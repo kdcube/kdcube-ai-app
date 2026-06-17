@@ -4,10 +4,6 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Dict, Mapping, Optional
 
-from kdcube_ai_app.apps.chat.sdk.context.memory.events.resolver import (
-    memory_ref_capabilities,
-    resolve_memory_ref_action,
-)
 from kdcube_ai_app.apps.chat.sdk.solutions.canvas import api as canvas_api
 from kdcube_ai_app.apps.chat.sdk.solutions.canvas.events.resolver import (
     CallableCanvasObjectResolver,
@@ -15,6 +11,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.canvas.events.resolver import (
     build_default_canvas_resolver_registry,
     object_ref_from_payload,
 )
+from kdcube_ai_app.apps.chat.sdk.solutions.canvas.search import CanvasPinSearch
 from kdcube_ai_app.apps.chat.sdk.solutions.canvas.storage import CanvasStore
 from kdcube_ai_app.apps.chat.sdk.solutions.chat.events.resolver import (
     conversation_ref_capabilities,
@@ -27,6 +24,37 @@ from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers import (
 from kdcube_ai_app.apps.chat.sdk.solutions.react.events.resolver import resolve_event_ref_action
 from kdcube_ai_app.apps.chat.sdk.runtime.data_bus import DataBusResult
 from kdcube_ai_app.apps.chat.sdk.runtime.http_ops import BundleBinaryResponse
+
+
+# UI layout operations (drag / resize) change only a card's position/size — never
+# its searchable text (card_text excludes placement). A patch that is ONLY these ops
+# is a no-op for the pin index, so we skip the index op entirely rather than re-take
+# the per-user lock and re-sync card metadata on every drag. Mirrors the layout op
+# set in canvas.tools_core (agent_visible_canvas_operations).
+_LAYOUT_ONLY_PATCH_OPS = {"move_card", "resize_card"}
+
+
+def _patch_operations(payload: Mapping[str, Any]) -> list[Dict[str, Any]]:
+    patch = payload.get("patch") if isinstance(payload.get("patch"), Mapping) else payload
+    if not isinstance(patch, Mapping):
+        return []
+    operations = patch.get("operations")
+    if isinstance(operations, list):
+        return [op for op in operations if isinstance(op, Mapping)]
+    if patch.get("op"):
+        return [patch]
+    return []
+
+
+def is_layout_only_patch(payload: Mapping[str, Any]) -> bool:
+    """True iff a canvas patch carries ops and EVERY op is a layout op (move/resize).
+    Such a patch never changes indexed text, so the pin index can skip it. Returns
+    False for an empty/unknown op set so an ambiguous patch is indexed rather than
+    silently dropped."""
+    operations = _patch_operations(payload)
+    if not operations:
+        return False
+    return all(str(op.get("op") or "") in _LAYOUT_ONLY_PATCH_OPS for op in operations)
 
 
 @dataclass(frozen=True)
@@ -70,6 +98,9 @@ class VersatileCanvasService:
         self.entrypoint = entrypoint
         self.config = config
         self.logger = logger
+        # Generic canvas pin search — derives its embedder + economics guard from
+        # the host entrypoint; any bundle mounting canvas reuses the same mechanism.
+        self.pins = CanvasPinSearch(entrypoint, logger=logger)
 
     def resolve_user_id(self, payload: Mapping[str, Any]) -> str:
         value = payload.get("user_id")
@@ -103,7 +134,6 @@ class VersatileCanvasService:
             {
                 "canvas_id": result.get("canvas_id") if result.get("canvas_id") is not None else payload.get("canvas_id"),
                 "canvas_name": result.get("canvas_name") if result.get("canvas_name") is not None else payload.get("canvas_name"),
-                "story_id": result.get("story_id") if result.get("story_id") is not None else payload.get("story_id"),
                 "revision": result.get("revision"),
                 "expected_revision": result.get("expected_revision"),
                 "current_revision": result.get("current_revision"),
@@ -143,6 +173,93 @@ class VersatileCanvasService:
             "conversation_role": "canvas",
         }
 
+    def _canvas_payload_for_result(self, payload: Mapping[str, Any], result: Mapping[str, Any]) -> Dict[str, Any]:
+        merged = dict(payload if payload is not None else {})
+        if result.get("canvas_id") is not None:
+            merged["canvas_id"] = result.get("canvas_id")
+        if result.get("canvas_name") is not None:
+            merged["canvas_name"] = result.get("canvas_name")
+        return merged
+
+    async def _index_pins_after_update(
+        self,
+        alias: str,
+        payload: Mapping[str, Any],
+        *,
+        user_id: str,
+        result: Mapping[str, Any],
+    ) -> None:
+        if result.get("ok") is False:
+            return
+        # A pure drag/resize (layout-only patch) changes no indexed text — skip the
+        # index op so dragging a card never triggers reindexing or lock contention.
+        if alias == "canvas_patch" and is_layout_only_patch(payload):
+            self.logger.info(
+                "[canvas.pins.index] skip layout-only patch user_id=%s canvas_id=%s",
+                user_id,
+                result.get("canvas_id"),
+            )
+            return
+        index_payload = self._canvas_payload_for_result(payload, result)
+        try:
+            indexed = await self.pins.index(
+                store=self.store(index_payload, user_id=user_id),
+                user_id=user_id,
+                payload=index_payload,
+            )
+            if indexed.get("ok") is False:
+                self.logger.warning("[canvas.pins.index] update failed alias=%s result=%s", alias, indexed)
+                return
+            self.logger.info(
+                "[canvas.pins.index] updated alias=%s user_id=%s canvas_id=%s indexed=%s",
+                alias,
+                user_id,
+                indexed.get("board"),
+                indexed.get("indexed"),
+            )
+        except Exception:
+            self.logger.warning(
+                "[canvas.pins.index] update exception alias=%s user_id=%s",
+                alias,
+                user_id,
+                exc_info=True,
+            )
+
+    async def _clear_pins_after_delete(
+        self,
+        alias: str,
+        payload: Mapping[str, Any],
+        *,
+        user_id: str,
+        result: Mapping[str, Any],
+    ) -> None:
+        if result.get("ok") is False:
+            return
+        index_payload = self._canvas_payload_for_result(payload, result)
+        try:
+            cleared = await self.pins.clear(
+                store=self.store(index_payload, user_id=user_id),
+                user_id=user_id,
+                payload=index_payload,
+            )
+            if cleared.get("ok") is False:
+                self.logger.warning("[canvas.pins.index] clear failed alias=%s result=%s", alias, cleared)
+                return
+            self.logger.info(
+                "[canvas.pins.index] cleared alias=%s user_id=%s canvas_id=%s removed=%s",
+                alias,
+                user_id,
+                cleared.get("board"),
+                cleared.get("removed"),
+            )
+        except Exception:
+            self.logger.warning(
+                "[canvas.pins.index] clear exception alias=%s user_id=%s",
+                alias,
+                user_id,
+                exc_info=True,
+            )
+
     def object_resolvers(self, payload: Mapping[str, Any], *, user_id: str):
         store = self.store(payload, user_id=user_id)
         registry = build_default_canvas_resolver_registry(store)
@@ -153,7 +270,6 @@ class VersatileCanvasService:
         async def _resolve_fi(
             action_payload: Mapping[str, Any],
             resolver_user_id: str,
-            resolver_story_id: str,
             action: str,
         ) -> Mapping[str, Any]:
             return await resolve_event_ref_action(
@@ -162,7 +278,6 @@ class VersatileCanvasService:
                 project=project,
                 user_id=resolver_user_id,
                 storage_path=str(getattr(self.entrypoint.settings, "STORAGE_PATH", "")),
-                story_id=resolver_story_id,
                 require_embedded_conversation=True,
             )
 
@@ -173,30 +288,6 @@ class VersatileCanvasService:
                 resolver_status="implemented",
                 capabilities={"preview": False, "open": False, "download": True, "rehost": False},
                 handler=_resolve_fi,
-            )
-        )
-
-        async def _resolve_mem(
-            action_payload: Mapping[str, Any],
-            resolver_user_id: str,
-            resolver_story_id: str,
-            action: str,
-        ) -> Mapping[str, Any]:
-            del resolver_user_id, resolver_story_id
-            return await resolve_memory_ref_action(
-                {**dict(action_payload if action_payload is not None else {}), "action": action},
-                store=self.entrypoint._memory_store(),
-                scope=self.entrypoint._memory_scope(),
-                scope_filter=self.entrypoint._memory_scope_filter("current_bundle"),
-            )
-
-        registry.register(
-            CallableCanvasObjectResolver(
-                namespace="mem",
-                resolver="sdk.memory",
-                resolver_status="implemented",
-                capabilities=memory_ref_capabilities(),
-                handler=_resolve_mem,
             )
         )
 
@@ -225,10 +316,8 @@ class VersatileCanvasService:
         async def _resolve_conv(
             action_payload: Mapping[str, Any],
             resolver_user_id: str,
-            resolver_story_id: str,
             action: str,
         ) -> Mapping[str, Any]:
-            del resolver_story_id
             return await resolve_conversation_ref_action(
                 {**dict(action_payload if action_payload is not None else {}), "action": action},
                 user_id=resolver_user_id,
@@ -254,20 +343,61 @@ class VersatileCanvasService:
         )
         return registry
 
-    def apply_patch_payload(self, payload: Mapping[str, Any]) -> Dict[str, Any]:
+    async def apply_patch_payload(self, payload: Mapping[str, Any]) -> Dict[str, Any]:
         user_id = self.resolve_user_id(payload)
-        story_id = protocol_string(payload, "story_id")
         try:
             result = canvas_api.patch(
                 payload=payload,
                 store=self.store(payload, user_id=user_id),
                 user_id=user_id,
-                story_id=story_id,
                 target=self.target(),
             )
         except Exception as exc:
-            result = {"ok": False, "user_id": user_id, "story_id": story_id, "error": str(exc)}
+            result = {"ok": False, "user_id": user_id, "error": str(exc)}
         self.log_failure("canvas_patch", payload, result)
+        await self._index_pins_after_update("canvas_patch", payload, user_id=user_id, result=result)
+        return result
+
+    async def search(self, payload: Mapping[str, Any]) -> Dict[str, Any]:
+        user_id = self.resolve_user_id(payload)
+        try:
+            result = await self.pins.search(
+                store=self.store(payload, user_id=user_id),
+                user_id=user_id,
+                payload=payload,
+            )
+        except Exception as exc:
+            result = {"ok": False, "user_id": user_id, "error": str(exc)}
+        self.log_failure("canvas_search", payload, result)
+        return result
+
+    async def write(self, payload: Mapping[str, Any]) -> Dict[str, Any]:
+        user_id = self.resolve_user_id(payload)
+        try:
+            result = canvas_api.write(
+                payload=payload,
+                store=self.store(payload, user_id=user_id),
+                user_id=user_id,
+                target=self.target(),
+            )
+        except Exception as exc:
+            result = {"ok": False, "user_id": user_id, "error": str(exc)}
+        self.log_failure("canvas_write", payload, result)
+        await self._index_pins_after_update("canvas_write", payload, user_id=user_id, result=result)
+        return result
+
+    async def delete(self, payload: Mapping[str, Any]) -> Dict[str, Any]:
+        user_id = self.resolve_user_id(payload)
+        try:
+            result = canvas_api.delete(
+                payload=payload,
+                store=self.store(payload, user_id=user_id),
+                user_id=user_id,
+            )
+        except Exception as exc:
+            result = {"ok": False, "user_id": user_id, "error": str(exc)}
+        self.log_failure("canvas_delete", payload, result)
+        await self._clear_pins_after_delete("canvas_delete", payload, user_id=user_id, result=result)
         return result
 
     async def attachment_upload(
@@ -277,33 +407,29 @@ class VersatileCanvasService:
         uploaded_files: list[Any],
     ) -> Dict[str, Any]:
         user_id = self.resolve_user_id(payload)
-        story_id = protocol_string(payload, "story_id")
         try:
             result = canvas_api.upload_attachments(
                 payload=payload,
                 uploaded_files=uploaded_files,
                 store=self.store(payload, user_id=user_id),
                 user_id=user_id,
-                story_id=story_id,
             )
         except Exception as exc:
-            self.logger.exception("[canvas.attachment_upload] failed story_id=%s", story_id)
-            result = {"ok": False, "user_id": user_id, "story_id": story_id, "error": str(exc)}
+            self.logger.exception("[canvas.attachment_upload] failed")
+            result = {"ok": False, "user_id": user_id, "error": str(exc)}
         self.log_failure("canvas_attachment_upload", payload, result)
         return result
 
     async def object_action(self, payload: Mapping[str, Any]) -> Dict[str, Any]:
         user_id = self.resolve_user_id(payload)
-        story_id = protocol_string(payload, "story_id")
         try:
             result = await canvas_api.object_action(
                 payload=payload,
                 registry=self.object_resolvers(payload, user_id=user_id),
                 user_id=user_id,
-                story_id=story_id,
             )
         except Exception as exc:
-            result = {"ok": False, "user_id": user_id, "story_id": story_id, "error": str(exc)}
+            result = {"ok": False, "user_id": user_id, "error": str(exc)}
         self.log_failure("canvas_object_action", payload, result)
         return result
 
@@ -326,15 +452,14 @@ class VersatileCanvasService:
 
     def operation(self, alias: str, payload: Mapping[str, Any], operation: Any) -> Dict[str, Any]:
         user_id = self.resolve_user_id(payload)
-        story_id = protocol_string(payload, "story_id")
         try:
-            result = operation(user_id=user_id, story_id=story_id)
+            result = operation(user_id=user_id)
         except Exception as exc:
-            result = {"ok": False, "user_id": user_id, "story_id": story_id, "error": str(exc)}
+            result = {"ok": False, "user_id": user_id, "error": str(exc)}
         self.log_failure(alias, payload, result)
         return result
 
-    def data_bus_patch_result(self, ctx: Any, message: Any) -> DataBusResult:
+    async def data_bus_patch_result(self, ctx: Any, message: Any) -> DataBusResult:
         payload = dict(message.payload if message.payload is not None else {})
         actor = dict(message.actor if message.actor is not None else {})
         if ctx.tenant and "tenant" not in payload:
@@ -352,7 +477,7 @@ class VersatileCanvasService:
         if message.object_ref and "object_ref" not in payload:
             payload["object_ref"] = message.object_ref
 
-        result = self.apply_patch_payload(payload)
+        result = await self.apply_patch_payload(payload)
         if result.get("ok") is False and result.get("current_revision") is not None:
             return DataBusResult.conflict(message, result)
         return DataBusResult.ok(message, result)

@@ -35,6 +35,8 @@ import {
   type CanvasPatchInput,
   type CanvasPatchResponse,
   type CanvasPatchUiEvent,
+  type CanvasSearchInput,
+  type CanvasSearchResponse,
 } from '@kdcube/components-react/canvas'
 import { settings } from './api/settings'
 import { createCanvasHost, type CanvasHost, type RouteContext } from './api/canvasHost'
@@ -45,22 +47,12 @@ const ATTACH_MESSAGE = 'kdcube-pinboard-attach'
 const OPEN_MESSAGE = 'kdcube-pinboard-open'
 const CLOSE_MESSAGE = 'kdcube-pinboard-close'
 const DROP_CONTEXT_MESSAGE = 'kdcube-pinboard-drop-context'
+const DROP_INGRESS_MESSAGE = 'kdcube-pinboard-drop-ingress'
 
 function postToHost(message: Record<string, unknown>): void {
   if (window.parent && window.parent !== window) {
     window.parent.postMessage({ source: 'kdcube.pinboard', ...message }, '*')
   }
-}
-
-function storyIdFor(bundleId: string): string {
-  const query = new URLSearchParams(window.location.search)
-  const explicit = (query.get('story_id') || query.get('storyId') || '').trim()
-  if (explicit) return explicit
-  // Mirror the scene's `<bundle>:main` convention (e.g. `versatile:main`),
-  // derived from the bundle id prefix so a board hosted in the same bundle
-  // shares the same canvas the scene writes to.
-  const prefix = (bundleId.split('@')[0] || '').trim()
-  return prefix ? `${prefix}:main` : 'main'
 }
 
 // Local card builders for the two ingress paths the scene also handles
@@ -86,7 +78,7 @@ function cardKindFromContext(context: CanvasContextItem, ref: string): CanvasCar
 }
 
 function cardFromContext(context: CanvasContextItem, rect: CanvasCard['rect']) {
-  const ref = String(context.logical_path ?? context.ref ?? context.id ?? '').trim()
+  const ref = String(context.object_ref ?? context.logical_path ?? context.ref ?? context.id ?? '').trim()
   return cardFromSearchResult(
     {
       ref,
@@ -94,6 +86,7 @@ function cardFromContext(context: CanvasContextItem, rect: CanvasCard['rect']) {
       mime: context.mime,
       summary: context.summary,
       kind: cardKindFromContext(context, ref),
+      object_kind: context.object_kind,
     },
     { placement: 'placed', rect },
   )
@@ -157,7 +150,7 @@ export default function App() {
         if (!ctx.tenant || !ctx.project || !ctx.bundleId) {
           throw new Error('Pin Board could not resolve tenant / project / bundle from its host.')
         }
-        const nextHost = createCanvasHost({ ctx, storyId: storyIdFor(ctx.bundleId) })
+        const nextHost = createCanvasHost({ ctx })
         const loaded = await nextHost.loadCanvas(activeCanvasName)
         if (cancelled) return
         setHost(nextHost)
@@ -213,7 +206,6 @@ export default function App() {
   }), [patchCanvas, host])
 
   const canvasTarget = useCallback((rect?: CanvasCard['rect']) => ({
-    storyId: host?.storyId,
     canvasId: activeCanvas.id,
     canvasName: activeCanvas.name,
     baseRevision: activeCanvas.revision,
@@ -251,17 +243,29 @@ export default function App() {
   useEffect(() => {
     function onMessage(event: MessageEvent) {
       const data = event.data as Record<string, unknown> | null
-      if (!data || typeof data !== 'object' || data.type !== DROP_CONTEXT_MESSAGE) return
-      const context = normalizeContext(data.context)
-      if (!context) {
-        setNotice('Dropped context is not valid.')
+      if (!data || typeof data !== 'object') return
+      if (data.type === DROP_CONTEXT_MESSAGE) {
+        const context = normalizeContext(data.context)
+        if (!context) {
+          setNotice('Dropped context is not valid.')
+          return
+        }
+        onDropContext(context, rectFromDropMessage(data))
         return
       }
-      onDropContext(context, rectFromDropMessage(data))
+      if (data.type === DROP_INGRESS_MESSAGE) {
+        const payload = data.payload as CanvasIngressPayload | undefined
+        if (!payload || typeof payload !== 'object') {
+          setNotice('Dropped canvas ingress is not valid.')
+          return
+        }
+        onDropIngress(payload, rectFromDropMessage(data))
+        return
+      }
     }
     window.addEventListener('message', onMessage)
     return () => window.removeEventListener('message', onMessage)
-  }, [onDropContext])
+  }, [onDropContext, onDropIngress])
 
   // Attaching / focusing a pin in chat is not something the standalone board
   // can do — forward the intent to the host broker.
@@ -294,6 +298,12 @@ export default function App() {
       postToHost({ type: OPEN_MESSAGE, target_surface: targetSurface, ui_event: uiEvent, card_ref: card.ref })
     }
     return response
+  }, [host])
+
+  const onSearchPins = useCallback(async (input: CanvasSearchInput): Promise<CanvasSearchResponse> => {
+    if (!host) return { ok: false, items: [], error: 'Pin Board is not ready yet.' }
+    const active = activeCanvasRef.current
+    return host.searchPins({ ...input, canvasName: active?.name, canvasId: active?.id })
   }, [host])
 
   const onCloseCanvas = useCallback(() => {
@@ -367,7 +377,8 @@ export default function App() {
         onDropContext={onDropContext}
         onDropIngress={onDropIngress}
         onObjectAction={onObjectAction}
-        namespaceStyles={settings.getCanvasNamespaceStyles() as Record<string, CanvasNamespaceStyle | string>}
+        onSearchPins={onSearchPins}
+        namespaceStyles={settings.getNamespaceStyles() as Record<string, CanvasNamespaceStyle | string>}
         infoHtml={host?.getBoardInfoHtml() || undefined}
         /* When floated by the scene's window chrome (embedded), the host owns the
          * close/dock control — hide the board's own ✕ so there aren't two. */

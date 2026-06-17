@@ -30,7 +30,7 @@ class FakeStore:
     def canvas_id(self, *, canvas_name, canvas_id):
         return canvas_id or f"cnv:{canvas_name}"
 
-    def read_document(self, *, canvas_id, story_id, canvas_name):
+    def read_document(self, *, canvas_id, canvas_name):
         return (None, {"cards": self._cards})
 
 
@@ -46,7 +46,7 @@ async def _run() -> None:
 
         # indexing happens on a canvas update (under the observed lock)
         idx = await index_pins(
-            store=store, user_id="u-1", story_id="s-1",
+            store=store, user_id="u-1",
             payload={"canvas_id": "b1"}, embed_fn=fake_embed, dim=len(VOCAB),
             vector_backend="bruteforce",
         )
@@ -54,21 +54,57 @@ async def _run() -> None:
 
         # search is read-only — does not re-index
         res = await search_pins(
-            store=store, user_id="u-1", story_id="s-1",
+            store=store, user_id="u-1",
             payload={"query": "alpha deploy", "canvas_id": "b1", "limit": 10},
             embed_fn=fake_embed, dim=len(VOCAB), vector_backend="bruteforce",
         )
         assert res["ok"] is True, res
         ids = [r["card_id"] for r in res["results"]]
-        assert ids and ids[0] == "p1", res
+        # Regression for the "search matched every pin" bug (e.g. "hello" → 14/14):
+        # the semantic floor must keep the unrelated pin (p2) OUT, not return the
+        # whole board reordered.
+        assert ids == ["p1"], f"floor should drop the non-matching pin p2: {ids}"
         assert res["results"][0]["ref"] == "cnv:u/b1/p1"   # native ref carried through
         assert res["scope"] == "b1"
+
+        # A query unrelated to every card returns NOTHING (not the whole board).
+        res_none = await search_pins(
+            store=store, user_id="u-1",
+            payload={"query": "xylophone serendipity", "canvas_id": "b1", "limit": 10},
+            embed_fn=fake_embed, dim=len(VOCAB), vector_backend="bruteforce",
+        )
+        assert res_none["ok"] is True and res_none["count"] == 0, res_none
+
+        # Semantic factor OFF (min_semantic_score < 0): search runs on lexical +
+        # recency only — never calls the embedder — and still returns matches.
+        embed_calls = {"n": 0}
+
+        async def counting_embed(texts):
+            embed_calls["n"] += 1
+            return await fake_embed(texts)
+
+        res_off = await search_pins(
+            store=store, user_id="u-1",
+            payload={"query": "alpha deploy", "canvas_id": "b1", "limit": 10},
+            embed_fn=counting_embed, dim=len(VOCAB), vector_backend="bruteforce",
+            min_semantic_score=-1,
+        )
+        assert res_off["ok"] is True and [r["card_id"] for r in res_off["results"]] == ["p1"], res_off
+        assert embed_calls["n"] == 0, "semantic-off must not call the embedder for the query"
+        # An unrelated query still returns nothing (lexical has its own boundary).
+        res_off_none = await search_pins(
+            store=store, user_id="u-1",
+            payload={"query": "xylophone serendipity", "canvas_id": "b1", "limit": 10},
+            embed_fn=counting_embed, dim=len(VOCAB), vector_backend="bruteforce",
+            min_semantic_score=-1,
+        )
+        assert res_off_none["ok"] is True and res_off_none["count"] == 0, res_off_none
 
         # economics guard denies → degrades to lexical (no exception, still returns)
         async def deny(_q):
             return False
         res2 = await search_pins(
-            store=store, user_id="u-1", story_id="s-1",
+            store=store, user_id="u-1",
             payload={"query": "alpha", "canvas_id": "b1"},
             embed_fn=fake_embed, dim=len(VOCAB), semantic_guard=deny,
             vector_backend="bruteforce",

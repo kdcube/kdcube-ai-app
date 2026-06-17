@@ -58,6 +58,12 @@ export interface CanvasNewCardInput {
    *  `<namespace>.<kind>`. Canvas uses it only for presentation;
    *  resolver dispatch still uses the URI root namespace before `:`. */
   object_kind?: string
+  /** Compact object preview shown on cards and preserved in canvas legend rows. */
+  content_preview?: string
+  /** Alias accepted from higher-level callers; normalized by storage as preview data. */
+  summary?: string
+  /** User/provider description attached to the card, not to the referenced object. */
+  description?: string
   /** Versioned ref to existing content. Mutually exclusive with `content`
    *  for cards the bundle rehosts. */
   logical_path?: string
@@ -131,7 +137,6 @@ export type CanvasPatchOp =
 export interface CanvasPatchInput {
   canvas_id?: string
   canvas_name?: string
-  story_id?: string
   base_revision?: number
   patch: {
     canvas_id?: string
@@ -154,7 +159,6 @@ export interface CanvasPatchAppliedCard {
 export interface CanvasPatchResponse {
   ok: boolean
   user_id?: string
-  story_id?: string
   canvas_id?: string
   canvas_name?: string
   revision?: number
@@ -171,7 +175,6 @@ export interface CanvasPatchResponse {
   ui_event?: {
     type: string
     source?: string
-    story_id?: string
     canvas_name?: string
     canvas_id?: string
     revision?: number
@@ -190,9 +193,7 @@ export interface CanvasPatchResponse {
   current_revision?: number
 }
 
-export interface CanvasListInput {
-  story_id?: string
-}
+export interface CanvasListInput {}
 
 export interface CanvasListItem {
   canvas_id?: string
@@ -211,7 +212,6 @@ export interface CanvasListItem {
 export interface CanvasListResponse {
   ok: boolean
   user_id?: string
-  story_id?: string
   canvases?: CanvasListItem[]
   /** Bundle-authored HTML for the board ⓘ help panel; absent → built-in default. */
   info_html?: string
@@ -224,7 +224,6 @@ export interface CanvasReadInput {
   canvas_id?: string
   canvas_name?: string
   name?: string
-  story_id?: string
   revision?: number
 }
 
@@ -232,7 +231,6 @@ export interface CanvasReadResponse {
   ok: boolean
   found?: boolean
   user_id?: string
-  story_id?: string
   canvas_id?: string
   canvas_name?: string
   revision?: number
@@ -254,7 +252,6 @@ export interface CanvasObjectActionInput {
   card_id?: string
   canvas_id?: string
   canvas_name?: string
-  story_id?: string
   mime?: string
 }
 
@@ -338,11 +335,45 @@ export interface CanvasUploadCardDescriptor {
 export interface CanvasUploadResponse {
   ok: boolean
   user_id?: string
-  story_id?: string
   canvas_id?: string
   canvas_name?: string
   attachments?: CanvasUploadedAttachment[]
   cards?: CanvasUploadCardDescriptor[]
   error?: string
   status?: number
+}
+
+/** Hybrid pin-board search (semantic + lexical + recency) over `canvas_search`. */
+export interface CanvasSearchInput {
+  query: string
+  /** Search every board the user owns; false = the active board only. */
+  allBoards?: boolean
+  canvasName?: string
+  canvasId?: string
+  kinds?: string[]
+  namespaces?: string[]
+  limit?: number
+}
+
+export interface CanvasSearchItem {
+  card_id: string
+  kind: string
+  title?: string
+  label?: string
+  mime?: string
+  logical_path?: string
+  namespace?: string
+  ref?: string
+  board?: string
+  score?: number
+}
+
+export interface CanvasSearchResponse {
+  ok: boolean
+  query?: string
+  scope?: string
+  items?: CanvasSearchItem[]
+  results?: CanvasSearchItem[]
+  count?: number
+  error?: string
 }

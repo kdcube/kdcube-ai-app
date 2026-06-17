@@ -56,7 +56,6 @@ class NamedServiceCanvasObjectResolver(CanvasObjectResolver):
         payload: Mapping[str, Any],
         *,
         user_id: str,
-        story_id: str,
         action: str,
     ) -> dict[str, Any]:
         object_ref = object_ref_from_payload(payload)
@@ -73,7 +72,7 @@ class NamedServiceCanvasObjectResolver(CanvasObjectResolver):
                 "operation": operation,
             }
         LOGGER.info(
-            "Named-service canvas resolver call start: namespace=%s provider=%s bundle=%s operation=%s action=%s object_ref=%s user_id=%s story_id=%s",
+            "Named-service canvas resolver call start: namespace=%s provider=%s bundle=%s operation=%s action=%s object_ref=%s user_id=%s",
             self.namespace,
             self.endpoint.provider or "",
             self.endpoint.bundle_id,
@@ -81,7 +80,6 @@ class NamedServiceCanvasObjectResolver(CanvasObjectResolver):
             action,
             object_ref,
             user_id,
-            story_id,
         )
         response = await call_named_service_endpoint(
             self.endpoint,
@@ -96,7 +94,6 @@ class NamedServiceCanvasObjectResolver(CanvasObjectResolver):
                     "tenant": self.endpoint.tenant or "",
                     "project": self.endpoint.project or "",
                     "user_id": user_id,
-                    "story_id": story_id,
                 },
                 payload=dict(payload or {}),
             ),

@@ -33,7 +33,6 @@ export interface CanvasIngressClient {
   patchCanvas: (input: {
     canvas_id?: string
     canvas_name?: string
-    story_id?: string
     base_revision?: number
     patch: {
       canvas_id?: string
@@ -45,7 +44,6 @@ export interface CanvasIngressClient {
   }) => Promise<CanvasPatchResponse>
   uploadCanvasAttachments: (
     payload: {
-      story_id?: string
       canvas_id?: string
       canvas_name?: string
       attachments?: Array<{
@@ -61,11 +59,8 @@ export interface CanvasIngressClient {
   }>
 }
 
-/** Canvas selection the orchestrators target. `storyId` is required
- *  because canvas storage scopes refs by story; the rest defaults to the
- *  active board. */
+/** Canvas selection the orchestrators target. */
 export interface CanvasIngressTarget {
-  storyId: string
   canvasName?: string
   canvasId?: string
   baseRevision?: number
@@ -164,16 +159,21 @@ export function cardFromSearchResult(
     mime?: string
     summary?: string
     kind?: CanvasCardKind
+    object_kind?: string
   },
   options: CardOptions = {},
 ): CanvasNewCardInput {
   assertCanvasLogicalPath(hit.ref, 'cardFromSearchResult')
+  const preview = compactPreview(hit.summary || hit.ref, 240)
   return {
     id: options.id ?? hit.ref,
     kind: hit.kind ?? 'object.ref',
     title: options.title ?? hit.title,
     mime: hit.mime ?? 'application/json',
-    namespace: ownerKeyFromLogicalPath(hit.ref),
+    namespace: namespaceFromLogicalPath(hit.ref),
+    object_kind: hit.object_kind,
+    content_preview: preview,
+    summary: preview,
     logical_path: hit.ref,
     placement: options.placement ?? 'floating',
     rect: options.rect,
@@ -188,13 +188,6 @@ function namespaceFromLogicalPath(ref: string): string | undefined {
   return match?.[1]?.toLowerCase()
 }
 
-function ownerKeyFromLogicalPath(ref: string): string | undefined {
-  const value = String(ref || '').trim()
-  const index = value.lastIndexOf(':')
-  if (index <= 0) return namespaceFromLogicalPath(value)
-  return value.slice(0, index).trim().toLowerCase() || namespaceFromLogicalPath(value)
-}
-
 /** User dragged an agent-produced file from the chat iframe onto canvas.
  *  Preserves cross-conversation `fi:conv_<id>.turn_<id>...` refs verbatim
  *  per the canvas namespace contract. */
@@ -203,6 +196,28 @@ export function cardFromChatArtifact(
   options: CardOptions = {},
 ): CanvasNewCardInput {
   assertCanvasLogicalPath(artifact.ref, 'cardFromChatArtifact')
+  const namespace = namespaceFromLogicalPath(artifact.ref)
+  if (namespace && namespace !== 'fi') {
+    const filename = String(artifact.filename || '').trim()
+    const refTitle = filename && filename !== artifact.ref ? compactFilename(filename) : ''
+    const preview = compactPreview(artifact.preview || artifact.ref, 240)
+    const title = options.title ?? (refTitle || compactPreview(artifact.preview || artifact.ref, 64))
+    return {
+      id: options.id ?? artifact.ref,
+      kind: 'object.ref',
+      title,
+      mime: artifact.mime || 'application/vnd.kdcube.object-ref+json',
+      namespace,
+      content_preview: preview,
+      summary: preview,
+      logical_path: artifact.ref,
+      placement: options.placement ?? 'floating',
+      rect: options.rect,
+      source_card_ids: options.source_card_ids,
+      source_refs: options.source_refs,
+      created_by: 'user',
+    }
+  }
   const title = options.title || compactFilename(artifact.filename || '') || compactFilename(artifact.ref) || 'File'
   return {
     id: options.id ?? artifact.ref,
@@ -253,8 +268,8 @@ function buildPatchOp(card: CanvasNewCardInput): CanvasNewCardOp {
  *  point for the four ref/text-based ingress paths.
  *
  *  The orchestrator does NOT auto-select the active canvas — the caller
- *  passes `{storyId, canvasName, canvasId}` so the same module is reusable
- *  from outside the main workbench. */
+ *  passes `{canvasName, canvasId}` so the same module is reusable from
+ *  outside the main workbench. */
 export async function applyCanvasCards(
   cards: CanvasNewCardInput[],
   target: CanvasIngressTarget,
@@ -266,7 +281,6 @@ export async function applyCanvasCards(
   return client.patchCanvas({
     canvas_id: target.canvasId,
     canvas_name: target.canvasName,
-    story_id: target.storyId,
     base_revision: target.baseRevision,
     patch: {
       canvas_id: target.canvasId,
@@ -299,7 +313,6 @@ export async function uploadAndPinFiles(
   const uploadPlacement = options.placement === 'placed' ? 'placed' : 'floating'
   const uploaded = await client.uploadCanvasAttachments(
     {
-      story_id: target.storyId,
       canvas_id: target.canvasId,
       canvas_name: target.canvasName,
       attachments: files.map((_, index) => ({

@@ -22,8 +22,8 @@ import {
   Trash2,
   X,
 } from 'lucide-react'
-import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
-import type { CanvasObjectActionName, CanvasObjectActionResponse, CanvasPatchInput, CanvasPatchOp, CanvasPatchResponse, CanvasReadInput, CanvasReadResponse } from './canvasTypes'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import type { CanvasObjectActionName, CanvasObjectActionResponse, CanvasPatchInput, CanvasPatchOp, CanvasPatchResponse, CanvasReadInput, CanvasReadResponse, CanvasSearchInput, CanvasSearchItem, CanvasSearchResponse } from './canvasTypes'
 import { normalizeContext, normalizeContextMessage, type CanvasContextItem } from './contextTypes'
 import { parseIngressMessage, type CanvasIngressPayload } from './ingressBridge'
 import {
@@ -34,7 +34,6 @@ import {
   canvasFromReadResponse,
   findCanvas,
   namespaceFromRef,
-  ownerKeyFromRef,
   normalizeCanvasPatchEvent,
   type CanvasCard,
   type CanvasDefinition,
@@ -49,6 +48,10 @@ export interface CanvasNamespaceStyle {
   focus?: string
   background?: string
 }
+
+export type CanvasBrokeredDrop =
+  | { kind: 'context'; context: CanvasContextItem }
+  | { kind: 'ingress'; payload: CanvasIngressPayload }
 
 export interface CanvasBoardProps {
   activeCanvasName: string
@@ -68,7 +71,11 @@ export interface CanvasBoardProps {
   onDropText: (text: string, rect: CanvasCard['rect']) => void
   onDropContext: (context: CanvasContextItem, rect: CanvasCard['rect']) => void
   onDropIngress: (payload: CanvasIngressPayload, rect: CanvasCard['rect']) => void
+  getBrokeredDrop?: () => CanvasBrokeredDrop | null
+  onBrokeredDropHandled?: () => void
   onObjectAction?: (card: CanvasCard, action: CanvasObjectActionName) => Promise<CanvasObjectActionResponse>
+  /** Hybrid pin search. When absent the search control is hidden. */
+  onSearchPins?: (input: CanvasSearchInput) => Promise<CanvasSearchResponse>
   namespaceStyles?: Record<string, CanvasNamespaceStyle | string>
   /** HTML help shown behind the ⓘ icon. Comes from bundle config; when absent a built-in default is used. */
   infoHtml?: string
@@ -134,7 +141,7 @@ const NAMESPACE_BY_KIND: Record<string, string> = {
 }
 
 function namespaceForCard(card: CanvasCard): string {
-  return card.namespace || ownerKeyFromRef(card.ref) || namespaceFromRef(card.ref) || NAMESPACE_BY_KIND[card.kind] || card.kind.replace(/\./g, '-').slice(0, 4)
+  return namespaceFromRef(card.ref) || card.namespace || NAMESPACE_BY_KIND[card.kind] || card.kind.replace(/\./g, '-').slice(0, 4)
 }
 
 function namespaceLabelForCard(card: CanvasCard, namespaceStyles?: Record<string, CanvasNamespaceStyle | string>): string {
@@ -426,7 +433,6 @@ function providerObjectAttachmentContexts(
   const { identity, body } = providerObjectParts(resolverState?.object)
   const attachments = Array.isArray(body.attachments) ? body.attachments : []
   const issueId = stringValue(body.issue_id || body.id || identity.object_id)
-  const storyId = stringValue(body.story_id || body.storyId || (issueId ? `issue:${issueId}` : ''))
   return attachments.map((item, index) => {
     const attachment = asRecord(item)
     if (!attachment) return null
@@ -474,7 +480,6 @@ function providerObjectAttachmentContexts(
         parent_object_ref: stringValue(resolverState?.object_ref || resolverState?.ref || card.ref),
         issue_id: issueId,
         attachment_id: attachmentId,
-        story_id: storyId,
         object_ref: ref,
         object_kind: objectKind,
         filename,
@@ -663,6 +668,13 @@ function formatCardTime(ts: number | null): string {
   return date.toLocaleDateString([], { month: 'short', day: 'numeric' })
 }
 
+// Escape a value for use inside a quoted CSS attribute selector. Card ids carry
+// colons (`mem:record:…`), so CSS.escape (identifier escaping) is wrong here —
+// only `"` and `\` need escaping inside the quoted value.
+function cssAttrValue(value: string): string {
+  return String(value).replace(/["\\]/g, '\\$&')
+}
+
 export function CanvasBoard({
   activeCanvasName,
   canvases,
@@ -681,7 +693,10 @@ export function CanvasBoard({
   onDropText,
   onDropContext,
   onDropIngress,
+  getBrokeredDrop,
+  onBrokeredDropHandled,
   onObjectAction,
+  onSearchPins,
   namespaceStyles,
   infoHtml,
   hideCloseControl,
@@ -714,9 +729,19 @@ export function CanvasBoard({
   const [resolverLoadingByCard, setResolverLoadingByCard] = useState<Record<string, boolean>>({})
   const [resolverNoticeByCard, setResolverNoticeByCard] = useState<Record<string, string>>({})
   const [cardFilter, setCardFilter] = useState<CanvasCardFilter>('all')
+  // Pin search. `searchResults === null` means search is inactive (full board);
+  // a non-null array (even empty) means search-filter mode is engaged.
+  const [searchInput, setSearchInput] = useState<string>('')
+  const [searchScope, setSearchScope] = useState<'board' | 'all'>('board')
+  const [searchResults, setSearchResults] = useState<CanvasSearchItem[] | null>(null)
+  const [searching, setSearching] = useState(false)
+  const [searchError, setSearchError] = useState<string>('')
   const [patchError, setPatchError] = useState<string>('')
   const [revisionConflict, setRevisionConflict] = useState<CanvasRevisionConflict | null>(null)
   const [refreshingCanvas, setRefreshingCanvas] = useState(false)
+  // In-app board dialogs (replace the browser prompt/confirm).
+  const [boardDialog, setBoardDialog] = useState<null | { mode: 'create' | 'delete' }>(null)
+  const [boardNameDraft, setBoardNameDraft] = useState('')
   const lastPatchKeyRef = useRef<string>('')
   const cardsRef = useRef<CanvasCard[]>(cards)
   const canvasIdRef = useRef<string>(canvasId)
@@ -1108,6 +1133,69 @@ export function CanvasBoard({
   ), [selectedCardIds, visibleCards])
   const selectedBounds = useMemo(() => cardsBounds(selectedVisibleCards), [selectedVisibleCards])
 
+  // --- Pin search (hybrid; results applied as a temporary board filter) ---
+  const searchActive = searchResults !== null
+  // Ids of cards on THIS board that matched, so non-matches recede and matches
+  // are highlighted. Cross-board hits (all-boards scope) aren't on this board;
+  // clicking one switches boards.
+  const matchedCardIds = useMemo(() => {
+    if (!searchResults) return null
+    const liveIds = new Set(cards.map((card) => card.id))
+    return new Set(searchResults.map((hit) => hit.card_id).filter((id) => liveIds.has(id)))
+  }, [searchResults, cards])
+  const boardMatchCount = matchedCardIds ? matchedCardIds.size : 0
+
+  const exitPinSearch = useCallback(() => {
+    setSearchResults(null)
+    setSearchError('')
+  }, [])
+
+  const runPinSearch = useCallback(async () => {
+    const query = searchInput.trim()
+    if (!onSearchPins || !query) {
+      exitPinSearch()
+      return
+    }
+    setSearching(true)
+    setSearchError('')
+    try {
+      const response = await onSearchPins({ query, allBoards: searchScope === 'all' })
+      if (response.ok === false) {
+        setSearchError(response.error || 'Search failed.')
+        setSearchResults([])
+        return
+      }
+      setSearchResults(response.items || response.results || [])
+    } catch (error) {
+      setSearchError(error instanceof Error ? error.message : 'Search failed.')
+      setSearchResults([])
+    } finally {
+      setSearching(false)
+    }
+  }, [exitPinSearch, onSearchPins, searchInput, searchScope])
+
+  // Changing the placement filter or the board exits search (its result set no
+  // longer applies); the user re-runs against the new context.
+  useEffect(() => {
+    exitPinSearch()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeCanvasName, cardFilter])
+
+  const handleSearchResultClick = useCallback((hit: CanvasSearchItem) => {
+    const onThisBoard = cards.some((card) => card.id === hit.card_id)
+    if (!onThisBoard && hit.board) {
+      // Cross-board hit (all-boards scope): jump to its board (search clears).
+      const target = canvases.find((c) => c.id === hit.board || c.name === hit.board)
+      if (target) {
+        onCanvasChange(target.name)
+        return
+      }
+    }
+    setSelectedCardIds(setFromIds([hit.card_id]))
+    const node = boardRef.current?.querySelector(`[data-card-id="${cssAttrValue(hit.card_id)}"]`)
+    if (node) node.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' })
+  }, [cards, canvases, onCanvasChange])
+
   useEffect(() => {
     if (!marqueeState) return
     const start = marqueeState
@@ -1336,27 +1424,37 @@ export function CanvasBoard({
   // persisted server-side on its first pin (a canvas.patch to a new name).
   function handleCreateBoard() {
     if (!onCreateCanvas) return
-    const raw = window.prompt('Name for the new board')
-    if (raw === null) return
-    const name = raw.trim()
-    if (!name) return
-    if (canvases.some((canvas) => canvas.name === name)) {
-      onCanvasChange(name)
-      return
-    }
-    onCreateCanvas(name)
-  }
-
-  function handleArchiveBoard() {
-    if (!onArchiveCanvas) return
-    if (!window.confirm(`Archive the board "${activeCanvas.name}"? It is hidden from the list but its pins are kept.`)) return
-    onArchiveCanvas(activeCanvas)
+    setBoardNameDraft('')
+    setBoardDialog({ mode: 'create' })
   }
 
   function handleDeleteBoard() {
     if (!onDeleteCanvas) return
-    if (!window.confirm(`Delete the board "${activeCanvas.name}" and all its pins? This cannot be undone.`)) return
-    onDeleteCanvas(activeCanvas)
+    setBoardDialog({ mode: 'delete' })
+  }
+
+  // Archive is intentionally not surfaced yet: there is no un-archive flow, so a
+  // board would become unreachable. `onArchiveCanvas` stays wired for when it lands.
+  function handleArchiveBoard() {
+    if (!onArchiveCanvas) return
+    onArchiveCanvas(activeCanvas)
+  }
+
+  function confirmBoardDialog() {
+    if (!boardDialog) return
+    if (boardDialog.mode === 'create') {
+      const name = boardNameDraft.trim()
+      if (!name) return
+      setBoardDialog(null)
+      if (canvases.some((canvas) => canvas.name === name)) {
+        onCanvasChange(name)
+        return
+      }
+      onCreateCanvas?.(name)
+      return
+    }
+    setBoardDialog(null)
+    onDeleteCanvas?.(activeCanvas)
   }
 
   function marqueeFromPoints(startX: number, startY: number, endX: number, endY: number): MarqueeState {
@@ -1497,8 +1595,20 @@ export function CanvasBoard({
           return
         }
       } catch {
-        // Fall through to text/plain handling.
+        // Invalid JSON is not a context payload. Fall through to text handling.
       }
+    }
+
+    const brokeredDrop = getBrokeredDrop?.()
+    if (brokeredDrop?.kind === 'ingress') {
+      onDropIngress(brokeredDrop.payload, dropRect(event, 246, 112))
+      onBrokeredDropHandled?.()
+      return
+    }
+    if (brokeredDrop?.kind === 'context') {
+      onDropContext(brokeredDrop.context, dropRect(event, 224, 104))
+      onBrokeredDropHandled?.()
+      return
     }
 
     const text = event.dataTransfer.getData('text/plain').trim()
@@ -1666,7 +1776,6 @@ export function CanvasBoard({
     const event = normalizeCanvasPatchEvent(response.ui_event ?? {
       type: 'canvas.patch.applied',
       source: 'canvas.patch',
-      story_id: response.story_id,
       canvas_name: response.canvas_name,
       canvas_id: response.canvas_id,
       revision: response.revision,
@@ -1849,7 +1958,7 @@ export function CanvasBoard({
   }
 
   return (
-    <section className="canvas-panel">
+    <section className={`canvas-panel ${onSearchPins ? 'has-search' : ''} ${searchActive ? 'is-searching' : ''}`}>
       <div className="canvas-header">
         <div className="canvas-title">
           <p className="canvas-title-line">
@@ -1928,11 +2037,8 @@ export function CanvasBoard({
           <button className="secondary icon-only" onClick={fitToView} title="Fit pins into view">
             <Frame size={16} />
           </button>
-          {onArchiveCanvas ? (
-            <button className="secondary icon-only" onClick={handleArchiveBoard} title="Archive this board">
-              <Archive size={16} />
-            </button>
-          ) : null}
+          {/* Archive hidden until an un-archive flow exists (a board would
+              otherwise become unreachable). Re-enable with onArchiveCanvas + handleArchiveBoard. */}
           {onDeleteCanvas ? (
             <button className="secondary icon-only" onClick={handleDeleteBoard} title="Delete this board">
               <Trash2 size={16} />
@@ -1967,6 +2073,150 @@ export function CanvasBoard({
               dangerouslySetInnerHTML={{ __html: (infoHtml && infoHtml.trim()) ? infoHtml : CANVAS_DEFAULT_INFO_HTML }}
             />
           </div>
+        </div>
+      ) : null}
+
+      {boardDialog ? (
+        <div
+          className="canvas-modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label={boardDialog.mode === 'create' ? 'New board' : 'Delete board'}
+          onClick={() => setBoardDialog(null)}
+        >
+          <div className="canvas-modal" onClick={(event) => event.stopPropagation()}>
+            {boardDialog.mode === 'create' ? (
+              <>
+                <h3>New board</h3>
+                <p>Give your new pin board a name.</p>
+                <input
+                  className="canvas-modal-input"
+                  autoFocus
+                  value={boardNameDraft}
+                  placeholder="Board name"
+                  onChange={(event) => setBoardNameDraft(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') { event.preventDefault(); confirmBoardDialog() }
+                    if (event.key === 'Escape') setBoardDialog(null)
+                  }}
+                />
+                <div className="canvas-modal-actions">
+                  <button type="button" className="secondary" onClick={() => setBoardDialog(null)}>Cancel</button>
+                  <button type="button" className="canvas-modal-go" disabled={!boardNameDraft.trim()} onClick={confirmBoardDialog}>
+                    Create board
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h3>Delete board</h3>
+                <p>Delete <strong>{activeCanvas.name}</strong> and all its pins? This can’t be undone.</p>
+                <div className="canvas-modal-actions">
+                  <button type="button" className="secondary" onClick={() => setBoardDialog(null)}>Cancel</button>
+                  <button type="button" className="canvas-modal-danger" onClick={confirmBoardDialog}>Delete board</button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      ) : null}
+
+      {onSearchPins ? (
+        <div className="canvas-search">
+          <form
+            className="canvas-search-bar"
+            onSubmit={(event) => { event.preventDefault(); void runPinSearch() }}
+          >
+            <div className="canvas-search-field">
+              <Search size={15} />
+              <input
+                value={searchInput}
+                onChange={(event) => setSearchInput(event.target.value)}
+                onKeyDown={(event) => { if (event.key === 'Escape') exitPinSearch() }}
+                placeholder="Search pins — semantic + lexical"
+                aria-label="Search pins"
+              />
+              {searchInput ? (
+                <button
+                  type="button"
+                  className="canvas-search-clear"
+                  title="Clear"
+                  aria-label="Clear search"
+                  onClick={exitPinSearch}
+                >
+                  <X size={13} />
+                </button>
+              ) : null}
+            </div>
+            <div className="canvas-search-scope" role="group" aria-label="Search scope">
+              <button
+                type="button"
+                className={searchScope === 'board' ? 'active' : ''}
+                aria-pressed={searchScope === 'board'}
+                onClick={() => setSearchScope('board')}
+              >
+                This board
+              </button>
+              <button
+                type="button"
+                className={searchScope === 'all' ? 'active' : ''}
+                aria-pressed={searchScope === 'all'}
+                onClick={() => setSearchScope('all')}
+              >
+                All boards
+              </button>
+            </div>
+            <button type="submit" className="secondary canvas-search-go" disabled={searching || !searchInput.trim()}>
+              {searching ? 'Searching…' : 'Search'}
+            </button>
+          </form>
+
+          {searchActive ? (
+            <div className="canvas-search-results">
+              <div className="canvas-search-filterbar">
+                <span>
+                  {searchError
+                    ? searchError
+                    : searchScope === 'board'
+                      ? `Filtering board — ${boardMatchCount} of ${cards.length} pins`
+                      : `${searchResults?.length ?? 0} match${(searchResults?.length ?? 0) === 1 ? '' : 'es'} across your boards`}
+                </span>
+                <span className="canvas-search-hint">Esc to exit</span>
+                <button type="button" className="canvas-search-clearall" onClick={exitPinSearch}>
+                  <X size={13} /> Clear search
+                </button>
+              </div>
+              {(searchResults?.length ?? 0) > 0 ? (
+                <ul className="canvas-search-list">
+                  {searchResults!.map((hit, idx) => {
+                    const onThisBoard = cards.some((card) => card.id === hit.card_id)
+                    return (
+                      <li key={`${hit.card_id}-${idx}`}>
+                        <button
+                          type="button"
+                          className="canvas-search-row"
+                          onClick={() => handleSearchResultClick(hit)}
+                          title={hit.ref || hit.label || hit.title || ''}
+                        >
+                          <span className="canvas-search-row-body">
+                            <span className="canvas-search-row-title">{hit.label || hit.title || hit.card_id}</span>
+                            <span className="canvas-search-row-sub">
+                              {(hit.namespace || hit.kind || 'pin')}{searchScope === 'all' && !onThisBoard ? ' · other board' : ''}
+                            </span>
+                          </span>
+                          {typeof hit.score === 'number' ? (
+                            <span className="canvas-search-row-score">{hit.score.toFixed(2)}</span>
+                          ) : null}
+                        </button>
+                      </li>
+                    )
+                  })}
+                </ul>
+              ) : (
+                !searchError ? <div className="canvas-search-empty">No pins match — try fewer words, or switch to All boards.</div> : null
+              )}
+            </div>
+          ) : null}
         </div>
       ) : null}
 
@@ -2109,12 +2359,15 @@ export function CanvasBoard({
             const capabilities = resolverState?.capabilities
             const wantsDownload = capabilities?.download === true || kind === 'file' || kind === 'user.attachment'
             const wantsOpen = kind === 'memory' || kind === 'source' || kind === 'search.result' || kind === 'object.ref' || kind === 'conversation' || Boolean(namespaceFromRef(card.ref))
+            const isObjectRefCard = kind === 'object.ref' || (Boolean(namespaceFromRef(card.ref)) && kind !== 'file' && kind !== 'user.attachment')
             const namespaceLabel = namespaceLabelForCard(card, namespaceStyles)
+            const visibleSummary = card.summary || (isObjectRefCard ? card.ref : '')
             const providerAttachmentContexts = providerObjectAttachmentContexts(card, resolverState)
             return (
               <article
                 key={card.id}
-                className={`canvas-card ${pinned ? 'expanded' : ''} ${dragged ? 'moving' : ''} ${card.selected || locallySelected ? 'selected' : ''} ${locallySelected ? 'multi-selected' : ''} ${pendingSuggestion ? 'suggested' : ''} ${card.kind.replace('.', '-')}`}
+                data-card-id={card.id}
+                className={`canvas-card ${pinned ? 'expanded' : ''} ${dragged ? 'moving' : ''} ${card.selected || locallySelected ? 'selected' : ''} ${locallySelected ? 'multi-selected' : ''} ${pendingSuggestion ? 'suggested' : ''} ${card.kind.replace('.', '-')} ${searchActive ? (matchedCardIds?.has(card.id) ? 'search-match' : 'search-dim') : ''}`}
                 draggable
                 onClick={(event) => selectCard(card, event)}
                 onDragStart={(event) => {
@@ -2203,6 +2456,24 @@ export function CanvasBoard({
                         {pinned ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
                       </button>
                     )}
+                    {copyUri ? (
+                      <button
+                        type="button"
+                        title={`Copy object URI\n${copyUri}`}
+                        aria-label="Copy object URI"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          void copyTextToClipboard(copyUri).then((ok) => {
+                            if (!ok) return
+                            setCopiedCardId(card.id)
+                            window.setTimeout(() => setCopiedCardId((prev) => (prev === card.id ? '' : prev)), 1200)
+                          })
+                        }}
+                        onMouseDown={(event) => event.stopPropagation()}
+                      >
+                        {copiedCardId === card.id ? <Check size={13} /> : <Copy size={13} />}
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       title="Attach to chat"
@@ -2222,7 +2493,7 @@ export function CanvasBoard({
                   onPointerCancel={clearDescriptionHold}
                 >
                   <h3>{card.title}</h3>
-                  <p>{card.summary}</p>
+                  <p>{visibleSummary}</p>
                 </div>
                 <span className="canvas-card-kind">
                   <Grip size={12} />
@@ -2273,10 +2544,17 @@ export function CanvasBoard({
                         <div><dt>chat</dt><dd>{card.title || 'Conversation'}</dd></div>
                         {card.summary ? <div><dt>last</dt><dd>{card.summary}</dd></div> : null}
                       </dl>
-                    ) : wantsDownload || kind === 'object.ref' ? (
+                    ) : isObjectRefCard ? (
+                      <dl className="canvas-card-flyout-kv">
+                        <div><dt>object URI</dt><dd>{card.ref || card.title}</dd></div>
+                        <div><dt>namespace</dt><dd>{namespaceLabel}</dd></div>
+                        <div><dt>object kind</dt><dd>{card.object_kind || card.kind || 'object.ref'}</dd></div>
+                        {card.summary ? <div><dt>preview</dt><dd>{card.summary}</dd></div> : null}
+                      </dl>
+                    ) : wantsDownload ? (
                       <dl className="canvas-card-flyout-kv">
                         <div><dt>file</dt><dd>{card.ref || card.title}</dd></div>
-                        <div><dt>type</dt><dd>{card.mime || '—'}</dd></div>
+                        <div><dt>mime</dt><dd>{card.mime || '—'}</dd></div>
                       </dl>
                     ) : wantsOpen && (kind === 'source' || kind === 'search.result') ? (
                       <dl className="canvas-card-flyout-kv">

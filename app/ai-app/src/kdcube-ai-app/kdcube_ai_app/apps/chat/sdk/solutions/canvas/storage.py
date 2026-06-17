@@ -418,12 +418,11 @@ class CanvasStore:
             return False, {}
         return True, _decode_json(raw)
 
-    def default_document(self, *, canvas_id: str, canvas_name: str, story_id: str = "") -> Dict[str, Any]:
+    def default_document(self, *, canvas_id: str, canvas_name: str) -> Dict[str, Any]:
         now = int(time.time())
         return {
             "schema": CANVAS_SCHEMA,
             "owner_user_id": self.user_id,
-            "story_id": str(story_id or ""),
             "canvas_name": self.canvas_name(canvas_name),
             "canvas_id": canvas_id,
             "revision": 0,
@@ -440,13 +439,11 @@ class CanvasStore:
         *,
         canvas_id: str,
         canvas_name: str,
-        story_id: str = "",
     ) -> Dict[str, Any]:
         doc = dict(raw or {})
         normalized_canvas_name = self.canvas_name(doc.get("canvas_name") or canvas_name)
         doc["schema"] = str(doc.get("schema") or CANVAS_SCHEMA)
         doc["owner_user_id"] = str(doc.get("owner_user_id") or self.user_id)
-        doc["story_id"] = str(doc.get("story_id") or story_id or "")
         doc["canvas_name"] = normalized_canvas_name
         doc["canvas_id"] = str(doc.get("canvas_id") or canvas_id or self.canvas_id(canvas_name=normalized_canvas_name))
         try:
@@ -532,7 +529,6 @@ class CanvasStore:
         *,
         canvas_id: str,
         canvas_name: str,
-        story_id: str = "",
         revision: int | None = None,
     ) -> tuple[bool, Dict[str, Any]]:
         relpath = (
@@ -542,8 +538,8 @@ class CanvasStore:
         )
         found, data = self._read_json(relpath)
         if not found:
-            return False, self.default_document(canvas_id=canvas_id, story_id=story_id, canvas_name=canvas_name)
-        return True, self.normalize_document(data, canvas_id=canvas_id, story_id=story_id, canvas_name=canvas_name)
+            return False, self.default_document(canvas_id=canvas_id, canvas_name=canvas_name)
+        return True, self.normalize_document(data, canvas_id=canvas_id, canvas_name=canvas_name)
 
     def ref_extension(self, mime: str) -> str:
         lowered = str(mime or "").split(";", 1)[0].strip().lower()
@@ -576,7 +572,6 @@ class CanvasStore:
         *,
         canvas_id: str,
         canvas_name: str,
-        story_id: str,
         card: Dict[str, Any],
     ) -> Dict[str, Any]:
         if "content" not in card:
@@ -618,7 +613,6 @@ class CanvasStore:
             data,
             mime=mime,
             meta={
-                "story_id": story_id,
                 "owner_user_id": self.user_id,
                 "canvas_name": self.canvas_name(canvas_name),
                 "canvas_id": canvas_id,
@@ -643,7 +637,6 @@ class CanvasStore:
         *,
         canvas_id: str,
         canvas_name: str,
-        story_id: str,
         card_id: str,
         filename: str,
         content: bytes,
@@ -666,7 +659,6 @@ class CanvasStore:
             content,
             mime=mime or "application/octet-stream",
             meta={
-                "story_id": story_id,
                 "owner_user_id": self.user_id,
                 "canvas_name": self.canvas_name(canvas_name),
                 "canvas_id": canvas_id,
@@ -692,7 +684,6 @@ class CanvasStore:
         self,
         *,
         canvas_id: str,
-        story_id: str,
         canvas_name: str,
         raw: Mapping[str, Any],
     ) -> Dict[str, Any]:
@@ -736,7 +727,6 @@ class CanvasStore:
         card["updated_at"] = int(time.time())
         return self.host_card_content(
             canvas_id=canvas_id,
-            story_id=story_id,
             canvas_name=canvas_name,
             card=card,
         )
@@ -823,7 +813,6 @@ class CanvasStore:
             "canvas_name": canvas_name,
             "canvas_uri": canvas_uri,
             "owner_user_id": canvas.get("owner_user_id"),
-            "story_id": canvas.get("story_id"),
             "revision": revision,
             "bounds": bounds,
             "cards_count": len(legend),
@@ -841,7 +830,6 @@ class CanvasStore:
         self,
         *,
         canvas_id: str,
-        story_id: str,
         canvas_name: str,
         canvas: Mapping[str, Any],
         canvas_ref: str,
@@ -854,7 +842,6 @@ class CanvasStore:
             "canvas_name": self.canvas_name(canvas_name),
             "canvas_id": canvas_id,
             "owner_user_id": self.user_id,
-            "story_id": story_id,
             "latest_revision": int(canvas.get("revision") or 0),
             "canvas_ref": canvas_ref,
             "updated_at": now,
@@ -869,7 +856,7 @@ class CanvasStore:
             relpath,
             (json.dumps(document, indent=2, sort_keys=True) + "\n").encode("utf-8"),
             mime="application/json",
-            meta={"story_id": story_id, "origin": f"{self.origin_prefix}.manifest"},
+            meta={"origin": f"{self.origin_prefix}.manifest"},
         )
 
     def write_document(
@@ -877,15 +864,13 @@ class CanvasStore:
         *,
         canvas: Mapping[str, Any],
         canvas_id: str,
-        story_id: str,
         canvas_name: str,
     ) -> Dict[str, Any]:
-        doc = self.normalize_document(canvas, canvas_id=canvas_id, story_id=story_id, canvas_name=canvas_name)
+        doc = self.normalize_document(canvas, canvas_id=canvas_id, canvas_name=canvas_name)
         rel_latest = self.latest_relpath(canvas_id=canvas_id)
         rel_revision = self.revision_relpath(canvas_id=canvas_id, revision=int(doc.get("revision") or 0))
         body = (json.dumps(doc, indent=2, sort_keys=True) + "\n").encode("utf-8")
         meta = {
-            "story_id": story_id,
             "owner_user_id": self.user_id,
             "canvas_name": self.canvas_name(canvas_name),
             "canvas_id": canvas_id,
@@ -899,16 +884,14 @@ class CanvasStore:
         latest_ref = self.canvas_uri(canvas_name=canvas_name, revision=None)
         self._manifest_update(
             canvas_id=canvas_id,
-            story_id=story_id,
             canvas_name=canvas_name,
             canvas=doc,
             canvas_ref=canvas_ref,
         )
         self.prune_revisions(canvas_id=canvas_id, keep=self.revision_retention)
         LOGGER.info(
-            "[canvas.revision] created user_id=%s story_id=%s canvas_id=%s canvas_name=%s revision=%s canvas_ref=%s latest_ref=%s",
+            "[canvas.revision] created user_id=%s canvas_id=%s canvas_name=%s revision=%s canvas_ref=%s latest_ref=%s",
             self.user_id,
-            story_id,
             canvas_id,
             self.canvas_name(canvas_name),
             int(doc.get("revision") or 0),
@@ -970,7 +953,7 @@ class CanvasStore:
             )
         return deleted
 
-    def list_canvases(self, *, story_id: str = "", include_archived: bool = False) -> Dict[str, Any]:
+    def list_canvases(self, *, include_archived: bool = False) -> Dict[str, Any]:
         _, manifest = self._read_json(self.manifest_relpath())
         canvases = manifest.get("canvases") if isinstance(manifest.get("canvases"), Mapping) else {}
         items = [dict(item) for item in canvases.values() if isinstance(item, Mapping)]
@@ -980,7 +963,6 @@ class CanvasStore:
         return {
             "ok": True,
             "user_id": self.user_id,
-            "story_id": story_id,
             "active_canvas": str(manifest.get("active_canvas") or ""),
             "canvases": items,
         }
@@ -1083,14 +1065,12 @@ class CanvasStore:
     def read(
         self,
         *,
-        story_id: str,
         canvas_name: str,
         canvas_id: str,
         revision: int | None = None,
     ) -> Dict[str, Any]:
         found, canvas = self.read_document(
             canvas_id=canvas_id,
-            story_id=story_id,
             canvas_name=canvas_name,
             revision=revision,
         )
@@ -1101,7 +1081,6 @@ class CanvasStore:
             "ok": True,
             "found": found,
             "user_id": self.user_id,
-            "story_id": story_id,
             "canvas_name": canvas_name,
             "canvas_id": canvas.get("canvas_id"),
             "revision": int(canvas.get("revision") or 0),
@@ -1117,7 +1096,6 @@ class CanvasStore:
         self,
         *,
         uri: str,
-        story_id: str = "",
         canvas_name: str = DEFAULT_CANVAS_NAME,
         canvas_id: str = "",
     ) -> Dict[str, Any]:
@@ -1127,7 +1105,6 @@ class CanvasStore:
             name = self.canvas_name(parsed.get("canvas_name") or canvas_name)
             cid = self.canvas_id(canvas_name=name, canvas_id=canvas_id)
             return self.read(
-                story_id=story_id,
                 canvas_name=name,
                 canvas_id=cid,
                 revision=parsed.get("revision"),
@@ -1142,7 +1119,6 @@ class CanvasStore:
     def write(
         self,
         *,
-        story_id: str,
         canvas_name: str,
         canvas_id: str,
         canvas_input: Mapping[str, Any],
@@ -1154,15 +1130,14 @@ class CanvasStore:
             operation=f"{self.origin_prefix}.write",
             wait_seconds=10,
         ):
-            found, current = self.read_document(canvas_id=canvas_id, story_id=story_id, canvas_name=canvas_name)
+            found, current = self.read_document(canvas_id=canvas_id, canvas_name=canvas_name)
             if base_revision is not None:
                 expected_revision = int(base_revision)
                 if expected_revision != int(current.get("revision") or 0):
                     current_projection = self.projection(current)
                     LOGGER.warning(
-                        "[canvas.write.conflict] user_id=%s story_id=%s canvas_id=%s canvas_name=%s expected_revision=%s current_revision=%s",
+                        "[canvas.write.conflict] user_id=%s canvas_id=%s canvas_name=%s expected_revision=%s current_revision=%s",
                         self.user_id,
-                        story_id,
                         canvas_id,
                         canvas_name,
                         expected_revision,
@@ -1172,21 +1147,20 @@ class CanvasStore:
                         "ok": False,
                         "error": "canvas_revision_conflict",
                         "user_id": self.user_id,
-                        "story_id": story_id,
                         "canvas_id": canvas_id,
                         "canvas_name": canvas_name,
                         "expected_revision": expected_revision,
                         "current_revision": int(current.get("revision") or 0),
                     }
-            doc = self.normalize_document(canvas_input, canvas_id=canvas_id, story_id=story_id, canvas_name=canvas_name)
+            doc = self.normalize_document(canvas_input, canvas_id=canvas_id, canvas_name=canvas_name)
             doc["cards"] = [
-                self.normalize_card(canvas_id=canvas_id, story_id=story_id, canvas_name=canvas_name, raw=card)
+                self.normalize_card(canvas_id=canvas_id, canvas_name=canvas_name, raw=card)
                 for card in doc.get("cards") or []
                 if isinstance(card, Mapping)
             ]
             doc["revision"] = int(current.get("revision") or 0) + 1 if found else max(1, int(doc.get("revision") or 1))
             doc["updated_at"] = int(time.time())
-            result = self.write_document(canvas=doc, canvas_id=canvas_id, story_id=story_id, canvas_name=canvas_name)
+            result = self.write_document(canvas=doc, canvas_id=canvas_id, canvas_name=canvas_name)
         projection = self.projection(result["canvas"])
         return {
             "ok": True,
@@ -1202,11 +1176,10 @@ class CanvasStore:
         canvas: Mapping[str, Any],
         patch: Mapping[str, Any],
         canvas_id: str,
-        story_id: str,
         canvas_name: str,
         actor: str,
     ) -> Dict[str, Any]:
-        doc = self.normalize_document(canvas, canvas_id=canvas_id, story_id=story_id, canvas_name=canvas_name)
+        doc = self.normalize_document(canvas, canvas_id=canvas_id, canvas_name=canvas_name)
         operations = patch.get("operations") if isinstance(patch.get("operations"), list) else []
         if not operations and patch.get("op"):
             operations = [patch]
@@ -1237,7 +1210,6 @@ class CanvasStore:
                 raw_card = raw_op.get("card") if isinstance(raw_op.get("card"), Mapping) else raw_op
                 card = self.normalize_card(
                     canvas_id=canvas_id,
-                    story_id=story_id,
                     canvas_name=canvas_name,
                     raw={k: v for k, v in dict(raw_card).items() if k not in {"op", "base_revision"}},
                 )
@@ -1265,9 +1237,8 @@ class CanvasStore:
                             "identity_ref": identity_ref,
                         })
                         LOGGER.info(
-                            "[canvas.pin.restore] user_id=%s story_id=%s canvas_id=%s canvas_name=%s identity_ref=%s existing_card_id=%s attempted_card_id=%s",
+                            "[canvas.pin.restore] user_id=%s canvas_id=%s canvas_name=%s identity_ref=%s existing_card_id=%s attempted_card_id=%s",
                             self.user_id,
-                            story_id,
                             canvas_id,
                             canvas_name,
                             identity_ref,
@@ -1276,9 +1247,8 @@ class CanvasStore:
                         )
                         continue
                     LOGGER.info(
-                        "[canvas.pin.noop] user_id=%s story_id=%s canvas_id=%s canvas_name=%s identity_ref=%s existing_card_id=%s attempted_card_id=%s",
+                        "[canvas.pin.noop] user_id=%s canvas_id=%s canvas_name=%s identity_ref=%s existing_card_id=%s attempted_card_id=%s",
                         self.user_id,
-                        story_id,
                         canvas_id,
                         canvas_name,
                         identity_ref,
@@ -1310,9 +1280,8 @@ class CanvasStore:
                 )
                 if idempotent_missing:
                     LOGGER.info(
-                        "[canvas.patch.missing_noop] user_id=%s story_id=%s canvas_id=%s canvas_name=%s op=%s card_id=%s",
+                        "[canvas.patch.missing_noop] user_id=%s canvas_id=%s canvas_name=%s op=%s card_id=%s",
                         self.user_id,
-                        story_id,
                         canvas_id,
                         canvas_name,
                         op,
@@ -1329,7 +1298,7 @@ class CanvasStore:
                         card[key] = value
                 if "content" in raw_op:
                     card["content"] = raw_op.get("content")
-                card = self.normalize_card(canvas_id=canvas_id, story_id=story_id, canvas_name=canvas_name, raw=card)
+                card = self.normalize_card(canvas_id=canvas_id, canvas_name=canvas_name, raw=card)
                 cards[idx] = card
             elif op == "move_card":
                 rect = card.get("rect") if isinstance(card.get("rect"), Mapping) else {}
@@ -1360,14 +1329,12 @@ class CanvasStore:
                     merged = {**card, **dict(replacement), "id": card_id}
                     cards[idx] = self.normalize_card(
                         canvas_id=canvas_id,
-                        story_id=story_id,
                         canvas_name=canvas_name,
                         raw=merged,
                     )
                 else:
                     new_card = self.normalize_card(
                         canvas_id=canvas_id,
-                        story_id=story_id,
                         canvas_name=canvas_name,
                         raw={
                             **dict(replacement),
@@ -1429,7 +1396,6 @@ class CanvasStore:
     def patch(
         self,
         *,
-        story_id: str,
         canvas_name: str,
         canvas_id: str,
         patch: Mapping[str, Any],
@@ -1441,15 +1407,14 @@ class CanvasStore:
             operation=f"{self.origin_prefix}.patch",
             wait_seconds=10,
         ):
-            _, current = self.read_document(canvas_id=canvas_id, story_id=story_id, canvas_name=canvas_name)
+            _, current = self.read_document(canvas_id=canvas_id, canvas_name=canvas_name)
             base_revision = patch.get("base_revision") if isinstance(patch, Mapping) else None
             operations = patch.get("operations") if isinstance(patch, Mapping) and isinstance(patch.get("operations"), list) else []
             if not operations and isinstance(patch, Mapping) and patch.get("op"):
                 operations = [patch]
             LOGGER.info(
-                "[canvas.patch] start user_id=%s story_id=%s canvas_id=%s canvas_name=%s base_revision=%s current_revision=%s actor=%s ops=%s",
+                "[canvas.patch] start user_id=%s canvas_id=%s canvas_name=%s base_revision=%s current_revision=%s actor=%s ops=%s",
                 self.user_id,
-                story_id,
                 canvas_id,
                 canvas_name,
                 base_revision,
@@ -1462,9 +1427,8 @@ class CanvasStore:
                 if expected_revision != int(current.get("revision") or 0):
                     current_projection = self.projection(current)
                     LOGGER.warning(
-                        "[canvas.patch.conflict] user_id=%s story_id=%s canvas_id=%s canvas_name=%s expected_revision=%s current_revision=%s actor=%s ops=%s",
+                        "[canvas.patch.conflict] user_id=%s canvas_id=%s canvas_name=%s expected_revision=%s current_revision=%s actor=%s ops=%s",
                         self.user_id,
-                        story_id,
                         canvas_id,
                         canvas_name,
                         expected_revision,
@@ -1476,7 +1440,6 @@ class CanvasStore:
                         "ok": False,
                         "error": "canvas_revision_conflict",
                         "user_id": self.user_id,
-                        "story_id": story_id,
                         "canvas_id": canvas_id,
                         "canvas_name": canvas_name,
                         "expected_revision": expected_revision,
@@ -1489,7 +1452,6 @@ class CanvasStore:
                 canvas=current,
                 patch=patch,
                 canvas_id=canvas_id,
-                story_id=story_id,
                 canvas_name=canvas_name,
                 actor=actor,
             )
@@ -1507,16 +1469,15 @@ class CanvasStore:
                     "noop": True,
                 }
                 LOGGER.info(
-                    "[canvas.patch] noop user_id=%s story_id=%s canvas_id=%s canvas_name=%s revision=%s actor=%s",
+                    "[canvas.patch] noop user_id=%s canvas_id=%s canvas_name=%s revision=%s actor=%s",
                     self.user_id,
-                    story_id,
                     canvas_id,
                     canvas_name,
                     int(current.get("revision") or 0),
                     actor,
                 )
             else:
-                result = self.write_document(canvas=next_canvas, canvas_id=canvas_id, story_id=story_id, canvas_name=canvas_name)
+                result = self.write_document(canvas=next_canvas, canvas_id=canvas_id, canvas_name=canvas_name)
         projection = self.projection(result["canvas"])
         changed = [] if result.get("noop") else (
             (result["canvas"].get("history") or [])[-1:] if isinstance(result["canvas"].get("history"), list) else []
@@ -1527,9 +1488,8 @@ class CanvasStore:
             changed_rows = [dict(row) for row in raw_changed if isinstance(row, Mapping)]
         changed_cards = _changed_cards(result["canvas"], changed_rows)
         LOGGER.info(
-            "[canvas.patch] applied user_id=%s story_id=%s canvas_id=%s canvas_name=%s revision=%s actor=%s changed=%s",
+            "[canvas.patch] applied user_id=%s canvas_id=%s canvas_name=%s revision=%s actor=%s changed=%s",
             self.user_id,
-            story_id,
             canvas_id,
             canvas_name,
             int(result["canvas"].get("revision") or 0),
@@ -1548,7 +1508,6 @@ class CanvasStore:
             "ui_event": {
                 "type": self.ui_event_type,
                 "source": "canvas.patch",
-                "story_id": story_id,
                 "canvas_name": canvas_name,
                 "canvas_id": result["canvas"].get("canvas_id"),
                 "revision": int(result["canvas"].get("revision") or 0),
@@ -1578,7 +1537,6 @@ class CanvasStore:
             "type": "event.canvas",
             "event_source_id": self.state_event_source_id,
             "reactive": False,
-            "story_id": str(canvas.get("story_id") or ""),
             "agent_id": agent_id,
             "payload": {
                 "mime": CANVAS_MIME,
@@ -1588,7 +1546,6 @@ class CanvasStore:
                     "canvas_name": canvas_name,
                     "canvas_uri": canvas_uri,
                     "owner_user_id": str(canvas.get("owner_user_id") or ""),
-                    "story_id": str(canvas.get("story_id") or ""),
                     "revision": revision,
                     "canvas_ref": canvas_ref,
                     "latest_ref": latest_ref,

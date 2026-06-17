@@ -141,7 +141,6 @@ async def patch_canvas_for_agent(
     operations: Any,
     canvas_name: str,
     canvas_id: str = "",
-    story_id: str = "",
     base_revision: int | None = None,
     reason: str = "",
     actor: str = "agent",
@@ -161,7 +160,6 @@ async def patch_canvas_for_agent(
     if base_revision is not None:
         patch_payload["base_revision"] = base_revision
     operation_payload = {
-        "story_id": str(story_id or ""),
         "canvas_name": name,
         "canvas_id": cid,
         "patch": patch_payload,
@@ -176,7 +174,6 @@ async def patch_canvas_for_agent(
     )
     if result is None:
         result = store.patch(
-            story_id=str(story_id or ""),
             canvas_name=name,
             canvas_id=cid,
             patch=patch_payload,
@@ -218,7 +215,6 @@ def read_canvas_for_agent(
     uri: str = "",
     canvas_name: str = "",
     canvas_id: str = "",
-    story_id: str = "",
     revision: int | None = None,
 ) -> Dict[str, Any]:
     name = store.canvas_name(canvas_name)
@@ -226,11 +222,10 @@ def read_canvas_for_agent(
     if str(uri or "").strip():
         return store.read_uri(
             uri=str(uri or "").strip(),
-            story_id=str(story_id or ""),
             canvas_name=name,
             canvas_id=cid if canvas_id else "",
         )
-    return store.read(story_id=str(story_id or ""), canvas_name=name, canvas_id=cid, revision=revision)
+    return store.read(canvas_name=name, canvas_id=cid, revision=revision)
 
 
 __all__ = [

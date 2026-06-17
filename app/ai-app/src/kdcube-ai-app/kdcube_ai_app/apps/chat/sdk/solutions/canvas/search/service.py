@@ -11,9 +11,9 @@ It derives the two runtime dependencies from the host entrypoint:
 A bundle's canvas mount then needs no bespoke embed/guard code:
 
     pins = CanvasPinSearch(self)                 # `self` = the bundle entrypoint
-    await pins.index(store=s, user_id=u, story_id=t, payload=p)   # on canvas update
-    await pins.clear(store=s, user_id=u, story_id=t, payload=p)   # on canvas delete
-    await pins.search(store=s, user_id=u, story_id=t, payload=p)  # on query (read-only)
+    await pins.index(store=s, user_id=u, payload=p)   # on canvas update
+    await pins.clear(store=s, user_id=u, payload=p)   # on canvas delete
+    await pins.search(store=s, user_id=u, payload=p)  # on query (read-only)
 
 Indexing (embedding) happens on updates; search is read-only and embeds only the
 query (degrading to lexical when the guard denies). See `pin_search`/`pin_index`.
@@ -25,7 +25,13 @@ from typing import Any, Mapping, Optional
 
 from kdcube_ai_app.infra.index.sqlite import VectorStore
 
-from .pin_search import DEFAULT_EMBEDDING_DIM, clear_pins, index_pins, search_pins
+from .pin_search import (
+    DEFAULT_EMBEDDING_DIM,
+    DEFAULT_MIN_SEMANTIC_SCORE,
+    clear_pins,
+    index_pins,
+    search_pins,
+)
 
 
 class CanvasPinSearch:
@@ -39,6 +45,7 @@ class CanvasPinSearch:
         dim: int = DEFAULT_EMBEDDING_DIM,
         vector_backend: Optional[str] = None,
         vector_store: Optional[VectorStore] = None,
+        min_semantic_score: Optional[float] = None,
         logger: Optional[logging.Logger] = None,
     ) -> None:
         self.entrypoint = entrypoint
@@ -49,6 +56,14 @@ class CanvasPinSearch:
         # "faiss-local" (file-backed per-user faiss). Set "bruteforce" to opt out
         # (pure-python, no faiss dep).
         self.vector_backend = vector_backend or self._configured_backend(entrypoint)
+        # Semantic floor: explicit arg > bundle prop
+        # `canvas.pin_search_min_semantic_score` > default (0.30). Set < 0 (e.g. -1)
+        # to turn the semantic factor off entirely (lexical + recency only) — for
+        # bundles with no embeddings/budget. A query may still override per-call.
+        self.min_semantic_score = (
+            min_semantic_score if min_semantic_score is not None
+            else self._configured_floor(entrypoint)
+        )
         self.logger = logger or logging.getLogger("kdcube.canvas.pins")
 
     @staticmethod
@@ -60,6 +75,16 @@ class CanvasPinSearch:
             except Exception:
                 pass
         return "faiss-local"
+
+    @staticmethod
+    def _configured_floor(entrypoint: Any) -> float:
+        bundle_prop = getattr(entrypoint, "bundle_prop", None)
+        if callable(bundle_prop):
+            try:
+                return float(bundle_prop("canvas.pin_search_min_semantic_score", DEFAULT_MIN_SEMANTIC_SCORE))
+            except Exception:
+                pass
+        return DEFAULT_MIN_SEMANTIC_SCORE
 
     def _embed_fn(self):
         model_service = getattr(self.entrypoint, "models_service", None)
@@ -74,26 +99,34 @@ class CanvasPinSearch:
         guard_factory = getattr(self.entrypoint, "search_semantic_guard", None)
         return guard_factory(flow=self.flow) if callable(guard_factory) else None
 
-    async def index(self, *, store: Any, user_id: str, story_id: str, payload: Mapping[str, Any]) -> dict:
+    async def index(self, *, store: Any, user_id: str, payload: Mapping[str, Any]) -> dict:
         return await index_pins(
-            store=store, user_id=user_id, story_id=story_id, payload=payload,
+            store=store, user_id=user_id, payload=payload,
             embed_fn=self._embed_fn(), dim=self.dim,
             vector_backend=self.vector_backend, vector_store=self.vector_store,
         )
 
-    async def clear(self, *, store: Any, user_id: str, story_id: str, payload: Mapping[str, Any]) -> dict:
+    async def clear(self, *, store: Any, user_id: str, payload: Mapping[str, Any]) -> dict:
         return await clear_pins(
-            store=store, user_id=user_id, story_id=story_id, payload=payload,
+            store=store, user_id=user_id, payload=payload,
             embed_fn=self._embed_fn(), dim=self.dim,
             vector_backend=self.vector_backend, vector_store=self.vector_store,
         )
 
-    async def search(self, *, store: Any, user_id: str, story_id: str, payload: Mapping[str, Any]) -> dict:
+    async def search(self, *, store: Any, user_id: str, payload: Mapping[str, Any]) -> dict:
+        # Per-call override (e.g. a tool/UI passing min_semantic_score) wins over the
+        # configured default; < 0 turns the semantic factor off for this query.
+        floor = self.min_semantic_score
+        if payload.get("min_semantic_score") is not None:
+            try:
+                floor = float(payload["min_semantic_score"])
+            except (TypeError, ValueError):
+                pass
         return await search_pins(
-            store=store, user_id=user_id, story_id=story_id, payload=payload,
+            store=store, user_id=user_id, payload=payload,
             embed_fn=self._embed_fn(), dim=self.dim,
             vector_backend=self.vector_backend, vector_store=self.vector_store,
-            semantic_guard=self._guard(),
+            semantic_guard=self._guard(), min_semantic_score=floor,
         )
 
 

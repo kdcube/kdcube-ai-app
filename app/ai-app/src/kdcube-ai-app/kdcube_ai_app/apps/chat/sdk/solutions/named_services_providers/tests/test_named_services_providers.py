@@ -730,7 +730,6 @@ async def test_canvas_resolver_maps_named_service_object_action():
         result = await resolver.object_action(
             {"object_ref": "task:issue:BUG-123"},
             user_id="user-1",
-            story_id="story-1",
             action="open",
         )
 
@@ -792,7 +791,6 @@ async def test_configured_canvas_resolver_helper_registers_namespace_resolver():
         result = await registry.object_action(
             {"object_ref": "task:issue:BUG-123", "action": "preview"},
             user_id="user-1",
-            story_id="story-1",
         )
 
     assert result["ok"] is True
@@ -949,7 +947,6 @@ async def test_configured_canvas_resolver_delegates_capabilities_to_provider():
         result = await registry.object_action(
             {"object_ref": "task:issue:BUG-123", "action": "capabilities"},
             user_id="user-1",
-            story_id="story-1",
         )
 
     assert calls
@@ -1025,7 +1022,6 @@ async def test_configured_canvas_resolver_promotes_provider_download_fields():
                 "action": "download",
             },
             user_id="user-1",
-            story_id="story-1",
         )
 
     assert result["ok"] is True
@@ -1671,6 +1667,56 @@ def test_named_service_tool_catalog_marks_applicable_namespaces():
     assert "get_object" not in catalog
 
 
+def test_named_service_tool_catalog_adds_namespace_trait_overrides():
+    props = {
+        "surfaces": {
+            "as_consumer": {
+                "agents": {
+                    "main": {
+                        "tools": [
+                            {
+                                "kind": "named_service",
+                                "alias": "named_services",
+                                "namespaces": {
+                                    "task": {
+                                        "allowed": ["object.upsert"],
+                                    },
+                                    "mem": {
+                                        "allowed": ["object.upsert"],
+                                        "tool_traits": {
+                                            "upsert_object": {"strategy": ["neutral"]},
+                                        },
+                                    },
+                                },
+                                "tool_traits": {
+                                    "upsert_object": {"strategy": ["exploitation"]},
+                                },
+                            },
+                        ],
+                    },
+                },
+            },
+        },
+        "named_services": {
+            "namespaces": {
+                "task": {},
+                "mem": {},
+            },
+        },
+    }
+
+    named_service_client_tools.bind_registry({"bundle_props": props, "client_id": "main"})
+    try:
+        catalog = named_service_client_tools.list_tools()
+    finally:
+        named_service_client_tools.bind_registry({})
+
+    assert catalog["upsert_object"]["namespaces_applicable"] == ["task", "mem"]
+    assert catalog["upsert_object"]["tool_traits_by_namespace"] == {
+        "mem": {"strategy": ["neutral"]},
+    }
+
+
 def test_named_service_tool_catalog_adds_search_scopes_from_discovery_snapshot():
     props = {
         "surfaces": {
@@ -1833,7 +1879,7 @@ def test_named_service_tool_catalog_defaults_do_not_expose_object_action():
     assert "object_action" not in catalog
 
 
-def test_named_service_tool_catalog_never_exposes_object_action_to_model_clients():
+def test_named_service_tool_catalog_exposes_object_action_when_explicitly_allowed():
     props = {
         "named_services": {
             "namespaces": {
@@ -1862,7 +1908,7 @@ def test_named_service_tool_catalog_never_exposes_object_action_to_model_clients
 
     assert "provider_about" in catalog
     assert "get_object" in catalog
-    assert "object_action" not in catalog
+    assert "object_action" in catalog
 
 
 @pytest.mark.asyncio

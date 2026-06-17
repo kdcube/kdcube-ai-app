@@ -131,9 +131,9 @@ bundle that mounts the canvas reuses it:
 from kdcube_ai_app.apps.chat.sdk.solutions.canvas.search import CanvasPinSearch
 
 self.pins = CanvasPinSearch(entrypoint)            # in the bundle's canvas mount
-await self.pins.index(store=..., user_id=u, story_id=t, payload=p)   # on canvas update
-await self.pins.clear(store=..., user_id=u, story_id=t, payload=p)   # on board delete
-await self.pins.search(store=..., user_id=u, story_id=t, payload=p)  # on query (read-only)
+await self.pins.index(store=..., user_id=u, payload=p)   # on canvas update
+await self.pins.clear(store=..., user_id=u, payload=p)   # on board delete
+await self.pins.search(store=..., user_id=u, payload=p)  # on query (read-only)
 ```
 
 `CanvasPinSearch` derives its two runtime dependencies from the host entrypoint, so
@@ -407,7 +407,7 @@ preview/read repo:kdcube-ai-app/app/ai-app/docs/... through a repository resolve
 The bundle now exposes the resolver entrypoint as:
 
 ```text
-canvas_object_action({object_ref, action, card_id?, canvas_id?, canvas_name?, story_id?, mime?})
+canvas_object_action({object_ref, action, card_id?, canvas_id?, canvas_name?, mime?})
 ```
 
 The main canvas UI asks this operation for `capabilities` when a card is

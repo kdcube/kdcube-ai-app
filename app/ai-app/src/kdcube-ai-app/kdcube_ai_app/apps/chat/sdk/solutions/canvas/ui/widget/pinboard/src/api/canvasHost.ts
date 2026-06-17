@@ -26,6 +26,8 @@ import {
   type CanvasPatchResponse,
   type CanvasReadInput,
   type CanvasReadResponse,
+  type CanvasSearchInput,
+  type CanvasSearchResponse,
   type CanvasUploadResponse,
 } from '@kdcube/components-react/canvas'
 
@@ -373,13 +375,11 @@ function objectRefForPatch(input: CanvasPatchInput): string {
 
 export interface CanvasHostConfig {
   ctx: RouteContext
-  storyId: string
   /** Surface label stamped on Data Bus publishes for provenance. */
   surface?: string
 }
 
 export interface CanvasHost {
-  readonly storyId: string
   patchCanvas(input: CanvasPatchInput): Promise<CanvasPatchResponse>
   subscribeCanvasPatchEvents(
     onPatch: (response: CanvasPatchResponse) => void,
@@ -396,6 +396,8 @@ export interface CanvasHost {
     action: CanvasObjectActionName,
     activeCanvas: CanvasDefinition,
   ): Promise<CanvasObjectActionResponse>
+  /** Hybrid search over the user's pins (read-only; economically gated server-side). */
+  searchPins(input: CanvasSearchInput): Promise<CanvasSearchResponse>
   /** Mark a board the user's last-active (so omitted-canvas pins land on it). */
   setActiveCanvas(canvasName: string): Promise<Record<string, unknown>>
   archiveCanvas(canvasName: string): Promise<Record<string, unknown>>
@@ -403,7 +405,7 @@ export interface CanvasHost {
 }
 
 export function createCanvasHost(config: CanvasHostConfig): CanvasHost {
-  const { ctx, storyId } = config
+  const { ctx } = config
   const surface = config.surface || 'pinboard.widget'
   // Board help HTML is bundle-authored config returned by `canvas_list`. It is
   // board-set-level and stable, so the first non-empty value sticks.
@@ -423,20 +425,15 @@ export function createCanvasHost(config: CanvasHostConfig): CanvasHost {
   }
 
   const readCanvas = (input: CanvasReadInput): Promise<CanvasReadResponse> => (
-    postOperation<CanvasReadInput, CanvasReadResponse>(ctx, 'canvas_read', {
-      story_id: storyId,
-      ...input,
-    })
+    postOperation<CanvasReadInput, CanvasReadResponse>(ctx, 'canvas_read', input)
   )
 
   const loadCanvas = async (activeCanvasName: string): Promise<CanvasDefinition[]> => {
-    const list = await postOperation<{ story_id: string }, CanvasListResponse>(ctx, 'canvas_list', {
-      story_id: storyId,
-    })
+    const list = await postOperation<Record<string, never>, CanvasListResponse>(ctx, 'canvas_list', {})
     const info = String(list.info_html ?? '').trim()
     if (info) boardInfoHtml = info
     const listed = (list.canvases ?? []).map(canvasFromListItem)
-    const main = await readCanvas({ story_id: storyId, canvas_name: activeCanvasName })
+    const main = await readCanvas({ canvas_name: activeCanvasName })
     const mainCanvas = main.ok
       ? canvasFromReadResponse(main, emptyCanvasDefinition(activeCanvasName))
       : emptyCanvasDefinition(activeCanvasName)
@@ -454,13 +451,11 @@ export function createCanvasHost(config: CanvasHostConfig): CanvasHost {
       card_id: card.id,
       canvas_id: activeCanvas.id,
       canvas_name: activeCanvas.name,
-      story_id: storyId,
       mime: card.mime,
     })
   )
 
   return {
-    storyId,
     patchCanvas,
     subscribeCanvasPatchEvents: (onPatch, onError) => subscribeCanvasPatchEvents(ctx, onPatch, onError),
     readCanvas,
@@ -468,11 +463,21 @@ export function createCanvasHost(config: CanvasHostConfig): CanvasHost {
     getBoardInfoHtml: () => boardInfoHtml,
     uploadCanvasAttachments: (payload, files) => uploadCanvasAttachments(ctx, payload, files),
     objectAction,
+    searchPins: (input) =>
+      postOperation<Record<string, unknown>, CanvasSearchResponse>(ctx, 'canvas_search', {
+        query: input.query,
+        all_boards: input.allBoards ?? false,
+        canvas_name: input.canvasName,
+        canvas_id: input.canvasId,
+        kinds: input.kinds,
+        namespaces: input.namespaces,
+        limit: input.limit ?? 30,
+      }),
     setActiveCanvas: (canvasName) =>
-      postOperation<Record<string, unknown>, Record<string, unknown>>(ctx, 'canvas_set_active', { story_id: storyId, canvas_name: canvasName }),
+      postOperation<Record<string, unknown>, Record<string, unknown>>(ctx, 'canvas_set_active', { canvas_name: canvasName }),
     archiveCanvas: (canvasName) =>
-      postOperation<Record<string, unknown>, Record<string, unknown>>(ctx, 'canvas_archive', { story_id: storyId, canvas_name: canvasName }),
+      postOperation<Record<string, unknown>, Record<string, unknown>>(ctx, 'canvas_archive', { canvas_name: canvasName }),
     deleteCanvas: (canvasName) =>
-      postOperation<Record<string, unknown>, Record<string, unknown>>(ctx, 'canvas_delete', { story_id: storyId, canvas_name: canvasName }),
+      postOperation<Record<string, unknown>, Record<string, unknown>>(ctx, 'canvas_delete', { canvas_name: canvasName }),
   }
 }

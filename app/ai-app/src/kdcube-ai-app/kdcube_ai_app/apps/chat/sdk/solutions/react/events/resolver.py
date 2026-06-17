@@ -145,7 +145,6 @@ async def resolve_event_ref_action(
     project: str,
     user_id: str,
     storage_path: str | None = None,
-    story_id: str = "",
     require_embedded_conversation: bool = False,
 ) -> dict[str, Any]:
     """
@@ -186,7 +185,6 @@ async def resolve_event_ref_action(
             project=project,
             user_id=user_id,
             storage_path=storage_path,
-            story_id=story_id,
         )
     return {
         "ok": False,
@@ -249,7 +247,6 @@ async def _resolve_fi_action(
     project: str,
     user_id: str,
     storage_path: str | None = None,
-    story_id: str = "",
 ) -> dict[str, Any]:
     ref = str(
         payload.get("event_ref")
@@ -263,7 +260,6 @@ async def _resolve_fi_action(
     base: dict[str, Any] = {
         "ok": True,
         "user_id": user_id,
-        "story_id": story_id,
         "action": action,
         "ref": ref,
         "event_ref": ref,

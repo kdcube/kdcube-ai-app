@@ -407,8 +407,12 @@ class VersatileEntrypoint(BaseEntrypointWithEconomicsAndMemory):
     def _canvas_target(self) -> Dict[str, str]:
         return self._canvas_service().target()
 
-    def _apply_canvas_patch_payload(self, payload: Mapping[str, Any]) -> Dict[str, Any]:
-        return self._canvas_service().apply_patch_payload(payload)
+    async def _apply_canvas_patch_payload(self, payload: Mapping[str, Any]) -> Dict[str, Any]:
+        return await self._canvas_service().apply_patch_payload(payload)
+
+    def _namespace_styles(self) -> Mapping[str, Any]:
+        namespace_styles = self.bundle_prop("namespace_styles", {}) or {}
+        return namespace_styles if isinstance(namespace_styles, Mapping) else {}
 
     async def pre_run_hook(self, *, state: Dict[str, Any], econ_ctx: Optional[Dict[str, Any]] = None) -> None:
         await self._configure_event_recording()
@@ -496,6 +500,19 @@ class VersatileEntrypoint(BaseEntrypointWithEconomicsAndMemory):
 
     @api(
         method="POST",
+        alias="namespace_presentation_config",
+        route="operations",
+        **_api_visibility("namespace_presentation_config"),
+    )
+    async def namespace_presentation_config(self, **kwargs) -> Dict[str, Any]:
+        del kwargs
+        return {
+            "ok": True,
+            "namespace_styles": self._namespace_styles(),
+        }
+
+    @api(
+        method="POST",
         alias="scene_surface_config",
         route="operations",
         **_api_visibility("scene_surface_config"),
@@ -508,7 +525,12 @@ class VersatileEntrypoint(BaseEntrypointWithEconomicsAndMemory):
         external_panels = scene_config.get("external_panels")
         if not isinstance(external_panels, list):
             external_panels = []
-        return {"ok": True, "external_panels": external_panels}
+        namespace_styles = self._namespace_styles()
+        return {
+            "ok": True,
+            "external_panels": external_panels,
+            "namespace_styles": namespace_styles,
+        }
 
     @api(
         alias="pinboard_widget",
@@ -572,11 +594,10 @@ class VersatileEntrypoint(BaseEntrypointWithEconomicsAndMemory):
         return self._canvas_service().operation(
             "canvas_pin_read",
             payload,
-            lambda *, user_id, story_id: canvas_api.read_pin(
+            lambda *, user_id: canvas_api.read_pin(
                 payload=payload,
                 store=self._canvas_store(payload, user_id=user_id),
                 user_id=user_id,
-                story_id=story_id,
             ),
         )
 
@@ -593,16 +614,7 @@ class VersatileEntrypoint(BaseEntrypointWithEconomicsAndMemory):
     @api(method="POST", alias="canvas_search", route="operations", **_api_visibility("canvas_search"))
     async def canvas_search(self, data: Optional[Dict[str, Any]] = None, **kwargs: Any) -> Dict[str, Any]:
         payload = payload_from_call(data, **kwargs)
-        return self._canvas_service().operation(
-            "canvas_search",
-            payload,
-            lambda *, user_id, story_id: canvas_api.search(
-                payload=payload,
-                store=self._canvas_store(payload, user_id=user_id),
-                user_id=user_id,
-                story_id=story_id,
-            ),
-        )
+        return await self._canvas_service().search(payload)
 
     @api(method="POST", alias="canvas_list", route="operations", **_api_visibility("canvas_list"))
     async def canvas_list(self, data: Optional[Dict[str, Any]] = None, **kwargs: Any) -> Dict[str, Any]:
@@ -610,10 +622,9 @@ class VersatileEntrypoint(BaseEntrypointWithEconomicsAndMemory):
         return self._canvas_service().operation(
             "canvas_list",
             payload,
-            lambda *, user_id, story_id: canvas_api.list_canvases(
+            lambda *, user_id: canvas_api.list_canvases(
                 store=self._canvas_store(payload, user_id=user_id),
                 user_id=user_id,
-                story_id=story_id,
                 info_html=self.bundle_prop("canvas.info_html"),
             ),
         )
@@ -624,11 +635,10 @@ class VersatileEntrypoint(BaseEntrypointWithEconomicsAndMemory):
         return self._canvas_service().operation(
             "canvas_set_active",
             payload,
-            lambda *, user_id, story_id: canvas_api.set_active(
+            lambda *, user_id: canvas_api.set_active(
                 payload=payload,
                 store=self._canvas_store(payload, user_id=user_id),
                 user_id=user_id,
-                story_id=story_id,
             ),
         )
 
@@ -638,27 +648,17 @@ class VersatileEntrypoint(BaseEntrypointWithEconomicsAndMemory):
         return self._canvas_service().operation(
             "canvas_archive",
             payload,
-            lambda *, user_id, story_id: canvas_api.archive(
+            lambda *, user_id: canvas_api.archive(
                 payload=payload,
                 store=self._canvas_store(payload, user_id=user_id),
                 user_id=user_id,
-                story_id=story_id,
             ),
         )
 
     @api(method="POST", alias="canvas_delete", route="operations", **_api_visibility("canvas_delete"))
     async def canvas_delete(self, data: Optional[Dict[str, Any]] = None, **kwargs: Any) -> Dict[str, Any]:
         payload = payload_from_call(data, **kwargs)
-        return self._canvas_service().operation(
-            "canvas_delete",
-            payload,
-            lambda *, user_id, story_id: canvas_api.delete(
-                payload=payload,
-                store=self._canvas_store(payload, user_id=user_id),
-                user_id=user_id,
-                story_id=story_id,
-            ),
-        )
+        return await self._canvas_service().delete(payload)
 
     @api(method="POST", alias="canvas_read", route="operations", **_api_visibility("canvas_read"))
     async def canvas_read(self, data: Optional[Dict[str, Any]] = None, **kwargs: Any) -> Dict[str, Any]:
@@ -666,33 +666,22 @@ class VersatileEntrypoint(BaseEntrypointWithEconomicsAndMemory):
         return self._canvas_service().operation(
             "canvas_read",
             payload,
-            lambda *, user_id, story_id: canvas_api.read(
+            lambda *, user_id: canvas_api.read(
                 payload=payload,
                 store=self._canvas_store(payload, user_id=user_id),
                 user_id=user_id,
-                story_id=story_id,
             ),
         )
 
     @api(method="POST", alias="canvas_write", route="operations", **_api_visibility("canvas_write"))
     async def canvas_write(self, data: Optional[Dict[str, Any]] = None, **kwargs: Any) -> Dict[str, Any]:
         payload = payload_from_call(data, **kwargs)
-        return self._canvas_service().operation(
-            "canvas_write",
-            payload,
-            lambda *, user_id, story_id: canvas_api.write(
-                payload=payload,
-                store=self._canvas_store(payload, user_id=user_id),
-                user_id=user_id,
-                story_id=story_id,
-                target=self._canvas_target(),
-            ),
-        )
+        return await self._canvas_service().write(payload)
 
     @api(method="POST", alias="canvas_patch", route="operations", **_api_visibility("canvas_patch"))
     async def canvas_patch(self, data: Optional[Dict[str, Any]] = None, **kwargs: Any) -> Dict[str, Any]:
         payload = payload_from_call(data, **kwargs)
-        return self._apply_canvas_patch_payload(payload)
+        return await self._apply_canvas_patch_payload(payload)
 
     @data_bus_handler(
         subject=CANVAS_DATA_BUS_SUBJECT,
@@ -701,7 +690,7 @@ class VersatileEntrypoint(BaseEntrypointWithEconomicsAndMemory):
         idempotency="required",
     )
     async def handle_canvas_patch_data_bus(self, ctx, message) -> DataBusResult:
-        return self._canvas_service().data_bus_patch_result(ctx, message)
+        return await self._canvas_service().data_bus_patch_result(ctx, message)
 
     @api(
         method="POST",

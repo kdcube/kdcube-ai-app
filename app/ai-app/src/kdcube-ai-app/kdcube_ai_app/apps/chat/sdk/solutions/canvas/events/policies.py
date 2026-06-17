@@ -364,7 +364,6 @@ def project_canvas_state_blocks(
         revision = canvas.get("revision") if canvas.get("revision") is not None else projection.get("revision")
         canvas_ref = str(canvas.get("canvas_ref") or parsed.get("event_ref") or parsed.get("hosted_uri") or "").strip()
         latest_ref = str(canvas.get("latest_ref") or "").strip()
-        story_id = str(canvas.get("story_id") or parsed.get("story_id") or _block_meta(block).get("story_id") or "").strip()
         lines = [
             "[CANVAS STATE]",
             f"canvas_name: {canvas_name}",
@@ -378,8 +377,6 @@ def project_canvas_state_blocks(
         stats = _projection_stats_line(projection)
         if stats:
             lines.append(stats)
-        if story_id:
-            lines.append(f"story_id: {story_id}")
         if canvas_ref:
             lines.append(f"canvas_ref: {canvas_ref}")
         if latest_ref:

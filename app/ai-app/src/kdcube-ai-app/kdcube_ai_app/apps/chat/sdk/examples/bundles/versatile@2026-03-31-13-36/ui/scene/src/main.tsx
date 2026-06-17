@@ -10,14 +10,18 @@ import {
   canvasFromPatchEvent,
   canvasFromReadResponse,
   emptyCanvasDefinition,
+  normalizeContext,
   normalizeCanvasPatchEvent,
+  parseIngressMessage,
   uploadAndPinFiles,
   upsertCanvasDefinition,
+  type CanvasBrokeredDrop,
   type CanvasCard,
   type CanvasContextItem,
   type CanvasDefinition,
   type CanvasIngressPayload,
   type CanvasListResponse,
+  type CanvasNamespaceStyle,
   type CanvasObjectActionName,
   type CanvasObjectActionResponse,
   type CanvasPatchInput,
@@ -51,7 +55,6 @@ const USAGE_CARD_WIDGET_ALIAS = 'usage_card'
 // trailing accounting event after the final delta without feeling stale.
 const USAGE_REFRESH_DEBOUNCE_MS = 800
 const USAGE_REFRESH_MESSAGE_TYPE = 'kdcube-usage-card-refresh'
-const CANVAS_STORY_ID = 'versatile:main'
 const CANVAS_SUBJECT = 'canvas.patch'
 const DEFAULT_CHAT_WIDTH = 460
 const DEFAULT_CHAT_HEIGHT = 720
@@ -104,6 +107,7 @@ interface SceneExternalPanelConfig {
 
 interface SceneConfig {
   external_panels: SceneExternalPanelConfig[]
+  namespaceStyles: Record<string, CanvasNamespaceStyle | string>
 }
 
 interface DataBusMessageInput {
@@ -393,6 +397,8 @@ function memoryIdFromSurfaceOpenRequest(request: SceneSurfaceOpenRequest): strin
     if (typeof id === 'string' && id.trim()) return id.trim()
   }
   const ref = String(request.uiEvent.object_ref || request.response.object_ref || request.response.ref || '').trim()
+  if (ref.startsWith('mem:record:')) return ref.slice('mem:record:'.length).split(/[?#]/, 1)[0].replace(/^\/+/, '')
+  if (ref.startsWith('me:')) return ref.slice(3).split(/[?#]/, 1)[0].replace(/^\/+/, '')
   return ref.startsWith('mem:') ? ref.slice(4).split(/[?#]/, 1)[0].replace(/^\/+/, '') : ''
 }
 
@@ -719,7 +725,7 @@ function cardKindFromContext(context: CanvasContextItem, ref: string): CanvasCar
 }
 
 function cardFromContext(context: CanvasContextItem, rect: CanvasCard['rect']) {
-  const ref = String(context.logical_path ?? context.ref ?? context.id ?? '').trim()
+  const ref = String(context.object_ref ?? context.logical_path ?? context.ref ?? context.id ?? '').trim()
   return cardFromSearchResult(
     {
       ref,
@@ -727,6 +733,7 @@ function cardFromContext(context: CanvasContextItem, rect: CanvasCard['rect']) {
       mime: context.mime,
       summary: context.summary,
       kind: cardKindFromContext(context, ref),
+      object_kind: context.object_kind,
     },
     { placement: 'placed', rect },
   )
@@ -813,7 +820,7 @@ function normalizeExternalPanelConfig(value: unknown): SceneExternalPanelConfig 
 
 async function loadSceneConfig(ctx: RouteContext): Promise<SceneConfig> {
   try {
-    const payload = await postOperation<Record<string, never>, { ok?: boolean; external_panels?: unknown[] }>(
+    const payload = await postOperation<Record<string, never>, { ok?: boolean; external_panels?: unknown[]; namespace_styles?: unknown; namespaceStyles?: unknown }>(
       ctx,
       'scene_surface_config',
       {},
@@ -821,10 +828,14 @@ async function loadSceneConfig(ctx: RouteContext): Promise<SceneConfig> {
     const externalPanels = Array.isArray(payload?.external_panels)
       ? payload.external_panels.map(normalizeExternalPanelConfig).filter((panel): panel is SceneExternalPanelConfig => Boolean(panel))
       : []
-    return { external_panels: externalPanels }
+    const namespaceStyles = asRecord(payload?.namespace_styles ?? payload?.namespaceStyles)
+    return {
+      external_panels: externalPanels,
+      namespaceStyles: namespaceStyles as Record<string, CanvasNamespaceStyle | string>,
+    }
   } catch (error) {
     console.warn('[versatile-scene] scene surface config unavailable', error)
-    return { external_panels: [] }
+    return { external_panels: [], namespaceStyles: {} }
   }
 }
 
@@ -847,7 +858,7 @@ function App() {
   // the iframe overlay, so we render an explicit handle on top of the
   // iframe and drive width/height from this state.
   const [memorySize, setMemorySize] = useState(() => memoryPanelSize(false))
-  const [sceneConfig, setSceneConfig] = useState<SceneConfig>({ external_panels: [] })
+  const [sceneConfig, setSceneConfig] = useState<SceneConfig>({ external_panels: [], namespaceStyles: {} })
   const [externalOpen, setExternalOpen] = useState(false)
   const [externalExpanded, setExternalExpanded] = useState(false)
   const [externalFrame, setExternalFrame] = useState(() => defaultExternalFrame(chatSizing.width, true, false))
@@ -855,6 +866,8 @@ function App() {
   const [usageFrame, setUsageFrame] = useState(() => defaultUsageFrame(chatSizing.width, true))
   const [userType, setUserType] = useState<string | null>(null)
   const [userId, setUserId] = useState<string | null>(null)
+  const brokeredCanvasDropRef = useRef<CanvasBrokeredDrop | null>(null)
+  const [brokeredContextDragActive, setBrokeredContextDragActive] = useState(false)
   const [panelZ, setPanelZ] = useState<Record<ScenePanelId, number>>({
     chat: FLOATING_PANEL_BASE_Z,
     memory: FLOATING_PANEL_BASE_Z + 1,
@@ -876,6 +889,12 @@ function App() {
   const isRegistered = userType != null && userType !== 'anonymous'
   const externalPanel = sceneConfig.external_panels[0] ?? null
   const sceneRuntime = useMemo(() => createSceneRuntime({ logger: console }), [])
+
+  const getBrokeredCanvasDrop = useCallback(() => brokeredCanvasDropRef.current, [])
+  const clearBrokeredCanvasDrop = useCallback(() => {
+    brokeredCanvasDropRef.current = null
+    setBrokeredContextDragActive(false)
+  }, [])
 
   const activeCanvas = useMemo(
     () => canvases.find((canvas) => canvas.name === activeCanvasName) ?? emptyCanvasDefinition(activeCanvasName),
@@ -1009,7 +1028,7 @@ function App() {
           if (!memoryId) return null
           return {
             action: 'open',
-            object_ref: request.uiEvent.object_ref || request.response.object_ref || request.response.ref || `mem:${memoryId}`,
+            object_ref: request.uiEvent.object_ref || request.response.object_ref || request.response.ref || `mem:record:${memoryId}`,
             memory_id: memoryId,
           }
         },
@@ -1564,19 +1583,14 @@ function App() {
   }, [applyPatchResponse, ctx])
 
   const readCanvas = useCallback((input: CanvasReadInput): Promise<CanvasReadResponse> => (
-    postOperation<CanvasReadInput, CanvasReadResponse>(ctx, 'canvas_read', {
-      story_id: CANVAS_STORY_ID,
-      ...input,
-    })
+    postOperation<CanvasReadInput, CanvasReadResponse>(ctx, 'canvas_read', input)
   ), [ctx])
 
   const loadCanvas = useCallback(async () => {
     try {
-      const list = await postOperation<{ story_id: string }, CanvasListResponse>(ctx, 'canvas_list', {
-        story_id: CANVAS_STORY_ID,
-      })
+      const list = await postOperation<Record<string, never>, CanvasListResponse>(ctx, 'canvas_list', {})
       const listed = (list.canvases ?? []).map(canvasFromListItem)
-      const main = await readCanvas({ story_id: CANVAS_STORY_ID, canvas_name: activeCanvasName })
+      const main = await readCanvas({ canvas_name: activeCanvasName })
       const mainCanvas = main.ok
         ? canvasFromReadResponse(main, emptyCanvasDefinition(activeCanvasName))
         : emptyCanvasDefinition(activeCanvasName)
@@ -1597,7 +1611,6 @@ function App() {
   }), [patchCanvas, uploadCanvasFiles])
 
   const canvasTarget = useCallback((rect?: CanvasCard['rect']) => ({
-    storyId: CANVAS_STORY_ID,
     canvasId: activeCanvas.id,
     canvasName: activeCanvas.name,
     baseRevision: activeCanvas.revision,
@@ -1634,33 +1647,20 @@ function App() {
     ).then(applyPatchResponse).catch((error) => setNotice(error instanceof Error ? error.message : String(error)))
   }, [applyPatchResponse, canvasIngressClient, canvasTarget])
 
-  // Pin a conversation as a `conversation` card. The durable ref is built
-  // here from the scene's own coordinates plus the chat-supplied agent /
-  // conversation id:
-  //   conv:<tenant>/<project>/<user>/<bundle>/<agent>/<conversation_id>
-  // Loading the pin later goes through the chat's own fetch-by-id, so the
-  // server already enforces that the user may open it.
-  const pinConversationToCanvas = useCallback((input: { conversation_id: string; title: string; agent: string }) => {
-    const conversationId = input.conversation_id.trim()
-    if (!conversationId) {
-      setNotice('No conversation to pin.')
+  const pinConversationToCanvas = useCallback((context: CanvasContextItem | null) => {
+    if (!context) {
+      setNotice('Conversation pin request did not include a canonical context.')
       return
     }
-    const agent = input.agent.trim() || 'main'
-    const userSegment = (userId && userId.trim()) || 'me'
-    const ref = `conv:${ctx.tenant}/${ctx.project}/${userSegment}/${ctx.bundleId}/${agent}/${conversationId}`
     const rect = { x: 48, y: 48, w: 252, h: 120 }
     void applyCanvasCards(
-      [cardFromSearchResult(
-        { ref, title: input.title || 'Conversation', mime: 'application/x-conversation', kind: 'conversation' },
-        { placement: 'placed', rect },
-      )],
+      [cardFromContext(context, rect)],
       canvasTarget(rect),
       canvasIngressClient,
     ).then(applyPatchResponse)
       .then(() => setNotice('Pinned conversation to canvas.'))
       .catch((error) => setNotice(error instanceof Error ? error.message : String(error)))
-  }, [applyPatchResponse, canvasIngressClient, canvasTarget, ctx.tenant, ctx.project, ctx.bundleId, userType])
+  }, [applyPatchResponse, canvasIngressClient, canvasTarget])
 
   const handleCanvasObjectAction = useCallback(async (
     card: CanvasCard,
@@ -1678,7 +1678,6 @@ function App() {
       card_id: card.id,
       canvas_id: activeCanvas.id,
       canvas_name: activeCanvas.name,
-      story_id: CANVAS_STORY_ID,
       mime: card.mime,
     })
     const response: CanvasObjectActionResponse = { ...rawResponse }
@@ -1712,6 +1711,46 @@ function App() {
     return response
   }, [activeCanvas.id, activeCanvas.name, ctx, dispatchSurfaceOpen])
 
+  const cardFromBrokeredContext = useCallback((context: CanvasContextItem): CanvasCard | null => {
+    const ref = String(context.object_ref || context.ref || context.logical_path || context.hosted_uri || '').trim()
+    if (!ref) return null
+    return {
+      id: context.id || ref,
+      kind: 'object.ref',
+      title: context.label || ref,
+      summary: context.summary || '',
+      ref,
+      mime: context.mime || 'application/vnd.kdcube.object-ref+json',
+      namespace: context.namespace,
+      object_kind: context.object_kind,
+      rect: { x: 0, y: 0, w: 1, h: 1 },
+    }
+  }, [])
+
+  const openBrokeredContext = useCallback(async (context: CanvasContextItem) => {
+    const sourceCard = cardFromBrokeredContext(context)
+    if (!sourceCard) {
+      setNotice('Dropped context did not include an object ref.')
+      return
+    }
+    await handleCanvasObjectAction(sourceCard, 'open')
+  }, [cardFromBrokeredContext, handleCanvasObjectAction])
+
+  const handleBrokeredSurfaceDragOver = useCallback((event: React.DragEvent<HTMLElement>) => {
+    if (brokeredCanvasDropRef.current?.kind !== 'context') return
+    event.preventDefault()
+    event.stopPropagation()
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy'
+  }, [])
+
+  const handleBrokeredSurfaceDrop = useCallback((event: React.DragEvent<HTMLElement>) => {
+    const drop = brokeredCanvasDropRef.current
+    if (drop?.kind !== 'context') return
+    event.preventDefault()
+    event.stopPropagation()
+    void openBrokeredContext(drop.context).finally(clearBrokeredCanvasDrop)
+  }, [clearBrokeredCanvasDrop, openBrokeredContext])
+
   useEffect(() => {
     requestRuntimeConfig()
       .then((config) => {
@@ -1743,6 +1782,30 @@ function App() {
             setMemoryContentHeight(Number.isFinite(height) && height > 0 ? Math.ceil(height) : null)
           }
           window.parent?.postMessage(data, '*')
+          return
+        }
+        if (data.type === 'kdcube-context-drag-start' || data.type === 'kdcube.memory.drag.start') {
+          const context = normalizeContext(data.context)
+          if (context) {
+            brokeredCanvasDropRef.current = { kind: 'context', context }
+            setBrokeredContextDragActive(true)
+          }
+          return
+        }
+        if (data.type === 'kdcube-canvas-ingress-drag-start') {
+          const ingress = parseIngressMessage({ type: 'kdcube-canvas-ingress', payload: data.payload })
+          if (ingress) {
+            brokeredCanvasDropRef.current = { kind: 'ingress', payload: ingress.payload }
+            setBrokeredContextDragActive(false)
+          }
+          return
+        }
+        if (
+          data.type === 'kdcube-context-drag-end' ||
+          data.type === 'kdcube-canvas-ingress-drag-end' ||
+          data.type === 'kdcube.memory.drag.end'
+        ) {
+          clearBrokeredCanvasDrop()
           return
         }
         if (data.type === 'kdcube-widget-view') {
@@ -1840,11 +1903,16 @@ function App() {
           return
         }
         if (data.type === 'kdcube-pin-conversation') {
-          pinConversationToCanvas({
+          const contextInput = asRecord(data.context)
+          const contextsInput = Array.isArray(data.contexts) ? data.contexts : []
+          const context = normalizeContext(contextInput) || normalizeContext(asRecord(contextsInput[0]))
+          console.info('[versatile:scene] pin conversation request', {
             conversation_id: typeof data.conversation_id === 'string' ? data.conversation_id : '',
             title: typeof data.title === 'string' ? data.title : '',
             agent: typeof data.agent === 'string' ? data.agent : '',
+            ref: context?.ref,
           })
+          pinConversationToCanvas(context)
           return
         }
       }
@@ -1855,7 +1923,7 @@ function App() {
     }
     window.addEventListener('message', onMessage)
     return () => window.removeEventListener('message', onMessage)
-  }, [bringPanelToFront, dispatchSurfaceOpen, externalPanel, flushSurfaceCommand, pinIngressPayloadToCanvas, pinConversationToCanvas, sendToChat])
+  }, [bringPanelToFront, clearBrokeredCanvasDrop, dispatchSurfaceOpen, externalPanel, flushSurfaceCommand, handleBrokeredSurfaceDrop, handleBrokeredSurfaceDragOver, pinIngressPayloadToCanvas, pinConversationToCanvas, sendToChat])
 
   useEffect(() => {
     syncChatWidgetView(chatExpanded ? 'expanded' : 'compact')
@@ -1917,7 +1985,10 @@ function App() {
                 onDropText={pinDroppedTextToCanvas}
                 onDropContext={pinDroppedContextToCanvas}
                 onDropIngress={pinIngressPayloadToCanvas}
+                getBrokeredDrop={getBrokeredCanvasDrop}
+                onBrokeredDropHandled={clearBrokeredCanvasDrop}
                 onObjectAction={handleCanvasObjectAction}
+                namespaceStyles={sceneConfig.namespaceStyles}
               />
             </>
           ) : (
@@ -2085,7 +2156,7 @@ function App() {
       </aside>
       {memoryOpen ? (
         <section
-          className={`memory-pane${memoryExpanded ? ' expanded' : ''}`}
+          className={`memory-pane${memoryExpanded ? ' expanded' : ''}${brokeredContextDragActive ? ' drop-active' : ''}`}
           style={{
             left: memoryFrame.x,
             top: memoryFrame.y,
@@ -2096,6 +2167,8 @@ function App() {
           } as CSSProperties}
           aria-label="Memories"
           onPointerDownCapture={() => bringPanelToFront('memory')}
+          onDragOver={handleBrokeredSurfaceDragOver}
+          onDrop={handleBrokeredSurfaceDrop}
         >
           <header onPointerDown={startMemoryDrag}>
             <span className="memory-pane-title">
@@ -2167,7 +2240,7 @@ function App() {
       ) : null}
       {externalOpen && externalPanel ? (
         <section
-          className={`external-pane${externalExpanded ? ' expanded' : ''}`}
+          className={`external-pane${externalExpanded ? ' expanded' : ''}${brokeredContextDragActive ? ' drop-active' : ''}`}
           style={{
             left: externalFrame.x,
             top: externalFrame.y,
@@ -2177,6 +2250,8 @@ function App() {
           } as CSSProperties}
           aria-label={externalPanel.label}
           onPointerDownCapture={() => bringPanelToFront('external')}
+          onDragOver={handleBrokeredSurfaceDragOver}
+          onDrop={handleBrokeredSurfaceDrop}
         >
           <header onPointerDown={startExternalDrag}>
             <span className="external-pane-title">

@@ -34,12 +34,19 @@ from .pin_index import PinSearchIndex
 
 DEFAULT_EMBEDDING_DIM = 1536
 
+# Cosine-similarity floor for semantic pin hits. Vector search ALWAYS returns the
+# nearest rows, so without a floor an unrelated query pulls back every pin (just
+# reordered) — e.g. "hello" matching all 14 cards. Drop weak semantic matches.
+# Pass a negative value (e.g. -1) to turn the semantic factor OFF entirely and run
+# the search on lexical + recency only — the graceful "semantic unavailable" mode.
+DEFAULT_MIN_SEMANTIC_SCORE = 0.30
+
 logger = logging.getLogger("kdcube.canvas.pins")
 
 
-def _read_board_cards(store: Any, *, board_id: str, story_id: str, payload: Mapping[str, Any]) -> list:
+def _read_board_cards(store: Any, *, board_id: str, payload: Mapping[str, Any]) -> list:
     _, canvas = store.read_document(
-        canvas_id=board_id, story_id=story_id,
+        canvas_id=board_id,
         canvas_name=store.canvas_name(payload.get("canvas_name") or payload.get("name")),
     )
     return list(canvas.get("cards") or [])
@@ -74,6 +81,7 @@ def _make_vector_store(db_path: Path, *, backend: str) -> Optional[VectorStore]:
 def _build_index(
     store: Any, user_id: str, *, embed_fn: EmbedFn, dim: int,
     vector_backend: str = "faiss-local",
+    min_semantic_score: float = DEFAULT_MIN_SEMANTIC_SCORE,
     vector_store: Optional[VectorStore] = None, semantic_guard: Optional[Any] = None,
 ) -> PinSearchIndex:
     db_path = pin_index_db_path(store, user_id)
@@ -86,6 +94,7 @@ def _build_index(
         dim=dim,
         vector_store=vs,
         semantic_guard=semantic_guard,
+        min_semantic_score=min_semantic_score,
     )
 
 
@@ -93,7 +102,6 @@ async def index_pins(
     *,
     store: Any,
     user_id: str,
-    story_id: str,
     payload: Mapping[str, Any],
     embed_fn: EmbedFn,
     dim: int = DEFAULT_EMBEDDING_DIM,
@@ -106,11 +114,11 @@ async def index_pins(
     board_id = _resolve_board(store, payload)
     try:
         _, canvas = store.read_document(
-            canvas_id=board_id, story_id=story_id,
+            canvas_id=board_id,
             canvas_name=store.canvas_name(payload.get("canvas_name") or payload.get("name")),
         )
     except Exception as exc:
-        return {"ok": False, "user_id": user_id, "story_id": story_id, "board": board_id, "error": str(exc)}
+        return {"ok": False, "user_id": user_id, "board": board_id, "error": str(exc)}
 
     cards = canvas.get("cards") or []
     db_path = pin_index_db_path(store, user_id)
@@ -127,16 +135,15 @@ async def index_pins(
             total = index.index.count()
     except Exception as exc:
         logger.warning("[canvas.pins.index] failed board=%s db=%s error=%s", board_id, db_path, exc, exc_info=True)
-        return {"ok": False, "user_id": user_id, "story_id": story_id, "board": board_id, "error": str(exc)}
+        return {"ok": False, "user_id": user_id, "board": board_id, "error": str(exc)}
     logger.info("[canvas.pins.index] board=%s cards=%s docs_total=%s db=%s", board_id, len(cards), total, db_path)
-    return {"ok": True, "user_id": user_id, "story_id": story_id, "board": board_id, "indexed": len(cards)}
+    return {"ok": True, "user_id": user_id, "board": board_id, "indexed": len(cards)}
 
 
 async def clear_pins(
     *,
     store: Any,
     user_id: str,
-    story_id: str,
     payload: Mapping[str, Any],
     embed_fn: EmbedFn,
     dim: int = DEFAULT_EMBEDDING_DIM,
@@ -157,19 +164,19 @@ async def clear_pins(
             removed = await index.clear_board(board_id=board_id)
             await index.ensure_built()
     except Exception as exc:
-        return {"ok": False, "user_id": user_id, "story_id": story_id, "board": board_id, "error": str(exc)}
-    return {"ok": True, "user_id": user_id, "story_id": story_id, "board": board_id, "removed": removed}
+        return {"ok": False, "user_id": user_id, "board": board_id, "error": str(exc)}
+    return {"ok": True, "user_id": user_id, "board": board_id, "removed": removed}
 
 
 async def search_pins(
     *,
     store: Any,
     user_id: str,
-    story_id: str,
     payload: Mapping[str, Any],
     embed_fn: EmbedFn,
     dim: int = DEFAULT_EMBEDDING_DIM,
     semantic_guard: Optional[Any] = None,
+    min_semantic_score: float = DEFAULT_MIN_SEMANTIC_SCORE,
     vector_backend: str = "faiss-local",
     vector_store: Optional[VectorStore] = None,
 ) -> dict:
@@ -190,7 +197,8 @@ async def search_pins(
     db_path = pin_index_db_path(store, user_id)
     index = _build_index(
         store, user_id, embed_fn=embed_fn, dim=dim,
-        vector_backend=vector_backend, vector_store=vector_store, semantic_guard=semantic_guard,
+        vector_backend=vector_backend, min_semantic_score=min_semantic_score,
+        vector_store=vector_store, semantic_guard=semantic_guard,
     )
 
     # Self-heal: if this board has no indexed docs (never indexed — e.g. pins
@@ -201,7 +209,7 @@ async def search_pins(
     try:
         present = index.index.ids(filters=None if all_boards else {"board": board_id})
         if not present:
-            cards = _read_board_cards(store, board_id=board_id, story_id=story_id, payload=payload)
+            cards = _read_board_cards(store, board_id=board_id, payload=payload)
             async with observed_file_lock_async(
                 lock_path=db_path.with_name(db_path.name + ".lock"),
                 resource_id=f"canvas.pins:{_safe(user_id)}",
@@ -225,7 +233,7 @@ async def search_pins(
         )
     except Exception as exc:
         logger.warning("[canvas.pins.search] failed q=%r board=%s error=%s", query, board_id, exc, exc_info=True)
-        return {"ok": False, "user_id": user_id, "story_id": story_id, "query": query, "error": str(exc)}
+        return {"ok": False, "user_id": user_id, "query": query, "error": str(exc)}
     logger.info("[canvas.pins.search] q=%r scope=%s docs_total=%s results=%s db=%s",
                 query, "all_boards" if all_boards else board_id, index.index.count(), len(hits), db_path)
 
@@ -249,7 +257,6 @@ async def search_pins(
     return {
         "ok": True,
         "user_id": user_id,
-        "story_id": story_id,
         "query": query,
         "scope": "all_boards" if all_boards else board_id,
         "items": items,

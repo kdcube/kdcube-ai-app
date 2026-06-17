@@ -182,7 +182,7 @@ download is hidden. Same for `open`, `preview`, and `rehost`.
 The host exposes the operation as:
 
 ```text
-canvas_object_action({object_ref, action, card_id?, canvas_id?, canvas_name?, story_id?, mime?})
+canvas_object_action({object_ref, action, card_id?, canvas_id?, canvas_name?, mime?})
 ```
 
 The operation first resolves the namespace from `object_ref`, then dispatches

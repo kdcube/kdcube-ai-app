@@ -47,7 +47,6 @@ export interface CanvasProjection {
 export interface CanvasPatchUiEvent {
   type?: string
   source?: string
-  story_id?: string
   canvas_id?: string
   canvas_name?: string
   canvas_uri?: string
@@ -133,7 +132,6 @@ export function normalizeCanvasPatchEvent(value: unknown): CanvasPatchUiEvent | 
   return {
     type,
     source: stringValue(raw.source),
-    story_id: stringValue(raw.story_id ?? raw.storyId),
     canvas_id: stringValue(raw.canvas_id ?? raw.canvasId),
     canvas_name: stringValue(raw.canvas_name ?? raw.canvasName),
     canvas_uri: stringValue(raw.canvas_uri ?? raw.canvasUri),
@@ -384,7 +382,7 @@ export function canvasProjection(canvas: CanvasDefinition): CanvasProjection {
     kind: card.kind,
     title: card.title,
     mime: card.mime,
-    namespace: cleanNamespaceValue(card.namespace) || ownerKeyFromRef(card.ref),
+    namespace: namespaceFromRef(card.ref) || cleanNamespaceValue(card.namespace),
     object_kind: cleanNamespaceValue(card.object_kind),
     content_preview: card.summary,
     description: card.description,
@@ -460,7 +458,7 @@ function proxiedCardKind(card: CanvasCard): string {
 export function cardContext(canvas: CanvasDefinition, card: CanvasCard): CanvasContextItem {
   const ref = String(card.ref || '').trim()
   const cardKind = proxiedCardKind(card)
-  const namespace = cleanNamespaceValue(card.namespace) || ownerKeyFromRef(ref)
+  const namespace = namespaceFromRef(ref) || cleanNamespaceValue(card.namespace)
   const objectKind = cleanNamespaceValue(card.object_kind)
   return {
     id: ref || `${canvas.id}:${card.id}:r${canvas.revision}`,

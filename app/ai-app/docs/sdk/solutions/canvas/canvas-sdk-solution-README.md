@@ -441,9 +441,9 @@ async def canvas_list(self, data=None, **kwargs):
     payload = payload_from_call(data, **kwargs)
     return self._canvas_service().operation(
         "canvas_list", payload,
-        lambda *, user_id, story_id: canvas_api.list_canvases(
+        lambda *, user_id: canvas_api.list_canvases(
             store=self._canvas_store(payload, user_id=user_id),
-            user_id=user_id, story_id=story_id,
+            user_id=user_id,
             info_html=self.bundle_prop("canvas.info_html"),
         ),
     )

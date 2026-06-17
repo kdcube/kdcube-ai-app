@@ -38,7 +38,7 @@ TEXT_MIME_TYPES = {
 }
 
 CanvasResolverHandler = Callable[
-    [Mapping[str, Any], str, str, str],
+    [Mapping[str, Any], str, str],
     Mapping[str, Any] | Awaitable[Mapping[str, Any]],
 ]
 
@@ -290,7 +290,6 @@ class CanvasObjectResolver:
         payload: Mapping[str, Any],
         *,
         user_id: str,
-        story_id: str,
         action: str,
     ) -> Dict[str, Any]:
         ref = object_ref_from_payload(payload)
@@ -335,10 +334,9 @@ class CallableCanvasObjectResolver(CanvasObjectResolver):
         payload: Mapping[str, Any],
         *,
         user_id: str,
-        story_id: str,
         action: str,
     ) -> Dict[str, Any]:
-        result = self._handler(payload, user_id, story_id, action)
+        result = self._handler(payload, user_id, action)
         if inspect.isawaitable(result):
             result = await result
         merged = {**self.base_response(ref=object_ref_from_payload(payload), action=action), **dict(result or {})}
@@ -378,7 +376,6 @@ class CanvasArtifactResolver(CanvasObjectResolver):
         payload: Mapping[str, Any],
         *,
         user_id: str,
-        story_id: str,
         action: str,
     ) -> Dict[str, Any]:
         ref = object_ref_from_payload(payload)
@@ -522,7 +519,6 @@ class NamespaceHandoffResolver(CanvasObjectResolver):
         payload: Mapping[str, Any],
         *,
         user_id: str,
-        story_id: str,
         action: str,
     ) -> Dict[str, Any]:
         ref = object_ref_from_payload(payload)
@@ -590,7 +586,6 @@ class CanvasObjectResolverRegistry:
         payload: Mapping[str, Any],
         *,
         user_id: str,
-        story_id: str,
     ) -> Dict[str, Any]:
         ref = object_ref_from_payload(payload)
         action = str(payload.get("action") or "capabilities").strip().lower()
@@ -610,7 +605,7 @@ class CanvasObjectResolverRegistry:
                 "error": "canvas_object_resolver_not_registered",
                 "status": 404,
             }
-        return await resolver.object_action(payload, user_id=user_id, story_id=story_id, action=action)
+        return await resolver.object_action(payload, user_id=user_id, action=action)
 
 
 def object_ref_from_payload(payload: Mapping[str, Any]) -> str:

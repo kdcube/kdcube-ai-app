@@ -34,7 +34,6 @@ def upload_attachments(
     uploaded_files: Sequence[Any],
     store: CanvasStore,
     user_id: str,
-    story_id: str,
 ) -> Dict[str, Any]:
     canvas_name = store.canvas_name(payload.get("canvas_name") or payload.get("name"))
     canvas_id = store.canvas_id(canvas_name=canvas_name, canvas_id=payload.get("canvas_id"))
@@ -42,7 +41,6 @@ def upload_attachments(
         return {
             "ok": False,
             "user_id": user_id,
-            "story_id": story_id,
             "canvas_id": canvas_id,
             "canvas_name": canvas_name,
             "error": "No uploaded files were provided",
@@ -64,7 +62,6 @@ def upload_attachments(
             artifact = store.host_attachment_bytes(
                 canvas_id=canvas_id,
                 canvas_name=canvas_name,
-                story_id=story_id,
                 card_id=card_id,
                 filename=filename,
                 content=content,
@@ -76,7 +73,6 @@ def upload_attachments(
             return {
                 "ok": False,
                 "user_id": user_id,
-                "story_id": story_id,
                 "canvas_id": canvas_id,
                 "canvas_name": canvas_name,
                 "error": f"Canvas attachment storage failed: {exc}",
@@ -101,7 +97,6 @@ def upload_attachments(
     return {
         "ok": True,
         "user_id": user_id,
-        "story_id": story_id,
         "canvas_name": canvas_name,
         "canvas_id": canvas_id,
         "attachments": attachments,
@@ -114,7 +109,6 @@ def read_pin(
     payload: Mapping[str, Any],
     store: CanvasStore,
     user_id: str,
-    story_id: str,
 ) -> Dict[str, Any]:
     ref = str(payload.get("ref") or payload.get("logical_path") or payload.get("storage_ref") or "").strip()
     mime = str(payload.get("mime") or "").strip()
@@ -125,8 +119,8 @@ def read_pin(
     try:
         result = CanvasPinResolver(store).read_ref(ref, mime=mime, max_text_chars=max_text_chars)
     except Exception as exc:
-        return {"ok": False, "user_id": user_id, "story_id": story_id, "ref": ref, "error": str(exc)}
-    return {"user_id": user_id, "story_id": story_id, **result}
+        return {"ok": False, "user_id": user_id, "ref": ref, "error": str(exc)}
+    return {"user_id": user_id, **result}
 
 
 async def object_action(
@@ -134,29 +128,26 @@ async def object_action(
     payload: Mapping[str, Any],
     registry: CanvasObjectResolverRegistry,
     user_id: str,
-    story_id: str,
 ) -> Dict[str, Any]:
     action = str(payload.get("action") or "capabilities").strip().lower()
     ref = object_ref_from_payload(payload)
     namespace = namespace_for_ref(ref)
     LOGGER.info(
-        "[canvas.object_action] requested action=%s namespace=%s ref=%s user_id=%s story_id=%s",
+        "[canvas.object_action] requested action=%s namespace=%s ref=%s user_id=%s",
         action,
         namespace,
         ref,
         user_id,
-        story_id,
     )
     try:
-        result = await registry.object_action(payload, user_id=user_id, story_id=story_id)
+        result = await registry.object_action(payload, user_id=user_id)
     except Exception:
         LOGGER.exception(
-            "[canvas.object_action] exception action=%s namespace=%s ref=%s user_id=%s story_id=%s",
+            "[canvas.object_action] exception action=%s namespace=%s ref=%s user_id=%s",
             action,
             namespace,
             ref,
             user_id,
-            story_id,
         )
         raise
     ok = bool(result.get("ok"))
@@ -167,7 +158,6 @@ async def object_action(
         "resolver_status": result.get("resolver_status"),
         "ref": result.get("object_ref") or result.get("ref") or ref,
         "user_id": user_id,
-        "story_id": story_id,
         "has_download_url": bool(result.get("download_url")),
         "has_content_base64": bool(result.get("content_base64")),
         "has_ui_event": bool(result.get("ui_event")),
@@ -178,7 +168,7 @@ async def object_action(
         LOGGER.info("[canvas.object_action] resolved %s", log_payload)
     else:
         LOGGER.warning("[canvas.object_action] failed %s", log_payload)
-    return {"user_id": user_id, "story_id": story_id, "action": action, **result}
+    return {"user_id": user_id, "action": action, **result}
 
 
 def search(
@@ -186,7 +176,6 @@ def search(
     payload: Mapping[str, Any],
     store: CanvasStore,
     user_id: str,
-    story_id: str,
 ) -> Dict[str, Any]:
     query = str(payload.get("query") or "").strip()
     namespaces = payload.get("namespaces") if isinstance(payload.get("namespaces"), list) else []
@@ -197,18 +186,17 @@ def search(
     canvas_name = store.canvas_name(payload.get("canvas_name") or payload.get("name"))
     canvas_id = store.canvas_id(canvas_name=canvas_name, canvas_id=payload.get("canvas_id"))
     try:
-        _, canvas = store.read_document(canvas_id=canvas_id, story_id=story_id, canvas_name=canvas_name)
+        _, canvas = store.read_document(canvas_id=canvas_id, canvas_name=canvas_name)
         result = search_canvas_cards(canvas, query=query, namespaces=namespaces, limit=limit)
     except Exception as exc:
-        return {"ok": False, "user_id": user_id, "story_id": story_id, "query": query, "error": str(exc)}
-    return {"user_id": user_id, "story_id": story_id, **result}
+        return {"ok": False, "user_id": user_id, "query": query, "error": str(exc)}
+    return {"user_id": user_id, **result}
 
 
 def list_canvases(
     *,
     store: CanvasStore,
     user_id: str,
-    story_id: str,
     info_html: str | None = None,
 ) -> Dict[str, Any]:
     """List the user's boards.
@@ -219,9 +207,9 @@ def list_canvases(
     help text.
     """
     try:
-        result = store.list_canvases(story_id=story_id)
+        result = store.list_canvases()
     except Exception as exc:
-        return {"ok": False, "user_id": user_id, "story_id": story_id, "error": str(exc)}
+        return {"ok": False, "user_id": user_id, "error": str(exc)}
     if isinstance(result, dict):
         info = str(info_html or "").strip()
         if info:
@@ -229,38 +217,38 @@ def list_canvases(
     return result
 
 
-def set_active(*, payload: Mapping[str, Any], store: CanvasStore, user_id: str, story_id: str) -> Dict[str, Any]:
+def set_active(*, payload: Mapping[str, Any], store: CanvasStore, user_id: str) -> Dict[str, Any]:
     canvas_name = str(payload.get("canvas_name") or payload.get("name") or "").strip()
     if not canvas_name:
-        return {"ok": False, "user_id": user_id, "story_id": story_id, "error": "canvas_name is required"}
+        return {"ok": False, "user_id": user_id, "error": "canvas_name is required"}
     try:
-        return {"story_id": story_id, **store.set_active_canvas(canvas_name=canvas_name)}
+        return store.set_active_canvas(canvas_name=canvas_name)
     except Exception as exc:
-        return {"ok": False, "user_id": user_id, "story_id": story_id, "error": str(exc)}
+        return {"ok": False, "user_id": user_id, "error": str(exc)}
 
 
-def archive(*, payload: Mapping[str, Any], store: CanvasStore, user_id: str, story_id: str) -> Dict[str, Any]:
+def archive(*, payload: Mapping[str, Any], store: CanvasStore, user_id: str) -> Dict[str, Any]:
     canvas_name = str(payload.get("canvas_name") or payload.get("name") or "").strip()
     canvas_id = str(payload.get("canvas_id") or "").strip()
     archived = payload.get("archived")
     archived_flag = True if archived is None else bool(archived)
     if not canvas_name and not canvas_id:
-        return {"ok": False, "user_id": user_id, "story_id": story_id, "error": "canvas_name or canvas_id is required"}
+        return {"ok": False, "user_id": user_id, "error": "canvas_name or canvas_id is required"}
     try:
-        return {"story_id": story_id, **store.archive_canvas(canvas_name=canvas_name, canvas_id=canvas_id, archived=archived_flag)}
+        return store.archive_canvas(canvas_name=canvas_name, canvas_id=canvas_id, archived=archived_flag)
     except Exception as exc:
-        return {"ok": False, "user_id": user_id, "story_id": story_id, "error": str(exc)}
+        return {"ok": False, "user_id": user_id, "error": str(exc)}
 
 
-def delete(*, payload: Mapping[str, Any], store: CanvasStore, user_id: str, story_id: str) -> Dict[str, Any]:
+def delete(*, payload: Mapping[str, Any], store: CanvasStore, user_id: str) -> Dict[str, Any]:
     canvas_name = str(payload.get("canvas_name") or payload.get("name") or "").strip()
     canvas_id = str(payload.get("canvas_id") or "").strip()
     if not canvas_name and not canvas_id:
-        return {"ok": False, "user_id": user_id, "story_id": story_id, "error": "canvas_name or canvas_id is required"}
+        return {"ok": False, "user_id": user_id, "error": "canvas_name or canvas_id is required"}
     try:
-        return {"story_id": story_id, **store.delete_canvas(canvas_name=canvas_name, canvas_id=canvas_id)}
+        return store.delete_canvas(canvas_name=canvas_name, canvas_id=canvas_id)
     except Exception as exc:
-        return {"ok": False, "user_id": user_id, "story_id": story_id, "error": str(exc)}
+        return {"ok": False, "user_id": user_id, "error": str(exc)}
 
 
 def read(
@@ -268,13 +256,12 @@ def read(
     payload: Mapping[str, Any],
     store: CanvasStore,
     user_id: str,
-    story_id: str,
 ) -> Dict[str, Any]:
     uri = str(payload.get("uri") or payload.get("canvas_uri") or "").strip()
     canvas_name = store.canvas_name(payload.get("canvas_name") or payload.get("name"))
     canvas_id = store.canvas_id(canvas_name=canvas_name, canvas_id=payload.get("canvas_id"))
     if uri:
-        return store.read_uri(uri=uri, story_id=story_id, canvas_name=canvas_name, canvas_id=payload.get("canvas_id") or "")
+        return store.read_uri(uri=uri, canvas_name=canvas_name, canvas_id=payload.get("canvas_id") or "")
     revision = payload.get("revision")
     try:
         revision_value = int(revision) if revision is not None and str(revision).strip() else None
@@ -282,12 +269,11 @@ def read(
         return {
             "ok": False,
             "user_id": user_id,
-            "story_id": story_id,
             "canvas_id": canvas_id,
             "canvas_name": canvas_name,
             "error": "revision must be an integer",
         }
-    return store.read(story_id=story_id, canvas_name=canvas_name, canvas_id=canvas_id, revision=revision_value)
+    return store.read(canvas_name=canvas_name, canvas_id=canvas_id, revision=revision_value)
 
 
 def write(
@@ -295,7 +281,6 @@ def write(
     payload: Mapping[str, Any],
     store: CanvasStore,
     user_id: str,
-    story_id: str,
     target: Mapping[str, Any] | None = None,
 ) -> Dict[str, Any]:
     canvas_input = payload.get("canvas") if isinstance(payload.get("canvas"), Mapping) else payload.get("document")
@@ -312,21 +297,19 @@ def write(
         return {
             "ok": False,
             "user_id": user_id,
-            "story_id": story_id,
             "canvas_id": canvas_id,
             "canvas_name": canvas_name,
             "error": "canvas document is required",
         }
     try:
         result = store.write(
-            story_id=story_id,
             canvas_name=canvas_name,
             canvas_id=canvas_id,
             canvas_input=canvas_input,
             base_revision=payload.get("base_revision"),
         )
     except Exception as exc:
-        return {"ok": False, "user_id": user_id, "story_id": story_id, "canvas_id": canvas_id, "canvas_name": canvas_name, "error": str(exc)}
+        return {"ok": False, "user_id": user_id, "canvas_id": canvas_id, "canvas_name": canvas_name, "error": str(exc)}
     if not result.get("ok"):
         return result
     resolved_target = _canvas_target(target)
@@ -340,7 +323,6 @@ def write(
     return {
         "ok": True,
         "user_id": user_id,
-        "story_id": story_id,
         "canvas_name": canvas_name,
         "canvas_id": result["canvas"].get("canvas_id"),
         "revision": int(result["canvas"].get("revision") or 0),
@@ -354,7 +336,6 @@ def write(
                 "agent_id": resolved_target["agent_id"],
                 "surface": resolved_target["surface"],
                 "story_kind": resolved_target["story_kind"],
-                "story_id": story_id,
                 "conversation_role": resolved_target["conversation_role"],
             },
             "external_events": [event],
@@ -367,7 +348,6 @@ def patch(
     payload: Mapping[str, Any],
     store: CanvasStore,
     user_id: str,
-    story_id: str,
     target: Mapping[str, Any] | None = None,
 ) -> Dict[str, Any]:
     canvas_name = store.canvas_name(payload.get("canvas_name") or payload.get("name"))
@@ -376,7 +356,6 @@ def patch(
     actor = str(payload.get("actor") or user_id or "user")
     try:
         result = store.patch(
-            story_id=story_id,
             canvas_name=canvas_name,
             canvas_id=canvas_id,
             patch=patch_payload,
@@ -387,7 +366,6 @@ def patch(
             "ok": False,
             "error": str(exc),
             "user_id": user_id,
-            "story_id": story_id,
             "canvas_id": canvas_id,
             "canvas_name": canvas_name,
         }
@@ -405,7 +383,6 @@ def patch(
     ui_event.update({
         "type": str(ui_event.get("type") or store.ui_event_type),
         "source": str(ui_event.get("source") or "canvas.patch"),
-        "story_id": story_id,
         "canvas_name": canvas_name,
         "canvas_id": result["canvas"].get("canvas_id"),
         "revision": int(result["canvas"].get("revision") or 0),
@@ -420,7 +397,6 @@ def patch(
     return {
         "ok": True,
         "user_id": user_id,
-        "story_id": story_id,
         "canvas_name": canvas_name,
         "canvas_id": result["canvas"].get("canvas_id"),
         "revision": int(result["canvas"].get("revision") or 0),
@@ -438,7 +414,6 @@ def patch(
                 "agent_id": resolved_target["agent_id"],
                 "surface": resolved_target["surface"],
                 "story_kind": resolved_target["story_kind"],
-                "story_id": story_id,
                 "conversation_role": resolved_target["conversation_role"],
             },
             "external_events": [event],
