@@ -34,6 +34,7 @@ import {
   canvasFromReadResponse,
   findCanvas,
   namespaceFromRef,
+  ownerKeyFromRef,
   normalizeCanvasPatchEvent,
   type CanvasCard,
   type CanvasDefinition,
@@ -173,19 +174,34 @@ function namespaceCssForCard(
   return vars
 }
 
+// Card timestamps arrive as ISO strings, epoch milliseconds, OR epoch SECONDS
+// (the canvas store writes created_at/updated_at as int(time.time())). Date.parse
+// can't read a bare seconds value, so normalize everything to epoch ms first.
+function toEpochMs(value?: string | number | null): number | null {
+  if (value == null || value === '') return null
+  if (typeof value === 'number') return value < 1e12 ? value * 1000 : value
+  const s = String(value).trim()
+  if (/^\d+$/.test(s)) {
+    const n = Number(s)
+    return n < 1e12 ? n * 1000 : n   // 10-digit = seconds, 13-digit = ms
+  }
+  const parsed = Date.parse(s)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
 function formatCardAdded(value?: string | null): string {
-  if (!value) return ''
-  const t = new Date(value)
-  if (Number.isNaN(t.getTime())) return ''
+  const ms = toEpochMs(value)
+  if (ms == null) return ''
+  const t = new Date(ms)
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())} ${pad(t.getHours())}:${pad(t.getMinutes())}`
 }
 
 // Compact "added" stamp for the card footer (minute precision, no year).
 function formatCardAddedShort(value?: string | null): string {
-  if (!value) return ''
-  const t = new Date(value)
-  if (Number.isNaN(t.getTime())) return ''
+  const ms = toEpochMs(value)
+  if (ms == null) return ''
+  const t = new Date(ms)
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${pad(t.getMonth() + 1)}-${pad(t.getDate())} ${pad(t.getHours())}:${pad(t.getMinutes())}`
 }
@@ -653,9 +669,7 @@ function isFullBoardProjection(projection: unknown, projectedCardCount: number):
 }
 
 function parseCardTime(value?: string): number | null {
-  if (!value) return null
-  const parsed = Date.parse(value)
-  return Number.isFinite(parsed) ? parsed : null
+  return toEpochMs(value)
 }
 
 function formatCardTime(ts: number | null): string {
@@ -718,6 +732,7 @@ export function CanvasBoard({
   const [trashOpen, setTrashOpen] = useState(false)
   const [externalDropReady, setExternalDropReady] = useState(false)
   const [expandedCardId, setExpandedCardId] = useState<string>('')
+  const [expandFlipUp, setExpandFlipUp] = useState(false)
   const [copiedCardId, setCopiedCardId] = useState<string>('')
   const [infoOpen, setInfoOpen] = useState(false)
   // Local draft for a new user-text card: edited inline (markdown) before it is
@@ -1096,9 +1111,12 @@ export function CanvasBoard({
     })
     const counts: Record<string, number> = {}
     for (const card of sorted) {
-      const ns = namespaceLabelForCard(card, namespaceStyles)
-      counts[ns] = (counts[ns] || 0) + 1
-      out[card.id] = `${ns}:${String(counts[ns]).padStart(2, '0')}`
+      // Show the FULL ref path (all segments, colon-separated) — e.g. mem:record,
+      // task:issue, task:attachment — not the kind-derived label ("memory"). The
+      // counter is per distinct path. Ref-less cards fall back to the kind ns.
+      const key = (card.ref ? ownerKeyFromRef(card.ref) : '') || namespaceLabelForCard(card, namespaceStyles)
+      counts[key] = (counts[key] || 0) + 1
+      out[card.id] = `${key}:${String(counts[key]).padStart(2, '0')}`
     }
     return out
   }, [cards, namespaceStyles])
@@ -1148,6 +1166,42 @@ export function CanvasBoard({
   const exitPinSearch = useCallback(() => {
     setSearchResults(null)
     setSearchError('')
+  }, [])
+
+  // The × / Esc clear the query text too (exitPinSearch only drops the filter).
+  const clearSearch = useCallback(() => {
+    setSearchInput('')
+    exitPinSearch()
+  }, [exitPinSearch])
+
+  // Esc closes an open card.
+  useEffect(() => {
+    if (!expandedCardId) return
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') setExpandedCardId('') }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [expandedCardId])
+
+  // Open/close a card's detail flyout. Only one is open at a time. When opening,
+  // pick the flyout direction from geometry: if the card sits near the board
+  // bottom, open upward so the panel isn't clipped off-screen.
+  const openCard = useCallback((cardId: string, willOpen: boolean) => {
+    if (!willOpen) {
+      setExpandedCardId('')
+      return
+    }
+    let flipUp = false
+    const board = boardRef.current
+    const node = board?.querySelector(`[data-card-id="${cssAttrValue(cardId)}"]`) as HTMLElement | null
+    if (board && node) {
+      const b = board.getBoundingClientRect()
+      const c = node.getBoundingClientRect()
+      const roomBelow = b.bottom - c.bottom
+      const roomAbove = c.top - b.top
+      flipUp = roomBelow < 240 && roomAbove > roomBelow
+    }
+    setExpandFlipUp(flipUp)
+    setExpandedCardId(cardId)
   }, [])
 
   const runPinSearch = useCallback(async () => {
@@ -1478,6 +1532,8 @@ export function CanvasBoard({
     if (event.target !== event.currentTarget && !(event.target instanceof HTMLElement && event.target.classList.contains('canvas-grid'))) {
       return
     }
+    // Clicking the empty board closes any open card.
+    setExpandedCardId('')
     if (event.shiftKey) {
       startMarqueeSelection(event)
       return
@@ -1955,6 +2011,9 @@ export function CanvasBoard({
       return
     }
     setSelectedCardIds(setFromIds([card.id]))
+    // A plain click opens the card's details (toggle). Drag is suppressed above via
+    // suppressCardClickRef, and clicks on buttons/inputs already returned early.
+    openCard(card.id, expandedCardId !== card.id)
   }
 
   return (
@@ -2132,7 +2191,7 @@ export function CanvasBoard({
               <input
                 value={searchInput}
                 onChange={(event) => setSearchInput(event.target.value)}
-                onKeyDown={(event) => { if (event.key === 'Escape') exitPinSearch() }}
+                onKeyDown={(event) => { if (event.key === 'Escape') clearSearch() }}
                 placeholder="Search pins — semantic + lexical"
                 aria-label="Search pins"
               />
@@ -2142,7 +2201,7 @@ export function CanvasBoard({
                   className="canvas-search-clear"
                   title="Clear"
                   aria-label="Clear search"
-                  onClick={exitPinSearch}
+                  onClick={clearSearch}
                 >
                   <X size={13} />
                 </button>
@@ -2403,7 +2462,7 @@ export function CanvasBoard({
                       className={pinned ? 'is-pinned' : ''}
                       onClick={(event) => {
                         event.stopPropagation()
-                        setExpandedCardId(pinned ? '' : card.id)
+                        openCard(card.id, !pinned)
                       }}
                       onMouseDown={(event) => event.stopPropagation()}
                     >
@@ -2449,7 +2508,7 @@ export function CanvasBoard({
                         aria-pressed={pinned}
                         onClick={(event) => {
                           event.stopPropagation()
-                          setExpandedCardId(pinned ? '' : card.id)
+                          openCard(card.id, !pinned)
                         }}
                         onMouseDown={(event) => event.stopPropagation()}
                       >
@@ -2497,7 +2556,7 @@ export function CanvasBoard({
                 </div>
                 <span className="canvas-card-kind">
                   <Grip size={12} />
-                  <span className="canvas-card-kind-label">{pendingSuggestion ? 'pending suggestion · ' : ''}{card.ref ? 'object.ref' : card.kind}</span>
+                  {pendingSuggestion ? <span className="canvas-card-kind-label">pending suggestion</span> : null}
                   {addedShort ? (
                     <time className="canvas-card-time" title={`Added ${addedAt}`}>{addedShort}</time>
                   ) : null}
@@ -2530,7 +2589,7 @@ export function CanvasBoard({
                   onMouseDown={(event) => event.stopPropagation()}
                 />
                 <div
-                  className="canvas-card-flyout"
+                  className={`canvas-card-flyout ${pinned && expandFlipUp ? 'up' : ''}`}
                   onClick={(event) => event.stopPropagation()}
                   onPointerDown={(event) => event.stopPropagation()}
                 >
