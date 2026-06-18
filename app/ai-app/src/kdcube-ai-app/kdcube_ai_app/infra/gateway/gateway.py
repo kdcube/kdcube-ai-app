@@ -311,9 +311,15 @@ class RequestGateway:
             }
 
         except (AuthenticationError, Exception) as ex:
-            logger.warning("Gateway auth failed silently:\n%s", traceback.format_exc())
-            # if _auth_debug_enabled():
-            #     logger.info("Gateway auth failed: %s", str(ex))
+            # Degrading to ANONYMOUS is the expected, handled path for requests
+            # without a valid bundle session (anonymous visitors, missing/expired
+            # tokens). Emitting a full traceback at WARNING for each one floods
+            # the log (observed: ~1k/day on a public demo). Keep it terse; full
+            # detail only when auth debug is enabled.
+            if _auth_debug_enabled():
+                logger.warning("Gateway auth failed silently:\n%s", traceback.format_exc())
+            else:
+                logger.debug("Gateway auth degraded to anonymous: %s", type(ex).__name__)
             return UserType.ANONYMOUS, None
 
     async def get_system_status(self) -> Dict[str, Any]:
