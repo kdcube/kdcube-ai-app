@@ -1016,14 +1016,13 @@ class BaseWorkflow():
             tenant = ctx.actor.tenant_id
             project = ctx.actor.project_id
             conversation_id = ctx.routing.conversation_id or ctx.routing.session_id
+            user_id = ctx.user.user_id or getattr(ctx.user, "fingerprint", None) or ""
+            runtime_ctx = getattr(self, "runtime_ctx", None)
             event_ctx = getattr(ctx, "event", None)
-            if event_ctx is None:
-                user_id = ""
-                agent_id = DEFAULT_REACT_AGENT_ID
-            else:
-                user_id = ctx.user.user_id or getattr(ctx.user, "fingerprint", None) or ""
-                runtime_ctx = getattr(self, "runtime_ctx", None)
-                agent_id = normalize_agent_id(getattr(runtime_ctx, "agent_id", None))
+            agent_id = normalize_agent_id(
+                getattr(runtime_ctx, "agent_id", None)
+                or getattr(event_ctx, "agent_id", None)
+            )
         except Exception:
             return None
         if not tenant or not project or not conversation_id:
@@ -1446,7 +1445,31 @@ class BaseWorkflow():
             return []
 
     def _iter_turn_prompt_entries(self, *, turn_id: str) -> List[Dict[str, Any]]:
-        return iter_turn_user_input_entries(self._current_turn_blocks(turn_id=turn_id), turn_id=turn_id)
+        blocks: List[Dict[str, Any]] = []
+        try:
+            current_turn_blocks_fn = getattr(self.ctx_browser, "current_turn_blocks", None) if self.ctx_browser else None
+            if callable(current_turn_blocks_fn):
+                blocks = list(current_turn_blocks_fn() or [])
+        except Exception:
+            blocks = []
+        if not blocks:
+            blocks = self._current_turn_blocks(turn_id=turn_id)
+        normalized: List[Dict[str, Any]] = []
+        for block in blocks:
+            if not isinstance(block, dict):
+                continue
+            btype = str(block.get("type") or "").strip()
+            if btype in {"user.prompt", "user.followup", "user.followup.preserved", "user.steer", "user.steer.preserved"}:
+                if str(block.get("turn_id") or "").strip() != turn_id:
+                    block = dict(block)
+                    meta = dict(block.get("meta") if isinstance(block.get("meta"), dict) else {})
+                    previous_turn_id = str(block.get("turn_id") or "").strip()
+                    if previous_turn_id:
+                        meta.setdefault("origin_turn_id", previous_turn_id)
+                    block["turn_id"] = turn_id
+                    block["meta"] = meta
+            normalized.append(block)
+        return iter_turn_user_input_entries(normalized, turn_id=turn_id)
 
     def _iter_turn_assistant_completion_entries(self, *, turn_id: str) -> List[Dict[str, Any]]:
         entries: List[Dict[str, Any]] = []
@@ -2393,6 +2416,13 @@ class BaseWorkflow():
         user_type = payload.get("user_type") or "anonymous"
         turn_id = payload.get("turn_id")
         external_events = payload.get("external_events") if isinstance(payload.get("external_events"), list) else []
+        if not external_events:
+            try:
+                request_events = getattr(getattr(self.comm_context, "request", None), "external_events", None)
+                if isinstance(request_events, list):
+                    external_events = request_events
+            except Exception:
+                external_events = []
         text = external_events_text(external_events)
         attachments = external_event_attachment_payloads(external_events)
 
@@ -2630,6 +2660,7 @@ class BaseWorkflow():
             except Exception:
                 event_reader_result = {}
             try:
+                external_event_source = getattr(getattr(self, "runtime_ctx", None), "external_event_source", None)
                 self.logger.log(
                     "[react.external.initial_fold] "
                     + json.dumps(
@@ -2638,7 +2669,10 @@ class BaseWorkflow():
                             "conversation_id": scratchpad.conversation_id,
                             "agent_id": getattr(getattr(self, "runtime_ctx", None), "agent_id", None),
                             "event_source_pipeline_enabled": bool(getattr(getattr(self, "runtime_ctx", None), "event_source_pipeline_enabled", False)),
-                            "external_event_source": bool(getattr(getattr(self, "runtime_ctx", None), "external_event_source", None)),
+                            "external_event_source": bool(external_event_source),
+                            "external_event_source_user_id": str(getattr(external_event_source, "user_id", "") or ""),
+                            "external_event_source_agent_id": str(getattr(external_event_source, "agent_id", "") or ""),
+                            "external_event_source_lane_id": str(getattr(external_event_source, "lane_id", "") or ""),
                             **(event_reader_result if isinstance(event_reader_result, dict) else {}),
                         },
                         ensure_ascii=False,

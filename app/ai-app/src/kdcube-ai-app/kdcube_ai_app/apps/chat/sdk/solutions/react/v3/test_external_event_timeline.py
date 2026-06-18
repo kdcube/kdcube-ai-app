@@ -7,9 +7,9 @@ import pytest
 from kdcube_ai_app.apps.chat.external_events import build_conversation_external_event_source
 from kdcube_ai_app.apps.chat.sdk.context.memory import tools as memory_tools
 from kdcube_ai_app.apps.chat.sdk.events import EventSourceSubsystem
+from kdcube_ai_app.apps.chat.sdk.runtime.user_inputs import iter_turn_user_input_entries
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v3.browser import ContextBrowser
 from kdcube_ai_app.apps.chat.sdk.solutions.react.proto import RuntimeCtx
-from kdcube_ai_app.apps.chat.sdk.solutions.react.v3.timeline import extract_user_attachments_from_blocks
 
 
 class _FakeRedis:
@@ -86,7 +86,7 @@ class _FakeCtxClient:
 
 
 @pytest.mark.asyncio
-async def test_browser_folds_external_events_into_history_and_current_turn(tmp_path):
+async def test_browser_folds_accepted_external_events_into_current_turn(tmp_path):
     redis = _FakeRedis()
     source = build_conversation_external_event_source(
         redis=redis,
@@ -186,24 +186,21 @@ async def test_browser_folds_external_events_into_history_and_current_turn(tmp_p
 
     await browser.load_timeline()
     try:
-        history_blocks = browser.timeline.get_history_blocks()
         current_blocks = browser.timeline.get_turn_blocks()
-        history_attachments = extract_user_attachments_from_blocks(history_blocks)
 
-        assert any(b.get("type") == "user.followup" and b.get("turn_id") == "turn_old" for b in history_blocks)
         assert any(
-            b.get("type") == "user.attachment.meta"
-            and b.get("turn_id") == "turn_old"
-            and ".external.followup.attachments/" in str(b.get("path") or "")
-            for b in history_blocks
+            b.get("type") == "user.followup"
+            and b.get("turn_id") == "turn_current"
+            and b.get("text") == "history event"
+            and b.get("meta", {}).get("origin_turn_id") == "turn_old"
+            for b in current_blocks
         )
         assert any(
             b.get("type") == "user.attachment.text"
-            and b.get("turn_id") == "turn_old"
+            and b.get("turn_id") == "turn_current"
             and b.get("text") == "attachment text from followup"
-            for b in history_blocks
+            for b in current_blocks
         )
-        assert any(att.get("filename") == "brief.txt" for att in history_attachments)
         assert any(
             b.get("type") == "user.prompt"
             and b.get("turn_id") == "turn_current"
@@ -224,6 +221,9 @@ async def test_browser_folds_external_events_into_history_and_current_turn(tmp_p
             for b in current_blocks
         )
         assert any(b.get("type") == "user.steer" and b.get("turn_id") == "turn_current" for b in current_blocks)
+        user_entries = iter_turn_user_input_entries(current_blocks, turn_id="turn_current")
+        assert any(entry.get("plain_text") == "history event" for entry in user_entries)
+        assert any(entry.get("plain_text") == "stream-originated prompt" for entry in user_entries)
         assert hook_saw_current_prompt == [True]
         assert browser.timeline.last_external_event_id == "3-0"
         assert int(browser.timeline.last_external_event_seq or 0) == 3

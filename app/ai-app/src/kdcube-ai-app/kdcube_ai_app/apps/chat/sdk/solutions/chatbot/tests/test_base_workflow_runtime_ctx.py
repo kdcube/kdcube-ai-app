@@ -191,6 +191,69 @@ def test_rebind_request_context_refreshes_external_event_source_after_redis_bind
     assert wf.runtime_ctx.external_event_source is expected_source
 
 
+def test_external_event_source_uses_scoped_user_without_event_context(monkeypatch):
+    captured = {}
+
+    def _fake_source(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(lane_id="lane")
+
+    monkeypatch.setattr(workflow_mod, "build_conversation_external_event_source", _fake_source)
+
+    wf = BaseWorkflow.__new__(BaseWorkflow)
+    wf.redis = "redis-client"
+    wf.runtime_ctx = RuntimeCtx(agent_id="custom.react")
+    wf.comm_context = SimpleNamespace(
+        actor=SimpleNamespace(tenant_id="tenant-a", project_id="project-a"),
+        user=SimpleNamespace(user_id="user-1", fingerprint="fp-1"),
+        routing=SimpleNamespace(conversation_id="conv-1", session_id="sess-1"),
+        event=None,
+    )
+
+    source = wf._external_event_source_for_runtime()
+
+    assert source is not None
+    assert captured["tenant"] == "tenant-a"
+    assert captured["project"] == "project-a"
+    assert captured["conversation_id"] == "conv-1"
+    assert captured["user_id"] == "user-1"
+    assert captured["agent_id"] == "custom.react"
+
+
+@pytest.mark.asyncio
+async def test_construct_turn_uses_request_context_external_events_when_payload_omits_them():
+    wf = BaseWorkflow.__new__(BaseWorkflow)
+    wf._ctx = {}
+    wf.gate_out_class = None
+    wf.comm_context = SimpleNamespace(
+        request=SimpleNamespace(
+            external_events=[
+                {
+                    "type": "event.user.prompt",
+                    "payload": {"event": {"text": "route me to Bari"}},
+                }
+            ]
+        )
+    )
+
+    scratchpad = await wf.construct_turn_and_scratchpad(
+        {
+            "request_id": "req-1",
+            "tenant": "tenant-a",
+            "project": "project-a",
+            "user": "user-1",
+            "user_type": "registered",
+            "session_id": "sess-1",
+            "conversation_id": "conv-1",
+            "turn_id": "turn-1",
+        }
+    )
+
+    assert scratchpad.user_text == "route me to Bari"
+    assert scratchpad.conversation_id == "conv-1"
+    assert scratchpad.turn_id == "turn-1"
+
+
 def test_resolve_mcp_services_config_prefers_bundle_props_over_env(monkeypatch):
     monkeypatch.setenv("MCP_SERVICES", '{"mcpServers":{"env_only":{"transport":"stdio","command":"python"}}}')
 
@@ -979,8 +1042,8 @@ async def test_persist_turn_entries_store_multiple_user_and_assistant_rows():
     assert prompt_count == 2
     assert [m["role"] for m in saved_messages] == ["user", "user", "assistant", "assistant", "assistant", "artifact"]
     assert [m["text"] for m in saved_messages] == [
-        "Original prompt",
-        "Additional requirement",
+        "[user.message]\nOriginal prompt",
+        "[user.message]\nAdditional requirement",
         "First visible completion",
         "Final completion",
         "Goal: finish the task\nOutcome: final completion persisted",
@@ -1077,8 +1140,68 @@ async def test_event_lane_prompt_is_not_indexed_twice_by_legacy_persist_call():
 
     assert prompt_count == 1
     assert [m["role"] for m in saved_messages] == ["user"]
-    assert saved_messages[0]["text"] == "Original prompt"
+    assert saved_messages[0]["text"] == "[user.message]\nOriginal prompt"
     assert "ar:turn-1.user.prompt.evt_1" in scratchpad.persisted_turn_entry_paths
+
+
+@pytest.mark.asyncio
+async def test_current_turn_prompt_slice_is_indexed_even_when_block_turn_id_is_stale():
+    saved_messages = []
+
+    class _ConvIdxStub:
+        async def add_message(self, **kwargs):
+            saved_messages.append(dict(kwargs))
+
+    async def _embed_texts(texts):
+        return [[0.1, 0.2, 0.3] for _ in texts]
+
+    stale_prompt_block = {
+        "type": "user.prompt",
+        "turn_id": "turn-previous",
+        "ts": "2026-04-26T10:00:00Z",
+        "path": "ar:turn-previous.user.prompt.evt_1",
+        "text": "Create a route to Bari using sails",
+        "meta": {
+            "prompt_origin": "external_event_lane",
+            "event_id": "evt_1",
+            "event_type": "event.user.prompt",
+        },
+    }
+
+    wf = BaseWorkflow.__new__(BaseWorkflow)
+    wf.conv_idx = _ConvIdxStub()
+    wf.model_service = SimpleNamespace(embed_texts=_embed_texts)
+    wf.config = SimpleNamespace(ai_bundle_spec=SimpleNamespace(id="bundle.test"))
+    wf._ctx = {
+        "service": {
+            "tenant": "tenant-a",
+            "project": "project-a",
+            "user": "user-a",
+            "user_type": "registered",
+        },
+        "conversation": {
+            "conversation_id": "conv-1",
+            "turn_id": "turn-current",
+            "ts": "2026-04-26T10:00:00Z",
+        },
+    }
+    wf.ctx_browser = SimpleNamespace(
+        timeline=SimpleNamespace(blocks=[]),
+        current_turn_blocks=lambda: [stale_prompt_block],
+    )
+    scratchpad = SimpleNamespace(
+        turn_topics_plain=[],
+        persisted_turn_entry_paths=set(),
+    )
+
+    prompt_count = await wf.persist_turn_prompt_entries(scratchpad)
+
+    assert prompt_count == 1
+    assert len(saved_messages) == 1
+    assert saved_messages[0]["role"] == "user"
+    assert saved_messages[0]["turn_id"] == "turn-current"
+    assert saved_messages[0]["text"] == "[user.message]\nCreate a route to Bari using sails"
+    assert saved_messages[0]["tags"][-1] == "event_type:event.user.prompt"
 
 
 # ---------------------------------------------------------------------------

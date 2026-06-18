@@ -618,16 +618,12 @@ class ContextBrowser:
                     int(self._last_external_event_reader_result.get("blocks_materialized") or 0) + len(blocks)
                 )
                 max_applied_seq = max(max_applied_seq, int(getattr(event, "sequence", 0) or 0))
-                event_turn_id = (
-                    str(getattr(event, "owner_turn_id", "") or "").strip()
-                    or str(getattr(event, "active_turn_id_at_ingress", "") or "").strip()
-                )
                 block_turn_ids = {
                     str(block.get("turn_id") or "").strip()
                     for block in blocks
                     if isinstance(block, dict) and str(block.get("turn_id") or "").strip()
                 }
-                is_current_turn_event = bool(current_turn_id and (event_turn_id == current_turn_id or current_turn_id in block_turn_ids))
+                is_current_turn_event = bool(current_turn_id and current_turn_id in block_turn_ids)
                 if is_current_turn_event:
                     deferred_current_turn_blocks.extend(blocks)
                     deferred_current_turn_hooks.append({
@@ -639,11 +635,11 @@ class ContextBrowser:
                         if not isinstance(block, dict):
                             continue
                         block_type = str(block.get("type") or "")
-                        if block_type == "user.prompt":
+                        if block_type in {"user.prompt", "user.followup", "user.steer"}:
                             text = str(block.get("text") or "").strip()
                             if text:
                                 current_prompt_texts.append(text)
-                        if block_type == "user.prompt" or block_type.startswith("user.attachment."):
+                        if block_type in {"user.prompt", "user.followup", "user.steer"} or block_type.startswith("user.attachment."):
                             self._last_external_event_reader_result["current_turn_user_input_materialized"] = True
                 else:
                     await self._timeline.contribute_async(blocks)
@@ -933,12 +929,13 @@ class ContextBrowser:
         kind = str(getattr(event, "kind", "") or "").strip().lower()
         if kind not in {"message", "regular", "followup", "steer", "external_event"}:
             return []
-        turn_id = (
+        materialized_turn_id = str(self._runtime_ctx.turn_id or "").strip()
+        origin_turn_id = (
             str(getattr(event, "owner_turn_id", "") or "").strip()
             or str(getattr(event, "active_turn_id_at_ingress", "") or "").strip()
             or str(getattr(event, "target_turn_id", "") or "").strip()
-            or str(self._runtime_ctx.turn_id or "").strip()
         )
+        turn_id = materialized_turn_id or origin_turn_id
         event_id = str(getattr(event, "message_id", "") or "").strip() or f"seq_{int(getattr(event, 'sequence', 0) or 0)}"
         is_prompt_event = kind in {"message", "regular"}
         if is_prompt_event:
@@ -982,6 +979,8 @@ class ContextBrowser:
             "target_turn_id": getattr(event, "target_turn_id", None),
             "active_turn_id_at_ingress": getattr(event, "active_turn_id_at_ingress", None),
             "owner_turn_id": getattr(event, "owner_turn_id", None),
+            "materialized_turn_id": turn_id,
+            "origin_turn_id": origin_turn_id,
             "explicit": bool(getattr(event, "explicit", False)),
             "source": str(getattr(event, "source", "") or ""),
         }
