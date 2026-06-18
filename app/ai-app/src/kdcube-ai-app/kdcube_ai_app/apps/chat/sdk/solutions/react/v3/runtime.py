@@ -4155,7 +4155,8 @@ class ReactSolverV2:
                 try_close = getattr(self.ctx_browser, "try_close_external_event_handler", None) if self.ctx_browser else None
                 if callable(try_close):
                     handler_closed = await try_close()
-                if handler_closed is False:
+                _max_it_cg = int(state.get("max_iterations") or 0)
+                if handler_closed is False and not (_max_it_cg and int(iteration) + 1 >= _max_it_cg):
                     state["retry_decision"] = True
                     state["exit_reason"] = None
                     state["final_answer"] = None
@@ -4165,6 +4166,14 @@ class ReactSolverV2:
                     except Exception:
                         pass
                 else:
+                    if handler_closed is False:
+                        # Close gate wanted another round, but none remain (the next
+                        # decision node would immediately exit on max_iterations).
+                        # Deliver the ready answer instead of discarding it.
+                        try:
+                            self.log.log("[react.v3] event-bus close gate deferred at max_iterations; delivering ready answer instead", level="INFO")
+                        except Exception:
+                            pass
                     final_answer_text = (decision.get("final_answer") or "").strip()
                     state["exit_reason"] = "steer" if bool(state.get("steer_finalize_mode")) else action
                     state["final_answer"] = final_answer_text
