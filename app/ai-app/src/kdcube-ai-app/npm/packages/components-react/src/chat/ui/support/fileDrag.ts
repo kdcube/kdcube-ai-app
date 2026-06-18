@@ -53,7 +53,10 @@ function postParentDragMessage(message: Record<string, unknown>): void {
   window.parent.postMessage(message, '*')
 }
 
-function dragEndPoint(event: DragEvent): Record<string, number> {
+// Structural source for drag coordinates — accepts both a DOM DragEvent (the
+// dragend listener) and a React.DragEvent (the start callers) without importing React.
+interface DragPointSource { clientX: number; clientY: number; screenX: number; screenY: number }
+function dragPoint(event: DragPointSource): Record<string, number> {
   return {
     client_x: event.clientX,
     client_y: event.clientY,
@@ -62,7 +65,7 @@ function dragEndPoint(event: DragEvent): Record<string, number> {
   }
 }
 
-export function setChatFileDragData(dataTransfer: DataTransfer, input: ChatFileDragInput): void {
+export function setChatFileDragData(dataTransfer: DataTransfer, input: ChatFileDragInput, event?: DragPointSource): void {
   const message = chatFileDragMessage(input)
   dataTransfer.effectAllowed = 'copy'
   dataTransfer.setData('application/json', JSON.stringify(message))
@@ -74,8 +77,13 @@ export function setChatFileDragData(dataTransfer: DataTransfer, input: ChatFileD
     type: 'kdcube-canvas-ingress-drag-start',
     source: 'chat-widget',
     payload: message.payload,
+    // Include the dragstart point so the host can build a screen->client
+    // calibration delta. Without it a cross-origin drop (released outside this
+    // iframe, e.g. on the canvas) can't be mapped to host coordinates and misses
+    // every drop target — context drags work only because they send this.
+    ...(event ? dragPoint(event) : {}),
   })
-  window.addEventListener('dragend', (event) => {
-    postParentDragMessage({ type: 'kdcube-canvas-ingress-drag-end', source: 'chat-widget', ...dragEndPoint(event) })
+  window.addEventListener('dragend', (endEvent) => {
+    postParentDragMessage({ type: 'kdcube-canvas-ingress-drag-end', source: 'chat-widget', ...dragPoint(endEvent) })
   }, { once: true })
 }

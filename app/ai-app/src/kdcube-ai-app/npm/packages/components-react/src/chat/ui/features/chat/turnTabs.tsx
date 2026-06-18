@@ -475,7 +475,7 @@ function DownloadsPanelImpl({
         draggable={Boolean(dragInput?.ref)}
         onDragStart={(event) => {
           if (!dragInput?.ref) return
-          setChatFileDragData(event.dataTransfer, dragInput)
+          setChatFileDragData(event.dataTransfer, dragInput, event)
         }}
         className={`k-chat-file k-chat-file--${origin}`}
         title={dragInput?.ref ? `Download ${label}; drag to attach or pin` : `Download ${label}`}

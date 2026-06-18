@@ -76,7 +76,7 @@ export function AttachmentChip({
           mime: attachment.mime,
           preview: attachment.description,
           sourceKind: 'user.attachment',
-        })
+        }, event)
       }}
       disabled={(!canDownload && !dragRef) || downloading}
       className="k-attach-chip"

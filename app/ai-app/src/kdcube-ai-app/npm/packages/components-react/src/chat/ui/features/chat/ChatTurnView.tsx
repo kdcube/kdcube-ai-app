@@ -599,7 +599,7 @@ function ChatFileBlockImpl({
           mime: artifact.mime,
           preview: artifact.description,
           sourceKind: 'assistant.file',
-        })
+        }, event)
       }}
       disabled={!pinRef || downloading}
       className="k-chat-file"
