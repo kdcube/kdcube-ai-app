@@ -166,6 +166,35 @@ issue platform-recognized `kst1.*` cookies. It requires
 `services.session_token.secret` in `secrets.yaml`. See
 [Bundle Session Auth](../service/auth/bundle-session-auth-README.md).
 
+`auth.idp: multi-cognito` selects the multi-provider Cognito verifier. The
+browser-facing OIDC config still comes from `auth.cognito`; ingress/proc also
+trust every Cognito provider listed in `auth.providers` or
+`auth.cognito.providers`.
+
+```yaml
+auth:
+  type: cognito
+  idp: multi-cognito
+  cognito:
+    region: eu-west-1
+    user_pool_id: eu-west-1_PRIMARY
+    app_client_id: primary-client
+  providers:
+  - alias: primary
+    kind: cognito
+    region: eu-west-1
+    user_pool_id: eu-west-1_PRIMARY
+    app_client_id: primary-client
+  - alias: peer
+    kind: cognito
+    region: eu-west-1
+    user_pool_id: eu-west-1_PEER
+    app_client_id: peer-client
+```
+
+The server selects a verifier from token claims (`iss` plus `client_id` or
+`aud`) and then performs normal JWKS validation for that provider.
+
 ### `infra.redis.topology`
 
 `infra.redis.topology` selects the Redis client topology used by the shared

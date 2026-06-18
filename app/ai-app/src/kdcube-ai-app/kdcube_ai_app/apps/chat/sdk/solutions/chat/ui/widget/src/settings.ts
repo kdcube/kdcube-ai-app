@@ -252,7 +252,12 @@ class SettingsManager {
     const bundleId = this.getBundleId()
     if (!tenant || !project || !bundleId) return false
     const controller = new AbortController()
-    const timeout = window.setTimeout(() => controller.abort(), 1200)
+    // The chat iframe is a different origin than the host page, so it gets its OWN
+    // CloudFront cache entry (responses Vary: Origin). The first cross-origin hit is
+    // a CDN miss to the origin and can take well over a second; a 1.2s abort dropped
+    // it, leaving the chip namespace colours (cnv/conv/...) unloaded while the host's
+    // own call succeeded. Give the cold miss room to complete.
+    const timeout = window.setTimeout(() => controller.abort(), 6000)
     try {
       const alias = 'namespace_presentation_config'
       const response = await fetch(

@@ -179,12 +179,40 @@ backend auth provider used by ingress/proc.
 |---|---|---|
 | `simple` | `simple` | SimpleIDP token registry. |
 | `cognito` | `cognito` | Cognito JWT validation. |
+| `cognito` | `multi-cognito` | Cognito JWT validation against every configured `auth.providers` trust-list entry. |
 | `delegated` | `cognito` | Proxy-login/delegated deployment shape with Cognito backend validation. |
 | `bundle` | `session` | Bundle/front shell validates external identity and issues platform-recognized bundle session cookies. |
 
 Bundle session auth requires the platform/global secret
 `services.session_token.secret` in `secrets.yaml` or the configured secret
 provider. See [Bundle Session Auth](../auth/bundle-session-auth-README.md).
+
+For mixed runtime scenes, `auth.idp: multi-cognito` keeps `auth.cognito` as the
+browser/login provider and adds a server-side trust list:
+
+```yaml
+auth:
+  type: cognito
+  idp: multi-cognito
+  cognito:
+    region: eu-west-1
+    user_pool_id: eu-west-1_PRIMARY
+    app_client_id: primary-client
+  providers:
+  - alias: primary
+    kind: cognito
+    region: eu-west-1
+    user_pool_id: eu-west-1_PRIMARY
+    app_client_id: primary-client
+  - alias: peer
+    kind: cognito
+    region: eu-west-1
+    user_pool_id: eu-west-1_PEER
+    app_client_id: peer-client
+```
+
+The verifier selects a provider from the token `iss` and `client_id`/`aud`
+claims, then performs normal JWKS verification for that provider.
 
 ## Where to continue
 

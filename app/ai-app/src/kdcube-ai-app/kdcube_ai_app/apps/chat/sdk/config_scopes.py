@@ -506,12 +506,23 @@ class IDPConfig(BaseModel):
     local: IDPLocalConfig = Field(default_factory=IDPLocalConfig)
 
 
+class CognitoTrustedProviderConfig(BaseModel):
+    """Trusted Cognito/OIDC provider accepted by the runtime auth verifier."""
+    alias: str
+    kind: str = "cognito"
+    region: str
+    user_pool_id: str
+    app_client_id: str
+    hosted_ui_domain: str | None = None
+
+
 class AuthConfig(BaseModel):
     """Auth settings.  Access via get_settings().AUTH.<attr>."""
     COGNITO_REGION: str | None = None
     COGNITO_USER_POOL_ID: str | None = None
     COGNITO_APP_CLIENT_ID: str | None = None
     COGNITO_SERVICE_CLIENT_ID: str | None = None
+    COGNITO_TRUSTED_PROVIDERS: list[CognitoTrustedProviderConfig] = Field(default_factory=list)
     ID_TOKEN_HEADER_NAME: str = "X-ID-Token"
     AUTH_TOKEN_COOKIE_NAME: str = "__Secure-LATC"
     ID_TOKEN_COOKIE_NAME: str = "__Secure-LITC"

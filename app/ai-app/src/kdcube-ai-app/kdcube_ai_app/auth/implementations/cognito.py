@@ -17,14 +17,16 @@ def _auth_debug_enabled() -> bool:
 class CognitoUser(User):
     sub: str
     preferred_username: Optional[str] = None
+    identity_provider: Optional[str] = None
+    issuer: Optional[str] = None
 
-def _cfg() -> OAuth2Config:
-    _auth = get_settings().AUTH
-    region    = _auth.COGNITO_REGION
-    pool_id   = _auth.COGNITO_USER_POOL_ID
-    client_id = _auth.COGNITO_APP_CLIENT_ID
-    hosted_ui = os.getenv("COGNITO_HOSTED_UI_DOMAIN")
-
+def _cfg_from_values(
+    *,
+    region: str,
+    pool_id: str,
+    client_id: str,
+    hosted_ui: str | None = None,
+) -> OAuth2Config:
     if not (region and pool_id and client_id):
         raise RuntimeError("COGNITO_REGION, COGNITO_USER_POOL_ID, COGNITO_APP_CLIENT_ID are required")
 
@@ -41,9 +43,47 @@ def _cfg() -> OAuth2Config:
         verify_signature=True,
     )
 
+def _cfg() -> OAuth2Config:
+    _auth = get_settings().AUTH
+    return _cfg_from_values(
+        region=_auth.COGNITO_REGION,
+        pool_id=_auth.COGNITO_USER_POOL_ID,
+        client_id=_auth.COGNITO_APP_CLIENT_ID,
+        hosted_ui=os.getenv("COGNITO_HOSTED_UI_DOMAIN"),
+    )
+
 class CognitoAuthManager(OAuthManager):
-    def __init__(self, send_validation_error_details: bool = False):
-        super().__init__(_cfg(), send_validation_error_details)
+    def __init__(
+        self,
+        send_validation_error_details: bool = False,
+        *,
+        oauth_config: OAuth2Config | None = None,
+        provider_alias: str | None = None,
+    ):
+        super().__init__(oauth_config or _cfg(), send_validation_error_details)
+        self.provider_alias = provider_alias or "primary"
+
+    @classmethod
+    def from_values(
+        cls,
+        *,
+        region: str,
+        pool_id: str,
+        client_id: str,
+        hosted_ui: str | None = None,
+        provider_alias: str | None = None,
+        send_validation_error_details: bool = False,
+    ) -> "CognitoAuthManager":
+        return cls(
+            send_validation_error_details=send_validation_error_details,
+            oauth_config=_cfg_from_values(
+                region=region,
+                pool_id=pool_id,
+                client_id=client_id,
+                hosted_ui=hosted_ui,
+            ),
+            provider_alias=provider_alias,
+        )
 
     async def authenticate(self, token: str) -> CognitoUser:
         """
@@ -142,7 +182,9 @@ class CognitoAuthManager(OAuthManager):
             name=None,   # Access tokens typically don't have name
             roles=[],    # Access tokens typically don't have roles
             permissions=[],  # Access tokens typically don't have permissions
-            preferred_username=payload.get("username")
+            preferred_username=payload.get("username"),
+            identity_provider=self.provider_alias,
+            issuer=payload.get("iss"),
         )
 
     def _create_user_from_id_token(self, payload: Dict[str, Any]) -> CognitoUser:
@@ -194,7 +236,9 @@ class CognitoAuthManager(OAuthManager):
             ),
             roles=list(set(roles)),  # Remove duplicates
             permissions=list(set(permissions)),  # Remove duplicates
-            preferred_username=payload.get("preferred_username")
+            preferred_username=payload.get("preferred_username"),
+            identity_provider=self.provider_alias,
+            issuer=payload.get("iss"),
         )
 
     async def _verify_id_token(self, id_token: str) -> Dict[str, Any]:

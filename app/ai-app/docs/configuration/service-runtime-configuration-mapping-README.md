@@ -67,6 +67,7 @@ per-descriptor pages. This section keeps only the cross-descriptor overview.
 | `COGNITO_USER_POOL_ID` | `auth.cognito.user_pool_id` | `assembly.yaml` | CLI local compose, AWS deployment |
 | `COGNITO_APP_CLIENT_ID` | `auth.cognito.app_client_id` | `assembly.yaml` | CLI local compose, AWS deployment |
 | `COGNITO_SERVICE_CLIENT_ID` | `auth.cognito.service_client_id` | `assembly.yaml` | CLI local compose, AWS deployment |
+| `AUTH_COGNITO_PROVIDERS_JSON` / `COGNITO_TRUSTED_PROVIDERS_JSON` | `auth.providers` or `auth.cognito.providers` | `assembly.yaml` | optional multi-Cognito trust list |
 | `ID_TOKEN_HEADER_NAME` | `auth.id_token_header_name` | `assembly.yaml` | CLI local compose, AWS deployment |
 | `AUTH_TOKEN_COOKIE_NAME` | `auth.auth_token_cookie_name` | `assembly.yaml` | CLI local compose, AWS deployment |
 | `ID_TOKEN_COOKIE_NAME` | `auth.id_token_cookie_name` | `assembly.yaml` | CLI local compose, AWS deployment |
@@ -89,6 +90,9 @@ Notes:
 - in delegated auth deployments, `AUTH_TOKEN_COOKIE_NAME` and
   `ID_TOKEN_COOKIE_NAME` are also passed to the web-proxy so it can distinguish
   already-present real cookies from the proxylogin masquerade/unmask flow
+- `auth.idp: multi-cognito` selects server-side verification against
+  `auth.providers`; `auth.cognito` remains the browser/login provider surfaced
+  by `/api/cp-frontend-config`
 - `auth.idp: session` is the bundle session auth provider. It requires the
   platform secret `services.session_token.secret`.
 

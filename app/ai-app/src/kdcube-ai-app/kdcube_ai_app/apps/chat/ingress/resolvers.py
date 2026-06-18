@@ -160,6 +160,12 @@ def create_auth_manager():
     # You can switch between different auth managers here:
 
     provider = (get_settings().AUTH_PROVIDER or "simple").lower()
+    if provider in {"multi-cognito", "cognito-multi"}:
+        from kdcube_ai_app.auth.implementations.multi_cognito import MultiCognitoAuthManager
+        providers = list(get_settings().AUTH.COGNITO_TRUSTED_PROVIDERS or [])
+        logger.info("Using MultiCognitoAuthManager for authentication providers=%s", len(providers))
+        return MultiCognitoAuthManager(providers, send_validation_error_details=True)
+
     if provider == "cognito":
         from kdcube_ai_app.auth.implementations.cognito import CognitoAuthManager
         logger.info("Using CognitoAuthManager for authentication")

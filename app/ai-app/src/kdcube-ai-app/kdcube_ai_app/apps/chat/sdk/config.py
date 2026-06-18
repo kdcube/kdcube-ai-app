@@ -21,7 +21,7 @@ from kdcube_ai_app.apps.chat.sdk.config_scopes import (
     MetricsConfig, MetricsRuntimeConfig, MetricsProxyConfig, MetricsExportConfig,
     MetricsCloudWatchConfig, MetricsPrometheusConfig,
     PyExecConfig, ExecConfig, ReactDebugConfig, AccountingConfig, GitBundlesConfig, ApplicationsConfig,
-    PlatformConfig, IDPLocalConfig, IDPConfig, AuthConfig, ServicesConfig,
+    PlatformConfig, IDPLocalConfig, IDPConfig, AuthConfig, CognitoTrustedProviderConfig, ServicesConfig,
 )
 from kdcube_ai_app.infra.props import get_props_manager
 from kdcube_ai_app.infra.secrets import get_secrets_manager
@@ -746,20 +746,100 @@ class Settings(PLATFORM_CONFIG):
 
     def _resolve_auth_provider_from_assembly(self) -> str | None:
         auth_idp = (self._assembly_str("auth.idp") or "").strip().lower()
-        if auth_idp in {"simple", "cognito", "session", "bundle", "bundle-session"}:
+        if auth_idp in {"simple", "cognito", "multi-cognito", "cognito-multi", "session", "bundle", "bundle-session"}:
             if auth_idp in {"bundle", "bundle-session"}:
                 return "session"
+            if auth_idp == "cognito-multi":
+                return "multi-cognito"
             return auth_idp
 
         # Backward compatibility for older descriptors that overloaded auth.type.
         auth_mode = (self._assembly_str("auth.type") or "").strip().lower()
         if auth_mode == "simple":
             return "simple"
+        if auth_mode in {"multi-cognito", "cognito-multi"}:
+            return "multi-cognito"
         if auth_mode in {"cognito", "delegated"}:
             return "cognito"
         if auth_mode in {"bundle", "bundle-session"}:
             return "session"
         return None
+
+    def _resolve_cognito_trusted_providers(
+        self,
+        *,
+        primary_region: str | None,
+        primary_pool_id: str | None,
+        primary_client_id: str | None,
+    ) -> list[CognitoTrustedProviderConfig]:
+        import json
+
+        raw_providers: Any = None
+        for env_name in ("AUTH_COGNITO_PROVIDERS_JSON", "COGNITO_TRUSTED_PROVIDERS_JSON"):
+            env_val = self._env_str(env_name)
+            if env_val:
+                try:
+                    raw_providers = json.loads(env_val)
+                    break
+                except Exception:
+                    raw_providers = None
+        if raw_providers is None:
+            raw_providers = _load_assembly_plain("auth.providers")
+        if raw_providers is None:
+            raw_providers = _load_assembly_plain("auth.cognito.providers")
+
+        providers: list[CognitoTrustedProviderConfig] = []
+
+        def _add_provider(raw: Any, *, default_alias: str | None = None) -> None:
+            if not isinstance(raw, dict):
+                return
+            kind = str(raw.get("kind") or "cognito").strip().lower()
+            if kind not in {"cognito", "oidc-cognito"}:
+                return
+            data = {
+                "alias": str(raw.get("alias") or raw.get("name") or default_alias or "").strip(),
+                "kind": "cognito",
+                "region": str(raw.get("region") or "").strip(),
+                "user_pool_id": str(raw.get("user_pool_id") or raw.get("pool_id") or "").strip(),
+                "app_client_id": str(raw.get("app_client_id") or raw.get("client_id") or "").strip(),
+                "hosted_ui_domain": str(raw.get("hosted_ui_domain") or raw.get("hosted_ui") or "").strip() or None,
+            }
+            if not (data["alias"] and data["region"] and data["user_pool_id"] and data["app_client_id"]):
+                return
+            try:
+                provider = CognitoTrustedProviderConfig(**data)
+            except Exception:
+                return
+            providers.append(provider)
+
+        if isinstance(raw_providers, dict):
+            for alias, raw in raw_providers.items():
+                _add_provider(raw, default_alias=str(alias))
+        elif isinstance(raw_providers, list):
+            for raw in raw_providers:
+                _add_provider(raw)
+
+        if primary_region and primary_pool_id and primary_client_id:
+            primary = CognitoTrustedProviderConfig(
+                alias="primary",
+                kind="cognito",
+                region=primary_region,
+                user_pool_id=primary_pool_id,
+                app_client_id=primary_client_id,
+            )
+            key = (primary.region, primary.user_pool_id, primary.app_client_id)
+            if not any((p.region, p.user_pool_id, p.app_client_id) == key for p in providers):
+                providers.insert(0, primary)
+
+        deduped: list[CognitoTrustedProviderConfig] = []
+        seen: set[tuple[str, str, str]] = set()
+        for provider in providers:
+            key = (provider.region, provider.user_pool_id, provider.app_client_id)
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(provider)
+        return deduped
 
     def model_post_init(self, __context) -> None:
         descriptors_dir = str(getattr(self, "PLATFORM_DESCRIPTORS_DIR", None) or os.getenv("PLATFORM_DESCRIPTORS_DIR") or "").strip()
@@ -1339,11 +1419,22 @@ class Settings(PLATFORM_CONFIG):
         _log_secret_status("services.openrouter.api_key", self.OPENROUTER_API_KEY, "env" if env_openrouter else "settings")
 
         # 13. Build AUTH config (env > assembly.yaml > default).
+        _cognito_region = self._resolve_str("COGNITO_REGION", "auth.cognito.region")
+        _cognito_user_pool_id = self._resolve_str("COGNITO_USER_POOL_ID", "auth.cognito.user_pool_id")
+        _cognito_app_client_id = self._resolve_str("COGNITO_APP_CLIENT_ID", "auth.cognito.app_client_id")
+        _cognito_trusted_providers = self._resolve_cognito_trusted_providers(
+            primary_region=_cognito_region,
+            primary_pool_id=_cognito_user_pool_id,
+            primary_client_id=_cognito_app_client_id,
+        )
+        if (self.AUTH_PROVIDER or "").strip().lower() in {"", "cognito"} and len(_cognito_trusted_providers) > 1:
+            self.AUTH_PROVIDER = "multi-cognito"
         self.AUTH = AuthConfig(
-            COGNITO_REGION=self._resolve_str("COGNITO_REGION", "auth.cognito.region"),
-            COGNITO_USER_POOL_ID=self._resolve_str("COGNITO_USER_POOL_ID", "auth.cognito.user_pool_id"),
-            COGNITO_APP_CLIENT_ID=self._resolve_str("COGNITO_APP_CLIENT_ID", "auth.cognito.app_client_id"),
+            COGNITO_REGION=_cognito_region,
+            COGNITO_USER_POOL_ID=_cognito_user_pool_id,
+            COGNITO_APP_CLIENT_ID=_cognito_app_client_id,
             COGNITO_SERVICE_CLIENT_ID=self._resolve_str("COGNITO_SERVICE_CLIENT_ID", "auth.cognito.service_client_id"),
+            COGNITO_TRUSTED_PROVIDERS=_cognito_trusted_providers,
             ID_TOKEN_HEADER_NAME=self._resolve_str("ID_TOKEN_HEADER_NAME", "auth.id_token_header_name", "X-ID-Token"),
             AUTH_TOKEN_COOKIE_NAME=self._resolve_str("AUTH_TOKEN_COOKIE_NAME", "auth.auth_token_cookie_name", "__Secure-LATC"),
             ID_TOKEN_COOKIE_NAME=self._resolve_str("ID_TOKEN_COOKIE_NAME", "auth.id_token_cookie_name", "__Secure-LITC"),

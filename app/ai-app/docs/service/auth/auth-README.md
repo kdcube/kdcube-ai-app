@@ -48,13 +48,24 @@ mismatched sessions are rejected (401/403).
 - Implementation: [Cognito auth](../../../src/kdcube-ai-app/kdcube_ai_app/auth/implementations/cognito.py)
 - Uses access token (Bearer) and optional ID token for profile/roles.
 
-2) SimpleIDP (dev / local)
+2) Multi-Cognito (mixed trusted runtimes)
+- Implementation: [Multi Cognito auth](../../../src/kdcube-ai-app/kdcube_ai_app/auth/implementations/multi_cognito.py)
+- `auth.idp: multi-cognito`.
+- Accepts JWTs from every configured `auth.providers` Cognito user-pool/client
+  pair. Provider selection is based on token claims: `iss` plus `client_id`
+  for access tokens or `aud` for ID tokens.
+- The access token and ID token must resolve to the same provider and subject.
+- The browser still logs into one configured OIDC provider. Multi-Cognito is a
+  server-side trust-list mode for mixed scenes where one authenticated shell can
+  call apps hosted by another trusted runtime.
+
+3) SimpleIDP (dev / local)
 - Implementation: [SimpleIDP](../../../src/kdcube-ai-app/kdcube_ai_app/apps/middleware/simple_idp.py)
 - Token-to-user mapping stored in `idp_users.json` (or `IDP_DB_PATH`).
 - Bundle-owned sign-in flows can register users through the cached registry
   utility documented in [Bundle SimpleIDP Bridge](bundle-simple-idp-bridge-README.md).
 
-3) Bundle session auth
+4) Bundle session auth
 - Implementation: [Bundle session auth](../../../src/kdcube-ai-app/kdcube_ai_app/auth/bundle/sessions.py)
 - `auth.idp: session`.
 - A bundle/front shell validates an external identity and calls the async
@@ -63,7 +74,7 @@ mismatched sessions are rejected (401/403).
   session record, user record, and revocation/version state.
 - Details: [Bundle Session Auth](bundle-session-auth-README.md).
 
-4) Delegated auth (proxy login service)
+5) Delegated auth (proxy login service)
 - Proxy service build: [ProxyLogin Dockerfile](../../../deployment/docker/custom-ui-managed-infra/Dockerfile_ProxyLogin)
 - Proxy service wiring: [custom-ui-managed compose](../../../deployment/docker/custom-ui-managed-infra/docker-compose.yaml)
 - The proxy service exchanges credentials and returns tokens; the UI stores
@@ -71,6 +82,38 @@ mismatched sessions are rejected (401/403).
 - The delegated web-proxy supports both the existing masquerade cookie flow and
   a non-masquerade flow where the real auth and identity cookies are already
   present on the request.
+
+### Multi-Cognito descriptor shape
+
+The primary `auth.cognito` block remains the provider surfaced to the browser
+through `/api/cp-frontend-config`. `auth.providers` is the server-side trust
+list used by ingress/proc token verification.
+
+```yaml
+auth:
+  type: cognito
+  idp: multi-cognito
+  cognito:
+    region: eu-west-1
+    user_pool_id: eu-west-1_PRIMARY
+    app_client_id: primary-client
+    service_client_id: primary-client
+  providers:
+  - alias: primary
+    kind: cognito
+    region: eu-west-1
+    user_pool_id: eu-west-1_PRIMARY
+    app_client_id: primary-client
+  - alias: peer
+    kind: cognito
+    region: eu-west-1
+    user_pool_id: eu-west-1_PEER
+    app_client_id: peer-client
+```
+
+Equivalent JSON can be supplied with `AUTH_COGNITO_PROVIDERS_JSON` or
+`COGNITO_TRUSTED_PROVIDERS_JSON`. A provider hint may be transported by future
+clients for routing/logging, but token claims remain authoritative.
 
 ## Bundle Builder Reading Path
 
