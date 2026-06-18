@@ -30,6 +30,14 @@ function hostControlsFromLocation(): boolean {
   return value === '1' || value === 'true' || value === 'yes';
 }
 
+// Single-record mode: a dedicated host window opens the widget with ?record=<mem id>
+// (mirrors the task-tracker wizard). It renders ONLY the MemoryDetail for that one
+// record, reusing the same component + styles as the full widget — no list chrome.
+function recordFromLocation(): string {
+  const params = new URLSearchParams(window.location.search);
+  return String(params.get('record') || params.get('memory_id') || '').trim();
+}
+
 function memRefsFromValue(value: unknown): string[] {
   if (!value || typeof value !== 'object') {
     if (typeof value === 'string' && (value.trim().startsWith('mem:') || value.trim().startsWith('me:'))) return [value.trim()];
@@ -100,6 +108,16 @@ export default function App() {
   } = useAppSelector((state) => state.memories);
   const initialCompact = useMemo(() => compactModeFromLocation(), []);
   const hostControls = useMemo(() => hostControlsFromLocation(), []);
+  const singleRecord = useMemo(() => recordFromLocation(), []);
+  // Single-record window: ?single=1 (the dedicated host window opens with this;
+  // the record arrives via the host 'open' command, like the task wizard) OR a
+  // record id baked straight into ?record=<id>.
+  const singleMode = useMemo(() => {
+    if (recordFromLocation()) return true;
+    const params = new URLSearchParams(window.location.search);
+    const value = String(params.get('single') || '').trim().toLowerCase();
+    return value === '1' || value === 'true' || value === 'yes';
+  }, []);
   const [compact, setCompact] = useState(initialCompact);
   const [editorMode, setEditorMode] = useState<'create' | 'edit' | ''>('');
   const [maintenanceOpen, setMaintenanceOpen] = useState(false);
@@ -143,6 +161,13 @@ export default function App() {
     dispatch(setViewMode(compact ? 'compact' : 'full'));
     void settings.setupParentListener().then(() => dispatch(loadMemories()));
   }, [compact, dispatch]);
+
+  // Single-record mode boot: focus + load the one record named in ?record=<id>,
+  // reusing the same path the host 'open' command uses.
+  useEffect(() => {
+    if (singleRecord) focusAndExpandMemoryIds([singleRecord]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [singleRecord]);
 
   useEffect(() => {
     document.documentElement.dataset.memoryView = compact ? 'compact' : 'full';
@@ -262,6 +287,26 @@ export default function App() {
     if (!memoryIds.length) return;
     event.preventDefault();
     focusMemoryIdsKeepView(memoryIds);
+  }
+
+  // Dedicated single-record window: just the detail (or its editor), reusing the
+  // same component + styles as the full widget. No list / filters / shell chrome.
+  if (singleMode) {
+    return (
+      <div className="memory-single">
+        {error ? (
+          <div className="error-box dismissible-error">
+            <span>{error}</span>
+            <button type="button" onClick={() => dispatch(clearTransientErrors())}>Dismiss</button>
+          </div>
+        ) : null}
+        {editorMode === 'edit' && selectedMemory ? (
+          <MemoryEditor mode="edit" memory={selectedMemory} onClose={() => setEditorMode('')} />
+        ) : (
+          <MemoryDetail onEdit={() => setEditorMode('edit')} single />
+        )}
+      </div>
+    );
   }
 
   return (

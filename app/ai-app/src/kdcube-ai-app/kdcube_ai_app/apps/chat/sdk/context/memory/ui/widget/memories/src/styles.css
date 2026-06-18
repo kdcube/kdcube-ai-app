@@ -1552,3 +1552,19 @@ input[type="range"] { accent-color: var(--teal); }
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* Dedicated single-record window (mirrors the task wizard): just the detail,
+   reusing the memories detail styles, filling the host window with a clean scroll. */
+.memory-single {
+  height: 100%;
+  overflow: auto;
+  padding: 12px 14px;
+  background: var(--surface, #fff);
+  box-sizing: border-box;
+}
+.memory-single .memory-detail {
+  padding: 0;
+}
+.detail-actions-open {
+  margin-bottom: 6px;
+}

@@ -29,9 +29,12 @@ function uniqueTerms(...groups: string[][]): string[] {
 
 interface MemoryDetailProps {
   onEdit: () => void;
+  // When true the detail is already in its own dedicated window — hide the
+  // "Open in window" affordance (it would be redundant / recursive).
+  single?: boolean;
 }
 
-export function MemoryDetail({ onEdit }: MemoryDetailProps) {
+export function MemoryDetail({ onEdit, single = false }: MemoryDetailProps) {
   const dispatch = useAppDispatch();
   const { allowWrite, eventsLoading, memories, saving, selectedEvents, selectedId } = useAppSelector((state) => state.memories);
   const memory = memories.find((item) => item.id === selectedId);
@@ -53,6 +56,30 @@ export function MemoryDetail({ onEdit }: MemoryDetailProps) {
         </div>
         <span className={`status-pill status-${memory.status}`}>{memory.status}</span>
       </div>
+
+      {!single ? (
+        <div className="detail-actions detail-actions-open">
+          <button
+            type="button"
+            className="secondary-button"
+            title="Open this memory in its own window"
+            onClick={() => {
+              try {
+                window.parent.postMessage({
+                  type: 'kdcube-memory-open-item',
+                  widget: 'memories',
+                  memory_id: memory.id,
+                  object_ref: `mem:${memory.id}`,
+                }, '*');
+              } catch {
+                /* no host listening — inline-only context */
+              }
+            }}
+          >
+            Open in window
+          </button>
+        </div>
+      ) : null}
 
       {allowWrite ? (
         <div className="detail-actions">
