@@ -78,6 +78,60 @@ WEB_SOURCE_RESULT_TOOL_IDS = {"web_tools.web_search", "web_tools.web_fetch"}
 
 logger = logging.getLogger(__name__)
 
+
+@dataclass(frozen=True)
+class TimelineEventCursor:
+    timestamp: str = ""
+    event_id: str = ""
+    block_path: str = ""
+    block_index: Optional[int] = None
+    sequence: Optional[int] = None
+    fingerprint: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        out: Dict[str, Any] = {}
+        if self.timestamp:
+            out["timestamp"] = self.timestamp
+        if self.event_id:
+            out["event_id"] = self.event_id
+        if self.block_path:
+            out["block_path"] = self.block_path
+        if self.block_index is not None:
+            out["block_index"] = self.block_index
+        if self.sequence is not None:
+            out["sequence"] = self.sequence
+        if self.fingerprint:
+            out["fingerprint"] = self.fingerprint
+        return out
+
+    @classmethod
+    def from_any(cls, raw: Any) -> "TimelineEventCursor":
+        if not isinstance(raw, dict):
+            return cls()
+        block_index = raw.get("block_index")
+        if block_index is not None:
+            try:
+                block_index = int(block_index)
+            except Exception:
+                block_index = None
+        sequence = raw.get("sequence")
+        if sequence is not None:
+            try:
+                sequence = int(sequence)
+            except Exception:
+                sequence = None
+        return cls(
+            timestamp=_block_ts({"ts": raw.get("timestamp")}),
+            event_id=str(raw.get("event_id") or "").strip(),
+            block_path=str(raw.get("block_path") or "").strip(),
+            block_index=block_index,
+            sequence=sequence,
+            fingerprint=str(raw.get("fingerprint") or "").strip(),
+        )
+
+    def is_empty(self) -> bool:
+        return not (self.timestamp or self.event_id or self.block_path or self.fingerprint)
+
 def _maybe_parse_json(val: str) -> Optional[Any]:
     try:
         return json.loads(val)
@@ -145,6 +199,7 @@ def build_timeline_payload(
     conversation_started_at: Optional[str] = None,
     last_external_event_id: Optional[str] = None,
     last_external_event_seq: Optional[int] = None,
+    last_rendered_event_cursor: Optional[TimelineEventCursor] = None,
     cache_last_touch_at: Optional[int] = None,
     cache_last_ttl_seconds: Optional[int] = None,
     last_known_feedback_ts: Optional[str] = None,
@@ -162,6 +217,11 @@ def build_timeline_payload(
         "last_activity_at": last_activity_at or "",
         "last_external_event_id": last_external_event_id or "",
         "last_external_event_seq": last_external_event_seq,
+        "last_rendered_event_cursor": (
+            last_rendered_event_cursor.to_dict()
+            if isinstance(last_rendered_event_cursor, TimelineEventCursor)
+            else {}
+        ),
         "cache_last_touch_at": cache_last_touch_at,
         "cache_last_ttl_seconds": cache_last_ttl_seconds,
         "last_known_feedback_ts": last_known_feedback_ts or "",
@@ -188,6 +248,7 @@ def parse_timeline_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
             last_external_event_seq = int(last_external_event_seq)
         except Exception:
             last_external_event_seq = None
+    last_rendered_event_cursor = TimelineEventCursor.from_any(payload.get("last_rendered_event_cursor"))
     turn_ids = payload.get("turn_ids")
     if not isinstance(turn_ids, list) or not turn_ids:
         turn_ids = extract_turn_ids_from_blocks(blocks)
@@ -219,6 +280,7 @@ def parse_timeline_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         "last_activity_at": payload.get("last_activity_at") or "",
         "last_external_event_id": last_external_event_id or "",
         "last_external_event_seq": last_external_event_seq,
+        "last_rendered_event_cursor": last_rendered_event_cursor,
         "cache_last_touch_at": cache_last_touch_at,
         "cache_last_ttl_seconds": cache_last_ttl_seconds,
         "last_known_feedback_ts": last_known_feedback_ts,
@@ -339,11 +401,82 @@ def _external_event_block_ts(block: Dict[str, Any]) -> str:
     return _block_ts(block)
 
 
-def _max_external_event_block_ts(blocks: List[Dict[str, Any]]) -> str:
-    out = ""
-    for blk in blocks or []:
-        out = _later_ts(out, _external_event_block_ts(blk))
-    return out
+def _event_cursor_from_block(block: Dict[str, Any], *, block_index: int) -> TimelineEventCursor:
+    if not isinstance(block, dict):
+        return TimelineEventCursor()
+    timestamp = _external_event_block_ts(block)
+    if not timestamp:
+        return TimelineEventCursor()
+    meta = block.get("meta") if isinstance(block.get("meta"), dict) else {}
+    event_meta = meta.get("event") if isinstance(meta.get("event"), dict) else {}
+    event_id = str(
+        meta.get("event_id")
+        or meta.get("message_id")
+        or event_meta.get("event_id")
+        or event_meta.get("message_id")
+        or ""
+    ).strip()
+    block_path = str(
+        block.get("path")
+        or meta.get("logical_path")
+        or meta.get("path")
+        or event_meta.get("logical_path")
+        or event_meta.get("path")
+        or ""
+    ).strip()
+    sequence_raw = meta.get("sequence")
+    if sequence_raw is None:
+        sequence_raw = event_meta.get("sequence")
+    sequence: Optional[int] = None
+    if sequence_raw is not None:
+        try:
+            sequence = int(sequence_raw)
+        except Exception:
+            sequence = None
+    fingerprint_source = {
+        "timestamp": timestamp,
+        "event_id": event_id,
+        "block_path": block_path,
+        "block_index": int(block_index),
+        "sequence": sequence,
+        "type": str(block.get("type") or "").strip(),
+        "turn_id": str(block.get("turn_id") or block.get("turn") or "").strip(),
+    }
+    fingerprint = hashlib.sha1(
+        json.dumps(fingerprint_source, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    ).hexdigest()
+    return TimelineEventCursor(
+        timestamp=timestamp,
+        event_id=event_id,
+        block_path=block_path,
+        block_index=int(block_index),
+        sequence=sequence,
+        fingerprint=fingerprint,
+    )
+
+
+def _last_rendered_external_event_cursor(blocks: List[Dict[str, Any]]) -> TimelineEventCursor:
+    cursor = TimelineEventCursor()
+    for idx, blk in enumerate(blocks or []):
+        candidate = _event_cursor_from_block(blk, block_index=idx)
+        if not candidate.is_empty():
+            cursor = candidate
+    return cursor
+
+
+def _later_timeline_event_cursor(
+    current: TimelineEventCursor,
+    candidate: TimelineEventCursor,
+) -> TimelineEventCursor:
+    if candidate.is_empty():
+        return current
+    if current.is_empty():
+        return candidate
+    current_ts = _timestamp_epoch(current.timestamp)
+    candidate_ts = _timestamp_epoch(candidate.timestamp)
+    if candidate_ts >= current_ts:
+        return candidate
+    return current
 
 
 def _first_user_message_ts(blocks: List[Dict[str, Any]]) -> str:
@@ -1564,7 +1697,7 @@ class Timeline:
     _feedback_seen: Dict[str, str] = field(default_factory=dict, init=False, repr=False)
     _feedback_updates: List[Dict[str, Any]] = field(default_factory=list, init=False, repr=False)
     _feedback_updates_integrated: bool = field(default=False, init=False, repr=False)
-    last_render_processed_event_timestamp: str = field(default="", init=False, repr=False)
+    last_rendered_event_cursor: TimelineEventCursor = field(default_factory=TimelineEventCursor, init=False, repr=False)
     version: int = 1
     ts: str = ""
     blocks: List[Dict[str, Any]] = None
@@ -1593,10 +1726,14 @@ class Timeline:
                 self._lock = None
         self._cache_ttl_bootstrap = self.cache_last_ttl_seconds is not None
 
+    @property
+    def last_render_processed_event_timestamp(self) -> str:
+        return self.last_rendered_event_cursor.timestamp
+
     @classmethod
     def from_payload(cls, payload: Dict[str, Any], *, runtime: RuntimeCtx, svc: Optional[Any] = None) -> "Timeline":
         parsed = parse_timeline_payload(payload or {})
-        return cls(
+        timeline = cls(
             runtime=runtime,
             svc=svc,
             version=int(parsed.get("version") or 1),
@@ -1611,6 +1748,10 @@ class Timeline:
             cache_last_ttl_seconds=parsed.get("cache_last_ttl_seconds"),
             last_known_feedback_ts=parsed.get("last_known_feedback_ts") or "",
         )
+        cursor = parsed.get("last_rendered_event_cursor")
+        if isinstance(cursor, TimelineEventCursor):
+            timeline.last_rendered_event_cursor = cursor
+        return timeline
 
     def to_payload(self) -> Dict[str, Any]:
         return build_timeline_payload(
@@ -1620,6 +1761,7 @@ class Timeline:
             conversation_started_at=self.conversation_started_at,
             last_external_event_id=self.last_external_event_id,
             last_external_event_seq=self.last_external_event_seq,
+            last_rendered_event_cursor=self.last_rendered_event_cursor,
             cache_last_touch_at=self.cache_last_touch_at,
             cache_last_ttl_seconds=self.cache_last_ttl_seconds,
             last_known_feedback_ts=self.last_known_feedback_ts,
@@ -1646,6 +1788,7 @@ class Timeline:
                 conversation_started_at=self.conversation_started_at,
                 last_external_event_id=self.last_external_event_id,
                 last_external_event_seq=self.last_external_event_seq,
+                last_rendered_event_cursor=self.last_rendered_event_cursor,
                 cache_last_touch_at=self.cache_last_touch_at,
                 cache_last_ttl_seconds=self.cache_last_ttl_seconds,
                 last_known_feedback_ts=self.last_known_feedback_ts,
@@ -5486,6 +5629,11 @@ class Timeline:
     ) -> List[Dict[str, Any]]:
         self.apply_session_cache_ttl_pruning()
         blocks = self._collect_blocks()
+        render_event_cursor = _last_rendered_external_event_cursor(
+            self._restore_missing_turn_headers_for_render(
+                self._slice_after_compaction_summary(blocks)
+            )
+        )
         if self.runtime.max_tokens:
             render_forces_sanitize = bool(force_sanitize)
             sanitize_trigger_reasons: List[str] = ["forced"] if force_sanitize else []
@@ -5564,8 +5712,11 @@ class Timeline:
             timeline_blocks=blocks,
             cache_last=bool(cache_last),
         )
-        self.last_render_processed_event_timestamp = _max_external_event_block_ts(visible_blocks)
         msg_blocks = self._blocks_to_message_blocks(visible_blocks)
+        self.last_rendered_event_cursor = _later_timeline_event_cursor(
+            self.last_rendered_event_cursor,
+            render_event_cursor,
+        )
         if getattr(self.runtime, "debug_timeline", False):
             try:
                 self._write_render_debug(
@@ -7317,6 +7468,7 @@ class Timeline:
             conversation_started_at=self.conversation_started_at,
             last_external_event_id=self.last_external_event_id,
             last_external_event_seq=self.last_external_event_seq,
+            last_rendered_event_cursor=self.last_rendered_event_cursor,
             cache_last_touch_at=self.cache_last_touch_at,
             cache_last_ttl_seconds=self.cache_last_ttl_seconds,
             last_known_feedback_ts=self.last_known_feedback_ts,

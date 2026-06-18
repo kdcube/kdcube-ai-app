@@ -289,20 +289,28 @@ class ContextBrowser:
             return None
         try:
             handler_processed_event_timestamp = ""
+            handler_processed_event_id = ""
             if self._timeline is not None:
+                cursor = getattr(self._timeline, "last_rendered_event_cursor", None)
                 handler_processed_event_timestamp = str(
-                    getattr(self._timeline, "last_render_processed_event_timestamp", "") or ""
+                    getattr(cursor, "timestamp", None)
+                    or getattr(self._timeline, "last_render_processed_event_timestamp", "")
+                    or ""
                 )
+                handler_processed_event_id = str(getattr(cursor, "event_id", "") or "")
             decision = await orchestrator.try_close_handler(
                 turn_id=str(self._runtime_ctx.turn_id or ""),
                 handler_processed_event_timestamp=handler_processed_event_timestamp,
+                handler_processed_event_id=handler_processed_event_id,
             )
             if not decision.closed:
                 self.log.log(
                     f"[timeline.external]: handler close deferred "
                     f"conversation={self._runtime_ctx.conversation_id} turn_id={self._runtime_ctx.turn_id} "
                     f"reason={decision.reason} handler_processed_event_timestamp={handler_processed_event_timestamp} "
-                    f"last_processed_event_timestamp={decision.state.last_processed_event_timestamp}",
+                    f"handler_processed_event_id={handler_processed_event_id} "
+                    f"last_processed_event_timestamp={decision.state.last_processed_event_timestamp} "
+                    f"last_processed_event_id={getattr(decision.state, 'last_processed_event_id', '')}",
                     "INFO",
                 )
             return bool(decision.closed)

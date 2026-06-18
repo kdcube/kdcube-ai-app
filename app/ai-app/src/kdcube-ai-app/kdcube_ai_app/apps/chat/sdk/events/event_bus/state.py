@@ -134,6 +134,27 @@ def event_timestamp(event: Any) -> str:
     return normalize_timestamp(getattr(event, "created_at", None))
 
 
+def event_id(event: Any) -> str:
+    text = str(getattr(event, "message_id", "") or getattr(event, "event_id", "") or "").strip()
+    if text:
+        return text
+    payload = getattr(event, "payload", None)
+    if isinstance(payload, dict):
+        accepted = payload.get("event")
+        if isinstance(accepted, dict):
+            text = str(accepted.get("event_id") or accepted.get("message_id") or "").strip()
+            if text:
+                return text
+    task_payload = getattr(event, "task_payload", None)
+    if isinstance(task_payload, dict):
+        event_meta = task_payload.get("event")
+        if isinstance(event_meta, dict):
+            text = str(event_meta.get("event_id") or event_meta.get("message_id") or "").strip()
+            if text:
+                return text
+    return ""
+
+
 def event_is_reactive(event: Any) -> bool:
     payload = getattr(event, "payload", None)
     if isinstance(payload, dict):
@@ -157,6 +178,7 @@ class EventLaneState:
     handler_status_at: str = ""
     last_processed_reactive_event_timestamp: str = ""
     last_processed_event_timestamp: str = ""
+    last_processed_event_id: str = ""
     consumer_status: str = ""
     consumer_status_at: str = ""
 

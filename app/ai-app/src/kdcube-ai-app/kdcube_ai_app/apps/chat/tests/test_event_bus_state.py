@@ -687,6 +687,40 @@ async def test_full_picture_happy_path_and_close_gate():
 
 
 @pytest.mark.asyncio
+async def test_close_gate_uses_event_id_to_disambiguate_same_timestamp_events():
+    orchestrator = _orchestrator()
+    await orchestrator.open_handler(turn_id="turn-1")
+
+    accept = await orchestrator.accept_events_for_open_handler(
+        [
+            _event("2026-06-10T10:00:00Z", reactive=True, event_id="evt-1"),
+            _event("2026-06-10T10:00:00Z", reactive=True, event_id="evt-2"),
+        ],
+        turn_id="turn-1",
+    )
+
+    assert accept.accepted
+    assert accept.state.last_processed_event_timestamp == "2026-06-10T10:00:00Z"
+    assert accept.state.last_processed_event_id == "evt-2"
+
+    rejected = await orchestrator.try_close_handler(
+        turn_id="turn-1",
+        handler_processed_event_timestamp="2026-06-10T10:00:00Z",
+        handler_processed_event_id="evt-1",
+    )
+    assert not rejected.closed
+    assert rejected.reason == "new_events_after_handler_snapshot"
+
+    closed = await orchestrator.try_close_handler(
+        turn_id="turn-1",
+        handler_processed_event_timestamp="2026-06-10T10:00:00Z",
+        handler_processed_event_id="evt-2",
+    )
+    assert closed.closed
+    assert closed.reason == "closed"
+
+
+@pytest.mark.asyncio
 async def test_open_handler_does_not_overwrite_existing_open_turn():
     orchestrator = _orchestrator()
 

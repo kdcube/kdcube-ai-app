@@ -9,6 +9,7 @@ from typing import Any, Awaitable, Callable, Optional, Sequence
 from .state import (
     EventLaneState,
     RedisEventLaneStateTable,
+    event_id,
     event_is_reactive,
     event_timestamp,
     later_timestamp,
@@ -78,9 +79,11 @@ class ConversationEventBusOrchestrator:
         *,
         turn_id: str,
         handler_processed_event_timestamp: str = "",
+        handler_processed_event_id: str = "",
     ) -> EventBusCloseDecision:
         turn_id = str(turn_id or "").strip()
         processed_ts = str(handler_processed_event_timestamp or "").strip()
+        processed_event_id = str(handler_processed_event_id or "").strip()
         now = utc_timestamp()
 
         async with self.table.lock():
@@ -91,7 +94,18 @@ class ConversationEventBusOrchestrator:
                     state=state,
                     reason="handler_not_open",
                 )
-            if timestamp_lt(processed_ts, state.last_processed_event_timestamp):
+            processed_before_state = timestamp_lt(processed_ts, state.last_processed_event_timestamp)
+            if (
+                not processed_before_state
+                and processed_ts
+                and state.last_processed_event_timestamp
+                and processed_ts == state.last_processed_event_timestamp
+                and state.last_processed_event_id
+                and processed_event_id
+                and processed_event_id != state.last_processed_event_id
+            ):
+                processed_before_state = True
+            if processed_before_state:
                 return EventBusCloseDecision(
                     closed=False,
                     state=state,
@@ -182,10 +196,14 @@ class ConversationEventBusOrchestrator:
 
     async def record_processed_events(self, events: Sequence[Any], *, turn_id: str = "") -> EventLaneState:
         max_ts = ""
+        max_event_id = ""
         max_reactive_ts = ""
         for event in events or []:
             ts = event_timestamp(event)
-            max_ts = later_timestamp(max_ts, ts)
+            next_max_ts = later_timestamp(max_ts, ts)
+            if ts and next_max_ts == ts:
+                max_event_id = event_id(event)
+            max_ts = next_max_ts
             if event_is_reactive(event):
                 max_reactive_ts = later_timestamp(max_reactive_ts, ts)
 
@@ -198,6 +216,8 @@ class ConversationEventBusOrchestrator:
                 state.last_processed_event_timestamp,
                 max_ts,
             )
+            if max_ts and state.last_processed_event_timestamp == max_ts:
+                state.last_processed_event_id = max_event_id
             state.last_processed_reactive_event_timestamp = later_timestamp(
                 state.last_processed_reactive_event_timestamp,
                 max_reactive_ts,
@@ -217,10 +237,14 @@ class ConversationEventBusOrchestrator:
     ) -> EventBusAcceptDecision:
         turn_id = str(turn_id or "").strip()
         max_ts = ""
+        max_event_id = ""
         max_reactive_ts = ""
         for event in events or []:
             ts = event_timestamp(event)
-            max_ts = later_timestamp(max_ts, ts)
+            next_max_ts = later_timestamp(max_ts, ts)
+            if ts and next_max_ts == ts:
+                max_event_id = event_id(event)
+            max_ts = next_max_ts
             if event_is_reactive(event):
                 max_reactive_ts = later_timestamp(max_reactive_ts, ts)
 
@@ -245,6 +269,8 @@ class ConversationEventBusOrchestrator:
                 state.last_processed_event_timestamp,
                 max_ts,
             )
+            if max_ts and state.last_processed_event_timestamp == max_ts:
+                state.last_processed_event_id = max_event_id
             state.last_processed_reactive_event_timestamp = later_timestamp(
                 state.last_processed_reactive_event_timestamp,
                 max_reactive_ts,

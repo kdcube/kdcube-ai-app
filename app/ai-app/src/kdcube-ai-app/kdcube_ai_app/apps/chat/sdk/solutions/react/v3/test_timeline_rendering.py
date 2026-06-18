@@ -1659,3 +1659,95 @@ def test_assistant_completion_attempt_renders_until_committed_completion_exists(
     assert "Draft final answer before all artifacts are done." not in text
     assert "[ASSISTANT MESSAGE]" in text
     assert "Committed final answer after all artifacts are done." in text
+
+
+def test_render_event_cursor_uses_source_block_when_event_block_is_hidden():
+    ctx = RuntimeCtx(
+        turn_id="turn_event_cursor",
+        started_at="2026-05-13T10:00:00Z",
+    )
+    tl = Timeline(runtime=ctx)
+    tl.blocks.extend([
+        tl._block(type="turn.header", author="system", turn_id=ctx.turn_id, ts=ctx.started_at, text="[TURN turn_event_cursor]"),
+        {
+            "type": "user.followup",
+            "author": "user",
+            "turn_id": ctx.turn_id,
+            "ts": "2026-05-13T10:00:05Z",
+            "path": "ar:turn_event_cursor.external.followup.evt_1",
+            "text": "hidden followup text",
+            "hidden": True,
+            "replacement_text": "[hidden followup]",
+            "meta": {
+                "event_id": "evt_1",
+                "message_id": "evt_1",
+                "event_source_id": "event.user.followup",
+                "event_kind": "followup",
+                "timestamp": "2026-05-13T10:00:05Z",
+                "sequence": 7,
+            },
+        },
+    ])
+
+    _run(tl.render(cache_last=True))
+
+    cursor = tl.last_rendered_event_cursor
+    assert cursor.timestamp == "2026-05-13T10:00:05Z"
+    assert cursor.event_id == "evt_1"
+    assert cursor.block_path == "ar:turn_event_cursor.external.followup.evt_1"
+    assert cursor.sequence == 7
+
+    restored = Timeline.from_payload(tl.to_payload(), runtime=ctx)
+    assert restored.last_rendered_event_cursor.to_dict() == cursor.to_dict()
+
+
+@pytest.mark.asyncio
+async def test_render_event_cursor_is_captured_before_render_time_sanitization(monkeypatch):
+    ctx = RuntimeCtx(
+        turn_id="turn_event_cursor_compacted",
+        started_at="2026-05-13T10:00:00Z",
+        max_tokens=50,
+    )
+    tl = Timeline(runtime=ctx)
+    tl.blocks.extend([
+        tl._block(type="turn.header", author="system", turn_id=ctx.turn_id, ts=ctx.started_at, text="[TURN turn_event_cursor_compacted]"),
+        {
+            "type": "user.followup",
+            "author": "user",
+            "turn_id": ctx.turn_id,
+            "ts": "2026-05-13T10:00:06Z",
+            "path": "ar:turn_event_cursor_compacted.external.followup.evt_2",
+            "text": "large followup text " * 100,
+            "meta": {
+                "event_id": "evt_2",
+                "message_id": "evt_2",
+                "event_source_id": "event.user.followup",
+                "event_kind": "followup",
+                "timestamp": "2026-05-13T10:00:06Z",
+            },
+        },
+    ])
+
+    async def fake_sanitize_context_blocks(**kwargs):
+        blocks = list(kwargs.get("blocks") or [])
+        return [
+            blocks[0],
+            {
+                "type": "conv.range.summary",
+                "author": "system",
+                "turn_id": ctx.turn_id,
+                "ts": "2026-05-13T10:00:07Z",
+                "path": "su:turn_event_cursor_compacted.conv.range.summary",
+                "text": "summary produced from compacted followup",
+                "meta": {"covered_turn_ids": [ctx.turn_id]},
+            },
+        ]
+
+    monkeypatch.setattr(tl, "sanitize_context_blocks", fake_sanitize_context_blocks)
+
+    await tl.render(cache_last=True)
+
+    cursor = tl.last_rendered_event_cursor
+    assert cursor.timestamp == "2026-05-13T10:00:06Z"
+    assert cursor.event_id == "evt_2"
+    assert cursor.block_path == "ar:turn_event_cursor_compacted.external.followup.evt_2"
