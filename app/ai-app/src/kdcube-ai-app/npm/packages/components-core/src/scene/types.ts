@@ -111,6 +111,47 @@ export interface SceneDropTarget {
   deliverContext?: (request: SceneContextDropRequest) => void | Promise<void>
 }
 
+export interface SceneContextDropTargetConfig extends SceneRecord {
+  surfaceRef?: string
+  railId?: string
+  targetSurface?: string
+  acceptsRootNamespaces?: string[] | string
+  accepts?: string[] | string
+  dropEffect?: SceneContextDropEffect | string
+  label?: string
+  delivery?: string
+  enabled?: boolean
+}
+
+export interface NormalizedSceneContextDropTargetConfig {
+  key: string
+  surfaceRef: string
+  railId: string
+  acceptsRootNamespaces: string[]
+  dropEffect: SceneContextDropEffect | string
+  label?: string
+  targetSurface?: string
+  delivery?: string
+  raw: SceneContextDropTargetConfig
+}
+
+export type SceneContextDropTargetIssueCode =
+  | 'target_disabled'
+  | 'target_not_record'
+  | 'surface_ref_missing'
+  | 'rail_id_missing'
+  | 'accepted_namespaces_missing'
+  | 'delivery_unknown'
+  | 'delivery_missing'
+  | 'open_route_missing'
+
+export interface SceneContextDropTargetIssue {
+  key: string
+  code: SceneContextDropTargetIssueCode
+  message: string
+  delivery?: string
+}
+
 export interface SceneObjectOpenActionRequest {
   action: 'open'
   object_ref: string

@@ -1,3 +1,4 @@
+export * from './dropTargets'
 export * from './eventBus'
 export * from './hostDrag'
 export * from './runtime'

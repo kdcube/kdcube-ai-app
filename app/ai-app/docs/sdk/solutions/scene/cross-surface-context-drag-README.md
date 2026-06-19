@@ -327,16 +327,17 @@ Namespace styles are app/scene configuration, keyed by root namespace:
 
 ```json
 {
-  "mem": { "label": "Memory", "accent": "#16a34a" },
-  "task": { "label": "Task", "accent": "#2563eb" },
-  "fi": { "label": "File", "accent": "#64748b" },
-  "cnv": { "label": "Canvas", "accent": "#7c3aed" }
+  "mem": { "label": "Memory", "color": "#16a34a", "border": "#16a34a", "focus": "#22c55e" },
+  "task": { "label": "Task", "color": "#2563eb", "border": "#2563eb", "focus": "#60a5fa" },
+  "fi": { "label": "File", "color": "#ca8a04", "border": "#ca8a04", "focus": "#facc15" },
+  "cnv": { "label": "Canvas", "color": "#7c3aed", "border": "#7c3aed", "focus": "#a78bfa" }
 }
 ```
 
 Every surface that renders context chips/cards should receive the same map from
-scene config. The style is not owned by canvas, chat, memory, or task. A scoped
-ref such as `task:issue:attachment:...` uses style key `task`.
+the runtime namespace presentation config. The style is not owned by canvas,
+chat, memory, task, or a host page. A scoped ref such as
+`task:issue:attachment:...` uses style key `task`.
 
 ## SDK Runtime API
 
@@ -394,6 +395,20 @@ DOM, rail buttons, iframe creation, and local command delivery. Compatibility
 message aliases can be accepted through `startTypes`, but the canonical producer
 contract remains `kdcube-context-drag-start`.
 
+Drop target maps are also normalized in the shared package:
+
+```ts
+mergeSceneContextDropTargets(sceneTargets, profileOverrides)
+sceneContextDropTargetsFromConfig(activeProfile)
+normalizeSceneContextDropTargets(activeProfile, {
+  knownDeliveries: ["chat.attach", "pinboard.pin", "memory.open", "task.open"]
+})
+```
+
+Those helpers validate structural routing config only: `surfaceRef`, `railId`,
+`acceptsRootNamespaces`, `dropEffect`, `targetSurface`, and `delivery`.
+Namespace colors remain server-owned namespace presentation data.
+
 Current consumers:
 
 - The versatile scene imports `@kdcube/components-core/scene`, which currently
@@ -411,7 +426,7 @@ Current consumers:
 | Chat/search result source surfaces | Emit or carry canonical context payloads in current paths. | Continue replacing remaining local helpers with package helpers as chat package becomes default. |
 | Standalone pinboard source surface | Emits `kdcube-context-drag-start/end` when cards are dragged. | Needs to stay aligned when canvas moves into npm packages. |
 | Embedded canvas board in versatile scene | `onDragCard` now feeds the scene context-drag broker. | Continue validating canvas-card -> owning-widget drops across mounted external panels. |
-| Plain-script host scene | Uses the scene broker contract for context normalization, namespace matching, and provider-backed open drops. | Host-local adapter remains until that host can import the ESM package. |
+| Plain-script host scene | Uses the scene broker contract for context normalization, namespace matching, provider-backed open drops, and config-driven target maps. | Host-local adapter remains until that host can import the ESM package. |
 | Versatile scene | Uses `createSceneRuntime()` for target-surface dispatch and `createContextDragBroker()` for owning-surface drops. | Canvas pinning remains a host-provided `pin` effect, by design. |
 | Memory widget | Has both host-command open and native drop parsing. | Native drop parser is convenience only; host-command open is the generic path. |
 | Task widget | Has target-surface command handling for issue list/editor paths. | Needs reliable broker input from all source surfaces. |
