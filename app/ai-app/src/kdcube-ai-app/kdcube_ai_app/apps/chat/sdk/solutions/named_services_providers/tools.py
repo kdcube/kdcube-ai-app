@@ -718,8 +718,8 @@ async def object_schema(
     namespace: Annotated[str, "Configured named-service namespace or provider-declared scoped namespace, for example 'sensor' or 'sensor:humidity:aggr'."],
     object_kind: Annotated[str, "Namespace object kind, for example 'sensor.temperature' or 'sensor.humidity.aggr'."] = "",
     object_ref: Annotated[str, "Canonical object ref when asking for the schema of a concrete ref."] = "",
-) -> Annotated[Dict[str, Any], "Named service response envelope with schema and usage guidance."]:
-    """Return provider-defined schema and tool payload guidance for objects in a namespace."""
+) -> Annotated[Dict[str, Any], "Named service response envelope with object fields, search filter contract, and usage guidance."]:
+    """Return provider-defined object fields, search filter contract, and tool payload guidance."""
 
     payload: Dict[str, Any] = {}
     if object_kind:
@@ -829,7 +829,7 @@ def list_tools() -> Dict[str, Dict[str, Any]]:
         },
         "object_schema": {
             "callable": object_schema,
-            "description": "Return provider-defined object schema and named-service tool payload guidance.",
+            "description": "Return provider-defined object fields, search filter contract, and named-service tool payload guidance.",
         },
         "object_action": {
             "callable": object_action,
