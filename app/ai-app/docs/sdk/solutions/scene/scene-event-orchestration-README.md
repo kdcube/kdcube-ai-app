@@ -219,18 +219,19 @@ SSE stream, the default is `sse`. If it has no live stream and only reacts to
 host pings, the default is `scene` or an explicit host subscription in the
 widget.
 
-## Website Scene Example
+## Plain-Script Host Example
 
-The kdcube.tech landing scene uses a small host-side broker:
+A non-React host can use the same scene contract through a small host-side
+broker. The concrete file names are host-owned; the reusable shape is:
 
 ```text
-website/scene-event-bus.js
+host event bus module
   create({ getAliases, defaultSubscriptions, isReady, post, queue })
   register(alias, subscriptions)
   unregister(alias)
   publish({ source, channel, type, envelope, ts })
 
-website/scene-summon.js
+host scene module
   opens one scene-level EventSource per runtime scope
   parses incoming SSE events
   calls sceneEventBus.publish(...)
@@ -242,10 +243,10 @@ The host can keep backward-compatible defaults for older widgets. For example,
 current usage-card build registers its own explicit claim. Once the iframe sends
 `kdcube-scene-subscribe`, the explicit widget claim replaces the host default.
 
-## Widget Ownership Map
+## Example Widget Ownership Map
 
-This table is the current landing-scene sitemap. Private app widgets are named
-by role, not by source path.
+This table shows the intended ownership pattern for a host scene. Private app
+widgets are named by role, not by source path.
 
 | Surface / widget | Event Bus ownership | Data Bus ownership | Scene claim | Events listened for | Notes |
 | --- | --- | --- | --- | --- | --- |
@@ -255,6 +256,7 @@ by role, not by source path.
 | News preview widget | Self by default; scene when configured | None | Conditional | `kdcube.news.pipeline_event` | `liveEventsTransport` selects widget SSE vs host relay. |
 | Full/admin news widgets | Self, only while the admin stream is visible | None | No by default | `kdcube.news.pipeline_event` | The stream is opened lazily in the admin view. |
 | Pinboard / canvas board | None | Self | No | Canvas patch events | The board owns its Data Bus Socket.IO subscription. Event Bus scene claims are not used for canvas patches. |
+| Telegram miniapp example | None | Self | No | Its configured Data Bus/service stream | The miniapp owns its Socket.IO/Data Bus client. It should not claim scene Event Bus delivery for the same stream. |
 | Memory widget | None currently | None | None currently | No current memory-record event family in the landing scene | Memory opens objects through scene commands and local API calls. A future `memory.record.changed` event can use this same claim pattern when the producer exists. |
 | Task list widget | Scene | None | Yes | `task_tracker.task.changed` | The task app is private. The widget has no task-change SSE of its own. |
 | Task wizard/editor | Scene for task-change events; self for its internal assistant chat | None | Yes for task changes | `task_tracker.task.changed`; internal wizard chat stream is self-owned | Scene relays task-change events. The wizard's own assistant stream is separate and remains widget-owned. |

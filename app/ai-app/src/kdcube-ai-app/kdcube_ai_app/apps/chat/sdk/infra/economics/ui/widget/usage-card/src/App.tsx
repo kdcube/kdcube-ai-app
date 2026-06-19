@@ -22,6 +22,8 @@ import type { ProfileResponse, QuotaBreakdown } from './api/types';
 
 const REFRESH_DEBOUNCE_MS = 600;
 const REFRESH_MESSAGE_TYPE = 'kdcube-usage-card-refresh';
+const SCENE_SUBSCRIBE_MESSAGE_TYPE = 'kdcube-scene-subscribe';
+const SCENE_UNSUBSCRIBE_MESSAGE_TYPE = 'kdcube-scene-unsubscribe';
 
 interface CardStatus {
   loading: boolean;
@@ -232,6 +234,31 @@ function notifyHost(message: Record<string, unknown>): void {
   }
 }
 
+function subscribeToSceneUsageEvents(): void {
+  notifyHost({
+    type: SCENE_SUBSCRIBE_MESSAGE_TYPE,
+    widget: 'usage_card',
+    subscriptions: [
+      {
+        id: 'usage-card-accounting-refresh',
+        source: 'sse',
+        events: ['accounting.usage'],
+        channels: ['chat_service', 'chat_step', 'accounting.usage', 'message'],
+        forwardType: REFRESH_MESSAGE_TYPE,
+        reason: 'accounting.usage',
+        debounceMs: 800,
+      },
+    ],
+  });
+}
+
+function unsubscribeFromSceneUsageEvents(): void {
+  notifyHost({
+    type: SCENE_UNSUBSCRIBE_MESSAGE_TYPE,
+    widget: 'usage_card',
+  });
+}
+
 export const App: React.FC = () => {
   const [compact, setCompact] = useState<boolean>(initialCompact);
   const [breakdown, setBreakdown] = useState<QuotaBreakdown | null>(null);
@@ -292,10 +319,12 @@ export const App: React.FC = () => {
     let cancelled = false;
     settings.setupParentListener().then((ready) => {
       if (cancelled || !ready) return;
+      subscribeToSceneUsageEvents();
       void load();
     });
     return () => {
       cancelled = true;
+      unsubscribeFromSceneUsageEvents();
     };
   }, [load]);
 

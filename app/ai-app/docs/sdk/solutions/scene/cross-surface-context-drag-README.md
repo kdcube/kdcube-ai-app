@@ -381,9 +381,9 @@ Current consumers:
 
 - The versatile scene imports `@kdcube/components-core/scene`, which currently
   resolves to the materialized SDK source during bundle builds.
-- The website landing scene uses the same contract through its plain-script
-  `KDCScene.createContextDragBroker()` adapter until the site consumes the ESM
-  package directly.
+- Plain-script host pages can use the same contract through a local adapter
+  around `KDCScene.createContextDragBroker()` until they consume the ESM package
+  directly.
 - The npm package now exposes `@kdcube/components-core/scene` as a real subpath,
   so future hosts can import it without SDK source materialization.
 
@@ -394,7 +394,7 @@ Current consumers:
 | Chat/search result source surfaces | Emit or carry canonical context payloads in current paths. | Continue replacing remaining local helpers with package helpers as chat package becomes default. |
 | Standalone pinboard source surface | Emits `kdcube-context-drag-start/end` when cards are dragged. | Needs to stay aligned when canvas moves into npm packages. |
 | Embedded canvas board in versatile scene | `onDragCard` now feeds the scene context-drag broker. | Continue validating canvas-card -> owning-widget drops across mounted external panels. |
-| Website landing scene | Uses the scene broker contract for context normalization, namespace matching, and provider-backed open drops. | Plain-script adapter remains until the website can import the ESM package. |
+| Plain-script host scene | Uses the scene broker contract for context normalization, namespace matching, and provider-backed open drops. | Host-local adapter remains until that host can import the ESM package. |
 | Versatile scene | Uses `createSceneRuntime()` for target-surface dispatch and `createContextDragBroker()` for owning-surface drops. | Canvas pinning remains a host-provided `pin` effect, by design. |
 | Memory widget | Has both host-command open and native drop parsing. | Native drop parser is convenience only; host-command open is the generic path. |
 | Task widget | Has target-surface command handling for issue list/editor paths. | Needs reliable broker input from all source surfaces. |
@@ -433,8 +433,8 @@ specific code in the target widget:
    - local command mapper;
    - readiness/queue policy.
 6. Keep provider `open` as the only authority for final target-surface routing.
-7. Add the acceptance matrix as browser/integration tests for both the website
-   landing scene and the versatile scene.
+7. Add the acceptance matrix as browser/integration tests for host scenes that
+   embed multiple iframe surfaces, including the versatile scene.
 
 ## Failure Modes To Surface
 
