@@ -1701,7 +1701,17 @@ def build_tools_block(
                             continue
                         label = str(scope.get("label") or scope.get("description") or scope.get("object_kind") or "").strip()
                         suffix = f" — {label}" if label else ""
-                        lines.append(f"             - {scope_ns}{suffix}")
+                        filter_keys = []
+                        filters_schema = scope.get("filters_schema")
+                        if isinstance(filters_schema, dict):
+                            filter_keys = [str(key) for key in filters_schema.keys() if str(key).strip()]
+                        filter_suffix = ""
+                        if filter_keys:
+                            shown = ", ".join(filter_keys[:10])
+                            if len(filter_keys) > 10:
+                                shown += ", ..."
+                            filter_suffix = f" (filters: {shown}; details: object_schema(namespace=\"{scope_ns}\"))"
+                        lines.append(f"             - {scope_ns}{suffix}{filter_suffix}")
             if tool_traits:
                 for trait_name, trait_value in tool_traits.items():
                     values = trait_value if isinstance(trait_value, list) else [trait_value]

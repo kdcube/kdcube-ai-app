@@ -2192,6 +2192,7 @@ class BaseEntrypoint:
             },
             agent="accounting",
             markdown=full_markdown,
+            broadcast=True,
         )
 
         return ranked_tokens, result
