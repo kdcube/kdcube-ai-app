@@ -1315,7 +1315,17 @@ function App() {
     }
     usageRefreshTimerRef.current = window.setTimeout(() => {
       usageRefreshTimerRef.current = null
-      usageFrameRef.current?.contentWindow?.postMessage({ type: USAGE_REFRESH_MESSAGE_TYPE }, '*')
+      const mounted = !!usageFrameRef.current?.contentWindow
+      console.info('[kdc-scene] usage refresh ping', { mounted })
+      if (!mounted) {
+        console.info('[kdc-scene] usage refresh skipped; usage card frame is not mounted')
+        return
+      }
+      usageFrameRef.current?.contentWindow?.postMessage({
+        type: USAGE_REFRESH_MESSAGE_TYPE,
+        reason: 'accounting.usage',
+        ts: new Date().toISOString(),
+      }, '*')
     }, USAGE_REFRESH_DEBOUNCE_MS)
   }, [])
 
@@ -1356,18 +1366,25 @@ function App() {
     let detach: (() => void) | undefined
     void (async () => {
       try {
+        console.info('[kdc-scene] usage relay subscribing', { tenant: ctx.tenant, project: ctx.project })
         const socket = await dataBusSocketFor(ctx)
         await ensureSocketConnected(socket)
         if (cancelled) return
+        console.info('[kdc-scene] usage relay connected')
         const onService = (payload: unknown) => {
           const env = (payload ?? {}) as { type?: string }
+          if (env.type) {
+            console.debug('[kdc-scene] usage relay service event', { type: env.type })
+          }
           if (env.type === 'accounting.usage') {
+            console.info('[kdc-scene] usage relay accounting event')
             scheduleUsageRefresh()
           }
         }
         socket.on('chat_service', onService)
         detach = () => socket.off('chat_service', onService)
-      } catch {
+      } catch (err) {
+        console.warn('[kdc-scene] usage relay subscribe failed', err)
         // Socket unavailable; widget still has its own manual refresh.
       }
     })()
@@ -1883,6 +1900,13 @@ function App() {
       ].filter(Boolean)
 
       if (childWindows.includes(event.source as Window)) {
+        if (data.type === 'kdcube-usage-card-refresh-ack') {
+          console.info('[kdc-scene] usage card refresh ack', {
+            reason: data.reason || '',
+            ts: data.ts || '',
+          })
+          return
+        }
         if (['CONFIG_REQUEST', 'kdcube-auth-required', 'kdcube-resize'].includes(data.type)) {
           if (event.source === memoryFrameRef.current?.contentWindow && data.type === 'kdcube-resize') {
             const height = Number(data.height)
