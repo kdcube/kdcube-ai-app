@@ -21,6 +21,10 @@ from kdcube_ai_app.apps.chat.sdk.protocol import ExternalEventPayload
 from kdcube_ai_app.apps.chat.sdk.event_identity import DEFAULT_REACT_AGENT_ID, normalize_agent_id
 from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint import BaseEntrypoint
 from kdcube_ai_app.apps.chat.sdk.infra.economics.defaults import DEFAULT_QUOTA_POLICIES
+from kdcube_ai_app.apps.chat.sdk.infra.economics.plan_resolution import (
+    resolve_plan_id,
+    subscription_is_active,
+)
 from kdcube_ai_app.apps.chat.sdk.config_scopes import economics_reservation_default
 from kdcube_ai_app.infra.plugin.bundle_loader import on_reactive_event
 from kdcube_ai_app.infra.service_hub.inventory import Config, _mid
@@ -93,9 +97,11 @@ class BaseEntrypointWithEconomics(BaseEntrypoint):
             cache_ttl=60,
             plan_balance_cache_ttl=10,
         )
+        from kdcube_ai_app.apps.chat.sdk.infra.economics.subscription import RLMonthAnchorStore
         self.rl = UserEconomicsRateLimiter(
             self.redis,
             user_balance_snapshot_mgr=self.cp_manager.plan_balance_snapshot_mgr,
+            rl_anchor_store=RLMonthAnchorStore(self.pg_pool),
         )
         self.budget_limiter = ProjectBudgetLimiter(
             redis=self.redis,
@@ -133,7 +139,7 @@ class BaseEntrypointWithEconomics(BaseEntrypoint):
     def app_quota_policies(self):
         """
         Platform default quota policies for the four baked-in plans
-        (anonymous/free/payasyougo/admin). Sourced from the shared defaults
+        (anonymous/free/wallet/admin). Sourced from the shared defaults
         module — the single source of truth shared with the deploy-time seeder.
         Subclasses may still override. Used as a defensive runtime fallback and
         by the non-chat enforcement engine.
@@ -659,31 +665,14 @@ class BaseEntrypointWithEconomics(BaseEntrypoint):
             user_id=user_id,
         )
         sub_now = datetime.utcnow().replace(tzinfo=timezone.utc)
-        sub_due_at = getattr(subscription, "next_charge_at", None) if subscription else None
-        sub_chargeable = bool(subscription and int(getattr(subscription, "monthly_price_cents", 0) or 0) > 0)
-        sub_past_due = bool(sub_due_at and sub_due_at <= sub_now)
-        has_active_subscription = bool(
-            subscription
-            and getattr(subscription, "status", None) == "active"
-            and sub_chargeable
-            and not sub_past_due
-        )
+        has_active_subscription = subscription_is_active(subscription, sub_now)
         has_wallet = bool(user_budget_tokens and int(user_budget_tokens) > 0)
 
-        plan_id = None
-        plan_source = None
-        if role in ("privileged", "admin"):
-            plan_id = "admin"
-            plan_source = "role"
-        elif role == "anonymous":
-            plan_id = "anonymous"
-            plan_source = "role"
-        elif has_active_subscription:
-            plan_id = getattr(subscription, "plan_id", None) or "payasyougo"
-            plan_source = "subscription"
-        else:
-            plan_id = "free"
-            plan_source = "role"
+        plan_id, plan_source = resolve_plan_id(
+            role=role,
+            has_active_subscription=has_active_subscription,
+            subscription=subscription,
+        )
 
         _log(
             "plan",
@@ -718,12 +707,12 @@ class BaseEntrypointWithEconomics(BaseEntrypoint):
             )
 
         payg_policy: QuotaPolicy | None = None
-        if has_wallet or plan_id == "payasyougo":
+        if has_wallet or plan_id == "wallet":
             payg_policy = await self.cp_manager.get_plan_quota_policy(
-                tenant=tenant, project=project, plan_id="payasyougo"
+                tenant=tenant, project=project, plan_id="wallet"
             )
             if not payg_policy:
-                payg_policy = self.app_quota_policies.get("payasyougo") or base_policy
+                payg_policy = self.app_quota_policies.get("wallet") or base_policy
 
         if plan_id == "free" and has_wallet and not has_active_subscription:
             payg_policy = payg_policy or base_policy
@@ -1483,7 +1472,7 @@ class BaseEntrypointWithEconomics(BaseEntrypoint):
             _log("exec", "Invoking execute_core", lane=lane, usage_from=usage_from)
             _log("economics", "--- END PRE-RUN ECONOMICS ---")
 
-            parent_scope_id = str(turn_id or thread_id or request_id or "")
+            parent_scope_id = str(turn_id or thread_id or "")
             with bind_economics_scope(parent_scope_id):
                 result = await self.execute_core(state=state, thread_id=thread_id, params=params)
 
@@ -1656,7 +1645,7 @@ class BaseEntrypointWithEconomics(BaseEntrypoint):
                 post_run_snapshot = _post_run_snapshot(
                     admit_snapshot_pre,
                     # paid lane consumes 0 plan token quota (wallet/subscription pays
-                    # at payasyougo) -> the post-run snapshot must not add ranked tokens.
+                    # at wallet) -> the post-run snapshot must not add ranked tokens.
                     ranked=int(plan_quota_commit_tokens) if lane == "plan" else 0,
                     reserved=int(plan_reserved_tokens_pre),
                     lane_name=lane,

@@ -43,6 +43,10 @@ from kdcube_ai_app.apps.chat.sdk.infra.economics.limiter import (
     GLOBAL_BUNDLE_ID,
 )
 from kdcube_ai_app.apps.chat.sdk.infra.economics.project_budget import BudgetInsufficientFunds
+from kdcube_ai_app.apps.chat.sdk.infra.economics.plan_resolution import (
+    resolve_plan_id,
+    subscription_is_active,
+)
 from kdcube_ai_app.apps.chat.sdk.infra.economics.quota_lock import QuotaLock, quota_lock_key
 from kdcube_ai_app.apps.chat.sdk.infra.economics.events_resources import (
     MSG_NO_FUNDING,
@@ -406,25 +410,14 @@ class EconomicsGuard:
         subscription = await self.cp.subscription_mgr.get_subscription(
             tenant=s.tenant, project=s.project, user_id=s.user_id
         )
-        sub_due_at = getattr(subscription, "next_charge_at", None) if subscription else None
-        sub_chargeable = bool(subscription and int(getattr(subscription, "monthly_price_cents", 0) or 0) > 0)
-        sub_past_due = bool(sub_due_at and sub_due_at <= self.now)
-        has_active_subscription = bool(
-            subscription
-            and getattr(subscription, "status", None) == "active"
-            and sub_chargeable
-            and not sub_past_due
-        )
+        has_active_subscription = subscription_is_active(subscription, self.now)
 
-        # plan id (mirror run())
-        if budget_bypass:
-            plan_id = "admin"
-        elif role == "anonymous":
-            plan_id = "anonymous"
-        elif has_active_subscription:
-            plan_id = getattr(subscription, "plan_id", None) or "payasyougo"
-        else:
-            plan_id = "free"
+        # plan id (shared resolver; budget_bypass == role in admin/privileged)
+        plan_id, _ = resolve_plan_id(
+            role=role,
+            has_active_subscription=has_active_subscription,
+            subscription=subscription,
+        )
 
         base_policy = await self.cp.get_plan_quota_policy(
             tenant=s.tenant, project=s.project, plan_id=plan_id
@@ -758,9 +751,9 @@ class EconomicsGuard:
         return outcome
 
     def _paid_policy(self, r: dict) -> QuotaPolicy:
-        """Policy for the paid (wallet-only) lane — payasyougo service limits."""
+        """Policy for the paid (wallet-only) lane — wallet service limits."""
         pols = getattr(self.ep, "app_quota_policies", None) or {}
-        return pols.get("payasyougo") or r.get("base_policy")
+        return pols.get("wallet") or r.get("base_policy")
 
     async def _switch_to_paid(self, decision: EconomicsDecision, r: dict, *, reason: str) -> None:
         """Release the plan RL token reservation, re-admit against the paid policy,

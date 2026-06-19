@@ -92,9 +92,24 @@ Plan resolution is performed in the entrypoint using the following priority:
 
 Special handling for wallet users with no subscription:
 
-- The **plan stays `free`**, but **service limits** (requests/concurrency) are taken from the `payasyougo` plan.
+- The **plan stays `free`**, but **service limits** (requests/concurrency) are taken from the `wallet` plan.
 - **Token limits** still come from the `free` plan.
 - When the free token quota is insufficient and a wallet exists, the request switches to **paid lane**.
+
+**What "active subscription" means** (`subscription_is_active`): a **chargeable**
+(`monthly_price_cents > 0`), `status='active'`, **not `past_due`** row within its
+billing period. Zero‑cost baseline rows (`free`/`admin`) are intentionally *not*
+"active" here — only a chargeable plan flips a user onto a subscription plan.
+
+**Baseline rows.** Every authenticated user gets a `user_subscriptions` row on
+first session (zero‑cost `free`, or `admin` for privileged) via a
+post‑session‑create hook. Resolution always reads the current row; anonymous users
+get no row.
+
+**No downgrade sweep.** The plan is computed **live** from the row on every
+request. A `canceled` or `past_due` subscription therefore resolves to `free`
+everywhere (widget, enforcement, profile) immediately — the row stays for history,
+but no background job is needed to "downgrade" users.
 
 Visual summary:
 
@@ -106,7 +121,7 @@ flowchart TD
   B -- other --> C{Active subscription?}
   C -- yes --> S[plan_id = subscription.plan_id]
   C -- no --> F[plan_id = free]
-  F --> W[If wallet exists: payasyougo service limits + free token limits]
+  F --> W[If wallet exists: wallet service limits + free token limits]
 ```
 
 ## Where Limits Come From (Plan Quotas)
@@ -155,12 +170,12 @@ Funding for plan lane:
 
 - Active subscription → reserve from subscription period budget.
   - If a wallet exists and subscription funding cannot cover the full reservation, reserve **subscription up to available** and reserve **wallet overflow** for the remainder.
-  - If subscription funds **zero** for the turn, the request switches to **paid lane** and **payasyougo** quotas apply.
+  - If subscription funds **zero** for the turn, the request switches to **paid lane** and **wallet** quotas apply.
   - If no wallet exists and actual spend exceeds reservation, **project budget absorbs the overage** (`shortfall:subscription_overage`).
 - Registered role (no subscription) → reserve from project budget.
 - Privileged bypass → no pre‑check; project budget is charged after run.
 - If project‑funded (free plan) actual spend exceeds reservation, **project budget absorbs the overage** (`shortfall:free_plan`).
-- Wallet‑backed free users keep `plan_id=free` but use **payasyougo service limits** (requests/concurrency) while **token limits** remain from `free`.
+- Wallet‑backed free users keep `plan_id=free` but use **wallet service limits** (requests/concurrency) while **token limits** remain from `free`.
 
 Post-run settlement uses current available capacity net of active reservations, then adds back this request's own still-live reservation for each funding source. Settlement consumes the maximum possible share from plan quota and normal plan funding first. Wallet pays only the overflow, and wallet-paid tokens do **not** consume plan quota.
 
@@ -248,8 +263,8 @@ Key tables:
 - `tenant_project_budget_ledger` — project budget ledger
 - `tenant_project_budget_absorption` — view for shortfall absorption reporting
 - `tenant_project_budget_absorption_detail` — view for shortfall reporting by user/bundle
-- `subscription_plans` — plan catalog and Stripe price mapping
-- `user_subscriptions` — subscription metadata
+- `subscription_plans` — plan catalog and Stripe price mapping (free/admin baseline + chargeable plans)
+- `user_subscriptions` — per‑user plan row (one per tenant/project/user). Carries a baseline `free`/`admin` row for every authenticated user (see Plan Resolution), `provider` (`internal`|`stripe`), Stripe linkage ids, and `rl_month_anchor_at` — a durable mirror of the Redis monthly‑quota window anchor so the window survives a Redis flush.
 - `user_subscription_period_budget` — per period subscription balance
 - `user_subscription_period_reservations` — subscription holds
 - `user_subscription_period_ledger` — subscription ledger

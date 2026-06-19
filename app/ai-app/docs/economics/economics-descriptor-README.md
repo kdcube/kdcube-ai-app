@@ -71,7 +71,7 @@ project_budget:
 quota_policies:
   anonymous:  { max_concurrent: 1, requests_per_day: 2,   requests_per_month: 60, ... }
   free:       { max_concurrent: 2, requests_per_day: 100, requests_per_month: 30000, ... }
-  payasyougo: { max_concurrent: 4, requests_per_day: 200, requests_per_month: 6000 }
+  wallet: { max_concurrent: 4, requests_per_day: 200, requests_per_month: 6000 }
   admin:      { max_concurrent: 10 }
 
 budget_policies:
@@ -79,7 +79,7 @@ budget_policies:
   duckduckgo: { usd_per_hour: null, usd_per_day: null,  usd_per_month: null }
 
 subscription_plans:
-  payasyougo: { provider: internal, monthly_price_cents: 0, active: true }
+  wallet: { provider: internal, monthly_price_cents: 0, active: true }
 ```
 
 ### `version`
@@ -149,11 +149,11 @@ fields override the baseline per field.
 
 | Entity | Baseline | Descriptor behaviour |
 |---|---|---|
-| `quota_policies` | `anonymous`, `free`, `payasyougo`, `admin` (`DEFAULT_QUOTA_POLICIES`) | Always seeded; descriptor overrides per field; extra `plan_id`s seeded as-is. |
+| `quota_policies` | `anonymous`, `free`, `wallet`, `admin` (`DEFAULT_QUOTA_POLICIES`) | Always seeded; descriptor overrides per field; extra `plan_id`s seeded as-is. |
 | `subscription_plans` | `free`, `admin` — internal, `monthly_price_cents: 0`, `active: true` (`DEFAULT_SUBSCRIPTION_PLANS`) | Always seeded; descriptor overrides per field; extra `plan_id`s seeded as-is. |
 | `budget_policies` | none | Opt-in; seeded only for the providers listed. |
 
-The four baseline quota plans (`anonymous` / `free` / `payasyougo` / `admin`)
+The four baseline quota plans (`anonymous` / `free` / `wallet` / `admin`)
 are intrinsic to the runtime plan-resolution logic, so they must always exist.
 
 ## Seeding

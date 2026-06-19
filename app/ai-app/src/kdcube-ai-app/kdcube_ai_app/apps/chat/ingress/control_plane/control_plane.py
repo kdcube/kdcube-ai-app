@@ -47,7 +47,7 @@ router = APIRouter()
 REF_PROVIDER = anthropic
 REF_MODEL = sonnet_45
 DEFAULT_PLAN_FREE = "free"
-DEFAULT_PLAN_PAYG = "payasyougo"
+DEFAULT_PLAN_PAYG = "wallet"
 DEFAULT_PLAN_ADMIN = "admin"
 DEFAULT_PLAN_ANON = "anonymous"
 
@@ -274,7 +274,7 @@ class AddLifetimeCreditsRequest(BaseModel):
 
 class SetQuotaPolicyRequest(BaseModel):
     """Set quota policy for a plan (base limits - NO bundle_id!)."""
-    plan_id: str = Field(..., description="Plan id (free, payasyougo, admin, etc.)")
+    plan_id: str = Field(..., description="Plan id (free, wallet, admin, etc.)")
     max_concurrent: Optional[int] = Field(None, description="Max concurrent requests")
     requests_per_day: Optional[int] = Field(None, description="Requests per day")
     requests_per_month: Optional[int] = Field(None, description="Requests per month")
@@ -1289,7 +1289,7 @@ async def list_quota_policies(
     """
     List plan quota policies (base policies by plan id).
 
-    Shows configured policies for different plans (free, payasyougo, admin, etc.).
+    Shows configured policies for different plans (free, wallet, admin, etc.).
     """
     try:
         mgr = _get_control_plane_manager(router)
@@ -1570,7 +1570,7 @@ async def delete_reservation_surface(
 @router.get("/users/{user_id}/quota-breakdown")
 async def get_user_quota_breakdown(
         user_id: str,
-        plan_id: Optional[str] = Query(None, description="Plan id override (free, payasyougo, admin, etc.)"),
+        plan_id: Optional[str] = Query(None, description="Plan id override (free, wallet, admin, etc.)"),
         role: Optional[str] = Query(None, description="Optional role hint (registered, paid, privileged, anonymous)"),
         user_type: Optional[str] = Query(None, description="Deprecated: role hint (registered, paid, privileged, anonymous)"),
         session: UserSession = Depends(auth_without_pressure())
@@ -1722,7 +1722,7 @@ async def get_user_quota_breakdown(
 @router.get("/users/{user_id}/budget-breakdown")
 async def get_user_budget_breakdown(
         user_id: str,
-        plan_id: Optional[str] = Query(None, description="Plan id override (free, payasyougo, admin, etc.)"),
+        plan_id: Optional[str] = Query(None, description="Plan id override (free, wallet, admin, etc.)"),
         role: Optional[str] = Query(None, description="Optional role hint (registered, paid, privileged, anonymous)"),
         user_type: Optional[str] = Query(None, description="Deprecated: role hint (registered, paid, privileged, anonymous)"),
         bundle_id: Optional[str] = Query(None, description="Optional bundle id for per-bundle windows"),

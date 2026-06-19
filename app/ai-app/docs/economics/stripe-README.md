@@ -300,6 +300,19 @@ the system must:
 
 Two paths trigger this: **Checkout** (user self-service) and **Admin API**.
 
+> **Change guard (both paths).** `assert_plan_change_allowed` runs **before** any
+> Stripe call. It always rejects a quota‑only target (`wallet`/`anonymous`) with
+> `409 target_not_subscribable`. Self‑serve checkout additionally blocks
+> `admin`→any (`admin_plan_locked`) and `free`/unsubscribed→zero‑cost
+> (`free_requires_paid_plan`); paid→paid is allowed. Operator create applies only
+> the quota‑only check.
+>
+> **Internal‑row constraint.** `chk_cp_us_stripe_ids_internal_null` permits a
+> `stripe_customer_id` on an `internal` row (attached at checkout, before payment)
+> but requires `stripe_subscription_id` to stay NULL until `provider` flips to
+> `stripe`. The flip happens on `checkout.session.completed`/`invoice.paid` once a
+> real Stripe subscription exists.
+
 ### Plan Change via Checkout (user-initiated)
 
 ```mermaid

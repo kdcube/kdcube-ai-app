@@ -98,7 +98,7 @@ class PlanFundingReservation:
     wallet_reservation_active: bool = False
 
     has_wallet: bool = False
-    # paid lane (post-switch): payasyougo quotas, primary is the wallet or the
+    # paid lane (post-switch): wallet quotas, primary is the wallet or the
     # subscription budget; RL usage commits reservation-free (no plan-quota consume).
     paid_lane: bool = False
 
@@ -478,7 +478,7 @@ async def settle_plan_funding(
         return out
 
     if funding_source == "subscription" and res.paid_lane:
-        # paid lane, subscription-primary: payasyougo quotas; the subscription
+        # paid lane, subscription-primary: wallet quotas; the subscription
         # budget pays the actual cost and the wallet stays untouched. Paid-lane
         # usage does NOT consume plan token quota (only the request counts), so the
         # RL commit records 0 tokens reservation-free.

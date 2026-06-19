@@ -57,7 +57,7 @@ Funding split (runtime):
 - Plan quota/funding is consumed first. Wallet covers only overflow and wallet-paid tokens do **not** consume plan quota.
 - Settlement uses current available capacity net of active reservations, then adds this request's own still-live reservation back for each source.
 - If actual spend exceeds both plan funding and wallet, project budget absorbs the remainder (shortfall note in ledger). If plan quota remains, that absorbed remainder also consumes quota.
-- If subscription funds **zero** for a turn, the request switches to **paid lane** and **payasyougo** quotas apply.
+- If subscription funds **zero** for a turn, the request switches to **paid lane** and **wallet** quotas apply.
 - Subscriptions and wallets never go negative; only project budget can absorb shortfalls.
 
 Absorption reporting:

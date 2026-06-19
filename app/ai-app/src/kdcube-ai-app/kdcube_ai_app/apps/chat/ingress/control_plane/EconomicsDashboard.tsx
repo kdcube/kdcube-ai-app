@@ -1409,7 +1409,7 @@ const EmptyState: React.FC<{ message: string; icon?: string }> = ({ message, ico
 
 const PLAN_OPTIONS = [
     { value: 'free', label: 'free' },
-    { value: 'payasyougo', label: 'payasyougo' },
+    { value: 'wallet', label: 'wallet' },
     { value: 'admin', label: 'admin' },
     { value: 'anonymous', label: 'anonymous' },
     { value: 'custom', label: 'custom…' },
@@ -3488,7 +3488,7 @@ const EconomicsAdmin: React.FC = () => {
                                 />
                                 <CardBody className="space-y-6">
                                     <Callout tone="neutral" title="Meaning">
-                                        This is the default quota envelope for a plan (free/payasyougo/admin). Daily is calendar day, hourly is a rolling 60‑minute window, and monthly is a rolling 30‑day window (anchored to first usage per bundle).
+                                        This is the default quota envelope for a plan (free/wallet/admin). Daily is calendar day, hourly is a rolling 60‑minute window, and monthly is a rolling 30‑day window (anchored to first usage per bundle).
                                     </Callout>
                                     <Callout tone="neutral" title="Reservation Floor">
                                         The platform reservation floor is set in the <span className="font-semibold">Reservation Floors</span> tab
@@ -4501,7 +4501,7 @@ Shortfall ledger notes:
                                                 label="Plan ID *"
                                                 value={planId}
                                                 onChange={(e) => setPlanId(e.target.value)}
-                                                placeholder="payasyougo"
+                                                placeholder="wallet"
                                                 required
                                             />
                                             <Select

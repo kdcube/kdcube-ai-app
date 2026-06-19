@@ -25,7 +25,7 @@ It is written for a director‑led setup session using the admin UI.
 ## Quick Model Summary
 
 - Role decides funding access (`registered`, `paid`, `privileged`).
-- Plan decides quota limits (`free`, `payasyougo`, `admin`, or custom plan IDs).
+- Plan decides quota limits (`free`, `wallet`, `admin`, or custom plan IDs).
 - Paid role is derived automatically if a user has an active subscription or wallet credits.
 - Plan is resolved at runtime from subscription or wallet.
 - Plan quota/funding covers the maximum eligible request share first. Wallet covers only overflow; wallet-paid tokens do **not** consume plan quota.
@@ -48,7 +48,7 @@ flowchart TD
 Use these plan IDs as a baseline:
 
 - `free` — registered users (project‑funded)
-- `payasyougo` — wallet‑funded users
+- `wallet` — wallet‑funded users
 - `beta-30` — internal subscription plan $30/month
 - `beta-50` — internal subscription plan $50/month
 - `admin` — privileged/admin (almost unlimited)
@@ -72,7 +72,7 @@ Create internal plans:
 
 - `beta-30` (provider: internal, monthly_price_cents: 3000)
 - `beta-50` (provider: internal, monthly_price_cents: 5000)
-- `payasyougo` (provider: internal, monthly_price_cents: 0)
+- `wallet` (provider: internal, monthly_price_cents: 0)
 
 Notes:
 
@@ -87,7 +87,7 @@ Set limits per `plan_id`.
 Suggested examples:
 
 - `free`: conservative daily/monthly limits
-- `payasyougo`: higher limits than free
+- `wallet`: higher limits than free
 - `beta-30`: moderate limits
 - `beta-50`: higher limits
 - `admin`: high concurrency, minimal token limits
@@ -130,7 +130,7 @@ Admin UI: **Lifetime Credits**
 
 - Add credits to the user’s wallet (USD amount)
 - This automatically makes the user `paid`
-- Plan stays `free`, but service limits come from `payasyougo`
+- Plan stays `free`, but service limits come from `wallet`
   (token limits still come from `free`)
 
 ### 7) Keep registered (free) users
@@ -149,7 +149,7 @@ Admin UI: **User Budget Breakdown**
 Check:
 
 - `role` (auto‑resolved from user session)
-- `plan_id` (free, beta‑30, payasyougo)
+- `plan_id` (free, beta‑30, wallet)
 - `plan_source` (subscription or role)
 - Subscription balance or wallet balance
 - If you want to verify rolling reset timestamps, provide the **Bundle ID** in the breakdown form.

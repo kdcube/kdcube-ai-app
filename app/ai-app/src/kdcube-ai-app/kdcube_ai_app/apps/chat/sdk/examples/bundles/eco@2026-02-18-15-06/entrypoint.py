@@ -11,7 +11,7 @@
 #   3. The "orchestrate" node initializes all dependencies (DB, indexes, RAG)
 #      and delegates execution to WithReactWorkflow.process()
 #   4. Defines role_models mapping logical roles to concrete LLM models
-#   5. Defines per-user-tier quota policies (anonymous, free, payasyougo, admin)
+#   5. Defines per-user-tier quota policies (anonymous, free, wallet, admin)
 #
 # Key base class: BaseEntrypointWithEconomics
 #   Extends BaseEntrypoint with quota enforcement, accounting, and the
@@ -202,7 +202,7 @@ class EcoEntrypoint(BaseEntrypointWithEconomics):
                 tokens_per_day=2_000_000,
                 tokens_per_month=30_000_000,
             ),
-            "payasyougo": QuotaPolicy(
+            "wallet": QuotaPolicy(
                 max_concurrent=2,
                 requests_per_day=200,
                 requests_per_month=6000,

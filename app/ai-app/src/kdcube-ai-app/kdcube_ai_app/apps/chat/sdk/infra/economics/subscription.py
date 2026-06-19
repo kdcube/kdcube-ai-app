@@ -18,6 +18,14 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+class PlanChangeNotAllowed(Exception):
+    """Raised when a requested subscription plan change violates the resub rules."""
+    def __init__(self, message: str, *, code: str = "plan_change_not_allowed"):
+        super().__init__(message)
+        self.message = message
+        self.code = code
+
+
 def _add_one_month(dt: datetime) -> datetime:
     # Preserve time + tz, clamp day (e.g. Jan 31 -> Feb 28/29)
     dt = dt.astimezone(timezone.utc)
@@ -97,6 +105,7 @@ class Subscription:
     stripe_subscription_id: Optional[str]
     created_at: datetime
     updated_at: datetime
+    rl_month_anchor_at: Optional[datetime] = None
 
 
 @dataclass(frozen=True)
@@ -124,6 +133,68 @@ class InternalRenewOnceResult:
     user_id: str
     usd_amount: float
     charged_at: datetime
+
+
+class RLMonthAnchorStore:
+    """
+    Durable mirror of the RL monthly-window anchor.
+    """
+
+    TABLE = "user_subscriptions"
+
+    def __init__(self, pg_pool: asyncpg.Pool):
+        self.pg_pool = pg_pool
+
+    @staticmethod
+    def _split_subject(subject_id: str) -> Optional[Tuple[str, str, str]]:
+        # subject_id_of(tenant, project, user_id) -> "{tenant}:{project}:{user_id}".
+        # maxsplit=2 keeps any colons inside user_id intact.
+        if not subject_id:
+            return None
+        parts = subject_id.split(":", 2)
+        if len(parts) != 3 or not all(parts):
+            return None
+        return parts[0], parts[1], parts[2]
+
+    async def load(self, subject_id: str) -> Optional[datetime]:
+        ident = self._split_subject(subject_id)
+        if not ident:
+            return None
+        tenant, project, user_id = ident
+        schema = _project_schema(tenant, project)
+        sql = (
+            f"SELECT rl_month_anchor_at FROM {schema}.{self.TABLE} "
+            f"WHERE tenant=$1 AND project=$2 AND user_id=$3"
+        )
+        try:
+            async with self.pg_pool.acquire() as c:
+                row = await c.fetchrow(sql, tenant, project, user_id)
+        except Exception:
+            return None
+        if not row:
+            return None
+        return row["rl_month_anchor_at"]
+
+    async def save_if_absent(self, subject_id: str, anchor_at: datetime) -> None:
+        ident = self._split_subject(subject_id)
+        if not ident:
+            return
+        tenant, project, user_id = ident
+        if anchor_at.tzinfo is None:
+            anchor_at = anchor_at.replace(tzinfo=timezone.utc)
+        schema = _project_schema(tenant, project)
+        sql = (
+            f"UPDATE {schema}.{self.TABLE} "
+            f"SET rl_month_anchor_at=$4 "
+            f"WHERE tenant=$1 AND project=$2 AND user_id=$3 AND rl_month_anchor_at IS NULL"
+        )
+        try:
+            async with self.pg_pool.acquire() as c:
+                await c.execute(sql, tenant, project, user_id, anchor_at)
+        except Exception:
+            # Non-fatal: the Redis anchor is still authoritative this period; we
+            # just lose the durable mirror until the next write.
+            return
 
 
 class SubscriptionManager:
@@ -351,7 +422,9 @@ class SubscriptionManager:
         Ensure a subscription row exists for a user (internal bootstrap).
 
         Rules:
-          - If an existing row is provider='stripe', DO NOT MODIFY it at all.
+          - If an existing row is an ACTIVE provider='stripe' subscription, DO
+            NOT MODIFY it. A non-active stripe row (canceled/past_due/...) may be
+            overridden onto an internal plan.
           - Otherwise, ensure/refresh an internal row.
           - Internal paid/premium ARE scheduled via next_charge_at.
         """
@@ -409,7 +482,7 @@ class SubscriptionManager:
           stripe_subscription_id = NULL,
 
           updated_at = NOW()
-        WHERE {tbl}.provider IS DISTINCT FROM 'stripe'
+        WHERE {tbl}.provider IS DISTINCT FROM 'stripe' OR {tbl}.status <> 'active'
         RETURNING *
         """
 
@@ -417,7 +490,7 @@ class SubscriptionManager:
             row = await c.fetchrow(sql, tenant, project, user_id, plan.plan_id, price, now)
             if row:
                 return row
-            # If conflict row exists and is stripe => UPDATE skipped => RETURNING empty => fetch existing row
+            # If conflict row is an ACTIVE stripe sub => UPDATE skipped => RETURNING empty => fetch existing row
             existing = await c.fetchrow(
                 f"SELECT * FROM {tbl} WHERE tenant=$1 AND project=$2 AND user_id=$3",
                 tenant, project, user_id
@@ -434,6 +507,135 @@ class SubscriptionManager:
 
         return self._from_row(row)
 
+
+    async def ensure_baseline_subscription(
+            self,
+            *,
+            tenant: str,
+            project: str,
+            user_id: str,
+            plan_id: str,
+            now: Optional[datetime] = None,
+            conn: Optional[asyncpg.Connection] = None,
+    ) -> Subscription:
+        """
+        Ensure a free/admin BASELINE subscription row exists for a user.
+
+        Differs from `ensure_subscription_for_user`:
+          - The plan MUST be internal and zero-cost (monthly_price_cents == 0);
+            baseline plans are never chargeable.
+          - It carries a monthly ZERO-COST period: next_charge_at is scheduled
+            one month out even though price is 0 (the renewal sweep rolls it).
+          - It NEVER clobbers an existing row. If the user already has any
+            subscription (a paid catalog plan, a stripe row, or an existing
+            baseline), it is left untouched and returned as-is.
+        """
+        now = now or _now()
+        plan = await self.get_plan(tenant=tenant, project=project, plan_id=plan_id, conn=conn)
+        if not plan:
+            raise ValueError(f"subscription plan not found: {plan_id}")
+        if plan.provider != "internal":
+            raise ValueError(f"baseline plan provider must be internal: {plan_id}")
+        if int(plan.monthly_price_cents) != 0:
+            raise ValueError(f"baseline plan must be zero-cost: {plan_id}")
+
+        tbl = f"{self._schema(tenant, project)}.{self.TABLE}"
+
+        # Insert a zero-cost internal row with a scheduled monthly period.
+        # ON CONFLICT DO NOTHING: never touch an existing row (paid/stripe/baseline).
+        sql = f"""
+        INSERT INTO {tbl} (
+          tenant, project, user_id,
+          plan_id, status, monthly_price_cents,
+          started_at, next_charge_at, last_charged_at,
+          provider, stripe_customer_id, stripe_subscription_id
+        ) VALUES (
+          $1,$2,$3,
+          $4,'active',0,
+          $5::timestamptz,
+          ($5::timestamptz + interval '1 month'),
+          $5::timestamptz,
+          'internal', NULL, NULL
+        )
+        ON CONFLICT (tenant, project, user_id) DO NOTHING
+        RETURNING *
+        """
+
+        async def _run(c: asyncpg.Connection) -> asyncpg.Record:
+            row = await c.fetchrow(sql, tenant, project, user_id, plan.plan_id, now)
+            if row:
+                return row
+            # Row already existed (DO NOTHING) => fetch and return it untouched.
+            existing = await c.fetchrow(
+                f"SELECT * FROM {tbl} WHERE tenant=$1 AND project=$2 AND user_id=$3",
+                tenant, project, user_id
+            )
+            if not existing:
+                raise RuntimeError(
+                    f"failed to ensure baseline subscription for {tenant}/{project}/{user_id}"
+                )
+            return existing
+
+        if conn:
+            row = await _run(conn)
+        else:
+            async with self.pg_pool.acquire() as c:
+                row = await _run(c)
+
+        return self._from_row(row)
+
+    def assert_plan_change_allowed(
+            self,
+            *,
+            current: Optional[Subscription],
+            target_plan: SubscriptionPlan,
+            operator: bool = False,
+    ) -> None:
+        """
+        Central guard for re-subscription. Raises PlanChangeNotAllowed when a
+        requested plan change violates the resub rules.
+
+        Rules (self-serve, operator=False):
+          - admin is locked: a user currently on `admin` cannot move to any
+            other plan.
+          - `wallet`/`anonymous` are quota-only policies, never subscribable
+            plans — they can never be a target (and should not exist in
+            subscription_plans, this is defense-in-depth).
+          - free (or no subscription yet) may only move to a chargeable plan
+            (monthly_price_cents > 0); moving free→free / free→zero-cost is a
+            no-op that the baseline already covers.
+
+        Paid→paid changes are allowed (e.g. plan upgrade/downgrade between
+        chargeable catalog plans); the caller owns the money flow.
+
+        operator=True is the admin/operator override: only the quota-only target
+        sanity check applies (operators may grant admin/free, or move a user who
+        is currently on admin). `current` is unused in this mode.
+        """
+        target_id = (target_plan.plan_id or "").strip().lower()
+        if target_id in ("wallet", "anonymous"):
+            raise PlanChangeNotAllowed(
+                f"plan '{target_plan.plan_id}' is a quota-only policy and cannot be subscribed to",
+                code="target_not_subscribable",
+            )
+
+        if operator:
+            return
+
+        cur_id = ((current.plan_id if current else None) or "").strip().lower()
+        if cur_id == "admin":
+            raise PlanChangeNotAllowed(
+                "admin users cannot re-subscribe to another plan",
+                code="admin_plan_locked",
+            )
+
+        target_price = int(target_plan.monthly_price_cents or 0)
+        # free (or unsubscribed) may only re-subscribe to a chargeable plan.
+        if cur_id in ("", "free") and target_price <= 0:
+            raise PlanChangeNotAllowed(
+                "free users may only re-subscribe to a paid plan",
+                code="free_requires_paid_plan",
+            )
 
     async def upsert_from_stripe_invoice_paid(
             self,

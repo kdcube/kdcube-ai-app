@@ -790,7 +790,8 @@ class UserEconomicsRateLimiter:
         redis: Redis,
         *,
         namespace: str = REDIS.ECONOMICS.RATE_LIMIT,
-        user_balance_snapshot_mgr: Optional['UserPlanBalanceSnapshotManager'] = None
+        user_balance_snapshot_mgr: Optional['UserPlanBalanceSnapshotManager'] = None,
+        rl_anchor_store: Optional[Any] = None,
     ):
         """
         Initialize RateLimiter.
@@ -799,10 +800,15 @@ class UserEconomicsRateLimiter:
             redis: Redis client
             namespace: Namespace prefix (default: "kdcube:rl")
             user_balance_snapshot_mgr: Manager for querying user balances
+            rl_anchor_store: Optional durable mirror for the monthly-window anchor
+                (see RLMonthAnchorStore). When present, the rolling-month anchor is
+                restored from / written through to the DB so the quota-reset window
+                survives a Redis flush. When None, behavior is pure-Redis.
         """
         self.r = redis
         self.ns = namespace
         self.user_balance_snapshot_mgr = user_balance_snapshot_mgr
+        self.rl_anchor_store = rl_anchor_store
 
     async def admit(
         self,
@@ -1448,13 +1454,36 @@ class UserEconomicsRateLimiter:
 
         anchor_raw = await self.r.get(anchor_key)
         if anchor_raw is None:
-            if not create_if_missing:
+            restored_ts: Optional[int] = None
+            if self.rl_anchor_store is not None:
+                try:
+                    db_anchor = await self.rl_anchor_store.load(subject_id)
+                except Exception:
+                    db_anchor = None
+                if db_anchor is not None:
+                    if db_anchor.tzinfo is None:
+                        db_anchor = db_anchor.replace(tzinfo=timezone.utc)
+                    restored_ts = int(db_anchor.timestamp())
+
+            if restored_ts is not None:
+                anchor_ts = restored_ts
+                await self.r.set(anchor_key, anchor_ts)
+            elif not create_if_missing:
                 return None, None, None
-            if await self.r.setnx(anchor_key, now_ts):
-                anchor_ts = now_ts
             else:
-                anchor_raw = await self.r.get(anchor_key)
-                anchor_ts = int(anchor_raw or now_ts)
+                if await self.r.setnx(anchor_key, now_ts):
+                    anchor_ts = now_ts
+                else:
+                    anchor_raw = await self.r.get(anchor_key)
+                    anchor_ts = int(anchor_raw or now_ts)
+                if self.rl_anchor_store is not None:
+                    try:
+                        await self.rl_anchor_store.save_if_absent(
+                            subject_id,
+                            datetime.fromtimestamp(anchor_ts, tz=timezone.utc),
+                        )
+                    except Exception:
+                        pass
         else:
             anchor_ts = int(anchor_raw)
 

@@ -10,7 +10,7 @@
 #   true  → realign every listed entity to these defaults (incl. lowering a
 #           field back to null / unlimited)
 #
-# Mandatory quota policies (anonymous / free / payasyougo / admin) and the
+# Mandatory quota policies (anonymous / free / wallet / admin) and the
 # subscription plans free / admin are always seeded from a built-in baseline
 # even if omitted below; entries here override that baseline per field.
 # budget_policies have no baseline and are seeded only for the keys listed here.
@@ -37,7 +37,7 @@ quota_policies:
                 tokens_per_hour: 150000, tokens_per_day: 1500000, tokens_per_month: 20000000 }
   free:       { max_concurrent: 2,  requests_per_day: 100, requests_per_month: 30000,
                 tokens_per_hour: 133333, tokens_per_day: 333333,  tokens_per_month: 666666 }
-  payasyougo: { max_concurrent: 4,  requests_per_day: 200, requests_per_month: 6000 }
+  wallet:     { max_concurrent: 4,  requests_per_day: 200, requests_per_month: 6000 }
   admin:      { max_concurrent: 10 }
 
 # provider -> budget policy (spending limits, USD). null = unlimited dimension.

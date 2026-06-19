@@ -1045,6 +1045,8 @@ CREATE TABLE IF NOT EXISTS <SCHEMA>.user_subscriptions (
     next_charge_at timestamptz NULL,
     last_charged_at timestamptz NULL,
 
+    rl_month_anchor_at timestamptz NULL,
+
     provider text NOT NULL DEFAULT 'internal',
     stripe_customer_id text NULL,
     stripe_subscription_id text NULL,
@@ -1058,9 +1060,13 @@ CREATE TABLE IF NOT EXISTS <SCHEMA>.user_subscriptions (
     CONSTRAINT chk_cp_us_status CHECK (status IN ('active','canceled','suspended')),
     CONSTRAINT chk_cp_us_price_nonneg CHECK (monthly_price_cents >= 0),
 
+    -- On an internal subscription only the Stripe *subscription* id must be NULL;
+    -- a stripe_customer_id is a pre-payment artifact (the user is known to Stripe)
+    -- that may be attached while the row is still internal. provider flips to
+    -- 'stripe' only when a real Stripe subscription exists (invoice-paid webhook).
     CONSTRAINT chk_cp_us_stripe_ids_internal_null CHECK (
       provider <> 'internal'
-      OR (stripe_customer_id IS NULL AND stripe_subscription_id IS NULL)
+      OR stripe_subscription_id IS NULL
     ),
 
     CONSTRAINT fk_cp_us_plan

@@ -2262,7 +2262,7 @@ paths:
       description: 'List plan quota policies (base policies by plan id).
 
 
-        Shows configured policies for different plans (free, payasyougo, admin, etc.).'
+        Shows configured policies for different plans (free, wallet, admin, etc.).'
       operationId: list_quota_policies_api_admin_control_plane_policies_quota_get
       parameters:
       - name: tenant
@@ -2431,9 +2431,9 @@ paths:
           anyOf:
           - type: string
           - type: 'null'
-          description: Plan id override (free, payasyougo, admin, etc.)
+          description: Plan id override (free, wallet, admin, etc.)
           title: Plan Id
-        description: Plan id override (free, payasyougo, admin, etc.)
+        description: Plan id override (free, wallet, admin, etc.)
       - name: role
         in: query
         required: false
@@ -2489,9 +2489,9 @@ paths:
           anyOf:
           - type: string
           - type: 'null'
-          description: Plan id override (free, payasyougo, admin, etc.)
+          description: Plan id override (free, wallet, admin, etc.)
           title: Plan Id
-        description: Plan id override (free, payasyougo, admin, etc.)
+        description: Plan id override (free, wallet, admin, etc.)
       - name: role
         in: query
         required: false
@@ -4291,7 +4291,7 @@ components:
         plan_id:
           type: string
           title: Plan Id
-          description: Plan id (free, payasyougo, admin, etc.)
+          description: Plan id (free, wallet, admin, etc.)
         max_concurrent:
           anyOf:
           - type: integer

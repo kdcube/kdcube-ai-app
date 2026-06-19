@@ -1419,7 +1419,7 @@ class VersatileEntrypoint(BaseEntrypointWithEconomicsAndMemory):
                 tokens_per_day=2_000_000,
                 tokens_per_month=30_000_000,
             ),
-            "payasyougo": QuotaPolicy(
+            "wallet": QuotaPolicy(
                 max_concurrent=3,
                 requests_per_day=500,
                 requests_per_month=100_000,

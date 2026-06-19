@@ -67,7 +67,7 @@ Reservations are short-lived (TTL) and are either:
 
 Wallet + no subscription behavior:
 - Plan remains `free`.
-- Service limits (requests/concurrency) come from `payasyougo`.
+- Service limits (requests/concurrency) come from `wallet`.
 - Token limits come from `free`.
 
 Subscription + wallet behavior:
@@ -75,7 +75,7 @@ Subscription + wallet behavior:
 - Subscription balance funds the maximum portion allowed by subscription balance and plan quota.
 - Wallet covers only the remaining overflow. Wallet-paid tokens do **not** consume plan quota.
 - If actual spend exceeds both plan funding and wallet, project budget absorbs the remainder (ledger note indicates shortfall). If plan quota remains, that absorbed remainder also consumes quota. Tags: `shortfall:wallet_subscription`, `shortfall:wallet_paid`, `shortfall:wallet_plan`, `shortfall:subscription_overage`, `shortfall:free_plan`.
-- If subscription funds **zero** for a turn, the request switches to **paid lane** and **payasyougo** quotas apply.
+- If subscription funds **zero** for a turn, the request switches to **paid lane** and **wallet** quotas apply.
 
 Subscription only (no wallet):
 - Subscription covers the full reservation.

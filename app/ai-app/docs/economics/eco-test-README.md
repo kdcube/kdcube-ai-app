@@ -18,7 +18,7 @@ This document is for QA. It explains expected economics behavior (as designed), 
 Use these definitions while testing:
 
 - **Role** decides funding access (`registered`, `paid`, `privileged`).
-- **Plan** decides quota limits (`free`, `payasyougo`, `beta-30`, `beta-50`, etc.).
+- **Plan** decides quota limits (`free`, `wallet`, `beta-30`, `beta-50`, etc.).
 - **Lane** is only:
   - `plan lane`
   - `paid lane` (wallet‑only lane)
@@ -53,7 +53,7 @@ Use these definitions while testing:
   - Overflow: wallet covers remaining usage; wallet-paid tokens do **not** consume free plan quota
   - If wallet runs out: project budget absorbs the remainder (shortfall), and any remaining free plan quota is consumed by that fallback
 - **Limits**:
-  - **Service limits** (requests/concurrency) from `payasyougo`
+  - **Service limits** (requests/concurrency) from `wallet`
   - **Token limits** from `free`
 - **Absorption**: wallet shortfall is absorbed by **project budget** (`shortfall:wallet_plan`).
 - **Expected**: wallet decreases; if wallet is insufficient, project budget absorbs shortfall and logs a shortfall note
@@ -68,7 +68,7 @@ Use these definitions while testing:
   - If both are insufficient → project budget absorbs remainder (shortfall), and any remaining subscription plan quota is consumed by that fallback
 - **Limits**:
   - If subscription funds any portion → subscription plan quotas apply
-  - If subscription funds **zero** and wallet covers the full request → **payasyougo** quotas apply
+  - If subscription funds **zero** and wallet covers the full request → **wallet** quotas apply
 - **Absorption**: wallet shortfall is absorbed by **project budget** (`shortfall:wallet_subscription`).
 
 ### E) Privileged user
@@ -136,7 +136,7 @@ Use this to confirm:
 ### Prep (10 min)
 
 1. Confirm bundle prop `economics.reservation_amount_dollars` is set (e.g., 2.0).
-2. Ensure plans exist: `free`, `payasyougo`, `beta-30`, `beta-50`, `admin`.
+2. Ensure plans exist: `free`, `wallet`, `beta-30`, `beta-50`, `admin`.
 3. Confirm plan quota policies are loaded in the admin UI.
 
 ### Test A — Free user (15 min)

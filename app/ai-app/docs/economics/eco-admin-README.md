@@ -69,7 +69,7 @@ Admin API (Integrations):
 - `POST /admin/integrations/bundles/{bundle_id}/props`
 
 Special case (wallet + no subscription):
-- Plan stays `free`, but **service limits** (requests/concurrency) are taken from `payasyougo`.
+- Plan stays `free`, but **service limits** (requests/concurrency) are taken from `wallet`.
 - **Token limits** still come from `free`.
 
 Special case (subscription + wallet):
@@ -77,7 +77,7 @@ Special case (subscription + wallet):
 - **Subscription balance and subscription plan quota** cover the maximum eligible request share.
 - **Wallet** covers only overflow; wallet-paid tokens do **not** consume subscription plan quota.
 - If actual spend exceeds both plan funding and wallet, project budget absorbs the remainder (shortfall note in ledger). If plan quota remains, that absorbed fallback also consumes quota.
-- If subscription funds **zero** for the turn, the request switches to **paid lane** and **payasyougo** quotas apply.
+- If subscription funds **zero** for the turn, the request switches to **paid lane** and **wallet** quotas apply.
 - Subscriptions and wallets never go negative; only project budget can absorb shortfalls.
 
 ### How plan limits are initialized
@@ -119,6 +119,19 @@ UI card: **Create Subscription**
 - Plan ID is required and must exist in `subscription_plans`.
 
 Backend: `POST /subscriptions/create`
+
+**Change guard.** Both admin create and user checkout pass through
+`assert_plan_change_allowed`. A target that is a quota‑only policy (`wallet`,
+`anonymous`) is always rejected (`409 target_not_subscribable`) — these are not
+subscribable plans. Operator create skips the remaining self‑serve rules (an
+operator may grant `admin`/`free` or move an `admin` user).
+
+**Internal grant vs an existing Stripe row.** Granting an internal plan **does not
+touch an `active` `provider='stripe'` subscription** (the operation no‑ops and
+returns the unchanged row). A **non‑active** Stripe row (`canceled`/`past_due`/…)
+**can** be overridden onto an internal plan — the row flips to `provider='internal'`
+and its Stripe ids are cleared. So to move a Stripe subscriber to internal, cancel
+the Stripe subscription first, then grant internal.
 
 ### Lookup subscription
 
