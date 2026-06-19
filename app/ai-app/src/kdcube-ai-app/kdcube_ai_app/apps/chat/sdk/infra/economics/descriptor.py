@@ -16,10 +16,10 @@ Two distinct purposes:
   - quota / budget / subscription: Postgres is the live runtime authority. The
     descriptor is only a persistence snapshot so the next deploy-time
     `seed_economics` does not regress runtime/admin changes.
-  - reservation: the descriptor file IS the live runtime source (read per turn
-    via config_scopes.economics_reservation_default, mtime-cached). Writing the
-    file here lets bundles pick up reservation changes in real time across
-    replicas over the shared mount.
+  - reservation / price_tables: the descriptor file IS the live runtime source
+    (read per turn via config_scopes, mtime-cached). These are never stored in the
+    DB, so write-backs preserve them verbatim from the existing file. Writing here
+    lets runtime pick up changes in real time across replicas over the shared mount.
 
 This is best-effort: callers must not fail the admin mutation if the descriptor
 write fails.
@@ -140,7 +140,7 @@ async def build_economics_descriptor(
     for floor in (reservation_deletes or ()):
         reservation.pop(floor, None)
 
-    return {
+    payload = {
         "version": int(existing.get("version", 1)),
         "enforce": bool(existing.get("enforce", False)),
         "reservation": reservation,
@@ -149,6 +149,10 @@ async def build_economics_descriptor(
         "budget_policies": budget_policies,
         "subscription_plans": subscription_plans,
     }
+    price_tables = existing.get("price_tables")
+    if isinstance(price_tables, dict):
+        payload["price_tables"] = price_tables
+    return payload
 
 
 def _write_locked(path: Path, builder) -> None:

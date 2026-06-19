@@ -80,6 +80,10 @@ budget_policies:
 
 subscription_plans:
   wallet: { provider: internal, monthly_price_cents: 0, active: true }
+
+price_tables:            # optional; whole-table replacement of the baseline (either/or)
+  llm:                   # must include the reference model, else the baseline is used
+    - { provider: anthropic, model: claude-sonnet-4-5-20250929, input_tokens_1M: 3.0, output_tokens_1M: 15.0 }
 ```
 
 ### `version`
@@ -110,6 +114,25 @@ The value is a **scalar**:
 
 The reservation section is **not** seeded into any table — it is runtime config
 read straight from the file (see [Runtime reads](#runtime-reads)).
+
+### `price_tables`
+
+Provider/model pricing catalog (`llm`, `embedding`, `web_search`) used for
+cost calculation and USD↔token conversion. Like `reservation`, it is a pure
+**runtime-read** section — never seeded, never in the DB.
+
+- **Optional.** The authoritative baseline is the in-code `DEFAULT_PRICE_TABLE`
+  (`infra/accounting/usage.py`); a missing section/file means the baseline is
+  used unchanged.
+- **Either/or, no merge.** When the descriptor provides `price_tables`, it is
+  used as the **whole** table and the baseline is **not** consulted; when it is
+  absent, the baseline is used in full. Sections are never combined — a
+  `price_tables` block must list every model/service you rely on.
+- **Reference model guard.** The block must carry the reference model
+  (`anthropic`/`claude-sonnet-4-5-…`, the currency of the token economy) in its
+  `llm` section. If it does not, the block is treated as **invalid** and the
+  baseline is used in full — the economy (reservation/credits/Stripe/balance)
+  can never break on a misconfigured descriptor.
 
 ### `project_budget`
 
@@ -185,13 +208,16 @@ Behaviour:
 
 ## Runtime reads
 
-Only the **reservation** section is read by the runtime from the file; quota,
-budget, and subscription state are read from the economics tables each turn.
+The **reservation** and **price_tables** sections are read by the runtime from
+the file; quota, budget, and subscription state are read from the economics
+tables each turn.
 
 `config_scopes.economics_reservation_default(floor)` reads `reservation.<floor>`
-from the file. The reader is cached by file **mtime**, so edits (including
-write-backs) are picked up without a restart, and they propagate to every proc
-replica over the shared mount.
+and `config_scopes.economics_price_tables()` reads `price_tables`. Both readers
+are cached by file **mtime**, so edits (including write-backs) are picked up
+without a restart, and they propagate to every proc replica over the shared mount.
+`price_table()` (`infra/accounting/usage.py`) uses the descriptor section in
+full when present and valid, else the in-code baseline (no merge).
 
 Per-turn resolution in the economics entrypoint
 ([entrypoint_with_economic.py](../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/chatbot/entrypoint_with_economic.py)):
@@ -213,8 +239,8 @@ This keeps the file current so the next deploy-time seed does not regress the
 change.
 
 - Rebuilds `quota_policies`, `budget_policies`, `subscription_plans`, and
-  `project_budget.overdraft_limit_usd` from the database; **preserves/merges**
-  the `reservation` section (which is never stored in the database).
+  `project_budget.overdraft_limit_usd` from the database; **preserves** the
+  `reservation` and `price_tables` sections (which are never stored in the database).
 - Writes atomically (temp file + `os.replace`) under an exclusive `flock`, so
   concurrent writes do not lose the reservation section.
 - Best-effort: a write failure logs a warning and never fails the originating
