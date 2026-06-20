@@ -89,6 +89,17 @@ Use one target `agent_id` for one submitted package. If a UI needs two internal
 agents to react, submit two explicit packages so each lane keeps independent
 ordering and promotion.
 
+The active ReAct `agent_id` also follows outbound comm and accounting surfaces:
+
+- `RuntimeCtx.agent_id` stores the active ReAct agent inside the run.
+- `ChatCommunicator` copies the active id into envelope `metadata.agent_id`.
+- accounting contexts export `agent_id` as a first-class context key, so stored
+  usage events can be correlated to the producing ReAct agent.
+
+This identity is separate from `event.agent`, which is the event actor label
+shown to clients, and from accounting role/model dimensions such as
+`metadata.role`.
+
 Inside the bundle entrypoint:
 
 ```python

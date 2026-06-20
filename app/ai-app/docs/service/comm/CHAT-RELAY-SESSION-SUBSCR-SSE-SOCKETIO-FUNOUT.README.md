@@ -30,6 +30,8 @@ This document describes the architecture of the **chat relay** in the KDCube AI 
 * How the **SSE hub** dynamically subscribes to per-session channels.
 * How the SSE hub can also subscribe to tenant/project channels for compact
   non-chat updates such as dashboard snapshots.
+* How session broadcasts carry producer identity metadata such as
+  `metadata.agent_id` without changing Redis channel selection.
 * The problems we were fighting (high traffic, wrong subscription semantics, sync I/O).
 * What did **not** work and what the final working design looks like.
 
@@ -128,6 +130,11 @@ async def pub(self, event, target_sid, data, channel="chat.events", session_id=N
     payload = json.dumps(message, ensure_ascii=False)
     await self._aioredis.publish(full_channel, payload)
 ```
+
+Envelope payloads can carry top-level identity metadata, for example
+`metadata.agent_id`. The relay treats this as payload data. Channel selection
+continues to be driven by the requested delivery scope: direct peer, current
+session, or opt-in tenant/project SSE channel.
 
 Subscribe / dynamic add:
 

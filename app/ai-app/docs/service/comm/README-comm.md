@@ -35,6 +35,9 @@ This README is the entry point for **communication integrations**:
   queue
 - **Comm recording and event sinks**: optional recording of selected comm
   envelopes and bounded batch dispatch to telemetry or other configured sinks
+- **Envelope identity metadata**: standard comm envelopes can carry
+  `metadata.agent_id` and related producer identity fields; see
+  [Comm System](comm-system.md#envelope-identity-metadata)
 - **Runtime context crossing**: when comm-backed execution crosses into tools,
   subprocesses, or ISO runtime, the platform uses the portable context room
   documented in [Cross-Runtime Context](../../runtime/cross-runtime-context-README.md)

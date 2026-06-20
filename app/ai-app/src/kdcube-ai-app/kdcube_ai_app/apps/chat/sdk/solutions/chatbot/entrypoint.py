@@ -28,6 +28,7 @@ from kdcube_ai_app.apps.chat.emitters import (
     build_relay_from_env,
 )
 from kdcube_ai_app.apps.chat.sdk.config import get_settings
+from kdcube_ai_app.apps.chat.sdk.event_identity import DEFAULT_REACT_AGENT_ID, normalize_agent_id
 from kdcube_ai_app.apps.chat.sdk.infra.economics.policy import EconomicsLimitException
 from kdcube_ai_app.apps.chat.sdk.protocol import ExternalEventPayload
 from kdcube_ai_app.apps.chat.sdk.runtime.exec_runtime_config import normalize_exec_runtime_config
@@ -1441,14 +1442,32 @@ class BaseEntrypoint:
         user_obj = (comm.service or {}).get("user_obj") or {}
         return user_obj.get("user_type") or "anonymous"
 
+    def _current_agent_id(self) -> str:
+        try:
+            runtime_agent_id = getattr(getattr(self, "runtime_ctx", None), "agent_id", None)
+            comm_agent_id = getattr(getattr(getattr(self, "comm_context", None), "event", None), "agent_id", None)
+            service_agent_id = None
+            try:
+                service_agent_id = (getattr(self, "comm", None).service or {}).get("agent_id")
+            except Exception:
+                service_agent_id = None
+            return normalize_agent_id(
+                runtime_agent_id or comm_agent_id or service_agent_id,
+                default=DEFAULT_REACT_AGENT_ID,
+            )
+        except Exception:
+            return DEFAULT_REACT_AGENT_ID
+
     @staticmethod
     def create_initial_state(payload: Dict[str, Any]) -> Dict[str, Any]:
+        agent_id = normalize_agent_id(payload.get("agent_id"), default=DEFAULT_REACT_AGENT_ID)
         return {
             "request_id": payload.get("request_id") or _mid("req"),
             "tenant": payload.get("tenant"),
             "project": payload.get("project"),
             "user": payload.get("user"),
             "user_type": payload.get("user_type"),
+            "agent_id": agent_id,
             "session_id": payload.get("session_id"),
             "conversation_id": payload.get("conversation_id"),
             "external_events": payload.get("external_events") or [],
@@ -1647,6 +1666,12 @@ class BaseEntrypoint:
         user_type = state.get("user_type") or "anonymous"
         thread_id = state.get("conversation_id") or state.get("session_id") or "default"
         turn_id = state.get("turn_id")
+        agent_id = normalize_agent_id(
+            state.get("agent_id")
+            or getattr(getattr(getattr(self, "comm_context", None), "event", None), "agent_id", None),
+            default=DEFAULT_REACT_AGENT_ID,
+        )
+        state["agent_id"] = agent_id
         bundle_id = str(getattr(getattr(self.config, "ai_bundle_spec", None), "id", "") or getattr(self, "BUNDLE_ID", "") or "")
         request_id = (
             state.get("request_id")
@@ -1675,6 +1700,7 @@ class BaseEntrypoint:
             project_id=project,
             request_id=request_id,
             app_bundle_id=bundle_id,
+            agent_id=agent_id,
             timezone=timezone,
             conversation_id=thread_id,
             turn_id=turn_id,
@@ -1682,6 +1708,7 @@ class BaseEntrypoint:
                 "conversation_id": thread_id,
                 "turn_id": turn_id,
                 "bundle_id": bundle_id,
+                "agent_id": agent_id,
                 "entrypoint": self.__class__.__name__,
             },
         ):
@@ -2116,6 +2143,7 @@ class BaseEntrypoint:
             or token_summary.get("llm_equivalent_tokens")
             or token_summary["weighted_tokens"]
         )
+        agent_id = self._current_agent_id()
 
         self.logger.log(
             f"[Conversation id: {thread_id}; Turn id: {turn_id}] "
@@ -2157,7 +2185,7 @@ class BaseEntrypoint:
 
         if emit_turn_event:
             await self.comm.event(
-                agent="accounting",
+                agent=agent_id,
                 type="accounting.usage",
                 title=f"💰 Turn Cost: ${cost_total_usd:.6f}",
                 step="accounting",
@@ -2170,6 +2198,12 @@ class BaseEntrypoint:
                     "llm_output_sum": token_summary["llm_output_sum"],
                     "summary": compact_summary,
                     "agent_costs": agent_costs,
+                    "metadata": {
+                        "agent_id": agent_id,
+                        "bundle_id": bundle_id,
+                        "conversation_id": thread_id,
+                        "turn_id": turn_id,
+                    },
                 },
                 markdown=full_markdown,
                 status="completed",
@@ -2189,8 +2223,14 @@ class BaseEntrypoint:
                 "llm_output_sum": token_summary["llm_output_sum"],
                 "summary": compact_summary,
                 "agent_costs": agent_costs,
+                "metadata": {
+                    "agent_id": agent_id,
+                    "bundle_id": bundle_id,
+                    "conversation_id": thread_id,
+                    "turn_id": turn_id,
+                },
             },
-            agent="accounting",
+            agent=agent_id,
             markdown=full_markdown,
             broadcast=True,
         )

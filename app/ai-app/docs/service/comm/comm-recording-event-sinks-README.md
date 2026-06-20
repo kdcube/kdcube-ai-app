@@ -437,6 +437,12 @@ Recorded items are compact, privacy-filtered copies of comm envelope metadata:
     "conversation_id": "...",
     "turn_id": "..."
   },
+  "metadata": {
+    "agent_id": "default.react.agent",
+    "app_bundle_id": "versatile@2026-03-31-13-36",
+    "bundle_id": "versatile@2026-03-31-13-36",
+    "component": "chatbot"
+  },
   "event": {
     "agent": "...",
     "step": "accounting",
@@ -464,11 +470,32 @@ Privacy behavior:
 | Source | Recorded by default |
 | --- | --- |
 | Envelope service/conversation/event metadata | Yes |
+| Envelope top-level `metadata` such as `agent_id`, `bundle_id`, and `component` | Yes |
 | Arbitrary `data` payload | No |
 | Delta text | No |
 | Delta marker/index/completion metadata | Yes, when present |
 | Numeric fields from `data` | Yes, in `metrics` |
 | `accounting.usage` bounded accounting payload | Yes, for the accounting fields supported by the recorder |
+
+Telemetry sinks receive recorded envelope metadata under
+`meta.comm_metadata`. This keeps the comm producer identity available to
+downstream analytics without treating it as the visible event actor:
+
+```json
+{
+  "name": "accounting.usage",
+  "dimensions": {
+    "service_type": "llm",
+    "provider": "openai"
+  },
+  "meta": {
+    "comm_metadata": {
+      "agent_id": "default.react.agent",
+      "bundle_id": "versatile@2026-03-31-13-36"
+    }
+  }
+}
+```
 
 Use selector privacy controls to include additional bounded data:
 

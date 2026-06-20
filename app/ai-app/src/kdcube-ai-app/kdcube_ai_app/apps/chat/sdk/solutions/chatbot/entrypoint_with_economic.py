@@ -18,6 +18,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from uuid import uuid4, UUID
 
 from kdcube_ai_app.apps.chat.sdk.protocol import ExternalEventPayload
+from kdcube_ai_app.apps.chat.sdk.event_identity import DEFAULT_REACT_AGENT_ID, normalize_agent_id
 from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint import BaseEntrypoint
 from kdcube_ai_app.apps.chat.sdk.infra.economics.defaults import DEFAULT_QUOTA_POLICIES
 from kdcube_ai_app.apps.chat.sdk.config_scopes import economics_reservation_default
@@ -536,6 +537,16 @@ class BaseEntrypointWithEconomics(BaseEntrypoint):
         project = state.get("project")
         user_id = state.get("user") or state.get("fingerprint")
         user_type = state.get("user_type") or "anonymous"
+        agent_id = normalize_agent_id(
+            state.get("agent_id")
+            or getattr(getattr(getattr(self, "comm_context", None), "event", None), "agent_id", None),
+            default=DEFAULT_REACT_AGENT_ID,
+        )
+        state["agent_id"] = agent_id
+        try:
+            acct.set_context(agent_id=agent_id)
+        except Exception:
+            pass
         role = user_type
         budget_bypass = role in self.budget_bypass_user_types()
         thread_id = state.get("conversation_id") or state.get("session_id") or "default"

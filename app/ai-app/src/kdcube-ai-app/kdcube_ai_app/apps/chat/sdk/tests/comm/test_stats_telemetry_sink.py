@@ -350,7 +350,7 @@ async def test_accounting_usage_event_id_is_stable_across_chat_and_service_envel
     }
 
     await comm.event(
-        agent="accounting",
+        agent="default.react.agent",
         type="accounting.usage",
         step="accounting",
         status="completed",
@@ -360,7 +360,7 @@ async def test_accounting_usage_event_id_is_stable_across_chat_and_service_envel
         type="accounting.usage",
         step="accounting",
         status="completed",
-        agent="accounting",
+        agent="default.react.agent",
         data=data,
     )
 
@@ -373,6 +373,27 @@ async def test_accounting_usage_event_id_is_stable_across_chat_and_service_envel
     assert len(events) == 2
     assert events[0]["event_id"] == events[1]["event_id"]
     assert events[0]["data"]["breakdown"] == events[1]["data"]["breakdown"]
+
+
+@pytest.mark.anyio
+async def test_comm_metadata_carries_agent_id_to_telemetry() -> None:
+    comm = _make_comm()
+    comm.service["agent_id"] = "research.react.agent"
+    comm.record(STATS_COMM_EVENT_SELECTOR, mode="replace")
+
+    await comm.service_event(
+        type="accounting.usage",
+        step="accounting",
+        status="completed",
+        agent="research.react.agent",
+        data={"breakdown": [], "cost_total_usd": 0.0},
+    )
+
+    records = comm.export_recorded_events()
+    assert records[0]["metadata"]["agent_id"] == "research.react.agent"
+
+    events = recorded_comm_batch_to_telemetry(records, comm=comm)
+    assert events[0]["meta"]["comm_metadata"]["agent_id"] == "research.react.agent"
 
 
 @pytest.mark.anyio

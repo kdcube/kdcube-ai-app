@@ -63,6 +63,14 @@ comm_ctx
     backend = redis
     tenant
     project
+
+accounting
+  context
+    tenant_id / project_id / user_id / session_id
+    conversation_id / turn_id / app_bundle_id / component
+    agent_id
+  enrichment
+    metadata / seed_system_resources
 ```
 
 The host builds the portable spec in:
@@ -98,6 +106,20 @@ These are not serialized:
 
 The target runtime reconstructs trusted services from descriptor-backed runtime
 configuration and the restored identity descriptor.
+
+## ReAct Agent Identity
+
+`agent_id` is part of the ReAct runtime context and the accounting context. The
+host resolves it from the submitted event lane, stores it on `RuntimeCtx`, and
+binds it into accounting before the ReAct run settles usage. When a runtime
+boundary is crossed, `snapshot_ctxvars()` includes the accounting context and
+`restore_ctxvars()` recreates it in the child runtime.
+
+Consequences:
+
+- stored accounting events can expose `agent_id` as a root context field;
+- comm envelopes can expose the same id under `metadata.agent_id`;
+- accounting role/model dimensions remain independent from `agent_id`.
 
 ## Flow
 

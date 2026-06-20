@@ -251,6 +251,7 @@ def make_recorded_item(
         "route_key": event.route_key,
         "service": json_safe(service),
         "conversation": json_safe(conversation),
+        "metadata": json_safe(envelope.get("metadata") or {}),
         "event": json_safe({
             "agent": event_meta.get("agent"),
             "step": event_meta.get("step"),

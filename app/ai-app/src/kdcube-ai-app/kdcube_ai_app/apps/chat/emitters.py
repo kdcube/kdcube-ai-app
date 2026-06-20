@@ -21,6 +21,7 @@ from kdcube_ai_app.apps.chat.sdk.comm.recording import (
     selector_privacy,
 )
 from kdcube_ai_app.apps.chat.sdk.config import get_settings
+from kdcube_ai_app.apps.chat.sdk.event_identity import DEFAULT_REACT_AGENT_ID, normalize_agent_id
 from kdcube_ai_app.apps.chat.sdk.protocol import (
     ChatEnvelope, ServiceCtx, ConversationCtx, ExternalEventRouting, _iso_now, ExternalEventPayload
 )
@@ -1263,8 +1264,20 @@ class ChatCommunicator:
             return
 
     # ---------- envelopes ----------
+    def _identity_metadata(self) -> Dict[str, Any]:
+        service = self.service if isinstance(self.service, Mapping) else {}
+        metadata: Dict[str, Any] = {}
+        agent_id = service.get("agent_id")
+        if agent_id:
+            metadata["agent_id"] = str(agent_id)
+        for key in ("app_bundle_id", "bundle_id", "component", "surface_ref", "source_surface_ref"):
+            value = service.get(key)
+            if value:
+                metadata[key] = str(value)
+        return metadata
+
     def _base_env(self, typ: str) -> Dict[str, Any]:
-        return {
+        env = {
             "type": typ,
             "timestamp": _iso_now(),
             "ts": int(time.time() * 1000),
@@ -1276,6 +1289,10 @@ class ChatCommunicator:
             },
             "event": {"step": "event", "status": "update"},
         }
+        metadata = self._identity_metadata()
+        if metadata:
+            env["metadata"] = metadata
+        return env
 
     async def emit_enveloped(self, env: dict):
         # sniff and record deltas coming through the generic path
@@ -1615,6 +1632,12 @@ def build_comm_from_comm_context(
     socket_id = task.routing.socket_id
     request_id = task.request.request_id
 
+    agent_id = DEFAULT_REACT_AGENT_ID
+    try:
+        agent_id = normalize_agent_id(getattr(getattr(task, "event", None), "agent_id", None))
+    except Exception:
+        agent_id = DEFAULT_REACT_AGENT_ID
+
     svc = ServiceCtx(
         request_id=request_id,
         tenant=task.actor.tenant_id,
@@ -1629,9 +1652,11 @@ def build_comm_from_comm_context(
         turn_id=task.routing.turn_id,
     )
     # IMPORTANT: new communicator instance every time
+    service_payload = svc.model_dump()
+    service_payload["agent_id"] = agent_id
     return ChatCommunicator(
         emitter=relay,
-        service=svc.model_dump(),
+        service=service_payload,
         conversation=conv.model_dump(),
         room=session_id,
         target_sid=socket_id,

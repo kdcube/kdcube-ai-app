@@ -151,6 +151,35 @@ Transports (SSE / Socket.IO) hook into the chat relay to dynamically subscribe/u
 
     * `IEventFilter.allow_event(...)`
 
+### Envelope Identity Metadata
+
+Every standard `ChatCommunicator` envelope may include top-level `metadata`
+derived from the communicator service context:
+
+```json
+{
+  "type": "accounting.usage",
+  "metadata": {
+    "agent_id": "default.react.agent",
+    "app_bundle_id": "versatile@2026-03-31-13-36",
+    "bundle_id": "versatile@2026-03-31-13-36",
+    "component": "chatbot"
+  },
+  "event": {
+    "agent": "default.react.agent",
+    "step": "accounting",
+    "status": "completed"
+  }
+}
+```
+
+`metadata.agent_id` is the stable ReAct agent identity used for producer
+attribution, routing diagnostics, accounting correlation, recording, and event
+sink output. `event.agent` is the visible actor/source label in the emitted
+event. Consumers should identify accounting refresh signals by
+`type == "accounting.usage"` and use `metadata.agent_id` when they need the
+specific producer identity.
+
 ### Bundle‑level outbound firewall
 
 Bundles can attach an **event filter** that acts as an outbound firewall.
@@ -171,6 +200,12 @@ choose the smallest scope that matches the UI behavior.
 | `comm.service_event(..., broadcast=False)` | direct peer when the request supplied `KDC-Stream-ID`; otherwise current session | open SSE/Socket.IO peer; pass `KDC-Stream-ID` for REST operations that need a direct reply | progress for the tab that launched a bundle operation |
 | `comm.service_event(..., broadcast=True)` | all connected peers in the current authenticated session | normal session stream | update every tab for the same user session |
 | `comm.project_event(...)` | all SSE clients for the same tenant/project that opened `/sse/stream?project_events=true` | SSE stream with `tenant`, `project`, and `project_events=true` | compact debounced project snapshots, such as usage dashboards |
+
+`broadcast=True` remains an emitter-owned decision. It publishes to the current
+authenticated session channel, not to every project listener and not to the
+Data Bus. For example, the chat ReAct entrypoint emits its own
+`accounting.usage` session broadcast after it settles a turn; other accountable
+surfaces choose their own delivery path.
 
 `comm.project_event(...)` is not a replacement for telemetry streams or raw
 logs. It publishes a `chat_service` envelope to the tenant/project channel

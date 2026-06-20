@@ -32,7 +32,7 @@ from typing import Set
 CONTEXT_EXPORT_KEYS: Set[str] = {
     "user_id", "session_id", "user_type",
     "project_id", "tenant_id", "request_id",
-    "component", "app_bundle_id", "timezone"
+    "component", "app_bundle_id", "timezone", "agent_id"
 }
 
 def register_context_keys(*keys: str) -> None:

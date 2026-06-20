@@ -513,6 +513,11 @@ The platform resolves this automatically; bundle code does not bind anything:
 4. for the lifetime of the ReAct run, the runtime overlays it onto
    `bundle_call_context.role_models`, so `ModelRouter` picks it up per role
 
+The active id is also stored on `RuntimeCtx.agent_id`. Chat comm envelopes copy
+it to `metadata.agent_id`, and accounting stores it as an exported context key
+for usage correlation. This field identifies the producing ReAct agent; it is
+separate from accounting role metadata used for pricing/model breakdowns.
+
 Effective precedence for a ReAct model call becomes:
 
 1. explicit per-request `bundle_call_context.role_models` (a bundle/runtime overlay

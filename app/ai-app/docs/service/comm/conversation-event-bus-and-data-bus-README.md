@@ -48,6 +48,12 @@ For the compact routing and partitioning contract, including `agent_id`,
 `subject`, `object_ref`, and handler examples, read
 [Bus Routing And Partitioning](bus-routing-and-partitioning-README.md).
 
+The conversation bus `agent_id` is also the producer identity exported by the
+ReAct runtime. Outbound comm envelopes expose it as `metadata.agent_id`, and
+stored accounting usage records expose it as an accounting context field. Data
+Bus handler selection remains subject-based; `agent_id` is used only when a
+Data Bus handler explicitly bridges a result back into the conversation bus.
+
 ## Routing Snapshot
 
 ```text

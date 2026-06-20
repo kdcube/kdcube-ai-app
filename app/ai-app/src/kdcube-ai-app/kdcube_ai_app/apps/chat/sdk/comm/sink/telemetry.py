@@ -565,6 +565,7 @@ def _base_event(
             "comm_type": _safe(item.get("type"), max_len=128),
             "socket_event": _safe(item.get("socket_event"), max_len=128),
             "route_key": _safe(item.get("route_key"), max_len=128),
+            "comm_metadata": _clean_mapping(_mapping(item.get("metadata"))),
         },
         "data": dict(data or {}),
     }
