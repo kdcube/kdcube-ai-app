@@ -4,13 +4,14 @@ title: "How To Write A Bundle"
 summary: "Authoring guide for bundle creators and integrators: bundle shape, lifecycle, decorators, runtime surfaces, bundle events, configuration and storage decisions, and how to turn a product idea or existing app into a deployable bundle."
 tags: ["sdk", "bundle", "authoring", "workflow", "widget", "api", "events", "testing"]
 keywords: ["bundle authoring guide", "bundle creator path", "bundle integrator path", "end to end bundle design", "decorator selection", "runtime surface selection", "widget api mcp cron on_job choices", "bundle events", "event sources", "artifact rehosters", "shared sdk widget components", "configuration and storage decisions", "bundle lifecycle design", "reference authoring patterns"]
-updated_at: 2026-06-11
+updated_at: 2026-06-20
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/how-to-integrate-with-kdcube-apps-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-navigate-kdcube-docs-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-test-bundle-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-assemble-bundle-with-sdk-building-blocks-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-avoid-common-bundle-integration-failures-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-understand-conversation-events-and-react-turns-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-release-bundle-content-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/configuration/bundle-runtime-configuration-and-secrets-README.md
@@ -27,6 +28,8 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-events-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-transports-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-widget-integration-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/scene/scene-composition-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/scene/scene-surface-registry-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/integrations/telegram/telegram-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/integrations/telegram/telegram-external-prereq-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/service/cicd/ngrok-README.md
@@ -60,6 +63,13 @@ server, or backend-only app should integrate with KDCube, choose that shape in
 [How To Integrate With KDCube Apps](../../../how-to-integrate-with-kdcube-apps-README.md)
 before deciding whether the app needs widgets, operations, Data Bus handlers,
 named services, chat events, or no UI at all.
+
+If the app needs several browser surfaces to behave as one product workspace,
+read [Scene Composition](../../solutions/scene/scene-composition-README.md)
+early. Scene building is the frontend connection layer for the app ecosystem:
+it mounts surfaces, relays runtime config, distributes namespace presentation,
+routes context drag/drop, dispatches provider-declared object opens, and can
+relay live events to subscribed widgets.
 
 For the local runtime command lifecycle, use
 [how-to-configure-and-run-bundle-README.md#canonical-cli-flow-schemas](how-to-configure-and-run-bundle-README.md#canonical-cli-flow-schemas).
@@ -132,6 +142,9 @@ Common failure recipes:
   widget visibility, live progress events, Data Bus mutations, authored event
   policies, or resolver registration, read
   [how-to-avoid-common-bundle-integration-failures-README.md](how-to-avoid-common-bundle-integration-failures-README.md)
+- before submitting or consuming conversation `external_events[]`, followups,
+  steers, snapshots, ReAct event-source blocks, or story-aware UI events, read
+  [how-to-understand-conversation-events-and-react-turns-README.md](how-to-understand-conversation-events-and-react-turns-README.md)
 - before integrating memory, canvas, tasks, Telegram, delivery, or another
   reusable SDK subsystem, read
   [bundle-subsystem-integration-README.md](../bundle-subsystem-integration-README.md)
@@ -644,6 +657,21 @@ State-placement rule:
   persisted bundle artifacts
 - DB/Redis/external APIs:
   runtime or business state
+
+Conversation-event rule:
+
+- a client-authored event is not a direct bundle call
+- accepted events are ordered in the conversation event lane
+- queue entries are wake pointers, not event bodies and not ordering authority
+- proc may ignore an obsolete wake, defer to a fresh consumer, or schedule a
+  turn by crossing the bundle-load/on-message fence
+- ReAct timeline blocks are projections created by event-source policy, not
+  the event bus itself
+- stale owners must rollback through `ExternalEventLaneTurnSuperseded`, not
+  commit stale output
+
+For the full boundary map, read
+[Conversation Events And ReAct Turns](how-to-understand-conversation-events-and-react-turns-README.md).
 
 ## 1D.1 Reuse SDK Building Blocks First
 

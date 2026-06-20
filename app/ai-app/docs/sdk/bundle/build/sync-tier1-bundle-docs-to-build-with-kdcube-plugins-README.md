@@ -36,6 +36,9 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/event-source/event-source-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/service/cicd/ngrok-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-widget-integration-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/scene/scene-composition-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/scene/scene-surface-registry-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/scene/cross-surface-context-drag-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/design/bundle-loader-import-isolation-README.md
 ---
 # Tier 1 Bundle Pack For Build-With-KDCube Plugins
@@ -174,6 +177,11 @@ Recommended:
   reachable for source-folder widget work, especially the `OUTDIR` /
   `<VI_BUILD_DEST_ABSOLUTE_PATH>` build command contract and shared SDK UI
   materialization via `shared_sources`
+- keep [Scene Composition](../../solutions/scene/scene-composition-README.md)
+  reachable when the app needs a browser workspace that connects multiple
+  surfaces. Plugin agents should treat scene building as the frontend
+  ecosystem layer over widgets, named-service object refs, namespace
+  presentation, context drag/drop, and event-bus/Data Bus relay.
 - keep [bundle-client-communication-README.md](../bundle-client-communication-README.md)
   and [bundle-transports-README.md](../bundle-transports-README.md) reachable
   for browser/backend communication, especially non-chat bundle events over

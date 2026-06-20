@@ -14,6 +14,8 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-platform-integration-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-client-ui-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-client-communication-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/scene/scene-composition-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/scene/scene-event-orchestration-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/service/comm/conversation-event-bus-and-data-bus-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/service/comm/data-bus-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/service/cicd/cli-README.md
@@ -28,6 +30,13 @@ A KDCube-served widget is one app integration shape. For the broader choice
 between iframe UI, direct host browser clients, host-server clients, and
 backend-only KDCube apps, start with
 [How To Integrate With KDCube Apps](../../how-to-integrate-with-kdcube-apps-README.md).
+
+When multiple widgets or app surfaces need to work together in one browser
+workspace, use [Scene Composition](../solutions/scene/scene-composition-README.md)
+as the canonical scene-building guide. A scene host owns the surface registry,
+config handshake, namespace presentation relay, local postMessage routing, and
+optional event-bus relay. Individual widgets still own their own rendering and
+domain commands.
 
 Core contract:
 

@@ -1,7 +1,7 @@
 ---
 id: repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/scene/scene-composition-README.md
 title: "Scene Composition"
-summary: "How an app assembles a host scene from configured UI surfaces, shared scene runtime sources, config handshakes, local message routing, and optional Data Bus subscriptions."
+summary: "Canonical app-scene building guide: how an app assembles a host scene from configured UI surfaces, shared scene runtime sources, config handshakes, namespace presentation, local message routing, and optional Data Bus subscriptions."
 status: draft
 tags: ["sdk", "solutions", "scene", "surface", "widget", "iframe", "composition", "data-bus", "postmessage"]
 updated_at: 2026-06-17
@@ -27,6 +27,12 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/service/comm/data-bus-README.md
 ---
 # Scene Composition
+
+This is the canonical scene-building document. Use it when an app needs to
+compose chat, canvas, memory, task, analytics, news, or app-specific widgets
+into one browser workspace. The companion scene docs cover narrower contracts:
+surface registry, cross-surface context drag, event orchestration, and visual
+layering.
 
 Read these words first:
 
@@ -260,6 +266,45 @@ surface iframe                       scene host
 The host replies to the requesting surface by matching the request identity and
 the frame/source that sent it. This is the standard widget contract from
 [Bundle Widget Integration](../../bundle/bundle-widget-integration-README.md).
+
+## Namespace Presentation Config
+
+Namespace presentation is app-owned runtime metadata. It gives the visual
+identity for root namespaces such as `mem`, `task`, `fi`, and `cnv`. The
+same map is used by:
+
+| Consumer | Use |
+| --- | --- |
+| Chat widget | Colors attached-context chips, search-result chips, and namespaced object refs. |
+| Scene drag overlay | Colors compatible target areas while a namespaced object is being dragged. |
+| Canvas / pinboard | Colors object pins/cards by the represented object's root namespace. |
+
+The app exposes the map through a public read endpoint:
+
+```text
+POST /api/integrations/bundles/<tenant>/<project>/<app_id>/public/namespace_presentation_config
+```
+
+Current code still uses the platform route segment `bundles` because that is
+the internal deployment term. Conceptually this is an app endpoint.
+
+The normal flow is:
+
+```text
+scene host
+  -> fetch public namespace_presentation_config
+  -> keep namespaceStyles in scene state
+  -> include namespace_styles / namespaceStyles in CONFIG_RESPONSE
+  -> widgets render their local UI from the same map
+```
+
+Widgets that are mounted without a scene host can fetch the same public
+endpoint directly as a fallback. These fallback callers must use the same
+public endpoint, not the privileged `/operations/...` route.
+
+Namespace presentation does not define object behavior. A green `mem:*` chip
+is still opened through the memory namespace provider; a blue `task:*` card is
+still opened through the task namespace provider.
 
 ## Local Surface Messages
 

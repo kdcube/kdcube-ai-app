@@ -52,6 +52,7 @@ TELEGRAM_WEBHOOK_PUBLIC_AUTH = {
     "secret_key": "integrations.telegram.webhook_secret",
 }
 TELEGRAM_WEBAPP_PUBLIC_AUTH = "none"
+PUBLIC_READ_AUTH = "none"
 TELEMETRY_SINK_TOKEN_SECRET = "b:telemetry_sink.auth.token"
 EVENT_RECORD_MAX = 200
 DATA_BUS_ECHO_SUBJECT = "versatile.echo"
@@ -513,7 +514,8 @@ class VersatileEntrypoint(BaseEntrypointWithEconomicsAndMemory):
     @api(
         method="POST",
         alias="namespace_presentation_config",
-        route="operations",
+        route="public",
+        public_auth=PUBLIC_READ_AUTH,
         **_api_visibility("namespace_presentation_config"),
     )
     async def namespace_presentation_config(self, **kwargs) -> Dict[str, Any]:

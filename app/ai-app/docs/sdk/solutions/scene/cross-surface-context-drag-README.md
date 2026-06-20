@@ -339,6 +339,16 @@ the runtime namespace presentation config. The style is not owned by canvas,
 chat, memory, task, or a host page. A scoped ref such as
 `task:issue:attachment:...` uses style key `task`.
 
+The server-owned presentation map is exposed by the hosting app through:
+
+```text
+POST /api/integrations/bundles/<tenant>/<project>/<bundle>/public/namespace_presentation_config
+```
+
+The scene normally fetches this map first and passes it to hosted widgets in
+their config handshake. Chat and canvas widgets can also fetch the same public
+endpoint directly when embedded without a scene host.
+
 ## SDK Runtime API
 
 The generic pieces live in the SDK scene runtime and are also exported by
@@ -431,7 +441,7 @@ Current consumers:
 | Memory widget | Has both host-command open and native drop parsing. | Native drop parser is convenience only; host-command open is the generic path. |
 | Task widget | Has target-surface command handling for issue list/editor paths. | Needs reliable broker input from all source surfaces. |
 | Providers | `mem` and `task` resolve `open` through named-service/canvas resolver paths. | New namespaces must advertise and implement `object.action open`. |
-| Namespace styles | Config exists and is passed through scene/widget config to chat and canvas surfaces. | New surfaces must consume the shared namespace presentation map instead of inventing local colors. |
+| Namespace styles | Config exists on the app runtime and is exposed through the public `namespace_presentation_config` endpoint. The scene passes it through widget config to chat, canvas, and overlay surfaces. | New surfaces must consume the shared namespace presentation map instead of inventing local colors. |
 
 ## Acceptance Matrix
 

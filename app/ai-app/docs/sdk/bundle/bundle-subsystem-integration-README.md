@@ -231,9 +231,9 @@ config endpoint:
 - `namespace_styles` is read by namespace-aware surfaces. The same root
   namespace key (`mem`, `task`, `fi`, `cnv`, and so on) should style the object
   in chat context chips, named-service search results, and canvas cards.
-  Bundles can expose it through an operation such as
-  `namespace_presentation_config`; scene-specific operations may include the same
-  top-level field for compatibility, but do not own it.
+  Apps expose it through their public `namespace_presentation_config` endpoint.
+  Scene-specific config responses may include the same top-level field for
+  compatibility, but do not own it.
 
 - `canvas.info_html` rides the canvas integration surface — the bundle's
   `canvas_list` operation reads `config.canvas.info_html` and echoes it on the

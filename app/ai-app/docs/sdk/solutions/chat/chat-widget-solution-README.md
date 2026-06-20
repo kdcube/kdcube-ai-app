@@ -27,6 +27,7 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-subsystem-integration-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/event-hub/resolver-and-policy-registration-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/scene/scene-composition-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/scene/cross-surface-context-drag-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/scene/scene-surface-registry-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/clients-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/memory/memory-widget-solution-README.md
@@ -67,6 +68,20 @@ sdk://solutions/chat/ui/widget
 The bundle still owns the assistant runtime, tools, resolvers, policies, and
 visibility rules. The chat widget sends events to the bundle; it does not decide
 how the agent interprets every domain object.
+
+## Namespace Presentation
+
+Namespaced context chips and search-result chips use the app's namespace
+presentation map. In a scene, the scene host fetches
+`public/namespace_presentation_config` and passes `namespace_styles` /
+`namespaceStyles` in the widget config handshake. When the chat widget is
+mounted without a scene host, it can fetch the same public endpoint directly as
+a fallback.
+
+The same map is used by the scene drag overlay and canvas pins, so a `mem:*`,
+`task:*`, `fi:*`, or `cnv:*` ref keeps the same color across chat, canvas, and
+drop targets. See
+[Scene Composition](../scene/scene-composition-README.md#namespace-presentation-config).
 
 ### Send eligibility and anonymous visitors
 

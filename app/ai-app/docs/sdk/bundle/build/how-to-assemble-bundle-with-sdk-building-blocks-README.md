@@ -4,7 +4,7 @@ title: "How To Assemble A Bundle With SDK Building Blocks"
 summary: "Tier 1 bundle-builder map for choosing reusable KDCube SDK and platform blocks before writing custom bundle services: tools, event sources, agents, storage, widgets, jobs, integrations, and solutions."
 tags: ["sdk", "bundle", "tier-1", "building-blocks", "integrations", "solutions", "tools"]
 keywords: ["bundle building blocks", "sdk integrations", "sdk solutions", "bundle assembly map", "reuse sdk components", "telegram integration", "email integration", "tasks solution", "delivery integration", "shared sdk widget components", "built in tools", "react tools", "bundle events", "event sources", "artifact rehosters"]
-updated_at: 2026-06-11
+updated_at: 2026-06-20
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/how-to-integrate-with-kdcube-apps-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-navigate-kdcube-docs-README.md
@@ -12,6 +12,7 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-test-bundle-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-avoid-common-bundle-integration-failures-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-understand-conversation-events-and-react-turns-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-bootstrap-local-bundle-runtime-as-coding-agent-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/tasks-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/integrations/README.md
@@ -134,7 +135,7 @@ ownership.
 | Explicit report delivery to email/Telegram with delivered-file metadata | `kdcube_ai_app.apps.chat.sdk.integrations.delivery` | [Email Integration](../../integrations/email/email-README.md), [Telegram Integration](../../integrations/telegram/telegram-README.md) |
 | Web search and web fetch with source-pool provenance | `web_tools` | [SDK Tools](../../tools/sdk-tools-README.md) |
 | Policy-driven tool result rendering | tool `@event_source(...)` declarations plus `react_phase=block_production` policies | [Bundle Events](../bundle-events-README.md), [React Event Sources](../../agents/react/event-source/event-source-README.md) |
-| Story-aware wizard/canvas/chat events and snapshots | authored external events with `payload.target.agent_id`, `story_kind`, `story_id`, and `external_events[].event_source_id` | [Bundle Events](../bundle-events-README.md), [External Events](../../events/external-events-README.md) |
+| Story-aware wizard/canvas/chat events and snapshots | authored external events with `payload.target.agent_id`, `story_kind`, `story_id`, and `external_events[].event_source_id`; first understand the lane/wake/bundle-load/ReAct-turn fences | [Conversation Events And ReAct Turns](how-to-understand-conversation-events-and-react-turns-README.md), [Bundle Events](../bundle-events-README.md), [External Events](../../events/external-events-README.md) |
 | Bundle/domain artifact refs visible to ReAct | `@artifact_namespace_rehoster(...)` for compact owner namespaces such as `nmsp:...`, `mem:...`, or `cnv:...`; `react.pull` returns the materialized `fi:` path | [Bundle Events](../bundle-events-README.md), [React Event Source](../../agents/react/event-source/event-source-README.md), [React Turn Workspace](../../agents/react/react-turn-workspace-README.md) |
 | Real browser verification for generated HTML, widgets, and local browser flows | `browser_tools`, shared Playwright backend, per-turn BrowserContext | [Browser Tools](../../integrations/browser/browser-tools-README.md), [Playwright Backend](../../integrations/browser/playwright-README.md) |
 | ReAct-side artifact recovery, search, and precise text editing | `react.pull`, `react.checkout`, `react.rg`, `react.read`, `react.patch` | [React Turn Workspace](../../agents/react/react-turn-workspace-README.md), [React Runtime Configuration](../../agents/react/runtime-configuration-README.md) |
@@ -146,6 +147,7 @@ ownership.
 | Bundle-served MCP endpoint | `@mcp(...)` | [Bundle Platform Integration](../bundle-platform-integration-README.md), [MCP Tools](../../tools/mcp-README.md) |
 | Claude Code subagent with scoped MCP/tools | `ClaudeCodeAgent`, `ClaudeCodeWorkspaceConfig` | [Bundle Agent Integration](../bundle-agent-integration-README.md) |
 | Browser widget or Mini App | `@ui_widget(...)`, source-folder widget build, operations/public APIs | [Bundle Widget Integration](../bundle-widget-integration-README.md) |
+| App scene that connects chat, canvas, namespace objects, widgets, and live client events into one workspace | scene host + `@kdcube/components-core/scene` style runtime contract: surface registry, config handshake, namespace presentation relay, context drag broker, provider-backed open routing, and optional event-bus/Data Bus relay | [Scene Composition](../../solutions/scene/scene-composition-README.md), [Scene Surface Registry](../../solutions/scene/scene-surface-registry-README.md), [Cross-Surface Context Drag](../../solutions/scene/cross-surface-context-drag-README.md), [Scene Event Orchestration](../../solutions/scene/scene-event-orchestration-README.md) |
 | Host product/client integration with a KDCube app | Choose iframe app UI, embedded control plane, direct host browser client, host-server client, or backend-only app; then wire operations, chat stream, Data Bus, named services, files, and auth accordingly | [How To Integrate With KDCube Apps](../../../how-to-integrate-with-kdcube-apps-README.md) |
 | Expose a namespace (`task:`, …) of objects/actions for other bundles to call, **or** consume another bundle's namespace as canvas pins / chat chips / agent tools | Owner side: `named_service` API operation + `NamedServiceRegistry`. Consumer side: `named_services.namespaces.<ns>.provider` config + generic resolver — no shared code, configured discovery | [Namespace Services](../../namespace-services/README.md) (index → Providers / Clients / Integration), [Bundle Subsystem Integration](../bundle-subsystem-integration-README.md) |
 | Widget expand to fullscreen/overlay when embedded as an iframe | host-driven `kdcube-widget-view` / `kdcube-set-view` postMessage; host promotes the same iframe (no reload) | [Frame View Contract](../bundle-widget-integration-README.md#frame-view-contract-host-driven-expand) |
@@ -248,6 +250,12 @@ main UI
 Bundle code owns the story identity model, event-source ids, snapshot storage,
 artifact namespace rehosters, and policies for how those events appear to the
 agent. UI code owns the interaction surface and sends explicit product events.
+
+Before implementing this path, read
+[Conversation Events And ReAct Turns](how-to-understand-conversation-events-and-react-turns-README.md).
+The event path crosses ingress, lane, wake queue, processor, bundle-load, ReAct
+consumer, timeline, and turn-commit fences. Do not treat a widget event as a
+direct call into the bundle or as an immediate timeline block.
 
 ### Telegram Bot Transport And Optional Mini App Controls
 

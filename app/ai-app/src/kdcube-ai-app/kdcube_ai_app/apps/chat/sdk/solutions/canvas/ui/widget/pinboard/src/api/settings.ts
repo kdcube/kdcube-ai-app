@@ -176,7 +176,7 @@ class Settings {
     try {
       const alias = 'namespace_presentation_config';
       const response = await fetch(
-        `${this.getBaseUrl()}/api/integrations/bundles/${encodeURIComponent(tenant)}/${encodeURIComponent(project)}/${encodeURIComponent(bundleId)}/operations/${alias}`,
+        `${this.getBaseUrl()}/api/integrations/bundles/${encodeURIComponent(tenant)}/${encodeURIComponent(project)}/${encodeURIComponent(bundleId)}/public/${alias}`,
         {
           method: 'POST',
           credentials: 'include',

@@ -24,6 +24,7 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/canvas/external-subsystem-event-source-products-pins-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/event-hub/resolver-and-policy-registration-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/scene/scene-composition-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/scene/cross-surface-context-drag-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/events/namespaces-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/service/comm/conversation-event-bus-and-data-bus-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/service/comm/data-bus-README.md
@@ -130,6 +131,20 @@ namespace when pinned:
 Canvas does not rehost external objects just because they are pinned. Rehosting
 is an explicit action owned by the target subsystem, for example attaching a
 chat file to a provider-owned object.
+
+## Namespace Presentation
+
+Canvas cards/pins use the represented object's root namespace for presentation.
+The app-owned namespace map is exposed through
+`public/namespace_presentation_config`. In a scene, the host fetches that map
+and passes it to the pinboard/canvas widget in the runtime config handshake.
+When the pinboard is embedded without a scene host, it can fetch the same
+public endpoint directly as a fallback.
+
+The same map is consumed by chat context chips and the scene drag overlay. This
+keeps `mem:*`, `task:*`, `fi:*`, and `cnv:*` visual identity consistent across
+chat, drag target areas, and canvas pins. See
+[Scene Composition](../scene/scene-composition-README.md#namespace-presentation-config).
 
 ## Configuring Storage
 
