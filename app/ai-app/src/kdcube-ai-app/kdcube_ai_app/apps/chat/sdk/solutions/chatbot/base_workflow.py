@@ -20,6 +20,7 @@ from kdcube_ai_app.apps.chat.emitters import (
 )
 from kdcube_ai_app.apps.chat.external_events import build_conversation_external_event_source
 from kdcube_ai_app.apps.chat.sdk.events.event_bus import (
+    ExternalEventLaneTurnSuperseded,
     EventLaneWakePublisher,
     RedisEventLaneWakeEnqueuer,
 )
@@ -1578,6 +1579,11 @@ class BaseWorkflow():
             })
         return entries
 
+    async def _assert_event_lane_turn_current(self, *, phase: str) -> None:
+        checker = getattr(getattr(self, "ctx_browser", None), "assert_external_event_handler_current", None)
+        if callable(checker):
+            await checker(phase=phase)
+
     async def _persist_user_conversation_entry(
         self,
         *,
@@ -2640,12 +2646,16 @@ class BaseWorkflow():
                 open_external_event_handler = getattr(self.ctx_browser, "open_external_event_handler", None)
                 if callable(open_external_event_handler):
                     await open_external_event_handler()
+            except ExternalEventLaneTurnSuperseded:
+                raise
             except Exception:
                 self.logger.log(traceback.format_exc(), "ERROR")
             try:
                 await self.ctx_browser.load_timeline(
                     days=365,
                 )
+            except ExternalEventLaneTurnSuperseded:
+                raise
             except Exception:
                 try:
                     self.logger.log(
@@ -2704,6 +2714,8 @@ class BaseWorkflow():
                 pass
 
         except Exception as e:
+            if isinstance(e, ExternalEventLaneTurnSuperseded):
+                raise
             self.logger.log(traceback.format_exc(), "ERROR")
             try:
                 from kdcube_ai_app.apps.chat.sdk.solutions.infra import ExecWorkspaceError
@@ -2806,6 +2818,8 @@ class BaseWorkflow():
         tenant, project, user, user_type, request_id = self._ctx["service"]["tenant"], self._ctx["service"]["project"], self._ctx["service"]["user"], self._ctx["service"]["user_type"], self._ctx["service"]["request_id"]
         conversation_id, turn_id = self._ctx["conversation"]["conversation_id"], self._ctx["conversation"]["turn_id"]
         t_turn0, ms0u = self._ctx["turn"]["t_turn0"], self._ctx["turn"]["ms0u"]
+
+        await self._assert_event_lane_turn_current(phase="finish_turn")
 
         if scratchpad.answer:
             try:
@@ -3115,6 +3129,8 @@ class BaseWorkflow():
         extra_data: dict = {}
         managed_exception: Exception | None = None
         show_error_in_timeline = True
+        suppress_user_error = False
+        log_level = "ERROR"
         service_exception = _service_exception_from_chain(exc)
 
         # Defaults for generic path
@@ -3133,7 +3149,21 @@ class BaseWorkflow():
                 pass
 
         # ---- unwrap ServiceException / TurnPhaseError vs generic errors ----
-        if service_exception is not None and _is_service_connectivity_error(service_exception.err):
+        if isinstance(exc, ExternalEventLaneTurnSuperseded):
+            message = str(exc)
+            error_type = "ExternalEventLaneTurnSuperseded"
+            extra_data = {
+                "turn_id": exc.turn_id,
+                "owner_turn_id": exc.owner_turn_id,
+                "handler_status": exc.handler_status,
+                "conversation_id": exc.conversation_id,
+                "event_lane_phase": exc.phase,
+            }
+            show_error_in_timeline = False
+            suppress_user_error = True
+            log_level = "INFO"
+
+        elif service_exception is not None and _is_service_connectivity_error(service_exception.err):
             se: ServiceError = service_exception.err
             agent = se.service_name or agent
             stage = se.stage or stage
@@ -3239,7 +3269,7 @@ class BaseWorkflow():
             f"Turn failed at phase={stage} agent={agent}: {message}\n"
             f"Timings:\n{ms_pretty_table}\n"
             f"error_type={error_type};phase_meta={meta}",
-            level="ERROR",
+            level=log_level,
         )
 
         # ---- build message payload ----
@@ -3266,7 +3296,9 @@ class BaseWorkflow():
         for k in ("raw_error", "traceback"):
             if k in data_for_user:
                 data_for_user.pop(k, None)
-        if show_error_in_timeline:
+        if suppress_user_error:
+            pass
+        elif show_error_in_timeline:
             # pass
             # Emit error event for telemetry and an answer bubble for the user.
             await self.comm.error(message=message, agent="turn.error", data=data_for_user)

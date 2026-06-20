@@ -4,7 +4,7 @@ title: "Conversation Event Bus Orchestrator"
 summary: "Design for the conversation external-event bus orchestrator and its shared Redis synchronization table."
 status: draft
 tags: ["service", "comm", "conversation-event-bus", "external-events", "react", "redis"]
-updated_at: 2026-06-19
+updated_at: 2026-06-20
 keywords:
   [
     "conversation event bus orchestrator",
@@ -271,50 +271,42 @@ state was written. The live signal is lane consumption:
 
 ```text
 T.consumer.status_at
-  fallback "last known consumer acknowledgement" timestamp
-
-probe ack
-  immediate proof that the currently open consumer can still read this lane
+  last known consumer acknowledgement timestamp
 ```
 
-The probe protocol is intentionally minimal. When a new turn sees a different
-open handler, it appends one control event to the same conversation event lane:
-
-```json
-{
-  "kind": "probe",
-  "probe_id": "probe_abc123",
-  "for_turn": "turn-A"
-}
-```
-
-The current open consumer reads the same stream in order. If it is alive and
-the probe is for its own turn, it writes one short-lived ack key:
+The handler and consumer are the same runtime owner, but
+`T.consumer.status_at` is the only timestamp that answers the liveness
+question:
 
 ```text
-SETEX <conversation-event-lane-key>:probe:probe_abc123 30 "turn-A"
+fresh consumer_status_at
+  an owner recently acknowledged the lane; defer to it
+
+missing or stale consumer_status_at
+  no owner has acknowledged the lane recently; reclaim it
 ```
 
-That ack means exactly this:
+The reclaim window is a recovery timeout, not a correctness boundary. A live
+but starved old turn can still be reclaimed. That is acceptable only if the
+old turn detects the ownership switch before it commits output. The ReAct
+runtime therefore fences the old turn in two places:
 
 ```text
-turn-A read this lane through probe_abc123
+consumer/listener fence
+  when the live consumer refreshes the owner lease, acknowledges consumption,
+  or accepts lane events, it verifies that T.handler.turn_id is still its turn.
+
+finish fence
+  before answer emission and turn persistence, BaseWorkflow asks the
+  ContextBrowser to verify that T.handler.turn_id is still this turn.
 ```
 
-It does not say that any specific user event has been rendered, answered, or
-persisted. It only proves the open consumer is still alive on this lane. The
-consumer already owns the normal rule for reading and applying all lane events
-before and around the probe.
-
-Probe events are control events:
-
-- they are stored in the same lane so the live consumer can see them;
-- they are not rendered into the ReAct timeline;
-- they are not reactive;
-- they are not promotable into their own processor turn;
-- they do not advance `T.last_processed_event_timestamp`;
-- they do not advance `T.last_processed_reactive_event_timestamp`;
-- they may advance the local Redis stream cursor in the reading consumer.
+If either fence sees a newer owner, it raises
+`ExternalEventLaneTurnSuperseded`. That exception lands in the normal turn
+exception path, which removes the current turn from the index. Because the
+finish fence runs before committed answer emission and persistence, the
+superseded turn does not save a partial or stale turn. The newer owner reads
+the last committed turn from the index and proceeds.
 
 ### Healthy Flow
 
@@ -355,9 +347,11 @@ C        I        L        Q        P        T        R
 |        |        |        |        |        |<-------|
 ```
 
-### Stale-Open Problem Without Probe
+### Stale-Open Recovery
 
-This is the failure mode the reclaim logic addresses:
+This is the failure mode the reclaim logic addresses. Turn-A was the owner,
+but its worker died or stopped acknowledging the lane. A later wake must not
+defer forever to `T.handler.status = open`.
 
 ```text
 Time ->
@@ -379,92 +373,58 @@ L        Q        P        T                         R(turn-A)       R(turn-B)
 |        |------->| set scheduled, build turn-B      |               |
 |        |        |        |                         |               | open_handler
 |        |        |        | sees open turn-A        |               |
-|        |        |        | handler_status_at exists|               |
-|        |        |        |                         |               |
+|        |        |        | consumer_status_at stale|               |
+|        |        |        | reclaim handler=turn-B  |               |
+|        |        |        |<---------------------------------------|
+|        |        |        | consumer=active         |               |
+|        |        |        |<---------------------------------------|
+| read E2|        |        |                         |               |
+|<-------------------------------------------------------------------------|
+|        |        |        | last_processed=E2       |               |
+|        |        |        |<---------------------------------------|
 ```
 
 If the runtime treats `handler_status_at` as liveness, turn-B may defer forever
 to a handler that no longer exists. That blocks the lane even though E2 is
 durably accepted and needs a new turn.
 
-### Fixed Flow With Probe
+### Live-But-Starved Race
+
+This is the important corner case. Turn-A is not dead, but it is starved long
+enough for its consumer acknowledgement to become stale. Turn-B is allowed to
+reclaim. Correctness depends on turn-A detecting that it no longer owns the
+lane before it saves anything.
 
 ```text
 Time ->
 
-L                  Q        P        T                         R(turn-A)       R(turn-B)
-|                  |        |        |                         |               |
-| E1               |        |        |                         |               |
-|----------------->| wake   |        |                         |               |
-|                  |------->| set scheduled                    |               |
-|                  |        |------->|                         |               |
-|                  |        |        | open handler=turn-A     |               |
-|                  |        |        |<------------------------|               |
-|                  |        |        | consumer=active         |               |
-|                  |        |        |<------------------------|               |
-|                  |        |        |                         | crash/reload  |
-|                  |        |        | handler remains open    X               |
-| E2               |        |        |                         |               |
-|----------------->| wake   |        |                         |               |
-|                  |------->| set scheduled, build turn-B      |               |
-|                  |        |        |                         |               | open_handler
-|                  |        |        | sees open turn-A        |               |
-| probe(for A)     |        |        |                         |               |
-|<-------------------------------------------------------------|               |
-|                  |        |        | wait for ack            |               |
-|                  |        |        | no ack before timeout   |               |
-|                  |        |        | reclaim handler=turn-B  |               |
-|                  |        |        |<---------------------------------------|
-|                  |        |        | consumer=active         |               |
-|                  |        |        |<---------------------------------------|
-| read E2          |        |        |                         |               |
-|<-------------------------------------------------------------------------|
-|                  |        |        | last_processed=E2       |               |
-|                  |        |        |<---------------------------------------|
+T                         R(turn-A)                         R(turn-B)
+|                         |                                 |
+| handler=turn-A          |                                 |
+| consumer active         |                                 |
+|<------------------------|                                 |
+|                         | busy/starved, no consumer ack   |
+| consumer_status_at stale|                                 |
+|                         |                                 | open_handler
+| handler=turn-B          |                                 | reclaim succeeds
+|<----------------------------------------------------------|
+|                         | resumes                         |
+|                         | refresh owner or ack consumer   |
+|                         | sees handler=turn-B             |
+|                         | raises ExternalEventLaneTurnSuperseded
+|                         | normal turn exception handler   |
+|                         | delete_turn(index_only)         |
+|                         | no committed answer/persist     |
 ```
 
-If turn-A is alive, the flow stops earlier:
-
-```text
-L                  T                         R(turn-A)       R(turn-B)
-|                  |                         |               |
-| probe(for A)     |                         |               |
-|<-------------------------------------------| open_handler  |
-|                  |                         |               |
-|                  | ack key = turn-A        |               |
-|                  |<------------------------|               |
-|                  |                         | sees ack       |
-|                  |                         |               |
-|                  | keep handler=turn-A     | defer turn-B   |
-```
-
-In this case turn-B does not steal the lane. Turn-A remains responsible for
-consuming the lane and updating the turn timeline.
-
-### Fallback When Probe Is Unavailable
-
-Some isolated tests or older source implementations may not expose probe
-methods. In that case `open_handler()` falls back to the consumer timestamp:
-
-```text
-defer if:
-  T.consumer.status in {active, scheduled}
-  and T.consumer.status_at is fresh
-
-reclaim if:
-  T.consumer.status_at is missing, malformed, or stale
-```
-
-The fallback still does not use `T.handler.status_at` as liveness.
+The same exception can also be raised at `finish_turn`. That covers a case
+where the old turn did not touch the lane again after it was reclaimed but is
+about to emit or persist its final output.
 
 ### Ordering Rule
 
 Normal close-gate ordering uses event-envelope timestamps plus event ids for
 same-timestamp disambiguation. It must not infer ordering from turn ids.
-
-Probe read-through uses Redis stream order only for the immediate liveness
-question: if a consumer reads the lane through the probe and writes the ack,
-the consumer is alive on that lane.
 
 ## Tested SDK Primitive
 
@@ -530,4 +490,6 @@ The standalone tests cover:
 - full wake -> scheduled -> handler open -> consumer active -> accept -> close path;
 - close rejection when ReAct did not see a newly accepted lane event;
 - reader rejection after handler close;
-- reader/close lock ordering when the Reader has a new event in hand.
+- reader/close lock ordering when the Reader has a new event in hand;
+- browser-side superseded-turn detection when a running turn sees a newer
+  handler owner.

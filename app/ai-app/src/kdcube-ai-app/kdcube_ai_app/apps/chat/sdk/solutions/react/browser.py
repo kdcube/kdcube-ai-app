@@ -42,9 +42,9 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.events import (
     run_live_external_event_listener_loop,
     stamp_event_identity_many,
 )
+from kdcube_ai_app.apps.chat.sdk.events.event_bus.exceptions import ExternalEventLaneTurnSuperseded
 from kdcube_ai_app.apps.chat.sdk.events.event_bus.orchestrator import ConversationEventBusOrchestrator
 from kdcube_ai_app.apps.chat.sdk.events.event_bus.state import (
-    event_is_handler_probe,
     event_is_reactive,
     event_timestamp,
     timestamp_lte,
@@ -86,6 +86,7 @@ class ContextBrowser:
         self._external_event_listener_requested: bool = False
         self._external_apply_lock = asyncio.Lock()
         self._last_external_event_reader_result: Dict[str, Any] = {}
+        self._external_event_lane_superseded: Optional[ExternalEventLaneTurnSuperseded] = None
 
     @property
     def external_event_source(self):
@@ -121,6 +122,55 @@ class ContextBrowser:
     def _event_bus_orchestrator(self) -> Optional[ConversationEventBusOrchestrator]:
         return self._external_event_orchestrator
 
+    def _lane_superseded_error(
+        self,
+        *,
+        owner_turn_id: str = "",
+        handler_status: str = "",
+        phase: str = "",
+    ) -> ExternalEventLaneTurnSuperseded:
+        return ExternalEventLaneTurnSuperseded(
+            turn_id=str(self._runtime_ctx.turn_id or ""),
+            owner_turn_id=str(owner_turn_id or ""),
+            handler_status=str(handler_status or ""),
+            conversation_id=str(self._runtime_ctx.conversation_id or ""),
+            phase=str(phase or ""),
+        )
+
+    def _mark_external_event_lane_superseded(
+        self,
+        *,
+        owner_turn_id: str = "",
+        handler_status: str = "",
+        phase: str = "",
+    ) -> ExternalEventLaneTurnSuperseded:
+        error = self._lane_superseded_error(
+            owner_turn_id=owner_turn_id,
+            handler_status=handler_status,
+            phase=phase,
+        )
+        self._external_event_lane_superseded = error
+        return error
+
+    async def assert_external_event_handler_current(self, *, phase: str = "") -> None:
+        if self._external_event_lane_superseded is not None:
+            raise self._external_event_lane_superseded
+        orchestrator = self._event_bus_orchestrator()
+        if orchestrator is None:
+            return
+        turn_id = str(self._runtime_ctx.turn_id or "").strip()
+        if not turn_id:
+            return
+        state = await orchestrator.state()
+        owner_turn_id = str(state.handler_turn_id or "").strip()
+        if owner_turn_id and owner_turn_id != turn_id:
+            error = self._mark_external_event_lane_superseded(
+                owner_turn_id=owner_turn_id,
+                handler_status=str(state.handler_status or ""),
+                phase=phase,
+            )
+            raise error
+
     async def open_external_event_handler(self) -> bool:
         orchestrator = self._ensure_event_bus_orchestrator()
         if orchestrator is None:
@@ -130,7 +180,15 @@ class ContextBrowser:
             return False
         try:
             state = await orchestrator.open_handler(turn_id=turn_id)
+            if not state.is_open_for(turn_id):
+                raise self._mark_external_event_lane_superseded(
+                    owner_turn_id=str(state.handler_turn_id or ""),
+                    handler_status=str(state.handler_status or ""),
+                    phase="open_external_event_handler",
+                )
             return bool(state.is_open_for(turn_id))
+        except ExternalEventLaneTurnSuperseded:
+            raise
         except Exception:
             self.log.log("[timeline.external]: failed to open event-bus handler state\n" + traceback.format_exc(), "ERROR")
             return False
@@ -180,6 +238,13 @@ class ContextBrowser:
         if orchestrator is not None:
             try:
                 state = await orchestrator.mark_consumer_active(turn_id=turn_id)
+                owner_turn_id = str(state.handler_turn_id or "").strip()
+                if owner_turn_id and owner_turn_id != turn_id:
+                    raise self._mark_external_event_lane_superseded(
+                        owner_turn_id=owner_turn_id,
+                        handler_status=str(state.handler_status or ""),
+                        phase="listener_start",
+                    )
                 if state.consumer_status != "active":
                     await release_live_external_event_owner(
                         source=source,
@@ -193,6 +258,17 @@ class ContextBrowser:
                         "INFO",
                     )
                     return
+            except ExternalEventLaneTurnSuperseded:
+                try:
+                    await release_live_external_event_owner(
+                        source=source,
+                        listener_id=self._external_listener_id,
+                        lease_token=lease.lease_token,
+                    )
+                except Exception:
+                    pass
+                self._external_lease_token = ""
+                raise
             except Exception:
                 await release_live_external_event_owner(
                     source=source,
@@ -219,16 +295,33 @@ class ContextBrowser:
                 ),
                 apply_events=lambda events: self.apply_live_external_events(list(events or [])),
                 acknowledge=self.acknowledge_external_event_consumer,
+                on_owner_lost=self._on_external_event_owner_lost,
                 log=self.log,
             ),
             name=f"react-timeline-events:{conversation_id}:{turn_id}",
+        )
+
+    def _on_external_event_owner_lost(self, reason: str, owner: Any) -> None:
+        owner_turn_id = str(getattr(owner, "turn_id", "") or "")
+        self._mark_external_event_lane_superseded(
+            owner_turn_id=owner_turn_id,
+            handler_status="open",
+            phase=str(reason or "owner_lost"),
         )
 
     async def acknowledge_external_event_consumer(self) -> None:
         orchestrator = self._event_bus_orchestrator()
         if orchestrator is None:
             return
-        await orchestrator.mark_consumer_active(turn_id=str(self._runtime_ctx.turn_id or ""))
+        turn_id = str(self._runtime_ctx.turn_id or "")
+        state = await orchestrator.mark_consumer_active(turn_id=turn_id)
+        owner_turn_id = str(state.handler_turn_id or "").strip()
+        if owner_turn_id and owner_turn_id != turn_id:
+            raise self._mark_external_event_lane_superseded(
+                owner_turn_id=owner_turn_id,
+                handler_status=str(state.handler_status or ""),
+                phase="consumer_acknowledge",
+            )
 
     async def post_save_external_event_handoff(self) -> bool:
         source = self.external_event_source
@@ -551,6 +644,12 @@ class ContextBrowser:
                 accept=_accept,
             )
             if not decision.accepted:
+                if decision.reason == "handler_turn_mismatch":
+                    raise self._mark_external_event_lane_superseded(
+                        owner_turn_id=str(decision.state.handler_turn_id or ""),
+                        handler_status=str(decision.state.handler_status or ""),
+                        phase="accept_live_external_events",
+                    )
                 self.log.log(
                     f"[timeline.external]: live lane events left unconsumed "
                     f"conversation={self._runtime_ctx.conversation_id} turn_id={self._runtime_ctx.turn_id} "
@@ -558,6 +657,8 @@ class ContextBrowser:
                     "INFO",
                 )
                 return 0
+        except ExternalEventLaneTurnSuperseded:
+            raise
         except Exception:
             self.log.log("[timeline.external]: failed to accept live lane events through event-bus state\n" + traceback.format_exc(), "ERROR")
             return 0
@@ -610,11 +711,6 @@ class ContextBrowser:
             max_applied_seq = 0
             current_prompt_texts: List[str] = []
             for event in events:
-                if await self._maybe_ack_handler_probe(event):
-                    if getattr(event, "stream_id", None):
-                        max_cursor = str(getattr(event, "stream_id", "") or max_cursor)
-                    max_seq = max(max_seq, int(getattr(event, "sequence", 0) or 0))
-                    continue
                 blocks = await self._blocks_from_external_event(event)
                 max_seq = max(max_seq, int(getattr(event, "sequence", 0) or 0))
                 if getattr(event, "stream_id", None):
@@ -681,6 +777,12 @@ class ContextBrowser:
                 accept=_accept_initial,
             )
             if not decision.accepted:
+                if decision.reason == "handler_turn_mismatch":
+                    raise self._mark_external_event_lane_superseded(
+                        owner_turn_id=str(decision.state.handler_turn_id or ""),
+                        handler_status=str(decision.state.handler_status or ""),
+                        phase="initial_external_event_fold",
+                    )
                 self.log.log(
                     f"[timeline.external]: initial lane events left unconsumed "
                     f"conversation={self._runtime_ctx.conversation_id} turn_id={self._runtime_ctx.turn_id} "
@@ -760,15 +862,6 @@ class ContextBrowser:
                 continue
             if self._external_event_already_applied(event):
                 continue
-            if await self._maybe_ack_handler_probe(event):
-                stream_id = str(getattr(event, "stream_id", "") or "")
-                if stream_id:
-                    self._timeline.last_external_event_id = stream_id
-                self._timeline.last_external_event_seq = max(
-                    int(self._timeline.last_external_event_seq or 0),
-                    int(event.sequence or 0),
-                )
-                continue
             blocks = await self._blocks_from_external_event(event)
             stream_id = str(getattr(event, "stream_id", "") or "")
             if not blocks:
@@ -807,39 +900,6 @@ class ContextBrowser:
             except Exception:
                 self.log.log(f"[timeline.external]: failed to mark consumed {traceback.format_exc()}", "ERROR")
         return added
-
-    async def _maybe_ack_handler_probe(self, event: Any) -> bool:
-        if not event_is_handler_probe(event):
-            return False
-        source = self.external_event_source
-        if source is None:
-            return True
-        payload = getattr(event, "payload", None)
-        if not isinstance(payload, dict):
-            payload = {}
-        probe_id = (
-            str(payload.get("probe_id") or "").strip()
-            or str(getattr(event, "message_id", "") or getattr(event, "event_id", "") or "").strip()
-        )
-        for_turn = str(payload.get("for_turn") or "").strip()
-        turn_id = str(self._runtime_ctx.turn_id or "").strip()
-        if not probe_id or not for_turn or not turn_id:
-            return True
-        if for_turn != turn_id:
-            return True
-        ack = getattr(source, "ack_handler_probe", None)
-        if not callable(ack):
-            return True
-        try:
-            await ack(probe_id=probe_id, turn_id=turn_id)
-            self.log.log(
-                f"[timeline.external]: acknowledged handler probe conversation={self._runtime_ctx.conversation_id} "
-                f"turn_id={turn_id} probe_id={probe_id}",
-                "INFO",
-            )
-        except Exception:
-            self.log.log("[timeline.external]: failed to acknowledge handler probe\n" + traceback.format_exc(), "ERROR")
-        return True
 
     async def _emit_external_event_hooks(self, *, type: str, event: Any, blocks: List[Dict[str, Any]]) -> None:
         hooks = list(self._external_event_hooks or [])

@@ -8,11 +8,10 @@ import os
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Optional, Sequence
 
-from .state import (
+from kdcube_ai_app.apps.chat.sdk.events.event_bus.state import (
     EventLaneState,
     RedisEventLaneStateTable,
     event_id,
-    event_is_handler_probe,
     event_is_reactive,
     event_timestamp,
     later_timestamp,
@@ -24,8 +23,6 @@ from .state import (
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_HANDLER_PROBE_TIMEOUT_MS = 750
-
 
 # A handler lane is owned by exactly one turn at a time. If that turn crashes or
 # its worker reloads before calling try_close_handler(), the lane stays
@@ -33,17 +30,17 @@ _DEFAULT_HANDLER_PROBE_TIMEOUT_MS = 750
 # open_handler() used to defer to it forever -> a permanent close-gate wedge.
 #
 # Liveness is a Reader/Consumer property, not a handler-status property. The
-# first-class check is a probe appended to the same conversation event lane. If
-# a probe-capable source is unavailable, this TTL is only a conservative
-# fallback against consumer_status_at, the last "I ate the stream" timestamp.
+# reclaim decision is based on consumer_status_at, the last "I ate the stream"
+# timestamp. Handler status timestamps are state-change timestamps and do not
+# prove that the owner is still consuming.
 def _consumer_turn_ttl_ms() -> int:
     try:
-        raw = os.getenv("KDCUBE_EVENT_BUS_OPEN_HANDLER_CONSUMER_TTL_SECONDS") or "600"
-        seconds = int(float(raw or 600))
+        raw = os.getenv("KDCUBE_EVENT_BUS_OPEN_HANDLER_CONSUMER_TTL_SECONDS") or "30"
+        seconds = int(float(raw or 30))
     except Exception:
-        seconds = 600
+        seconds = 30
     if seconds <= 0:
-        seconds = 600
+        seconds = 30
     return seconds * 1000
 
 
@@ -91,11 +88,9 @@ class ConversationEventBusOrchestrator:
         *,
         table: RedisEventLaneStateTable,
         source: Any = None,
-        probe_timeout_ms: int = _DEFAULT_HANDLER_PROBE_TIMEOUT_MS,
     ) -> None:
         self.table = table
         self.source = source
-        self.probe_timeout_ms = max(0, int(probe_timeout_ms or 0))
 
     @classmethod
     def for_source(cls, source: Any) -> "ConversationEventBusOrchestrator":
@@ -113,113 +108,25 @@ class ConversationEventBusOrchestrator:
         if not turn_id:
             return await self.table.get()
 
-        while True:
-            now = utc_timestamp()
-            probe_owner_turn_id = ""
-            async with self.table.lock():
-                state = await self.table.get()
-                if state.handler_status == "open" and state.handler_turn_id and state.handler_turn_id != turn_id:
-                    probe_owner_turn_id = state.handler_turn_id
-                    if not self._can_probe_open_handler():
-                        if _consumer_state_is_fresh(state, now):
-                            return state
-                        logger.warning(
-                            "[event-bus] reclaiming stale-open handler turn=%s -> %s "
-                            "(consumer_status=%s consumer_status_at=%s age > TTL)",
-                            state.handler_turn_id,
-                            turn_id,
-                            state.consumer_status or "<empty>",
-                            state.consumer_status_at or "<empty>",
-                        )
-                        state.handler_turn_id = turn_id
-                        state.handler_status = "open"
-                        state.handler_status_at = now
-                        await self.table.put(state)
-                        return state
-                else:
-                    state.handler_turn_id = turn_id
-                    state.handler_status = "open"
-                    state.handler_status_at = now
-                    await self.table.put(state)
+        now = utc_timestamp()
+        async with self.table.lock():
+            state = await self.table.get()
+            if state.handler_status == "open" and state.handler_turn_id and state.handler_turn_id != turn_id:
+                if _consumer_state_is_fresh(state, now):
                     return state
-
-            probe_alive = await self._probe_open_handler(
-                owner_turn_id=probe_owner_turn_id,
-                challenger_turn_id=turn_id,
-            )
-
-            now = utc_timestamp()
-            async with self.table.lock():
-                state = await self.table.get()
-                if state.is_open_for(turn_id):
-                    return state
-                if (
-                    state.handler_status == "open"
-                    and state.handler_turn_id
-                    and state.handler_turn_id != probe_owner_turn_id
-                ):
-                    return state
-                if (
-                    state.handler_status == "open"
-                    and state.handler_turn_id == probe_owner_turn_id
-                    and probe_alive
-                ):
-                    return state
-                if (
-                    state.handler_status == "open"
-                    and state.handler_turn_id == probe_owner_turn_id
-                ):
-                    logger.warning(
-                        "[event-bus] reclaiming stale-open handler turn=%s -> %s "
-                        "(probe_ack=false consumer_status=%s consumer_status_at=%s)",
-                        probe_owner_turn_id,
-                        turn_id,
-                        state.consumer_status or "<empty>",
-                        state.consumer_status_at or "<empty>",
-                    )
-                state.handler_turn_id = turn_id
-                state.handler_status = "open"
-                state.handler_status_at = now
-                await self.table.put(state)
-                return state
-
-    def _can_probe_open_handler(self) -> bool:
-        source = self.source
-        return bool(
-            source is not None
-            and callable(getattr(source, "publish_handler_probe", None))
-            and callable(getattr(source, "wait_handler_probe_ack", None))
-        )
-
-    async def _probe_open_handler(self, *, owner_turn_id: str, challenger_turn_id: str) -> bool:
-        source = self.source
-        owner_turn_id = str(owner_turn_id or "").strip()
-        if not owner_turn_id or not self._can_probe_open_handler():
-            return False
-        try:
-            probe = await source.publish_handler_probe(
-                for_turn=owner_turn_id,
-                challenger_turn_id=str(challenger_turn_id or "").strip(),
-            )
-            probe_id = str(
-                getattr(probe, "message_id", "")
-                or getattr(probe, "event_id", "")
-                or ""
-            ).strip()
-            return bool(
-                await source.wait_handler_probe_ack(
-                    probe_id=probe_id,
-                    for_turn=owner_turn_id,
-                    timeout_ms=self.probe_timeout_ms,
+                logger.warning(
+                    "[event-bus] reclaiming stale-open handler turn=%s -> %s "
+                    "(consumer_status=%s consumer_status_at=%s age > TTL)",
+                    state.handler_turn_id,
+                    turn_id,
+                    state.consumer_status or "<empty>",
+                    state.consumer_status_at or "<empty>",
                 )
-            )
-        except Exception:
-            logger.exception(
-                "[event-bus] handler probe failed owner_turn=%s challenger_turn=%s",
-                owner_turn_id,
-                challenger_turn_id,
-            )
-            return False
+            state.handler_turn_id = turn_id
+            state.handler_status = "open"
+            state.handler_status_at = now
+            await self.table.put(state)
+            return state
 
     async def try_close_handler(
         self,
@@ -349,8 +256,6 @@ class ConversationEventBusOrchestrator:
         max_event_id = ""
         max_reactive_ts = ""
         for event in events or []:
-            if event_is_handler_probe(event):
-                continue
             ts = event_timestamp(event)
             next_max_ts = later_timestamp(max_ts, ts)
             if ts and next_max_ts == ts:
@@ -392,8 +297,6 @@ class ConversationEventBusOrchestrator:
         max_event_id = ""
         max_reactive_ts = ""
         for event in events or []:
-            if event_is_handler_probe(event):
-                continue
             ts = event_timestamp(event)
             next_max_ts = later_timestamp(max_ts, ts)
             if ts and next_max_ts == ts:

@@ -3,15 +3,18 @@
 
 """Conversation event-bus coordination primitives."""
 
-from .orchestrator import (
+from kdcube_ai_app.apps.chat.sdk.events.event_bus.orchestrator import (
     ConversationEventBusOrchestrator,
     EventBusAcceptDecision,
     EventBusCloseDecision,
     EventBusScheduleDecision,
 )
-from .exceptions import ExternalEventLaneWakeIgnored
-from .state import EventLaneState, RedisEventLaneStateTable, event_is_handler_probe, event_timestamp
-from .wakeup import (
+from kdcube_ai_app.apps.chat.sdk.events.event_bus.exceptions import (
+    ExternalEventLaneTurnSuperseded,
+    ExternalEventLaneWakeIgnored,
+)
+from kdcube_ai_app.apps.chat.sdk.events.event_bus.state import EventLaneState, RedisEventLaneStateTable, event_timestamp
+from kdcube_ai_app.apps.chat.sdk.events.event_bus.wakeup import (
     EventLaneWakePublishResult,
     EventLaneWakePublisher,
     RedisEventLaneWakeEnqueuer,
@@ -27,13 +30,13 @@ __all__ = [
     "EventBusScheduleDecision",
     "EventLaneWakePublishResult",
     "EventLaneWakePublisher",
+    "ExternalEventLaneTurnSuperseded",
     "ExternalEventLaneWakeIgnored",
     "EventLaneState",
     "RedisEventLaneWakeEnqueuer",
     "RedisEventLaneStateTable",
     "build_event_lane_ref",
     "build_event_lane_wakeup",
-    "event_is_handler_probe",
     "event_lane_wakeup_queue_key",
     "event_timestamp",
 ]

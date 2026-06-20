@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Optional, Sequence
 
 from kdcube_ai_app.apps.chat.sdk.solutions.react.proto import RuntimeCtx
+from kdcube_ai_app.apps.chat.sdk.events.event_bus.exceptions import ExternalEventLaneTurnSuperseded
 
 
 @dataclass(frozen=True)
@@ -76,6 +77,7 @@ async def run_live_external_event_listener_loop(
     apply_events: Callable[[Sequence[Any]], Awaitable[int]],
     log: Any,
     acknowledge: Optional[Callable[[], Awaitable[None]]] = None,
+    on_owner_lost: Optional[Callable[[str, Any], None]] = None,
 ) -> None:
     """
     Drain the live ReAct external-event lane while the current turn owns it.
@@ -98,15 +100,21 @@ async def run_live_external_event_listener_loop(
                 lease_token=lease_token,
             )
             if refreshed is None:
+                if on_owner_lost is not None:
+                    on_owner_lost("owner_lease_refresh_rejected", None)
                 log.log("[timeline.external]: owner lease refresh rejected; stopping listener", "INFO")
                 break
             current_owner = await source.get_owner()
             if current_owner is None or str(getattr(current_owner, "lease_token", "") or "") != lease_token:
+                if on_owner_lost is not None:
+                    on_owner_lost("owner_lease_lost", current_owner)
                 log.log("[timeline.external]: owner lease lost; stopping listener", "INFO")
                 break
             if acknowledge is not None:
                 try:
                     await acknowledge()
+                except ExternalEventLaneTurnSuperseded:
+                    raise
                 except Exception:
                     log.log(f"[timeline.external]: consumer acknowledgement callback failure {traceback.format_exc()}", "ERROR")
             last_cursor = ""
@@ -124,6 +132,9 @@ async def run_live_external_event_listener_loop(
             await apply_events(events)
         except asyncio.CancelledError:
             raise
+        except ExternalEventLaneTurnSuperseded:
+            log.log("[timeline.external]: listener stopped because turn was superseded", "INFO")
+            break
         except Exception:
             log.log(f"[timeline.external]: listener loop failure {traceback.format_exc()}", "ERROR")
             try:
