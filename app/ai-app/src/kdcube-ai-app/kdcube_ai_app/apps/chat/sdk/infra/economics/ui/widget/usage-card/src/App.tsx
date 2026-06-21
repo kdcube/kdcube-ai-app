@@ -278,20 +278,19 @@ export const App: React.FC = () => {
     const task = (async () => {
       setStatus((prev) => ({ ...prev, loading: true, error: null }));
       try {
-        const [breakdownResult, profileResult] = await Promise.allSettled([
-          getBudgetBreakdown(),
-          getProfile(),
-        ]);
-        if (breakdownResult.status === 'fulfilled') {
-          setBreakdown(breakdownResult.value);
+        try {
+          const nextBreakdown = await getBudgetBreakdown();
+          setBreakdown(nextBreakdown);
           setStatus({ loading: false, error: null, ready: true });
-        } else {
-          const err = breakdownResult.reason;
+          try {
+            setProfile(await getProfile());
+          } catch {
+            setProfile(null);
+          }
+        } catch (err) {
           const message = err instanceof UsageCardApiError ? err.message : (err as Error)?.message ?? 'load failed';
           setStatus({ loading: false, error: message, ready: true });
-        }
-        if (profileResult.status === 'fulfilled') {
-          setProfile(profileResult.value);
+          setProfile(null);
         }
       } finally {
         inFlightRef.current = null;

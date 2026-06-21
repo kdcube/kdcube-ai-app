@@ -32,9 +32,11 @@ class _RecordingRelay:
 
     def __init__(self) -> None:
         self.events: list[tuple[str, dict]] = []  # (socket_event, envelope)
+        self.event_kwargs: list[dict] = []
 
     async def emit(self, *, event: str, data: dict, **kwargs) -> None:
         self.events.append((event, data))
+        self.event_kwargs.append(dict(kwargs or {}))
 
     def emitted_types(self) -> list[str]:
         """Return the list of envelope types in emission order."""
@@ -115,6 +117,24 @@ class TestEventStructure:
         assert emitted["project"] == "p"
         assert emitted["data"]["type"] == "demo.snapshot"
         assert emitted["data"]["conversation"]["session_id"] == PROJECT_BROADCAST_ROOM
+
+    @pytest.mark.anyio
+    async def test_broadcast_service_event_targets_session_not_stream(self):
+        relay = _RecordingRelay()
+        comm = _make_comm(relay)
+        comm.target_sid = "chat-stream-1"
+
+        await comm.service_event(
+            type="accounting.usage",
+            step="accounting",
+            status="completed",
+            data={"cost_total_usd": 0.01},
+            broadcast=True,
+        )
+
+        assert relay.events[0][0] == "chat_service"
+        assert relay.event_kwargs[0]["target_sid"] is None
+        assert relay.event_kwargs[0]["session_id"] == "s1"
 
     @pytest.mark.anyio
     async def test_project_sse_relay_only_fans_out_to_project_subscribers(self):
