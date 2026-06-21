@@ -286,10 +286,11 @@ host scene module
   queues forwarded messages until iframe config handshake is complete
 ```
 
-The host can keep backward-compatible defaults for older widgets. For example,
-`usage_card` receives a default `accounting.usage` subscription only until the
-current usage-card build registers its own explicit claim. Once the iframe sends
-`kdcube-scene-subscribe`, the explicit widget claim replaces the host default.
+The host does not need component-specific event defaults. It records claims
+sent by widgets, enriches them with runtime scope, and opens/reuses the
+corresponding relay. A widget that needs `accounting.usage`,
+`kdcube.stats.snapshot`, or another event family sends that claim from its own
+component/app code.
 
 ## Example Widget Ownership Map
 
@@ -304,7 +305,7 @@ widgets are named by role, not by source path.
 | News preview widget | Self by default; scene when configured | None | Conditional | `kdcube.news.pipeline_event` | `liveEventsTransport` selects widget SSE vs host relay. |
 | Full/admin news widgets | Self, only while the admin stream is visible | None | No by default | `kdcube.news.pipeline_event` | The stream is opened lazily in the admin view. |
 | Pinboard / canvas board | None | Self | No | Canvas patch events | The board owns its Data Bus Socket.IO subscription. Event Bus scene claims are not used for canvas patches. |
-| Telegram miniapp example | None | Self | No | Its configured Data Bus/service stream | The miniapp owns its Socket.IO/Data Bus client. It should not claim scene Event Bus delivery for the same stream. |
+| Telegram miniapp example | None | Self | No | Its configured Data Bus/service stream | The miniapp owns its Socket.IO/Data Bus client. Scene Event Bus delivery is a separate transport mode. |
 | Memory widget | None currently | None | None currently | No current memory-record event family in the landing scene | Memory opens objects through scene commands and local API calls. A future `memory.record.changed` event can use this same claim pattern when the producer exists. |
 | Task list widget | Scene | None | Yes | `task_tracker.task.changed` | The task app is private. The widget has no task-change SSE of its own. |
 | Task wizard/editor | Scene for task-change events; self for its internal assistant chat | None | Yes for task changes | `task_tracker.task.changed`; internal wizard chat stream is self-owned | Scene relays task-change events. The wizard's own assistant stream is separate and remains widget-owned. |

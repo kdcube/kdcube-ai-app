@@ -105,9 +105,9 @@ into context chips. The scene core still emits the same envelope.
 ```
 
 The scene knows aliases, routes, target-surface ids, accepted namespaces,
-subscriptions, readiness policies, and presentation config. It does not derive
-local entity ids from object refs. The object URI is passed intact to the
-surface and to the provider.
+transport modes, readiness policies, and presentation config. It does not
+derive local entity ids from object refs. The object URI is passed intact to
+the surface and to the provider.
 
 ## Scene Configuration
 
@@ -155,7 +155,6 @@ Target shape:
       "authRequired": true,
       "ready": { "type": "message", "messageType": "kdcube-chat-ready" },
       "commands": ["attach", "open", "focus"],
-      "subscriptions": [],
       "contextDrag": { "source": true, "target": true }
     },
     "pinboard": {
@@ -174,13 +173,7 @@ Target shape:
           "effect": "pin"
         }
       ],
-      "subscriptions": [
-        {
-          "bus": "data-bus",
-          "transport": "self",
-          "subjects": ["canvas.patch"]
-        }
-      ],
+      "liveDataTransport": "data-bus-self",
       "contextDrag": { "source": true, "target": true }
     },
     "task_editor": {
@@ -193,6 +186,7 @@ Target shape:
       "authRequired": true,
       "ready": { "type": "message", "messageType": "kdcube-task-tracker-wizard-ready" },
       "commands": ["open", "create", "refresh", "close"],
+      "liveEventsTransport": "scene",
       "dropTargets": [
         {
           "acceptsRootNamespaces": ["task"],
@@ -200,18 +194,17 @@ Target shape:
           "requestedTargetSurface": "task_tracker.issue_editor"
         }
       ],
-      "subscriptions": [
-        {
-          "bus": "event-bus",
-          "transport": "scene",
-          "events": ["task_tracker.task.changed"]
-        }
-      ],
       "contextDrag": { "source": false, "target": true }
     }
   }
 }
 ```
+
+This scene config does not list event names, SSE channels, Data Bus subjects,
+or forward command payloads for a remote component. Those are component/app
+contract details. The scene config selects placement, runtime, app package,
+surface routing, and transport mode; the component claims the exact event
+families it understands after it receives runtime config.
 
 ### Runtime Config
 
@@ -222,6 +215,8 @@ Target shape:
 | `runtimes.<alias>.auth` | Authentication provider and whether authenticated-only surfaces may mount. |
 | `components.<alias>.runtime` | Runtime alias used to serve this component. |
 | `components.<alias>.app` | Deployable app package id used to form widget/public routes. |
+| `components.<alias>.liveEventsTransport` | Event Bus transport mode exposed to the component in `CONFIG_RESPONSE`. |
+| `components.<alias>.liveDataTransport` | Data Bus ownership hint exposed to components that support a Data Bus mode. |
 
 A mixed-runtime scene can mount some components from `demo.kdcube.tech` and
 other components from `dev.kdcube.tech`. Each component declares its runtime.
@@ -277,7 +272,7 @@ hardcoded into the widgets.
 | `ready` | How the scene knows commands can be flushed. |
 | `commands` | Generic actions the surface accepts. |
 | `dropTargets` | Root namespaces and effects accepted by this surface. |
-| `subscriptions` | Event Bus/Data Bus claims and transport ownership. |
+| `liveEventsTransport` / `liveDataTransport` | Transport ownership mode exposed to the component. Exact event claims are component-owned runtime messages. |
 | `contextDrag` | Whether the surface can be a drag source and/or drop target. |
 
 Scene core should build surface registry entries from this data. Adding a new
@@ -659,10 +654,9 @@ standalone route + liveEventsTransport="none"
   component uses manual refresh / backend pulls only
 ```
 
-The component should not infer authenticated state by polling `/profile`.
-Authenticated state should arrive through host auth config, route-provided
-runtime config, or a one-time authenticated app data call that is only made
-after auth is known to be present.
+Authenticated state arrives through host auth config, route-provided runtime
+config, or a one-time authenticated app data call that is made after auth is
+known to be present. `/profile` polling is not part of the scene contract.
 
 ## Scene Configurator Checklist
 
@@ -675,12 +669,16 @@ When composing a scene:
 5. Declare auth requirements for each surface.
 6. Declare readiness policy for each iframe surface.
 7. Declare accepted root namespaces and drop effects.
-8. Declare Event Bus/Data Bus subscription ownership:
+8. Declare Event Bus/Data Bus transport ownership:
    - `scene` when the host relays;
    - `sse` or `data-bus-self` when the component owns the stream;
    - `none` when the component has no live stream.
 9. Declare namespace presentation provider once.
 10. Declare widget-to-host commands as `kdcube.surface.command` envelopes.
+
+The scene configurator does not list remote widget event names, channels,
+subjects, or local refresh command payloads. Those details live in the
+component/app package and are sent as scene subscription claims.
 
 ## Component Developer Checklist
 
@@ -699,7 +697,7 @@ When making a component scene-compatible:
 
 ## Components To Align
 
-These are the concrete participants that should be aligned to this contract.
+These are the concrete participants tracked against this contract.
 Private app source paths are intentionally omitted from this public SDK doc.
 
 | Component / surface | Current role in demo scene | Target scene contract | Work to verify |
@@ -723,11 +721,11 @@ aligned with this table.
 | --- | --- |
 | Component specs | Config drives aliases, routes, sizes, rails, auth visibility, readiness, commands, and drop targets. |
 | Cross-surface commands | Host sends `kdcube.surface.command`; components interpret object refs locally. |
-| Event relay | Surface subscription config claims events; event broker dispatches configured surface commands. |
+| Event relay | Component/app code claims event families; event broker dispatches the claimed commands. |
 | Usage-card readiness | Readiness is configured as a timeout policy; component readiness events can replace it. |
 | Task/memory/chat routing | Config maps target surfaces to mounted aliases. |
 | Namespace colors | Scene fetches namespace presentation once; client defaults are only fallback for standalone/unavailable config. |
-| Widget subscriptions | Widgets can declare subscriptions; scene config can provide host defaults. |
+| Widget subscriptions | Widgets declare subscriptions. Scene config provides runtime, transport mode, and mounted surface identity. |
 | Host API | Public host API opens by target surface and generic command. |
 
 ## Diagnostics
@@ -768,7 +766,7 @@ contract.
 3. Add or verify `kdcube.surface.command` handlers in every participating
    widget.
 4. Move readiness special cases to config and widget ready messages.
-5. Move Event Bus relay behavior to declared subscriptions and widget claims.
+5. Move Event Bus relay behavior to widget-owned subscription claims.
 6. Keep Data Bus ownership explicit per surface.
 7. Make namespace presentation scene-owned while embedded, with standalone
    fallback only for standalone components.
@@ -789,7 +787,7 @@ The scene is generic when all of the following are true:
 | Drop object on owning surface | Scene calls provider and dispatches generic `open` command to returned `target_surface`. |
 | Drop object on chat | Scene dispatches generic `attach` command; chat owns chip creation. |
 | Drop object on canvas | Scene dispatches generic `pin` command; canvas owns card creation. |
-| Runtime event reaches scene | Event broker matches declared subscriptions and dispatches generic `refresh` or configured command. |
+| Runtime event reaches scene | Event broker matches widget claims and dispatches the claimed command/message. |
 | Widget runs standalone | Widget uses standalone config and configured self transport without scene assumptions. |
 | Mixed-runtime scene | Each component uses its configured runtime; Event Bus relays are scoped by runtime and opened only when claimed. |
 | Namespace color changes server-side | Chat, overlay, and canvas update from the same namespace presentation map. |

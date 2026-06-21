@@ -426,13 +426,16 @@ durable/runtime state:
 The app decides which subjects matter. Examples:
 
 ```yaml
-scene_subscriptions:
+component_scene_claim:
   - subject: app.issue.updated
     partition: object_ref
   - subject: accounting.usage
 ```
 
-If a scene has no surface that needs these subjects, it should not subscribe.
+If a scene has no surface that needs these subjects, there is no scene-level
+subscription for them.
+Transport mode belongs in scene configuration. The exact subjects/events belong
+to the app/component that sends the scene subscription claim.
 
 ## Object Opens
 

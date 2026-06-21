@@ -61,9 +61,9 @@ Long-lived event delivery between surfaces uses the separate
 The surface registry opens/focuses target surfaces; the event broker relays
 runtime events to widgets that explicitly claim them.
 
-The concrete app decides which surfaces exist. A scene with no task UI should
-not contain task behavior. A scene with no memory UI should not contain memory
-behavior. The runtime stays the same.
+The concrete app decides which surfaces exist. A scene with no task UI has no
+task behavior. A scene with no memory UI has no memory behavior. The runtime
+stays the same.
 
 High-level communication:
 
@@ -276,8 +276,8 @@ The implementation-oriented design is
 shows how drag/drop maps onto the surface registry's object-open route.
 
 Dropping an existing object onto one of its capable surfaces is just another
-object-open route. It should not depend on the target widget knowing every
-possible source widget's browser drag payload.
+object-open route. The target widget receives a canonical command/context
+envelope instead of every possible source widget's browser drag payload.
 
 ```text
 FRONTEND                                             BACKEND
