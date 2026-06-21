@@ -168,8 +168,8 @@ Scene host EventSource
       |
       v
 SceneEventBus
-  normalize: { source, channel, type, envelope, ts }
-  match: source + channel + type
+  normalize: { source, channel, type, runtime, dataScope, envelope, ts }
+  match: source + runtime scope + optional data scope + channel + type
   debounce: optional per subscription
       |
       +--> iframe: usage_card
