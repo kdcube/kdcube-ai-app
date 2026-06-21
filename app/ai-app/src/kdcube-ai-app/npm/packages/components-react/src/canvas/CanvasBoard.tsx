@@ -1335,8 +1335,10 @@ export function CanvasBoard({
     const bounds = board.getBoundingClientRect()
     const groupBounds = cardsBounds(movingCards)
     if (!groupBounds) return []
-    const nextOriginX = clamp(x, 8, Math.max(8, bounds.width - groupBounds.w - 8))
-    const nextOriginY = clamp(y, 8, Math.max(8, bounds.height - groupBounds.h - 8))
+    const contentWidth = Math.max(board.scrollWidth, board.clientWidth, bounds.width, x + groupBounds.w + 8)
+    const contentHeight = Math.max(board.scrollHeight, board.clientHeight, bounds.height, y + groupBounds.h + 8)
+    const nextOriginX = clamp(x, 8, Math.max(8, contentWidth - groupBounds.w - 8))
+    const nextOriginY = clamp(y, 8, Math.max(8, contentHeight - groupBounds.h - 8))
     const offsets = cardOffsets || Object.fromEntries(movingCards.map((card) => [
       card.id,
       { x: card.rect.x - groupBounds.x, y: card.rect.y - groupBounds.y },
@@ -1724,8 +1726,8 @@ export function CanvasBoard({
     setSelectedCardIds(setFromIds(cardIds))
     setDragState({
       cardIds,
-      offsetX: event.clientX - bounds.left - groupBounds.x,
-      offsetY: event.clientY - bounds.top - groupBounds.y,
+      offsetX: event.clientX - bounds.left + board.scrollLeft - groupBounds.x,
+      offsetY: event.clientY - bounds.top + board.scrollTop - groupBounds.y,
       cardOffsets,
     })
     event.dataTransfer.effectAllowed = 'copyMove'
@@ -2363,8 +2365,8 @@ export function CanvasBoard({
             const rect = boardRef.current.getBoundingClientRect()
             const operations = moveCards(
               dragState.cardIds,
-              event.clientX - rect.left - dragState.offsetX,
-              event.clientY - rect.top - dragState.offsetY,
+              event.clientX - rect.left - dragState.offsetX + boardRef.current.scrollLeft,
+              event.clientY - rect.top - dragState.offsetY + boardRef.current.scrollTop,
               dragState.cardOffsets,
             )
             setDragState(null)
