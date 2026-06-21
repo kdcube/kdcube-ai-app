@@ -197,7 +197,7 @@ The widget sends this message to its parent scene:
     {
       "id": "usage-card-accounting-refresh",
       "source": "sse",
-      "runtimeAlias": "demo",
+      "runtime": "demo",
       "dataScope": { "tenant": "demo", "project": "demo" },
       "events": ["accounting.usage"],
       "channels": ["chat_service", "chat_step", "accounting.usage", "message"],
@@ -216,7 +216,7 @@ The fields mean:
 | `widget` | Scene alias for the target iframe. |
 | `id` | Stable subscription id scoped by widget. |
 | `source` | Event source family. Today `sse` means the Event Bus SSE relay. |
-| `runtimeAlias` | Optional scene runtime alias. If absent, the surface runtime is used. |
+| `runtime` | Optional scene runtime alias. If absent, the component runtime is used. |
 | `dataScope` | Optional tenant/project scope for the data carried by the event. Use when route runtime and displayed data scope differ. |
 | `events` | Canonical envelope event identities to match, for example `accounting.usage` or future namespace-shaped values such as `task:event:task-changed`. |
 | `channels` | Browser SSE event names to match, for example `chat_service`. |

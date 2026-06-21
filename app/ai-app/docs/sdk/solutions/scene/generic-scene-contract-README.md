@@ -35,14 +35,14 @@ standard when refactoring the website scene, when extracting scene logic into
 composition.
 
 The target scene is a config-driven browser composition layer. It connects UI
-surfaces from several apps without embedding memory, task, canvas, chat,
+components from several apps without embedding memory, task, canvas, chat,
 analytics, or news semantics in the host page.
 
 The central rule:
 
 ```text
 Scene core routes opaque object refs and runtime events.
-Providers and surfaces own object semantics and local UI behavior.
+Providers and components own object semantics and local UI behavior.
 ```
 
 The scene's generic command envelope is:
@@ -140,17 +140,16 @@ Target shape:
     }
   },
   "namespacePresentation": {
-    "runtimeAlias": "demo",
-    "appAlias": "versatile",
+    "component": "chat",
     "endpoint": "public/namespace_presentation_config",
     "delivery": "config-handshake"
   },
-  "surfaces": {
+  "components": {
     "chat": {
+      "app": "versatile@2026-03-31-13-36",
+      "runtime": "demo",
       "surface_ref": "website.chat",
       "target_surfaces": ["sdk.chat.context"],
-      "runtimeAlias": "demo",
-      "appAlias": "versatile",
       "route": "public/widgets/versatile_chat",
       "mount": { "mode": "inline" },
       "authRequired": true,
@@ -160,10 +159,10 @@ Target shape:
       "contextDrag": { "source": true, "target": true }
     },
     "pinboard": {
+      "app": "versatile@2026-03-31-13-36",
+      "runtime": "demo",
       "surface_ref": "website.pinboard",
       "target_surfaces": ["sdk.canvas.pinboard"],
-      "runtimeAlias": "demo",
-      "appAlias": "versatile",
       "route": "public/widgets/pinboard",
       "mount": { "mode": "summoned", "rail": "pinboard" },
       "authRequired": true,
@@ -185,10 +184,10 @@ Target shape:
       "contextDrag": { "source": true, "target": true }
     },
     "task_editor": {
+      "app": "task-tracker@1-0",
+      "runtime": "demo",
       "surface_ref": "website.task_editor",
       "target_surfaces": ["task_tracker.issue_editor"],
-      "runtimeAlias": "demo",
-      "appAlias": "taskTracker",
       "route": "public/widgets/task_tracker_wizard?host_controls=1",
       "mount": { "mode": "summoned", "rail": "tasks" },
       "authRequired": true,
@@ -221,15 +220,16 @@ Target shape:
 | `runtimes.<alias>.origin` | Browser origin serving app endpoints and widgets. |
 | `runtimes.<alias>.tenant` / `project` | Data scope used by that runtime. |
 | `runtimes.<alias>.auth` | Authentication provider and whether authenticated-only surfaces may mount. |
-| `appAlias` | Scene-local app handle used to form widget routes. Internally this maps to a bundle id. |
+| `components.<alias>.runtime` | Runtime alias used to serve this component. |
+| `components.<alias>.app` | Deployable app package id used to form widget/public routes. |
 
-A mixed-runtime scene can mount some surfaces from `demo.kdcube.tech` and other
-surfaces from `dev.kdcube.tech`. Each surface declares its runtime.
+A mixed-runtime scene can mount some components from `demo.kdcube.tech` and
+other components from `dev.kdcube.tech`. Each component declares its runtime.
 
 The scene must treat a runtime scope as:
 
 ```text
-runtimeAlias -> origin + tenant + project + auth provider
+runtime alias -> origin + tenant + project + auth provider
 ```
 
 The browser page can connect to multiple KDCube runtimes in the same scene.
@@ -242,9 +242,9 @@ scene profile
   runtimes.demo -> https://demo.kdcube.tech, tenant=demo, project=demo
   runtimes.dev  -> https://dev.kdcube.tech,  tenant=demo, project=demo-march
 
-surface chat      -> runtimeAlias=demo
-surface pinboard  -> runtimeAlias=demo
-surface stats     -> runtimeAlias=dev, dataScope=demo/demo
+component chat     -> runtime=demo, app=versatile@2026-03-31-13-36
+component pinboard -> runtime=demo, app=versatile@2026-03-31-13-36
+component stats    -> runtime=dev, app=kdcube.stats@2026-05-20-12-05, dataScope=demo/demo
 
 scene-owned relay keys:
   event-bus:demo/demo@https://demo.kdcube.tech
@@ -253,7 +253,7 @@ scene-owned relay keys:
 ```
 
 Widget subscriptions either declare a runtime explicitly or inherit the
-surface's `runtimeAlias`. A subscription can also declare a data scope when the
+component's `runtime`. A subscription can also declare a data scope when the
 event payload is about a tenant/project different from the route runtime. The
 scene uses this information to decide which relay receives the event and which
 subscribers should see it.
@@ -264,13 +264,13 @@ client can accept the same authenticated user as a demo runtime. That is a
 configuration property of the scene host and descriptors; it must not be
 hardcoded into the widgets.
 
-### Surface Config
+### Component Config
 
 | Field | Meaning |
 | --- | --- |
 | `surface_ref` | Stable host-local identity for the mounted surface instance. |
 | `target_surfaces` | Logical provider target ids that this surface can receive. |
-| `runtimeAlias` / `appAlias` | Where the iframe/component is served from. |
+| `runtime` / `app` | Runtime scope and deployable app package used to serve the iframe/component. |
 | `route` | Route relative to the app's widget/public route root. |
 | `mount` | Inline, docked, rail-summoned, modal, or overlay placement. |
 | `authRequired` | Surface is visible/mountable only after scene auth reports an authenticated user. |
@@ -281,7 +281,7 @@ hardcoded into the widgets.
 | `contextDrag` | Whether the surface can be a drag source and/or drop target. |
 
 Scene core should build surface registry entries from this data. Adding a new
-surface should add configuration and a component-side command handler, not a new
+component should add configuration and a component-side command handler, not a new
 `if (alias === "...")` branch in scene core.
 
 ### Namespace Presentation Config
@@ -514,7 +514,7 @@ Widget-to-scene subscription claim:
     {
       "id": "usage-card-accounting-refresh",
       "bus": "event-bus",
-      "runtimeAlias": "demo",
+      "runtime": "demo",
       "events": ["accounting.usage"],
       "transport": "scene",
       "forward": {
@@ -544,7 +544,7 @@ The same pattern should support Data Bus later with subject/partition matching:
 ```json
 {
   "bus": "data-bus",
-  "runtimeAlias": "demo",
+  "runtime": "demo",
   "subjects": ["canvas.patch"],
   "partitions": ["board:main"],
   "transport": "scene"
@@ -669,8 +669,8 @@ after auth is known to be present.
 When composing a scene:
 
 1. Declare every runtime scope used by the page.
-2. Declare every app alias and widget/component route.
-3. Declare every surface alias and its `target_surfaces`.
+2. Declare every component alias with its `app` package and route.
+3. Declare every component's `surface_ref` and `target_surfaces`.
 4. Declare mount mode, size, layer tier, and rail position.
 5. Declare auth requirements for each surface.
 6. Declare readiness policy for each iframe surface.
@@ -716,12 +716,12 @@ Private app source paths are intentionally omitted from this public SDK doc.
 
 ## Landing Scene Status
 
-The website landing scene and versatile scene should stay aligned with this
-table.
+The website landing scene and the reusable scene implementation should stay
+aligned with this table.
 
 | Area | Status |
 | --- | --- |
-| Surface specs | Config drives aliases, routes, sizes, rails, auth visibility, readiness, commands, and drop targets. |
+| Component specs | Config drives aliases, routes, sizes, rails, auth visibility, readiness, commands, and drop targets. |
 | Cross-surface commands | Host sends `kdcube.surface.command`; components interpret object refs locally. |
 | Event relay | Surface subscription config claims events; event broker dispatches configured surface commands. |
 | Usage-card readiness | Readiness is configured as a timeout policy; component readiness events can replace it. |
@@ -737,7 +737,7 @@ The scene should produce enough console traces to answer these questions:
 | Question | Trace |
 | --- | --- |
 | Which profile loaded? | `scene config loaded` with profile and runtimes. |
-| Which surfaces mounted? | `surface registered/mounted` with alias, surface ref, target surfaces. |
+| Which components mounted? | `surface registered/mounted` with alias, surface ref, target surfaces. |
 | Was namespace presentation loaded? | `namespace presentation loaded` with namespace count and source. |
 | Did a widget request config? | `config request received` with identity, alias, source frame. |
 | Did a surface become ready? | `surface ready` with alias, surface ref, queued count flushed. |
@@ -762,7 +762,7 @@ chat: attach command received -> context chip added/rejected
 This is the implementation sequence to make the current scene match the target
 contract.
 
-1. Move website scene surface declarations into scene config.
+1. Move website scene component declarations into scene config.
 2. Replace host-side task/memory/chat command builders with the generic
    `kdcube.surface.command` envelope.
 3. Add or verify `kdcube.surface.command` handlers in every participating
@@ -784,14 +784,14 @@ The scene is generic when all of the following are true:
 
 | Criterion | Expected result |
 | --- | --- |
-| Add a new surface by config | The scene can mount/register it without editing scene core. |
+| Add a new component by config | The scene can mount/register it without editing scene core. |
 | Add a new provider namespace | The scene can color, drag, pin, and provider-open it when namespace presentation and provider `object.action(open)` exist. |
 | Drop object on owning surface | Scene calls provider and dispatches generic `open` command to returned `target_surface`. |
 | Drop object on chat | Scene dispatches generic `attach` command; chat owns chip creation. |
 | Drop object on canvas | Scene dispatches generic `pin` command; canvas owns card creation. |
 | Runtime event reaches scene | Event broker matches declared subscriptions and dispatches generic `refresh` or configured command. |
 | Widget runs standalone | Widget uses standalone config and configured self transport without scene assumptions. |
-| Mixed-runtime scene | Each surface uses its configured runtime; Event Bus relays are scoped by runtime and opened only when claimed. |
+| Mixed-runtime scene | Each component uses its configured runtime; Event Bus relays are scoped by runtime and opened only when claimed. |
 | Namespace color changes server-side | Chat, overlay, and canvas update from the same namespace presentation map. |
 | Task/memory IDs change shape | Scene behavior stays unchanged because scene passes opaque object refs. |
 
@@ -802,10 +802,10 @@ Some choices remain host/page configuration rather than reusable scene core:
 | Page-specific concern | Reason |
 | --- | --- |
 | Landing page marketing text and layout bands | This belongs to the website page, not the scene runtime. |
-| Which apps are shown in the demo scene | This is a profile/config decision. |
+| Which components are shown in the demo scene | This is a profile/config decision. |
 | Rail labels and icon artwork | This is host presentation, declared in config. |
 | Exact panel sizes and responsive layout | This is host composition, declared in config and CSS tokens. |
 | Component-local state payloads | Components translate `kdcube.surface.command` into their own local store/API calls. |
 
 Everything else listed in this document should become reusable scene behavior or
-surface-owned behavior.
+component-owned behavior.
