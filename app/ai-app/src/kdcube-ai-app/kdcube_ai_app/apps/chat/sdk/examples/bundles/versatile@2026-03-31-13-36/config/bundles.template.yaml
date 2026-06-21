@@ -362,6 +362,9 @@ bundles:
               components_core_scene:
                 src_folder: npm://components-core/src/scene
                 target: _shared/components-core/scene
+              components_core_events:
+                src_folder: npm://components-core/src/events
+                target: _shared/components-core/events
           widgets:
             # Chat is package-only — `engine` expands to the npm:// shared sources +
             # build env (solutions/chat/backend.apply_chat_widget_engine).
@@ -374,6 +377,10 @@ bundles:
             usage_card:
               src_folder: sdk://infra/economics/ui/widget/usage-card
               build_command: npm install --no-package-lock && OUTDIR=<VI_BUILD_DEST_ABSOLUTE_PATH> npm run build
+              shared_sources:
+                components_core:
+                  src_folder: npm://components-core/src
+                  target: _shared/components-core
             telegram_miniapp:
               src_folder: ui/widgets/telegram_miniapp
               build_command: npm install --no-package-lock && OUTDIR=<VI_BUILD_DEST_ABSOLUTE_PATH> npm run build

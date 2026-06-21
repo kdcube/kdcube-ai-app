@@ -183,6 +183,9 @@ ui:
       components_core_scene:
         src_folder: sdk://solutions/scene
         target: _shared/components-core/scene
+      components_core_events:
+        src_folder: npm://components-core/src/events
+        target: _shared/components-core/events
       components_react_canvas:
         src_folder: sdk://solutions/canvas/ui/component
         target: _shared/components-react/canvas

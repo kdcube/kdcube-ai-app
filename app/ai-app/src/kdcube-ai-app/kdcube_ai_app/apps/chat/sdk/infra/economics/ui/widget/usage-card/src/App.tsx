@@ -16,14 +16,16 @@
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  bindComponentEventSubscriptions,
+  createSceneEventTransport,
+} from '@kdcube/components-core/events';
 import { getBudgetBreakdown, getProfile, UsageCardApiError } from './api/client';
 import { settings } from './api/settings';
 import type { ProfileResponse, QuotaBreakdown } from './api/types';
 
 const REFRESH_DEBOUNCE_MS = 600;
 const SURFACE_COMMAND_MESSAGE_TYPE = 'kdcube.surface.command';
-const SCENE_SUBSCRIBE_MESSAGE_TYPE = 'kdcube-scene-subscribe';
-const SCENE_UNSUBSCRIBE_MESSAGE_TYPE = 'kdcube-scene-unsubscribe';
 
 interface CardStatus {
   loading: boolean;
@@ -239,11 +241,15 @@ function notifyHost(message: Record<string, unknown>): void {
   }
 }
 
-function subscribeToSceneUsageEvents(): void {
+function subscribeToSceneUsageEvents(): () => void {
   console.info('[kdcube.usage-card] scene subscription claim', { event: 'accounting.usage' });
-  notifyHost({
-    type: SCENE_SUBSCRIBE_MESSAGE_TYPE,
-    widget: 'usage_card',
+  return bindComponentEventSubscriptions({
+    component: 'usage_card',
+    transportMode: 'scene',
+    transports: {
+      scene: createSceneEventTransport({ logger: console }),
+    },
+    logger: console,
     subscriptions: [
       {
         id: 'usage-card-accounting-refresh',
@@ -263,13 +269,6 @@ function subscribeToSceneUsageEvents(): void {
   });
 }
 
-function unsubscribeFromSceneUsageEvents(): void {
-  notifyHost({
-    type: SCENE_UNSUBSCRIBE_MESSAGE_TYPE,
-    widget: 'usage_card',
-  });
-}
-
 export const App: React.FC = () => {
   const [compact, setCompact] = useState<boolean>(initialCompact);
   const [breakdown, setBreakdown] = useState<QuotaBreakdown | null>(null);
@@ -279,7 +278,7 @@ export const App: React.FC = () => {
   const pendingRefreshRef = useRef(false);
   const debounceRef = useRef<number | null>(null);
   const shellRef = useRef<HTMLDivElement | null>(null);
-  const sceneSubscriptionActiveRef = useRef(false);
+  const sceneSubscriptionCleanupRef = useRef<(() => void) | null>(null);
 
   const load = useCallback(async (reason = 'load') => {
     if (inFlightRef.current) {
@@ -331,17 +330,14 @@ export const App: React.FC = () => {
     settings.setupParentListener().then((ready) => {
       if (cancelled || !ready) return;
       if (settings.isHostedByScene() && settings.getLiveEventsTransport() === 'scene') {
-        subscribeToSceneUsageEvents();
-        sceneSubscriptionActiveRef.current = true;
+        sceneSubscriptionCleanupRef.current = subscribeToSceneUsageEvents();
       }
       void load();
     });
     return () => {
       cancelled = true;
-      if (sceneSubscriptionActiveRef.current) {
-        sceneSubscriptionActiveRef.current = false;
-        unsubscribeFromSceneUsageEvents();
-      }
+      sceneSubscriptionCleanupRef.current?.();
+      sceneSubscriptionCleanupRef.current = null;
     };
   }, [load]);
 

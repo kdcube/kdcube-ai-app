@@ -4,6 +4,7 @@ export default defineConfig({
   entry: {
     index: 'src/index.ts',
     'chat/index': 'src/chat/index.ts',
+    'events/index': 'src/events/index.ts',
     'scene/index': 'src/scene/index.ts',
     'canvas/index': 'src/canvas/index.ts',
   },

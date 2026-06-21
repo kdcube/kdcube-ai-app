@@ -36,6 +36,11 @@ const envSceneRuntime = process.env.KDCUBE_SCENE_RUNTIME_SRC
   ? path.resolve(process.env.KDCUBE_SCENE_RUNTIME_SRC)
   : ''
 const repoSceneRuntime = findInWorkspace(__dirname, 'npm/packages/components-core/src/scene/index.ts')
+const materializedComponentsCoreEvents = path.resolve(__dirname, '_shared/components-core/events/index.ts')
+const envEventsRuntime = process.env.KDCUBE_EVENTS_RUNTIME_SRC
+  ? path.resolve(process.env.KDCUBE_EVENTS_RUNTIME_SRC)
+  : ''
+const repoEventsRuntime = findInWorkspace(__dirname, 'npm/packages/components-core/src/events/index.ts')
 
 const canvasComponentEntry = fs.existsSync(materializedComponentsReactCanvas)
   ? materializedComponentsReactCanvas
@@ -43,6 +48,9 @@ const canvasComponentEntry = fs.existsSync(materializedComponentsReactCanvas)
 const sceneRuntimeEntry = fs.existsSync(materializedComponentsCoreScene)
   ? materializedComponentsCoreScene
   : envSceneRuntime || repoSceneRuntime
+const eventsRuntimeEntry = fs.existsSync(materializedComponentsCoreEvents)
+  ? materializedComponentsCoreEvents
+  : envEventsRuntime || repoEventsRuntime
 // Canvas core logic (@kdcube/components-core/canvas — model/ingress/types), imported by
 // the canvas component. Same materialized-_shared + workspace-fallback resolution.
 const materializedComponentsCoreCanvas = path.resolve(__dirname, '_shared/components-core/canvas/index.ts')
@@ -62,6 +70,7 @@ export default defineConfig({
       { find: '@kdcube/components-react/canvas/canvasBoard.css', replacement: canvasComponentCss },
       { find: '@kdcube/components-react/canvas', replacement: canvasComponentEntry },
       { find: '@kdcube/components-core/scene', replacement: sceneRuntimeEntry },
+      { find: '@kdcube/components-core/events', replacement: eventsRuntimeEntry },
       { find: '@kdcube/components-core/canvas', replacement: componentsCoreCanvasEntry },
       { find: 'lucide-react', replacement: require.resolve('lucide-react') },
       { find: /^react$/, replacement: require.resolve('react') },

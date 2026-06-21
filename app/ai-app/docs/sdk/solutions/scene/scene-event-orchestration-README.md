@@ -22,8 +22,8 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/scene/scene-surface-registry-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/scene/cross-surface-context-drag-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/scene/surface-layering-README.md
+  - repo:kdcube-ai-app/app/ai-app/src/kdcube-ai-app/npm/packages/components-core/src/events
   - repo:kdcube-ai-app/app/ai-app/src/kdcube-ai-app/npm/packages/components-core/src/scene/eventBus.ts
-  - repo:kdcube-ai-app/app/ai-app/src/kdcube-ai-app/npm/packages/components-core/src/scene/subscriptions.ts
 ---
 # Scene Event Orchestration
 
@@ -158,9 +158,22 @@ the widget can connect to the correct runtime itself.
 
 The host profile can choose the transport mode for a component. The exact
 event names, channels, and actions are component/app-owned. In scene transport
-mode, the component posts a `kdcube-scene-subscribe` claim after it receives
-host config; the scene only scopes, opens/reuses the runtime relay, matches,
-debounces, and forwards events according to that claim.
+mode, the component uses `@kdcube/components-core/events` to post a
+`kdcube-scene-subscribe` claim after it receives host config; the scene only
+scopes, opens/reuses the runtime relay, matches, debounces, and forwards
+events according to that claim.
+
+The shared dependency direction is:
+
+```text
+@kdcube/components-core/events
+  component subscription claim and transport adapters
+  no dependency on scene host runtime
+
+@kdcube/components-core/scene
+  host registry, relay, matching, drag/drop broker
+  consumes event claims
+```
 
 ## Runtime Shape
 

@@ -1254,6 +1254,10 @@ class VersatileEntrypoint(BaseEntrypointWithEconomicsAndMemory):
                             "src_folder": "npm://components-core/src/scene",
                             "target": "_shared/components-core/scene",
                         },
+                        "components_core_events": {
+                            "src_folder": "npm://components-core/src/events",
+                            "target": "_shared/components-core/events",
+                        },
                     },
                 },
                 "widgets": {
@@ -1270,6 +1274,12 @@ class VersatileEntrypoint(BaseEntrypointWithEconomicsAndMemory):
                         "enabled": True,
                         "src_folder": "sdk://infra/economics/ui/widget/usage-card",
                         "build_command": "npm install --no-package-lock && OUTDIR=<VI_BUILD_DEST_ABSOLUTE_PATH> npm run build",
+                        "shared_sources": {
+                            "components_core": {
+                                "src_folder": "npm://components-core/src",
+                                "target": "_shared/components-core",
+                            },
+                        },
                     },
                     "telegram_miniapp": {
                         "enabled": True,
@@ -1368,6 +1378,13 @@ class VersatileEntrypoint(BaseEntrypointWithEconomicsAndMemory):
             {
                 "src_folder": "npm://components-core/src/scene",
                 "target": "_shared/components-core/scene",
+            },
+        )
+        shared_sources.setdefault(
+            "components_core_events",
+            {
+                "src_folder": "npm://components-core/src/events",
+                "target": "_shared/components-core/events",
             },
         )
         main_view_cfg["shared_sources"] = shared_sources
