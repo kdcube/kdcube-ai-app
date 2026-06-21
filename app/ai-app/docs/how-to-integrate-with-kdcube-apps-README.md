@@ -10,8 +10,8 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/service/cicd/embedding-kdcube-in-a-host-app-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/service/cicd/embedding-control-plane-frontend-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-client-ui-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-client-communication-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-chat-stream-events-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/service/comm/client-transport-protocols-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/chat/chat-stream-events-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-widget-integration-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/ui-components-lifecycle-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-platform-integration-README.md
@@ -52,9 +52,9 @@ same deployment.
 | Surface | Client uses it for | Primary docs |
 | --- | --- | --- |
 | Static app UI routes | Load a KDCube-served widget or main view in an iframe or public launcher. | [Bundle Client UI](sdk/bundle/bundle-client-ui-README.md), [Bundle Widget Integration](sdk/bundle/bundle-widget-integration-README.md) |
-| App operations/public APIs | Request/response calls to app backend code. | [Bundle Platform Integration](sdk/bundle/bundle-platform-integration-README.md), [Bundle Client Communication](sdk/bundle/bundle-client-communication-README.md) |
-| Chat send path | Send user text, attachments, followups, steers, or authored external events into a conversation. | [Bundle Client Communication](sdk/bundle/bundle-client-communication-README.md), [Chat Stream Events](sdk/bundle/bundle-chat-stream-events-README.md) |
-| Chat/event stream | Receive lifecycle, deltas, service events, compaction, completion, errors, and peer-targeted app events. | [Chat Stream Events](sdk/bundle/bundle-chat-stream-events-README.md) |
+| App operations/public APIs | Request/response calls to app backend code. | [Bundle Platform Integration](sdk/bundle/bundle-platform-integration-README.md), [Client Transport Protocols](service/comm/client-transport-protocols-README.md) |
+| Chat send path | Send user text, attachments, followups, steers, or authored external events into a conversation. | [Client Transport Protocols](service/comm/client-transport-protocols-README.md), [Chat Stream Events](sdk/solutions/chat/chat-stream-events-README.md) |
+| Chat/event stream | Receive lifecycle, deltas, service events, compaction, completion, errors, and peer-targeted app events. | [Chat Stream Events](sdk/solutions/chat/chat-stream-events-README.md) |
 | Data Bus | Submit durable app-domain mutations such as board patches, issue edits, annotations, or app messages. | [Data Bus](service/comm/data-bus-README.md), [Conversation Event Bus And Data Bus](service/comm/conversation-event-bus-and-data-bus-README.md) |
 | Named services | Expose or consume namespace-owned objects, refs, actions, relations, files, and provider contracts. | [Namespace Services](sdk/namespace-services/README.md) |
 | Files/artifacts | Upload, host, download, cite, or materialize files through runtime or provider-owned refs. | [Bundle Runtime](sdk/bundle/bundle-runtime-README.md), [Namespace Services](sdk/namespace-services/README.md) |
@@ -177,8 +177,8 @@ Host-browser responsibilities:
 
 Read:
 
-- [Bundle Client Communication](sdk/bundle/bundle-client-communication-README.md)
-- [Bundle Chat Stream Events](sdk/bundle/bundle-chat-stream-events-README.md)
+- [Client Transport Protocols](service/comm/client-transport-protocols-README.md)
+- [Chat Stream Events](sdk/solutions/chat/chat-stream-events-README.md)
 - [Conversation Event Bus And Data Bus](service/comm/conversation-event-bus-and-data-bus-README.md)
 - [Data Bus](service/comm/data-bus-README.md)
 
@@ -341,8 +341,8 @@ page to fetch KDCube.
 - If you are building a KDCube-served app UI, start with
   [Bundle Widget Integration](sdk/bundle/bundle-widget-integration-README.md).
 - If you are writing a direct browser client, start with
-  [Bundle Client Communication](sdk/bundle/bundle-client-communication-README.md) and
-  [Bundle Chat Stream Events](sdk/bundle/bundle-chat-stream-events-README.md).
+  [Client Transport Protocols](service/comm/client-transport-protocols-README.md) and
+  [Chat Stream Events](sdk/solutions/chat/chat-stream-events-README.md).
 - If you are sending durable domain messages, start with
   [Conversation Event Bus And Data Bus](service/comm/conversation-event-bus-and-data-bus-README.md).
 - If you are exposing or consuming namespace-owned objects, start with

@@ -8,6 +8,7 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/runtime/README.md
   - repo:kdcube-ai-app/app/ai-app/docs/runtime/cross-runtime-context-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/service/comm/CHAT-RELAY-SESSION-SUBSCR-SSE-SOCKETIO-FUNOUT.README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/service/comm/client-transport-protocols-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/service/comm/comm-system.md
   - repo:kdcube-ai-app/app/ai-app/docs/service/comm/bus-routing-and-partitioning-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/service/comm/conversation-event-bus-and-data-bus-README.md
@@ -16,8 +17,8 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/service/streams/telemetry-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/service/auth/auth-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-firewall-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-client-communication-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-chat-stream-events-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/chat/chat-component-communication-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/chat/chat-stream-events-README.md
 ---
 # Communication Integrations (External + Internal)
 
@@ -29,7 +30,7 @@ This README is the entry point for **communication integrations**:
 - **Internal relay**: Redis Pub/Sub fan-out (`ServiceCommunicator` + `ChatRelayCommunicator`)
 - **Tenant/project SSE events**: opt-in project-scoped service updates for
   compact cross-session UI refreshes
-- **Data Bus**: durable, bundle-scoped inbound message path for
+- **Data Bus**: durable, app-scoped inbound message path for
   non-conversation domain state changes, such as collaborative board patches or
   issue updates, routed through separate Redis Streams instead of the chat turn
   queue
@@ -43,6 +44,12 @@ This README is the entry point for **communication integrations**:
   documented in [Cross-Runtime Context](../../runtime/cross-runtime-context-README.md)
 
 If you are implementing a UI, API client, or a new transport, start here.
+
+For the detailed client-facing REST/SSE/Socket.IO/Data Bus protocol, use
+[Client Transport Protocols](client-transport-protocols-README.md). For the
+reusable chat component specifically, use
+[Chat Component Communication](../../sdk/solutions/chat/chat-component-communication-README.md)
+and [Chat Stream Events](../../sdk/solutions/chat/chat-stream-events-README.md).
 
 For how conversation `external_events[]` and Data Bus `messages[]` fit
 together, read
@@ -204,16 +211,16 @@ opt into a separate tenant/project channel for compact project-level updates.
 The relay above is for client-visible comm envelopes: chat output, direct
 operation replies, session broadcast, and compact project updates.
 
-The **Data Bus** is a different path. It accepts durable bundle-domain
-messages from clients or services, writes them to bundle-scoped Redis Streams,
-and lets the bundle handle them with registered handlers. Use it when the
-message changes bundle state and must be processed even if no browser is
+The **Data Bus** is a different path. It accepts durable app-domain
+messages from clients or services, writes them to app-scoped Redis Streams,
+and lets the app handle them with registered handlers. Use it when the
+message changes app state and must be processed even if no browser is
 currently listening. Do not model those messages as chat turns or
-`external_events[]` unless the bundle explicitly bridges the result into a
+`external_events[]` unless the app explicitly bridges the result into a
 conversation later.
 
-Data Bus producers can be browser Socket.IO clients or server-side bundle
-runtimes. Bundle entrypoints, tools, and trusted isolated/generated-code
+Data Bus producers can be browser Socket.IO clients or server-side app
+runtimes. App entrypoints, tools, and trusted isolated/generated-code
 runtimes use `comm.data_bus.publish(...)` or `comm_ctx.data_bus_publish(...)`
 to write into the same stream and handler path.
 
@@ -255,7 +262,7 @@ Conversation state:
 Typed UI cards:
 - carried as `chat_step` with `env.type` (e.g. `chat.followups`)
 
-## 6.1) Delta markers (bundle authors)
+## 6.1) Delta markers (app authors)
 
 Use `chat.delta` with a marker to control how the client renders the stream.
 Keep it simple unless you own the client UI.
@@ -286,8 +293,8 @@ The platform already has well-understood rendering behavior for these shapes:
 | Custom typed event | `chat_step` route with custom `env.type` | domain-specific semantic event |
 
 For the client-facing contract and examples, see:
-- [bundle-client-communication-README.md](../../sdk/bundle/bundle-client-communication-README.md)
-- [bundle-chat-stream-events-README.md](../../sdk/bundle/bundle-chat-stream-events-README.md)
+- [App Client Communication](client-transport-protocols-README.md)
+- [Chat Stream Events](../../sdk/solutions/chat/chat-stream-events-README.md)
 
 ### Which method owns which concept
 
@@ -364,9 +371,9 @@ await self.comm.event(
 
 ---
 
-## 9) Producer API (bundles)
+## 9) Producer API (apps)
 
-If you are a bundle author, see:
+If you are an app author, see:
 - [comm-system.md](comm-system.md) (producer API + filters)
 - [comm-recording-event-sinks-README.md](comm-recording-event-sinks-README.md) (recording selected comm envelopes and dispatching batches to event sinks)
 - [emitters.py](../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/comm/emitters.py) and

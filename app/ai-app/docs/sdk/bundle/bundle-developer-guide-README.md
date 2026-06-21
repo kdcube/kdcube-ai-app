@@ -101,7 +101,7 @@ read [Bus Routing And Partitioning](../../service/comm/bus-routing-and-partition
 [Data Bus](../../service/comm/data-bus-README.md),
 [Bundle Federated Auth For Data Bus](auth-bundle-federated-README.md),
 [bundle-platform-integration-README.md#110-data_bus_handler](bundle-platform-integration-README.md#110-data_bus_handler),
-and [bundle-client-communication-README.md#data-bus-contract](bundle-client-communication-README.md#data-bus-contract).
+and [Client Transport Protocols: Data Bus Contract](../../service/comm/client-transport-protocols-README.md#7-data-bus-contract).
 Use Data Bus for bundle-owned state mutations that need retry, idempotency, or
 per-object serialization; use chat ingress only for conversation turns and
 authored `external_events[]`.

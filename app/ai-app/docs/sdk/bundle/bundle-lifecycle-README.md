@@ -13,7 +13,7 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-interfaces-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-venv-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/auth-bundle-federated-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-client-communication-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/service/comm/client-transport-protocols-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/service/streams/background-jobs-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/design/@longrun-README.md
 ---
@@ -25,7 +25,7 @@ Read it together with:
 
 - [Bundle Runtime](bundle-runtime-README.md) for request/tool runtime surfaces
 - [Bundle Interfaces](bundle-interfaces-README.md) for streaming/widgets/operations
-- [Client Communication](bundle-client-communication-README.md) when the bundle also ships client code
+- [Client Communication](../../service/comm/client-transport-protocols-README.md) when the bundle also ships client code
 - [Bundle Longrun Design](build/design/@longrun-README.md) for the proposed
   future lifecycle for supervised bundle-owned long-running tasks
 
@@ -514,7 +514,7 @@ fall back to `index.html` for client-side routing.
   - `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/ui/main/src/App.tsx`
   That example shows a lightweight chat main view with bundle-scoped conversation browsing on top of the runtime UI config handshake plus chat REST/SSE endpoints.
 - See:
-  [bundle-client-communication-README.md](bundle-client-communication-README.md)
+  [client-transport-protocols-README.md](../../service/comm/client-transport-protocols-README.md)
   and [docs/sdk/bundle/bundle-runtime-README.md](bundle-runtime-README.md)
 
 ## React integration

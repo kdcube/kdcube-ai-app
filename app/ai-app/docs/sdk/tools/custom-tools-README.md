@@ -483,6 +483,61 @@ Do not use this shape for a tool that has several independent result surfaces
 such as files plus search rows plus snapshot refs. For that case, use a
 composite result and declare the event-source policies that consume each field.
 
+### File vs Artifact Surfaces
+
+Client placement is driven by explicit event/artifact surfaces, not by
+namespace names and not by incidental fields inside a row. Client reducers
+project incoming packages into artifact objects with one of these UI surfaces:
+`files`, `artifacts`, `links`, or `timeline`. A row with `object_ref`, `mime`,
+or `filename` is not a downloadable file unless it came through a file surface.
+Anything written only to the timeline remains `surface="timeline"` and must not
+be counted in the Artifacts tab.
+
+Full surface routing:
+
+```text
+Tool/provider result
+  |
+  |-- ret.artifact_type == "files" + ret.files[]
+  |     -> declared-file block production
+  |     -> hosted file metadata
+  |     -> chat.files event
+  |     -> client FileArtifact
+  |     -> Files tab / transport download handling
+  |
+  |-- named_service.search_results subsystem artifact
+  |     -> client NamedServiceSearchArtifact
+  |     -> Artifacts tab / timeline search block
+  |     -> click/drag routes object_ref through object.action
+  |
+  |-- canvas/write artifact blocks
+  |     -> client CanvasArtifact with surface="artifacts"
+  |     -> Artifacts tab, plus a separate timeline entry when streamed
+  |
+  |-- marker="timeline_text" / answer notes / final answers
+  |     -> client TimelineArtifact with surface="timeline"
+  |     -> Timeline/chat feed only
+  |
+  |-- citation/source rows with public URLs
+        -> citation/link artifacts
+        -> Links tab / citation UI
+```
+
+Compact version:
+
+```text
+ret.artifact_type="files"       -> FileArtifact(surface=files)               -> Files
+named_service.search_results    -> NamedServiceSearchArtifact(surface=artifacts) -> Artifacts
+canvas/write artifact           -> CanvasArtifact(surface=artifacts)         -> Artifacts
+marker="timeline_text"/answers  -> TimelineArtifact(surface=timeline)        -> Timeline/chat
+public cited URL rows           -> LinkArtifact(surface=links)               -> Links
+```
+
+This is why search results, memory records, task issues, and other provider
+objects must stay object artifacts. They may be clickable or draggable in a
+capable client, but they are not downloadable files unless a separate file
+surface explicitly declares or hosts bytes.
+
 ## 4.3) Multi-Surface Tool Results
 
 There is no protocol where `artifact_type` contains multiple values such as

@@ -21,7 +21,7 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/events/external-events-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-events-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-interfaces-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-client-communication-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/service/comm/client-transport-protocols-README.md
 ---
 # Bus Routing And Partitioning
 

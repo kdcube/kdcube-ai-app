@@ -16,15 +16,16 @@ keywords:
     "authored external events",
     "resolver ownership",
   ]
-updated_at: 2026-06-11
+updated_at: 2026-06-20
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/how-to-integrate-with-kdcube-apps-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-navigate-kdcube-docs-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-assemble-bundle-with-sdk-building-blocks-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-understand-conversation-events-and-react-turns-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-subsystem-integration-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-runtime-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-widget-integration-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-client-communication-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/service/comm/client-transport-protocols-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-events-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-economics-integration-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-platform-integration-README.md
@@ -54,7 +55,7 @@ canvas, tasks, Telegram, delivery, or another reusable SDK subsystem, also read
 | Widget visibility or config defaults | inherited widgets can exist but return "not visible to this user". |
 | Live progress from a bundle operation | raw bundle WebSocket/SSE endpoints duplicate platform transport. |
 | Browser-to-bundle durable mutations | Data Bus and conversation events have different ownership and ordering. |
-| ReAct timeline/ANNOUNCE rendering | authored events and tool results need event-source policies. |
+| ReAct timeline/ANNOUNCE rendering | authored events and tool results need event-source policies, and conversation events cross lane/wake/processor/bundle-load/ReAct fences. |
 | Canvas/task/memory/file refs | resolver ownership belongs to the namespace owner, not the composition bundle. |
 | Semantic search, background jobs, or task execution | economics must be wired at the operation boundary and visible through `[economics.enforcement]` traces. |
 
@@ -251,7 +252,7 @@ session stream for operation progress and UI feedback.
 
 Read:
 
-- [Bundle Client Communication: non-chat bundle events over the shared stream](../bundle-client-communication-README.md#non-chat-bundle-events-over-the-shared-stream)
+- [Bundle Client Communication: non-chat bundle events over the shared stream](../../../service/comm/client-transport-protocols-README.md#non-chat-app-events-over-the-shared-stream)
 - [Bundle Transports](../bundle-transports-README.md)
 
 ## Recipe: Data Bus Is Not The Conversation Bus
@@ -299,6 +300,14 @@ Read:
 
 ## Recipe: Authored Events And Tool Result Rendering
 
+Before changing authored conversation events, followups, steers, snapshots, or
+story-aware UI events, read
+[Conversation Events And ReAct Turns](how-to-understand-conversation-events-and-react-turns-README.md).
+Do not treat `external_events[]` as a direct bundle method call. The event is
+accepted by ingress, ordered in the conversation lane, scheduled through a wake,
+processed by `chat-proc`, then folded by the ReAct consumer if a turn owns the
+lane.
+
 Use authored external events for story-aware UI moments:
 
 - wizard assistance
@@ -326,6 +335,7 @@ register an artifact namespace rehoster in a loaded tool or event module so
 
 Read:
 
+- [Conversation Events And ReAct Turns](how-to-understand-conversation-events-and-react-turns-README.md)
 - [Bundle Events](../bundle-events-README.md)
 - [React Event Sources](../../agents/react/event-source/event-source-README.md)
 

@@ -4,13 +4,14 @@ title: "How To Test A Bundle"
 summary: "Testing guide for bundle authors and QA: local syntax/suite/pytest validation, runtime reload validation, widget/API/event-source checks, scheduled-job verification, and failure diagnosis in the local runtime."
 tags: ["sdk", "bundle", "testing", "pytest", "widget", "events", "runtime", "validation"]
 keywords: ["bundle testing workflow", "shared bundle suite", "local bundle tests", "widget and api validation", "event source validation", "artifact rehoster validation", "shared sdk widget source validation", "runtime reload verification", "scheduled job checks", "bundle failure diagnosis", "manual and automated test loop", "local qa for bundles", "integration qa for bundles"]
-updated_at: 2026-06-11
+updated_at: 2026-06-20
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/how-to-integrate-with-kdcube-apps-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-navigate-kdcube-docs-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-write-bundle-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-assemble-bundle-with-sdk-building-blocks-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-avoid-common-bundle-integration-failures-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-understand-conversation-events-and-react-turns-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-bootstrap-local-bundle-runtime-as-coding-agent-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-release-bundle-content-README.md
@@ -72,6 +73,10 @@ Common failure tests:
   as the test checklist for bundle-local imports, widget origins/assets,
   widget visibility, live operation events, Data Bus boundaries, authored
   event-source policies, and resolver ownership
+- use [how-to-understand-conversation-events-and-react-turns-README.md](how-to-understand-conversation-events-and-react-turns-README.md)
+  as the architecture checklist for conversation `external_events[]`,
+  followups, steers, snapshots, lane wakeups, ReAct timeline projection, and
+  stale-owner recovery
 - if a bundle mounts an SDK subsystem, use
   [bundle-subsystem-integration-README.md](../bundle-subsystem-integration-README.md)
   to test the whole mounted surface, not only the visible widget
@@ -140,6 +145,19 @@ Run tests in this order:
 5. event-source/rehoster discovery checks if the bundle declares events
 6. local runtime reload path
 7. real widget/API/manual runtime checks
+
+If the bundle changes conversation events, do not stop at checking that an API
+returned `ok`. Prove the architecture path:
+
+- ingress accepts or rejects the `external_events[]` batch correctly
+- reactive events enqueue a wake, but the wake is not treated as event order
+- proc ignores obsolete wakes, defers to fresh consumers, or schedules a turn
+  through the bundle-load/on-message fence
+- ReAct `ContextBrowser` consumes accepted lane events and produces only the
+  intended timeline blocks
+- stale owners do not commit stale output after supersession
+- client acknowledgements such as `followup_accepted` and `steer_accepted` are
+  rendered as admission, not as proof that a new visible turn started
 
 After validation passes, use
 [how-to-release-bundle-content-README.md](how-to-release-bundle-content-README.md)
@@ -605,7 +623,7 @@ PYTHONPATH=app/ai-app/src/kdcube-ai-app $PY -m pytest -q /abs/path/to/bundle/tes
 Reference map:
 - [bundle-platform-integration-README.md](../bundle-platform-integration-README.md)
 - [bundle-widget-integration-README.md](../bundle-widget-integration-README.md)
-- [bundle-client-communication-README.md](../bundle-client-communication-README.md)
+- [client-transport-protocols-README.md](../../../service/comm/client-transport-protocols-README.md)
 - [bundle-transports-README.md](../bundle-transports-README.md)
 - [bundle-scheduled-jobs-README.md](../bundle-scheduled-jobs-README.md)
 
@@ -714,7 +732,7 @@ What to validate:
 
 Reference:
 
-- [bundle-client-communication-README.md#non-chat-bundle-events-over-the-shared-stream](../bundle-client-communication-README.md#non-chat-bundle-events-over-the-shared-stream)
+- [Client Transport Protocols: Non-chat App Events](../../../service/comm/client-transport-protocols-README.md#non-chat-app-events-over-the-shared-stream)
 
 ### C. Data Bus handler path
 

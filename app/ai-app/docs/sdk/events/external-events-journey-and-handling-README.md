@@ -24,6 +24,8 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/events/event-subsystem-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/event-source/event-source-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/shared-timeline-event-bus-steer-followup-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/service/comm/conversation-event-bus-orchestrator-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/events/conversation-event-lane-state-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/arch/ingress/events-inception-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/arch/proc/events-orchestration-README.md
 ---
@@ -70,61 +72,213 @@ The lane identity is separate from event semantics:
 For tool-backed events inside ReAct, `tool_id` is equivalent to
 `event_source_id` and `tool_call_id` is equivalent to `event_id`.
 
+## Diagram Terminology
+
+The diagrams below use short labels. They are not new abstractions:
+
+| Term | Meaning |
+|---|---|
+| `E[]` | One ordered `external_events[]` batch authored by a client, widget, webhook, or API caller. |
+| Accepted event | One event occurrence after ingress validation/normalization. It has platform event identity and can be stored in the lane. |
+| Lane `L` | The ordered conversation/agent event stream for one `id_card`. Today this is Redis. A Kafka implementation would still need the same per-lane order and retained event lookup contract. |
+| Wake | A small queue item saying "there is reactive work in lane `L`". It is not the event body; it points back to an accepted lane occurrence. |
+| Queue `Q` | The processor ready/wake queue. It schedules work; it does not define event order. |
+| State table `T` | Shared event-lane coordination state: open handler owner, consumer status/freshness, and processed cursors. Today this is Redis-backed state. |
+| Handler | The turn that currently owns the lane for folding events into a ReAct turn. It is logical ownership, not a process. |
+| Consumer | The runtime loop that reads lane events and folds/materializes them. In the current ReAct runtime this is the `ContextBrowser` event reader. |
+| `consumer_status_at` | The consumer heartbeat timestamp. It proves the lane reader has recently acknowledged that it is alive. It does not mean every pending event has already been folded. Diagrams may write this as `T.consumer.status_at`. |
+| Fresh consumer | A consumer whose `consumer_status_at` is inside the configured freshness window. A fresh consumer means another turn must not compete for the same lane. |
+| Stale wake | A wake whose referenced reactive event is already covered by `T.last_processed_reactive_event_timestamp`. The wake is obsolete and can be ignored. |
+| Defer | Do not start a new turn because a fresh scheduled/active consumer is already responsible for this lane. The accepted event remains in `L`. |
+| Reclaim | Take ownership from an open handler whose consumer is missing or stale. The older turn must later detect supersession and discard its output. |
+| Superseded turn | A turn that started earlier but later sees that another turn owns the lane. It raises `ExternalEventLaneTurnSuperseded` and follows the normal turn-exception rollback path. |
+
 ## Current Journey
 
+Compact version:
+
 ```text
-Client / widget / API
-  sends one ordered external_events[] batch
-  built-in user events and bundle/domain events use the same batch protocol
+external_events[] from client/widget/webhook/API
+  -> chat-ingress
+       validates request, resolves lane identity, appends accepted events to L
+       and enqueues wake Q only when reactive work exists
+  -> chat-proc
+       dequeues wake, checks T, then:
+         stale wake                 -> ignore
+         fresh active/scheduled consumer -> defer
+         no fresh consumer          -> T.consumer = scheduled
+  -> bundle-load/on-message fence
+       resolve/load bundle, bind request context, invoke bundle turn entrypoint
+  -> ReAct ContextBrowser
+       open handler in T for this turn
+       heartbeat consumer_status_at while still owner
+       read L after timeline cursor
+       accept_events_for_open_handler(...)
+       fold events into TL only if still owner
+  -> ReAct loop
+       consume TL
+  -> finish_turn
+       assert still owner before answer/turn persistence
+       owner changed -> ExternalEventLaneTurnSuperseded -> rollback/no stale commit
+```
+
+```text
+Legend
+  E[] = external_events batch from client/webhook/widget/API
+  L   = Redis conversation event lane stream
+  Q   = processor ready/wake queue
+  T   = event-lane state table
+  R   = ReAct runtime / ContextBrowser
+  TL  = ReAct turn timeline
+
+Client / Webhook / Widget / API
         |
+        | 1. sends request with one ordered E[] batch
         v
-Ingress
-  validates auth/session/conversation
-  resolves agent_id from payload.target.agent_id or default.react.agent
-  builds ExternalEventPayload
-  publishes the accepted occurrence to the Redis event lane when the event is
-  lane-backed
+chat-ingress process
         |
-        +-- idle reactive event
-        |     queue ExternalEventLaneWakeup
-        |     wakeup points at the lane event; it does not carry request data
+        | 2. validates auth/session/conversation
+        | 3. resolves lane identity:
+        |      tenant + project + user_id + conversation_id + agent_id
+        | 4. normalizes event ids, timestamps, logical ev: paths,
+        |    semantic event_source_id, and task_payload
         |
-        +-- busy turn events
-        |     includes followup, steer, prompt-like continuation, and domain events
-        |     retain in the same lane for the live owner
-        |     if not consumed live, proc can promote the retained event later
+        +-------------------------------+
+        |                               |
+        v                               v
+Redis/shared coordination          Redis/shared coordination
+Lane Stream L                      Processor Queue Q
+append accepted lane records       enqueue wake only when the accepted
+with event_id + sequence           batch has reactive work
+        |                               |
+        |                               v
+        |                         chat-proc process
+        |                         processor worker
+        |                               |
+        |                               | 5. dequeues wake
+        |                               | 6. checks T:
+        |                               |    - stale wake? ignore wake
+        |                               |    - fresh consumer? defer to owner
+        |                               |    - no fresh consumer? schedule turn
+        |                               v
+        |                         Redis/shared coordination
+        |                         T.consumer = scheduled
+        |                               |
+        |                               v
+        |                         chat-proc process
+        |                         load/resolve the bundle instance
+        |                         then invoke its on-message turn entrypoint
+        |                         (for ReAct bundles: @on_message / workflow run)
+        |                               |
+        v                               v
+chat-proc process
+ReAct Runtime / ContextBrowser R <-------+
         |
-        +-- idle non-reactive accepted events
-              retain in the lane and return; no model wake
-        |
+        | 7. opens lane handler for this turn
+        |    if T already names another owner:
+        |      raise ExternalEventLaneTurnSuperseded
         v
-Redis event lane
-  assigns event_id + sequence
-  stores the occurrence payload and stored task_payload while retained
+Redis/shared coordination
+T.handler = open, handler_turn_id = current turn
         |
+        | 8. starts lane consumer and acknowledges ownership
+        |    by refreshing T.consumer_status_at
         v
-Processor ready queue
-  carries either an ordinary ExternalEventPayload or an ExternalEventLaneWakeup
+T.consumer = active, consumer_status_at = now
         |
+        | 9. reads accepted events from L after the timeline cursor
+        |    then calls accept_events_for_open_handler(...)
+        |    before folding/materializing them
+        |    if handler_turn_id changed:
+        |      raise ExternalEventLaneTurnSuperseded
         v
-Processor
-  if queue item is ExternalEventLaneWakeup:
-    reads the lane event by event_id
-    reconstructs ExternalEventPayload from event.task_payload
-    annotates bundle_call_context.event_lane_wakeup
-  invokes bundle @on_reactive_event with the resolved payload
+ContextBrowser block production under current-owner acceptance
         |
+        | event kind/source decides block shape:
+        | - event.user.prompt     -> user.prompt
+        | - event.user.followup   -> user.followup
+        | - event.user.steer      -> user.steer
+        | - event.external/canvas -> policy-produced blocks or no blocks
         v
-ReAct ContextBrowser / BaseWorkflow
-  folds lane events into timeline before first model render
-  live listener drains later lane events while the turn owns the lane
-  BaseWorkflow skips duplicate inline prompt/attachment contribution when the
-  lane reader already materialized current-turn user input
+Timeline TL
+        |
+        | 10. contributed blocks become visible to this in-flight ReAct turn
+        |     and lane processed cursors advance only for the current owner
+        v
+ReAct agent loop consumes updated TL
+        |
+        | 11. before final answer/turn persistence,
+        |     finish_turn checks ownership again
+        |     if this turn was superseded:
+        |       normal exception rollback; no stale committed output
 ```
 
 There is one event protocol: `ExternalEventPayload`. The ready queue may carry
 a small `ExternalEventLaneWakeup`, but that wakeup is only a pointer to the
 accepted lane occurrence. It is not the event body.
+
+Processor wake decisions have precise meanings:
+
+| Decision | Meaning | What happens to the lane event |
+|---|---|---|
+| Ignore stale wake | The wake points at reactive work whose timestamp is already covered by `T.last_processed_reactive_event_timestamp`. The wake item is obsolete. | Nothing new is scheduled; the lane cursor already proves the reactive work was handled. |
+| Defer to fresh consumer | The wake is not obsolete, but `consumer_status_at` is fresh for an active or scheduled consumer. Starting another turn would create a competing owner. | The accepted event remains in `L`; the current owner is responsible for reading and folding it. |
+| Schedule turn | No fresh consumer owns the lane. | Proc marks `T.consumer = scheduled`, loads/resolves the bundle instance, invokes the bundle turn entrypoint, and that turn opens the handler and consumes from `L`. |
+
+In short: "ignore" means the wake itself is obsolete; "defer" means the wake
+is still valid but another live/scheduled consumer is already responsible for
+the lane.
+
+The bundle load/invoke step is an important runtime fence. Proc has decided a
+turn should run, but the lane is not consumed until the bundle instance is
+loaded/resolved and its on-message turn entrypoint starts the ReAct runtime.
+For non-singleton bundles, bundle loading can take observable time in this
+window. That is why the state table first records `T.consumer = scheduled`:
+another wake should not start a competing turn while this bundle-load and
+entrypoint-invocation boundary is in progress.
+
+The ContextBrowser side is also fenced for idempotence. A turn may be delayed,
+then another turn may reclaim the lane. The delayed turn is allowed to resume
+briefly, but it must not commit stale output. `ContextBrowser` therefore
+checks current ownership at the moments where stale work would otherwise
+matter:
+
+| Moment | Check | If ownership changed |
+|---|---|---|
+| Handler open | `T.handler_turn_id` must be this turn after `open_handler(...)`. | Raise `ExternalEventLaneTurnSuperseded`. |
+| Consumer acknowledgement | Consumer heartbeat updates are guarded by handler owner. | The stale turn cannot refresh liveness for a different owner. |
+| Initial and live event fold | `accept_events_for_open_handler(...)` requires `T.handler_turn_id` to still be this turn before calling the fold/materialization callback and advancing processed cursors. | Raise `ExternalEventLaneTurnSuperseded` on handler mismatch. |
+| Finish turn | `finish_turn` calls the event-lane current-owner assertion before answer emission and final turn persistence. | Raise `ExternalEventLaneTurnSuperseded`; the normal turn exception path abandons this turn. |
+
+This is the idempotence rule: a lane event is folded and cursor-advanced only
+for the turn that still owns the lane, and a superseded turn does not publish
+its answer or final turn record. Any partial local/in-memory materialization
+from the stale turn is abandoned with that turn; the next owner continues from
+the last committed conversation index.
+
+## Process And Fence Map
+
+This journey crosses several runtime fences. The fences are the parts that
+must stay explicit if the implementation changes from Redis to Kafka, or from
+in-process bundle loading to a remote bundle runner.
+
+| Fence | Current process/runtime | Shared state touched | Why it is a fence |
+|---|---|---|---|
+| Client submit | Browser, widget iframe/webview, webhook sender, or API caller | None yet | The platform has not accepted the event. The caller's turn id or target turn is intent, not authority. |
+| Ingress admission | `chat-ingress` process | Lane `L`, queue `Q` | Auth/session/conversation are validated; event identity, lane identity, and stored `task_payload` are normalized; the accepted event is appended to `L`; reactive work may enqueue a wake in `Q`. |
+| Wake scheduling | Shared queue plus `chat-proc` processor worker | Queue `Q`, state table `T` | The wake is converted from "there is work" into "this worker may start or defer a turn". The event body is still read from `L`, not from `Q`. |
+| Lane ownership decision | `chat-proc` processor worker | State table `T` | Proc checks processed cursors and consumer freshness. It ignores obsolete wakes, defers to fresh consumers, or marks `T.consumer = scheduled` before loading the bundle. |
+| Bundle load / turn entrypoint | `chat-proc` process today; future remote bundle runner would own the same contract | Bundle registry/cache, request context, state table `T` | KDCube resolves/loads the bundle instance and invokes the bundle reactive/message turn entrypoint. For ReAct chat bundles this enters the on-message workflow run path (`@on_message` / workflow run); a lane wake can arrive through the resolved reactive-event wrapper before that on-message path starts. Non-singleton bundles can spend real time here. |
+| Handler open | ReAct runtime inside the bundle turn | State table `T` | The turn declares itself the lane handler. If the state table names a different handler, this turn is superseded and must abort. From this point, another turn must not fold the same lane unless this handler's consumer becomes stale and is reclaimed. |
+| Consumer acknowledgement | ReAct `ContextBrowser` event reader | State table `T` | The lane reader refreshes `consumer_status_at` only while it still matches the current handler. This is the liveness signal used to decide whether new wakes should defer or reclaim. |
+| Lane read and block production | ReAct `ContextBrowser` plus event-source/block-production policies | Lane `L`, timeline `TL`, state table `T` | Accepted events are read in lane order, wrapped by `accept_events_for_open_handler(...)`, and materialized into zero or more ReAct timeline blocks only for the current owner. Event-source policy decides visibility; the bus event and timeline block are separate concepts. |
+| Turn commit | BaseWorkflow/ReAct turn finish path | Conversation index, turn log, timeline storage | Only a non-superseded turn may persist answer/timeline/index updates. If ownership changed, `ExternalEventLaneTurnSuperseded` reaches the normal exception rollback path and stale output is not committed. |
+
+The current implementation runs the bundle and ReAct runtime in `chat-proc`.
+That is an implementation detail, not a semantic requirement. A remote bundle
+runtime would still need the same fences: accepted event storage, wake
+scheduling, lane ownership, consumer heartbeat, ordered lane read, and
+superseded-turn rollback before persistence.
 
 ## Event Bus Processing Schematic
 
@@ -168,6 +322,97 @@ only produced blocks are appended to the ReAct timeline
   timeline_projection / announce_production / compaction_projection
   operate only on those blocks, not on every bus event
 ```
+
+## Lane Ownership And Recovery
+
+The Redis lane stream stores the accepted event records. A separate event-lane
+state table coordinates which turn currently owns the lane:
+
+```text
+T.handler.turn_id
+T.handler.status                 open | closed
+T.handler.status_at
+
+T.consumer.status                active | scheduled | none
+T.consumer.status_at
+
+T.last_processed_event_timestamp
+T.last_processed_reactive_event_timestamp
+```
+
+`T.handler.status_at` is not a liveness signal. It only says when handler
+state was last written. The liveness signal is `T.consumer.status_at`, written
+by the reader/consumer as an acknowledgement that it is still consuming this
+lane.
+
+```text
+fresh consumer_status_at
+  defer to the current owner
+
+missing or stale consumer_status_at
+  reclaim the lane for a new turn
+```
+
+The processor wake is only a nudge. It does not own event ordering and does
+not decide which event belongs to which turn. The lane state table and the
+ReAct `ContextBrowser` decide whether a live owner should keep consuming or a
+new turn should reclaim the lane.
+
+### Stale Open Handler
+
+```text
+Turn A opens lane
+  T.handler_turn_id = turn-A
+  T.consumer_status = active
+  T.consumer_status_at = fresh
+        |
+        | worker dies, reloads, or stops acknowledging
+        v
+T.handler_status remains open
+T.consumer_status_at becomes stale
+        |
+        | new reactive event arrives and wake is queued
+        v
+Turn B opens lane
+  sees open handler turn-A
+  sees stale consumer_status_at
+  reclaims:
+    T.handler_turn_id = turn-B
+```
+
+### Live But Delayed Consumer
+
+A turn can be alive but delayed long enough for `consumer_status_at` to become
+stale. Reclaiming is still allowed, but the older turn must not commit stale
+output after a newer owner takes over.
+
+```text
+Turn A is delayed
+        |
+        | Turn B reclaims the lane
+        v
+T.handler_turn_id = turn-B
+        |
+        | Turn A resumes
+        v
+Turn A checks lane ownership during consumer ack / event accept / finish
+        |
+        v
+sees owner turn-B
+        |
+        v
+raises ExternalEventLaneTurnSuperseded
+        |
+        v
+normal turn exception path:
+  delete_turn(index_only)
+  no stale committed answer or turn persistence
+```
+
+`ExternalEventLaneTurnSuperseded` is intentionally handled by the normal turn
+exception path. The important property is that the stale turn is discarded as
+a wrong turn, while the newer owner continues from the last committed turn in
+the index.
 
 This means bundles can use the same SSE/Socket.IO-backed lane for explicit
 conversation events. An event can be useful to the bundle even when it should
@@ -308,9 +553,27 @@ sdk/solutions/react/events/listener.py
 The loop owns transport mechanics only:
 
 1. acquire/refresh the owner lease
-2. read lane events after the current cursor
-3. call the supplied fold/materialization callback
-4. mark consumed events only after they were applied
+2. acknowledge the lane consumer by refreshing `T.consumer_status_at` while
+   this turn is still the handler
+3. read lane events after the current cursor
+4. hand the batch to `ContextBrowser`
+5. `ContextBrowser` calls `accept_events_for_open_handler(...)`
+6. only if the state table still names this turn as handler, call the supplied
+   fold/materialization callback
+7. advance processed cursors only after the accepted events were applied
+
+The loop and `ContextBrowser` also detect owner loss. If lease refresh is
+rejected, the owner lease changes, or the event-lane table reports another
+handler turn, the runtime marks the current turn as superseded by storing an
+`ExternalEventLaneTurnSuperseded` error. That signal is raised immediately at
+the current event-read/fold boundary when possible and is always rechecked at
+`finish_turn` before answer emission and persistence.
+
+This makes late execution idempotent at the turn boundary. A delayed old turn
+can wake back up after a newer turn has reclaimed the lane, but it cannot use
+that late wakeup to publish a final answer or make the stale turn the committed
+conversation head. It raises `ExternalEventLaneTurnSuperseded` and follows the
+same exception cleanup path as a wrong turn.
 
 Event-source policy semantics stay outside the Redis listener.
 
@@ -377,9 +640,10 @@ history.
 |---|---|
 | Ingress | Auth/session validation, event classification, agent target resolution, lane publish, wakeup enqueue, service ack. |
 | Redis event lane | Per-`id_card` event order, retained event payload, sequence, event lookup, owner lease, promotion claim metadata. |
+| Event-lane state table | Handler owner, consumer status/freshness, processed cursors, stale-open reclaim coordination. |
 | Ready queue | Processor wakeups and ordinary proc scheduling. It does not store the lane-backed event body. |
-| Processor | Queue claim, wakeup resolution, communicator/accounting context, bundle invocation, promotion after unconsumed busy events. |
-| ReAct ContextBrowser | Lane-to-timeline folding before first render and during live turns. |
+| Processor | Queue claim, wakeup resolution, consumer scheduling from wakes, communicator/accounting context, bundle invocation, promotion after unconsumed busy events. |
+| ReAct ContextBrowser | Handler open/close, consumer acknowledgement, lane-to-timeline folding before first render and during live turns, superseded-turn detection. |
 | Bundle/workflow event callbacks | Raw accepted-event side effects such as hosting, API calls, permission checks, storage updates, or ignoring events. |
 | Event-source subsystem | Source declaration and policy lookup. It does not own transport or processor queueing. |
 | Event-source readers | Namespace-owner hooks used by runtime/policy code to resolve canonical refs such as `mem:` or `cnv:`. Exact model-facing content is imported through `react.pull` when that namespace has a registered rehoster. They are not external-event transport and do not consume the Redis event lane. |
@@ -392,9 +656,12 @@ history.
 | `ExternalEventPayload` as top-level envelope | Implemented. |
 | `agent_id` in lane scope and RuntimeCtx | Implemented. |
 | Redis external-event lane sequence and owner lease | Implemented. |
+| Event-lane state table for handler/consumer coordination | Implemented. |
 | Ready-queue `ExternalEventLaneWakeup` | Implemented for lane-backed reactive starts and promoted retained events. |
 | Wakeup without request body | Implemented; proc resolves event body from lane `task_payload`. |
 | Lane-backed ReAct turn input | Implemented; ContextBrowser folds lane events before first model render. |
+| Stale-open reclaim using `consumer_status_at` | Implemented. |
+| Superseded-turn fencing before stale persistence | Implemented. |
 | BaseWorkflow duplicate prompt/attachment guard | Implemented. |
 | Workflow raw event callback | Implemented as `BaseWorkflow.on_external_event_received(...)`; default no-op. |
 | Durable idle non-reactive event-history materialization | Pending. |

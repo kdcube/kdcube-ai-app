@@ -216,7 +216,10 @@ once, instead of repeating it in every named-service tool description:
   and also emits a generic `named_service.search_results` subsystem artifact.
   Capable chat/scene clients can render those result rows as clickable and
   draggable context objects; model instructions must not assume that such a UI
-  exists.
+  exists. This artifact is not `chat.files`; provider object hits must not be
+  treated as downloadable files unless a separate file surface explicitly
+  declares or hosts bytes. In KDCube chat clients it is projected as
+  `surface="artifacts"`, while timeline notes remain `surface="timeline"`.
 - Use pull/read for existing refs already in the timeline when content is
   needed; use live `object.get` only when the configured tool surface exposes
   it and the model deliberately needs current namespace service state.

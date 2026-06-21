@@ -45,8 +45,8 @@ Curated index of platform, service, and SDK documentation.
 * Bundle Widget Integration: [bundle-widget-integration-README.md](sdk/bundle/bundle-widget-integration-README.md)
 * UI Components Lifecycle: [ui-components-lifecycle-README.md](sdk/bundle/ui-components-lifecycle-README.md)
 * Bundle Frontend Awareness: [bundle-frontend-awareness-README.md](sdk/bundle/bundle-frontend-awareness-README.md)
-* Bundle Client Communication: [bundle-client-communication-README.md](sdk/bundle/bundle-client-communication-README.md)
-* Bundle Chat Stream Events: [bundle-chat-stream-events-README.md](sdk/bundle/bundle-chat-stream-events-README.md)
+* Bundle Client Communication: [client-transport-protocols-README.md](service/comm/client-transport-protocols-README.md)
+* Bundle Chat Stream Events: [chat-stream-events-README.md](sdk/solutions/chat/chat-stream-events-README.md)
 * Bundle Transports: [bundle-transports-README.md](sdk/bundle/bundle-transports-README.md)
 
 ## Agents, Tools, Skills, And Memory

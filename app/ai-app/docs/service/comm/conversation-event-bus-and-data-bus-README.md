@@ -1,26 +1,27 @@
 ---
 id: repo:kdcube-ai-app/app/ai-app/docs/service/comm/conversation-event-bus-and-data-bus-README.md
 title: "Conversation Event Bus And Data Bus"
-summary: "How conversation external events and the bundle-scoped Data Bus fit together, including transport shape, routing, persistence, ordering, replies, and bridge patterns."
+summary: "How conversation external events and the app-scoped Data Bus fit together, including transport shape, routing, persistence, ordering, replies, and bridge patterns."
 status: active
-tags: ["service", "comm", "conversation-events", "data-bus", "socketio", "redis-streams", "bundle-runtime"]
+tags: ["service", "comm", "conversation-events", "data-bus", "socketio", "redis-streams", "app-runtime", "bundle-legacy-field"]
 keywords:
   [
     "conversation event bus",
     "external_events",
     "data bus",
-    "bundle data messages",
+    "app data messages",
     "socket.io data_bus.publish",
     "chat_message",
     "react timeline",
-    "bundle state mutation",
+    "app state mutation",
     "per object ordering",
   ]
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/service/comm/comm-system.md
   - repo:kdcube-ai-app/app/ai-app/docs/service/comm/bus-routing-and-partitioning-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/service/comm/data-bus-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-client-communication-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/service/comm/client-transport-protocols-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/service/comm/client-transport-protocols-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-widget-integration-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-transports-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/events/external-event-envelope-README.md
@@ -32,14 +33,14 @@ KDCube has two durable inbound message paths. They can share browser transport,
 while each path keeps its own routing, partitioning, and handler contract.
 
 Use this page when deciding whether a browser/widget action should become
-conversation context for an agent, or should mutate bundle-owned domain state.
+conversation context for an agent, or should mutate app-owned domain state.
 
 ## Two Buses
 
 | Bus | Scope | Ingress event | Durable route | Consumer | Typical payload |
 | --- | --- | --- | --- | --- | --- |
 | Conversation event bus | conversation + turn | `/sse/chat` or Socket.IO `chat_message` with `external_events[]` | chat task queue and conversation external event store | chat workflow / ReAct owner | user prompt, chat attachment, followup, steer, selected context, snapshot event intended for timeline |
-| Data Bus | tenant + project + bundle, optionally object-partitioned | Socket.IO `data_bus.publish` or HTTP `POST /sse/data_bus.publish` with `messages[]` | bundle Data Bus Redis Stream | processor-owned `@data_bus_handler(...)` worker | board patch, issue edit, object comment, widget persistence signal |
+| Data Bus | tenant + project + app, optionally object-partitioned | Socket.IO `data_bus.publish` or HTTP `POST /sse/data_bus.publish` with `messages[]` | app Data Bus Redis Stream | processor-owned `@data_bus_handler(...)` worker | board patch, issue edit, object comment, widget persistence signal |
 
 The same browser can keep one Socket.IO connection and use both events. That is
 transport reuse; routing still follows the selected bus contract.
@@ -62,7 +63,7 @@ conversation event:
   -> @on_reactive_event run(...)
 
 data bus message:
-  messages[].subject -> bundle Data Bus stream
+  messages[].subject -> app Data Bus stream
   -> optional object_ref partition lock
   -> @data_bus_handler(ctx, message)
 ```
@@ -94,21 +95,21 @@ Examples:
 - focused context dragged into chat for this request;
 - read-only snapshot context that should be visible to ReAct.
 
-The bundle may define event-source policies that decide which accepted events
+The app may define event-source policies that decide which accepted events
 produce timeline blocks, announce records, or compaction projections.
 
 ## Data Bus
 
-Data Bus messages are bundle-owned domain messages. They are durable even if no
+Data Bus messages are app-owned domain messages. They are durable even if no
 chat turn is running and no browser remains connected.
 
 ```text
 widget/custom UI
   -> Socket.IO data_bus.publish or POST /sse/data_bus.publish
-  -> ingress validates bundle + subject + actor visibility
+  -> ingress validates app + subject + actor visibility
   -> kdcube:data-bus:{tenant}:{project}:{bundle}:messages
   -> processor-owned @data_bus_handler(...)
-  -> bundle storage/API update
+  -> app storage/API update
   -> optional ctx.reply.* through comm relay
 ```
 
@@ -260,11 +261,11 @@ data_bus handler applies domain change
 Do this deliberately. Most domain state mutations should remain outside the
 conversation timeline unless the user explicitly asked the agent to react.
 
-## Bundle Builder Checklist
+## App Builder Checklist
 
 - Choose conversation `external_events[]` when the action is agent context.
-- Choose Data Bus when the action mutates bundle state.
-- Keep Data Bus payloads structured and bundle-owned.
+- Choose Data Bus when the action mutates app state.
+- Keep Data Bus payloads structured and app-owned.
 - Include `object_ref` for object-scoped mutations.
 - Include `idempotency_key` for mutations.
 - Treat `data_bus.publish` ack as stream admission only.

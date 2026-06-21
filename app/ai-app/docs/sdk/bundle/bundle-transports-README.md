@@ -9,10 +9,10 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-conversation-events-and-react-output-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-platform-integration-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-interfaces-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-client-communication-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/service/comm/client-transport-protocols-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/shared-timeline-event-bus-steer-followup-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/configuration/bundle-runtime-configuration-and-secrets-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-chat-stream-events-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/chat/chat-stream-events-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-runtime-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/providers-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/service/streams/background-jobs-README.md
@@ -101,8 +101,8 @@ with continuation intent. Ingress stores it in the shared conversation external
 event source. A live React owner consumes it on the current turn, or proc later
 promotes the stored `task_payload` into one normal ready-queue turn. See
 [Bus Routing And Partitioning](../../service/comm/bus-routing-and-partitioning-README.md),
-[Bundle Client Communication](bundle-client-communication-README.md) and
-[Bundle Chat Stream Events](bundle-chat-stream-events-README.md).
+[Client Transport Protocols](../../service/comm/client-transport-protocols-README.md) and
+[Chat Stream Events](../solutions/chat/chat-stream-events-README.md).
 
 Background jobs are intentionally not URL-addressable. A producer writes a
 ready job to the Redis Stream with tenant/project/bundle/user routing metadata.
@@ -603,13 +603,13 @@ normal `/sse/stream` or Socket.IO connection, call a bundle REST operation, and
 pass the connected peer id through the configured stream-id header so
 `comm.service_event(...)` can reply to that exact peer or broadcast to the
 current session. See the concrete recipe in
-[Bundle Client Communication](bundle-client-communication-README.md#non-chat-bundle-events-over-the-shared-stream).
+[Client Transport Protocols](../../service/comm/client-transport-protocols-README.md#non-chat-app-events-over-the-shared-stream).
 
 For tenant/project-level widget refreshes, SSE clients opt in with
 `project_events=true`, and bundle code emits `comm.project_event(...)`. Keep
 those payloads compact and already safe for all viewers in the tenant/project.
 The detailed recipe is in
-[Bundle Client Communication](bundle-client-communication-README.md#tenantproject-sse-broadcast).
+[Client Transport Protocols](../../service/comm/client-transport-protocols-README.md#tenantproject-sse-broadcast).
 
 ### 7.2 Who owns outbound auth
 
@@ -657,9 +657,9 @@ Choose by caller and auth ownership:
 - widget/static/browser-facing integration:
   [bundle-interfaces-README.md](bundle-interfaces-README.md)
 - browser/UI request contract:
-  [bundle-client-communication-README.md](bundle-client-communication-README.md)
+  [client-transport-protocols-README.md](../../service/comm/client-transport-protocols-README.md)
 - streaming payload catalog:
-  [bundle-chat-stream-events-README.md](bundle-chat-stream-events-README.md)
+  [chat-stream-events-README.md](../solutions/chat/chat-stream-events-README.md)
 - durable Data Bus messages:
   [../../service/comm/data-bus-README.md](../../service/comm/data-bus-README.md)
 - routing and partitioning:

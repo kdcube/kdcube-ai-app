@@ -18,9 +18,9 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-interfaces-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/tools/custom-tools-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/tools/tool-subsystem-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-client-communication-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/service/comm/client-transport-protocols-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/auth-bundle-federated-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-chat-stream-events-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/chat/chat-stream-events-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-event-recording-and-sinks-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/service/comm/bus-routing-and-partitioning-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/service/comm/data-bus-README.md
@@ -787,7 +787,7 @@ Practical consequence:
 If the bundle also ships widget or frontend code, that code must follow the
 client transport contract when it calls `/api/integrations/*`:
 
-- [bundle-client-communication-README.md](bundle-client-communication-README.md)
+- [client-transport-protocols-README.md](../../service/comm/client-transport-protocols-README.md)
 
 ### 3) Tool execution in normal in-process runtime
 
@@ -1027,7 +1027,7 @@ That is why:
 For actual event names, `chat.delta` shape, and built-in markers such as
 `answer`, `thinking`, `canvas`, `timeline_text`, and `subsystem`, read:
 
-- [bundle-chat-stream-events-README.md](bundle-chat-stream-events-README.md)
+- [chat-stream-events-README.md](../solutions/chat/chat-stream-events-README.md)
 
 For recording selected comm events into a bounded buffer and sending the batch
 to a bundle/platform sink, read:

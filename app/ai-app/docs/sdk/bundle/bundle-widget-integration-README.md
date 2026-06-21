@@ -13,7 +13,7 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/ui-components-lifecycle-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-platform-integration-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-client-ui-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-client-communication-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/service/comm/client-transport-protocols-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/scene/scene-composition-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/scene/scene-event-orchestration-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/service/comm/conversation-event-bus-and-data-bus-README.md
@@ -141,7 +141,7 @@ not raw upstream app context.
 See:
 
 - [Conversation Event Bus And Data Bus](../../service/comm/conversation-event-bus-and-data-bus-README.md)
-- [bundle-client-communication-README.md#data-bus-contract](bundle-client-communication-README.md#data-bus-contract)
+- [Client Transport Protocols: Data Bus Contract](../../service/comm/client-transport-protocols-README.md#7-data-bus-contract)
 - [Data Bus](../../service/comm/data-bus-README.md)
 - [Bundle Federated Auth For Data Bus](auth-bundle-federated-README.md)
 

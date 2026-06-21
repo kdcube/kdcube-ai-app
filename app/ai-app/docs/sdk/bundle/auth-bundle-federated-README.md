@@ -16,7 +16,7 @@ keywords:
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/service/comm/data-bus-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-platform-integration-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-client-communication-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/service/comm/client-transport-protocols-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-transports-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-runtime-README.md
 ---

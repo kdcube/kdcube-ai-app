@@ -12,7 +12,7 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-transports-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/auth-bundle-federated-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-client-communication-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/service/comm/client-transport-protocols-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-interfaces-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-scheduled-jobs-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-event-recording-and-sinks-README.md
@@ -93,7 +93,7 @@ Project events are SSE-only in the current contract. They are for small,
 bounded, already-safe payloads. Do not publish raw telemetry events, prompts,
 answers, logs, or unbounded result lists through this path. The concrete client
 and bundle recipe lives in
-[Bundle Client Communication](bundle-client-communication-README.md#tenantproject-sse-broadcast).
+[Client Transport Protocols](../../service/comm/client-transport-protocols-README.md#tenantproject-sse-broadcast).
 
 ## 1) Supported decorators
 
@@ -924,7 +924,7 @@ See:
 - [docs/service/comm/bus-routing-and-partitioning-README.md](../../service/comm/bus-routing-and-partitioning-README.md)
 - [docs/service/comm/data-bus-README.md](../../service/comm/data-bus-README.md)
 - [auth-bundle-federated-README.md](auth-bundle-federated-README.md)
-- [bundle-client-communication-README.md#data-bus-contract](bundle-client-communication-README.md#data-bus-contract)
+- [Client Transport Protocols: Data Bus Contract](../../service/comm/client-transport-protocols-README.md#7-data-bus-contract)
 - [bundle-runtime-README.md#publishing-to-data-bus-from-tools-and-entrypoints](bundle-runtime-README.md#publishing-to-data-bus-from-tools-and-entrypoints)
 
 ### 1.11 `@cron(...)`

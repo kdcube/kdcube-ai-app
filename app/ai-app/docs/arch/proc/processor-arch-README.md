@@ -14,7 +14,7 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/service/streams/conversation-scheduler-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/ops/ecs/components/proc-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/service/maintenance/connection-pooling-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-chat-stream-events-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/chat/chat-stream-events-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-frontend-awareness-README.md
 ---
 # Chat Processor Architecture

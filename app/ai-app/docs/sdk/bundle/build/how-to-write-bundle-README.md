@@ -24,7 +24,7 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-economics-integration-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-agent-integration-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-platform-integration-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-client-communication-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/service/comm/client-transport-protocols-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-events-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-transports-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-widget-integration-README.md
@@ -1575,7 +1575,7 @@ So the practical rule is:
 - REST operations can emit live non-chat events over the already-open
   `/sse/stream` or Socket.IO connection when the client passes
   `KDC-Stream-ID`; use the recipe in
-  [bundle-client-communication-README.md#non-chat-bundle-events-over-the-shared-stream](../bundle-client-communication-README.md#non-chat-bundle-events-over-the-shared-stream)
+  [Client Transport Protocols: Non-chat App Events](../../../service/comm/client-transport-protocols-README.md#non-chat-app-events-over-the-shared-stream)
 
 If a widget or host-embedded UI calls a bundle operation, do not treat it as a detached background job.
 

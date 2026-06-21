@@ -13,6 +13,7 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-write-bundle-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-assemble-bundle-with-sdk-building-blocks-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-avoid-common-bundle-integration-failures-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-understand-conversation-events-and-react-turns-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-test-bundle-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/versatile-reference-bundle-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/configuration/bundle-runtime-configuration-and-secrets-README.md
@@ -76,19 +77,21 @@ backend-only apps — start with
    - how bundles submit `external_events[]` into the conversation lane and consume ReAct timeline output for non-browser delivery
 13. [bundle-events-README.md](bundle-events-README.md)
    - bundle-authored events, tool-backed event sources, ReAct policy bindings, UI story events, snapshots, and custom artifact namespace rehosters
-14. [bundle-agent-integration-README.md](bundle-agent-integration-README.md)
+14. [build/how-to-understand-conversation-events-and-react-turns-README.md](build/how-to-understand-conversation-events-and-react-turns-README.md)
+   - sharp architecture view for conversation event lane, wake queue, bundle-load/on-message fence, ContextBrowser consumer, timeline projection, and stale-owner rollback
+15. [bundle-agent-integration-README.md](bundle-agent-integration-README.md)
    - React tools/skills, MCP connector/server patterns, and Claude Code subagent requirements
-15. [bundle-entrypoint-classes-README.md](bundle-entrypoint-classes-README.md)
+16. [bundle-entrypoint-classes-README.md](bundle-entrypoint-classes-README.md)
    - which SDK entrypoint base to use: base, economics, memory, or both
-16. [bundle-properties-and-secrets-lifecycle-README.md](bundle-properties-and-secrets-lifecycle-README.md)
+17. [bundle-properties-and-secrets-lifecycle-README.md](bundle-properties-and-secrets-lifecycle-README.md)
    - how code defaults, descriptor/admin props, effective bundle props, and bundle secrets flow at runtime
-17. [bundle-platform-integration-README.md](bundle-platform-integration-README.md)
+18. [bundle-platform-integration-README.md](bundle-platform-integration-README.md)
    - exact decorator and route contract
-18. [bundle-transports-README.md](bundle-transports-README.md)
+19. [bundle-transports-README.md](bundle-transports-README.md)
    - canonical inbound/outbound protocol and transport map
-19. [../../configuration/bundle-runtime-configuration-and-secrets-README.md](../../configuration/bundle-runtime-configuration-and-secrets-README.md)
+20. [../../configuration/bundle-runtime-configuration-and-secrets-README.md](../../configuration/bundle-runtime-configuration-and-secrets-README.md)
    - platform/global, bundle-scoped, and user-scoped configuration and secrets
-20. [bundle-delivery-and-update-README.md](bundle-delivery-and-update-README.md)
+21. [bundle-delivery-and-update-README.md](bundle-delivery-and-update-README.md)
    - local reload, registry updates, delivery modes, and deployment-side changes
 
 ## Core Doc Map
@@ -109,8 +112,9 @@ backend-only apps — start with
 | Record and sink selected comm events | [bundle-event-recording-and-sinks-README.md](bundle-event-recording-and-sinks-README.md) |
 | Conversation agent lanes and Data Bus partitions | [../../service/comm/bus-routing-and-partitioning-README.md](../../service/comm/bus-routing-and-partitioning-README.md) |
 | Named provider/client surfaces for namespaced services, object actions, relations, API/MCP/Data Bus adapters | [../namespace-services/providers-README.md](../namespace-services/providers-README.md) |
-| Durable bundle-scoped inbound Data Bus messages | [../../service/comm/data-bus-README.md](../../service/comm/data-bus-README.md), [bundle-client-communication-README.md#data-bus-contract](bundle-client-communication-README.md#data-bus-contract) |
+| Durable bundle-scoped inbound Data Bus messages | [../../service/comm/data-bus-README.md](../../service/comm/data-bus-README.md), [Client Transport Protocols: Data Bus Contract](../../service/comm/client-transport-protocols-README.md#7-data-bus-contract) |
 | Submit conversation events and reduce ReAct timeline output for adapters | [bundle-conversation-events-and-react-output-README.md](bundle-conversation-events-and-react-output-README.md) |
+| Sharp architecture path for conversation events, wakeups, bundle load/on-message, ReAct ContextBrowser, timeline projection, and stale-owner rollback | [build/how-to-understand-conversation-events-and-react-turns-README.md](build/how-to-understand-conversation-events-and-react-turns-README.md) |
 | Bundle-authored events, event sources, ReAct policies, snapshots, and custom namespace rehosters | [bundle-events-README.md](bundle-events-README.md) |
 | React, tools/skills, MCP, Claude Code, and file-producing tool integration | [bundle-agent-integration-README.md](bundle-agent-integration-README.md) |
 | Decorators, widget/API/public integration, Data Bus handlers, `@on_job` | [bundle-platform-integration-README.md](bundle-platform-integration-README.md) |
@@ -122,8 +126,8 @@ backend-only apps — start with
 | Widgets, streaming, operations, background job surface | [bundle-interfaces-README.md](bundle-interfaces-README.md) |
 | Bundle-facing browser/UI entry | [bundle-client-ui-README.md](bundle-client-ui-README.md) |
 | Product-level KDCube app/client integration modes | [../../how-to-integrate-with-kdcube-apps-README.md](../../how-to-integrate-with-kdcube-apps-README.md) |
-| Browser/UI transport contract | [bundle-client-communication-README.md](bundle-client-communication-README.md) |
-| Chat stream event catalog for bundle-facing clients | [bundle-chat-stream-events-README.md](bundle-chat-stream-events-README.md) |
+| Browser/UI transport contract | [client-transport-protocols-README.md](../../service/comm/client-transport-protocols-README.md) |
+| Chat stream event catalog for bundle-facing clients | [chat-stream-events-README.md](../solutions/chat/chat-stream-events-README.md) |
 | Frontend behavior under drains/rate limits | [bundle-frontend-awareness-README.md](bundle-frontend-awareness-README.md) |
 | Local reload and deployed registry updates | [bundle-delivery-and-update-README.md](bundle-delivery-and-update-README.md) |
 | Bundle storage and cache | [bundle-storage-and-cache-README.md](bundle-storage-and-cache-README.md) |

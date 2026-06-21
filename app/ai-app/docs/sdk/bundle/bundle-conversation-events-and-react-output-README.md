@@ -1,14 +1,14 @@
 ---
 id: repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-conversation-events-and-react-output-README.md
-title: "Bundle Conversation Events And React Output"
-summary: "Bundle contract for submitting conversation events into the platform event lane and consuming ReAct output from timeline/turn-log blocks instead of private runtime state."
+title: "App Conversation Events And ReAct Output"
+summary: "App contract for submitting conversation events into the platform event lane and consuming ReAct output from timeline/turn-log blocks instead of private runtime state."
 status: active
-tags: ["sdk", "bundle", "events", "react", "timeline", "telegram", "webhooks", "integration"]
-updated_at: 2026-06-18
+tags: ["sdk", "app", "bundle-legacy-path", "events", "react", "timeline", "telegram", "webhooks", "integration"]
+updated_at: 2026-06-21
 keywords:
   [
-    "bundle conversation events",
-    "bundle react output",
+    "app conversation events",
+    "app react output",
     "chat submitter",
     "ExternalEventPayload",
     "external_events[]",
@@ -23,12 +23,13 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/events/external-events-journey-and-handling-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-events-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-agent-integration-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-chat-stream-events-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/chat/chat-stream-events-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/service/comm/client-transport-protocols-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/integrations/telegram/README.md
 ---
-# Bundle Conversation Events And React Output
+# App Conversation Events And ReAct Output
 
-This page is the bundle contract for two operations:
+This page is the app contract for two operations:
 
 1. sending conversation events into the platform event lane
 2. reducing ReAct output for a non-browser delivery surface
@@ -38,15 +39,15 @@ are outputs.
 
 ## Ownership Boundary
 
-| Area | Owner | Bundle responsibility |
+| Area | Owner | App responsibility |
 | --- | --- | --- |
 | Transport authentication and user/session resolution | Platform ingress or platform integration component | Pass the request through the supported submitter/ingress contract. |
 | `turn_id` minting for chat ingress | Platform transport adapter or platform submitter | Do not invent a second turn id after calling submitter. |
 | `ExternalEventPayload` and ready wake package | Platform ingress core | Provide `external_events[]` and payload metadata; do not push directly to the ready queue. |
-| Redis conversation event lane | Platform event bus | Do not write lane state directly from bundle code. |
-| Event semantics | Bundle or SDK subsystem that owns the event source | Use stable `event_source_id`, payload shape, and policy/reader registration. |
+| Redis conversation event lane | Platform event bus | Do not write lane state directly from app code. |
+| Event semantics | App or SDK subsystem that owns the event source | Use stable `event_source_id`, payload shape, and policy/reader registration. |
 | ReAct runtime turn and timeline | Platform ReAct runtime | Consume public timeline/turn-log output. |
-| Delivery to a custom channel | Bundle adapter | Reduce timeline blocks into the channel format. |
+| Delivery to a custom channel | App adapter | Reduce timeline blocks into the channel format. |
 
 ## Submit Events Through Ingress
 
@@ -150,11 +151,11 @@ entrypoint.chat_submitter.submit(...)
 platform ingress -> Redis lane -> proc -> ReAct
 ```
 
-When processor later runs the queued turn, the bundle uses the Telegram
+When processor later runs the queued turn, the app uses the Telegram
 delivery wrapper:
 
 ```text
-processor-side bundle run
+processor-side app run
         |
         v
 run_with_queued_telegram_delivery(entrypoint, runner=...)
@@ -180,7 +181,7 @@ run_react_turn(...)
 deliver_react_turn_to_telegram(...)
 ```
 
-A bundle author integrating Telegram should not infer conversation semantics
+An app author integrating Telegram should not infer conversation semantics
 from the word "resubmitter". The deciding boundary is whether the code called
 the platform submitter and received an ingress result, or ran ReAct inline.
 
@@ -253,7 +254,7 @@ integrations such as Telegram should use a channel-specific reducer.
 | `repo:kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/integrations/telegram/user_admin.py` | Submitted Telegram path, inline fallback, and queued delivery boundary. |
 | `repo:kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/integrations/telegram` | Telegram timeline-to-message rendering helpers. |
 | `repo:kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/tasks/operations.py` | Task execution delivering ReAct results through Telegram rendering. |
-| `repo:kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/agents/main.py` | Normal bundle ReAct construction and workspace persistence. |
+| `repo:kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/agents/main.py` | Normal app ReAct construction and workspace persistence; the path keeps the historical `bundles` directory name. |
 
 ## Indexing Boundary
 

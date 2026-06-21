@@ -15,8 +15,8 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-index-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-transports-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/auth-bundle-federated-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-client-communication-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-chat-stream-events-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/service/comm/client-transport-protocols-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/chat/chat-stream-events-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/service/streams/background-jobs-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/service/comm/data-bus-README.md
 ---
@@ -67,8 +67,8 @@ Bundles stream output through the platform communicator. Clients receive events 
 
 Docs:
 - client request contract:
-  [bundle-client-communication-README.md](bundle-client-communication-README.md)
-- Chat stream events: [bundle-chat-stream-events-README.md](bundle-chat-stream-events-README.md)
+  [client-transport-protocols-README.md](../../service/comm/client-transport-protocols-README.md)
+- Chat stream events: [chat-stream-events-README.md](../solutions/chat/chat-stream-events-README.md)
 - Comm system: `docs/service/comm/README-comm.md`
 
 The communicator is **asynchronous**: bundle execution and streaming can happen on
@@ -88,7 +88,7 @@ Common stream payloads:
 - `citations` (sources)
 
 See:
-- [bundle-chat-stream-events-README.md](bundle-chat-stream-events-README.md)
+- [chat-stream-events-README.md](../solutions/chat/chat-stream-events-README.md)
 
 ### Concrete bundle-to-client examples
 
@@ -238,7 +238,7 @@ See:
 - [Data Bus](../../service/comm/data-bus-README.md)
 - [Bus Routing And Partitioning](../../service/comm/bus-routing-and-partitioning-README.md)
 - [Bundle Federated Auth For Data Bus](auth-bundle-federated-README.md)
-- [bundle-client-communication-README.md#data-bus-contract](bundle-client-communication-README.md#data-bus-contract)
+- [Client Transport Protocols: Data Bus Contract](../../service/comm/client-transport-protocols-README.md#7-data-bus-contract)
 - [bundle-platform-integration-README.md#110-data_bus_handler](bundle-platform-integration-README.md#110-data_bus_handler)
 
 ---
@@ -400,8 +400,8 @@ Reference examples:
 This is not bundle-specific magic. Widget/frontend code is regular platform
 client code and should follow:
 
-- [bundle-client-communication-README.md](bundle-client-communication-README.md)
-- [bundle-chat-stream-events-README.md](bundle-chat-stream-events-README.md)
+- [client-transport-protocols-README.md](../../service/comm/client-transport-protocols-README.md)
+- [chat-stream-events-README.md](../solutions/chat/chat-stream-events-README.md)
 
 ## 5) Bundle operations endpoint (loop-back)
 
@@ -647,7 +647,7 @@ namespace. The owning bundle should decide the API, permissions, and transport.
 
 Docs:
 - Attachments system: [docs/hosting/attachments-system.md](../../hosting/attachments-system.md)
-- Chat stream events: [bundle-chat-stream-events-README.md](bundle-chat-stream-events-README.md)
+- Chat stream events: [chat-stream-events-README.md](../solutions/chat/chat-stream-events-README.md)
 
 ---
 

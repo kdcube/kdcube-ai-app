@@ -23,7 +23,7 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-bootstrap-local-bundle-runtime-as-coding-agent-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-test-bundle-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-release-bundle-content-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-client-communication-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/service/comm/client-transport-protocols-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-events-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-economics-integration-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-transports-README.md
@@ -108,7 +108,7 @@ Use the companion docs for those:
 - [how-to-assemble-bundle-with-sdk-building-blocks-README.md](how-to-assemble-bundle-with-sdk-building-blocks-README.md)
 - [how-to-test-bundle-README.md](how-to-test-bundle-README.md)
 - [how-to-bootstrap-local-bundle-runtime-as-coding-agent-README.md](how-to-bootstrap-local-bundle-runtime-as-coding-agent-README.md)
-- [bundle-client-communication-README.md](../bundle-client-communication-README.md)
+- [client-transport-protocols-README.md](../../../service/comm/client-transport-protocols-README.md)
 - [bundle-events-README.md](../bundle-events-README.md)
 - [bundle-platform-integration-README.md](../bundle-platform-integration-README.md)
 - [bundle-runtime-README.md](../bundle-runtime-README.md)

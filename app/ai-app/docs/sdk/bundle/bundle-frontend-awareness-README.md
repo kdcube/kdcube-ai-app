@@ -7,8 +7,8 @@ keywords: ["scaled frontend behavior", "sse retry strategy", "drain and shutdown
 updated_at: 2026-05-19
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-client-ui-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-client-communication-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-chat-stream-events-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/service/comm/client-transport-protocols-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/chat/chat-stream-events-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-interfaces-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/service/comm/conversation-event-bus-and-data-bus-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/service/comm/data-bus-README.md
@@ -143,7 +143,7 @@ This avoids duplicate SSE streams and rate‑limit bursts.
   one connected peer instead of broadcast to the whole session.
 - If using a proxylogin service, the browser should not handle raw tokens.
 
-See [bundle-client-communication-README.md](bundle-client-communication-README.md) for the full header/cookie/query-param contract.
+See [client-transport-protocols-README.md](../../service/comm/client-transport-protocols-README.md) for the full header/cookie/query-param contract.
 
 ---
 

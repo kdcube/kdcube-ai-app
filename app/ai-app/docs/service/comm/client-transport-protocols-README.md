@@ -1,16 +1,17 @@
 ---
-id: repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-client-communication-README.md
-title: "Bundle Client Communication"
-summary: "Browser-to-bundle communication contract across widget iframes, integrations, REST, SSE, Socket.IO, and Data Bus: auth propagation, headers, cookies, stream and session identifiers, and peer targeting."
-tags: ["sdk", "bundle", "transport", "auth", "headers", "cookies", "sse", "socketio", "rest", "integrations", "data-bus"]
-keywords: ["browser to bundle transport", "widget iframe communication", "integration request headers", "data bus publish", "auth token forwarding", "session and stream identifiers", "peer targeting", "sse and socket communication", "bundle client request contract"]
-updated_at: 2026-06-06
+id: repo:kdcube-ai-app/app/ai-app/docs/service/comm/client-transport-protocols-README.md
+title: "Client Transport Protocols"
+summary: "Client-facing communication protocol across REST, SSE, Socket.IO, integration routes, chat submit, chat stream, and Data Bus publish: auth propagation, headers, cookies, stream/session identifiers, and peer targeting."
+tags: ["service", "comm", "transport", "auth", "headers", "cookies", "sse", "socketio", "rest", "integrations", "chat", "data-bus"]
+keywords: ["client transport protocol", "browser transport", "widget iframe communication", "integration request headers", "data bus publish", "auth token forwarding", "session and stream identifiers", "peer targeting", "sse and socket communication", "chat submit contract"]
+updated_at: 2026-06-21
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/how-to-integrate-with-kdcube-apps-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/chat/chat-component-communication-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/chat/chat-stream-events-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-transports-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-conversation-events-and-react-output-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-client-ui-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-chat-stream-events-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-frontend-awareness-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-events-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/providers-README.md
@@ -22,38 +23,49 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/service/comm/conversation-event-bus-and-data-bus-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/service/comm/data-bus-README.md
 ---
-# Bundle Client Communication
+# Client Transport Protocols
 
-This document is the browser/UI contract for talking to the platform over:
+This document is the client-facing transport contract for talking to the
+platform over:
 
 - REST
 - SSE
 - Socket.IO
 - proc integrations (`/api/integrations/*`)
 
-It focuses on what a bundle-facing client can send, what the server accepts, and what the client should expect back.
+It focuses on what a client can send, what the server accepts, and what the
+client should expect back. The same transports may be used by the reusable chat
+component, an app main UI, a widget iframe, a public app-specific client, or a
+backend adapter.
+
+This is not an app-shape document. An app may have no chat UI at all: it
+can expose only APIs, MCP tools, named services, scheduled jobs, Data Bus
+handlers, or some combination of those surfaces.
 
 For user/domain events that should enter a conversation ReAct turn, do not infer
 behavior from generic REST/Data Bus transport alone. Use the
 `external_events[]` conversation-event contract in
-[Bundle Conversation Events And React Output](bundle-conversation-events-and-react-output-README.md).
+[App Conversation Events And ReAct Output](../../sdk/bundle/bundle-conversation-events-and-react-output-README.md)
+or the lower-level event journey docs linked from there.
 
 For choosing the client shape first — iframe app UI, direct host browser
 client, host-server client, or backend-only KDCube app — read
 [How To Integrate With KDCube Apps](../../how-to-integrate-with-kdcube-apps-README.md).
 
-This page is intentionally browser/UI-oriented.
+For the reusable chat component, use
+[Chat Component Communication](../../sdk/solutions/chat/chat-component-communication-README.md)
+and [Chat Stream Events](../../sdk/solutions/chat/chat-stream-events-README.md).
 
 For provider/client contracts that can be exposed through API, MCP, Data Bus,
 or local adapters, use
-[Namespace Services: Providers](../namespace-services/providers-README.md).
+[Namespace Services: Providers](../../sdk/namespace-services/providers-README.md).
 
-It does not define bundle-served MCP routes or the full bundle transport map.
+This page does not define app-served MCP routes or the full app transport map.
 Use:
 
-- [bundle-transports-README.md](bundle-transports-README.md) for the overall inbound/outbound surface map
-- [bundle-platform-integration-README.md](bundle-platform-integration-README.md) for the exact `@mcp(...)` contract
-- [bundle-chat-stream-events-README.md](bundle-chat-stream-events-README.md) for the shared event catalog seen after admission
+- [App Transports](../../sdk/bundle/bundle-transports-README.md) for the overall inbound/outbound surface map
+- [App Platform Integration](../../sdk/bundle/bundle-platform-integration-README.md) for the exact `@mcp(...)` contract
+- [Chat Stream Events](../../sdk/solutions/chat/chat-stream-events-README.md) for the shared event catalog seen after admission
 
 ## 1. Transport Overview
 
@@ -62,7 +74,7 @@ Use:
 | REST | non-streaming APIs | Standard headers/cookies auth. |
 | SSE | one-way server-to-client event stream plus `POST /sse/chat` send path | `stream_id` is required on the stream. |
 | Socket.IO | bidirectional chat and event delivery | Socket `sid` acts as the peer stream id. |
-| Proc integrations | bundle widgets, bundle REST operations, custom frontend ↔ bundle APIs | Supports the same auth context plus peer targeting through a header. |
+| Proc integrations | app widgets, app REST operations, custom frontend ↔ app APIs | Supports the same auth context plus peer targeting through a header. |
 
 ## 2. Supported Request Headers
 
@@ -181,8 +193,8 @@ The Socket.IO `connect` auth payload may include:
 | `id_token` | ID token |
 | `tenant` | Tenant override |
 | `project` | Project override |
-| `bundle_id` | Bundle scope for bundle-issued federated Data Bus tokens |
-| `federated_token` | Short-lived token issued by a bundle for app-specific clients |
+| `bundle_id` | App scope for app-issued federated Data Bus tokens. `bundle_id` is the protocol field name. |
+| `federated_token` | Short-lived token issued by an app for app-specific clients |
 
 The Socket.IO connection `sid` is the peer stream identifier for direct delivery.
 
@@ -201,7 +213,7 @@ Socket.IO clients should bind all shared server event routes, including `chat_co
 
 ## 7. Data Bus Contract
 
-Use Data Bus publish for durable bundle-domain messages that are not chat
+Use Data Bus publish for durable app-domain messages that are not chat
 turns, such as collaborative board patches or issue updates.
 
 Browser clients may publish through:
@@ -211,20 +223,20 @@ Browser clients may publish through:
   on `/sse/stream`.
 
 Both routes accept the same package and write the same normalized message to
-the same bundle Data Bus Redis Stream. The SSE stream itself is still
+the same app Data Bus Redis Stream. The SSE stream itself is still
 server-to-client only; the POST is the inbound half.
 
 For how conversation `external_events[]` and Data Bus `messages[]` fit
 together, read
-[Conversation Event Bus And Data Bus](../../service/comm/conversation-event-bus-and-data-bus-README.md).
+[Conversation Event Bus And Data Bus](conversation-event-bus-and-data-bus-README.md).
 For the compact routing and partitioning map, read
-[Bus Routing And Partitioning](../../service/comm/bus-routing-and-partitioning-README.md).
+[Bus Routing And Partitioning](bus-routing-and-partitioning-README.md).
 
 There are two supported auth paths:
 
 - platform-authenticated widgets/main views connect with the normal runtime
   session and token material;
-- app-specific clients first call a bundle endpoint, the bundle validates that
+- app-specific clients first call an app endpoint, the app validates that
   upstream context and issues a short-lived federated Data Bus token, and the
   client connects Socket.IO with `federated_token`.
 
@@ -250,13 +262,13 @@ Request shape for both browser transports:
 ```
 
 The Socket.IO ack or HTTP response confirms that accepted messages were written
-to the Data Bus Redis Stream. It does not prove that a bundle handler exists or
+to the Data Bus Redis Stream. It does not prove that an app handler exists or
 that the domain mutation succeeded. Handler completion, unknown-subject
 failures, handler access failures, and domain conflicts are proc-side results
-and may arrive later as a `chat_service` event when the bundle handler/runtime
+and may arrive later as a `chat_service` event when the app handler/runtime
 uses `ctx.reply.*`.
 
-Bundle handler registration:
+App handler registration:
 
 ```python
 from kdcube_ai_app.apps.chat.sdk.data_bus import data_bus_handler
@@ -272,7 +284,7 @@ async def handle_document_patch(self, ctx, message):
 ```
 
 Data Bus is separate from `chat_message`, `/sse/chat`, `external_events[]`, and
-ReAct timelines. A bundle that wants a handled domain message to become visible
+ReAct timelines. An app that wants a handled domain message to become visible
 to an agent must explicitly bridge it into conversation ingress.
 
 Routing keys:
@@ -280,24 +292,24 @@ Routing keys:
 | Client intent | Field |
 | --- | --- |
 | Send conversation context to a named internal agent | `target.agent_id` or `external_events[].agent_id` |
-| Route durable bundle-domain work to a handler | `messages[].subject` |
+| Route durable app-domain work to a handler | `messages[].subject` |
 | Serialize durable work for one object | `messages[].object_ref` with handler `partition_by="object_ref"` |
 
 Ingress owns socket auth, federated token scope, JSON bounds, actor/reply
-normalization, and stream admission. Proc owns bundle manifest loading,
-bundle/handler visibility, partition locking, and handler invocation.
+normalization, and stream admission. Proc owns app manifest loading,
+app/handler visibility, partition locking, and handler invocation.
 
-See [Data Bus](../../service/comm/data-bus-README.md) and
-[Bundle Federated Auth For Data Bus](auth-bundle-federated-README.md).
+See [Data Bus](data-bus-README.md) and
+[App Federated Auth For Data Bus](../../sdk/bundle/auth-bundle-federated-README.md).
 
-Server-side bundle code and trusted tools can publish the same durable messages
+Server-side app code and trusted tools can publish the same durable messages
 without a browser socket by using `comm.data_bus.publish(...)` or
 `comm.data_bus.publish_and_wait(...)`; isolated/generated-code runtimes use
 `comm_ctx.data_bus_publish(...)` or `comm_ctx.data_bus_publish_and_wait(...)`.
-Use that producer path when a tool must mutate bundle-owned state through the
+Use that producer path when a tool must mutate app-owned state through the
 same `@data_bus_handler(...)` pipeline as a browser action. See
-[Data Bus: Producer APIs From Bundle Runtimes](../../service/comm/data-bus-README.md#producer-apis-from-bundle-runtimes)
-and [Bundle Runtime](bundle-runtime-README.md#publishing-to-data-bus-from-tools-and-entrypoints).
+[Data Bus: Producer APIs From App Runtimes](data-bus-README.md#producer-apis-from-bundle-runtimes)
+and [App Runtime](../../sdk/bundle/bundle-runtime-README.md#publishing-to-data-bus-from-tools-and-entrypoints).
 
 ---
 
@@ -322,7 +334,7 @@ Current request fields:
   "tenant": "demo-tenant",
   "turn_id": "turn_123",
   "conversation_id": "conv_123",
-  "bundle_id": "my.bundle@1-0",
+  "bundle_id": "my.app@1-0",
   "message_kind": "regular|followup|steer",
   "continuation_kind": "regular|followup|steer",
   "active_turn_id": "turn_current",
@@ -336,7 +348,7 @@ Important:
 
 - `message_kind` / `continuation_kind` are current routing semantics
 - authored UI/application events use `external_events[]` and
-  top-level `target`; see [Bundle Events](bundle-events-README.md)
+  top-level `target`; see [App Events](../../sdk/bundle/bundle-events-README.md)
 - `turn_id` on the request is a client correlation hint; the server allocates or confirms the authoritative task/turn id in the acknowledgement
 - for continuations, `target_turn_id` is the user/client intent and `active_turn_id` is the client's best known active turn; neither field is authoritative without server state
 - attachments are represented as `event.user.attachment.*` entries in
@@ -413,7 +425,7 @@ Client rules:
 
 Use:
 
-- [bundle-chat-stream-events-README.md](bundle-chat-stream-events-README.md)
+- [Chat Stream Events](../../sdk/solutions/chat/chat-stream-events-README.md)
 
 for the event semantics after acceptance.
 
@@ -422,7 +434,7 @@ Important stream routes after acceptance:
 | Route | Use |
 | --- | --- |
 | `chat_start` | Turn began processing. |
-| `chat_step` | Structured progress, decisions, tool updates, custom bundle events. |
+| `chat_step` | Structured progress, decisions, tool updates, custom app events. |
 | `chat_delta` | Streaming answer/thinking/artifact chunks. |
 | `chat_compaction` | ReAct context compaction started/completed/skipped during a long turn. |
 | `chat_complete` | Final answer and followups. |
@@ -430,12 +442,12 @@ Important stream routes after acceptance:
 | `chat_service` | Gateway, queue, and rate-limit events. |
 | `conv_status` | Conversation state snapshot. |
 
-## 9. Integrations and Bundle REST Calls
+## 9. Integrations And App REST Calls
 
 This is the relevant contract for:
 
-- bundle widgets
-- custom bundle frontends
+- app widgets
+- custom app frontends
 - any client calling `/api/integrations/*`
 
 ### Auth on integrations REST
@@ -459,7 +471,8 @@ For browser/widget cases where setting headers is inconvenient, the middleware a
 
 ### Peer-targeted communicator delivery from REST
 
-If the client wants a REST-triggered bundle operation to emit events back to one exact already-connected peer, it must send the configured stream-id header:
+If the client wants a REST-triggered app operation to emit events back to one
+exact already-connected peer, it must send the configured stream-id header:
 
 ```http
 KDC-Stream-ID: <connected-peer-stream-id>
@@ -470,7 +483,7 @@ Here, `KDC-Stream-ID` means the request header whose default name is `KDC-Stream
 Behavior:
 
 - header present:
-  server maps it into communicator target peer id, so bundle-side emits can target that one connected client
+  server maps it into communicator target peer id, so app-side emits can target that one connected client
 - header absent:
   communicator emits remain session-scoped broadcast
 
@@ -479,15 +492,15 @@ Session-scoped broadcast means:
 - all connected peers on that session receive the event
 - if no peer is listening for that session, nobody receives it
 
-### Non-chat bundle events over the shared stream
+### Non-chat app events over the shared stream
 
-The SSE and Socket.IO streams are not limited to chat turns. A bundle UI can
+The SSE and Socket.IO streams are not limited to chat turns. An app UI can
 reuse the same authenticated stream for peer-to-peer or session-broadcast
-events from a bundle operation, widget call, MCP route, or background-triggered
-bundle code as long as the call is executed with a bound communicator context.
+events from an app operation, widget call, MCP route, or background-triggered
+app code as long as the call is executed with a bound communicator context.
 
 Use this shape when the UI does **not** want to start a chat turn but still
-wants live events from bundle code.
+wants live events from app code.
 
 Client-side SSE:
 
@@ -508,7 +521,7 @@ events.addEventListener("ready", event => {
 
 events.addEventListener("chat_service", event => {
   const envelope = JSON.parse(event.data);
-  if (envelope.type === "bundle.job.progress") {
+  if (envelope.type === "app.job.progress") {
     renderProgress(envelope.data);
   }
 });
@@ -529,13 +542,13 @@ const socket = io(baseUrl, {
 });
 
 socket.on("chat_service", envelope => {
-  if (envelope.type === "bundle.job.progress") {
+  if (envelope.type === "app.job.progress") {
     renderProgress(envelope.data);
   }
 });
 ```
 
-Then call the bundle operation. For a direct reply to the current browser peer,
+Then call the app operation. For a direct reply to the current browser peer,
 send the connected peer id as `KDC-Stream-ID`:
 
 ```ts
@@ -553,7 +566,7 @@ await fetch(
 );
 ```
 
-Bundle-side operation:
+App-side operation:
 
 ```python
 from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import get_current_comm
@@ -565,7 +578,7 @@ async def run_job(self, job_id: str, **kwargs):
 
     if comm is not None:
         await comm.service_event(
-            type="bundle.job.progress",
+            type="app.job.progress",
             step="job",
             status="running",
             title="Job running",
@@ -577,7 +590,7 @@ async def run_job(self, job_id: str, **kwargs):
 
     if comm is not None:
         await comm.service_event(
-            type="bundle.job.completed",
+            type="app.job.completed",
             step="job",
             status="completed",
             title="Job completed",
@@ -594,12 +607,12 @@ Delivery semantics:
   otherwise it falls back to the current session route.
 - `broadcast=True` sends to all connected SSE/Socket.IO peers in the same
   authenticated session.
-- use namespaced semantic event types such as `bundle.job.progress`,
+- use namespaced semantic event types such as `app.job.progress`,
   `memory.snapshot.completed`, or `admin.import.failed`.
 
 ### Tenant/project SSE broadcast
 
-When a bundle needs to update all connected SSE clients in the same
+When an app needs to update all connected SSE clients in the same
 tenant/project, use `comm.project_event(...)`. This is a separate primitive from
 `broadcast=True`:
 
@@ -623,13 +636,13 @@ const events = new EventSource(streamUrl.toString(), { withCredentials: true });
 
 events.addEventListener("chat_service", event => {
   const envelope = JSON.parse(event.data);
-  if (envelope.type === "my.bundle.snapshot") {
+  if (envelope.type === "my.app.snapshot") {
     applySnapshot(envelope.data);
   }
 });
 ```
 
-Bundle-side publisher:
+App-side publisher:
 
 ```python
 from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import get_current_comm
@@ -640,7 +653,7 @@ async def publish_snapshot(self, snapshot: dict):
         return
 
     await comm.project_event(
-        type="my.bundle.snapshot",
+        type="my.app.snapshot",
         step="snapshot",
         status="completed",
         title="Snapshot updated",
@@ -775,14 +788,14 @@ Example:
 
 ### E) Custom typed events
 
-If the bundle wants a custom non-delta semantic event, it can emit a typed
+If the app wants a custom non-delta semantic event, it can emit a typed
 event that still travels over the standard streaming transport.
 
 Example:
 
 ```json
 {
-  "type": "bundle.preferences.updated",
+  "type": "app.preferences.updated",
   "timestamp": "2026-04-01T10:00:00Z",
   "event": {
     "agent": "preferences",
@@ -804,8 +817,8 @@ Client rule:
 
 See:
 
-- [bundle-chat-stream-events-README.md](bundle-chat-stream-events-README.md)
-- [README-comm.md](../../service/comm/README-comm.md)
+- [Chat Stream Events](../../sdk/solutions/chat/chat-stream-events-README.md)
+- [Communication Integrations](README-comm.md)
 
 ## 12. Typical Browser Patterns
 
@@ -825,11 +838,11 @@ See:
    - `chat_delta`
    - `chat_complete`
 
-### Widget or custom bundle frontend
+### Widget or custom app frontend
 
 1. get or reuse connected peer id from the host app
 2. call `/api/integrations/*`
-3. include the configured stream-id header if bundle-side communicator emits should go only to that peer
+3. include the configured stream-id header if app-side communicator emits should go only to that peer
 
 ### Cookie-based proxylogin deployment
 
@@ -840,8 +853,8 @@ See:
 ## 13. What To Read Next
 
 - shared chat stream event catalog:
-  [bundle-chat-stream-events-README.md](bundle-chat-stream-events-README.md)
+  [Chat Stream Events](../../sdk/solutions/chat/chat-stream-events-README.md)
 - reconnect, draining, retry, and multi-tab behavior:
-  [bundle-frontend-awareness-README.md](bundle-frontend-awareness-README.md)
+  [App Frontend Awareness](../../sdk/bundle/bundle-frontend-awareness-README.md)
 - server-side auth transport details:
-  [auth-README.md](../../service/auth/auth-README.md)
+  [Auth](../auth/auth-README.md)

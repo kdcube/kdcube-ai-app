@@ -1,14 +1,16 @@
 ---
-id: repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-chat-stream-events-README.md
-title: "Bundle Chat Stream Events"
-summary: "Reference catalog for chat stream events visible to bundle-facing clients: shared event envelope and lifecycle across SSE and Socket.IO, plus continuation acknowledgements, rate limits, backpressure, and bundle-emitted events."
-tags: ["sdk", "bundle", "sse", "socketio", "protocol", "events", "streaming", "chat"]
-keywords: ["chat stream event catalog", "socketio event catalog", "sse event catalog", "client visible event lifecycle", "continuation acknowledgements", "chat step events", "rate limit events", "backpressure events", "bundle emitted events", "stream protocol reference"]
+id: repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/chat/chat-stream-events-README.md
+title: "Chat Stream Events"
+summary: "Reference catalog for the client-visible chat stream: shared event envelope and lifecycle across SSE and Socket.IO, plus continuation acknowledgements, rate limits, backpressure, ReAct progress, and app-emitted events."
+tags: ["sdk", "solutions", "chat", "sse", "socketio", "protocol", "events", "streaming"]
+keywords: ["chat stream event catalog", "socketio event catalog", "sse event catalog", "client visible event lifecycle", "continuation acknowledgements", "chat step events", "rate limit events", "backpressure events", "app emitted events", "stream protocol reference"]
+updated_at: 2026-06-21
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/how-to-integrate-with-kdcube-apps-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/chat/chat-component-communication-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/service/comm/client-transport-protocols-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-conversation-events-and-react-output-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-client-ui-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-client-communication-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/events/event-ingress-to-react-turn-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/shared-timeline-event-bus-steer-followup-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-event-recording-and-sinks-README.md
@@ -18,13 +20,19 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/arch/architecture-long.md
   - repo:kdcube-ai-app/app/ai-app/docs/economics/rate-limit-simulation-playbook.md
 ---
-# Bundle Chat Stream Events
+# Chat Stream Events
 
 This document describes the **shared chat stream event protocol** used by the chat system.
 
-For choosing whether the client is a KDCube-served app UI, direct host browser
-client, host-server client, or backend-only app consumer, start with
-[How To Integrate With KDCube Apps](../../how-to-integrate-with-kdcube-apps-README.md).
+This is the owner document for the events a browser client, iframe chat widget,
+adapter, or stream observer receives after conversation work is admitted. It is
+not an app-shape document: an app may have a chat surface, but it may also
+be API-only, MCP-only, named-service-only, or Data-Bus-only.
+
+For the reusable chat component's send/stream/iframe picture, start with
+[Chat Component Communication](chat-component-communication-README.md). For
+the transport/auth/SSE/Socket.IO/Data Bus request contract, use
+[Client Transport Protocols](../../../service/comm/client-transport-protocols-README.md).
 
 It covers:
 
@@ -32,30 +40,31 @@ It covers:
   - SSE
   - Socket.IO
 - the synchronous chat-send acknowledgements
-- the default event families emitted by ingress + processor + bundles
+- the default event families emitted by ingress + processor + apps
 - the places where SSE framing differs from Socket.IO event delivery
 
 This page is the client-visible stream catalog. It does not define how backend
 webhooks or Telegram adapters submit conversation work, and it does not define
 how to reduce a completed ReAct turn for a non-browser channel. Use
-[Bundle Conversation Events And React Output](bundle-conversation-events-and-react-output-README.md)
-for those bundle-side contracts.
+[App Conversation Events And ReAct Output](../../bundle/bundle-conversation-events-and-react-output-README.md)
+for those app-side contracts. The document path still contains `bundle`
+because the SDK package uses that historical directory name.
 
 It is intended for:
 - Frontend developers integrating the chat UI.
 - Adapter developers (Telegram/Slack/etc.) who need to consume the stream.
 - Anyone building a sniffer/aggregator for chat activity.
 
-For bundle code that records selected comm events and sends bounded batches to
+For app code that records selected comm events and sends bounded batches to
 a sink, use
-[Bundle Event Recording And Sinks](bundle-event-recording-and-sinks-README.md).
+[App Event Recording And Sinks](../../bundle/bundle-event-recording-and-sinks-README.md).
 
 It reflects the current server implementation (ingress + processor split) and the default client implementation in `ChatService.ts`.
 
 **Important**
 - The transport route name (for example `chat_step`) is **not** the same as `env.type` inside the JSON payload.
 - The route name is transport-level routing. The payload `type` is the semantic event type.
-- Bundles may emit **custom event types**, so clients must treat unknown types as generic `chat_step` events unless they explicitly support them.
+- Apps may emit **custom event types**, so clients must treat unknown types as generic `chat_step` events unless they explicitly support them.
 - In the processor request path, successful `ChatCommunicator` emissions also
   refresh the active task idle watchdog. Long-running SDK internals may refresh
   the same watchdog through an internal activity hook without emitting a
@@ -83,7 +92,7 @@ The main difference is:
 
 For connection/auth/send details, use:
 
-- [bundle-client-communication-README.md](bundle-client-communication-README.md)
+- [Client Transport Protocols](../../../service/comm/client-transport-protocols-README.md)
 
 ---
 
@@ -229,7 +238,7 @@ Important:
 
 **Core Event Types**
 
-These are emitted by the default workflow and are stable across bundles.
+These are emitted by the default workflow and are stable across apps.
 
 | `env.type`      | Route           | Meaning                      | Key fields                                                      |
 |-----------------|-----------------|------------------------------|-----------------------------------------------------------------|
@@ -594,7 +603,9 @@ This event is emitted by `/sse/conv_status.get` and mirrors server‑side state:
 
 ### Queued-next contract
 
-If the active bundle does not consume accepted external events itself, proc may promote the oldest pending event into the normal ready queue after the current turn completes. In that case the client may see:
+If the active app does not consume accepted external events itself, proc may
+promote the oldest pending event into the normal ready queue after the current
+turn completes. In that case the client may see:
 
 - `conv_status` where:
   - `data.state = "in_progress"`
@@ -736,12 +747,12 @@ Only the transport framing is different.
 
 **Extensibility**
 
-Bundles can emit new event types via `comm.event(...)` and `comm.service_event(...)`.  
+Apps can emit new event types via `comm.event(...)` and `comm.service_event(...)`.  
 If your client does not recognize a type:
 - Treat it as a `chat_step` payload.
 - Use `event.step`, `event.status`, and `event.markdown` for display.
 
-Custom event filtering can be applied per bundle (see `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/comm/event_filter.py`).
+Custom event filtering can be applied per app (see `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/comm/event_filter.py`).
 
 ---
 

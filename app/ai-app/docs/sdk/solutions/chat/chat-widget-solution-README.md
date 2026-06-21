@@ -22,6 +22,7 @@ keywords:
     "reuse chat backend",
   ]
 see_also:
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/chat/chat-component-communication-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-client-ui-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-widget-integration-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-subsystem-integration-README.md
@@ -181,7 +182,7 @@ If you are building outside React (or in another stack) and want only the
 server side, you do not use this engine at all — you target the documented wire
 contract (operations + SSE/Socket.IO + the streaming envelope patterns). The
 engine's `api/` layer is a reference implementation of that contract. See
-[Bundle Client Communication](../../bundle/bundle-client-communication-README.md).
+[Client Transport Protocols](../../../service/comm/client-transport-protocols-README.md).
 
 ### Caveat: single store instance
 

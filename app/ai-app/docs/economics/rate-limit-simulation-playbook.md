@@ -6,7 +6,7 @@ tags: ["economics", "rate-limit", "sse", "testing", "playbook"]
 keywords: ["rate_limit.warning", "rate_limit.denied", "SSE", "quota", "throttling"]
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/economics/economics-events-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-chat-stream-events-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/chat/chat-stream-events-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/economics/eco-test-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/economics/operational-README.md
 ---

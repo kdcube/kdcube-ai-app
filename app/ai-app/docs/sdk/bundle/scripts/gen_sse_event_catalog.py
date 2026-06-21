@@ -143,7 +143,7 @@ def _replace_section(doc: str, new_section: str) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=str, default=None, help="Path to app/ai-app root")
-    parser.add_argument("--doc", type=str, default=None, help="Path to bundle-chat-stream-events-README.md")
+    parser.add_argument("--doc", type=str, default=None, help="Path to chat-stream-events-README.md")
     parser.add_argument("--write", action="store_true", help="Write back to doc")
     args = parser.parse_args()
 
@@ -151,7 +151,7 @@ def main() -> int:
     default_root = script_path.parents[4]
     root = Path(args.root).resolve() if args.root else default_root
 
-    doc_path = Path(args.doc).resolve() if args.doc else (root / "docs" / "sdk" / "bundle" / "bundle-chat-stream-events-README.md")
+    doc_path = Path(args.doc).resolve() if args.doc else (root / "docs" / "sdk" / "solutions" / "chat" / "chat-stream-events-README.md")
 
     section = _build_catalog(root)
 

@@ -28,7 +28,7 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/events/external-event-envelope-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/streaming/channeled-streamer-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/service/comm/README-comm.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-client-communication-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/service/comm/client-transport-protocols-README.md
 ---
 # Why Not Simply Tool Calling
 
