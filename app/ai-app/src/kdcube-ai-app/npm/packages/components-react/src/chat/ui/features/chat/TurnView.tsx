@@ -15,7 +15,7 @@ import { MarkdownBlock } from '../../components/MarkdownBlock.tsx'
 import { SuggestedQuestions } from '../../components/SuggestedQuestions.tsx'
 import { AttachmentChip } from '../../components/AttachmentChip.tsx'
 import type {
-  CanvasArtifact,
+  Artifact,
   ChatTurn,
   FileArtifact,
   NamespaceStyleMap,
@@ -24,7 +24,6 @@ import type {
 import type { BannerTone, TurnReaction } from '@kdcube/components-core/chat'
 import {
   ArtifactFeed,
-  CanvasPanel,
   DownloadsPanel,
   LinksPanel,
   MergedOverviewFeed,
@@ -37,6 +36,10 @@ import {
 import { ChatTurnView } from './ChatTurnView.tsx'
 import { ContextInlineChip } from './ContextInlineChip.tsx'
 import { splitContextChips } from '@kdcube/components-core/chat'
+
+function isArtifactPanelArtifact(artifact: Artifact): boolean {
+  return artifact.surface === 'artifacts'
+}
 
 /** Turn-level reaction control: thumbs up/down on a completed answer.
  *  Liking is instant; disliking expands an inline optional-comment box
@@ -168,8 +171,8 @@ function TurnViewImpl({
     () => turn.timeline.filter((entry) => entry.kind === 'thinking'),
     [turn.timeline],
   )
-  const canvases = useMemo(
-    () => turn.artifacts.filter((artifact): artifact is CanvasArtifact => artifact.kind === 'canvas'),
+  const artifactPanelArtifacts = useMemo(
+    () => turn.artifacts.filter(isArtifactPanelArtifact),
     [turn.artifacts],
   )
   /* Overview shows artifacts AND follow-up user messages in real timestamp
@@ -294,7 +297,7 @@ function TurnViewImpl({
              * (their panes remain below but are unreachable). */
             ['chat', 'Timeline', null],
             ['steps', 'Steps', steps.length || null],
-            ['canvases', 'Artifacts', canvases.length || null],
+            ['canvases', 'Artifacts', artifactPanelArtifacts.length || null],
             ['links', 'Links', turnLinks.length || null],
             ['files', 'Files', (allUserAttachments.length + assistantFiles.length) || null],
           ] as Array<[TurnTab, string, number | null]>).map(([tab, label, count]) => (
@@ -370,7 +373,13 @@ function TurnViewImpl({
 
           {activeTab === 'timeline' ? <TimelineFeed entries={turn.timeline} /> : null}
           {activeTab === 'steps' ? <StepList steps={steps} /> : null}
-          {activeTab === 'canvases' ? <CanvasPanel canvases={canvases} /> : null}
+          {activeTab === 'canvases' ? (
+            artifactPanelArtifacts.length > 0 ? (
+              <ArtifactFeed artifacts={artifactPanelArtifacts} namespaceStyles={namespaceStyles} />
+            ) : (
+              <p className="pt-2 text-[12px] text-[var(--muted)]">No artifacts for this turn yet.</p>
+            )
+          ) : null}
           {activeTab === 'links' ? <LinksPanel links={turnLinks} /> : null}
           {activeTab === 'files' ? (
             <DownloadsPanel attachments={allUserAttachments} files={assistantFiles} conversationId={conversationId} onError={onDownloadError} />

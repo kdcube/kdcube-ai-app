@@ -40,6 +40,7 @@ export interface TurnStep {
 
 export interface LinkArtifact {
   kind: 'citation'
+  surface: 'links'
   timestamp: number
   url: string
   title?: string | null
@@ -49,6 +50,7 @@ export interface LinkArtifact {
 
 export interface FileArtifact {
   kind: 'file'
+  surface: 'files'
   timestamp: number
   filename: string
   objectRef: string
@@ -59,6 +61,7 @@ export interface FileArtifact {
 
 export interface TimelineArtifact {
   kind: 'timeline'
+  surface: 'timeline'
   timestamp: number
   name: string
   markdown: string
@@ -66,6 +69,7 @@ export interface TimelineArtifact {
 
 export interface CanvasArtifact {
   kind: 'canvas'
+  surface: 'artifacts'
   timestamp: number
   name: string
   title?: string | null
@@ -84,6 +88,7 @@ export interface WebSearchItem {
 
 export interface WebSearchArtifact {
   kind: 'web_search'
+  surface: 'artifacts'
   timestamp: number
   searchId: string
   name: string
@@ -106,6 +111,7 @@ export interface WebFetchItem {
 
 export interface WebFetchArtifact {
   kind: 'web_fetch'
+  surface: 'artifacts'
   timestamp: number
   executionId: string
   name: string
@@ -134,6 +140,7 @@ export interface NamedServiceSearchItem {
 
 export interface NamedServiceSearchArtifact {
   kind: 'named_service_search'
+  surface: 'artifacts'
   timestamp: number
   searchId: string
   name: string
@@ -157,6 +164,7 @@ export interface CodeExecStatus {
 
 export interface CodeExecArtifact {
   kind: 'code_exec'
+  surface: 'artifacts'
   timestamp: number
   executionId: string
   name?: string
@@ -170,6 +178,7 @@ export interface CodeExecArtifact {
 
 export interface ServiceErrorArtifact {
   kind: 'service_error'
+  surface: 'artifacts'
   timestamp: number
   message: string
 }

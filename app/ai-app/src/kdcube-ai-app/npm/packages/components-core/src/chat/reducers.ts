@@ -365,6 +365,7 @@ function normalizedFileArtifact(
   if (!filename) return null
   return {
     kind: 'file',
+    surface: 'files',
     timestamp,
     filename,
     objectRef,
@@ -659,7 +660,7 @@ export function hydrateHistoricalConversation(conversation: ConversationDTO): Ch
             answer: text,
             artifacts: [
               ...turn.artifacts,
-              { kind: 'timeline', timestamp: ts, name: `final_answer:${attempt}`, markdown: text },
+              { kind: 'timeline', surface: 'timeline', timestamp: ts, name: `final_answer:${attempt}`, markdown: text },
             ],
           }
           break
@@ -675,6 +676,7 @@ export function hydrateHistoricalConversation(conversation: ConversationDTO): Ch
           if (!objectRef) break
           const fileArtifact: FileArtifact = {
             kind: 'file',
+            surface: 'files',
             timestamp: ts,
             filename: normalized.name,
             objectRef,
@@ -714,6 +716,7 @@ export function hydrateHistoricalConversation(conversation: ConversationDTO): Ch
             if (!url) continue
             artifacts = upsertArtifact(artifacts, (artifactItem) => artifactItem.kind === 'citation' && artifactItem.url === url, {
               kind: 'citation',
+              surface: 'links',
               timestamp: ts,
               url,
               title: typeof row.title === 'string' ? row.title : null,
@@ -739,6 +742,7 @@ export function hydrateHistoricalConversation(conversation: ConversationDTO): Ch
             const itemTs = typeof row.ts_first === 'number' ? row.ts_first : ts
             const nextArtifact: TimelineArtifact = {
               kind: 'timeline',
+              surface: 'timeline',
               timestamp: itemTs,
               name,
               markdown: text,
@@ -953,6 +957,7 @@ export function applyChatError(state: ChatState, env: ChatErrorEnvelope): ChatSt
       ...turn.artifacts,
       {
         kind: 'service_error',
+        surface: 'artifacts',
         timestamp: timestampValue(env.timestamp),
         message,
       },
@@ -1050,6 +1055,7 @@ export function applyChatStep(state: ChatState, env: ChatStepEnvelope): ChatStat
           if (!url) continue
           artifacts = upsertArtifact(artifacts, (artifact) => artifact.kind === 'citation' && artifact.url === url, {
             kind: 'citation',
+            surface: 'links',
             timestamp,
             url,
             title: typeof item.title === 'string' ? item.title : null,
@@ -1069,6 +1075,7 @@ export function applyChatStep(state: ChatState, env: ChatStepEnvelope): ChatStat
             return Boolean(logicalPath && artifact.objectRef === logicalPath)
           }, {
             kind: 'file',
+            surface: 'files',
             timestamp,
             objectRef: logicalPath || '',
             filename,
@@ -1165,6 +1172,7 @@ export function applyChatDelta(state: ChatState, env: ChatDeltaEnvelope): ChatSt
         )
         const nextArtifact: TimelineArtifact = {
           kind: 'timeline',
+          surface: 'timeline',
           timestamp: current?.timestamp ?? timestamp,
           name,
           markdown: `${current?.markdown || ''}${textDelta}`,
@@ -1205,6 +1213,7 @@ export function applyChatDelta(state: ChatState, env: ChatDeltaEnvelope): ChatSt
               ) as TimelineArtifact | undefined)
         const nextArtifact: TimelineArtifact = {
           kind: 'timeline',
+          surface: 'timeline',
           timestamp: current?.timestamp ?? timestamp,
           name,
           markdown: `${current?.markdown || ''}${textDelta}`,
@@ -1242,6 +1251,7 @@ export function applyChatDelta(state: ChatState, env: ChatDeltaEnvelope): ChatSt
               ) as CanvasArtifact | undefined)
         const nextArtifact: CanvasArtifact = {
           kind: 'canvas',
+          surface: 'artifacts',
           timestamp: current?.timestamp ?? timestamp,
           name,
           title,
@@ -1283,6 +1293,7 @@ export function applyChatDelta(state: ChatState, env: ChatDeltaEnvelope): ChatSt
           ) as WebSearchArtifact | undefined
           const base: WebSearchArtifact = current || {
             kind: 'web_search',
+            surface: 'artifacts',
             timestamp,
             searchId,
             name: artifactName,
@@ -1321,6 +1332,7 @@ export function applyChatDelta(state: ChatState, env: ChatDeltaEnvelope): ChatSt
           const parsed = safeJsonParse<Record<string, unknown>>(textDelta, {})
           const nextArtifact: NamedServiceSearchArtifact = {
             kind: 'named_service_search',
+            surface: 'artifacts',
             timestamp,
             searchId,
             name: artifactName,
@@ -1342,6 +1354,7 @@ export function applyChatDelta(state: ChatState, env: ChatDeltaEnvelope): ChatSt
           const parsed = safeJsonParse<Record<string, unknown>>(textDelta, {})
           const nextArtifact: WebFetchArtifact = {
             kind: 'web_fetch',
+            surface: 'artifacts',
             timestamp,
             executionId,
             name: artifactName,
@@ -1358,6 +1371,7 @@ export function applyChatDelta(state: ChatState, env: ChatDeltaEnvelope): ChatSt
           ) as CodeExecArtifact | undefined
           const base: CodeExecArtifact = current || {
             kind: 'code_exec',
+            surface: 'artifacts',
             timestamp,
             executionId,
             title,

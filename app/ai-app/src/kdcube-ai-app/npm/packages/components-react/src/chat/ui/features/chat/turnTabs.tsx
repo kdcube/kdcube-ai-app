@@ -2,11 +2,11 @@
  *
  *  - StepList ........... `Steps` tab
  *  - LinksPanel ......... `Links` tab + TurnLink type + collectTurnLinks helper
- *  - CanvasPanel ........ `Artifacts` tab
+ *  - CanvasPanel ........ canvas-only artifact renderer retained for focused views
  *  - ThinkingBlock ...... thinking carrier rendered above the Overview feed
  *  - TimelineFeed ....... `Timeline` tab
  *  - DownloadsPanel ..... `Files` tab
- *  - ArtifactFeed ....... per-kind renderer used by `MergedOverviewFeed`
+ *  - ArtifactFeed ....... per-kind renderer used by `MergedOverviewFeed` and the Artifacts tab
  *  - FollowupMessageBlock interleaved follow-up bubbles
  *  - OverviewEvent + mergeOverviewEvents + MergedOverviewFeed
  *
