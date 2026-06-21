@@ -118,6 +118,44 @@ origin | tenant | project
 A single-runtime scene normally has one Event Bus relay. A mixed-runtime scene
 may have one relay per runtime scope.
 
+The scene must support multiple KDCube runtimes when the active profile allows
+them. A subscription is therefore not only:
+
+```text
+event type + channel
+```
+
+It is:
+
+```text
+bus + runtime scope + optional data scope + event type + channel/subject
+```
+
+If a widget does not specify a runtime in its subscription claim, the scene
+uses the runtime of the surface that registered the claim. If a widget is
+configured to show data for another tenant/project, the claim can include that
+data scope and the event payload must also carry a matching scope for delivery.
+
+Example:
+
+```text
+chat, memory, pinboard
+  runtime scope: https://demo.kdcube.tech | demo | demo
+
+stats
+  route runtime scope: https://dev.kdcube.tech | demo | demo-march
+  displayed data scope: demo | demo
+
+scene event relays
+  Event Bus relay for demo/demo only if a demo-hosted widget claims scene relay
+  Event Bus relay for dev/demo-march only if a dev-hosted widget claims scene relay
+```
+
+Widgets that own their own SSE stream, such as a stats widget configured with
+`liveEventsTransport="sse"`, do not require a scene relay for that event
+family. The scene still passes runtime and data-scope config to the widget so
+the widget can connect to the correct runtime itself.
+
 ## Runtime Shape
 
 ```text
@@ -159,6 +197,8 @@ The widget sends this message to its parent scene:
     {
       "id": "usage-card-accounting-refresh",
       "source": "sse",
+      "runtimeAlias": "demo",
+      "dataScope": { "tenant": "demo", "project": "demo" },
       "events": ["accounting.usage"],
       "channels": ["chat_service", "chat_step", "accounting.usage", "message"],
       "forwardType": "kdcube-usage-card-refresh",
@@ -176,6 +216,8 @@ The fields mean:
 | `widget` | Scene alias for the target iframe. |
 | `id` | Stable subscription id scoped by widget. |
 | `source` | Event source family. Today `sse` means the Event Bus SSE relay. |
+| `runtimeAlias` | Optional scene runtime alias. If absent, the surface runtime is used. |
+| `dataScope` | Optional tenant/project scope for the data carried by the event. Use when route runtime and displayed data scope differ. |
 | `events` | Canonical envelope event identities to match, for example `accounting.usage` or future namespace-shaped values such as `task:event:task-changed`. |
 | `channels` | Browser SSE event names to match, for example `chat_service`. |
 | `forwardType` | Dash-case `postMessage.type` the widget expects. This is a transport alias, not the canonical event identity. |

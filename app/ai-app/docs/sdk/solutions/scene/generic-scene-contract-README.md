@@ -224,9 +224,45 @@ Target shape:
 | `appAlias` | Scene-local app handle used to form widget routes. Internally this maps to a bundle id. |
 
 A mixed-runtime scene can mount some surfaces from `demo.kdcube.tech` and other
-surfaces from `dev.kdcube.tech`. Each surface declares its runtime. The scene
-opens one Event Bus relay per runtime scope only when at least one surface
-claims scene-owned delivery for that scope.
+surfaces from `dev.kdcube.tech`. Each surface declares its runtime.
+
+The scene must treat a runtime scope as:
+
+```text
+runtimeAlias -> origin + tenant + project + auth provider
+```
+
+The browser page can connect to multiple KDCube runtimes in the same scene.
+Therefore scene-owned Event Bus and Data Bus relays are not global. They are
+keyed by runtime scope and opened only when at least one surface claims
+scene-owned delivery for that scope.
+
+```text
+scene profile
+  runtimes.demo -> https://demo.kdcube.tech, tenant=demo, project=demo
+  runtimes.dev  -> https://dev.kdcube.tech,  tenant=demo, project=demo-march
+
+surface chat      -> runtimeAlias=demo
+surface pinboard  -> runtimeAlias=demo
+surface stats     -> runtimeAlias=dev, dataScope=demo/demo
+
+scene-owned relay keys:
+  event-bus:demo/demo@https://demo.kdcube.tech
+  event-bus:demo-march@https://dev.kdcube.tech
+  data-bus:... only when a surface requests scene-owned Data Bus delivery
+```
+
+Widget subscriptions either declare a runtime explicitly or inherit the
+surface's `runtimeAlias`. A subscription can also declare a data scope when the
+event payload is about a tenant/project different from the route runtime. The
+scene uses this information to decide which relay receives the event and which
+subscribers should see it.
+
+In the KDCube public website style setup, the scene can use an auth provider
+that is valid for more than one runtime. For example, a dev/staging Cognito app
+client can accept the same authenticated user as a demo runtime. That is a
+configuration property of the scene host and descriptors; it must not be
+hardcoded into the widgets.
 
 ### Surface Config
 
