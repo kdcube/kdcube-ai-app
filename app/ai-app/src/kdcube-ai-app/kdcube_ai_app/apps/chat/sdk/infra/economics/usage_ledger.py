@@ -19,6 +19,7 @@ Two roles:
     that powers /api/economics/admin/cost-by-user and /me/cost-breakdown. The
     query lives in the function, as required.
 """
+import datetime as _dt
 import logging
 from typing import Any, Dict, List, Optional
 
@@ -26,6 +27,20 @@ from kdcube_ai_app.ops.deployment.sql.db_deployment import project_schema as _pr
 from kdcube_ai_app.infra.accounting.usage import compute_rollup_cost
 
 logger = logging.getLogger(__name__)
+
+
+def _as_date(x) -> _dt.date:
+    """Coerce a window bound to a `datetime.date`.
+
+    asyncpg infers a *date* OID for params bound to a `$n::date` cast and requires
+    a real `datetime.date` object — given an ISO string it raises
+    `DataError: invalid input for query argument ... ('str' object has no attribute
+    'toordinal')`, which silently yields no rows → dashboards / cost endpoints show
+    "$0 / no spend" even with priced ledger rows. Accept a date as-is; otherwise
+    parse the leading YYYY-MM-DD."""
+    if isinstance(x, _dt.date):
+        return x
+    return _dt.date.fromisoformat(str(x)[:10])
 
 
 # --------------------------------------------------------------------------- #
@@ -284,7 +299,7 @@ class UsageLedgerStore:
             GROUP BY user_id, service_type, provider, model
         """
         async with self.pool.acquire() as conn:
-            rows = await conn.fetch(sql, self.tenant, self.project, date_from, date_to)
+            rows = await conn.fetch(sql, self.tenant, self.project, _as_date(date_from), _as_date(date_to))
         users = list(self._assemble([dict(r) for r in rows]).values())
         users.sort(key=lambda u: u["total_cost_usd"], reverse=True)
         return {
@@ -310,7 +325,7 @@ class UsageLedgerStore:
             GROUP BY user_id, service_type, provider, model
         """
         async with self.pool.acquire() as conn:
-            rows = await conn.fetch(sql, self.tenant, self.project, user_id, date_from, date_to)
+            rows = await conn.fetch(sql, self.tenant, self.project, user_id, _as_date(date_from), _as_date(date_to))
         users = self._assemble([dict(r) for r in rows])
         u = users.get(user_id) or {
             "user_id": user_id, "total_cost_usd": 0.0, "by_model": [],
@@ -331,7 +346,7 @@ class UsageLedgerStore:
             LIMIT 1
         """
         async with self.pool.acquire() as conn:
-            row = await conn.fetchrow(sql, self.tenant, self.project, date_from, date_to)
+            row = await conn.fetchrow(sql, self.tenant, self.project, _as_date(date_from), _as_date(date_to))
         return row is not None
 
 
