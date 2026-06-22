@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 
 from kdcube_ai_app.apps.chat.sdk.runtime.workspace import artifact_outdir_for
-from kdcube_ai_app.apps.chat.sdk.solutions.canvas.events.policies import canvas_read_block_policy
+from kdcube_ai_app.apps.chat.sdk.solutions.canvas.events.policies import (
+    canvas_read_block_policy,
+    produce_canvas_announce_blocks,
+)
 from kdcube_ai_app.apps.chat.sdk.solutions.canvas.events.resolver import CanvasArtifactResolver
 from kdcube_ai_app.apps.chat.sdk.solutions.react.proto import RuntimeCtx
 
@@ -86,3 +90,66 @@ def test_canvas_read_stats_policy_emits_original_object_stats_on_block(tmp_path)
     assert stats["revision_ref"] == "cnv:main@7"
     assert stats["cards_count"] == 2
     assert stats["selected_card_ids"] == ["card-1"]
+
+
+def test_canvas_announce_policy_shows_and_expires_retention_rounds():
+    projection = {
+        "canvas_name": "main",
+        "canvas_id": "cnv:user-1:main",
+        "revision": 7,
+        "cards_count": 1,
+        "placed_count": 1,
+        "floating_count": 0,
+        "bounds": {"x": 0, "y": 0, "w": 100, "h": 100},
+        "legend": [
+            {
+                "id": "card-1",
+                "kind": "memory",
+                "title": "Memory",
+                "placement": "placed",
+                "rect": {"x": 10, "y": 10, "w": 20, "h": 20},
+            }
+        ],
+    }
+    block = {
+        "turn": "turn_1",
+        "type": "react.tool.result",
+        "event_source_id": "canvas.read",
+        "path": "cnv:main",
+        "text": "{}",
+        "meta": {
+            "event_source_id": "canvas.read",
+            "iteration": 2,
+            "canvas": {
+                "payload": {
+                    "canvas_name": "main",
+                    "canvas_id": "cnv:user-1:main",
+                    "revision": 7,
+                    "canvas_ref": "cnv:main@7",
+                    "projection": projection,
+                }
+            },
+        },
+    }
+
+    visible = produce_canvas_announce_blocks(
+        [],
+        timeline_blocks=[block],
+        source=SimpleNamespace(event_source_id="canvas.state"),
+        current_turn_id="turn_1",
+        iteration=2,
+        announce_retention_rounds=3,
+    )
+    assert len(visible) == 1
+    assert "visibility: 3/3 render rounds remaining" in visible[0]["text"]
+    assert "react.pull(paths=['cnv:main'])" in visible[0]["text"]
+
+    stale = produce_canvas_announce_blocks(
+        [],
+        timeline_blocks=[block],
+        source=SimpleNamespace(event_source_id="canvas.state"),
+        current_turn_id="turn_1",
+        iteration=5,
+        announce_retention_rounds=3,
+    )
+    assert stale == []

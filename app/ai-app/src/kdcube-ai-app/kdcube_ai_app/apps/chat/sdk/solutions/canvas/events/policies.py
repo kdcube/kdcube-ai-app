@@ -20,6 +20,7 @@ DEFAULT_CANVAS_STATE_SOURCE_ID = "canvas.state"
 DEFAULT_CANVAS_META_KEY = "canvas"
 DEFAULT_CANVAS_ANNOUNCE_PATH_PREFIX = "announce:canvas"
 DEFAULT_CANVAS_TOOL_SOURCE_IDS = ("canvas.read", "canvas.patch")
+DEFAULT_CANVAS_ANNOUNCE_RETENTION_ROUNDS = 3
 
 
 def _block_meta(block: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -327,6 +328,59 @@ def _block_turn_id(block: Mapping[str, Any]) -> str:
     return str(block.get("turn_id") or block.get("turn") or "").strip()
 
 
+def _maybe_int(value: Any) -> int | None:
+    try:
+        return int(value)
+    except Exception:
+        return None
+
+
+def _block_iteration(block: Mapping[str, Any]) -> int | None:
+    meta = _block_meta(block)
+    value = _maybe_int(block.get("iteration"))
+    if value is not None:
+        return value
+    return _maybe_int(meta.get("iteration"))
+
+
+def _retention_rounds_for_block(
+    block: Mapping[str, Any],
+    *,
+    canvas_meta_keys: tuple[str, ...],
+    default_rounds: int,
+) -> int:
+    meta = _block_meta(block)
+    for key in canvas_meta_keys:
+        candidate = meta.get(key)
+        if isinstance(candidate, Mapping):
+            rounds = _maybe_int(candidate.get("announce_retention_rounds"))
+            if rounds is not None:
+                return max(0, rounds)
+    return max(0, int(default_rounds or 0))
+
+
+def _canvas_announce_expired(
+    block: Mapping[str, Any],
+    *,
+    current_iteration: int | None,
+    canvas_meta_keys: tuple[str, ...],
+    default_retention_rounds: int,
+) -> bool:
+    if current_iteration is None:
+        return False
+    produced_iteration = _block_iteration(block)
+    if produced_iteration is None:
+        return False
+    retention_rounds = _retention_rounds_for_block(
+        block,
+        canvas_meta_keys=canvas_meta_keys,
+        default_rounds=default_retention_rounds,
+    )
+    if retention_rounds <= 0:
+        return True
+    return max(0, current_iteration - produced_iteration) >= retention_rounds
+
+
 def _block_canvas_payload(
     block: Mapping[str, Any],
     *,
@@ -351,6 +405,8 @@ def _latest_canvas_payload(
     *,
     event_source_id: str,
     current_turn_id: str = "",
+    current_iteration: int | None = None,
+    announce_retention_rounds: int = DEFAULT_CANVAS_ANNOUNCE_RETENTION_ROUNDS,
     accepted_source_ids: tuple[str, ...] = DEFAULT_CANVAS_TOOL_SOURCE_IDS,
     canvas_meta_keys: tuple[str, ...] = (DEFAULT_CANVAS_META_KEY,),
 ) -> dict[str, Any]:
@@ -361,14 +417,30 @@ def _latest_canvas_payload(
             continue
         if current_turn_id and _block_turn_id(block) and _block_turn_id(block) != current_turn_id:
             continue
+        if _canvas_announce_expired(
+            block,
+            current_iteration=current_iteration,
+            canvas_meta_keys=canvas_meta_keys,
+            default_retention_rounds=announce_retention_rounds,
+        ):
+            continue
         payload = _parse_block_json(block)
         candidate = _block_canvas_payload(block, canvas_meta_keys=canvas_meta_keys)
         if candidate:
+            retention_rounds = _retention_rounds_for_block(
+                block,
+                canvas_meta_keys=canvas_meta_keys,
+                default_rounds=announce_retention_rounds,
+            )
+            produced_iteration = _block_iteration(block)
             latest = {
                 **candidate,
                 "_event_id": payload.get("event_id") or _block_meta(block).get("event_id") or block.get("event_id"),
                 "_logical_path": payload.get("logical_path") or _block_meta(block).get("logical_path") or block.get("path"),
                 "_event_ref": payload.get("event_ref") or candidate.get("canvas_ref") or candidate.get("event_ref"),
+                "_announce_current_iteration": current_iteration,
+                "_announce_produced_iteration": produced_iteration,
+                "_announce_retention_rounds": retention_rounds,
             }
     return latest
 
@@ -787,6 +859,8 @@ def produce_canvas_announce_blocks(
     timeline_blocks: list[MutableMapping[str, Any]],
     source: Any,
     current_turn_id: str = "",
+    iteration: int | None = None,
+    announce_retention_rounds: int = DEFAULT_CANVAS_ANNOUNCE_RETENTION_ROUNDS,
     default_event_source_id: str = DEFAULT_CANVAS_STATE_SOURCE_ID,
     accepted_source_ids: tuple[str, ...] = DEFAULT_CANVAS_TOOL_SOURCE_IDS,
     canvas_meta_keys: tuple[str, ...] = (DEFAULT_CANVAS_META_KEY,),
@@ -798,6 +872,8 @@ def produce_canvas_announce_blocks(
         timeline_blocks,
         event_source_id=event_source_id,
         current_turn_id=str(current_turn_id or ""),
+        current_iteration=_maybe_int(iteration),
+        announce_retention_rounds=announce_retention_rounds,
         accepted_source_ids=accepted_source_ids,
         canvas_meta_keys=canvas_meta_keys,
     )
@@ -810,6 +886,14 @@ def produce_canvas_announce_blocks(
     revision = str(canvas.get("revision") or projection.get("revision") or "0")
     canvas_ref = str(canvas.get("_event_ref") or canvas.get("canvas_ref") or "")
     canvas_uri = str(canvas.get("canvas_uri") or projection.get("canvas_uri") or f"cnv:{canvas_name}@{revision}")
+    produced_iteration = _maybe_int(canvas.get("_announce_produced_iteration"))
+    current_iteration = _maybe_int(canvas.get("_announce_current_iteration"))
+    retention_rounds = _maybe_int(canvas.get("_announce_retention_rounds")) or int(announce_retention_rounds or 0)
+    if current_iteration is not None and produced_iteration is not None and retention_rounds > 0:
+        age = max(0, current_iteration - produced_iteration)
+        remaining_rounds = max(0, retention_rounds - age)
+    else:
+        remaining_rounds = None
 
     bounds = projection.get("bounds") if isinstance(projection.get("bounds"), Mapping) else {}
     full_legend = _labelled_legend(projection)
@@ -822,6 +906,11 @@ def produce_canvas_announce_blocks(
         f"canvas_uri: {canvas_uri}",
         f"revision: {revision}",
     ]
+    if remaining_rounds is not None:
+        header.append(
+            f"visibility: {remaining_rounds}/{retention_rounds} render rounds remaining; "
+            f"use react.pull(paths=['cnv:{canvas_name}']) and react.read on the returned fi: path if you need it updated/prolonged."
+        )
     if bounds:
         header.append(f"bounds: x={bounds.get('x')} y={bounds.get('y')} w={bounds.get('w')} h={bounds.get('h')}")
     if cards_count > len(recent_legend):

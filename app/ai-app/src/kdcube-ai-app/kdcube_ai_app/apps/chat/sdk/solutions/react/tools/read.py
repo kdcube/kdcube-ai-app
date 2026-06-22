@@ -763,6 +763,12 @@ async def handle_react_read(*, ctx_browser: Any, state: Dict[str, Any], tool_cal
         if isinstance(block.get("meta"), dict):
             block["meta"]["hidden"] = False
             block["meta"].pop("replacement_text", None)
+            try:
+                iteration = getattr(getattr(ctx_browser, "runtime_ctx", None), "_current_react_iteration", None)
+                if iteration is not None and "iteration" not in block["meta"]:
+                    block["meta"]["iteration"] = int(iteration)
+            except Exception:
+                pass
         block.pop("replacement_text", None)
         path = (block.get("path") or "").strip()
         meta = block.get("meta") if isinstance(block.get("meta"), dict) else {}

@@ -225,6 +225,17 @@ ANNOUNCE for a bounded number of render rounds. If the agent needs a fresh
 exact board after that, it should call `react.pull(paths=["cnv:<name>"])` again
 and then read the returned `fi:` path.
 
+Owner ANNOUNCE policies should make this lifetime visible in the rendered
+section. For example, canvas renders a line like:
+
+```text
+visibility: 3/3 render rounds remaining; use react.pull(paths=['cnv:main']) and react.read on the returned fi: path if you need it updated/prolonged.
+```
+
+That instruction belongs in the owner policy because only the owner knows
+whether a snapshot is volatile, how long it should remain prompt-visible, and
+which live object ref refreshes it.
+
 ## Implementation Checklist
 
 For a namespace-owning app/provider:
