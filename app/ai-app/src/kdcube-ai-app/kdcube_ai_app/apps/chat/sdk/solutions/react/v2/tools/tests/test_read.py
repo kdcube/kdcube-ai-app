@@ -126,6 +126,81 @@ async def test_read_preserves_pulled_namespace_object_ref_metadata(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_read_stats_only_includes_original_object_stats_from_owner_policy(tmp_path):
+    @block_production_policy(event_policy_id="demo.block_production.original_object_stats")
+    async def original_object_stats_policy(target, **_):
+        stats = {
+            "kind": "demo_object",
+            "object_ref": target.get("object_ref"),
+            "logical_path": target.get("logical_path"),
+            "physical_path": target.get("physical_path"),
+        }
+        target.setdefault("blocks", []).append({
+            "turn": target.get("turn_id") or "",
+            "type": "react.tool.result",
+            "call_id": target.get("tool_call_id") or "",
+            "event_source_id": target.get("event_source_id") or "",
+            "mime": "application/json",
+            "path": target.get("object_ref") or "",
+            "text": json.dumps(stats),
+            "original_object_stats": stats,
+        })
+        return target
+
+    def list_event_sources():
+        return [
+            event_source_declaration(
+                event_source_id="named_services.mem",
+                policies=[
+                    {
+                        "react_phase": "block_production",
+                        "event_policy_id": "demo.block_production.original_object_stats",
+                    },
+                ],
+                kind="named_service",
+            )
+        ]
+
+    event_sources = EventSourceSubsystem(modules=[{
+        "mod": _module(
+            "demo_original_object_stats_events",
+            list_event_sources=list_event_sources,
+            original_object_stats_policy=original_object_stats_policy,
+        ),
+        "alias": "demo",
+    }])
+    runtime = RuntimeCtx(turn_id="turn_read", outdir=str(tmp_path), workdir=str(tmp_path), event_sources=event_sources)
+    ctx = FakeBrowser(runtime)
+    physical = tmp_path / "turn_read" / "files" / "memory.json"
+    physical.parent.mkdir(parents=True, exist_ok=True)
+    physical.write_text('{"ok": true, "memory": {"memory": "Prefer concise docs"}}', encoding="utf-8")
+    path = "fi:turn_read.files/memory.json"
+    state = {
+        "last_decision": {"tool_call": {"params": {"paths": [path], "stats_only": True}}},
+        "pulled_logical_refs": {
+            path: {
+                "object_ref": "mem:record:mem_123",
+                "physical_path": "turn_read/files/memory.json",
+                "mime": "application/vnd.kdcube.memory.record+json;version=1",
+            }
+        },
+    }
+
+    await handle_react_read(ctx_browser=ctx, state=state, tool_call_id="r_stats_original")
+
+    status = json.loads(next(
+        b["text"]
+        for b in ctx.timeline.blocks
+        if b.get("path") == "tc:turn_read.r_stats_original.result" and b.get("mime") == "application/json"
+    ))
+    stats = status["paths"][0]["original_object_stats"]
+    assert stats["kind"] == "demo_object"
+    assert stats["object_ref"] == "mem:record:mem_123"
+    assert stats["logical_path"] == path
+    assert stats["physical_path"] == "turn_read/files/memory.json"
+
+
+@pytest.mark.asyncio
 async def test_read_projects_pulled_namespace_ref_through_owner_event_source(tmp_path):
     @block_production_policy(event_policy_id="demo.block_production.owner_read")
     async def owner_read_policy(target, **_):

@@ -252,7 +252,7 @@ or file inspection needs artifact bytes, materialize the visible ref with
      turn_<current>/
        files/<workspace_scope>/...   # editable durable workspace/project state
        outputs/<artifact_scope>/...  # produced artifacts grouped by task/project
-       snapshots/...                 # story/wizard state snapshots
+       snapshots/...                 # board/story/wizard state snapshots
        attachments/...               # current user uploads; already turn-scoped
        external/...                  # rehosted event/domain attachments or evidence
      logs/

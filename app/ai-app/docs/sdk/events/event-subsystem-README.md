@@ -4,7 +4,7 @@ title: "SDK Events Subsystem"
 summary: "Shared event-source declarations and discovery used by tools today and by broader SDK event flows over time."
 status: draft
 tags: ["sdk", "events", "event-source", "tools", "react"]
-updated_at: 2026-06-17
+updated_at: 2026-06-22
 keywords:
   [
     "event_source",
@@ -21,6 +21,7 @@ keywords:
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/events/namespaces-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/react-object-materialization-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/react-object-policy-bridge-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/events/event-ingress-to-react-turn-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-events-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/events/external-event-envelope-README.md

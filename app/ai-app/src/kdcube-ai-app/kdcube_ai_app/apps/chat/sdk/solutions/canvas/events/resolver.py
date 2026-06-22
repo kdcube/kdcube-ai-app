@@ -14,6 +14,7 @@ from kdcube_ai_app.apps.chat.sdk.events import (
     artifact_namespace_rehoster,
     event_source_declaration,
     event_source_reader,
+    event_source_resolver,
 )
 from kdcube_ai_app.apps.chat.sdk.infra.bundle_urls import bundle_operation_url
 from kdcube_ai_app.apps.chat.sdk.solutions.canvas.config import canvas_config_from_props
@@ -105,6 +106,29 @@ def list_event_sources() -> list[Any]:
             kind="react.event_source_reader",
         )
     ]
+
+
+@event_source_resolver(
+    namespace="cnv",
+    description="Route cnv: canvas refs to the canvas read event source for owner block-production policies.",
+)
+async def resolve_canvas_event_source_ref(
+    *,
+    ref: str,
+    namespace: str = "cnv",
+    key: str = "",
+    **_: Any,
+) -> Dict[str, Any]:
+    uri = str(ref or (f"{namespace}:{key}" if key else "")).strip()
+    if not uri:
+        return {"ok": False, "ref": uri, "error": "missing_ref"}
+    return {
+        "ok": True,
+        "ref": uri,
+        "object_ref": uri,
+        "namespace": namespace,
+        "event_source_id": "canvas.read",
+    }
 
 
 @artifact_namespace_rehoster(

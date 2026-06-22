@@ -1035,6 +1035,95 @@ async def handle_react_read(*, ctx_browser: Any, state: Dict[str, Any], tool_cal
         )
         return True
 
+    async def _original_object_stats_for_block(
+        block: Dict[str, Any],
+        *,
+        source_tokens: int = 0,
+        source_text_symbols: int = 0,
+        source_bytes: int = 0,
+        source_line_count: Optional[int] = None,
+    ) -> Optional[Dict[str, Any]]:
+        meta = block.get("meta") if isinstance(block.get("meta"), dict) else {}
+        object_ref = _object_ref_from_block(block)
+        if not object_ref:
+            return None
+        event_source_id, resolution = await _owner_event_source_id_for_ref(object_ref, meta=meta)
+        if not event_source_id:
+            return None
+
+        runtime_ctx = getattr(ctx_browser, "runtime_ctx", None)
+        event_sources = getattr(runtime_ctx, "event_sources", None)
+        apply_policies = getattr(event_sources, "apply_react_phase_policies_async", None)
+        if not callable(apply_policies):
+            return None
+
+        target: Dict[str, Any] = {
+            "ok": True,
+            "error": None,
+            "ret": {
+                "ref": object_ref,
+                "object_ref": object_ref,
+                "logical_path": block.get("path") or "",
+                "physical_path": meta.get("physical_path") or block.get("physical_path") or "",
+                "mime": block.get("mime") or "",
+            },
+            "raw": {
+                "text": block.get("text") or "",
+                "mime": block.get("mime") or "",
+                "path": block.get("path") or "",
+                "physical_path": meta.get("physical_path") or block.get("physical_path") or "",
+            },
+            "blocks": [],
+            "turn_id": turn_id,
+            "tool_call_id": tool_call_id,
+            "tool_id": tool_id,
+            "event_source_id": event_source_id,
+            "object_ref": object_ref,
+            "ref": object_ref,
+            "logical_path": block.get("path") or "",
+            "path": block.get("path") or "",
+            "physical_path": meta.get("physical_path") or block.get("physical_path") or "",
+            "mime": block.get("mime") or "",
+            "text": block.get("text") or "",
+            "stats_only": True,
+            "meta": {
+                **{k: v for k, v in dict(meta or {}).items() if k not in {"source_ref", "original_ref"}},
+                "object_ref": object_ref,
+                "source_namespace": _namespace_from_ref(object_ref, meta=meta),
+                "resolved_event_source_id": event_source_id,
+                "event_source_resolution": resolution,
+                "source_tokens": source_tokens,
+                "source_text_symbols": source_text_symbols,
+                "source_bytes": source_bytes,
+                **({"source_line_count": source_line_count} if source_line_count is not None else {}),
+            },
+        }
+        try:
+            await apply_policies(
+                "block_production",
+                event_source_id,
+                target,
+                runtime_ctx=runtime_ctx,
+                ctx_browser=ctx_browser,
+                timeline=getattr(ctx_browser, "timeline", None),
+            )
+        except Exception:
+            LOGGER.warning(
+                "[react.read.original_object_stats] status=policy_error object_ref=%s event_source_id=%s path=%s",
+                object_ref,
+                event_source_id,
+                block.get("path") or "",
+                exc_info=True,
+            )
+            return None
+
+        for produced_block in [item for item in (target.get("blocks") or []) if isinstance(item, dict)]:
+            original_object_stats = produced_block.get("original_object_stats")
+            if isinstance(original_object_stats, dict):
+                return dict(original_object_stats)
+        original_object_stats = target.get("original_object_stats")
+        return dict(original_object_stats) if isinstance(original_object_stats, dict) else None
+
     if skill_paths and not stats_only:
         try:
             from kdcube_ai_app.apps.chat.sdk.skills.skills_registry import (
@@ -1552,6 +1641,8 @@ async def handle_react_read(*, ctx_browser: Any, state: Dict[str, Any], tool_cal
             size_bytes_raw = res.get("size_bytes")
             size_bytes = int(size_bytes_raw) if size_bytes_raw is not None else None
             is_text = _is_textual_mime(art_mime)
+            source_info = _pulled_source_info(ctx_path)
+            source_object_ref = source_info.get("object_ref") or ""
             entry = {
                 "path": ctx_path,
                 "status": "stats_only",
@@ -1559,6 +1650,32 @@ async def handle_react_read(*, ctx_browser: Any, state: Dict[str, Any], tool_cal
                 "mime": art_mime,
                 "content_materialized": False,
             }
+            if source_object_ref:
+                entry["object_ref"] = source_object_ref
+                original_object_stats = await _original_object_stats_for_block(
+                    {
+                        "turn": turn_id,
+                        "type": "react.tool.result",
+                        "call_id": tool_call_id,
+                        "mime": source_info.get("mime") or art_mime,
+                        "path": ctx_path,
+                        "physical_path": physical_path,
+                        "text": "",
+                        "meta": {
+                            "tool_call_id": tool_call_id,
+                            "turn_id": turn_id,
+                            "tool_id": tool_id,
+                            "object_ref": source_object_ref,
+                            "source_namespace": source_info.get("source_namespace") or "",
+                            "source_mime": source_info.get("mime") or "",
+                            "physical_path": physical_path,
+                        },
+                    },
+                    source_bytes=size_bytes or 0,
+                    source_line_count=res.get("line_count") if isinstance(res.get("line_count"), int) else None,
+                )
+                if original_object_stats:
+                    entry["original_object_stats"] = original_object_stats
             if source_conversation_id:
                 entry["conversation_id"] = source_conversation_id
             if size_bytes is not None:

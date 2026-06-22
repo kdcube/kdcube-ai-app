@@ -47,7 +47,7 @@ TOOL_SPEC = {
         "Unsupported namespaces are reported by the pull result. "
         "For an externally owned ref, react.pull calls the registered namespace rehoster, copies the artifact into a ReAct artifact surface, "
         "and returns the materialized fi: logical_path plus physical_path. "
-        "The rehoster chooses whether the artifact lands as files, snapshots, external attachments, or another supported ReAct artifact surface. "
+        "The rehoster chooses whether the artifact lands into files, snapshots, external attachments, or another supported ReAct artifact surface. "
         "Use those returned paths with react.read, react.rg, exec/code, or later artifact operations. "
         "Use this for versioned files/folders you need locally as historical reference material. "
         "Pulled content stays under its historical turn root as reference material; checkout copies versioned files into the editable current-turn workspace. "
@@ -85,7 +85,7 @@ TOOL_SPEC = {
         "JSON object with requested refs and compact pulled summaries. "
         "Folder pulls are grouped by logical_root/physical_root with file_count, bounded tree, and path_rule. "
         "Exact file pulls return one logical_path/physical_path item. "
-        "Externally owned refs return object_ref plus the resolved/rehosted fi: logical_path, physical_path, materialization scope, mime, size_bytes, and file_count when available. "
+        "Externally owned refs return object_ref plus the resolved/rehosted fi: logical_path, physical_path, materialization scope (surface), mime, size_bytes, and file_count when available. "
         "When share=true, each delivered file is also listed under shared with its logical_path. "
         "Diagnostics such as missing, invalid, and errors are included only when non-empty."
     ),

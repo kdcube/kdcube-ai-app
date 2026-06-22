@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import pathlib
 from collections.abc import Mapping, MutableMapping
 from typing import Any
 
@@ -144,6 +145,111 @@ def _canvas_tool_fact(target: Mapping[str, Any], *, action: str, canvas: Mapping
     }
 
 
+def _artifact_json_from_stats_target(
+    target: Mapping[str, Any],
+    *,
+    runtime_ctx: Any = None,
+) -> dict[str, Any]:
+    meta = _block_meta(target)
+    ret = _ret_mapping(target)
+    raw = target.get("raw") if isinstance(target.get("raw"), Mapping) else {}
+    physical_path = str(
+        target.get("physical_path")
+        or ret.get("physical_path")
+        or raw.get("physical_path")
+        or meta.get("physical_path")
+        or ""
+    ).strip()
+    outdir_raw = str(getattr(runtime_ctx, "outdir", "") or "").strip()
+    if not physical_path or not outdir_raw:
+        return {}
+    try:
+        from kdcube_ai_app.apps.chat.sdk.runtime.workspace import resolve_artifact_path
+
+        path = resolve_artifact_path(pathlib.Path(outdir_raw), physical_path, create_root=False)
+        parsed = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return dict(parsed) if isinstance(parsed, Mapping) else {}
+
+
+def _canvas_original_object_stats(
+    target: Mapping[str, Any],
+    *,
+    runtime_ctx: Any = None,
+) -> dict[str, Any]:
+    ret = _ret_mapping(target)
+    canvas = _canvas_payload_from_ret(ret)
+    if not canvas:
+        canvas = _canvas_payload_from_ret(_artifact_json_from_stats_target(target, runtime_ctx=runtime_ctx))
+    if not canvas:
+        return {}
+    projection = canvas.get("projection") if isinstance(canvas.get("projection"), Mapping) else {}
+    object_ref = str(target.get("object_ref") or target.get("ref") or ret.get("object_ref") or ret.get("ref") or "").strip()
+    logical_path = str(target.get("logical_path") or target.get("path") or "").strip()
+    canvas_name = str(canvas.get("canvas_name") or projection.get("canvas_name") or "").strip()
+    latest_ref = str(canvas.get("latest_ref") or "").strip() or (f"cnv:{canvas_name}" if canvas_name else object_ref)
+    revision_ref = str(canvas.get("canvas_ref") or canvas.get("canvas_uri") or "").strip()
+    selected_cards = _selected_card_ids(projection)
+    stats = {
+        "kind": "canvas_snapshot",
+        "object_ref": object_ref or latest_ref,
+        "live_ref": latest_ref,
+        "revision_ref": revision_ref,
+        "canvas_name": canvas_name,
+        "canvas_id": canvas.get("canvas_id") or projection.get("canvas_id"),
+        "revision": canvas.get("revision") if canvas.get("revision") is not None else projection.get("revision"),
+        "cards_count": projection.get("cards_count"),
+        "placed_count": projection.get("placed_count"),
+        "floating_count": projection.get("floating_count"),
+        "selected_count": len(selected_cards),
+        "selected_card_ids": selected_cards[:12],
+        "read_snapshot_with": f"react.read(paths=[{logical_path!r}])" if logical_path else "",
+        "read_latest_with": f"react.pull(paths=[{latest_ref!r}])" if latest_ref else "",
+    }
+    return {
+        key: value
+        for key, value in stats.items()
+        if value is not None and (not isinstance(value, str) or value.strip()) and value != []
+    }
+
+
+def append_canvas_original_object_stats_block(
+    target: MutableMapping[str, Any],
+    *,
+    runtime_ctx: Any = None,
+) -> MutableMapping[str, Any]:
+    stats = _canvas_original_object_stats(target, runtime_ctx=runtime_ctx)
+    if not stats:
+        return target
+    tool_id = str(target.get("tool_id") or target.get("event_source_id") or "canvas.read").strip()
+    tool_call_id = str(target.get("tool_call_id") or target.get("event_id") or "").strip()
+    turn_id = str(target.get("turn_id") or "").strip()
+    blocks = target.setdefault("blocks", [])
+    if isinstance(blocks, list):
+        blocks.append(
+            {
+                "turn": turn_id,
+                "type": "react.tool.result",
+                "call_id": tool_call_id,
+                "tool_id": tool_id,
+                "event_source_id": tool_id,
+                "mime": "application/json",
+                "path": str(stats.get("object_ref") or target.get("path") or "").strip(),
+                "text": json.dumps(stats, ensure_ascii=False, indent=2, default=str),
+                "original_object_stats": stats,
+                "meta": {
+                    "tool_call_id": tool_call_id,
+                    "tool_id": tool_id,
+                    "event_source_id": tool_id,
+                    "canvas_action": "read",
+                },
+            }
+        )
+    target["original_object_stats"] = stats
+    return target
+
+
 def append_canvas_tool_fact_block(
     target: MutableMapping[str, Any],
     *,
@@ -273,8 +379,13 @@ def _latest_canvas_payload(
 )
 def canvas_read_block_policy(
     target: MutableMapping[str, Any],
-    **_: Any,
+    **context: Any,
 ) -> MutableMapping[str, Any]:
+    if bool(target.get("stats_only")):
+        return append_canvas_original_object_stats_block(
+            target,
+            runtime_ctx=context.get("runtime_ctx"),
+        )
     return append_canvas_tool_fact_block(target, action="read")
 
 

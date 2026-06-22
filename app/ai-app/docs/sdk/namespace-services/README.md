@@ -4,7 +4,7 @@ title: "Namespace Services"
 summary: "Index and mental model for namespace-owning service providers, clients, object resolution, and bundle-to-bundle integration."
 status: design
 tags: ["sdk", "namespace-services", "providers", "clients", "resolvers", "bundles"]
-updated_at: 2026-06-17
+updated_at: 2026-06-22
 keywords:
   [
     "namespace services",
@@ -20,6 +20,7 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/clients-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/integration-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/react-object-materialization-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/react-object-policy-bridge-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/runtime/cross-runtime-context-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/events/namespaces-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/scene/scene-surface-registry-README.md
@@ -116,6 +117,7 @@ and provider-backed refs gain a live cross-bundle/object-owner bridge.
 | [Clients](clients-README.md) | Client config, tool exposure, current resolver behavior, and client ids. |
 | [Integration](integration-README.md) | Visual provider-host/client-bundle flow using task-tracker and versatile. |
 | [ReAct Object Materialization](react-object-materialization-README.md) | Runtime-boundary diagram for `react.pull`, streamed `object.get`, `react.read`, owner `block.produce`, and prompt rendering. |
+| [ReAct Object Policy Bridge](react-object-policy-bridge-README.md) | Owner policy contract for namespace rehosters, event-source routing, block production, render hooks, and `original_object_stats`. |
 | [Logical Reference Namespaces](../events/namespaces-README.md) | Foundational rules for `task:`, `mem:`, `cnv:`, `fi:`, and other refs. |
 
 ## Current Scope

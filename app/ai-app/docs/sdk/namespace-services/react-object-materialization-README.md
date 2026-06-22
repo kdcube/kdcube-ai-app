@@ -4,7 +4,7 @@ title: "Namespace Services: ReAct Object Materialization"
 summary: "Runtime-boundary diagram for how ReAct pulls, reads, owner-projects, and renders named-service objects."
 status: design
 tags: ["sdk", "namespace-services", "react", "pull", "read", "block-production", "events"]
-updated_at: 2026-06-17
+updated_at: 2026-06-22
 keywords:
   [
     "react.pull",
@@ -17,6 +17,7 @@ keywords:
   ]
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/react-object-policy-bridge-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/providers-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/clients-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/integration-README.md
@@ -325,3 +326,7 @@ For a consumer ReAct runtime:
 - The prompt renderer consumes stored blocks and may call provider
   `block.render` hooks for visible provider-owned blocks.
 - Provider render traces are emitted under `named_services.block_render`.
+
+For the field-level owner policy contract, including top-level
+`original_object_stats` for `react.read(stats_only=true)`, see
+[ReAct Object Policy Bridge](react-object-policy-bridge-README.md).

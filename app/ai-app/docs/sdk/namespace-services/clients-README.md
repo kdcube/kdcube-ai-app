@@ -4,7 +4,7 @@ title: "Namespace Services: Clients"
 summary: "How bundles, agents, widgets, jobs, and external clients consume configured namespace service providers."
 status: design
 tags: ["sdk", "namespace-services", "clients", "tools", "resolvers", "bundles"]
-updated_at: 2026-06-17
+updated_at: 2026-06-22
 keywords:
   [
     "namespace service client",
@@ -20,6 +20,7 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/providers-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/integration-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/react-object-materialization-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/react-object-policy-bridge-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/runtime/cross-runtime-context-README.md
 ---
 # Namespace Services: Clients
