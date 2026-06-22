@@ -55,6 +55,28 @@ function canonicalCanvasId(value: unknown): string | undefined {
   return canvasId
 }
 
+function canvasNameFromSurfaceCommand(data: Record<string, unknown>): string {
+  const uiEvent = data.ui_event && typeof data.ui_event === 'object'
+    ? data.ui_event as Record<string, unknown>
+    : {}
+  const direct = String(
+    data.canvas_name ||
+    uiEvent.canvas_name ||
+    '',
+  ).trim()
+  if (direct) return direct
+  const ref = String(
+    data.object_ref ||
+    uiEvent.object_ref ||
+    data.ref ||
+    '',
+  ).trim()
+  if (!ref.startsWith('cnv:')) return ''
+  const key = ref.slice('cnv:'.length).trim()
+  if (!key || key.includes('/')) return ''
+  return key.split('@', 1)[0].trim()
+}
+
 function postToHost(message: Record<string, unknown>): void {
   if (window.parent && window.parent !== window) {
     window.parent.postMessage({ source: 'kdcube.pinboard', ...message }, '*')
@@ -259,13 +281,31 @@ export default function App() {
       .catch(failNotice)
   }, [applyPatchResponse, canvasIngressClient, canvasTarget, failNotice])
 
+  // Switching boards records the user's last-active board server-side, so an
+  // omitted-canvas pin (UI drop or agent canvas.pin) lands on it, not "main".
+  const handleCanvasChange = useCallback((name: string) => {
+    setActiveCanvasName(name)
+    if (host) void host.setActiveCanvas(name).catch(() => undefined)
+  }, [host])
+
   useEffect(() => {
     function onMessage(event: MessageEvent) {
       const data = event.data as Record<string, unknown> | null
       if (!data || typeof data !== 'object') return
-      if (data.type === SURFACE_COMMAND_MESSAGE_TYPE && data.action === 'pin') {
+      if (data.type === SURFACE_COMMAND_MESSAGE_TYPE) {
         const target = String(data.target_surface || '').trim().toLowerCase()
         if (target && target !== 'sdk.canvas.pinboard') return
+        const action = String(data.action || '').trim().toLowerCase()
+        if (action === 'open' || action === 'focus') {
+          const name = canvasNameFromSurfaceCommand(data)
+          if (!name) {
+            setNotice('Canvas open command did not include a board name.')
+            return
+          }
+          handleCanvasChange(name)
+          return
+        }
+        if (action !== 'pin') return
         const context = normalizeContext(data.context)
         if (!context) {
           setNotice('Dropped context is not valid.')
@@ -286,7 +326,7 @@ export default function App() {
     }
     window.addEventListener('message', onMessage)
     return () => window.removeEventListener('message', onMessage)
-  }, [onDropContext, onDropIngress])
+  }, [handleCanvasChange, onDropContext, onDropIngress])
 
   // Attaching / focusing a pin in chat is not something the standalone board
   // can do — forward the intent to the host broker.
@@ -365,13 +405,6 @@ export default function App() {
   const onCloseCanvas = useCallback(() => {
     postToHost({ type: CLOSE_MESSAGE })
   }, [])
-
-  // Switching boards records the user's last-active board server-side, so an
-  // omitted-canvas pin (UI drop or agent canvas.pin) lands on it, not "main".
-  const handleCanvasChange = useCallback((name: string) => {
-    setActiveCanvasName(name)
-    if (host) void host.setActiveCanvas(name).catch(() => undefined)
-  }, [host])
 
   // Create a new board: add an empty canvas to local state, switch to it, and
   // make it the active board. It persists server-side on its first pin.

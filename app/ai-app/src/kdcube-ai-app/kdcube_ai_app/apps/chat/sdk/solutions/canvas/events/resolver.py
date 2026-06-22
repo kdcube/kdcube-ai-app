@@ -242,6 +242,16 @@ def namespace_for_ref(ref: str) -> str:
     return value.split(":", 1)[0].strip().lower()
 
 
+def canvas_board_name_from_ref(ref: str) -> str:
+    raw = str(ref or "").strip()
+    if not raw.startswith("cnv:"):
+        return ""
+    key = raw.split(":", 1)[1].strip()
+    if not key or _looks_like_canvas_storage_key(key):
+        return ""
+    return key.split("@", 1)[0].strip() or "main"
+
+
 def _bundle_operation_url(store: CanvasStore, operation: str, query: Mapping[str, Any]) -> str:
     return bundle_operation_url(
         tenant=getattr(store, "tenant", ""),
@@ -389,10 +399,13 @@ class CanvasArtifactResolver(CanvasObjectResolver):
         self._read_behavior = str(read_behavior or "Storage-backed refs are previewed here and can be imported into ReAct with react.pull.").strip()
 
     def capabilities_for_ref(self, ref: str) -> Dict[str, bool]:
+        if canvas_board_name_from_ref(ref):
+            return {"preview": True, "open": True, "download": False, "rehost": True}
         return {"preview": True, "open": False, "download": True, "rehost": False}
 
     def default_open_effect_action_for_ref(self, ref: str) -> str:
-        del ref
+        if canvas_board_name_from_ref(ref):
+            return "open"
         return "download"
 
     async def object_action(
@@ -406,6 +419,45 @@ class CanvasArtifactResolver(CanvasObjectResolver):
         mime = str(payload.get("mime") or "").strip()
         if action in {"capabilities", "describe"}:
             return self.base_response(ref=ref, action=action)
+        board_name = canvas_board_name_from_ref(ref)
+        if board_name:
+            if action == "preview":
+                return {
+                    **self.base_response(ref=ref, action=action),
+                    "resolved": True,
+                    "title": f"Canvas: {board_name}",
+                    "summary": f"Canvas board {board_name}",
+                    "mime": "application/vnd.kdcube.canvas+json",
+                    "canvas_name": board_name,
+                }
+            if action == "open":
+                return {
+                    **self.base_response(ref=ref, action=action),
+                    "resolved": True,
+                    "title": f"Canvas: {board_name}",
+                    "summary": f"Canvas board {board_name}",
+                    "mime": "application/vnd.kdcube.canvas+json",
+                    "canvas_name": board_name,
+                    "ui_event": {
+                        "type": "kdcube.ui.object.open.requested",
+                        "subject": "ui.object.open.requested",
+                        "source": "object_resolver",
+                        "object_ref": ref,
+                        "target_surface": "sdk.canvas.pinboard",
+                        "action": "open",
+                        "mode": "focus",
+                        "canvas_name": board_name,
+                    },
+                }
+            if action == "download":
+                return {
+                    **self.base_response(ref=ref, action=action),
+                    "ok": False,
+                    "resolved": False,
+                    "error": "canvas_board_is_not_downloadable",
+                    "message": "Canvas board refs open the canvas surface; use react.pull/read for model-visible board JSON.",
+                    "status": 400,
+                }
         if action == "preview":
             return self.read_ref(ref, mime=mime, max_text_chars=4000)
         if action == "download":

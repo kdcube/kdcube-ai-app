@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
+import pytest
+
 from kdcube_ai_app.apps.chat.sdk.runtime.workspace import artifact_outdir_for
 from kdcube_ai_app.apps.chat.sdk.solutions.canvas.events.policies import (
     canvas_read_block_policy,
@@ -40,6 +42,27 @@ def test_canvas_artifact_download_returns_url_not_json_bytes():
         "/api/integrations/bundles/tenant/project/bundle%401/operations/canvas_object_download?"
     )
     assert "object_ref=cnv%3Acanvas%2Fusers%2Fuser-1%2Ffiles%2Freport.html" in result["download_url"]
+
+
+@pytest.mark.asyncio
+async def test_canvas_board_ref_open_returns_pinboard_ui_event_not_download():
+    resolver = CanvasArtifactResolver(_FakeStore())  # type: ignore[arg-type]
+
+    result = await resolver.object_action(
+        {"object_ref": "cnv:main", "action": "open"},
+        user_id="user-1",
+        action="open",
+    )
+
+    assert result["ok"] is True
+    assert result["default_open_effect_action"] == "open"
+    assert result["capabilities"]["open"] is True
+    assert result["capabilities"]["download"] is False
+    assert result["canvas_name"] == "main"
+    assert result["ui_event"]["target_surface"] == "sdk.canvas.pinboard"
+    assert result["ui_event"]["action"] == "open"
+    assert result["ui_event"]["canvas_name"] == "main"
+    assert "download_url" not in result
 
 
 def test_canvas_read_stats_policy_emits_original_object_stats_on_block(tmp_path):
