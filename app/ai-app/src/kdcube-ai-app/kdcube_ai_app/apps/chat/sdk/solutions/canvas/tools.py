@@ -189,7 +189,24 @@ class CanvasTools:
                 event_surface=str(cfg.get("event_surface") or "canvas"),
             )
             if not result.get("ok"):
-                return error("canvas_patch_failed", str(result.get("error") or "canvas patch failed"))
+                code = str(result.get("error") or "canvas_patch_failed")
+                message = (
+                    "Canvas revision conflict; inspect ret.current_revision and ret.projection before issuing a new patch."
+                    if code == "canvas_revision_conflict"
+                    else str(result.get("error") or "canvas patch failed")
+                )
+                return {
+                    "ok": False,
+                    "error": {"code": code, "message": message},
+                    "ret": {
+                        "canvas_name": result.get("canvas_name") or canvas_name,
+                        "canvas_id": result.get("canvas_id") or canvas_id,
+                        "expected_revision": result.get("expected_revision"),
+                        "current_revision": result.get("current_revision"),
+                        "projection": result.get("projection") or {},
+                        "agent_view": result.get("agent_view") or "",
+                    },
+                }
             return ok({
                 "canvas_name": result["canvas_name"],
                 "canvas_id": result["canvas_id"],

@@ -19,6 +19,14 @@ export interface CanvasCard {
   selected?: boolean
   suggested?: boolean
   commentsCount?: number
+  comments?: CanvasComment[]
+}
+
+export interface CanvasComment {
+  id: string
+  text: string
+  actor?: string
+  createdAt?: string | number
 }
 
 export interface CanvasDefinition {
@@ -90,6 +98,15 @@ function stringValue(value: unknown): string | undefined {
   return text || undefined
 }
 
+function canvasNameValue(value: unknown): string {
+  return stringValue(value) ?? 'main'
+}
+
+function isPlaceholderCanvasId(value: unknown): boolean {
+  const id = stringValue(value)
+  return !id || id.startsWith('canvas:')
+}
+
 function numberValue(value: unknown, fallback: number): number {
   if (typeof value === 'number' && Number.isFinite(value)) return value
   if (typeof value === 'string' && value.trim()) {
@@ -103,6 +120,28 @@ function optionalNumberValue(value: unknown): number | undefined {
   if (value == null || value === '') return undefined
   const parsed = numberValue(value, NaN)
   return Number.isFinite(parsed) ? parsed : undefined
+}
+
+function commentsValue(value: unknown): CanvasComment[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const comments = value
+    .map((item, index): CanvasComment | null => {
+      const raw = asRecord(item)
+      if (!raw) {
+        const text = stringValue(item)
+        return text ? { id: `comment:${index}`, text } : null
+      }
+      const text = stringValue(raw.text ?? raw.body ?? raw.content)
+      if (!text) return null
+      return {
+        id: stringValue(raw.id ?? raw.comment_id ?? raw.commentId) ?? `comment:${index}`,
+        text,
+        actor: stringValue(raw.actor ?? raw.author),
+        createdAt: optionalNumberValue(raw.created_at ?? raw.createdAt) ?? stringValue(raw.created_at ?? raw.createdAt),
+      }
+    })
+    .filter((comment): comment is CanvasComment => Boolean(comment))
+  return comments.length ? comments : undefined
 }
 
 function rectValue(value: unknown, index: number): CanvasCard['rect'] {
@@ -156,6 +195,7 @@ function cardFromProjectionLegendRow(value: unknown, index: number, changedIds: 
   const placement = stringValue(raw.placement) as CanvasCard['placement'] | undefined
   const trashed = Boolean(raw.trashed) || placement === 'trashed'
   const changed = changedIds.has(id)
+  const comments = commentsValue(raw.comments)
   return {
     id,
     kind,
@@ -175,7 +215,8 @@ function cardFromProjectionLegendRow(value: unknown, index: number, changedIds: 
     selected: Boolean(raw.selected) || changed,
     suggested: Boolean(raw.suggested) || placement === 'suggested',
     commentsCount: optionalNumberValue(raw.comments_count ?? raw.commentsCount) ??
-      (Array.isArray(raw.comments) ? raw.comments.length : undefined),
+      comments?.length,
+    comments,
   }
 }
 
@@ -205,7 +246,7 @@ function isFullCanvasProjection(projection: unknown, projectedCardCount: number)
 }
 
 export function emptyCanvasDefinition(name = 'main', canvasId = ''): CanvasDefinition {
-  const canvasName = stringValue(name) ?? 'main'
+  const canvasName = canvasNameValue(name)
   const id = stringValue(canvasId) ?? `canvas:${canvasName}`
   return {
     id,
@@ -218,7 +259,7 @@ export function emptyCanvasDefinition(name = 'main', canvasId = ''): CanvasDefin
 }
 
 export function canvasFromListItem(item: CanvasListItemLike): CanvasDefinition {
-  const name = stringValue(item.canvas_name ?? item.name) ?? 'main'
+  const name = canvasNameValue(item.canvas_name ?? item.name)
   const id = stringValue(item.canvas_id) ?? `canvas:${name}`
   const revision = numberValue(item.latest_revision ?? item.revision, 0)
   return {
@@ -242,7 +283,22 @@ export function canvasFromReadResponse(
   const id = stringValue(response.canvas_id ?? rawCanvas?.canvas_id ?? fallback.id) ?? fallback.id
   const revision = numberValue(response.revision ?? rawCanvas?.revision, fallback.revision)
   const cardsFromFullProjection = cardsFromProjection(response.projection)
-  const cards = cardsFromFullProjection.length ? cardsFromFullProjection : fallback.cards
+  const rawCards = Array.isArray(rawCanvas?.cards) ? rawCanvas.cards : []
+  const rawCommentsByCardId = new Map<string, CanvasComment[]>()
+  rawCards.forEach((value) => {
+    const raw = asRecord(value)
+    if (!raw) return
+    const id = stringValue(raw.id ?? raw.card_id ?? raw.cardId)
+    if (!id) return
+    const comments = commentsValue(raw.comments)
+    if (comments?.length) rawCommentsByCardId.set(id, comments)
+  })
+  const cards = (cardsFromFullProjection.length ? cardsFromFullProjection : fallback.cards).map((card) => {
+    const comments = card.comments?.length ? card.comments : rawCommentsByCardId.get(card.id)
+    return comments?.length
+      ? { ...card, comments, commentsCount: card.commentsCount ?? comments.length }
+      : card
+  })
   return {
     id,
     name,
@@ -295,14 +351,27 @@ export function upsertCanvasDefinition(
   canvases: CanvasDefinition[],
   canvas: CanvasDefinition,
 ): CanvasDefinition[] {
-  const key = canvas.id || canvas.name
-  const index = canvases.findIndex((item) => item.id === key || item.name === canvas.name)
-  if (index < 0) return [...canvases, canvas]
-  const next = canvases.slice()
-  next[index] = {
-    ...next[index],
-    ...canvas,
-    cards: canvas.cards.length || !next[index].cards.length ? canvas.cards : next[index].cards,
+  const next: CanvasDefinition[] = []
+  for (const item of [...canvases, canvas]) {
+    const itemName = canvasNameValue(item.name)
+    const index = next.findIndex((existing) => canvasNameValue(existing.name) === itemName || existing.id === item.id)
+    if (index < 0) {
+      next.push({ ...item, name: itemName })
+      continue
+    }
+    const existing = next[index]
+    const existingPlaceholder = isPlaceholderCanvasId(existing.id)
+    const itemPlaceholder = isPlaceholderCanvasId(item.id)
+    const preferred = !itemPlaceholder || existingPlaceholder ? item : existing
+    const fallback = preferred === item ? existing : item
+    next[index] = {
+      ...fallback,
+      ...preferred,
+      name: itemName,
+      id: stringValue(preferred.id) ?? stringValue(fallback.id) ?? `canvas:${itemName}`,
+      ref: stringValue(preferred.ref) ?? stringValue(fallback.ref) ?? `cnv:${itemName}`,
+      cards: preferred.cards.length || !fallback.cards.length ? preferred.cards : fallback.cards,
+    }
   }
   return next
 }
@@ -343,9 +412,10 @@ export function cardsFromPatchEvent(event: CanvasPatchUiEvent): CanvasCard[] {
       updatedAt: stringValue(raw.updated_at ?? raw.updatedAt),
       selected: true,
       suggested: Boolean(raw.suggested) || placement === 'suggested',
-      commentsCount: optionalNumberValue(raw.comments_count ?? raw.commentsCount) ??
-        (Array.isArray(raw.comments) ? raw.comments.length : undefined),
-    }
+    commentsCount: optionalNumberValue(raw.comments_count ?? raw.commentsCount) ??
+      commentsValue(raw.comments)?.length,
+    comments: commentsValue(raw.comments),
+  }
   }).filter((card): card is CanvasCard => Boolean(card))
 }
 
@@ -394,6 +464,7 @@ export function canvasProjection(canvas: CanvasDefinition): CanvasProjection {
     selected: Boolean(card.selected),
     suggested: Boolean(card.suggested) || card.placement === 'suggested',
     comments_count: card.commentsCount,
+    comments: card.comments,
   }))
   return {
     schema: 'kdcube.canvas.projection.v1',

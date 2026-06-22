@@ -383,6 +383,7 @@ function normalizedPatchInput(input: CanvasPatchInput): CanvasPatchInput {
   const canvasName = String(input.canvas_name ?? input.patch.canvas_name ?? 'main').trim()
   const topCanvasId = canonicalCanvasId(input.canvas_id)
   const patchCanvasId = canonicalCanvasId(input.patch.canvas_id)
+  const hasCanonicalCanvasId = Boolean(topCanvasId || patchCanvasId)
   const normalized: CanvasPatchInput = {
     ...input,
     canvas_name: canvasName || 'main',
@@ -395,6 +396,10 @@ function normalizedPatchInput(input: CanvasPatchInput): CanvasPatchInput {
   else delete normalized.canvas_id
   if (patchCanvasId) normalized.patch.canvas_id = patchCanvasId
   else delete normalized.patch.canvas_id
+  if (!hasCanonicalCanvasId) {
+    delete normalized.base_revision
+    delete normalized.patch.base_revision
+  }
   return normalized
 }
 

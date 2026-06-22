@@ -185,6 +185,10 @@ async def patch_canvas_for_agent(
             "error": str(result.get("error") or "canvas patch failed"),
             "canvas_name": name,
             "canvas_id": cid,
+            "expected_revision": result.get("expected_revision"),
+            "current_revision": result.get("current_revision"),
+            "projection": result.get("projection") or {},
+            "agent_view": result.get("agent_view") or "",
             "result": result,
         }
     event = store.state_event(

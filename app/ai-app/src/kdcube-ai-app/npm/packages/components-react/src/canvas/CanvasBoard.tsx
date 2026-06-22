@@ -189,7 +189,7 @@ function toEpochMs(value?: string | number | null): number | null {
   return Number.isFinite(parsed) ? parsed : null
 }
 
-function formatCardAdded(value?: string | null): string {
+function formatCardAdded(value?: string | number | null): string {
   const ms = toEpochMs(value)
   if (ms == null) return ''
   const t = new Date(ms)
@@ -198,7 +198,7 @@ function formatCardAdded(value?: string | null): string {
 }
 
 // Compact "added" stamp for the card footer (minute precision, no year).
-function formatCardAddedShort(value?: string | null): string {
+function formatCardAddedShort(value?: string | number | null): string {
   const ms = toEpochMs(value)
   if (ms == null) return ''
   const t = new Date(ms)
@@ -552,6 +552,7 @@ function cloneCards(cards: CanvasCard[]): CanvasCard[] {
   return cards.map((card) => ({
     ...card,
     rect: { ...card.rect },
+    comments: card.comments?.map((comment) => ({ ...comment })),
   }))
 }
 
@@ -2423,6 +2424,7 @@ export function CanvasBoard({
             const descDraft = descDraftByCard[card.id]
             const isEditingDesc = descDraft !== undefined
             const commentDraft = commentDraftByCard[card.id] || ''
+            const comments = card.comments || []
             const infoTooltip = [
               `id: ${card.id}`,
               `ref: ${card.ref || 'inline/local'}`,
@@ -2708,6 +2710,19 @@ export function CanvasBoard({
                   </section>
                   <section className="canvas-card-flyout-comments">
                     <h4>Comments <span className="count">({card.commentsCount || 0})</span></h4>
+                    {comments.length ? (
+                      <div className="canvas-card-flyout-comment-list">
+                        {comments.slice(-5).map((comment) => (
+                          <article key={comment.id} className="canvas-card-flyout-comment">
+                            <div className="canvas-card-flyout-comment-meta">
+                              {comment.actor ? <span>{comment.actor}</span> : null}
+                              {comment.createdAt ? <time>{formatCardAddedShort(comment.createdAt)}</time> : null}
+                            </div>
+                            <Markdown text={comment.text} />
+                          </article>
+                        ))}
+                      </div>
+                    ) : null}
                     <InlineMarkdownEditor
                       value={commentDraft}
                       onChange={(value) => updateCommentDraft(card.id, value)}

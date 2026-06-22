@@ -221,12 +221,15 @@ export default function App() {
     },
   }), [patchCanvas, host])
 
-  const canvasTarget = useCallback((rect?: CanvasCard['rect']) => ({
-    canvasId: canonicalCanvasId(activeCanvas.id),
-    canvasName: activeCanvas.name,
-    baseRevision: activeCanvas.revision,
-    rect,
-  }), [activeCanvas, host])
+  const canvasTarget = useCallback((rect?: CanvasCard['rect']) => {
+    const canvasId = canonicalCanvasId(activeCanvas.id)
+    return {
+      canvasId,
+      canvasName: activeCanvas.name,
+      baseRevision: canvasId ? activeCanvas.revision : undefined,
+      rect,
+    }
+  }, [activeCanvas, host])
 
   const failNotice = useCallback((err: unknown) => {
     setNotice(err instanceof Error ? err.message : String(err))

@@ -44,6 +44,10 @@ Canvas read/write behavior:
   refs until pulled into the ReAct workspace.
 - Collaborate only through `canvas.patch` with `base_revision` set to the
   visible canvas revision. Do not edit/re-save canvas JSON directly.
+- If `canvas.patch` returns `canvas_revision_conflict`, the patch was not
+  applied. Use the returned `ret.current_revision` and `ret.projection` as the
+  current board view, or pull/read the current canvas when exact JSON is
+  needed, then issue a new patch that is valid for that current revision.
 - Each successful `canvas.patch` creates a new canvas revision and a
   `event.canvas` tool/result event.
 - The canvas view in ANNOUNCE is expected to stay visible until the current

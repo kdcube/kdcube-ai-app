@@ -1068,6 +1068,30 @@ button {
   margin-left: 4px;
 }
 
+.canvas-card-flyout-comment-list {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.canvas-card-flyout-comment {
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-sm);
+  padding: 6px 7px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.canvas-card-flyout-comment-meta {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 3px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
 .canvas-card-flyout-attachment-list {
   display: grid;
   gap: 5px;
