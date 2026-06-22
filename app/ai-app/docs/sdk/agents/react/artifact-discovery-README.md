@@ -13,7 +13,7 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/artifact-storage-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/react-tools-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/timeline-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/files-vs-outputs-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/workspace/workspace-model-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/memory-recovery-path-README.md
 ---
 # Artifact Discovery (Logical/Physical Paths)

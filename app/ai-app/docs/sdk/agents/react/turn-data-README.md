@@ -8,7 +8,7 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/conversation-artifacts-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/turn-log-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/react-context-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/files-vs-outputs-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/workspace/workspace-model-README.md
 ---
 # Turn Data (Conversation Fetch)
 

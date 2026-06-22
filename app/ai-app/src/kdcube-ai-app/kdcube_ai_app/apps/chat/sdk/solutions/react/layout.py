@@ -684,121 +684,175 @@ def build_announce_workspace_lines(
     runtime_ctx: Optional[RuntimeCtx],
     timeline_blocks: List[Dict[str, Any]],
 ) -> List[str]:
+    """ANNOUNCE [WORKSPACE]: the live material map of the sparse per-turn workspace.
+
+    Two views, rebuilt every round:
+      LOCAL  — exactly what is materialized on disk this turn (the only content
+               local-bytes tools can touch directly).
+      REMOTE — top-level git-branch projects that can be pulled, plus the single
+               "latest committed turn" anchor used to build every pull/checkout ref.
+    """
     if runtime_ctx is None:
         return []
     impl = get_workspace_implementation(runtime_ctx)
     turn_id = str(getattr(runtime_ctx, "turn_id", "") or "").strip()
     lines: List[str] = ["[WORKSPACE]"]
-    lines.append(f"  implementation: {impl}")
     if turn_id:
         lines.append(f"  current_turn_root: {turn_id}/")
 
+    outdir_raw = str(getattr(runtime_ctx, "outdir", "") or "").strip()
+    artifact_root = None
+    if outdir_raw:
+        try:
+            from kdcube_ai_app.apps.chat.sdk.runtime.workspace import artifact_outdir_for
+            artifact_root = artifact_outdir_for(pathlib.Path(outdir_raw), create=False)
+        except Exception:
+            artifact_root = None
+
     try:
-        roots = list_materialized_turn_roots(runtime_ctx=runtime_ctx)
+        roots = list_materialized_turn_roots(runtime_ctx=runtime_ctx) or []
     except Exception:
         roots = []
-    if roots:
-        labels = []
-        for root in roots[-6:]:
-            if root == turn_id:
-                labels.append(f"{root} (current)")
-            else:
-                labels.append(f"{root} (read-only)")
-        lines.append(f"  local turn roots: {', '.join(labels)}")
-    else:
-        lines.append("  local turn roots: none")
 
-    try:
-        scopes = summarize_current_turn_scopes(runtime_ctx=runtime_ctx)
-    except Exception:
-        scopes = []
-    if scopes:
-        lines.append("  current editable workspace:")
-        for item in scopes[:6]:
-            scope = str(item.get("scope") or "").strip()
-            files = int(item.get("files") or 0)
-            lines.append(f"    - files/{scope} ({files} file{'s' if files != 1 else ''})")
-    else:
-        lines.append("  current editable workspace: none")
-
+    # checkout provenance: current files/<scope> -> source ref
+    provenance: Dict[str, str] = {}
     current_checkout = latest_workspace_checkout_event(timeline_blocks, turn_id=turn_id) if turn_id else None
     if current_checkout:
-        checkout_mode = str(current_checkout.get("mode") or "").strip()
-        if checkout_mode:
-            lines.append(f"  checkout_mode: {checkout_mode}")
-        checked_out_from = [
-            str(item).strip()
-            for item in (current_checkout.get("checked_out_from") or [])
-            if str(item).strip()
-        ]
-        if checked_out_from:
-            lines.append("  checked_out_from:")
-            for item in checked_out_from[:6]:
-                lines.append(f"    - {item}")
-        else:
-            lines.append("  checked_out_from: current-turn only")
-    else:
-        lines.append("  checked_out_from: none")
+        for item in (current_checkout.get("checked_out_from") or []):
+            ref = str(item or "").strip()
+            m = re.search(r"\.files/([^/]+)", ref)
+            if m:
+                provenance.setdefault(m.group(1), ref)
 
-    current_publish = latest_workspace_publish_event(timeline_blocks, turn_id=turn_id) if turn_id else None
-    any_publish = latest_workspace_publish_event(timeline_blocks)
-    last_published_turn = ""
-    last_publish_status = ""
-    if any_publish:
-        last_published_turn = str(any_publish.get("turn_id") or "").strip()
-        last_publish_status = str(any_publish.get("status") or "").strip() or "unknown"
+    # per-project MODIFIED (uncommitted changes in the current-turn repo)
+    modified_scopes: set = set()
+    if outdir_raw:
+        try:
+            from kdcube_ai_app.apps.chat.sdk.solutions.react.git_workspace import current_turn_modified_files_scopes
+            modified_scopes = current_turn_modified_files_scopes(runtime_ctx=runtime_ctx, outdir=pathlib.Path(outdir_raw)) or set()
+        except Exception:
+            modified_scopes = set()
 
+    def _top_dirs(root_name: str, namespace: str) -> List[str]:
+        if artifact_root is None:
+            return []
+        base = artifact_root / root_name / namespace
+        if not base.is_dir():
+            return []
+        try:
+            return sorted((c.name for c in base.iterdir() if c.is_dir()), key=str.lower)
+        except Exception:
+            return []
+
+    def _rel_files(root_name: str, namespace: str, cap: int = 20):
+        if artifact_root is None:
+            return [], 0
+        base = artifact_root / root_name / namespace
+        if not base.is_dir():
+            return [], 0
+        rels: List[str] = []
+        try:
+            for dirpath, _dirs, filenames in os.walk(base):
+                for fn in filenames:
+                    rels.append(os.path.relpath(os.path.join(dirpath, fn), base))
+        except Exception:
+            return [], 0
+        rels.sort(key=str.lower)
+        return rels[:cap], len(rels)
+
+    # local files/ presence (for cross-tagging REMOTE rows)
+    current_files_projects = set(_top_dirs(turn_id, "files")) if turn_id else set()
+    readonly_files_projects: set = set()
+    for root in roots:
+        if root != turn_id:
+            readonly_files_projects.update(_top_dirs(root, "files"))
+
+    # ---------- LOCAL ----------
+    lines.append("")
+    lines.append("  LOCAL — materialized on disk THIS turn.")
+    lines.append("  This is the ONLY content react.read / react.rg / react.patch / exec can touch directly.")
+    lines.append("  If a path is not in this tree it is NOT local — pull it first, even if you see its fi: ref in the timeline.")
+    if not roots:
+        lines.append("  (workspace is empty this turn — nothing materialized yet)")
+    ordered_roots = ([turn_id] if turn_id in roots else []) + sorted([r for r in roots if r != turn_id], reverse=True)
+    for root in ordered_roots:
+        is_current = (root == turn_id)
+        label = "current turn \u00b7 EDITABLE" if is_current else "pulled reference \u00b7 READ-ONLY \u2014 checkout into the current turn to edit"
+        lines.append(f"  {root}/   ({label})")
+        # files/
+        fdirs = _top_dirs(root, "files")
+        if fdirs or is_current:
+            lines.append("    files/")
+            for proj in fdirs:
+                ann = []
+                if is_current and proj in provenance:
+                    ann.append(f"checked out from {provenance[proj]}")
+                if is_current and proj in modified_scopes:
+                    ann.append("MODIFIED this turn")
+                suffix = ("      \u2014 " + " \u00b7 ".join(ann)) if ann else ""
+                lines.append(f"      {proj}/{suffix}")
+            if is_current and not fdirs:
+                lines.append("      (empty)")
+        # outputs/ + attachments/ (list files)
+        for ns, note in (("outputs", "produced this turn"), ("attachments", "user upload this turn")):
+            files, total = _rel_files(root, ns)
+            if files:
+                lines.append(f"    {ns}/")
+                for rel in files:
+                    suffix = f"   \u2014 {note}" if (is_current and note) else ""
+                    lines.append(f"      {rel}{suffix}")
+                if total > len(files):
+                    lines.append(f"      \u2026 +{total - len(files)} more")
+            elif is_current and ns == "outputs":
+                lines.append("    outputs/            (empty)")
+        # snapshots/ (top-level)
+        sdirs = _top_dirs(root, "snapshots")
+        if sdirs:
+            lines.append("    snapshots/")
+            for s in sdirs:
+                lines.append(f"      {s}/")
+        elif is_current:
+            lines.append("    snapshots/          (empty)")
+
+    # ---------- REMOTE (git only) ----------
     if impl == "git":
         try:
-            from kdcube_ai_app.apps.chat.sdk.solutions.react.git_workspace import describe_current_turn_git_repo
             from kdcube_ai_app.apps.chat.sdk.solutions.react.git_workspace import summarize_current_turn_git_lineage_scopes
-            outdir = getattr(runtime_ctx, "outdir", None)
-            repo_info = describe_current_turn_git_repo(
-                runtime_ctx=runtime_ctx,
-                outdir=pathlib.Path(str(outdir or "")),
-            )
-            lineage_scopes = summarize_current_turn_git_lineage_scopes(
-                runtime_ctx=runtime_ctx,
-                outdir=pathlib.Path(str(outdir or "")),
-            )
+            lineage = summarize_current_turn_git_lineage_scopes(runtime_ctx=runtime_ctx, outdir=pathlib.Path(outdir_raw)) if outdir_raw else []
         except Exception:
-            repo_info = {}
-            lineage_scopes = []
-        repo_mode = str(repo_info.get("repo_mode") or "").strip()
-        repo_status = str(repo_info.get("repo_status") or "").strip()
-        if repo_mode:
-            lines.append(f"  repo_mode: {repo_mode}")
-        if repo_status:
-            lines.append(f"  repo_status: {repo_status}")
-        if lineage_scopes:
-            lines.append("  previous saved workspace paths (pull to bring local; checkout to edit):")
-            for item in lineage_scopes[:6]:
-                namespace = str(item.get("namespace") or "files").strip().strip("/") or "files"
-                scope = str(item.get("scope") or "").strip()
-                files = int(item.get("files") or 0)
-                lines.append(f"    - {namespace}/{scope} ({files} git-tracked file{'s' if files != 1 else ''})")
-            source_turn = last_published_turn or "<published_turn>"
-            first_path = str((lineage_scopes[0] or {}).get("scope") or "<path_under_files>").strip().strip("/")
-            first_namespace = str((lineage_scopes[0] or {}).get("namespace") or "files").strip().strip("/") or "files"
-            source_ref = f"fi:{source_turn}.{first_namespace}/{first_path}"
-            lines.append("  to focus on one path, use its fi: form, for example:")
-            lines.append(f"    react.pull(paths=[\"{source_ref}\"])")
-            if first_namespace == "files":
-                lines.append(f"    react.checkout(mode=\"replace\", paths=[\"{source_ref}\"])")
-        else:
-            lines.append("  previous saved workspace paths: none")
-
-    if current_publish:
-        status = str(current_publish.get("status") or "").strip() or "unknown"
-        lines.append(f"  current_turn_publish: {status}")
-        if status == "failed":
-            msg = str(current_publish.get("message") or current_publish.get("error") or "").strip()
-            if msg:
-                lines.append(f"  publish_error: {_shorten(msg, 120)}")
-    else:
-        lines.append("  current_turn_publish: pending")
-        if last_published_turn and last_published_turn != turn_id:
-            lines.append(f"  last_published_turn: {last_published_turn} ({last_publish_status})")
+            lineage = []
+        any_publish = latest_workspace_publish_event(timeline_blocks)
+        anchor = str((any_publish or {}).get("turn_id") or "").strip() if any_publish else ""
+        projects = [
+            str(it.get("scope") or "").strip().strip("/")
+            for it in (lineage or [])
+            if str(it.get("namespace") or "files").strip().strip("/") == "files"
+        ]
+        projects = [p for p in projects if p]
+        lines.append("")
+        lines.append("  REMOTE git branch \u2014 top-level projects you can pull (NOT local until pulled).")
+        if anchor:
+            lines.append(f"  latest committed turn: {anchor}")
+            lines.append("  \u2192 pull any project or subpath at its latest by building the ref with THIS turn id (same anchor for all projects):")
+            lines.append(f"        fi:{anchor}.files/<project>[/<subpath>]")
+        if projects:
+            for p in projects[:12]:
+                if p in current_files_projects:
+                    tag = "   [editable in current turn]"
+                elif p in readonly_files_projects:
+                    tag = "   [pulled \u00b7 read-only]"
+                else:
+                    tag = ""
+                lines.append(f"    files/{p}{tag}")
+            if len(projects) > 12:
+                lines.append(f"    \u2026 +{len(projects) - 12} more")
+        elif anchor:
+            lines.append("    (no committed projects yet)")
+        if anchor and projects:
+            ex = projects[0]
+            lines.append("  examples:")
+            lines.append(f'    pull a subfolder:  react.pull(paths=["fi:{anchor}.files/{ex}/<subpath>"])')
+            lines.append(f'    make editable:     react.checkout(mode="replace", paths=["fi:{anchor}.files/{ex}"])')
 
     return lines
 

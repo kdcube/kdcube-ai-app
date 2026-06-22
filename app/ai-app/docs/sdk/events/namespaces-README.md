@@ -28,8 +28,8 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/events/external-event-envelope-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/events/event-subsystem-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/artifact-discovery-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/workspace/workspace-checkout-model-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/files-vs-outputs-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/workspace/workspace-model-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/workspace/workspace-model-README.md
 ---
 # Logical Reference Namespaces
 

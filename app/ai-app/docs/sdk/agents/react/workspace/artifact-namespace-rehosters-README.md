@@ -1,26 +1,38 @@
 ---
-id: repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/agent-workspace-collboration-README.md
-title: "Agent Workspace Collaboration"
-summary: "Canonical ReAct workspace and artifact-origin contract: logical refs, physical OUT_DIR layout, files/outputs/snapshots/attachments semantics, cross-conversation refs, custom namespace rehosters, and read/search/write/pull/checkout cooperation."
-tags: ["sdk", "agents", "react", "workspace", "artifacts", "files"]
-keywords: ["outdir", "react.read", "react.rg", "react.patch", "versioned workspace"]
+id: repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/workspace/artifact-namespace-rehosters-README.md
+title: "Artifact Namespace Rehosters & Artifact Origin"
+summary: "How owner-domain artifact namespaces (e.g. nmsp:) are bridged into the ReAct artifact model: registering a namespace rehoster, the artifact-origin-to-workspace-layout mapping, and how rehosted refs resolve into files/outputs/snapshots/attachments."
+tags: ["sdk", "agents", "react", "workspace", "artifacts", "rehoster", "namespaces"]
+keywords: ["artifact namespace rehoster", "nmsp", "artifact origin", "owner namespace", "react.pull rehost", "destination map"]
 see_also:
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/react-turn-workspace-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/artifact-discovery-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/workspace/workspace-model-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/workspace/workspace-lifecycle-and-distribution-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/react-tools-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/files-vs-outputs-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/events/event-subsystem-README.md
 ---
-# Agent Workspace Collaboration
+# Artifact Namespace Rehosters & Artifact Origin
 
-This document explains the working model the React agent should use when combining the filesystem tools.
-It is about the **current** agent model, not the future shared mutable workspace design.
+This document explains how **owner-domain artifact namespaces** (custom refs such
+as `nmsp:...`) are bridged into the ReAct artifact model — registering a
+namespace rehoster, how the rehoster chooses a destination, and how rehosted refs
+resolve into `files/`/`outputs/`/`snapshots/`/`attachments/`.
+
+> The agent-facing workspace contract — namespaces, logical vs physical paths,
+> the `[WORKSPACE]` ANNOUNCE map, and the `react.pull` / `react.checkout` /
+> `read` / `rg` / `write` / `patch` cooperation — is in
+> [workspace-model-README.md](./workspace-model-README.md). This doc focuses on
+> the artifact-origin / rehoster mechanics; sections below that restate the
+> general namespace or pull/checkout model are kept for context but the canonical
+> source is the workspace model.
 
 Scope:
-- this doc is the canonical agent-facing workspace/artifact contract
-- the actual filesystem lifecycle is covered by `react-turn-workspace-README.md`
-- custom-mode edge cases are covered by `custom-isolated-workspace-mental-map-README.md`
-- git-mode engineering details are covered by `workspace/git-based-isolated-workspace-README.md`
+- this doc covers owner-domain artifact origin and custom namespace rehosters
+- the agent-facing workspace/artifact contract is in
+  [workspace-model-README.md](./workspace-model-README.md)
+- the filesystem lifecycle is in
+  [workspace-lifecycle-and-distribution-README.md](./workspace-lifecycle-and-distribution-README.md)
+- git-mode engineering details are in
+  [git-backed-workspace-engineering-README.md](./git-backed-workspace-engineering-README.md)
 
 ## Core model
 
@@ -250,8 +262,8 @@ The rehoster must know the ReAct workspace layout. Its job is to choose the
 destination surface by artifact meaning, write/copy bytes under the matching
 `OUTPUT_DIR` physical path, and return the `fi:` logical path plus physical
 path that the agent should use after `react.pull`. The structure is defined in
-[ReAct Turn Workspace](./react-turn-workspace-README.md) and the namespace
-semantics are summarized in [Files vs Outputs](./files-vs-outputs-README.md).
+[ReAct Turn Workspace](workspace-lifecycle-and-distribution-README.md) and the namespace
+semantics are summarized in [Files vs Outputs](workspace-model-README.md).
 
 Register the rehoster in a tool/event module loaded into the ReAct runtime:
 

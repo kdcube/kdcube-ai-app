@@ -1,19 +1,18 @@
 ---
-id: repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/react-turn-workspace-README.md
-title: "ReAct Turn Workspace"
+id: repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/workspace/workspace-lifecycle-and-distribution-README.md
+title: "ReAct Workspace Lifecycle & Distribution"
 summary: "Filesystem contract and lifecycle of the per-turn ReAct workspace (work/out), including local origin, runtime population, persistence, and Fargate/distributed snapshot transport."
 tags: ["sdk", "agents", "react", "workspace", "execution", "snapshot", "fargate", "distributed"]
 keywords: ["exec-workspace", "exec_YYYYMMDDHHMMSS", "workdir", "outdir", "timeline.json", "tool_calls_index.json", "user.log", "infra.log", "EXEC_SNAPSHOT", "build_exec_snapshot_workspace", "snapshot_exec_input", "py_code_exec_entry.py"]
 see_also:
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/agent-workspace-collboration-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/workspace/workspace-model-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/timeline-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/turn-log-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/source-pool-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/external-exec-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/exec/distributed-exec-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/files-vs-outputs-README.md
 ---
-# ReAct Turn Workspace
+# ReAct Workspace Lifecycle & Distribution
 
 This document defines the **actual workspace structure** used by ReAct and how it evolves across phases:
 - local turn start (`exec-workspace/exec_<UTC timestamp>_<suffix>`)
@@ -25,12 +24,14 @@ The workspace is execution state. Canonical conversation state still lives in ti
 
 Scope:
 - this document describes the concrete workspace filesystem and lifecycle
-- the current namespace separation between workspace files and non-workspace outputs is tracked in `files-vs-outputs-README.md`
+- the agent-facing contract — namespaces (`files/` vs `outputs/` vs `snapshots/`),
+  the `[WORKSPACE]` ANNOUNCE map, and pull/checkout — is in
+  [workspace-model-README.md](./workspace-model-README.md)
 
 ## Effective agent workspace model
 
 The full agent-facing path contract is in
-[agent-workspace-collboration-README.md](./agent-workspace-collboration-README.md).
+[workspace-model-README.md](./workspace-model-README.md).
 This lifecycle doc only names the physical runtime roots and the most important
 invariants.
 
@@ -206,7 +207,7 @@ Notes:
 ### Path conventions used inside the workspace
 
 The full `fi:` grammar, custom namespace rules, and pull/checkout contract live
-in [agent-workspace-collboration-README.md](./agent-workspace-collboration-README.md).
+in [artifact-namespace-rehosters-README.md](artifact-namespace-rehosters-README.md).
 This runtime article only needs the operational shape:
 
 ```text

@@ -25,7 +25,7 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/conversation-artifacts-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/react-announce-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/source-pool-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/react-turn-workspace-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/workspace/workspace-lifecycle-and-distribution-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/custom-isolated-workspace-mental-map-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/event-source/event-source-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/event-source/timeline-projection-README.md

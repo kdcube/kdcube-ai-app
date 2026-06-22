@@ -30,8 +30,8 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/events/external-events-journey-and-handling-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/event-source/event-source-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/event-source/block-production-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/agent-workspace-collboration-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/react-turn-workspace-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/workspace/artifact-namespace-rehosters-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/workspace/workspace-lifecycle-and-distribution-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-agent-integration-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/service/comm/client-transport-protocols-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-widget-integration-README.md
@@ -425,9 +425,9 @@ Register a namespace rehoster in a loaded tool module or loaded event module.
 The rehoster must know the ReAct workspace layout and choose the destination by
 artifact meaning. Read:
 
-- [Agent Workspace Collaboration](../agents/react/agent-workspace-collboration-README.md)
-- [ReAct Turn Workspace](../agents/react/react-turn-workspace-README.md)
-- [Files vs Outputs](../agents/react/files-vs-outputs-README.md)
+- [Agent Workspace Collaboration](../agents/react/workspace/artifact-namespace-rehosters-README.md)
+- [ReAct Turn Workspace](../agents/react/workspace/workspace-lifecycle-and-distribution-README.md)
+- [Files vs Outputs](../agents/react/workspace/workspace-model-README.md)
 
 Destination map:
 

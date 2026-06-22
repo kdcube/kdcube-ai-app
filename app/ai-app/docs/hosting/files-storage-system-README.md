@@ -8,7 +8,7 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/storage/sdk-store-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/conversation-artifacts-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/artifact-storage-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/react-turn-workspace-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/workspace/workspace-lifecycle-and-distribution-README.md
 ---
 # File Storage and Hosting
 
@@ -157,4 +157,4 @@ blocks are model-visible summaries/previews and are not used as file bytes.
 ## Related docs
 - [Conversation artifacts](https://github.com/kdcube/kdcube-ai-app/blob/main/app/ai-app/docs/sdk/agents/react/conversation-artifacts-README.md)
 - [Artifact storage](https://github.com/kdcube/kdcube-ai-app/blob/main/app/ai-app/docs/sdk/agents/react/artifact-storage-README.md)
-- [React turn workspace](https://github.com/kdcube/kdcube-ai-app/blob/main/app/ai-app/docs/sdk/agents/react/react-turn-workspace-README.md)
+- [React turn workspace](https://github.com/kdcube/kdcube-ai-app/blob/main/app/ai-app/docs/sdk/agents/react/workspace/workspace-lifecycle-and-distribution-README.md)

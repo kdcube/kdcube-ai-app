@@ -70,7 +70,7 @@ Reference:
 - **Execution snapshots** (optional) — persisted workdir for debugging  
   Enabled by `REACT_PERSIST_WORKSPACE=1`  
   See:
-  - https://github.com/kdcube/kdcube-ai-app/blob/main/app/ai-app/docs/sdk/agents/react/react-turn-workspace-README.md
+  - https://github.com/kdcube/kdcube-ai-app/blob/main/app/ai-app/docs/sdk/agents/react/workspace/workspace-lifecycle-and-distribution-README.md
   - https://github.com/kdcube/kdcube-ai-app/blob/main/app/ai-app/docs/sdk/storage/sdk-store-README.md
 
 Example layout (abbreviated):

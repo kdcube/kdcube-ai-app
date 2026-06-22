@@ -24,7 +24,7 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/context-layout.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/system-instruction-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/react-tools-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/react-turn-workspace-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/workspace/workspace-lifecycle-and-distribution-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/react-announce-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/shared-timeline-event-bus-steer-followup-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/why/why-not-simply-tool-calling-README.md
@@ -207,7 +207,7 @@ Read the ReAct model in this order:
 3. [ReAct Context Layout](sdk/agents/react/context-layout.md)
 4. [ReAct System Instruction](sdk/agents/react/system-instruction-README.md)
 5. [ReAct Tools](sdk/agents/react/react-tools-README.md)
-6. [ReAct Turn Workspace](sdk/agents/react/react-turn-workspace-README.md)
+6. [ReAct Turn Workspace](sdk/agents/react/workspace/workspace-lifecycle-and-distribution-README.md)
 7. [ReAct Event Sources](sdk/agents/react/event-source/event-source-README.md)
 8. [Why Not Simply Tool Calling](sdk/agents/react/why/why-not-simply-tool-calling-README.md)
 

@@ -8,7 +8,7 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/timeline-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/runtime-configuration-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/flow-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/workspace/git-based-isolated-workspace-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/workspace/git-backed-workspace-engineering-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/why/why-not-simply-tool-calling-README.md
 ---
 # React Structure

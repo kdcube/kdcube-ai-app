@@ -16,11 +16,11 @@ keywords:
     "react.checkout",
   ]
 see_also:
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/react-turn-workspace-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/workspace/workspace-checkout-model-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/workspace/git-based-isolated-workspace-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/files-vs-outputs-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/agent-workspace-collboration-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/workspace/workspace-lifecycle-and-distribution-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/workspace/workspace-model-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/workspace/git-backed-workspace-engineering-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/workspace/workspace-model-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/workspace/artifact-namespace-rehosters-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/react-announce-README.md
   - repo:kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/layout.py
   - repo:kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/workspace.py
@@ -35,11 +35,11 @@ This is the mental-model companion to the mechanical workspace docs.
 
 **Scope**: agent perception in custom mode only.
 
-- The filesystem layout, lifecycle, and exec snapshot transport are in [react-turn-workspace-README.md](./react-turn-workspace-README.md).
-- The `react.pull` / `react.checkout` tool contract is in [workspace/workspace-checkout-model-README.md](./workspace/workspace-checkout-model-README.md).
-- The `files/...` vs `outputs/...` namespace contract is in [files-vs-outputs-README.md](./files-vs-outputs-README.md).
-- Tool cooperation (read/rg/write/patch) is in [agent-workspace-collboration-README.md](./agent-workspace-collboration-README.md).
-- Git mode is in [workspace/git-based-isolated-workspace-README.md](./workspace/git-based-isolated-workspace-README.md).
+- The filesystem layout, lifecycle, and exec snapshot transport are in [workspace-lifecycle-and-distribution-README.md](workspace/workspace-lifecycle-and-distribution-README.md).
+- The `react.pull` / `react.checkout` tool contract is in [workspace/workspace-model-README.md](workspace/workspace-model-README.md).
+- The `files/...` vs `outputs/...` namespace contract is in [workspace-model-README.md](workspace/workspace-model-README.md).
+- Tool cooperation (read/rg/write/patch) is in [artifact-namespace-rehosters-README.md](workspace/artifact-namespace-rehosters-README.md).
+- Git mode is in [workspace/git-backed-workspace-engineering-README.md](workspace/git-backed-workspace-engineering-README.md).
 
 This doc focuses on the question: *given there is no git history to inspect, what does the agent know about its workspace, and how?*
 
@@ -283,7 +283,7 @@ This is the single biggest semantic difference from git mode, where deletion *is
    │                                                          │
    │     Reports/exports/test outputs that should NOT become  │
    │     workspace state go to turn_<current>/outputs/...     │
-   │     (see files-vs-outputs-README.md).                    │
+   │     (see workspace-model-README.md).                    │
    └─────────────────────────────────────────────────────────┘
 ```
 
@@ -314,7 +314,7 @@ OUTPUT_DIR/
 
 For the complete namespace grammar and resolver/rehoster
 discovery rules, see
-[agent-workspace-collboration-README.md](./agent-workspace-collboration-README.md).
+[artifact-namespace-rehosters-README.md](workspace/artifact-namespace-rehosters-README.md).
 
 ---
 
@@ -369,11 +369,11 @@ Both items are tracked as design targets; the current per-round reconstruction i
 
 ## 8) What this doc does **not** cover
 
-- Filesystem mechanics, exec workspace transport, snapshot persistence — see [react-turn-workspace-README.md](./react-turn-workspace-README.md).
-- `react.pull` vs `react.checkout` semantics, `replace` vs `overlay` modes — see [workspace/workspace-checkout-model-README.md](./workspace/workspace-checkout-model-README.md).
-- `files/<scope>/...` vs `outputs/<scope>/...` namespace rules — see [files-vs-outputs-README.md](./files-vs-outputs-README.md).
-- Per-tool cooperation (`react.read`, `react.rg`, `react.write`, `react.patch`) — see [agent-workspace-collboration-README.md](./agent-workspace-collboration-README.md).
-- Git-mode lineage branches, immutable version refs, publish flow — see [workspace/git-based-isolated-workspace-README.md](./workspace/git-based-isolated-workspace-README.md).
+- Filesystem mechanics, exec workspace transport, snapshot persistence — see [workspace-lifecycle-and-distribution-README.md](workspace/workspace-lifecycle-and-distribution-README.md).
+- `react.pull` vs `react.checkout` semantics, `replace` vs `overlay` modes — see [workspace/workspace-model-README.md](workspace/workspace-model-README.md).
+- `files/<scope>/...` vs `outputs/<scope>/...` namespace rules — see [workspace-model-README.md](workspace/workspace-model-README.md).
+- Per-tool cooperation (`react.read`, `react.rg`, `react.write`, `react.patch`) — see [artifact-namespace-rehosters-README.md](workspace/artifact-namespace-rehosters-README.md).
+- Git-mode lineage branches, immutable version refs, publish flow — see [workspace/git-backed-workspace-engineering-README.md](workspace/git-backed-workspace-engineering-README.md).
 - The shape and lifecycle of ANNOUNCE as a whole — see [react-announce-README.md](./react-announce-README.md).
 
 This doc is purely about *how the agent perceives the workspace when no git lineage is available* — and what that perception is and is not built to support.

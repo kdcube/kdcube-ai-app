@@ -8,14 +8,14 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/artifact-discovery-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/conversation-artifacts-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/react-tools-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/files-vs-outputs-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/workspace/workspace-model-README.md
 ---
 # Artifact Storage Rules
 
 Scope:
 - this document describes current artifact persistence and hosting behavior
 - it does not define workspace-membership semantics by itself
-- the current namespace split between durable workspace `files/...` and non-workspace `outputs/...` is described in `files-vs-outputs-README.md`
+- the current namespace split between durable workspace `files/...` and non-workspace `outputs/...` is described in `workspace-model-README.md`
 
 ## Files vs Tool Results
 Tool results are stored in the **event log blocks** (timeline), not on disk.

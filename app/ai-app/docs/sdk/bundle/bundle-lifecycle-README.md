@@ -526,7 +526,7 @@ If a bundle uses the React agent:
   MCP/search surfaces, or registered rehosters
 
 See:
-- [../agents/react/react-turn-workspace-README.md](../agents/react/react-turn-workspace-README.md)
+- [../agents/react/workspace-lifecycle-and-distribution-README.md](../agents/react/workspace/workspace-lifecycle-and-distribution-README.md)
 
 ## Practical rules
 

@@ -27,9 +27,9 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/events/external-event-envelope-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/events/external-events-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/arch/proc/events-orchestration-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/agent-workspace-collboration-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/react-turn-workspace-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/files-vs-outputs-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/workspace/artifact-namespace-rehosters-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/workspace/workspace-lifecycle-and-distribution-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/workspace/workspace-model-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/event-source/event-source-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/event-source/block-production-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/tools/tool-subsystem-README.md
@@ -258,8 +258,8 @@ A rehoster must be aware of the ReAct workspace and artifact surfaces. It does
 not merely download bytes; it chooses where the artifact belongs in the ReAct
 model and returns the resulting `fi:` logical path plus `OUTPUT_DIR`-relative
 physical path. Read
-[Agent Workspace Collaboration](../agents/react/agent-workspace-collboration-README.md)
-and [Files vs Outputs](../agents/react/files-vs-outputs-README.md) before
+[Agent Workspace Collaboration](../agents/react/workspace/artifact-namespace-rehosters-README.md)
+and [Files vs Outputs](../agents/react/workspace/workspace-model-README.md) before
 writing a bundle rehoster.
 
 ### Where rehosters are discovered

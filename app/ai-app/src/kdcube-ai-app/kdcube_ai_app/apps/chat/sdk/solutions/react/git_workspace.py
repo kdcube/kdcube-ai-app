@@ -221,6 +221,49 @@ def summarize_current_turn_git_lineage_scopes(
     return out
 
 
+def current_turn_modified_files_scopes(
+    *,
+    runtime_ctx: Any,
+    outdir: pathlib.Path,
+) -> set:
+    """Top-level files/<scope> dirs with uncommitted changes in the current-turn repo.
+
+    Used by the ANNOUNCE [WORKSPACE] map to mark a checked-out project as
+    MODIFIED this turn. Best-effort: returns an empty set on any error.
+    """
+    turn_id = str(getattr(runtime_ctx, "turn_id", "") or "").strip()
+    if not turn_id:
+        return set()
+    turn_root = _artifact_outdir(outdir) / turn_id
+    if not (turn_root / ".git").exists():
+        return set()
+    try:
+        proc = subprocess.run(
+            _git_cmd(turn_root, ["status", "--porcelain", "--untracked-files=all"]),
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except Exception:
+        return set()
+    scopes: set = set()
+    prefix = f"{ARTIFACT_NAMESPACE_FILES}/"
+    for line in (proc.stdout or "").splitlines():
+        if len(line) < 4:
+            continue
+        path = line[3:].strip()
+        if path.startswith('"') and path.endswith('"'):
+            path = path[1:-1]
+        if " -> " in path:  # rename: "old -> new"
+            path = path.split(" -> ", 1)[1]
+        if path.startswith(prefix):
+            rest = path[len(prefix):].strip("/")
+            top = rest.split("/", 1)[0] if rest else ""
+            if top:
+                scopes.add(top)
+    return scopes
+
+
 def _run_git_capture(repo_root: pathlib.Path, args: List[str], *, env: Optional[Dict[str, str]] = None) -> subprocess.CompletedProcess:
     return subprocess.run(
         _git_cmd(repo_root, args),

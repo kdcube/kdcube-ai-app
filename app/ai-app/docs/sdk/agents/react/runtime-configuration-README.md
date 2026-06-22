@@ -295,7 +295,7 @@ not required for conversation correctness.
 - `REACT_PERSIST_WORKSPACE=1` (default): persist snapshot
 - `REACT_PERSIST_WORKSPACE=0`: skip snapshot
 
-See `react-turn-workspace-README.md` for details.
+See `workspace-lifecycle-and-distribution-README.md` for details.
 
 ## Legacy Cache Fields
 

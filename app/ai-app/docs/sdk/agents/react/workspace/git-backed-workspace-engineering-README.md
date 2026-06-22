@@ -1,6 +1,6 @@
 ---
-id: repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/workspace/git-based-isolated-workspace-README.md
-title: "Git-Based Isolated Workspace"
+id: repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/workspace/git-backed-workspace-engineering-README.md
+title: "Git-Backed Workspace Engineering"
 summary: "Git-backed React workspace model, immutable per-turn version refs, explicit workspace pull and checkout hydration, sparse current-turn repos, point-wise hosted binary hydration, and lineage-only git isolation."
 status: experimental
 tags: ["sdk", "agents", "react", "workspace", "git", "artifacts"]
@@ -17,25 +17,28 @@ keywords:
   ]
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/draft/note-keeping-and-working-summary-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/workspace/workspace-checkout-model-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/workspace/workspace-model-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/react-announce-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/session-view-README.md
   - repo:kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/v2/solution_workspace.py
   - repo:kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/v2/runtime.py
   - repo:kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/v2/timeline.py
 ---
-# Git-Based Isolated Workspace
+# Git-Backed Workspace Engineering
 
-This is an engineering reference for the git-backed workspace backend. It is
-not the primary agent-facing path contract. For the compact operational model
-used by agents, start with
-[agent-workspace-collboration-README.md](../agent-workspace-collboration-README.md)
-and
-[workspace-checkout-model-README.md](./workspace-checkout-model-README.md).
+This is the engineering reference for the git-backed workspace backend (lineage
+branch, immutable per-turn version refs, isolation, publish flow, integration
+points). It is **not** the agent-facing contract — for namespaces, the
+`[WORKSPACE]` ANNOUNCE map, and the pull/checkout model agents use, start with
+[workspace-model-README.md](./workspace-model-README.md).
 
-This document explains the git-backed React workspace model that complements the
-existing `custom` backend while keeping the same agent-facing `fi:` /
-`react.pull(...)` contract.
+> **`custom` mode is legacy.** The non-git `custom` backend is being phased out;
+> git is the forward path. Where this doc contrasts `custom` vs `git`, treat
+> `custom` as historical context.
+
+This document explains the git-backed React workspace model and keeps the same
+agent-facing `fi:` / `react.pull(...)` contract described in
+[workspace-model-README.md](./workspace-model-README.md).
 
 The main design choices in this model are:
 
@@ -447,7 +450,7 @@ explicit historical compatibility views under the referenced version path.
 
 `react.checkout(...)` is the tool that defines what gets materialized into the
 active current-turn workspace. The fuller cross-backend rationale is captured in
-`workspace/workspace-checkout-model-README.md`:
+`workspace/workspace-model-README.md`:
 
 - keep `react.pull(...)` strictly historical
 - make checkout define the contents of `turn_<current>/files/`

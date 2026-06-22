@@ -26,7 +26,7 @@ def test_get_workspace_implementation_guide_git_mentions_git_backed_mode():
     assert "active lineage workspace" in guide
     assert "historical reference view" in guide
     assert 'react.checkout(mode="replace", paths=[...])' in guide or 'react.checkout(mode="replace", paths=["fi:' in guide
-    assert "runnable/searchable/testable editable copy" in guide
+    assert "editable workspace state" in guide
     assert "mode=\"overlay\"" in guide
     assert "turn_<current>/files/..." in guide
     assert "previous saved workspace paths" in guide
@@ -45,9 +45,9 @@ def test_build_decision_system_text_uses_selected_workspace_implementation():
     assert "hosted binaries require exact file refs" in text
     assert "local git repo" in text
     assert "Workspace activation is explicit" in text
-    assert "do NOT auto-materialize old files" in text
+    assert "EACH TURN STARTS BLANK" in text
     assert 'react.checkout(mode="replace", paths=[fi:...])' in text or 'react.checkout(mode="replace", paths=["fi:' in text
-    assert "runnable/searchable/testable editable copy" in text
+    assert "editable workspace state" in text
     assert "mode=\"overlay\"" in text
     assert "turn_<current>/files/..." in text
     assert "existing top-level scope" in text
@@ -117,11 +117,11 @@ def test_build_decision_system_text_prefers_visible_document_source_refs():
     )
     assert "Prefer generating source content with `react.write`." in text
     assert "Preferred: then call the renderer with `content=\"ref:<visible text source ref>\"`" in text
-    assert "Inline renderer content is still valid when needed." in text
+    assert "Inline renderer content is accepted when needed." in text
     assert "Do not bind physical paths,\n  external owner refs, or internal artifacts into rendering_tools.write_*" in text
     assert "exec output with" in text and "visibility=external" in text
     assert "If generated content is meant for the user to see, download, approve, or use" in text
-    assert "Do not use `channel=\"internal\"` refs as rendering_tools.write_* source." in text
-    assert "draft shape is wrong" in text
+    assert "Internal text artifacts are still valid for private notes" in text
+    assert "shape is wrong" in text
     assert "Use the input type documented by the target rendering tool." in text
     assert "Use HTML source for PDF" not in text

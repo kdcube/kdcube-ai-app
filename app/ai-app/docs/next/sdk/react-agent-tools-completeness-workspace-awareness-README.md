@@ -5,9 +5,9 @@ summary: "Current state and near-term plan for React agent turn workspace, conve
 tags: ["next", "sdk", "react", "workspace", "owner-namespaces", "copilot", "tools"]
 keywords: ["turn workspace", "artifact memory", "owner namespaces", "kdcube.copilot", "resolver", "isolated exec", "fi namespace", "rehoster"]
 see_also:
-  - ks:docs/sdk/agents/react/agent-workspace-collboration-README.md
+  - ks:docs/sdk/agents/react/workspace/artifact-namespace-rehosters-README.md
   - ks:docs/sdk/agents/react/artifact-discovery-README.md
-  - ks:docs/sdk/agents/react/react-turn-workspace-README.md
+  - ks:docs/sdk/agents/react/workspace/workspace-lifecycle-and-distribution-README.md
   - ks:docs/sdk/agents/react/timeline-README.md
   - ks:docs/exec/exec-logging-error-propagation-README.md
 ---
