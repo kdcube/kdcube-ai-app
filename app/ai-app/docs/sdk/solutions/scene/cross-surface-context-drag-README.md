@@ -3,7 +3,7 @@ id: repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/scene/cross-surface-context
 title: "Cross-Surface Context Drag"
 summary: "Concrete design for generic object drag/drop between scene surfaces: source drag lifecycle, scene broker state, selector-based candidate targets, provider open resolution, target-surface command dispatch, and current migration gaps."
 status: implementation
-tags: ["sdk", "solutions", "scene", "drag-drop", "context-pin", "surfaces", "named-services", "canvas", "chat"]
+tags: ["sdk", "solutions", "scene", "drag-drop", "context-drag", "surfaces", "named-services", "canvas", "chat"]
 updated_at: 2026-06-23
 keywords:
   [
@@ -11,7 +11,8 @@ keywords:
     "context drag broker",
     "kdcube-context-drag-start",
     "kdcube-context-drag-end",
-    "context pin contract",
+    "context drag",
+    "canvas ingress",
     "surface selector policy",
     "requested target surface",
     "object action open",
@@ -23,7 +24,7 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/scene/scene-composition-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/scene/scene-surface-registry-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/canvas/pin-operations-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/npm/components-core/context-pin-contract-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/npm/components-core/context-drag-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/integration-README.md
 ---
 # Cross-Surface Context Drag
@@ -110,6 +111,167 @@ inside the payload as `context.ref` / `object_ref`, for example
 `task:issue:...`, `mem:record:...`, or future event identities such as
 `task:event:task-changed` where they are payload values rather than DOM-style
 event names.
+
+## Canvas Ingress Packet
+
+Canvas ingress is the canonical cross-surface packet for placing something on a
+canvas. The message type is:
+
+```text
+kdcube.canvas.ingress
+```
+
+`ingress` means "this payload is entering the canvas from another surface". It
+does not mean canvas owns the object. Canvas receives the packet, creates or
+updates a card, and keeps the underlying object identity intact.
+
+There are two distinct layers:
+
+```text
+canonical packet:
+  kdcube.canvas.ingress
+
+optional drag lifecycle wrapper:
+  kdcube-canvas-ingress-drag-start
+  kdcube-canvas-ingress-drag-end
+```
+
+The wrapper exists only so the browser scene can track pointer coordinates
+across iframe boundaries. The canonical packet must be valid without the
+wrapper, so a host can also deliver it directly.
+
+### Object Ref Payload
+
+Use this when the source already has a canonical object URI:
+
+```json
+{
+  "type": "kdcube.canvas.ingress",
+  "payload_type": "object.ref",
+  "payload": {
+    "object_ref": "fi:conv_.../weather_cli.zip",
+    "mime": "application/zip",
+    "title": "weather_cli.zip",
+    "filename": "weather_cli.zip",
+    "preview": "Optional display preview",
+    "presentation": {
+      "label": "file",
+      "namespace": "fi",
+      "object_kind": "fi:artifact"
+    }
+  }
+}
+```
+
+Rules:
+
+- `object_ref` is the identity. Canvas, scene, and target widgets must not
+  derive behavior from a local parser of this URI.
+- `presentation` is optional and cosmetic. It may provide label, namespace, or
+  object-kind hints for immediate display while provider metadata is loading.
+- Actions such as open, download, attach, or edit come from the resolver or
+  provider response, not from `payload_type`, `presentation.label`, or card
+  `kind`.
+
+### Text Content Payload
+
+Use this when the source has raw text, not a provider object URI:
+
+```json
+{
+  "type": "kdcube.canvas.ingress",
+  "payload_type": "content.text",
+  "payload": {
+    "title": "Selection",
+    "content": {
+      "mime": "text/markdown",
+      "text": "Selected text to place on the canvas."
+    },
+    "presentation": {
+      "label": "provided.text",
+      "object_kind": "canvas.card"
+    }
+  }
+}
+```
+
+Rules:
+
+- `payload_type` is a schema selector only: `object.ref` means the payload has
+  `object_ref`; `content.text` means it has inline text content.
+- `payload_type` must not become a hidden object classifier or routing key.
+- If the text is placed on canvas, canvas hosts it as a canvas-owned object and
+  assigns the resulting `cnv:` identity.
+- `agent.text`, `user.text`, or `provided.text` are card/display labels after
+  materialization. They are not cross-surface protocol message types.
+
+### Source Stamping
+
+The source widget composes only the object/text data it knows. In a scene, the
+scene host stamps provenance from its surface registry:
+
+```json
+{
+  "source": {
+    "surface_ref": "website.chat",
+    "component": "chat",
+    "app": "versatile@2026-03-31-13-36",
+    "runtime": "default"
+  }
+}
+```
+
+The source widget usually does not know `app`, `runtime`, or scene-local
+surface aliases. For example, a chat file chip only knows the file ref, mime,
+filename, and preview. The website scene reads the iframe/surface alias from
+the mounted frame and looks up the configured component/app/runtime before
+forwarding the packet to canvas.
+
+### End-To-End Flow
+
+```text
+chat/file chip, memory row, search result, or another source
+  creates:
+    kdcube.canvas.ingress
+    payload_type = object.ref | content.text
+        |
+        v
+source drag helper
+  wraps during pointer drag:
+    kdcube-canvas-ingress-drag-start { ingress, x, y }
+        |
+        v
+scene host
+  validates ingress packet
+  stamps payload.source from scene config / iframe attrs
+  arms canvas drop overlay
+        |
+        v
+pinboard/canvas surface
+  receives:
+    kdcube-pinboard-drop-ingress { ingress, x, y }
+  materializes a generic canvas card
+  preserves object_ref for provider-owned objects
+        |
+        v
+provider / resolver layer
+  owns open/download/capability behavior for object_ref
+```
+
+Concrete current examples:
+
+- Chat file drag builds the minimal `kdcube.canvas.ingress` packet in
+  `components-react/src/chat/ui/support/fileDrag.ts`.
+- Website scene receives the drag wrapper and stamps source metadata in
+  `website/scene-context-drag.js`.
+- Pinboard parses `data.ingress` and creates a generic card in
+  `canvas/ui/widget/pinboard/src/App.tsx`.
+- Versatile's embedded scene follows the same protocol in
+  `examples/bundles/versatile.../ui/scene/src/main.tsx`.
+
+No task/memory/file-specific card constructor is required for this path. A
+canvas card is a generic container plus preserved `object_ref`; the provider
+realm supplies object actions and richer metadata.
 
 ### Overlay Target Map
 

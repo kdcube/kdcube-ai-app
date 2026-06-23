@@ -1,72 +1,148 @@
 ---
 id: repo:kdcube-ai-app/app/ai-app/docs/sdk/npm/README.md
-title: "KDCube Components Library (npm)"
-summary: "Index and map for the two-package components library that decouples KDCube's interactive UI from any framework: @kdcube/components-core (headless engines) and @kdcube/components-react (React bindings). Start here, then follow the per-package and per-concept docs."
+title: "KDCube Components npm Packages"
+summary: "Map for the shared TypeScript packages: headless component contracts in @kdcube/components-core and React bindings in @kdcube/components-react."
 status: implementation
-tags: ["sdk", "npm", "components", "components-core", "components-react", "headless", "index"]
-updated_at: 2026-06-16
+tags: ["sdk", "npm", "components-core", "components-react", "scene", "canvas", "chat", "events"]
+updated_at: 2026-06-23
 keywords:
   [
     "@kdcube/components-core",
     "@kdcube/components-react",
-    "kdcube components library",
-    "headless chat engine",
-    "framework-agnostic UI components",
-    "npm packages index",
+    "scene runtime",
+    "canvas pin board",
+    "chat engine",
+    "host event bus",
+    "component events",
   ]
 ---
 
-# KDCube Components Library (npm)
+# KDCube Components npm Packages
 
-A two-package library that decouples KDCube's interactive components (chat,
-scene runtime, canvas today; memories, … next) from any single framework or host. Workspace:
-`app/ai-app/src/kdcube-ai-app/npm/` (inside the installed app tree, so the package
-source ships into the runtime image and is reachable via the `npm://` shared-source
-resolver).
+KDCube's shared client components are split into two npm packages:
 
-| Package | Layer | Knows about |
+| Package | Role | Contains |
 | --- | --- | --- |
-| **`@kdcube/components-core`** | headless engines — state machine + transport + protocol + host event bus | nothing UI: no React, no DOM host, no iframe |
-| **`@kdcube/components-react`** | React bindings — provider + hooks (+ optional default UI) | React only |
+| `@kdcube/components-core` | Headless contracts and runtimes | chat engine, scene runtime, event claims/client, canvas model/ingress, shared config/types |
+| `@kdcube/components-react` | React bindings and reusable UI | chat provider/hooks/default UI, `CanvasBoard`, React wrappers over core contracts |
 
-Each package is **multi-component** via subpath exports, so a consumer installs
-two packages and imports only what it needs.
-Future adapters (`@kdcube/components-angular`, `…-vanilla`) slot in with no core change.
+The packages are not a product-specific website implementation. They are the
+reusable layer used by widgets and scenes so apps can join the same ecosystem
+without each component inventing its own drag/drop, event, canvas, or chat
+protocol.
 
-## Read in order
+```text
+app widget / website scene
+        |
+        v
+@kdcube/components-react        optional React UI/bindings
+        |
+        v
+@kdcube/components-core         protocol + state + runtime contracts
+        |
+        v
+KDCube app runtime              APIs, Event Bus, Data Bus, named services
+```
 
-1. **Core package** — [`components-core/README.md`](./components-core/README.md)
-   - [Chat engine](./components-core/chat-engine-README.md) — `createChatEngine(config)` controller API.
-   - [Engine config & auth](./components-core/engine-config-README.md) — `EngineConfig`, cookie/token, `EngineRuntime`.
-   - [Host event bus](./components-core/host-event-bus-README.md) — the events the engine bubbles to the host.
-   - [Context-pin contract](./components-core/context-pin-contract-README.md) — the cross-component drag contract.
-   - Scene runtime: `@kdcube/components-core/scene` exports the surface registry and context-drag broker.
-2. **React package** — [`components-react/README.md`](./components-react/README.md) — `ChatStoreProvider` + hooks, and `CanvasBoard`.
-3. **Widget integration & deployment** — [`widget-integration-README.md`](./widget-integration-README.md) — the SDK chat widget's local/package engine switch, the `npm://` build path, and how the package source ships into the image.
+## Read In This Order
 
-## How it's consumed (three stories)
+Core package:
 
-- **Our bundles** — `sdk://solutions/chat/ui/widget` can run on the package engine via
-  a single opt-in knob (default stays the in-tree engine); the package source ships in
-  the app image and is materialized via `npm://`. See
-  [widget integration & deployment](./widget-integration-README.md).
-- **External React, no iframe** — install both packages, wrap with
-  `<ChatStoreProvider config>`, render your own UI, handle bubbled events.
-- **Non-React host** — install `@kdcube/components-core`, `createChatEngine(config)`,
-  `subscribe(render)` + call methods.
+- [Core package map](./components-core/README.md)
+- [Scene](./components-core/scene-README.md)
+- [Canvas pin board](./components-core/canvas-pin-board-README.md)
+- [Component events](./components-core/events-README.md)
+- [Context drag and canvas ingress](./components-core/context-drag-README.md)
+- [Chat engine](./components-core/chat-engine-README.md)
+- [Host event bus](./components-core/host-event-bus-README.md)
+- [Engine config](./components-core/engine-config-README.md)
 
-The in-tree widget these packages derive from stays the reference until each consumer
-switches: `docs/sdk/solutions/chat/chat-widget-solution-README.md`.
+React package:
 
-## Status
+- [React package map](./components-react/README.md)
 
-- [x] Workspace + both packages; `/chat`, `/scene`, and `/canvas` subpath exports; tsup build.
-- [x] Chat engine ported into `@kdcube/components-core/chat`.
-- [x] React bindings in `@kdcube/components-react/chat`.
-- [x] Context-pin contract in `@kdcube/components-core`.
-- [x] Scene runtime and context-drag broker in `@kdcube/components-core/scene`.
-- [x] Canvas board React component in `@kdcube/components-react/canvas`.
-- [x] SDK widget consumes the packages via an opt-in engine switch + iframe host-bridge ([details](./widget-integration-README.md)).
-- [x] Package source ships in the runtime image (app tree + `npm://`).
-- [ ] Make the package engine the default once validated across environments.
-- [ ] Publish / workspace-link for external consumers.
+Runtime/widget integration:
+
+- [Widget integration](./widget-integration-README.md)
+
+## Concept Map
+
+```text
+scene
+  mounts components
+  connects runtimes
+  routes surface commands
+  brokers cross-iframe context drag
+  owns Event Bus/SSE transport per runtime
+
+events
+  lets components claim event interests
+  hides whether transport is scene, direct Event Bus, or another host
+
+canvas pin board
+  stores proxy cards, not provider objects
+  accepts kdcube.canvas.ingress
+  preserves opaque object_ref
+  delegates actions to provider resolvers
+
+chat engine
+  owns chat state/transport/conversation lifecycle
+  emits host events instead of reaching into window.parent
+  attaches/removes context refs
+
+React bindings
+  make the same core contracts ergonomic in React
+```
+
+## Naming Rules
+
+- Use **app** in prose. Say `bundles.yaml` only when referring to the current
+  internal backend config key.
+- Use **scene** for the host composition/runtime surface.
+- Use **pin board** for the user-facing canvas workspace; use **canvas** when
+  referring to protocol/module names.
+- Use **context drag** for moving object refs between surfaces.
+- Use **canvas ingress** for `kdcube.canvas.ingress`.
+- Use **host event bus** for chat-engine outbound events to a host.
+
+## Package Exports
+
+`@kdcube/components-core` exports:
+
+| Export | Purpose |
+| --- | --- |
+| `@kdcube/components-core` | shared config/types, events, and scene helpers |
+| `@kdcube/components-core/chat` | framework-agnostic chat engine |
+| `@kdcube/components-core/scene` | scene runtime, surface registry, drop targets, host drag helpers |
+| `@kdcube/components-core/events` | event claims/client and scene transport |
+| `@kdcube/components-core/canvas` | canvas model, context types, ingress, ids |
+
+`@kdcube/components-react` exports:
+
+| Export | Purpose |
+| --- | --- |
+| `@kdcube/components-react` | shared React exports and `CanvasBoard` |
+| `@kdcube/components-react/chat` | chat provider, hooks, default UI |
+| `@kdcube/components-react/canvas` | reusable React canvas/pin-board component |
+
+## Verification
+
+```sh
+cd app/ai-app/src/kdcube-ai-app/npm/packages/components-core
+npm run typecheck
+npm run build
+npm run test:events
+npm run test:scene
+
+cd ../components-react
+npm run typecheck
+npm run build
+```
+
+## Related Platform Docs
+
+- `docs/sdk/solutions/scene/config/README.md`
+- `docs/sdk/solutions/scene/cross-surface-context-drag-README.md`
+- `docs/sdk/solutions/canvas/pin-integration-README.md`
+- `docs/sdk/solutions/ecosystem-component/components-ecosystem-README.md`
+- `docs/sdk/namespace-services/README.md`

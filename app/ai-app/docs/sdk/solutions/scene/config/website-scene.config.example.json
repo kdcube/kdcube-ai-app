@@ -1,0 +1,273 @@
+{
+  "_schema": "kdcube.scene.website.config.example.v1",
+  "_note": "Documentation example. App ids and route paths mirror the current KDCube website scene. Namespace patterns, when present, are explicit host composition policy; object behavior still goes through the objectActions gateway/provider resolver.",
+  "scene": {
+    "profiles": {
+      "local": {
+        "authProvider": {
+          "origin": "https://broodier-maxie-uninferrably.ngrok-free.dev"
+        },
+        "runtimes": {
+          "default": {
+            "origin": "https://broodier-maxie-uninferrably.ngrok-free.dev",
+            "tenant": "demo-tenant",
+            "project": "demo-project"
+          }
+        }
+      },
+      "demo-mixed": {
+        "authProvider": {
+          "origin": "https://demo.kdcube.tech"
+        },
+        "runtimes": {
+          "demo": {
+            "origin": "https://demo.kdcube.tech",
+            "tenant": "demo",
+            "project": "demo"
+          },
+          "dev": {
+            "origin": "https://dev.kdcube.tech",
+            "tenant": "demo",
+            "project": "demo-march"
+          }
+        }
+      }
+    },
+    "objectActions": {
+      "gateway": {
+        "runtime": "default",
+        "app": "versatile@2026-03-31-13-36",
+        "operation": "canvas_object_action"
+      }
+    },
+    "namespacePresentation": {
+      "runtime": "default",
+      "app": "versatile@2026-03-31-13-36",
+      "endpoint": "namespace_presentation_config",
+      "delivery": "config-handshake"
+    },
+    "contextDropTargets": {
+      "chat": {
+        "surfaceRef": "website.chat",
+        "railId": "chat",
+        "label": "Attach to chat",
+        "accepts": {
+          "attach": ["*"]
+        },
+        "dropEffect": "attach",
+        "targetSurface": "sdk.chat.context",
+        "action": "attach",
+        "providerOpen": {
+          "enabled": true,
+          "targetSurface": "sdk.chat.context",
+          "patterns": ["conv:*"],
+          "allowedTargetSurfaces": ["sdk.chat.viewer", "sdk.chat.conversation"]
+        }
+      },
+      "pinboard": {
+        "surfaceRef": "website.pinboard",
+        "railId": "pinboard",
+        "label": "Pin to board",
+        "accepts": {
+          "pin": ["*"]
+        },
+        "dropEffect": "pin",
+        "targetSurface": "sdk.canvas.pinboard",
+        "action": "pin",
+        "ingressDelivery": "pinboard.ingress"
+      },
+      "memories": {
+        "surfaceRef": "website.memories",
+        "railId": "memories",
+        "label": "Focus memory",
+        "accepts": {
+          "open": ["mem:*"]
+        },
+        "dropEffect": "open",
+        "targetSurface": "sdk.memory.viewer",
+        "action": "open"
+      },
+      "task_list": {
+        "surfaceRef": "website.task_list",
+        "railId": "task_list",
+        "label": "Open in tasks",
+        "accepts": {
+          "open": ["task:*"]
+        },
+        "dropEffect": "open",
+        "targetSurface": "task_tracker.issue_list",
+        "action": "open"
+      }
+    },
+    "components": {
+      "chat": {
+        "alias": "chat",
+        "app": "versatile@2026-03-31-13-36",
+        "runtime": "default",
+        "surfaceRef": "website.chat",
+        "targetSurfaces": ["sdk.chat.context", "sdk.chat.conversation"],
+        "title": "Chat",
+        "identity": "BUNDLE_VERSATILE_CHAT_VIEW",
+        "route": "public/widgets/versatile_chat?chat_embed_mode=host&chat_widget_id=versatile_chat&chat_config_identity=BUNDLE_VERSATILE_CHAT_VIEW&chat_brand_label=Versatile&chat_event_prefix=versatile&chat_surface=versatile_chat&chat_canvas_state_event_source_id=canvas.state&chat_canvas_focus_event_source_id=canvas.focus&bundle_id=versatile%402026-03-31-13-36",
+        "mount": { "mode": "summoned", "rail": "chat" },
+        "commands": ["attach", "open", "load-conversation"]
+      },
+      "pinboard": {
+        "alias": "pinboard",
+        "app": "versatile@2026-03-31-13-36",
+        "runtime": "default",
+        "surfaceRef": "website.pinboard",
+        "targetSurfaces": ["sdk.canvas.pinboard"],
+        "title": "Pin Board",
+        "identity": "PINBOARD_WIDGET",
+        "route": "widgets/pinboard/",
+        "mount": { "mode": "summoned", "rail": "pinboard" },
+        "commands": ["pin", "open", "focus"]
+      },
+      "memories": {
+        "alias": "memories",
+        "app": "versatile@2026-03-31-13-36",
+        "runtime": "default",
+        "surfaceRef": "website.memories",
+        "targetSurfaces": ["sdk.memory.list"],
+        "title": "Memories",
+        "identity": "MEMORIES_WIDGET",
+        "route": "widgets/memories/?view=compact&compact=1&host_controls=1&limit=2",
+        "mount": { "mode": "summoned", "rail": "memories" },
+        "commands": ["open", "create", "focus", "refresh"]
+      },
+      "memory_item": {
+        "alias": "memory_item",
+        "app": "versatile@2026-03-31-13-36",
+        "runtime": "default",
+        "surfaceRef": "website.memory_item",
+        "targetSurfaces": ["sdk.memory.viewer"],
+        "title": "Memory",
+        "identity": "MEMORIES_WIDGET",
+        "route": "widgets/memories/?single=1&host_controls=1",
+        "mount": { "mode": "summoned", "rail": "memories" },
+        "commands": ["open", "focus"]
+      },
+      "task_list": {
+        "alias": "task_list",
+        "app": "task-tracker@1-0",
+        "runtime": "default",
+        "surfaceRef": "website.task_list",
+        "targetSurfaces": ["task_tracker.issue_list", "task_tracker.tasks"],
+        "title": "KDCube Task Tracker",
+        "identity": "TASK_TRACKER_TASKS_WIDGET",
+        "route": "widgets/task_tracker_tasks/?view=compact&host_controls=1&create=1&editor=1",
+        "mount": { "mode": "summoned", "rail": "task_list" },
+        "commands": ["open", "create", "refresh", "clear"]
+      },
+      "task_wizard": {
+        "alias": "task_wizard",
+        "app": "task-tracker@1-0",
+        "runtime": "default",
+        "surfaceRef": "website.task_wizard",
+        "targetSurfaces": ["task_tracker.issue_editor"],
+        "title": "KDCube Task Editor",
+        "identity": "TASK_TRACKER_WIZARD_WIDGET",
+        "route": "widgets/task_tracker_wizard/?host_controls=1",
+        "mount": { "mode": "summoned", "rail": "task_list" },
+        "readyType": "kdcube-task-tracker-wizard-ready",
+        "closeType": "kdcube-task-tracker-wizard-close",
+        "commands": ["open", "create", "refresh", "close"]
+      },
+      "usage_card": {
+        "alias": "usage_card",
+        "app": "versatile@2026-03-31-13-36",
+        "runtime": "default",
+        "surfaceRef": "website.usage_card",
+        "targetSurfaces": ["sdk.usage.card"],
+        "title": "Usage",
+        "identity": "USAGE_CARD_WIDGET",
+        "route": "widgets/usage_card/?view=compact",
+        "mount": { "mode": "summoned", "rail": "usage" },
+        "ready": { "type": "load-timeout", "delayMs": 2500 },
+        "liveEventsTransport": "scene",
+        "interactionPlanes": ["api", "event-bus"],
+        "apiEndpoints": ["/api/economics/me/budget-breakdown"],
+        "commands": ["refresh"]
+      },
+      "stats": {
+        "alias": "stats",
+        "app": "kdcube.stats@2026-05-20-12-05",
+        "runtime": "default",
+        "surfaceRef": "website.stats",
+        "targetSurfaces": ["kdcube.stats.dashboard"],
+        "title": "KDCube Usage",
+        "identity": "KDCUBE_STATS_WIDGET",
+        "route": "public/widgets/usage",
+        "mount": { "mode": "inline", "rail": "stats" },
+        "liveEventsTransport": "scene",
+        "interactionPlanes": ["api", "event-bus", "cron"],
+        "apiEndpoints": ["operations/dashboard_data"],
+        "events": ["kdcube.stats.snapshot"],
+        "cronJobs": ["stats-project-snapshot-broadcaster"]
+      },
+      "news": {
+        "alias": "news",
+        "app": "news@2026-05-20-12-05",
+        "runtime": "default",
+        "surfaceRef": "website.news",
+        "targetSurfaces": ["kdcube.news.preview"],
+        "title": "Industry News",
+        "identity": "KDCUBE_NEWS_WIDGET",
+        "route": "public/widgets/news_preview",
+        "mount": { "mode": "inline", "rail": "news" },
+        "liveEventsTransport": "scene",
+        "interactionPlanes": ["api", "mcp", "event-bus", "cron"]
+      }
+    },
+    "surfaceCommandContracts": {
+      "chat.context": {
+        "alias": "chat",
+        "targetSurfaces": ["sdk.chat.context"],
+        "action": "attach"
+      },
+      "chat.conversation": {
+        "alias": "chat",
+        "targetSurfaces": ["sdk.chat.viewer", "sdk.chat.conversation"],
+        "action": "open"
+      },
+      "canvas.pinboard": {
+        "alias": "pinboard",
+        "targetSurfaces": ["sdk.canvas.pinboard"],
+        "action": "pin"
+      },
+      "memory.record.viewer": {
+        "alias": "memory_item",
+        "targetSurfaces": ["sdk.memory.viewer"],
+        "action": "open"
+      },
+      "task.issue.list": {
+        "alias": "task_list",
+        "targetSurfaces": ["task_tracker.issue_list", "task_tracker.tasks"],
+        "action": "open"
+      },
+      "task.issue.editor": {
+        "alias": "task_wizard",
+        "targetSurfaces": ["task_tracker.issue_editor"],
+        "action": "open",
+        "readyType": "kdcube-task-tracker-wizard-ready",
+        "closeType": "kdcube-task-tracker-wizard-close",
+        "pending": true
+      },
+      "usage.card": {
+        "alias": "usage_card",
+        "targetSurfaces": ["sdk.usage.card"],
+        "action": "refresh"
+      }
+    },
+    "viewCommandContracts": {
+      "memories": {
+        "setViewType": "kdcube-set-view"
+      },
+      "task_tracker_tasks": {
+        "widget": "task_tracker_tasks",
+        "setViewType": "kdcube-set-view"
+      }
+    }
+  }
+}

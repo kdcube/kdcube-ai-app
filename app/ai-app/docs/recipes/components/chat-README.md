@@ -89,7 +89,8 @@ A scene should declare chat as a context drop target:
 
 ## Current Gaps
 
-- The common context chip and drag helpers should move fully into shared component packages.
+- Context chip and drag helpers now live in shared component packages; remaining
+  chat-specific wiring should stay thin and host-driven.
 - Chat-local filtering for accounting events should use stable agent/session identity metadata as multi-agent flows expand.
 
 ## Related Docs
@@ -98,6 +99,6 @@ A scene should declare chat as a context drop target:
 - [Component Recipes](./README.md)
 - [Components Ecosystem Architecture](../../sdk/solutions/ecosystem-component/components-ecosystem-README.md)
 - [Chat Widget Solution](../../sdk/solutions/chat/chat-widget-solution-README.md)
-- [Context Pin Contract](../../sdk/npm/components-core/context-pin-contract-README.md)
+- [Context Drag And Canvas Ingress](../../sdk/npm/components-core/context-drag-README.md)
 - [Host Event Bus](../../sdk/npm/components-core/host-event-bus-README.md)
 - [React Event Blocks](../../sdk/agents/react/event-blocks-README.md)

@@ -1,22 +1,26 @@
 ---
 id: repo:kdcube-ai-app/app/ai-app/docs/sdk/npm/components-core/chat-engine-README.md
-title: "Chat Engine (createChatEngine)"
-summary: "The framework-agnostic chat controller from @kdcube/components-core/chat: construct with EngineConfig, drive chat via methods (send/steer/loadConversation/…), read state via getState/subscribe and engine status via getStatus/subscribeStatus, and react to bubbled host events. The widget's useChatEngine orchestration minus React."
-status: design
+title: "Chat Engine"
+summary: "The framework-agnostic chat controller from @kdcube/components-core/chat: state, transport, conversation lifecycle, context chips, and host events without React or iframe coupling."
+status: implementation
 tags: ["sdk", "npm", "components-core", "chat", "createChatEngine", "controller", "headless"]
-updated_at: 2026-06-16
+updated_at: 2026-06-23
 keywords:
   [
     "createChatEngine",
     "ChatEngine",
     "headless chat controller",
     "send steer loadConversation",
-    "getStatus subscribeStatus",
+    "host event bus",
     "chat state machine",
   ]
 ---
 
-# Chat Engine — `createChatEngine`
+# Chat Engine
+
+`@kdcube/components-core/chat` exports `createChatEngine(config)`, a headless
+controller for chat state, transport, conversation lifecycle, context chips, and
+host events.
 
 ```ts
 import { createChatEngine } from '@kdcube/components-core/chat'
@@ -26,46 +30,45 @@ const engine = createChatEngine({
 })
 ```
 
-A vanilla controller that owns the RTK store + transport + orchestration lifted from
-the widget's `useChatEngine.tsx` — the send-queue, reconnect, conversation lifecycle,
-and service-event handling are unchanged. What's different from the widget: the
-`settings` singleton is replaced by the injected config (see
-[engine-config](./engine-config-README.md)), and `host.ts` postMessage is replaced by
-the [host event bus](./host-event-bus-README.md). The engine boots on creation and
-re-resolves auth via `refreshAuth()`.
+`bundleId` is the current TypeScript/API field name. In product-facing docs this
+means the app id/version the chat engine talks to.
 
-## Controller surface
+The engine owns no DOM, login UI, iframe bridge, or router. It emits host events
+and the host decides how to render, route, authenticate, and compose surfaces.
+
+## Controller Surface
 
 ```ts
 interface ChatEngine {
-  readonly store: ChatStore             // RTK store (react-redux binds to it)
+  readonly store: ChatStore
   readonly bundleId: string
 
-  getState(): ChatState                 // the Redux chat state
+  getState(): ChatState
   subscribe(listener: () => void): () => void
-  getStatus(): ChatEngineStatus         // engine-level: ready/authed/bootError/hostView/dryRun
+  getStatus(): ChatEngineStatus
   subscribeStatus(listener: () => void): () => void
-  on(event, handler): () => void        // host event bus
+  on(event, handler): () => void
 
-  refreshAuth(): void                   // host calls after an external login change
+  refreshAuth(): void
 
   send(text?, eventType?): void
   steer(): void
   loadConversation(id): void
   newChat(): void
-  deleteConversation(conversation): void // host confirms first; engine does not prompt
+  deleteConversation(conversation): void
   refreshConversations(): void
 
   attachContext(items): void
-  removeContext(ids): void
-  openContextChip(context): void        // resolves capabilities → emits 'object-open' or downloads
+  removeContext(ids, opts?): void
+  openContextChip(context): void
   downloadFile(ref, filename?, mime?): void
   submitFeedback(turnId, reaction, text?): void
 
   handleReconnect(): void
-  pinConversationToCanvas(): void       // emits 'pin-conversation'
-  promptLogin(): void                   // emits 'unauthorized'
-  setHostView(next): void               // emits 'view-change'
+  pinConversationToCanvas(): void
+  promptLogin(): void
+  setHostView(next, opts?): void
+  setBootError(value): void
   setDryRunEnabled(value): void
   clearDryRunPreview(): void
 
@@ -73,26 +76,43 @@ interface ChatEngine {
 }
 ```
 
-## State vs. status
+## State vs Status
 
-- **`getState()` / `subscribe()`** — the Redux `ChatState` (turns, banners, composer,
-  conversations, connection, feedback). Use selectors in React via `useChatState`.
-- **`getStatus()` / `subscribeStatus()`** — engine-level state that is *not* in Redux:
-  `{ ready, authed, bootError, hostView, dryRun }`.
+- `getState()` / `subscribe()` expose Redux `ChatState`: turns, composer,
+  banners, conversations, attached context, feedback, and connection state.
+- `getStatus()` / `subscribeStatus()` expose engine-level state outside Redux:
+  boot readiness, auth state, host view, and dry-run preview status.
 
-## Multi-instance
+React hosts normally consume this through
+[`@kdcube/components-react/chat`](../components-react/README.md).
 
-Each `createChatEngine` builds its own store (a factory, not a module singleton), so
-a page can host more than one chat.
+## Host Boundary
 
-## Host responsibilities
+The engine does not call `window.parent.postMessage`. It emits typed events on the
+[host event bus](./host-event-bus-README.md):
 
-The engine has no `window` listeners and shows no login/confirm UI. The host:
+```ts
+engine.on('unauthorized', () => showLogin())
+engine.on('object-open', ({ ref }) => openInScene(ref))
+engine.on('pin-conversation', (payload) => pinConversation(payload))
+```
 
-- calls methods in response to its own input (`loadConversation`, `attachContext`,
-  `removeContext`, `setHostView`, `refreshAuth`);
-- reacts to [bubbled events](./host-event-bus-README.md) (`unauthorized`, `object-open`,
-  `pin-conversation`, `canvas-patch`, …);
-- confirms destructive actions (e.g. before `deleteConversation`).
+The reverse direction is method calls:
 
-React hosts get all of this wrapped by [`@kdcube/components-react/chat`](../components-react/README.md).
+```ts
+engine.attachContext(contexts)
+engine.loadConversation(conversationId)
+engine.refreshAuth()
+```
+
+## Context
+
+Chat treats attached context as object refs plus display/provenance metadata. It
+does not own provider objects. Opening a context chip asks the host/resolver path
+to decide what the object can do.
+
+## Multi-Instance
+
+Each `createChatEngine` call creates its own store and transport state. A page can
+host multiple chat engines when it deliberately wants independent chat instances.
+

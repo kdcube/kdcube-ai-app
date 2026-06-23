@@ -1,102 +1,109 @@
 ---
 id: repo:kdcube-ai-app/app/ai-app/docs/sdk/npm/components-react/README.md
 title: "@kdcube/components-react"
-summary: "The React bindings package: thin adapters over @kdcube/components-core. @kdcube/components-react/chat exports ChatStoreProvider (owns one engine + provides its RTK store via react-redux), useChatEngine, useChatState, and useChatStatus. All behaviour lives in the core; this is React idiom only."
+summary: "React bindings and reusable UI over @kdcube/components-core: chat provider/hooks/default UI and the CanvasBoard pin-board component."
 status: implementation
-tags: ["sdk", "npm", "components-react", "react", "hooks", "provider", "chat"]
-updated_at: 2026-06-16
+tags: ["sdk", "npm", "components-react", "react", "hooks", "provider", "chat", "canvas"]
+updated_at: 2026-06-23
 keywords:
   [
     "@kdcube/components-react",
     "ChatStoreProvider",
+    "Chat",
+    "CanvasBoard",
     "useChatEngine",
     "useChatState",
-    "useChatStatus",
-    "react-redux provider",
   ]
 ---
 
 # `@kdcube/components-react`
 
-Thin React adapters over `@kdcube/components-core`. Most behaviour lives in core or
-the component's explicit host callbacks; this package provides React providers,
-hooks, and React-hosted components. Peer deps: `react`, `react-dom`.
+`@kdcube/components-react` is the React layer over
+[`@kdcube/components-core`](../components-core/README.md). It should stay thin:
+core owns contracts and runtime behavior; React owns providers, hooks, rendering,
+and DOM event wiring.
 
-## `@kdcube/components-react/chat`
+## Exports
+
+| Export | Purpose |
+| --- | --- |
+| `@kdcube/components-react` | Shared React export surface. |
+| `@kdcube/components-react/chat` | `ChatStoreProvider`, hooks, `Chat`, `ChatShell`, `useChatViewModel`. |
+| `@kdcube/components-react/canvas` | `CanvasBoard` plus re-exported core canvas types/helpers. |
+
+## Chat
 
 ```tsx
 import {
-  ChatStoreProvider, useChatEngine, useChatState, useChatStatus,
+  Chat,
+  ChatStoreProvider,
+  useChatEngine,
+  useChatState,
+  useChatStatus,
 } from '@kdcube/components-react/chat'
 
 function App() {
   return (
     <ChatStoreProvider config={{ connection: { baseUrl, tenant, project, bundleId } }}>
-      <MyChatUI />
+      <Chat namespaceStyles={namespaceStyles} />
     </ChatStoreProvider>
   )
 }
-
-function MyChatUI() {
-  const engine = useChatEngine()
-  const turns  = useChatState(s => s.turns)
-  const { authed, hostView } = useChatStatus()
-  useEffect(() => engine.on('unauthorized', showLogin), [engine])
-  return <button onClick={() => engine.send('hi')}>send</button>
-}
 ```
 
-| Export | What |
+The provider creates one core chat engine instance and exposes its Redux store.
+Multiple providers mean multiple isolated chat engines.
+
+| Export | Purpose |
 | --- | --- |
-| `ChatStoreProvider` | Creates one `createChatEngine(config)` per instance, disposes on unmount, and wraps children in a react-redux `<Provider store={engine.store}>`. Multiple providers per page = multiple isolated chats. |
-| `useChatEngine()` | The controller — methods + the event bus. Throws outside a provider. |
-| `useChatState(selector?)` | Subscribe to the Redux `ChatState` with an optional selector. |
-| `useChatStatus(selector?)` | Subscribe to engine status (`ready`/`authed`/`bootError`/`hostView`/`dryRun`). |
+| `ChatStoreProvider` | Creates/disposes a `createChatEngine(config)` instance and wraps children in a Redux provider. |
+| `useChatEngine()` | Returns the controller: methods plus host event bus. |
+| `useChatState(selector?)` | Subscribes to Redux chat state. |
+| `useChatStatus(selector?)` | Subscribes to engine status outside Redux. |
+| `Chat` / `ChatShell` | Reference React chat UI over the engine view model. |
 
-Everything the engine can do (config, the controller surface, the event bus) is in the
-core docs: [`../components-core/README.md`](../components-core/README.md).
+`bundleId` is the current field name in the TypeScript config and backend API. In
+app-builder language, treat it as the app id/version.
 
-## `@kdcube/components-react/canvas`
+## Canvas
 
 ```tsx
 import { CanvasBoard } from '@kdcube/components-react/canvas'
 ```
 
-`CanvasBoard` is the reusable React board component used by the standalone
-pinboard widget and the versatile scene. Hosts provide the storage/operation
-callbacks:
+`CanvasBoard` is the reusable React pin-board component. It renders boards and
+cards, but the host supplies every stateful or ecosystem-facing operation:
 
-- `patchCanvas`, `readCanvas`
+- `readCanvas` / `patchCanvas`
 - `onDropFiles`, `onDropText`, `onDropContext`, `onDropIngress`
 - `onObjectAction`
-- optional `getBrokeredDrop` / `onBrokeredDropHandled` for scene-brokered drops
-- `namespaceStyles` from the app/scene namespace presentation config
+- optional `onSearchPins`
+- optional scene-brokered drop callbacks
+- `namespaceStyles` from provider/scene presentation config
 
-The component does not fetch namespace colors or resolve provider objects by
-itself. Those remain host/runtime responsibilities.
+`CanvasBoard` must not decide that `mem:*`, `task:*`, `conv:*`, or any future
+namespace opens in a specific place. It shows card metadata and delegates object
+actions to the supplied resolver callback.
 
-## Namespace Styles
+## Namespace Presentation
 
-The default chat shell accepts `namespaceStyles`, the same app-level namespace
-presentation map used by other scene surfaces:
+`namespaceStyles` is cosmetic presentation supplied by the app/scene runtime, usually
+from the same provider presentation config used by other surfaces:
 
 ```tsx
-<Chat
-  namespaceStyles={{
-    mem: { label: 'Memory', color: '#159947', background: '#eaf8ef' },
-    task: { label: 'Task', color: '#2563eb', background: '#eff6ff' },
-  }}
-/>
+<Chat namespaceStyles={namespaceStyles} />
+<CanvasBoard namespaceStyles={namespaceStyles} {...boardProps} />
 ```
 
-The map is keyed by root namespace. Chat applies it to context chips, named
-service search results, composer attachments, and turn overview/follow-up
-rendering through the core helpers. The package does not fetch this map from an
-iframe or from canvas; the host/app runtime supplies it from the same config that
-other mounted surfaces receive.
+The map can be keyed by provider namespace or scoped object kind. It may control
+label, color, background, border, focus, and icon metadata. It must not control
+routing or object behavior.
 
-## Build / verify
+## Build
 
 ```sh
-cd app/ai-app/src/kdcube-ai-app/npm/packages/components-react && npx tsc --noEmit && npx tsup
+cd app/ai-app/src/kdcube-ai-app/npm/packages/components-react
+npm run typecheck
+npm run build
 ```
+

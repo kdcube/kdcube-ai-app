@@ -1,87 +1,77 @@
 ---
 id: repo:kdcube-ai-app/app/ai-app/docs/sdk/npm/components-core/README.md
 title: "@kdcube/components-core"
-summary: "The headless, framework-agnostic package: per-component engines (chat today), the host event bus, the engine config/auth contract, and the cross-component context-pin contract. Redux is an internal detail; the public API is a vanilla controller."
+summary: "Headless package for shared KDCube component contracts: chat engine, scene runtime, event claims/client, canvas pin-board model/ingress, and host-facing event/config types."
 status: implementation
-tags: ["sdk", "npm", "components-core", "headless", "vanilla-controller", "redux"]
-updated_at: 2026-06-16
+tags: ["sdk", "npm", "components-core", "headless", "scene", "events", "canvas", "chat"]
+updated_at: 2026-06-23
 keywords:
   [
     "@kdcube/components-core",
-    "createChatEngine",
-    "vanilla controller",
-    "headless engine",
-    "subpath exports",
-    "redux internal",
+    "scene runtime",
+    "event claims",
+    "canvas ingress",
+    "chat engine",
+    "headless package",
   ]
 ---
 
 # `@kdcube/components-core`
 
-The headless layer. No React, no DOM host, no iframe assumptions. Depends only on
-`@reduxjs/toolkit` and `socket.io-client`.
+`@kdcube/components-core` is the framework-free contract layer. It has no React
+dependency and no assumption that the host is an iframe, website, or KDCube
+widget. It defines the protocols and small runtimes that let app surfaces
+interoperate.
 
-## The vanilla-controller principle
+## Exports
 
-Redux Toolkit stays **inside** the package as the state container (reducers +
-devtools). The **public** API is a small controller — not "Redux you must learn":
+| Import | What it provides |
+| --- | --- |
+| `@kdcube/components-core` | shared config/types plus root re-exports for events and scene |
+| `@kdcube/components-core/chat` | `createChatEngine`, chat state, transport, context helpers |
+| `@kdcube/components-core/scene` | scene runtime, surface registry, drop targets, host drag helpers |
+| `@kdcube/components-core/events` | component event claims/client and scene transport |
+| `@kdcube/components-core/canvas` | canvas model, context types, ids, ingress packet helpers |
 
-```ts
-const engine = createChatEngine({ connection: { baseUrl, tenant, project, bundleId } })
-engine.subscribe(render)          // state changes
-engine.send('hello')              // methods
-engine.on('unauthorized', login)  // host event bus
-engine.dispose()
+## Documents
+
+- [Scene](./scene-README.md)
+- [Canvas pin board](./canvas-pin-board-README.md)
+- [Component events](./events-README.md)
+- [Context drag and canvas ingress](./context-drag-README.md)
+- [Chat engine](./chat-engine-README.md)
+- [Host event bus](./host-event-bus-README.md)
+- [Engine config](./engine-config-README.md)
+
+## Boundary
+
+Core may normalize transport envelopes and route by configured target surfaces.
+It must not learn provider object semantics.
+
+```text
+allowed in core:
+  parse kdcube.canvas.ingress shape
+  normalize context drag refs
+  call injected objectAction(open)
+  maintain scene drop-target config
+  expose event claim client
+
+not allowed in core:
+  decide what mem:/task:/conv: means
+  infer open/download behavior from kind
+  fetch namespace presentation by itself
+  declare component subscriptions for a widget
 ```
 
-React binds to it (`@kdcube/components-react`), Angular wraps it in a service, plain
-JS calls it directly — none need to know Redux.
+Namespace presentation, object actions, and ReAct rendering are provider/app
+responsibilities. Core carries refs and calls the configured resolver paths.
 
-## Subpath exports
-
-| Import | What |
-| --- | --- |
-| `@kdcube/components-core` | shared: host event bus, `EngineConfig`/auth, the context-pin contract |
-| `@kdcube/components-core/chat` | the chat engine: `createChatEngine`, protocol types, store/slice/reducers, transport |
-| `@kdcube/components-core/scene` | headless scene runtime: surface registry, object-open dispatch, context-drag broker |
-
-## Namespace Presentation Helpers
-
-Namespace colors are app-owned presentation metadata, not chat-owned or
-canvas-owned state. The core chat export therefore includes small, headless
-helpers for deriving presentation from a context item:
-
-- `NamespaceStyleMap` / `NamespaceVisualStyle`
-- `contextNamespace(context)`
-- `namespaceStyleVars(namespace, namespaceStyles)`
-- `contextChipStyle(context, namespaceStyles)`
-- `contextChipClass(context)`
-
-The helpers only turn an already-supplied namespace style map into CSS variable
-values and stable classes. They do not fetch config, resolve objects, or invent
-fallback colors. A host, scene, or widget must pass the namespace style map from
-its app/runtime configuration.
-
-## Concepts
-
-- [Chat engine](./chat-engine-README.md) — `createChatEngine(config)`: the controller
-  surface (send/steer/loadConversation/…), state + status access, lifecycle.
-- [Engine config & auth](./engine-config-README.md) — `EngineConfig` (connection +
-  cookie/token auth) and `EngineRuntime`; the `settings`-singleton replacement.
-- [Host event bus](./host-event-bus-README.md) — the typed events the engine bubbles
-  (`unauthorized`, `object-open`, `view-change`, …) so any host reacts.
-- [Context-pin contract](./context-pin-contract-README.md) — `ContextItem` +
-  `buildContextDrag` / `parseContextDrop`: one shape for "a draggable object ref".
-- Scene runtime — `createSceneRuntime()` registers target surfaces and routes
-  provider `ui_event.target_surface` responses. `createContextDragBroker()`
-  normalizes canonical `kdcube-context-drag-start/end`, matches drop targets by
-  root namespace, delivers local `pin`/`attach` drops, and calls provider-backed
-  `object.action(open)` for owning-surface drops.
-
-## Build / verify
+## Verification
 
 ```sh
-cd app/ai-app/src/kdcube-ai-app/npm && npm install
-cd packages/components-core && npx tsc --noEmit && npx tsup   # typecheck + build dist
-npm run test:scene                                           # scene runtime broker tests
+cd app/ai-app/src/kdcube-ai-app/npm/packages/components-core
+npm run typecheck
+npm run build
+npm run test:events
+npm run test:scene
 ```

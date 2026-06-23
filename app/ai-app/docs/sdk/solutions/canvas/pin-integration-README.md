@@ -343,8 +343,8 @@ path documented in
 
 ## Chat Context Batch
 
-> The drag/drop payload shape for context pins (one envelope, `ref` the single uri
-> field) is the [context-pin contract](../../npm/components-core/context-pin-contract-README.md)
+> The drag/drop payload shape for object refs and pin-board ingress is documented in
+> [context drag and canvas ingress](../../npm/components-core/context-drag-README.md)
 > in `@kdcube/components-core`.
 
 When the user sends a chat request with context attached, that context must be

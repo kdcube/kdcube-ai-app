@@ -1,0 +1,248 @@
+# Documentation example for backend config that supports a scene.
+# Runtime descriptors still use the internal key "bundles"; public docs should
+# describe these participants as apps.
+
+bundles:
+  version: "1"
+  default_bundle_id: versatile@2026-03-31-13-36
+  items:
+    - id: versatile@2026-03-31-13-36
+      name: Versatile
+      module: entrypoint
+      singleton: false
+      config:
+        ui:
+          widgets:
+            versatile_chat:
+              surface: sdk.chat.context
+              route: public/widgets/versatile_chat
+            pinboard:
+              surface: sdk.canvas.pinboard
+              route: widgets/pinboard/
+            memories:
+              surface: sdk.memory.list
+              route: widgets/memories/
+            usage_card:
+              surface: sdk.usage.card
+              route: widgets/usage_card/
+          scene:
+            canvas:
+              resolvers:
+                - kind: named_service
+                  namespace: mem
+                  enabled: true
+                  discovery:
+                    mode: service_discovery
+                  allowed:
+                    - object.resolve
+                    - object.action
+                - kind: named_service
+                  namespace: task
+                  enabled: true
+                  discovery:
+                    mode: service_discovery
+                  allowed:
+                    - object.resolve
+                    - object.action
+        react:
+          default_agent:
+            tools:
+              - kind: named_service
+                alias: named_services
+                namespaces:
+                  mem:
+                    # Existing mem: refs should be pulled through react.pull/read
+                    # policies. Model-callable named-service tools expose search,
+                    # schema, action, mutation, and deletion.
+                    allowed:
+                      - provider.about
+                      - object.list
+                      - object.search
+                      - object.schema
+                      - object.upsert
+                      - object.action
+                      - object.delete
+                    # Namespace overrides are part of the harness contract. Memory
+                    # writes/actions are neutral because they update durable user
+                    # memory but are not final answer/product creation.
+                    tool_traits:
+                      upsert_object:
+                        strategy:
+                          - neutral
+                      object_action:
+                        strategy:
+                          - neutral
+                  task:
+                    # object.get is intentionally not exposed as a direct model
+                    # tool. Existing task: refs are bound through react.pull/read;
+                    # the pull policy calls provider object.get and materializes a
+                    # readable artifact/snapshot.
+                    allowed:
+                      - provider.about
+                      - object.list
+                      - object.search
+                      - object.schema
+                      - object.upsert
+                      - object.host_file
+                      - object.delete
+                  cnv:
+                    # Canvas is exposed to ReAct as a normal namespace service.
+                    # The provider schema explains typed mutation objects such as
+                    # canvas.card, canvas.card.comment, canvas.card.replacement,
+                    # canvas.card.deletion_suggestion, canvas.card.delete,
+                    # canvas.card.layout, and canvas.operation_batch.
+                    allowed:
+                      - provider.about
+                      - object.search
+                      - object.schema
+                      - object.upsert
+                    tool_traits:
+                      upsert_object:
+                        strategy:
+                          - exploitation
+                # Generic named-service tool aliases need strategy traits so the
+                # ReAct harness can correctly classify exploration versus
+                # exploitation across namespace services.
+                tool_traits:
+                  provider_about:
+                    strategy:
+                      - exploration
+                  list_objects:
+                    strategy:
+                      - exploration
+                  search_objects:
+                    strategy:
+                      - exploration
+                  object_schema:
+                    strategy:
+                      - exploration
+                  upsert_object:
+                    strategy:
+                      - exploitation
+                  object_action:
+                    strategy:
+                      - exploitation
+                  host_file:
+                    strategy:
+                      - exploitation
+                  delete_object:
+                    strategy:
+                      - exploitation
+            event_sources:
+              - kind: named_service
+                namespace: mem
+                enabled: true
+                discovery:
+                  mode: service_discovery
+                policies:
+                  block_production:
+                    mode: provider
+                    operation: block.produce
+                  pull:
+                    mode: provider
+                    operation: object.get
+              - kind: named_service
+                namespace: task
+                enabled: true
+                discovery:
+                  mode: service_discovery
+                policies:
+                  block_production:
+                    mode: provider
+                    operation: block.produce
+                  pull:
+                    mode: provider
+                    operation: object.get
+
+    - id: task-tracker@1-0
+      name: Task Tracker
+      module: entrypoint
+      singleton: false
+      config:
+        ui:
+          widgets:
+            task_tracker_tasks:
+              surface: task_tracker.issue_list
+              route: widgets/task_tracker_tasks/
+            task_tracker_wizard:
+              surface: task_tracker.issue_editor
+              route: widgets/task_tracker_wizard/
+        named_services:
+          providers:
+            - provider: sdk.task
+              namespaces:
+                - task
+              operations:
+                - provider.about
+                - object.list
+                - object.search
+                - object.schema
+                - object.get
+                - object.upsert
+                - object.host_file
+                - object.resolve
+                - object.action
+                - block.produce
+        events:
+          produces:
+            - task_tracker.task.changed
+
+    - id: news@2026-05-20-12-05
+      name: News
+      module: entrypoint
+      singleton: false
+      config:
+        ui:
+          widgets:
+            news_preview:
+              surface: kdcube.news.preview
+              route: public/widgets/news_preview
+            kdcube_news:
+              surface: kdcube.news.kdcube
+              route: public/widgets/kdcube_news
+        api:
+          operations:
+            - news_search
+            - news_article
+        mcp:
+          enabled: true
+        events:
+          claims:
+            - news.refresh
+
+    - id: kdcube.stats@2026-05-20-12-05
+      name: KDCube Stats
+      module: entrypoint
+      singleton: false
+      config:
+        ui:
+          widgets:
+            usage:
+              surface: kdcube.stats.dashboard
+              route: public/widgets/usage
+        api:
+          operations:
+            - dashboard_data
+        events:
+          consumes:
+            - accounting.usage
+          produces:
+            - kdcube.stats.snapshot
+        cron:
+          jobs:
+            - alias: stats-project-snapshot-broadcaster
+              method: scheduled_project_snapshot_broadcaster
+              span: system
+              schedule: "* * * * *"
+
+    - id: knowledge@1-0
+      name: Knowledge
+      module: entrypoint
+      singleton: true
+      config:
+        mcp:
+          enabled: true
+          tools:
+            - search
+            - read
+            - graph

@@ -20,6 +20,7 @@ keywords:
   ]
 see_also:
   - docs/sdk/solutions/ecosystem-component/components-ecosystem-README.md
+  - docs/sdk/solutions/scene/config/README.md
   - docs/sdk/solutions/scene/scene-composition-README.md
   - docs/sdk/solutions/scene/scene-event-orchestration-README.md
   - docs/sdk/solutions/scene/cross-surface-context-drag-README.md
@@ -34,6 +35,11 @@ strict than the current landing-page implementation. Use it as the gold
 standard when refactoring the website scene, when extracting scene logic into
 `@kdcube/components-core/scene`, and when writing app recipes for scene
 composition.
+
+Concrete frontend and backend config examples live in
+[`config/`](config/README.md). Those examples are the first place to check when
+deciding whether a scene behavior belongs in host code, app config, component
+claims, or provider policy.
 
 The target scene is a config-driven browser composition layer. It connects UI
 components from several apps without embedding memory, task, canvas, chat,

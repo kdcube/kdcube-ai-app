@@ -1,60 +1,64 @@
 ---
 id: repo:kdcube-ai-app/app/ai-app/docs/sdk/npm/components-core/host-event-bus-README.md
 title: "Host Event Bus"
-summary: "The decoupling seam: a typed event emitter (engine.on(...)) the engine uses to bubble server- and component-originated control events (unauthorized, object-open, view-change, pin-conversation, canvas-patch, context-removed, …) to ANY host, instead of reaching for window.parent.postMessage. Replaces the widget's host.ts."
-status: design
-tags: ["sdk", "npm", "components-core", "events", "host", "postMessage", "decoupling"]
-updated_at: 2026-06-16
+summary: "Typed outbound events from a component engine to its host: unauthorized, object-open, view-change, pin-conversation, canvas-patch, context-removed, service-notice, connection, ready, and error."
+status: implementation
+tags: ["sdk", "npm", "components-core", "events", "host", "chat", "scene"]
+updated_at: 2026-06-23
 keywords:
   [
     "host event bus",
     "engine.on",
-    "unauthorized object-open view-change",
-    "pin-conversation canvas-patch context-removed",
     "HostEventMap",
-    "postMessage replacement",
+    "object-open",
+    "pin-conversation",
+    "canvas-patch",
   ]
 ---
 
 # Host Event Bus
 
-The engine never reaches for `window.parent.postMessage`, a router, or a login modal
-directly. It **emits typed events**; the host subscribes via `engine.on(...)` and
-decides what to do. The iframe/scene widget maps these to `postMessage`; a website
-maps them to its own handlers. Same contract, different transport — this is what
-replaces the widget's `host.ts` and makes "any host" work.
+The host event bus is the outbound control channel from an engine to its host.
+The engine emits; the host reacts. The engine does not know whether the host is a
+website scene, iframe adapter, React page, or another shell.
 
 ```ts
-const off = engine.on('unauthorized', () => showLogin())
-// …
-off()  // unsubscribe
+const off = engine.on('object-open', ({ ref }) => openInScene(ref))
+off()
 ```
 
-## Events (`HostEventMap`)
+## Events
 
-| Event | Payload | Replaces (widget) | Host does |
-| --- | --- | --- | --- |
-| `unauthorized` | `{ status?, reason? }` | `requestAuthRequired()` | show login |
-| `object-open` | `{ ref }` | `kdcube-object-open` postMessage | open the referenced surface |
-| `view-change` | `{ view }` | `requestHostView()` | resize/overlay, or ignore |
-| `pin-conversation` | `{ conversationId, title?, ref? }` | `kdcube-pin-conversation` | pin to a board/canvas |
-| `canvas-patch` | `{ event }` | canvas-patch postMessage forward | forward to a board |
-| `context-removed` | `{ ids }` | context-remove postMessage | sync the source surface |
-| `service-notice` | `{ text, tone, kind? }` | in-widget banner | optionally react (e.g. billing) |
-| `connection` / `ready` / `error` | — | internal state | observe/log |
+| Event | Payload | Host responsibility |
+| --- | --- | --- |
+| `unauthorized` | `{ status?, reason? }` | Show login or refresh credentials. |
+| `object-open` | `{ ref }` | Resolve/open a referenced object through scene/provider routing. |
+| `view-change` | `{ view }` | Resize, dock, expand, or ignore. |
+| `pin-conversation` | `{ conversationId, title?, ref?, context?, contexts? }` | Convert the active chat context into canvas ingress/pin action. |
+| `canvas-patch` | `{ event }` | Forward a backend canvas patch event to a board if the host has one mounted. |
+| `context-removed` | `{ ids }` | Sync context-chip removal back to source surfaces if needed. |
+| `service-notice` | `{ text, tone, kind? }` | Show or log a user-facing notice. |
+| `connection` | `{ status, detail? }` | Observe transport state. |
+| `ready` | `{}` | Observe engine readiness. |
+| `error` | `{ error, fatal?, context? }` | Log or surface non-fatal/fatal engine errors. |
 
-The map is the single source of truth — every new host-actionable signal gets a key
-here so all adapters stay type-checked.
+## Inbound Direction
 
-## Inbound direction
+Host-to-engine control is not another event bus. The host calls methods:
 
-Events are **outbound** (engine → host). The reverse — host telling the engine what to
-do — is plain method calls: `loadConversation`, `attachContext`, `removeContext`,
-`setHostView`, `refreshAuth`. An iframe host-adapter wires both directions:
-`engine.on(...)` → `postMessage`, and inbound `postMessage` → engine methods.
+```ts
+engine.loadConversation(id)
+engine.attachContext(items)
+engine.removeContext(ids)
+engine.setHostView('expanded')
+engine.refreshAuth()
+```
 
-## Auth & events together
+Iframe or scene adapters may translate postMessage or scene commands into those
+method calls, but the core engine contract remains method-based.
 
-Login is external (see [engine config & auth](./engine-config-README.md)); the engine
-only signals. On a 401/403 it emits `unauthorized` — the host shows login, then calls
-`engine.refreshAuth()`.
+## Relation To Scene
+
+The scene has its own runtime/event bus for mounted surfaces. The host event bus is
+local to a component engine. A scene adapter may bridge `object-open` or
+`pin-conversation` into scene surface commands or `kdcube.canvas.ingress`.

@@ -243,9 +243,10 @@ argument should I use for search?" path.
                drag  -> normal context attach/pin path
 ```
 
-> The "normal context attach/pin path" means each result row is dragged as a
-> [context pin](../npm/components-core/context-pin-contract-README.md): one envelope
-> with the native uri in `ref`, so it opens/pins natively rather than as a generic object.
+> The "normal context attach/pin path" means each result row is dragged through
+> [context drag / canvas ingress](../npm/components-core/context-drag-README.md):
+> one canonical object ref flows through the host, so it opens/pins natively
+> rather than as a generic object.
 
 The base namespace in `namespaces applicable` remains the policy boundary. The
 provider search scopes beneath it are valid `namespace` arguments for

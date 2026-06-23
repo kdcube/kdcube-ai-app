@@ -103,4 +103,4 @@ The widget can run standalone by opening its own runtime connections. In a scene
 - [Canvas Module Guide](../../sdk/solutions/canvas/canvas-module-guide-README.md)
 - [Pin Integration](../../sdk/solutions/canvas/pin-integration-README.md)
 - [Canvas Search Operations](../../sdk/solutions/canvas/search-operations-README.md)
-- [Context Pin Contract](../../sdk/npm/components-core/context-pin-contract-README.md)
+- [Context Drag And Canvas Ingress](../../sdk/npm/components-core/context-drag-README.md)
