@@ -794,12 +794,12 @@ def build_announce_workspace_lines(
             return [], 0
         return rels[:cap], len(rels)
 
-    def _render_files_namespace(root_path: pathlib.Path, *, is_current: bool) -> None:
+    def _render_files_namespace(out: List[str], root_path: pathlib.Path, *, is_current: bool) -> None:
         files_root = root_path / "files"
         children = _direct_children(files_root)
-        if not children and not is_current:
+        if not children:
             return
-        lines.append("    files/")
+        out.append("    files/")
         for child in children:
             name = child.name
             ann = []
@@ -809,35 +809,32 @@ def build_announce_workspace_lines(
                 ann.append("MODIFIED this turn")
             suffix = ("      \u2014 " + " \u00b7 ".join(ann)) if ann else ""
             marker = "/" if child.is_dir() else ""
-            lines.append(f"      {name}{marker}{suffix}")
-        if is_current and not children:
-            lines.append("      (empty)")
+            out.append(f"      {name}{marker}{suffix}")
 
-    def _render_recursive_namespace(ns_path: pathlib.Path, *, is_current: bool) -> None:
+    def _render_recursive_namespace(out: List[str], ns_path: pathlib.Path, *, is_current: bool) -> None:
         name = ns_path.name
         if name in {".git", "__pycache__"}:
             return
         if ns_path.is_file():
-            lines.append(f"    {name}")
+            out.append(f"    {name}")
             return
         if not ns_path.is_dir():
             return
         files, total = _rel_files(ns_path)
-        lines.append(f"    {name}/")
-        if files:
-            for rel in files:
-                suffix = ""
-                if is_current and name == "outputs":
-                    suffix = "   \u2014 produced this turn"
-                elif is_current and name == "attachments":
-                    suffix = "   \u2014 user upload this turn"
-                elif is_current and name == "external" and "/attachments/" in rel:
-                    suffix = "   \u2014 live event attachment"
-                lines.append(f"      {rel}{suffix}")
-            if total > len(files):
-                lines.append(f"      \u2026 +{total - len(files)} more")
-        else:
-            lines.append("      (empty)")
+        if not files:
+            return
+        out.append(f"    {name}/")
+        for rel in files:
+            suffix = ""
+            if is_current and name == "outputs":
+                suffix = "   \u2014 produced this turn"
+            elif is_current and name == "attachments":
+                suffix = "   \u2014 user upload this turn"
+            elif is_current and name == "external" and "/attachments/" in rel:
+                suffix = "   \u2014 live event attachment"
+            out.append(f"      {rel}{suffix}")
+        if total > len(files):
+            out.append(f"      \u2026 +{total - len(files)} more")
 
     # local files/ presence (for cross-tagging REMOTE rows)
     current_files_projects = set(_top_dirs(turn_id, "files")) if turn_id else set()
@@ -849,17 +846,18 @@ def build_announce_workspace_lines(
     # ---------- LOCAL ----------
     lines.append("")
     lines.append("  LOCAL — materialized on disk THIS turn.")
-    lines.append("  This is the ONLY content react.read / react.rg / react.patch / exec can touch directly.")
-    lines.append("  If a path is not in this tree it is NOT local — pull it first, even if you see its fi: ref in the timeline.")
+    lines.append("  This tree lists actual files already present under the artifact workdir.")
+    lines.append("  Timeline fi: refs that are not listed here are hosted/unhydrated; use react.pull to hydrate them before local-byte tools.")
+    lines.append("  react.read may inspect provider-rendered text for a hosted ref, but it does not make local bytes appear here.")
+    lines.append("  react.rg / react.patch / exec can touch only paths listed here or paths you create in this turn.")
     local_entries = _workdir_entries()
-    if not local_entries:
-        lines.append("  (workspace is empty this turn — nothing materialized yet)")
+    local_lines: List[str] = []
     for entry in local_entries:
         name = entry.name
         is_current = bool(turn_id and name == turn_id)
         is_turn_root = name in set(roots)
         if entry.is_file():
-            lines.append(f"  {name}   (local workdir file)")
+            local_lines.append(f"  {name}   (local workdir file)")
             continue
         if is_current:
             label = "current turn \u00b7 EDITABLE"
@@ -867,32 +865,34 @@ def build_announce_workspace_lines(
             label = "pulled reference \u00b7 READ-ONLY \u2014 checkout into the current turn to edit"
         else:
             label = "local workdir entry"
-        lines.append(f"  {name}/   ({label})")
         if not entry.is_dir():
             continue
 
+        entry_lines: List[str] = []
         children = _direct_children(entry)
         by_name = {child.name: child for child in children}
         rendered: set[str] = set()
-        if "files" in by_name or is_current:
-            _render_files_namespace(entry, is_current=is_current)
+        if "files" in by_name:
+            _render_files_namespace(entry_lines, entry, is_current=is_current)
             rendered.add("files")
-        for expected_empty in ("outputs", "snapshots"):
-            if is_current and expected_empty not in by_name:
-                spacing = "            " if expected_empty == "outputs" else "          "
-                lines.append(f"    {expected_empty}/{spacing}(empty)")
-                rendered.add(expected_empty)
         ordered_names = ["outputs", "snapshots", "attachments", "external"]
         for child_name in ordered_names:
             child = by_name.get(child_name)
             if child is None or child_name in rendered:
                 continue
-            _render_recursive_namespace(child, is_current=is_current)
+            _render_recursive_namespace(entry_lines, child, is_current=is_current)
             rendered.add(child_name)
         for child in children:
             if child.name in rendered:
                 continue
-            _render_recursive_namespace(child, is_current=is_current)
+            _render_recursive_namespace(entry_lines, child, is_current=is_current)
+        if entry_lines:
+            local_lines.append(f"  {name}/   ({label})")
+            local_lines.extend(entry_lines)
+    if local_lines:
+        lines.extend(local_lines)
+    else:
+        lines.append("  (no materialized files in the artifact workdir yet)")
 
     # ---------- REMOTE (git only) ----------
     if impl == "git":

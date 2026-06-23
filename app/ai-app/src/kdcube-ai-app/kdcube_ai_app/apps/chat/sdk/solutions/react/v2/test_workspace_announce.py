@@ -15,7 +15,8 @@ def test_build_announce_text_includes_git_workspace_summary(tmp_path):
     turn_root = artifact_outdir / "turn_123"
     (turn_root / "files" / "projectA" / "src").mkdir(parents=True, exist_ok=True)
     (turn_root / "files" / "projectA" / "src" / "app.py").write_text("print('hi')\n", encoding="utf-8")
-    (artifact_outdir / "turn_122" / "files").mkdir(parents=True, exist_ok=True)
+    (artifact_outdir / "turn_122" / "snapshots").mkdir(parents=True, exist_ok=True)
+    (artifact_outdir / "turn_122" / "snapshots" / "old.json").write_text("{}", encoding="utf-8")
 
     subprocess.run(["git", "init", str(turn_root)], check=True, capture_output=True)
     subprocess.run(["git", "-C", str(turn_root), "config", "user.name", "Test User"], check=True, capture_output=True)
@@ -119,6 +120,43 @@ def test_build_announce_text_lists_actual_workdir_paths_except_files_tree(tmp_pa
     assert "note.txt" in announce_text
     assert "projectA/" in announce_text
     assert "src/app.py" not in announce_text
+
+
+def test_build_announce_text_omits_empty_turn_namespace_placeholders(tmp_path):
+    outdir = tmp_path / "out"
+    artifact_outdir = artifact_outdir_for(outdir)
+    turn_root = artifact_outdir / "turn_123"
+    (turn_root / "files").mkdir(parents=True, exist_ok=True)
+    (turn_root / "outputs").mkdir(parents=True, exist_ok=True)
+    (turn_root / "snapshots").mkdir(parents=True, exist_ok=True)
+
+    runtime = RuntimeCtx(
+        turn_id="turn_123",
+        outdir=str(outdir),
+        workspace_implementation="custom",
+    )
+
+    announce_text = build_announce_text(
+        iteration=1,
+        max_iterations=6,
+        started_at="2026-04-02T10:00:00Z",
+        timezone="UTC",
+        runtime_ctx=runtime,
+        timeline_blocks=[],
+        constraints=None,
+        feedback_updates=None,
+        feedback_incorporated=False,
+        mode="full",
+    )
+
+    assert "Timeline fi: refs that are not listed here are hosted/unhydrated" in announce_text
+    assert "use react.pull to hydrate them before local-byte tools" in announce_text
+    assert "react.read may inspect provider-rendered text" in announce_text
+    assert "turn_123/   (current turn" not in announce_text
+    assert "    files/" not in announce_text
+    assert "    outputs/" not in announce_text
+    assert "    snapshots/" not in announce_text
+    assert "(no materialized files in the artifact workdir yet)" in announce_text
 
 
 def test_build_announce_text_includes_context_caps(tmp_path):
