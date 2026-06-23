@@ -223,7 +223,8 @@ def append_canvas_original_object_stats_block(
     stats = _canvas_original_object_stats(target, runtime_ctx=runtime_ctx)
     if not stats:
         return target
-    tool_id = str(target.get("tool_id") or target.get("event_source_id") or "canvas.read").strip()
+    tool_id = str(target.get("tool_id") or "canvas.read").strip()
+    event_source_id = str(target.get("event_source_id") or tool_id or "canvas.read").strip()
     tool_call_id = str(target.get("tool_call_id") or target.get("event_id") or "").strip()
     turn_id = str(target.get("turn_id") or "").strip()
     blocks = target.setdefault("blocks", [])
@@ -234,7 +235,7 @@ def append_canvas_original_object_stats_block(
                 "type": "react.tool.result",
                 "call_id": tool_call_id,
                 "tool_id": tool_id,
-                "event_source_id": tool_id,
+                "event_source_id": event_source_id,
                 "mime": "application/json",
                 "path": str(stats.get("object_ref") or target.get("path") or "").strip(),
                 "text": json.dumps(stats, ensure_ascii=False, indent=2, default=str),
@@ -242,7 +243,7 @@ def append_canvas_original_object_stats_block(
                 "meta": {
                     "tool_call_id": tool_call_id,
                     "tool_id": tool_id,
-                    "event_source_id": tool_id,
+                    "event_source_id": event_source_id,
                     "canvas_action": "read",
                 },
             }
@@ -256,13 +257,23 @@ def append_canvas_tool_fact_block(
     *,
     action: str,
     canvas_meta_key: str = DEFAULT_CANVAS_META_KEY,
+    runtime_ctx: Any = None,
 ) -> MutableMapping[str, Any]:
     ret = _ret_mapping(target)
+    target_meta = _block_meta(target)
     canvas = _canvas_payload_from_ret(ret)
+    if action == "read" and not (canvas.get("projection") if isinstance(canvas.get("projection"), Mapping) else None):
+        canvas = _canvas_payload_from_ret(_artifact_json_from_stats_target(target, runtime_ctx=runtime_ctx))
     fact = _canvas_tool_fact(target, action=action, canvas=canvas)
-    tool_id = str(target.get("tool_id") or target.get("event_source_id") or f"canvas.{action}").strip()
+    tool_id = str(target.get("tool_id") or f"canvas.{action}").strip()
+    event_source_id = str(target.get("event_source_id") or tool_id or f"canvas.{action}").strip()
     tool_call_id = str(target.get("tool_call_id") or target.get("event_id") or "").strip()
     turn_id = str(target.get("turn_id") or "").strip()
+    produced_iteration = _maybe_int(target.get("iteration"))
+    if produced_iteration is None:
+        produced_iteration = _maybe_int(target_meta.get("iteration"))
+    if produced_iteration is None:
+        produced_iteration = _maybe_int(getattr(runtime_ctx, "_current_react_iteration", None))
     path = str(target.get("tool_result_path") or "").strip()
     if action == "read":
         path = str(fact.get("requested_uri") or fact.get("canvas_uri") or "").strip()
@@ -275,15 +286,17 @@ def append_canvas_tool_fact_block(
                 "turn": turn_id,
                 "type": "react.tool.result",
                 "call_id": tool_call_id,
+                **({"iteration": produced_iteration} if produced_iteration is not None else {}),
                 "tool_id": tool_id,
-                "event_source_id": tool_id,
+                "event_source_id": event_source_id,
                 "mime": "application/json",
                 "path": path,
                 "text": json.dumps(fact, ensure_ascii=False, indent=2, default=str),
                 "meta": {
                     "tool_call_id": tool_call_id,
                     "tool_id": tool_id,
-                    "event_source_id": tool_id,
+                    "event_source_id": event_source_id,
+                    **({"iteration": produced_iteration} if produced_iteration is not None else {}),
                     "canvas_action": action,
                     str(canvas_meta_key or DEFAULT_CANVAS_META_KEY): {
                         "retention": "turn",
@@ -458,7 +471,7 @@ def canvas_read_block_policy(
             target,
             runtime_ctx=context.get("runtime_ctx"),
         )
-    return append_canvas_tool_fact_block(target, action="read")
+    return append_canvas_tool_fact_block(target, action="read", runtime_ctx=context.get("runtime_ctx"))
 
 
 @block_production_policy(

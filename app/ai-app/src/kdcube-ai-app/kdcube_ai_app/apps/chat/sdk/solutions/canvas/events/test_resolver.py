@@ -115,6 +115,79 @@ def test_canvas_read_stats_policy_emits_original_object_stats_on_block(tmp_path)
     assert stats["selected_card_ids"] == ["card-1"]
 
 
+def test_canvas_read_policy_projects_materialized_snapshot_for_announce(tmp_path):
+    runtime = RuntimeCtx(turn_id="turn_read", outdir=str(tmp_path), workdir=str(tmp_path))
+    physical_path = "turn_read/snapshots/cnv/main.json"
+    target_path = artifact_outdir_for(tmp_path) / physical_path
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    projection = {
+        "canvas_name": "main",
+        "canvas_id": "cnv:user-1:main",
+        "revision": 7,
+        "cards_count": 1,
+        "placed_count": 1,
+        "floating_count": 0,
+        "bounds": {"x": 0, "y": 0, "w": 100, "h": 100},
+        "legend": [
+            {
+                "id": "card-1",
+                "kind": "memory",
+                "title": "Memory",
+                "placement": "placed",
+                "rect": {"x": 10, "y": 10, "w": 20, "h": 20},
+            }
+        ],
+    }
+    target_path.write_text(
+        json.dumps({
+            "ok": True,
+            "canvas_name": "main",
+            "canvas_id": "cnv:user-1:main",
+            "revision": 7,
+            "canvas_ref": "cnv:main@7",
+            "latest_ref": "cnv:main",
+            "projection": projection,
+        }),
+        encoding="utf-8",
+    )
+    target = {
+        "turn_id": "turn_read",
+        "tool_call_id": "read_1",
+        "tool_id": "react.read",
+        "event_source_id": "canvas.read",
+        "object_ref": "cnv:main",
+        "logical_path": "fi:turn_read.snapshots/cnv/main.json",
+        "path": "fi:turn_read.snapshots/cnv/main.json",
+        "physical_path": physical_path,
+        "blocks": [],
+        "meta": {
+            "object_ref": "cnv:main",
+            "physical_path": physical_path,
+            "iteration": 2,
+        },
+    }
+
+    canvas_read_block_policy(target, runtime_ctx=runtime)
+
+    assert target["blocks"]
+    block = target["blocks"][0]
+    assert block["tool_id"] == "react.read"
+    assert block["event_source_id"] == "canvas.read"
+    assert block["meta"]["canvas"]["payload"]["projection"]["cards_count"] == 1
+    visible = produce_canvas_announce_blocks(
+        [],
+        timeline_blocks=[block],
+        source=SimpleNamespace(event_source_id="canvas.state"),
+        current_turn_id="turn_read",
+        iteration=2,
+        announce_retention_rounds=3,
+    )
+    assert len(visible) == 1
+    assert "[CANVAS BOARD]" in visible[0]["text"]
+    assert "visibility: 3/3 render rounds remaining" in visible[0]["text"]
+    assert "Memory" in visible[0]["text"]
+
+
 def test_canvas_announce_policy_shows_and_expires_retention_rounds():
     projection = {
         "canvas_name": "main",
