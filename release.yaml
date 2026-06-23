@@ -1,88 +1,134 @@
 platform:
   repo: "kdcube-ai-app"
-  ref: "2026.6.19.202"
+  ref: "2026.6.23.2230"
   description: |
-    This release follows 2026.6.18.2120 with targeted authentication,
-    cross-origin scene interaction, and documentation improvements needed for
-    mixed-runtime deployments.
+    This release follows 2026.6.19.202 with a broad platform update around
+    ReAct workspace visibility, external-event handling, named-service object
+    resolution, scene/canvas generalization, app-builder documentation, and
+    economics-guarded search embeddings.
 
-    The main product outcome is that a runtime can now trust more than one
-    explicitly configured Cognito issuer/client pair while still validating
-    tokens with the normal Cognito verifier. This supports transitional scenes
-    where the browser signs in through one trusted runtime and calls apps
-    hosted by another trusted runtime.
+    The main product outcome is that apps can participate more consistently in
+    the KDCube interaction network. Domain objects can move through scene
+    surfaces, pinboards, ReAct context, and named-service tools with URI refs as
+    the universal handle, while provider-owned resolvers remain responsible for
+    object semantics, presentation, actions, and materialization.
 
     Highlights
 
-    - Adds server-side Multi-Cognito authentication mode. A runtime can accept
-      JWTs from every configured trusted Cognito provider in `auth.providers`.
-    - Keeps validation strict: provider routing uses untrusted JWT claims only
-      to select the verifier, then the selected Cognito verifier validates
-      issuer, client/audience, token use, signature, and expiration.
-    - Requires access token and ID token, when both are present, to resolve to
-      the same provider and subject.
-    - Extends authentication settings with `CognitoTrustedProviderConfig` and
-      `AUTH.COGNITO_TRUSTED_PROVIDERS`.
-    - Supports `auth.idp: multi-cognito` / `cognito-multi` plus JSON provider
-      lists through `AUTH_COGNITO_PROVIDERS_JSON` or
-      `COGNITO_TRUSTED_PROVIDERS_JSON`.
-    - Preserves existing single-Cognito behavior when only one provider is
-      configured.
-    - Adds regression tests for provider selection, mixed-token rejection, and
-      delegation to the existing Cognito verifier.
-    - Improves cross-origin context drag calibration by sending drag-start
-      coordinates from chat file and ingress drags.
-    - Increases the chat namespace-style fetch timeout so cold cross-origin CDN
-      cache misses can still load namespace colors.
-    - Clarifies event-lane documentation around external event movement into
-      ReAct turns.
+    - Generalizes scene surface orchestration and component-owned event
+      subscriptions.
+    - Adds shared scene drop-target normalization, host drag helpers, runtime
+      helpers, and transport helpers in the core component package.
+    - Cleans up the canvas ingress contract so canvas receives generic object
+      refs or provided content instead of hidden namespace-specific behavior.
+    - Routes canvas/pinboard integration through named services and provider
+      object resolvers.
+    - Makes canvas object actions and presentation depend on resolver/provider
+      metadata instead of local namespace assumptions.
+    - Improves canvas board refs, card comments, movement coordinates, object
+      action routing, and ReAct-facing canvas announce retention.
+    - Adds canvas pin search/indexing service wiring and keeps index embeddings
+      on the economics-guarded search model service path.
+    - Extracts reusable economics-guarded search embedding helpers into
+      `search_service`.
+    - Fixes ReAct external-event/followup handling by skipping already processed
+      external events before the fold and preventing duplicate user-input index
+      rows.
+    - Restores the ReAct ANNOUNCE workspace tree so the current turn is always
+      shown as writable, including empty `files`, `outputs`, `attachments`,
+      `external`, and `snapshots` namespaces.
+    - Shows live followup attachments in ANNOUNCE with filename, MIME type, and
+      `fi:` ref.
+    - Clarifies ReAct workspace hydration state so hosted/unhydrated refs are
+      distinguished from files already present under the local artifact workdir.
+    - Adds original object stats for pulled/read objects so provider-owned
+      block production can expose source object metadata without hardcoding
+      namespace logic in generic ReAct read code.
+    - Strengthens event-bus stale handler recovery and usage-card accounting
+      refresh propagation.
+    - Updates memory named-service search filters and named-service schema
+      guidance.
+    - Refreshes platform docs around app builders, the app interaction network,
+      named services, scene, canvas/pinboard, event bus, data bus, ReAct event
+      sources, npm components, and runtime architecture.
 
-    Multi-Cognito auth
+    Scene, canvas, and named services
 
-    - The browser still logs into one configured OIDC authority for a profile.
-      Multi-Cognito is a server-side trust-list mode.
-    - Provider selection is based on `iss` plus `client_id` for access tokens
-      and `iss` plus `aud` for ID tokens.
-    - The selected provider constructs a normal `CognitoAuthManager`, so
-      cryptographic validation and Cognito claim checks remain centralized.
-    - `CognitoUser` now carries provider metadata (`identity_provider` and
-      `issuer`) for diagnostics and downstream policy decisions.
+    - URI refs remain the universal handle for domain objects.
+    - The centralized resolver router may dispatch by URI prefix as an internal
+      routing optimization, but scene/canvas widgets should not own provider
+      object semantics.
+    - Provider-owned resolvers are responsible for object identity,
+      presentation, capabilities, open/download/preview actions, and
+      materialization.
+    - Canvas-owned content stays under the canvas namespace, while provider
+      objects keep provider-owned refs and metadata.
+    - Scene configuration can describe surfaces and host wiring, but long-term
+      compatibility/action decisions belong to providers or cached provider
+      claims.
 
-    Scene and chat interop
+    ReAct and workspace
 
-    - Chat-side file/context drags now include the coordinates needed by the
-      scene host to calibrate cross-origin drops reliably.
-    - Namespace presentation config fetches now allow longer cold starts so
-      namespace-specific color styles are available in embedded chat widgets.
+    - ANNOUNCE now reliably distinguishes hosted timeline refs from files that
+      are actually present under the artifact workdir.
+    - The current turn workspace tree is always rendered, even when empty, so
+      agents see the writable target namespaces clearly.
+    - Live external followups now surface attachment metadata in ANNOUNCE.
+    - Processed external events are skipped before folding into ReAct state,
+      avoiding replayed user messages and duplicate indexed user input.
+    - User input indexing now avoids duplicate prompt/followup rows for the
+      same turn.
+
+    Search and economics
+
+    - Search embeddings now use a reusable `search_service` facade that keeps
+      indexing on fail-loud embedding calls and query embedding on graceful
+      lexical fallback.
+    - Canvas pin indexing uses the same guarded service path as search, so
+      embedding usage is accounted through the economics flow.
 
     Documentation
 
-    - Adds Multi-Cognito descriptor examples to auth and descriptor docs.
-    - Documents how trusted providers are configured and how future provider
-      hints may be used for routing/logging while token claims remain
-      authoritative.
+    - Reframes top-level docs around app builders and fast creation of useful
+      apps that can also join the broader app interaction network.
+    - Adds ecosystem-component architecture docs that map API, MCP, cron, event
+      bus, data bus, named services, UI scene, pinboard, and ReAct integration.
+    - Updates named-service provider/client/integration docs with object
+      materialization, action/presentation, schema, and ReAct policy bridge
+      guidance.
+    - Updates npm package docs for core components, React components, scene,
+      host event bus, context drag, canvas pin board, and chat engine.
+    - Updates the reference versatile app docs and config templates for scene,
+      pinboard, storage, and scenario integration.
 
     Runtime and deployment notes
 
-    - Deployments should point the platform ref at 2026.6.19.202 to receive
-      Multi-Cognito auth, cross-origin drag calibration, namespace-style fetch
-      timeout improvements, and the updated docs.
-    - Environments that should accept exactly one Cognito pool should keep
-      `auth.idp: cognito`.
-    - Mixed-runtime environments can use `auth.idp: multi-cognito` with an
-      explicit `auth.providers` list. Each provider entry must include alias,
-      region, user pool id, and app client id.
+    - Deployments should point the platform ref at 2026.6.23.2230 to receive
+      the generalized scene/canvas contracts, named-service object resolution
+      updates, ReAct workspace and followup attachment ANNOUNCE fixes, event
+      replay safeguards, and refreshed app-builder documentation.
+    - Existing integrations that still rely on host-side namespace patterns
+      should treat them as configuration hints and migrate behavior decisions
+      toward provider-owned resolver claims/actions.
+    - No deployment descriptor update is part of this platform-only release
+      branch.
 
     Changelog
 
-    - Added `MultiCognitoAuthManager`.
-    - Added trusted Cognito provider config parsing.
-    - Wired ingress auth manager selection for `multi-cognito`.
-    - Added provider metadata to Cognito users.
-    - Added Multi-Cognito tests.
-    - Documented Multi-Cognito auth and descriptor shape.
-    - Improved chat cross-origin drag coordinate reporting.
-    - Increased namespace style fetch timeout for embedded chat.
-    - Clarified event-lane to ReAct turn docs.
+    - Generalized scene event subscription and transport helpers.
+    - Generalized context drag and canvas ingress contracts.
+    - Routed canvas/pinboard through named-service object upsert/search/action
+      paths.
+    - Added provider-owned object presentation/action guidance.
+    - Improved canvas board refs, comments, move coordinates, and ReAct announce
+      retention.
+    - Added guarded search embedding facade and canvas pin search wiring.
+    - Fixed ReAct workspace material map rendering and hosted/hydrated ref
+      wording.
+    - Fixed live followup attachment visibility in ANNOUNCE.
+    - Fixed duplicate user-input indexing.
+    - Fixed processed external-event replay before ReAct fold.
+    - Refreshed app-builder, ecosystem, named-service, scene, canvas, ReAct, npm
+      component, and reference app documentation.
 config:
-    version: "2026.6.19.202"
+  version: "2026.6.23.2230"
