@@ -61,3 +61,9 @@ owner objects should be imported with `react.pull` before rendering.
 
 Validation owns source-specific input preparation. It should not produce result
 blocks. Result-side representation belongs to `block_production`.
+
+Validation also does not refresh owner objects or ANNOUNCE views. If a model
+needs current state for an object such as `cnv:main`, it should use the owner
+read path (`react.pull` followed by `react.read`) or the provider's named
+service action. Validation can check and normalize parameters for a tool call,
+but the read/refresh semantics belong to block-production and owner policies.

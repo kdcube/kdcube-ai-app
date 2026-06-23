@@ -290,6 +290,32 @@ rules are separate from TTL pruning:
   (image dimensions/PDF pages), not as raw base64 bytes
 - unsupported binaries such as xlsx/pptx/docx/zip remain metadata-only
 
+### Owner-projected reads and ANNOUNCE
+
+For materialized namespace objects, `react.read` still reads a local `fi:`
+artifact, but the visible blocks can be produced by the object owner. The
+generic read tool passes identity such as `object_ref`, `logical_path`,
+`physical_path`, and `stats_only`; the owner policy decides what model-visible
+blocks to add.
+
+Those owner-produced blocks are ordinary timeline blocks. Separately, an
+ANNOUNCE policy may render a volatile projection from the same read. For
+example, reading a pulled canvas snapshot can produce:
+
+- a durable compact `[CANVAS TOOL RESULT]` fact in the timeline; and
+- a non-durable `[CANVAS BOARD]` ANNOUNCE map for a bounded number of render
+  rounds.
+
+The tool-result fact should tell the model the retention rule, for example:
+
+```text
+announce_effect: board projection refreshed in ANNOUNCE for 3 render rounds
+refresh_rule: use react.pull(paths=['cnv:main']) and react.read on the returned fi: path if you need an updated or prolonged board view
+```
+
+This is owner policy text. Generic ReAct does not know that `cnv:` is canvas,
+that the object is volatile, or how to refresh it.
+
 Assistant completion blocks (`assistant.completion`) are rendered with an extra line when
 `meta.sources_used` is present:
 ```

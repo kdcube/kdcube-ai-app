@@ -105,7 +105,13 @@ def _compact_error(value: Any) -> Any:
     return str(value)
 
 
-def _canvas_tool_fact(target: Mapping[str, Any], *, action: str, canvas: Mapping[str, Any]) -> dict[str, Any]:
+def _canvas_tool_fact(
+    target: Mapping[str, Any],
+    *,
+    action: str,
+    canvas: Mapping[str, Any],
+    announce_retention_rounds: int = DEFAULT_CANVAS_ANNOUNCE_RETENTION_ROUNDS,
+) -> dict[str, Any]:
     ret = _ret_mapping(target)
     projection = canvas.get("projection") if isinstance(canvas.get("projection"), Mapping) else {}
     changed = ret.get("changed") if isinstance(ret.get("changed"), list) else []
@@ -134,6 +140,18 @@ def _canvas_tool_fact(target: Mapping[str, Any], *, action: str, canvas: Mapping
             or final_params.get("object_ref")
             or ""
         ).strip()
+        canvas_name = str(canvas.get("canvas_name") or projection.get("canvas_name") or "").strip()
+        live_ref = str(canvas.get("latest_ref") or "").strip() or (f"cnv:{canvas_name}" if canvas_name else "")
+        if projection and live_ref:
+            retention_rounds = _maybe_int(announce_retention_rounds) or DEFAULT_CANVAS_ANNOUNCE_RETENTION_ROUNDS
+            fact["live_ref"] = live_ref
+            fact["announce_effect"] = (
+                f"board projection refreshed in ANNOUNCE for {retention_rounds} render rounds"
+            )
+            fact["refresh_rule"] = (
+                f"use react.pull(paths=[{live_ref!r}]) and react.read on the returned fi: path "
+                "if you need an updated or prolonged board view"
+            )
     if action == "patch":
         fact["base_revision"] = final_params.get("base_revision")
     compacted_error = _compact_error(error)
@@ -257,6 +275,7 @@ def append_canvas_tool_fact_block(
     *,
     action: str,
     canvas_meta_key: str = DEFAULT_CANVAS_META_KEY,
+    announce_retention_rounds: int = DEFAULT_CANVAS_ANNOUNCE_RETENTION_ROUNDS,
     runtime_ctx: Any = None,
 ) -> MutableMapping[str, Any]:
     ret = _ret_mapping(target)
@@ -264,7 +283,12 @@ def append_canvas_tool_fact_block(
     canvas = _canvas_payload_from_ret(ret)
     if action == "read" and not (canvas.get("projection") if isinstance(canvas.get("projection"), Mapping) else None):
         canvas = _canvas_payload_from_ret(_artifact_json_from_stats_target(target, runtime_ctx=runtime_ctx))
-    fact = _canvas_tool_fact(target, action=action, canvas=canvas)
+    fact = _canvas_tool_fact(
+        target,
+        action=action,
+        canvas=canvas,
+        announce_retention_rounds=announce_retention_rounds,
+    )
     tool_id = str(target.get("tool_id") or f"canvas.{action}").strip()
     event_source_id = str(target.get("event_source_id") or tool_id or f"canvas.{action}").strip()
     tool_call_id = str(target.get("tool_call_id") or target.get("event_id") or "").strip()
@@ -356,6 +380,57 @@ def _block_iteration(block: Mapping[str, Any]) -> int | None:
     return _maybe_int(meta.get("iteration"))
 
 
+def _base_ref(value: Any) -> str:
+    text = str(value or "").strip()
+    return text.split("@", 1)[0] if text else ""
+
+
+def _canvas_identity_keys(canvas: Mapping[str, Any]) -> set[str]:
+    projection = canvas.get("projection") if isinstance(canvas.get("projection"), Mapping) else {}
+    keys: set[str] = set()
+    for key in ("canvas_id", "canvas_uri", "canvas_ref", "latest_ref", "event_ref", "_event_ref"):
+        base = _base_ref(canvas.get(key) or projection.get(key))
+        if not base:
+            continue
+        keys.add(base)
+        if base.startswith("cnv:"):
+            leaf = base.rsplit(":", 1)[-1].strip()
+            if leaf:
+                keys.add(leaf)
+    canvas_name = str(canvas.get("canvas_name") or projection.get("canvas_name") or "").strip()
+    if canvas_name:
+        keys.add(canvas_name)
+        keys.add(f"cnv:{canvas_name}")
+    return keys
+
+
+def _has_canvas_state_block_for_canvas(
+    timeline_blocks: list[MutableMapping[str, Any]],
+    *,
+    canvas: Mapping[str, Any],
+    current_turn_id: str = "",
+    tool_source_ids: tuple[str, ...] = DEFAULT_CANVAS_TOOL_SOURCE_IDS,
+    canvas_meta_keys: tuple[str, ...] = (DEFAULT_CANVAS_META_KEY,),
+) -> bool:
+    wanted = _canvas_identity_keys(canvas)
+    if not wanted:
+        return False
+    tool_sources = set(tool_source_ids)
+    for block in timeline_blocks or []:
+        if not isinstance(block, Mapping):
+            continue
+        if str(block.get("type") or "") != "event.canvas":
+            continue
+        if _block_source_id(block) in tool_sources:
+            continue
+        if current_turn_id and _block_turn_id(block) and _block_turn_id(block) != current_turn_id:
+            continue
+        candidate = _block_canvas_payload(block, canvas_meta_keys=canvas_meta_keys)
+        if wanted.intersection(_canvas_identity_keys(candidate)):
+            return True
+    return False
+
+
 def _retention_rounds_for_block(
     block: Mapping[str, Any],
     *,
@@ -424,9 +499,13 @@ def _latest_canvas_payload(
     canvas_meta_keys: tuple[str, ...] = (DEFAULT_CANVAS_META_KEY,),
 ) -> dict[str, Any]:
     latest: dict[str, Any] = {}
+    latest_rank: tuple[int, int, int] = (-1, -1, -1)
     accepted_sources = {event_source_id, *accepted_source_ids}
-    for block in timeline_blocks:
-        if not isinstance(block, Mapping) or _block_source_id(block) not in accepted_sources:
+    for index, block in enumerate(timeline_blocks):
+        if not isinstance(block, Mapping):
+            continue
+        source_id = _block_source_id(block)
+        if source_id not in accepted_sources:
             continue
         if current_turn_id and _block_turn_id(block) and _block_turn_id(block) != current_turn_id:
             continue
@@ -446,6 +525,14 @@ def _latest_canvas_payload(
                 default_rounds=announce_retention_rounds,
             )
             produced_iteration = _block_iteration(block)
+            rank = (
+                produced_iteration if produced_iteration is not None else -1,
+                1 if source_id in set(accepted_source_ids) else 0,
+                index,
+            )
+            if rank < latest_rank:
+                continue
+            latest_rank = rank
             latest = {
                 **candidate,
                 "_event_id": payload.get("event_id") or _block_meta(block).get("event_id") or block.get("event_id"),
@@ -471,7 +558,13 @@ def canvas_read_block_policy(
             target,
             runtime_ctx=context.get("runtime_ctx"),
         )
-    return append_canvas_tool_fact_block(target, action="read", runtime_ctx=context.get("runtime_ctx"))
+    retention_rounds = _maybe_int(context.get("announce_retention_rounds")) or DEFAULT_CANVAS_ANNOUNCE_RETENTION_ROUNDS
+    return append_canvas_tool_fact_block(
+        target,
+        action="read",
+        announce_retention_rounds=retention_rounds,
+        runtime_ctx=context.get("runtime_ctx"),
+    )
 
 
 @block_production_policy(
@@ -616,6 +709,7 @@ def project_canvas_tool_result_blocks(
     policy_prefix: str = "canvas",
     accepted_source_ids: tuple[str, ...] = DEFAULT_CANVAS_TOOL_SOURCE_IDS,
     canvas_meta_keys: tuple[str, ...] = (DEFAULT_CANVAS_META_KEY,),
+    announce_retention_rounds: int = DEFAULT_CANVAS_ANNOUNCE_RETENTION_ROUNDS,
     **_: Any,
 ) -> list[MutableMapping[str, Any]]:
     source_id = str(getattr(source, "event_source_id", "") or "")
@@ -674,6 +768,27 @@ def project_canvas_tool_result_blocks(
         changed_count = parsed.get("changed_count")
         if changed_count is not None:
             lines.append(f"changed_count: {changed_count}")
+        if action == "read" and projection:
+            live_ref = str(
+                parsed.get("live_ref")
+                or canvas.get("latest_ref")
+                or (f"cnv:{canvas_name}" if canvas_name else "")
+            ).strip()
+            announce_effect = str(parsed.get("announce_effect") or "").strip()
+            if not announce_effect:
+                retention_rounds = _maybe_int(announce_retention_rounds) or DEFAULT_CANVAS_ANNOUNCE_RETENTION_ROUNDS
+                announce_effect = (
+                    f"board projection refreshed in ANNOUNCE for {retention_rounds} render rounds"
+                )
+            lines.append(f"announce_effect: {announce_effect}")
+            refresh_rule = str(parsed.get("refresh_rule") or "").strip()
+            if not refresh_rule and live_ref:
+                refresh_rule = (
+                    f"use react.pull(paths=[{live_ref!r}]) and react.read on the returned fi: path "
+                    "if you need an updated or prolonged board view"
+                )
+            if refresh_rule:
+                lines.append(f"refresh_rule: {refresh_rule}")
         error_value = parsed.get("error")
         if error_value:
             lines.append("error: " + _compact(error_value, max_chars=320))
@@ -894,6 +1009,14 @@ def produce_canvas_announce_blocks(
     )
     projection = canvas.get("projection") if isinstance(canvas.get("projection"), Mapping) else {}
     if not projection:
+        return target
+    if event_source_id in set(accepted_source_ids) and _has_canvas_state_block_for_canvas(
+        timeline_blocks,
+        canvas=canvas,
+        current_turn_id=str(current_turn_id or ""),
+        tool_source_ids=accepted_source_ids,
+        canvas_meta_keys=canvas_meta_keys,
+    ):
         return target
 
     canvas_name = str(canvas.get("canvas_name") or projection.get("canvas_name") or "main")

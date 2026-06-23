@@ -1129,6 +1129,13 @@ export function CanvasBoard({
     ref: canvasRef,
     cards,
   }), [activeCanvas, canvasId, canvasRef, canvasRevision, cards])
+  const liveCanvasWithSelection = useMemo(() => ({
+    ...liveCanvas,
+    cards: liveCanvas.cards.map((card) => ({
+      ...card,
+      selected: card.selected || selectedCardIds.has(card.id),
+    })),
+  }), [liveCanvas, selectedCardIds])
   const enumByCardId = useMemo(() => {
     const out: Record<string, string> = {}
     const sorted = [...cards].sort((a, b) => {
@@ -2180,7 +2187,7 @@ export function CanvasBoard({
               <Trash2 size={16} />
             </button>
           ) : null}
-          <button className="secondary" onClick={() => onAttachCanvas(canvasContext(liveCanvas))} title="Pin board to chat">
+          <button className="secondary" onClick={() => onAttachCanvas(canvasContext(liveCanvasWithSelection))} title="Pin board to chat">
             <MessageSquarePlus size={16} />
             Pin board to chat
           </button>

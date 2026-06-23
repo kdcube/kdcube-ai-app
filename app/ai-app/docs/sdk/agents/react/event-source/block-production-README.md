@@ -88,6 +88,33 @@ ReAct timeline blocks. Bind `react.block_production.no_timeline` for events that
 should travel through the ordered event lane and bundle callbacks, but should
 not become durable ReAct history.
 
+## Owner Read Block Production
+
+`react.read` is generic. When it reads a materialized namespace object, the
+target carries the original owner identity:
+
+```python
+{
+    "object_ref": "cnv:main",
+    "logical_path": "fi:turn_1.snapshots/cnv/main.json",
+    "physical_path": "turn_1/snapshots/cnv/main.json",
+    "stats_only": False,
+}
+```
+
+The owner block-production policy interprets that target. It can produce:
+
+- bounded model-visible read blocks;
+- a compact timeline fact describing the read;
+- top-level `original_object_stats` for `stats_only` reads; and
+- owner metadata used later by timeline or ANNOUNCE projection.
+
+For canvas, a normal read intentionally stores only a compact
+`[CANVAS TOOL RESULT]` timeline fact. The board map itself is rendered by the
+canvas ANNOUNCE policy for a bounded number of render rounds. This keeps
+`react.read` namespace-agnostic while still telling the model how to refresh
+the volatile object when it needs current state again.
+
 ## Accumulator Fields
 
 | Field | Meaning |

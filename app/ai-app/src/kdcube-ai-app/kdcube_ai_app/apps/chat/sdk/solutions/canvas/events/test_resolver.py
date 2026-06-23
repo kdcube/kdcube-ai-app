@@ -9,6 +9,7 @@ from kdcube_ai_app.apps.chat.sdk.runtime.workspace import artifact_outdir_for
 from kdcube_ai_app.apps.chat.sdk.solutions.canvas.events.policies import (
     canvas_read_block_policy,
     produce_canvas_announce_blocks,
+    project_canvas_tool_result_blocks,
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.canvas.events.resolver import CanvasArtifactResolver
 from kdcube_ai_app.apps.chat.sdk.solutions.react.proto import RuntimeCtx
@@ -187,6 +188,15 @@ def test_canvas_read_policy_projects_materialized_snapshot_for_announce(tmp_path
     assert "visibility: 3/3 render rounds remaining" in visible[0]["text"]
     assert "Memory" in visible[0]["text"]
 
+    projected = project_canvas_tool_result_blocks(
+        [dict(block)],
+        source=SimpleNamespace(event_source_id="canvas.read"),
+        announce_retention_rounds=3,
+    )
+    assert "[CANVAS TOOL RESULT]" in projected[0]["text"]
+    assert "announce_effect: board projection refreshed in ANNOUNCE for 3 render rounds" in projected[0]["text"]
+    assert "refresh_rule: use react.pull(paths=['cnv:main'])" in projected[0]["text"]
+
 
 def test_canvas_announce_policy_shows_and_expires_retention_rounds():
     projection = {
@@ -249,3 +259,88 @@ def test_canvas_announce_policy_shows_and_expires_retention_rounds():
         announce_retention_rounds=3,
     )
     assert stale == []
+
+
+def test_canvas_announce_consolidates_state_and_read_for_same_board():
+    projection = {
+        "canvas_name": "demo-board",
+        "canvas_id": "cnv:user-1:demo-board",
+        "revision": 52,
+        "cards_count": 1,
+        "placed_count": 1,
+        "floating_count": 0,
+        "bounds": {"x": 0, "y": 0, "w": 100, "h": 100},
+        "legend": [
+            {
+                "id": "card-1",
+                "kind": "memory",
+                "title": "Memory",
+                "placement": "placed",
+                "rect": {"x": 10, "y": 10, "w": 20, "h": 20},
+            }
+        ],
+    }
+    state_block = {
+        "turn": "turn_1",
+        "type": "event.canvas",
+        "event_source_id": "chat.canvas.state",
+        "path": "ev:turn_1.events/demo-board",
+        "text": json.dumps({
+            "event_ref": "cnv:demo-board",
+            "ret": {
+                "canvas_name": "demo-board",
+                "canvas_id": "cnv:user-1:demo-board",
+                "revision": 52,
+                "canvas_ref": "cnv:demo-board@52",
+                "latest_ref": "cnv:demo-board",
+                "projection": projection,
+            },
+        }),
+        "meta": {
+            "event_source_id": "chat.canvas.state",
+        },
+    }
+    read_block = {
+        "turn": "turn_1",
+        "type": "react.tool.result",
+        "event_source_id": "canvas.read",
+        "path": "cnv:demo-board@52",
+        "text": "{}",
+        "meta": {
+            "event_source_id": "canvas.read",
+            "iteration": 2,
+            "canvas": {
+                "payload": {
+                    "canvas_name": "demo-board",
+                    "canvas_id": "cnv:user-1:demo-board",
+                    "revision": 52,
+                    "canvas_ref": "cnv:demo-board@52",
+                    "latest_ref": "cnv:demo-board",
+                    "projection": projection,
+                }
+            },
+        },
+    }
+    timeline = [read_block, state_block]
+
+    from_state = produce_canvas_announce_blocks(
+        [],
+        timeline_blocks=timeline,
+        source=SimpleNamespace(event_source_id="chat.canvas.state"),
+        current_turn_id="turn_1",
+        iteration=3,
+        announce_retention_rounds=3,
+    )
+    from_read = produce_canvas_announce_blocks(
+        [],
+        timeline_blocks=timeline,
+        source=SimpleNamespace(event_source_id="canvas.read"),
+        current_turn_id="turn_1",
+        iteration=3,
+        announce_retention_rounds=3,
+    )
+
+    assert len(from_state) == 1
+    assert from_read == []
+    assert "visibility: 2/3 render rounds remaining" in from_state[0]["text"]
+    assert from_state[0]["text"].count("[CANVAS BOARD]") == 1

@@ -226,6 +226,23 @@ ANNOUNCE for a bounded number of render rounds. If the agent needs a fresh
 exact board after that, it should call `react.pull(paths=["cnv:<name>"])` again
 and then read the returned `fi:` path.
 
+The read itself should also leave a compact timeline fact. For canvas that fact
+looks like:
+
+```text
+[CANVAS TOOL RESULT]
+action: read
+status: success
+canvas_name: main
+revision: 416
+cards=21 placed=20 floating=1 selected=conv:...
+announce_effect: board projection refreshed in ANNOUNCE for 3 render rounds
+refresh_rule: use react.pull(paths=['cnv:main']) and react.read on the returned fi: path if you need an updated or prolonged board view
+```
+
+The compact fact is timeline history. The board map rendered in ANNOUNCE is
+turn-local prompt context.
+
 Owner ANNOUNCE policies should make this lifetime visible in the rendered
 section. For example, canvas renders a line like:
 
@@ -236,6 +253,12 @@ visibility: 3/3 render rounds remaining; use react.pull(paths=['cnv:main']) and 
 That instruction belongs in the owner policy because only the owner knows
 whether a snapshot is volatile, how long it should remain prompt-visible, and
 which live object ref refreshes it.
+
+When the same volatile object appears from multiple sources in one turn, the
+owner policy should render one ANNOUNCE section for that object. For example,
+`chat.canvas.state` can carry a board attached by the UI, and `canvas.read` can
+carry a later read of the same board. The source ids describe how the object
+arrived; the object ref/revision identify the board.
 
 ## Implementation Checklist
 

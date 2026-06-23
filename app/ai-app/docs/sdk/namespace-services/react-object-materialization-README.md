@@ -188,6 +188,12 @@ Current implementation state:
    latency:
      local timeline append
 
+   owner policy may also:
+     emit a compact read fact instead of a large object body
+     attach original_object_stats for stats_only reads
+     attach owner metadata that a later ANNOUNCE policy can render for a
+     bounded number of prompt renders
+
         |
         v
 
@@ -218,6 +224,25 @@ Current implementation state:
 | Produce read blocks | `block.produce` | ReAct owner-projection adapter | named-service provider | Yes, when owner projection is registered and `object_ref` is present |
 | Render provider representation | `block.render` | ReAct timeline projection or explicit custom client | named-service provider | Optional, only when provider-owned blocks are present and the provider implements it |
 | Render model prompt | `Timeline.render()` | ReAct runtime | local timeline and local policies | Yes |
+
+## Materialization Scope
+
+`react.pull` returns local artifact rows. A row may include a `scope` such as
+`snapshots`:
+
+```json
+{
+  "object_ref": "cnv:main",
+  "logical_path": "fi:turn_1.snapshots/cnv/main.json",
+  "physical_path": "turn_1/snapshots/cnv/main.json",
+  "scope": "snapshots",
+  "mime": "application/json"
+}
+```
+
+`scope` describes where the bytes were materialized in the ReAct workspace. It
+is not the owner namespace and must not be used for named-service routing.
+Routing and owner policy selection use the preserved `object_ref`.
 
 ## Owner Identity Field
 
@@ -276,6 +301,32 @@ For an object namespace that supports ReAct materialization:
 - `block.render` optionally patches provider-owned blocks during model prompt
   rendering. It receives a bounded block snapshot and a render context with
   `phase`, `audience`, event-source id, trigger refs, and limits.
+
+## Volatile Object Pattern
+
+Some objects are live collaborative state rather than static files. Canvas is
+the reference pattern:
+
+```text
+react.pull(paths=["cnv:main"])
+  -> writes fi:turn_1.snapshots/cnv/main.json
+
+react.read(paths=["fi:turn_1.snapshots/cnv/main.json"])
+  -> canvas block-production emits a compact [CANVAS TOOL RESULT] fact
+  -> canvas announce policy renders [CANVAS BOARD] for N render rounds
+```
+
+The compact timeline fact is durable. The ANNOUNCE board map is not. The fact
+should tell the model how to refresh:
+
+```text
+announce_effect: board projection refreshed in ANNOUNCE for 3 render rounds
+refresh_rule: use react.pull(paths=['cnv:main']) and react.read on the returned fi: path if you need an updated or prolonged board view
+```
+
+This text is produced by the canvas owner policy, not by generic `react.read`.
+Other providers can implement the same pattern for volatile objects by keeping
+their own refresh instructions in their block-production and ANNOUNCE policies.
 
 ## Provider Render Merge Contract
 

@@ -40,6 +40,20 @@ projected into rendered context, announced, or prepared for compaction.
 `event_source_id` is the type of event. `event_id` is one occurrence. `block.type`
 is how the timeline renderer stores and renders the block.
 
+Event source ids also distinguish how context arrived. The same object can be
+seen through different sources without changing its object identity:
+
+```text
+chat.canvas.state  = the UI attached current canvas state to the user turn
+chat.canvas.focus  = the UI attached selected/focused canvas cards
+canvas.read        = react.read inspected a pulled canvas snapshot
+```
+
+Those names are policy-routing keys, not object namespaces. The object identity
+is still the ref carried in the event or block, such as `cnv:main`. Owner
+policies can merge or compare occurrences by object identity when rendering,
+announcing, or compacting.
+
 For tool-backed events, the existing tool fields remain authoritative:
 
 ```text

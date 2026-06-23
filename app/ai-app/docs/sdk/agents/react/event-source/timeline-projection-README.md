@@ -52,6 +52,18 @@ If an event source has no registered render policy, the SDK applies a structural
 fallback for `event.external`, `event.snapshot`, and `event.canvas` blocks that
 are still JSON at render time.
 
+## Relationship To ANNOUNCE
+
+Timeline projection mutates the prompt-visible view of persisted blocks.
+ANNOUNCE production appends non-durable tail material after cache markers.
+
+Owner policies can use both phases for the same object. For canvas,
+timeline projection renders a compact `[CANVAS TOOL RESULT]` or
+`[CANVAS STATE]` fact, while ANNOUNCE renders the spatial board map and legend
+when the board is still inside its retention window. The projection should
+include enough recovery text for the model to pull/read the object again after
+ANNOUNCE expires.
+
 ## Cache Rule
 
 Timeline projection must complete before cache marker assignment. ANNOUNCE and

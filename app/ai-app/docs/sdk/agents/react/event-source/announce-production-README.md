@@ -51,3 +51,32 @@ conversation. Current-conversation refs normally omit that segment.
   non-cached.
 - The render token probe uses the same ANNOUNCE production path as the final
   render, so large ANNOUNCE blocks can still trigger compaction.
+
+## Owner Retention Contract
+
+ANNOUNCE policies are the right place for owner-defined volatile context. A
+policy may decide that a recently attached or read object should be shown for
+only a bounded number of render rounds. The rendered section must say how long
+it remains visible and how to refresh it.
+
+Canvas is the reference example:
+
+```text
+[CANVAS BOARD]
+visibility: 3/3 render rounds remaining; use react.pull(paths=['cnv:main']) and react.read on the returned fi: path if you need it updated/prolonged.
+```
+
+Two different event sources can legitimately refer to the same board in one
+turn:
+
+```text
+chat.canvas.state  -> user/UI attached the board as context
+canvas.read        -> agent read a pulled canvas snapshot
+```
+
+They should not produce duplicate ANNOUNCE sections for the same board. The
+owner announce policy should consolidate by object identity and render one
+current section, preferring the freshest read/state payload according to its
+policy. This is not a generic ReAct rule; it belongs to the owner policy
+because only the owner knows whether two refs identify the same volatile
+object.

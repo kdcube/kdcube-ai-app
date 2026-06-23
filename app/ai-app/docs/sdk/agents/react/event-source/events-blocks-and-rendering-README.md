@@ -32,6 +32,12 @@ ANNOUNCE is tail material. It is recomputed for the decision render and appended
 after cache markers. It is not stored as a normal timeline block unless a
 separate materializer writes a durable artifact/ref.
 
+Owner-object reads can participate in both worlds. The read policy may append a
+compact durable timeline fact, while the ANNOUNCE policy renders a bounded live
+projection from metadata on that fact. Canvas uses this pattern: `canvas.read`
+stores a compact read fact, and the canvas announce policy renders the board
+map for a limited number of render rounds.
+
 ## Phase Matrix
 
 | # | Spot | Current implementation | `tool_call_validation` | `block_production` | `timeline_projection` | `announce_production` | `compaction_projection` | Status |

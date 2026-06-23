@@ -293,7 +293,14 @@ export default function App() {
   // omitted-canvas pin (UI drop or agent canvas.pin) lands on it, not "main".
   const handleCanvasChange = useCallback((name: string) => {
     setActiveCanvasName(name)
-    if (host) void host.setActiveCanvas(name).catch(() => undefined)
+    if (!host) return
+    void host.setActiveCanvas(name).catch(() => undefined)
+    // Boot only fetched the initial board, so other boards live in `canvases`
+    // as metadata with no cards — selecting one rendered blank until the user
+    // hit refresh. Load the picked board's pins now (same call boot/fallback use).
+    void host.loadCanvas(name)
+      .then((loaded) => { if (loaded.length) setCanvases(loaded) })
+      .catch(() => undefined)
   }, [host])
 
   useEffect(() => {
