@@ -170,6 +170,9 @@ def is_text_mime_type(mime_type: str) -> bool:
     if mime_type.startswith("text/"):
         return True
 
+    if mime_type.endswith("+json") or mime_type.endswith("+xml"):
+        return True
+
     # Check for charset parameter (usually indicates text)
     if "charset=" in mime_type:
         return True

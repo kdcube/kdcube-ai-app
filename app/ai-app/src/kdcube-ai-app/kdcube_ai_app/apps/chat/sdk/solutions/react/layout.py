@@ -744,21 +744,100 @@ def build_announce_workspace_lines(
         except Exception:
             return []
 
-    def _rel_files(root_name: str, namespace: str, cap: int = 20):
-        if artifact_root is None:
-            return [], 0
-        base = artifact_root / root_name / namespace
+    def _workdir_entries() -> List[pathlib.Path]:
+        if artifact_root is None or not artifact_root.is_dir():
+            return []
+        try:
+            children = list(artifact_root.iterdir())
+        except Exception:
+            return []
+        turn_root_names = set(roots)
+        current: List[pathlib.Path] = []
+        prior_turns: List[pathlib.Path] = []
+        other: List[pathlib.Path] = []
+        for child in children:
+            name = child.name
+            if turn_id and name == turn_id:
+                current.append(child)
+            elif name in turn_root_names:
+                prior_turns.append(child)
+            else:
+                other.append(child)
+        current.sort(key=lambda p: p.name.lower())
+        prior_turns.sort(key=lambda p: p.name, reverse=True)
+        other.sort(key=lambda p: p.name.lower())
+        return current + prior_turns + other
+
+    def _direct_children(base: pathlib.Path) -> List[pathlib.Path]:
+        if not base.is_dir():
+            return []
+        try:
+            return sorted(base.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower()))
+        except Exception:
+            return []
+
+    def _rel_files(base: pathlib.Path, *, cap: int = 120) -> Tuple[List[str], int]:
         if not base.is_dir():
             return [], 0
         rels: List[str] = []
         try:
-            for dirpath, _dirs, filenames in os.walk(base):
-                for fn in filenames:
+            for dirpath, dirnames, filenames in os.walk(base):
+                dirnames[:] = [
+                    d for d in sorted(dirnames, key=str.lower)
+                    if d not in {".git", "__pycache__"}
+                ]
+                for fn in sorted(filenames, key=str.lower):
+                    if fn in {".DS_Store"}:
+                        continue
                     rels.append(os.path.relpath(os.path.join(dirpath, fn), base))
         except Exception:
             return [], 0
-        rels.sort(key=str.lower)
         return rels[:cap], len(rels)
+
+    def _render_files_namespace(root_path: pathlib.Path, *, is_current: bool) -> None:
+        files_root = root_path / "files"
+        children = _direct_children(files_root)
+        if not children and not is_current:
+            return
+        lines.append("    files/")
+        for child in children:
+            name = child.name
+            ann = []
+            if is_current and child.is_dir() and name in provenance:
+                ann.append(f"checked out from {provenance[name]}")
+            if is_current and child.is_dir() and name in modified_scopes:
+                ann.append("MODIFIED this turn")
+            suffix = ("      \u2014 " + " \u00b7 ".join(ann)) if ann else ""
+            marker = "/" if child.is_dir() else ""
+            lines.append(f"      {name}{marker}{suffix}")
+        if is_current and not children:
+            lines.append("      (empty)")
+
+    def _render_recursive_namespace(ns_path: pathlib.Path, *, is_current: bool) -> None:
+        name = ns_path.name
+        if name in {".git", "__pycache__"}:
+            return
+        if ns_path.is_file():
+            lines.append(f"    {name}")
+            return
+        if not ns_path.is_dir():
+            return
+        files, total = _rel_files(ns_path)
+        lines.append(f"    {name}/")
+        if files:
+            for rel in files:
+                suffix = ""
+                if is_current and name == "outputs":
+                    suffix = "   \u2014 produced this turn"
+                elif is_current and name == "attachments":
+                    suffix = "   \u2014 user upload this turn"
+                elif is_current and name == "external" and "/attachments/" in rel:
+                    suffix = "   \u2014 live event attachment"
+                lines.append(f"      {rel}{suffix}")
+            if total > len(files):
+                lines.append(f"      \u2026 +{total - len(files)} more")
+        else:
+            lines.append("      (empty)")
 
     # local files/ presence (for cross-tagging REMOTE rows)
     current_files_projects = set(_top_dirs(turn_id, "files")) if turn_id else set()
@@ -772,47 +851,48 @@ def build_announce_workspace_lines(
     lines.append("  LOCAL — materialized on disk THIS turn.")
     lines.append("  This is the ONLY content react.read / react.rg / react.patch / exec can touch directly.")
     lines.append("  If a path is not in this tree it is NOT local — pull it first, even if you see its fi: ref in the timeline.")
-    if not roots:
+    local_entries = _workdir_entries()
+    if not local_entries:
         lines.append("  (workspace is empty this turn — nothing materialized yet)")
-    ordered_roots = ([turn_id] if turn_id in roots else []) + sorted([r for r in roots if r != turn_id], reverse=True)
-    for root in ordered_roots:
-        is_current = (root == turn_id)
-        label = "current turn \u00b7 EDITABLE" if is_current else "pulled reference \u00b7 READ-ONLY \u2014 checkout into the current turn to edit"
-        lines.append(f"  {root}/   ({label})")
-        # files/
-        fdirs = _top_dirs(root, "files")
-        if fdirs or is_current:
-            lines.append("    files/")
-            for proj in fdirs:
-                ann = []
-                if is_current and proj in provenance:
-                    ann.append(f"checked out from {provenance[proj]}")
-                if is_current and proj in modified_scopes:
-                    ann.append("MODIFIED this turn")
-                suffix = ("      \u2014 " + " \u00b7 ".join(ann)) if ann else ""
-                lines.append(f"      {proj}/{suffix}")
-            if is_current and not fdirs:
-                lines.append("      (empty)")
-        # outputs/ + attachments/ (list files)
-        for ns, note in (("outputs", "produced this turn"), ("attachments", "user upload this turn")):
-            files, total = _rel_files(root, ns)
-            if files:
-                lines.append(f"    {ns}/")
-                for rel in files:
-                    suffix = f"   \u2014 {note}" if (is_current and note) else ""
-                    lines.append(f"      {rel}{suffix}")
-                if total > len(files):
-                    lines.append(f"      \u2026 +{total - len(files)} more")
-            elif is_current and ns == "outputs":
-                lines.append("    outputs/            (empty)")
-        # snapshots/ (top-level)
-        sdirs = _top_dirs(root, "snapshots")
-        if sdirs:
-            lines.append("    snapshots/")
-            for s in sdirs:
-                lines.append(f"      {s}/")
-        elif is_current:
-            lines.append("    snapshots/          (empty)")
+    for entry in local_entries:
+        name = entry.name
+        is_current = bool(turn_id and name == turn_id)
+        is_turn_root = name in set(roots)
+        if entry.is_file():
+            lines.append(f"  {name}   (local workdir file)")
+            continue
+        if is_current:
+            label = "current turn \u00b7 EDITABLE"
+        elif is_turn_root:
+            label = "pulled reference \u00b7 READ-ONLY \u2014 checkout into the current turn to edit"
+        else:
+            label = "local workdir entry"
+        lines.append(f"  {name}/   ({label})")
+        if not entry.is_dir():
+            continue
+
+        children = _direct_children(entry)
+        by_name = {child.name: child for child in children}
+        rendered: set[str] = set()
+        if "files" in by_name or is_current:
+            _render_files_namespace(entry, is_current=is_current)
+            rendered.add("files")
+        for expected_empty in ("outputs", "snapshots"):
+            if is_current and expected_empty not in by_name:
+                spacing = "            " if expected_empty == "outputs" else "          "
+                lines.append(f"    {expected_empty}/{spacing}(empty)")
+                rendered.add(expected_empty)
+        ordered_names = ["outputs", "snapshots", "attachments", "external"]
+        for child_name in ordered_names:
+            child = by_name.get(child_name)
+            if child is None or child_name in rendered:
+                continue
+            _render_recursive_namespace(child, is_current=is_current)
+            rendered.add(child_name)
+        for child in children:
+            if child.name in rendered:
+                continue
+            _render_recursive_namespace(child, is_current=is_current)
 
     # ---------- REMOTE (git only) ----------
     if impl == "git":

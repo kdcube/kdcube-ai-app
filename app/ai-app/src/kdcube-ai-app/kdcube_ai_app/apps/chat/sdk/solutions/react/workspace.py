@@ -213,7 +213,7 @@ def _is_text_mime(m: str | None) -> bool:
     m = (m or "").lower().strip()
     if m in _TEXT_MIMES:
         return True
-    return m.startswith("text/")
+    return m.startswith("text/") or m.endswith("+json") or m.endswith("+xml")
 
 
 def workspace_lineage_segments(runtime_ctx: Any) -> Dict[str, str]:

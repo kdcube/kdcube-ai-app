@@ -6,6 +6,7 @@ import random
 from types import ModuleType, SimpleNamespace
 
 from kdcube_ai_app.apps.chat.sdk.events import EventSourceSubsystem, event_source_declaration
+from kdcube_ai_app.apps.chat.sdk.runtime.workspace import artifact_outdir_for
 from kdcube_ai_app.apps.chat.sdk.solutions.react.events import block_production_policy
 from kdcube_ai_app.apps.chat.sdk.solutions.react.proto import RuntimeCtx
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.tools.read import handle_react_read
@@ -87,6 +88,33 @@ async def test_read_supports_outdir_relative_fi_paths(tmp_path):
 
     assert any(
         b.get("path") == "fi:logs/docker.err.log" and b.get("text") == "boom"
+        for b in ctx.timeline.blocks
+        if b.get("type") == "react.tool.result"
+    )
+
+
+@pytest.mark.asyncio
+async def test_read_external_followup_svg_attachment_as_text(tmp_path):
+    runtime = RuntimeCtx(turn_id="turn_read", outdir=str(tmp_path), workdir=str(tmp_path))
+    ctx = FakeBrowser(runtime)
+    physical = (
+        artifact_outdir_for(tmp_path)
+        / "turn_read"
+        / "external"
+        / "external_event"
+        / "attachments"
+        / "evt_1"
+        / "diagram.svg"
+    )
+    physical.parent.mkdir(parents=True, exist_ok=True)
+    physical.write_text('<svg xmlns="http://www.w3.org/2000/svg"><text>diagram</text></svg>', encoding="utf-8")
+    path = "fi:turn_read.external.external_event.attachments/evt_1/diagram.svg"
+    state = {"last_decision": {"tool_call": {"params": {"paths": [path]}}}}
+
+    await handle_react_read(ctx_browser=ctx, state=state, tool_call_id="r_svg")
+
+    assert any(
+        b.get("path") == path and "<svg" in (b.get("text") or "") and "diagram" in (b.get("text") or "")
         for b in ctx.timeline.blocks
         if b.get("type") == "react.tool.result"
     )

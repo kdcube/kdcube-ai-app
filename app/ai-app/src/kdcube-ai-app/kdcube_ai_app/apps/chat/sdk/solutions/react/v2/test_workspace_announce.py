@@ -79,6 +79,48 @@ def test_build_announce_text_includes_git_workspace_summary(tmp_path):
     assert 'react.checkout(mode="replace", paths=["fi:turn_122.files/projectA"])' in announce_text
 
 
+def test_build_announce_text_lists_actual_workdir_paths_except_files_tree(tmp_path):
+    outdir = tmp_path / "out"
+    artifact_outdir = artifact_outdir_for(outdir)
+    turn_root = artifact_outdir / "turn_123"
+    (turn_root / "files" / "projectA" / "src").mkdir(parents=True, exist_ok=True)
+    (turn_root / "files" / "projectA" / "src" / "app.py").write_text("print('hi')\n", encoding="utf-8")
+    (turn_root / "snapshots" / "cnv").mkdir(parents=True, exist_ok=True)
+    (turn_root / "snapshots" / "cnv" / "main.json").write_text("{}", encoding="utf-8")
+    (turn_root / "external" / "external_event" / "attachments" / "evt_1").mkdir(parents=True, exist_ok=True)
+    (turn_root / "external" / "external_event" / "attachments" / "evt_1" / "diagram.svg").write_text("<svg />", encoding="utf-8")
+    (artifact_outdir / "diagnostics").mkdir(parents=True, exist_ok=True)
+    (artifact_outdir / "diagnostics" / "note.txt").write_text("local", encoding="utf-8")
+
+    runtime = RuntimeCtx(
+        turn_id="turn_123",
+        outdir=str(outdir),
+        workspace_implementation="custom",
+    )
+
+    announce_text = build_announce_text(
+        iteration=1,
+        max_iterations=6,
+        started_at="2026-04-02T10:00:00Z",
+        timezone="UTC",
+        runtime_ctx=runtime,
+        timeline_blocks=[],
+        constraints=None,
+        feedback_updates=None,
+        feedback_incorporated=False,
+        mode="full",
+    )
+
+    assert "external/" in announce_text
+    assert "external_event/attachments/evt_1/diagram.svg" in announce_text
+    assert "snapshots/" in announce_text
+    assert "cnv/main.json" in announce_text
+    assert "diagnostics/" in announce_text
+    assert "note.txt" in announce_text
+    assert "projectA/" in announce_text
+    assert "src/app.py" not in announce_text
+
+
 def test_build_announce_text_includes_context_caps(tmp_path):
     runtime = RuntimeCtx(
         turn_id="turn_123",
