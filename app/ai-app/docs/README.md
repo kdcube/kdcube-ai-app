@@ -1,9 +1,9 @@
 ---
 id: repo:kdcube-ai-app/app/ai-app/docs/README.md
 title: "Platform Documentation Index"
-summary: "Curated top-level map of the KDCube documentation tree for builders, integrators, operators, and agents."
+summary: "Curated top-level map of the KDCube documentation tree for app builders, integrators, operators, and agents."
 tags: ["docs", "index", "sdk", "service", "ops", "architecture"]
-keywords: ["documentation index", "platform architecture", "configuration guides", "service runtime docs", "bundle sdk docs", "execution docs", "deployment and operations docs", "bundle builder docs", "client widgets", "streaming", "memory", "claude code"]
+keywords: ["documentation index", "platform architecture", "configuration guides", "service runtime docs", "app sdk docs", "execution docs", "deployment and operations docs", "app builder docs", "client widgets", "streaming", "memory", "claude code"]
 updated_at: 2026-06-23
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/what-you-can-do-with-kdcube-README.md
@@ -30,35 +30,35 @@ Curated index of platform, service, and SDK documentation.
 * Architecture Of What We Built: [architecture-of-what-we-built-README.md](arch/architecture-of-what-we-built-README.md)
 * Architecture Of What You Build: [architecture-of-what-you-build-README.md](arch/architecture-of-what-you-build-README.md)
 * Component Recipes: [components/README.md](recipes/components/README.md)
-* How To Navigate Bundle Docs: [how-to-navigate-kdcube-docs-README.md](sdk/bundle/build/how-to-navigate-kdcube-docs-README.md)
-* Bundle Docs Index: [bundle-index-README.md](sdk/bundle/bundle-index-README.md)
+* How To Navigate App Docs: [how-to-navigate-kdcube-docs-README.md](sdk/bundle/build/how-to-navigate-kdcube-docs-README.md)
+* App Docs Index: [bundle-index-README.md](sdk/bundle/bundle-index-README.md)
 
-## Build Bundles
+## Build Apps
 
-* How To Write A Bundle: [how-to-write-bundle-README.md](sdk/bundle/build/how-to-write-bundle-README.md)
+* How To Write An App: [how-to-write-bundle-README.md](sdk/bundle/build/how-to-write-bundle-README.md)
 * Assemble With SDK Building Blocks: [how-to-assemble-bundle-with-sdk-building-blocks-README.md](sdk/bundle/build/how-to-assemble-bundle-with-sdk-building-blocks-README.md)
-* Configure And Run A Bundle: [how-to-configure-and-run-bundle-README.md](sdk/bundle/build/how-to-configure-and-run-bundle-README.md)
-* Test A Bundle: [how-to-test-bundle-README.md](sdk/bundle/build/how-to-test-bundle-README.md)
-* Release Bundle Content: [how-to-release-bundle-content-README.md](sdk/bundle/build/how-to-release-bundle-content-README.md)
-* Versatile Reference Bundle: [versatile-reference-bundle-README.md](sdk/bundle/versatile-reference-bundle-README.md)
-* Bundle Developer Guide: [bundle-developer-guide-README.md](sdk/bundle/bundle-developer-guide-README.md)
+* Configure And Run An App: [how-to-configure-and-run-bundle-README.md](sdk/bundle/build/how-to-configure-and-run-bundle-README.md)
+* Test An App: [how-to-test-bundle-README.md](sdk/bundle/build/how-to-test-bundle-README.md)
+* Release App Content: [how-to-release-bundle-content-README.md](sdk/bundle/build/how-to-release-bundle-content-README.md)
+* Versatile Reference App: [versatile-reference-bundle-README.md](sdk/bundle/versatile-reference-bundle-README.md)
+* App Developer Guide: [bundle-developer-guide-README.md](sdk/bundle/bundle-developer-guide-README.md)
 * Component Recipes: [components/README.md](recipes/components/README.md)
 
-## Bundle Interfaces And Frontend
+## App Interfaces And Frontend
 
 * How To Integrate With KDCube Apps: [how-to-integrate-with-kdcube-apps-README.md](how-to-integrate-with-kdcube-apps-README.md)
-* Bundle Interfaces: [bundle-interfaces-README.md](sdk/bundle/bundle-interfaces-README.md)
-* Bundle Client UI: [bundle-client-ui-README.md](sdk/bundle/bundle-client-ui-README.md)
-* Bundle Widget Integration: [bundle-widget-integration-README.md](sdk/bundle/bundle-widget-integration-README.md)
+* App Interfaces: [bundle-interfaces-README.md](sdk/bundle/bundle-interfaces-README.md)
+* App Client UI: [bundle-client-ui-README.md](sdk/bundle/bundle-client-ui-README.md)
+* App Widget Integration: [bundle-widget-integration-README.md](sdk/bundle/bundle-widget-integration-README.md)
 * UI Components Lifecycle: [ui-components-lifecycle-README.md](sdk/bundle/ui-components-lifecycle-README.md)
-* Bundle Frontend Awareness: [bundle-frontend-awareness-README.md](sdk/bundle/bundle-frontend-awareness-README.md)
-* Bundle Client Communication: [client-transport-protocols-README.md](service/comm/client-transport-protocols-README.md)
-* Bundle Chat Stream Events: [chat-stream-events-README.md](sdk/solutions/chat/chat-stream-events-README.md)
-* Bundle Transports: [bundle-transports-README.md](sdk/bundle/bundle-transports-README.md)
+* App Frontend Awareness: [bundle-frontend-awareness-README.md](sdk/bundle/bundle-frontend-awareness-README.md)
+* App Client Communication: [client-transport-protocols-README.md](service/comm/client-transport-protocols-README.md)
+* App Chat Stream Events: [chat-stream-events-README.md](sdk/solutions/chat/chat-stream-events-README.md)
+* App Transports: [bundle-transports-README.md](sdk/bundle/bundle-transports-README.md)
 
 ## Agents, Tools, Skills, And Memory
 
-* Bundle Agent Integration: [bundle-agent-integration-README.md](sdk/bundle/bundle-agent-integration-README.md)
+* App Agent Integration: [bundle-agent-integration-README.md](sdk/bundle/bundle-agent-integration-README.md)
 * ReAct Runtime Flow: [flow-README.md](sdk/agents/react/flow-README.md)
 * ReAct Context: [react-context-README.md](sdk/agents/react/react-context-README.md)
 * ReAct Tools: [react-tools-README.md](sdk/agents/react/react-tools-README.md)
@@ -75,7 +75,7 @@ Curated index of platform, service, and SDK documentation.
 
 ## Runtime, Storage, And Execution
 
-* Bundle Storage And Cache: [bundle-storage-and-cache-README.md](sdk/bundle/bundle-storage-and-cache-README.md)
+* App Storage And Cache: [bundle-storage-and-cache-README.md](sdk/bundle/bundle-storage-and-cache-README.md)
 * File Storage And Hosting: [files-storage-system-README.md](hosting/files-storage-system-README.md)
 * Artifacts Limits: [artifacts-limits-README.md](hosting/artifacts-limits-README.md)
 * ISO Runtime: [README-iso-runtime.md](exec/README-iso-runtime.md)
@@ -87,12 +87,12 @@ Curated index of platform, service, and SDK documentation.
 ## Configuration And Secrets
 
 * Assembly Descriptor: [assembly-descriptor-README.md](configuration/assembly-descriptor-README.md)
-* Bundles Descriptor: [bundles-descriptor-README.md](configuration/bundles-descriptor-README.md)
-* Bundles Secrets Descriptor: [bundles-secrets-descriptor-README.md](configuration/bundles-secrets-descriptor-README.md)
+* Apps Descriptor: [bundles-descriptor-README.md](configuration/bundles-descriptor-README.md)
+* Apps Secrets Descriptor: [bundles-secrets-descriptor-README.md](configuration/bundles-secrets-descriptor-README.md)
 * Platform Secrets Descriptor: [secrets-descriptor-README.md](configuration/secrets-descriptor-README.md)
 * Service Runtime Configuration Mapping: [service-runtime-configuration-mapping-README.md](configuration/service-runtime-configuration-mapping-README.md)
-* Bundle Runtime Settings, Configuration, And Secrets: [bundle-runtime-configuration-and-secrets-README.md](configuration/bundle-runtime-configuration-and-secrets-README.md)
-* Bundle Properties And Secrets Lifecycle: [bundle-properties-and-secrets-lifecycle-README.md](sdk/bundle/bundle-properties-and-secrets-lifecycle-README.md)
+* App Runtime Settings, Configuration, And Secrets: [bundle-runtime-configuration-and-secrets-README.md](configuration/bundle-runtime-configuration-and-secrets-README.md)
+* App Properties And Secrets Lifecycle: [bundle-properties-and-secrets-lifecycle-README.md](sdk/bundle/bundle-properties-and-secrets-lifecycle-README.md)
 * Reserved Platform Properties: [bundle-reserved-platform-properties-README.md](sdk/bundle/bundle-reserved-platform-properties-README.md)
 
 ## Service, Deployment, And Operations
@@ -112,7 +112,7 @@ Curated index of platform, service, and SDK documentation.
 
 ## Scheduled Work, Streaming, And Communication
 
-* Bundle Scheduled Jobs: [bundle-scheduled-jobs-README.md](sdk/bundle/bundle-scheduled-jobs-README.md)
+* App Scheduled Jobs: [bundle-scheduled-jobs-README.md](sdk/bundle/bundle-scheduled-jobs-README.md)
 * Streaming Exec Widget: [streaming-widget-README.md](sdk/streaming/streaming-widget-README.md)
 * LLM Streaming And Accountable Invocation: [llm-streaming-README.md](sdk/streaming/llm-streaming-README.md)
 * Communication Integrations: [README-comm.md](service/comm/README-comm.md)

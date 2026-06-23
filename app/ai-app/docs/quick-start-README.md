@@ -1,10 +1,10 @@
 ---
 id: repo:kdcube-ai-app/app/ai-app/docs/quick-start-README.md
 title: "Quick Start: Local KDCube"
-summary: "Current local-start guide for booting KDCube with the CLI, descriptor sets, Docker Compose runtime, bundle registry, refresh flow, and bundle release loop."
-tags: ["docs", "quickstart", "local", "docker-compose", "cli", "descriptors", "bundle"]
-keywords: ["local quick start", "kdcube init start bundle reload", "docker compose startup", "descriptor driven install", "oss cli descriptors", "local bundle development", "run kdcube locally", "bundle config apply", "bundle release", "demo environment bootstrap", "kdcube copilot local"]
-updated_at: 2026-05-27
+summary: "Current local-start guide for booting KDCube with the CLI, descriptor sets, Docker Compose runtime, app registry, refresh flow, and app release loop."
+tags: ["docs", "quickstart", "local", "docker-compose", "cli", "descriptors", "app"]
+keywords: ["local quick start", "kdcube init start app reload", "docker compose startup", "descriptor driven install", "oss cli descriptors", "local app development", "run kdcube locally", "app config apply", "app release", "demo environment bootstrap", "kdcube copilot local"]
+updated_at: 2026-06-23
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/what-you-can-do-with-kdcube-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/service/cicd/cli-README.md
@@ -20,15 +20,15 @@ see_also:
 # Quick Start: Local KDCube
 
 This is the shortest current path to run KDCube locally and begin iterating on
-bundles.
+apps.
 
 Use this page when you need to:
 
 - start a local KDCube runtime from descriptors
-- test reference bundles
-- update bundle declarations and reload them
+- test reference apps
+- update app declarations and reload them
 - rebuild or refresh the platform runtime
-- understand where bundle release fits into the local loop
+- understand where app release fits into the local loop
 
 For the product overview, read
 [What You Can Do With KDCube](what-you-can-do-with-kdcube-README.md).
@@ -56,14 +56,18 @@ assembly.yaml / bundles.yaml / ...       --path / --release / --latest
 The important boundaries:
 
 - `tenant/project` is one isolated runtime environment.
-- descriptors configure the environment and bundle registry.
+- descriptors configure the environment and app registry.
 - `kdcube init` creates or reseeds a runtime workdir.
 - `kdcube start` starts the Docker Compose stack.
 - `kdcube refresh` rebuilds or moves the platform runtime while preserving
   staged descriptors.
-- `kdcube bundle config apply` updates staged bundle descriptors from a seed.
-- `kdcube bundle reload <bundle_id>` refreshes bundle code/config in the
-  running proc without rebuilding platform images.
+- `kdcube bundle config apply` updates staged app descriptors from a seed.
+- `kdcube bundle reload <app_id>` refreshes app code/config in the running proc
+  without rebuilding platform images.
+
+Compatibility note: the current CLI and descriptor files still use the legacy
+term `bundle` in commands and filenames. This guide uses **app** for the
+deployable product unit and keeps literal command/config names unchanged.
 
 ## 2. Local Paths
 
@@ -93,8 +97,8 @@ The main descriptor files are:
 | `assembly.yaml` | tenant/project, platform ref, auth, ports, infra, storage, ReAct/runtime settings |
 | `secrets.yaml` | platform secrets such as model keys, infra passwords, git tokens |
 | `gateway.yaml` | gateway capacity, throttling, process limits |
-| `bundles.yaml` | bundle registry, source refs, bundle props, non-secret config |
-| `bundles.secrets.yaml` | bundle-level secrets |
+| `bundles.yaml` | app registry, source refs, app props, non-secret config |
+| `bundles.secrets.yaml` | app-level secrets |
 
 ## 3. Install Or Refresh The CLI
 
@@ -153,7 +157,7 @@ secret store, not in docs:
 
 "$KDCUBE" info --workdir "$WORKDIR"
 
-"$KDCUBE" bundle status <bundle_id> \
+"$KDCUBE" bundle status <app_id> \
   --workdir "$WORKDIR" \
   --json
 
@@ -181,9 +185,9 @@ platform ref. `refresh` preserves staged descriptors under `$WORKDIR/config`.
 Use `refresh --path "$REPO" --build` when your dirty local checkout should be
 copied into `$WORKDIR/repo` before images are rebuilt.
 
-## 7. Configure Bundles
+## 7. Configure Apps
 
-When the seed descriptor files are the source of truth for bundle declarations,
+When the seed descriptor files are the source of truth for app declarations,
 props, or secrets, apply them to the active runtime:
 
 ```shell
@@ -199,60 +203,60 @@ props, or secrets, apply them to the active runtime:
 ```
 
 `--dry-run` previews the staged changes. `--reload` asks the running proc to
-reload changed bundle ids after staging.
+reload changed app ids after staging.
 
 Use a direct reload when the staged descriptor is already correct and only proc
 cache/code visibility needs refreshing:
 
 ```shell
-"$KDCUBE" bundle reload <bundle_id> --workdir "$WORKDIR"
+"$KDCUBE" bundle reload <app_id> --workdir "$WORKDIR"
 ```
 
-Local-path bundle registration:
+Local-path app registration:
 
 ```shell
-"$KDCUBE" bundle my.bundle@1-0 \
+"$KDCUBE" bundle my.app@1-0 \
   --workdir "$WORKDIR" \
-  --local-path "/abs/path/to/my.bundle@1-0" \
+  --local-path "/abs/path/to/my.app@1-0" \
   --module entrypoint \
   --no-singleton
 
-"$KDCUBE" bundle reload my.bundle@1-0 --workdir "$WORKDIR"
+"$KDCUBE" bundle reload my.app@1-0 --workdir "$WORKDIR"
 ```
 
-Git-backed bundle registration:
+Git-backed app registration:
 
 ```shell
-"$KDCUBE" bundle my.bundle@1-0 \
+"$KDCUBE" bundle my.app@1-0 \
   --workdir "$WORKDIR" \
   --git-repo "https://github.com/org/repo.git" \
-  --git-ref "<bundle-release-ref>" \
-  --git-subdir "src/my.bundle@1-0" \
+  --git-ref "<app-release-ref>" \
+  --git-subdir "src/my.app@1-0" \
   --module entrypoint \
   --no-singleton
 
-"$KDCUBE" bundle reload my.bundle@1-0 --workdir "$WORKDIR"
+"$KDCUBE" bundle reload my.app@1-0 --workdir "$WORKDIR"
 ```
 
-For local-path bundles, the CLI normalizes host paths to the container-visible
+For local-path apps, the CLI normalizes host paths to the container-visible
 `/bundles/...` mount using `assembly.yaml -> paths.host_bundles_path`.
 
-## 8. Release Bundle Content
+## 8. Release App Content
 
-The local runtime loop ends by releasing bundle content and patching descriptors
+The local runtime loop ends by releasing app content and patching descriptors
 to the released ref.
 
 Use the release guide:
 
-[How To Release Bundle Content](sdk/bundle/build/how-to-release-bundle-content-README.md)
+[How To Release App Content](sdk/bundle/build/how-to-release-bundle-content-README.md)
 
 Usual flow:
 
 ```text
-develop/test bundle locally
-  -> update bundle docs, interface docs, config templates, release.yaml
-  -> run bundle validation/tests
-  -> commit/tag/push the bundle/content repo
+develop/test app locally
+  -> update app docs, interface docs, config templates, release.yaml
+  -> run app validation/tests
+  -> commit/tag/push the app/content repo
   -> update deployment descriptors to the released git ref
   -> apply descriptors and reload, or deploy the target environment
 ```
@@ -262,12 +266,12 @@ develop/test bundle locally
 Use the UI/admin surfaces and CLI to check:
 
 - active tenant/project and platform ref
-- registered bundles and default bundle
-- bundle props and bundle secrets
-- chat route loads the expected bundle
+- registered apps and default app
+- app props and app secrets
+- chat route loads the expected app
 - widget routes build and serve static assets
 - public APIs/webhooks are reachable when configured
-- MCP endpoints are listed and callable when the bundle exposes them
+- MCP endpoints are listed and callable when the app exposes them
 - generated files and timeline artifacts appear with expected visibility
 
 For `versatile`, check that the chat route loads, configured widgets build, and
@@ -275,11 +279,11 @@ any enabled namespace-service or MCP surfaces are listed and callable.
 
 ## 10. Coding-Agent Bootstrap Prompt
 
-Use this as a compact instruction when asking a coding agent to build or wrap a
-bundle locally:
+Use this as a compact instruction when asking a coding agent to build or wrap an
+app locally:
 
 ```text
-You are building a KDCube bundle. First read:
+You are building a KDCube app. First read:
 - docs/what-you-can-do-with-kdcube-README.md
 - docs/quick-start-README.md
 - docs/sdk/bundle/build/how-to-navigate-kdcube-docs-README.md
@@ -288,10 +292,11 @@ You are building a KDCube bundle. First read:
 - docs/sdk/bundle/build/how-to-write-bundle-README.md
 - docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md
 
-Use the versatile reference bundle for patterns. Keep product logic separate
+Use the versatile reference app for patterns. Keep product logic separate
 from the KDCube adapter. Expose surfaces through entrypoint.py decorators.
 Map config to bundles.yaml and secrets to bundles.secrets.yaml. Test locally
-with kdcube init/start/bundle reload using the active descriptor set.
+with kdcube init/start and the current compatibility command `kdcube bundle reload`
+using the active descriptor set.
 ```
 
 ## 11. Where To Go Next
@@ -301,8 +306,8 @@ with kdcube init/start/bundle reload using the active descriptor set.
 | product overview | [what-you-can-do-with-kdcube-README.md](what-you-can-do-with-kdcube-README.md) |
 | CLI details | [service/cicd/cli-README.md](service/cicd/cli-README.md) |
 | descriptor semantics | [configuration/assembly-descriptor-README.md](configuration/assembly-descriptor-README.md), [configuration/bundles-descriptor-README.md](configuration/bundles-descriptor-README.md) |
-| bundle authoring | [sdk/bundle/build/how-to-navigate-kdcube-docs-README.md](sdk/bundle/build/how-to-navigate-kdcube-docs-README.md) |
-| release bundle content | [sdk/bundle/build/how-to-release-bundle-content-README.md](sdk/bundle/build/how-to-release-bundle-content-README.md) |
+| app authoring | [sdk/bundle/build/how-to-navigate-kdcube-docs-README.md](sdk/bundle/build/how-to-navigate-kdcube-docs-README.md) |
+| release app content | [sdk/bundle/build/how-to-release-bundle-content-README.md](sdk/bundle/build/how-to-release-bundle-content-README.md) |
 | reference implementation | [sdk/bundle/versatile-reference-bundle-README.md](sdk/bundle/versatile-reference-bundle-README.md) |
 | public HTTPS callbacks | [service/cicd/ngrok-README.md](service/cicd/ngrok-README.md) |
 
@@ -314,9 +319,9 @@ with kdcube init/start/bundle reload using the active descriptor set.
   source in an existing runtime.
 - Expecting descriptor changes to affect a running proc without
   `bundle config apply --reload`, `bundle reload`, or restart.
-- Writing bundle secrets into non-secret config.
+- Writing app secrets into non-secret config.
 - Using a host filesystem path inside runtime config where a container path is
-  required; let the CLI normalize local bundle paths.
+  required; let the CLI normalize local app paths.
 - Using browser/top-page origins in widgets instead of the KDCube frame/runtime
   origin.
 - Expecting public provider callbacks to call `localhost`; use a stable HTTPS

@@ -3,13 +3,14 @@
 </p>
 
 <p align="center">
-  <strong><span style="color:#16a34a;font-size:1.15em;">The self-hosted control plane and runtime for governed AI agents and applications.</span></strong>
+  <strong><span style="color:#16a34a;font-size:1.15em;">Build powerful governed AI apps quickly, on infrastructure you control.</span></strong>
 </p>
 
 <p align="center">
-  Tenancy, budgets, isolated execution, RBAC, and accounting as platform primitives —
-  so teams whose data, prompts, tools, and execution must stay inside controlled
-  infrastructure can run <em>more than one</em> AI application in production.
+  KDCube gives developers an app framework, reference ReAct runtime, reusable
+  widgets, named-service integration, isolated execution, tenancy, budgets, RBAC,
+  and accounting as platform primitives — so a prototype can become a governed
+  product without rebuilding the runtime from scratch.
 </p>
 
 <p align="center">
@@ -31,9 +32,15 @@
        alt="KDCube system: browsers, MCP clients, APIs/webhooks, and Telegram reach the platform over its ingress transports (REST, SSE/Socket.IO streaming, conversation event bus, Data Bus, MCP) through the KDCube control plane (RBAC, budgets, firewall, reload/apply) into apps — one per deployable AI application. Each app exposes provided surfaces (@api, @mcp, @ui_widget, @cron, @data_bus_handler, event bus, Data Bus, streams, OAuth login/callbacks), consumes per-agent surfaces (tools, skills, named services, other apps' @api, external MCP servers), runs agent runtimes (ReAct reference runtime, Claude Code, custom Python) and a prominent isolated-execution split (privileged supervisor with network and secrets vs. separate-UID executor with no network running untrusted/generated code; in-proc / local / Docker / Fargate modes), owns a named-service-provider role (refs and schemas, previews and actions, event source policies, event resolvers, ontologic tools), and carries custom OAuth auth plus per-app config and secrets. Reusable SDK components (chat, canvas board, memories, usage; integrations like Telegram, email, browser, rendering) mount into apps by config; namespace consumers resolve shared refs through the owner. Everything runs on your own infrastructure inside your boundary.">
 </p>
 
-## Building one AI app is easy. Running ten — governed — is hard.
+## Build powerful AI apps fast. Keep them governable as they grow.
 
-The first AI demo ships in a weekend. The trouble starts at the **second and third app in production**, when someone has to answer:
+The first reason to use KDCube is speed: developers can assemble chat, tools,
+UI widgets, APIs, MCP, cron, memory, Pinboard, named-service objects, and
+isolated execution into a working app without inventing the runtime envelope.
+
+That speed matters because the first AI demo ships in a weekend. The trouble
+starts at the **second and third app in production**, when someone has to
+answer:
 
 - Who is allowed to run what, and which surfaces are visible to which roles?
 - What did each app cost, and how do we cap it before it surprises us?
@@ -41,9 +48,9 @@ The first AI demo ships in a weekend. The trouble starts at the **second and thi
 - Which events are allowed to leave our boundary — and which never can?
 - How do we update a live app without redeploying the whole service?
 
-Managed agent services, flow builders, and agent frameworks each handle part of this well. KDCube focuses on the part that is hardest to retrofit: a **governed runtime and control plane you host yourself**, where isolation, budgets, RBAC, accounting, and an outbound event firewall are part of the platform rather than something you assemble per app.
+Managed agent services, flow builders, and agent frameworks each handle part of this well. KDCube focuses on the combination that app builders need: a fast path to real products plus the governed runtime and control plane that are hardest to retrofit later. Isolation, budgets, RBAC, accounting, and an outbound event firewall are part of the platform rather than something you assemble per app.
 
-KDCube is not just an agent framework, not just a chatbot, and not just a flow builder. It lets teams package full AI applications — chat, UI, APIs, MCP surfaces, scheduled jobs, configuration, state — as deployable units called **apps** (named *bundles* throughout today's code, config, CLI, and docs — the rename is in progress), and run them with platform controls.
+KDCube is not just an agent framework, not just a chatbot, and not just a flow builder. It lets teams package full AI applications — chat, UI, APIs, MCP surfaces, scheduled jobs, configuration, state — as deployable units called **apps**, and run them with platform controls.
 
 ## Who it is for
 
@@ -66,6 +73,8 @@ KDCube is not only a place to run a chatbot. It is a way to turn internal system
 
 - **A private AI app store for your organization.** Each app ships as a complete internal product with its own chat, UI, API, jobs, MCP surface, config, secrets, state, and permissions.
 - **Domain objects the agent can actually understand.** Tasks, memories, files, incidents, cases, reports — or any namespace you define — become first-class refs with provider-owned schemas, previews, actions, and materialization paths.
+- **A governed ReAct runtime, not just a model call.** Apps can include KDCube's timeline-driven agent runtime with tools, event-source policies, ANNOUNCE, compaction, steer/followup, and named-service materialization.
+- **A real execution boundary for generated code.** Trusted app logic and secrets stay separate from untrusted/model-generated code, which can run through isolated local, Docker, split supervisor/executor, or Fargate execution modes.
 - **A shared work surface, not just a chat transcript.** Chat, canvas, widgets, files, tasks, and tools exchange context through stable refs instead of copy-pasted text.
 - **Governed automation at the edge of real systems.** Agents can inspect, update, cite, or attach objects only through configured tools, namespace contracts, and auth-aware provider operations.
 - **AI products that can be operated.** Platform teams can see costs, enforce budgets, isolate execution, gate surface visibility, control event egress, and reload/apply configuration at runtime.
@@ -109,7 +118,7 @@ These are the parts a security or platform review actually asks about, and in KD
 
 A deployable AI application in KDCube is called an **app** — one folder of code and resources that carries backend, frontend, APIs, widgets, MCP surfaces, scheduled jobs, configuration, storage, and runtime behavior **together**. It is not a plugin or a prompt wrapper; it is one whole application that can expose several governed surfaces at once. KDCube loads an app from your local filesystem or from Git by repo ref plus the app folder path.
 
-> **Naming note** — today's code, config, CLI, and docs call this unit a **bundle** (`bundles.template.yaml`, Bundle Admin, "How To Write A Bundle"). The rename to *app* is in progress; the concepts are identical.
+> **Compatibility note** — some lower-level config files, CLI commands, paths, and older SDK docs still use the legacy name **bundle** (`bundles.template.yaml`, `kdcube bundle ...`, `sdk/bundle/...`). In product and builder-facing docs, the deployable unit is an **app**.
 
 Typical app structure:
 
@@ -135,7 +144,7 @@ my.app@1-0/
 
 Tool and skill wiring is **config-first and per agent**: the app declares which tools, namespaces, operations, and skills each agent id may use under `surfaces.as_consumer.agents.<agent>.tools` and `surfaces.as_consumer.agents.<agent>.skills`. Capability is granted per agent, not globally.
 
-Python is the KDCube-native shell. Selected backend logic can live in Node or TypeScript behind a narrow bridge — see [Bundle Node backend bridge](app/ai-app/docs/sdk/bundle/bundle-node-backend-bridge-README.md) and [Node backend sidecar](app/ai-app/docs/sdk/node/node-backend-sidecar-README.md).
+Python is the KDCube-native shell. Selected backend logic can live in Node or TypeScript behind a narrow bridge — see [App Node backend bridge](app/ai-app/docs/sdk/bundle/bundle-node-backend-bridge-README.md) and [Node backend sidecar](app/ai-app/docs/sdk/node/node-backend-sidecar-README.md).
 
 ## Control over the agent and its runtime
 
@@ -146,7 +155,7 @@ Hosting is half of it. KDCube also gives the app author direct control over how 
 - **Data retention and exposure.** Timeline retention is TTL-based (`cache_ttl_seconds`, `cache_keep_recent_turns`), and what the agent can pull into its workspace is bounded by explicit read caps. Retention and exposure are configuration, not inherited defaults.
 - **Custom ontologic namespaces.** An app can own a semantic namespace — `task:`, `mem:`, `cnv:`, or one you define — by implementing a **named service provider**. The provider owns refs, objects, schemas, previews, actions, block rendering, file hosting, and URI resolution for that namespace. Consumers connect chat, canvas, and agents to those surfaces by configuration, without embedding app-specific logic in common components.
 - **Materialization both ways.** Agents can pull namespace refs into their isolated workspace as real files, and host agent-produced files back into a provider-owned namespace — under the provider's contract and the caller's auth context.
-- **Per-agent model routing.** Default models per agent role, overridable by app config and again per invocation (`bundle_call_context.role_models`).
+- **Per-agent model routing.** Default models per agent role, overridable by app config and again per invocation (`bundle_call_context.role_models`, the current compatibility field name).
 
 In short: you decide, deliberately, what the agent sees, what it can touch, what it remembers, and what it is allowed to emit.
 
@@ -160,7 +169,7 @@ One app is not limited to one agent or one runtime. Inside a single app you can 
 - **Isolated exec** — untrusted, generated code under control.
 - **`@venv(...)`** — dependency-heavy Python leaf helpers.
 
-The same app also holds ordinary backend logic, APIs, widgets, cron, and MCP that don't need an agent runtime at all. Streaming and transport surfaces run over REST, SSE, Socket.IO, and MCP. Two durable inbound paths keep their own contracts: the **conversation event bus** carries everything meant for the agent's timeline (messages, attachments, steer, followup, attached context), while the **Data Bus** carries bundle-scoped durable mutations (board patches, object edits) into `@data_bus_handler` workers.
+The same app also holds ordinary backend logic, APIs, widgets, cron, and MCP that don't need an agent runtime at all. Streaming and transport surfaces run over REST, SSE, Socket.IO, and MCP. Two durable inbound paths keep their own contracts: the **conversation event bus** carries everything meant for the agent's timeline (messages, attachments, steer, followup, attached context), while the **Data Bus** carries app-scoped durable mutations (board patches, object edits) into `@data_bus_handler` workers.
 
 Built-in SDK/runtime capabilities include Neuro Search, rendering tools (PDF / PPTX / DOCX / HTML / PNG), a managed shared Playwright browser runtime, custom tools and skills, and MCP-connected tool surfaces.
 
@@ -191,7 +200,7 @@ KDCube runs on a single machine with Docker Compose, and the same environment mo
 
 ## For builders and operators
 
-KDCube documents itself for engineers **and** coding agents: a compact Tier 1 authoring pack, a reference app, explicit configuration/runtime ownership rules, and local run/reload/test guidance. An agent can act as creator, integrator, configurator, deployer, or QA on real app work. (The docs below still use the term *bundle* for what this page calls an app.)
+KDCube documents itself for engineers **and** coding agents: a compact Tier 1 authoring pack, a reference app, explicit configuration/runtime ownership rules, and local run/reload/test guidance. An agent can act as creator, integrator, configurator, deployer, or QA on real app work.
 
 **Start with the product map:**
 
@@ -199,16 +208,16 @@ KDCube documents itself for engineers **and** coding agents: a compact Tier 1 au
 
 **Build an app (Tier 1 pack, read together):**
 
-1. [How To Navigate KDCube Bundle Docs](app/ai-app/docs/sdk/bundle/build/how-to-navigate-kdcube-docs-README.md)
-2. [How To Test A Bundle](app/ai-app/docs/sdk/bundle/build/how-to-test-bundle-README.md)
-3. [How To Write A Bundle](app/ai-app/docs/sdk/bundle/build/how-to-write-bundle-README.md)
-4. [How To Assemble A Bundle With SDK Building Blocks](app/ai-app/docs/sdk/bundle/build/how-to-assemble-bundle-with-sdk-building-blocks-README.md)
-5. [Bundle Runtime Settings, Configuration, and Secrets](app/ai-app/docs/configuration/bundle-runtime-configuration-and-secrets-README.md)
-6. [How To Configure And Run A Bundle](app/ai-app/docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md)
+1. [How To Navigate KDCube App Docs](app/ai-app/docs/sdk/bundle/build/how-to-navigate-kdcube-docs-README.md)
+2. [How To Test An App](app/ai-app/docs/sdk/bundle/build/how-to-test-bundle-README.md)
+3. [How To Write An App](app/ai-app/docs/sdk/bundle/build/how-to-write-bundle-README.md)
+4. [How To Assemble An App With SDK Building Blocks](app/ai-app/docs/sdk/bundle/build/how-to-assemble-bundle-with-sdk-building-blocks-README.md)
+5. [App Runtime Settings, Configuration, and Secrets](app/ai-app/docs/configuration/bundle-runtime-configuration-and-secrets-README.md)
+6. [How To Configure And Run An App](app/ai-app/docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md)
 
 **Reference app:**
 
-- [Versatile reference bundle](app/ai-app/docs/sdk/bundle/versatile-reference-bundle-README.md) · [`versatile@2026-03-31-13-36`](app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36)
+- [Versatile reference app](app/ai-app/docs/sdk/bundle/versatile-reference-bundle-README.md) · [`versatile@2026-03-31-13-36`](app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36)
 
 Specialized examples: [`with-isoruntime@2026-02-16-14-00`](app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/with-isoruntime@2026-02-16-14-00) for direct isolated exec · [`node.bridge.mcp@2026-04-24`](app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/node.bridge.mcp@2026-04-24) for app-local Node/TS backend logic.
 
@@ -222,9 +231,9 @@ Specialized examples: [`with-isoruntime@2026-02-16-14-00`](app/ai-app/src/kdcube
 
 **Operate it:**
 
-- [Bundles descriptor](app/ai-app/docs/configuration/bundles-descriptor-README.md)
+- [Apps descriptor](app/ai-app/docs/configuration/bundles-descriptor-README.md)
 - [Runtime surfaces and boundaries](app/ai-app/docs/runtime/README.md)
-- [Bundle runtime](app/ai-app/docs/sdk/bundle/bundle-runtime-README.md)
+- [App runtime](app/ai-app/docs/sdk/bundle/bundle-runtime-README.md)
 - [Conversation event bus and Data Bus](app/ai-app/docs/service/comm/conversation-event-bus-and-data-bus-README.md)
 - [Architecture](app/ai-app/docs/arch) · [Service docs](app/ai-app/docs/service) · [Exec / isolation](app/ai-app/docs/exec) · [Configuration](app/ai-app/docs/configuration)
 
