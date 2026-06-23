@@ -27,12 +27,6 @@ function cloneRecord<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
 }
 
-function stringList(value: unknown): string[] {
-  if (Array.isArray(value)) return value.map((item) => asSceneString(item)).filter(Boolean)
-  const item = asSceneString(value)
-  return item ? [item] : []
-}
-
 function issue(key: string, code: SceneContextDropTargetIssue['code'], message: string, delivery?: string): SceneContextDropTargetIssue {
   return { key, code, message, delivery }
 }
@@ -102,12 +96,8 @@ export function normalizeSceneContextDropTarget(
   const railId = asSceneString(config.railId)
   if (!railId) return { target: null, issue: issue(targetKey, 'rail_id_missing', 'Drop target config is missing railId.') }
 
-  const acceptsRootNamespaces = stringList(config.acceptsRootNamespaces ?? config.accepts)
-  if (!acceptsRootNamespaces.length) {
-    return { target: null, issue: issue(targetKey, 'accepted_namespaces_missing', 'Drop target config is missing accepted root namespaces.') }
-  }
-
   const dropEffect = asSceneString(config.dropEffect) || 'open'
+  const accepts = config.accepts === undefined ? (dropEffect === 'open' ? 'provider-open' : 'context') : cloneRecord(config.accepts)
   const delivery = asSceneString(config.delivery)
   const knownDeliveries = knownDeliverySet(options)
   if (delivery && knownDeliveries && !knownDeliveries.has(delivery)) {
@@ -126,7 +116,7 @@ export function normalizeSceneContextDropTarget(
       key: targetKey,
       surfaceRef,
       railId,
-      acceptsRootNamespaces,
+      accepts,
       dropEffect: dropEffect as SceneContextDropEffect | string,
       label: asSceneString(config.label) || undefined,
       targetSurface: targetSurface || undefined,

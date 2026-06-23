@@ -158,9 +158,15 @@ async def object_action(
         "resolver_status": result.get("resolver_status"),
         "ref": result.get("object_ref") or result.get("ref") or ref,
         "user_id": user_id,
+        "capabilities": result.get("capabilities") if isinstance(result.get("capabilities"), dict) else None,
+        "default_open_effect_action": result.get("default_open_effect_action"),
+        "object_kind": result.get("object_kind"),
+        "title": result.get("title"),
         "has_download_url": bool(result.get("download_url")),
         "has_content_base64": bool(result.get("content_base64")),
         "has_ui_event": bool(result.get("ui_event")),
+        "ui_event_target_surface": (result.get("ui_event") or {}).get("target_surface")
+            if isinstance(result.get("ui_event"), dict) else None,
         "error": result.get("error"),
         "status": result.get("status"),
     }

@@ -10,6 +10,8 @@ from ..store import UserMemoryStore
 
 MEMORY_RESOLVER_NAME = "sdk.memory"
 MEMORY_OBJECT_NAMESPACE = "mem"
+MEMORY_RECORD_OBJECT_KIND = "memory.record"
+MEMORY_RECORD_MIME = "application/vnd.kdcube.memory.record+json;version=1"
 MEMORY_RECORD_REF_PREFIX = "mem:record:"
 
 
@@ -81,8 +83,10 @@ def _base_response(*, ref: str, action: str, scope: MemoryScope | None = None) -
         "ref": ref,
         "object_ref": ref,
         "namespace": MEMORY_OBJECT_NAMESPACE,
+        "object_kind": MEMORY_RECORD_OBJECT_KIND,
         "resolver": MEMORY_RESOLVER_NAME,
         "resolver_status": "implemented",
+        "mime": MEMORY_RECORD_MIME,
         "capabilities": memory_ref_capabilities(),
         "default_open_effect_action": "open",
     }
@@ -165,6 +169,8 @@ async def resolve_memory_ref_action(
 
 __all__ = [
     "MEMORY_OBJECT_NAMESPACE",
+    "MEMORY_RECORD_MIME",
+    "MEMORY_RECORD_OBJECT_KIND",
     "MEMORY_RECORD_REF_PREFIX",
     "MEMORY_RESOLVER_NAME",
     "canonical_memory_ref",

@@ -65,9 +65,11 @@ Canvas card search has two compatible surfaces:
 - `cnv` named-service facet: the standard provider surface for runtimes that
   register canvas as a named-service namespace. In those runtimes,
   `named_services.search_objects(namespace="cnv", ...)` searches cards,
-  `named_services.object_schema(namespace="cnv")` returns board/card/object
-  schemas and filters under `ret.extra.schema.search.filters`, and
-  `named_services.upsert_object(namespace="cnv", ...)` creates or updates
+  `named_services.object_schema(namespace="cnv", object_kind=...)` returns
+  board/card/object schemas, typed mutation schemas, and filters under
+  `ret.extra.schema.search.filters`, and
+  `named_services.upsert_object(namespace="cnv", object_ref="cnv:<board>",
+  base_revision=<visible revision>, object_json=...)` creates or updates
   boards/cards when that operation is allowed for the consumer.
 
 Canvas-owned refs are normal namespace refs with subnamespace/path segments:
@@ -75,10 +77,13 @@ Canvas-owned refs are normal namespace refs with subnamespace/path segments:
 as `cnv:canvas/users/<user>/canvases/<board>/objects/<kind>/<card-id>/v000001.md`.
 Direct mutation of the hosted object path is not a separate API; update the
 owning `canvas.card`, and the storage layer produces the hosted `cnv:` object.
+For comments, replacement suggestions, deletion suggestions, deletes, and
+layout changes, ask for the corresponding typed schema such as
+`canvas.card.comment`, `canvas.card.replacement`,
+`canvas.card.deletion_suggestion`, `canvas.card.delete`, or
+`canvas.card.layout`.
 
-The current Versatile demo bundle may expose only `task` and `mem` in its
-`named_services.*` catalog until it registers the canvas provider. That is
-configuration, not a different protocol. The shared filter payload is:
+The shared filter payload is:
 
 ```json
 {

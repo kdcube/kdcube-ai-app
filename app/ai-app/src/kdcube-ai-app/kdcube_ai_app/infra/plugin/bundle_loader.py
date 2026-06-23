@@ -2684,15 +2684,26 @@ async def preload_bundle_async(
     Eagerly load a bundle module and run its on_bundle_load hook (if any).
     Called at proc startup when BUNDLES_PRELOAD_ON_START=1.
 
-    Builds a minimal startup comm_context. Read from settings.TENANT /
-    settings.PROJECT. This ensures _bundle_load_key() produces the same
-    key that real requests will use, so the hook is not re-run on first
-    actual request.
+    Builds the same descriptor-resolved Config shape used by normal bundle
+    operations, plus a minimal startup comm_context. This ensures
+    _bundle_load_key() produces the same key that real requests will use, so
+    the hook is not re-run on first actual request.
     """
-    from kdcube_ai_app.infra.service_hub.inventory import ConfigRequest, create_workflow_config
+    from kdcube_ai_app.infra.service_hub.inventory import (
+        ConfigRequest,
+        create_workflow_config,
+        resolve_config_request_secrets,
+    )
 
     comm_ctx = _StartupCommContext(tenant, project)
-    wf_config = create_workflow_config(ConfigRequest())
+    bundle_id = str(getattr(bundle_spec, "id", "") or "").strip()
+    cfg_req = ConfigRequest(
+        agentic_bundle_id=bundle_id or None,
+        tenant=tenant,
+        project=project,
+    )
+    cfg_req = await resolve_config_request_secrets(cfg_req, bundle_id=bundle_id or None)
+    wf_config = create_workflow_config(cfg_req)
     wf_config.ai_bundle_spec = bundle_spec
 
     await get_workflow_instance_async(

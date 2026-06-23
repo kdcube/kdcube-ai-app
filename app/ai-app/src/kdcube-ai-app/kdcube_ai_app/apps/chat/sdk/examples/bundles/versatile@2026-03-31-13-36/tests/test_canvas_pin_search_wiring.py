@@ -44,7 +44,8 @@ class _Entrypoint:
     def search_model_service(self, *, flow: str):
         class _ModelService:
             async def embed_texts(self, texts):
-                return await _embed_texts(texts)
+                vectors = await _embed_texts(texts)
+                return [[float(v[0]) + 200.0] for v in vectors]
 
             async def embed_search_query(self, query: str, *, flow: str | None = None):
                 self.flow = flow
@@ -106,7 +107,7 @@ async def test_canvas_search_awaits_pin_search_with_economics_guard(monkeypatch)
     assert seen["user_id"] == "u-1"
     assert "story_id" not in seen
     assert seen["semantic_guard"] is None
-    assert await seen["embed_fn"](["alpha"]) == [[5.0]]
+    assert await seen["embed_fn"](["alpha"]) == [[205.0]]
     assert seen["model_service"].flow == "canvas.pins.search"
     assert await seen["model_service"].embed_search_query("alpha") == [105.0]
 
@@ -121,6 +122,7 @@ async def test_canvas_patch_indexes_after_successful_patch(monkeypatch):
 
     async def _index_pins(**kwargs):
         seen["index"] = kwargs
+        seen["index_embed"] = await kwargs["embed_fn"](["alpha"])
         return {"ok": True, "board": "cnv-main", "indexed": 1}
 
     monkeypatch.setattr(canvas_service.canvas_api, "patch", _patch)
@@ -133,6 +135,8 @@ async def test_canvas_patch_indexes_after_successful_patch(monkeypatch):
     assert seen["patch"]["user_id"] == "u-1"
     assert seen["index"]["payload"]["canvas_id"] == "cnv-main"
     assert seen["index"]["payload"]["canvas_name"] == "main"
+    assert seen["index_embed"] == [[205.0]]
+    assert seen["index"]["model_service"].flow == "canvas.pins.search"
 
 
 @pytest.mark.asyncio

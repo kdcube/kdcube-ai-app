@@ -6,10 +6,7 @@ import {
 import {
   asSceneRecord,
   asSceneString,
-  canonicalObjectRef,
   normalizeSceneContext,
-  rootNamespaceFromNamespace,
-  rootNamespaceFromRef,
 } from './runtime'
 
 export interface ScenePoint {
@@ -68,7 +65,7 @@ export function normalizeHostContextDragStartMessage(
   }
 }
 
-export function namespaceStyleCandidates(input: unknown): string[] {
+export function presentationStyleCandidates(input: unknown): string[] {
   const item = asSceneRecord(input)
   const data = asSceneRecord(item.data)
   const seen = new Set<string>()
@@ -79,31 +76,13 @@ export function namespaceStyleCandidates(input: unknown): string[] {
     seen.add(text)
     out.push(text)
   }
-  const addRoot = (value: unknown): void => {
-    const root = rootNamespaceFromNamespace(value)
-    if (!root || seen.has(root)) return
-    seen.add(root)
-    out.push(root)
-  }
-  const addRefRoot = (value: unknown): void => {
-    const root = rootNamespaceFromRef(value)
-    if (!root || seen.has(root)) return
-    seen.add(root)
-    out.push(root)
-  }
 
+  addRaw(item.object_kind)
+  addRaw(item.objectKind)
+  addRaw(data.object_kind)
+  addRaw(data.objectKind)
   addRaw(item.namespace)
-  addRoot(item.namespace)
   addRaw(data.namespace)
-  addRoot(data.namespace)
-  addRefRoot(canonicalObjectRef(item))
-  addRefRoot(item.ref)
-  addRefRoot(item.object_ref)
-  addRefRoot(item.logical_path)
-  addRaw(item.kind)
-  addRoot(item.kind)
-  addRaw(data.kind)
-  addRoot(data.kind)
 
   return out
 }

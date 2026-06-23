@@ -53,10 +53,9 @@ kdcube_ai_app.apps.chat.sdk.solutions.canvas
                           projection, retention, and UI event envelopes
   api.py                  Bundle route/operation helpers for read, write,
                           patch, upload, search, pin read, and object action
-  tools.py                Reusable Semantic Kernel ReAct write-tool module and
-                          cnv: event-source reader; include it through
-                          surfaces.as_consumer when the model should call
-                          canvas.patch
+  tools.py                Legacy direct write-tool module plus cnv: event-source
+                          reader; prefer the cnv named-service provider for
+                          model-facing writes
   tools_core.py           Reusable canvas read/patch execution core
   instructions.py         Stable additional ReAct instructions for canvas
   ids.py                  Timestamp-bearing canvas/message id helpers
@@ -162,14 +161,8 @@ store = CanvasStore.from_scope(
     state_event_source_id="my_bundle.canvas.state",
     ui_event_type="my_bundle.canvas.patch.applied",
     artifact_resolver_name="sdk.canvas.artifact_storage",
-    handoff_resolver_names={
-        "acme": "my_bundle.provider_objects",
-    },
 )
 ```
-
-Use `handoff_resolver_names` only to name resolvers owned elsewhere. It is not
-a place to implement object semantics.
 
 The scope passed to `CanvasStore` must come from the shared runtime identity
 contract. In entrypoint methods that run from REST/widget/tool calls, use
@@ -212,8 +205,7 @@ Built-in SDK resolver support:
 
 | Resolver | Namespace | Meaning |
 | --- | --- | --- |
-| `CanvasArtifactResolver` | `cnv:` | Reads canvas-owned artifact refs from canvas artifact storage. |
-| `NamespaceHandoffResolver` | any | Declares that another subsystem owns the namespace. |
+| `CanvasArtifactResolver` | `cnv:` | Handles canvas-owned refs only. |
 | `NamedServiceCanvasObjectResolver` | configured | Calls the namespace-owning bundle's named-service API endpoint. |
 | `CanvasObjectResolverRegistry` | all | Dispatches actions to registered resolvers by namespace. |
 
@@ -271,9 +263,13 @@ The instructions explain:
   canonical context-pin payload. The scene broker, not canvas, decides which
   mounted drop target accepts the root namespace and asks the namespace
   provider for the `open` effect.
-- `react.pull(paths=["cnv:<name>@<revision>"])` imports exact hidden board
-  state into the ReAct workspace; inspect the returned `fi:` or physical path.
-- `canvas.patch` is the only agent write path.
+- `react.pull(paths=["cnv:<name>"])` imports the live board into the ReAct
+  workspace. `react.pull(paths=["cnv:<name>@<revision>"])` imports a fixed
+  revision; inspect the returned `fi:` or physical path.
+- `named_services.upsert_object(namespace="cnv", ...)` is the agent write path.
+  Ask `named_services.object_schema(namespace="cnv", object_kind=...)` for
+  exact payloads such as `canvas.card.comment`,
+  `canvas.card.replacement`, or `canvas.operation_batch`.
 - Agents do not move or resize existing cards.
 - Proxy card underlying objects stay owned by their source subsystem.
 
@@ -286,15 +282,15 @@ from kdcube_ai_app.apps.chat.sdk.solutions.canvas.tools_core import (
 )
 ```
 
-The SDK tool module exposes one direct model tool and one namespace rehoster:
+The SDK exposes canvas as a namespace provider plus a namespace rehoster:
 
 | Source id | `kind` | How the model uses it |
 | --- | --- | --- |
-| `canvas.patch` | `react.tool` | Calls `canvas.patch(...)` to create a new content revision. |
-| `cnv` rehoster | `artifact_namespace_rehoster` | Calls `react.pull(paths=["cnv:<name>@<revision>"])`; the rehoster materializes exact canvas state/content as returned `fi:` artifacts. |
+| `cnv` named-service provider | `named_service` | Calls `named_services.object_schema(namespace="cnv", ...)`, `named_services.search_objects(namespace="cnv", ...)`, and `named_services.upsert_object(namespace="cnv", ...)`. |
+| `cnv` rehoster | `artifact_namespace_rehoster` | Calls `react.pull(paths=["cnv:<name>"])` or `react.pull(paths=["cnv:<name>@<revision>"])`; the rehoster materializes exact canvas state/content as returned `fi:` artifacts. |
 
-A bundle still defines its own SK plugin class and event-source policy ids when
-it wraps the SDK core directly:
+A bundle can still wrap the SDK core directly for internal storage/event
+implementation, but that wrapper is not the preferred ReAct-facing contract:
 
 ```python
 class CanvasTools:

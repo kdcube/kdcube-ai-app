@@ -65,8 +65,8 @@ function conversationIdFromSurfaceCommand(data: Record<string, unknown>): string
   const action = String(data.action || '').trim().toLowerCase()
   if (
     data.type !== SURFACE_COMMAND_MESSAGE_TYPE ||
-    (target && target !== 'sdk.chat.conversation' && target !== 'sdk.chat.viewer') ||
-    action !== 'open'
+    (target && target !== 'sdk.chat.conversation' && target !== 'sdk.chat.viewer' && target !== 'sdk.chat.context') ||
+    (action !== 'open' && action !== 'attach' && action !== 'focus')
   ) return ''
   const context = data.context && typeof data.context === 'object' ? data.context as Record<string, unknown> : {}
   const contextData = context.data && typeof context.data === 'object' ? context.data as Record<string, unknown> : {}
@@ -127,6 +127,28 @@ function PackageEngineHost({ children }: { children: ReactNode }) {
             : conversationId
               ? `conv:${conversationId}`
               : ''
+        const normalizedContext = ctx || objectRef
+          ? {
+              ...(ctx || {}),
+              id: String((ctx && (ctx.id || ctx.object_ref || ctx.ref)) || objectRef || conversationId || ''),
+              kind: String((ctx && ctx.kind) || 'chat.conversation'),
+              label: String((ctx && (ctx.label || ctx.title)) || title || 'Conversation'),
+              summary: String((ctx && ctx.summary) || title || ''),
+              ref: objectRef || undefined,
+              object_ref: objectRef || undefined,
+              logical_path: objectRef || undefined,
+              namespace: String((ctx && ctx.namespace) || 'conv'),
+              object_kind: String((ctx && ctx.object_kind) || 'chat.conversation'),
+              mime: String((ctx && ctx.mime) || 'application/vnd.kdcube.conversation+json;version=1'),
+              data: {
+                ...((ctx && typeof ctx.data === 'object' ? ctx.data : {}) as Record<string, unknown>),
+                conversation_id: conversationId,
+                namespace: String((ctx && ctx.namespace) || 'conv'),
+                object_kind: String((ctx && ctx.object_kind) || 'chat.conversation'),
+                object_ref: objectRef || undefined,
+              },
+            }
+          : null
         window.parent.postMessage({
           type: SURFACE_COMMAND_MESSAGE_TYPE,
           target_surface: 'sdk.canvas.pinboard',
@@ -134,8 +156,8 @@ function PackageEngineHost({ children }: { children: ReactNode }) {
           conversation_id: conversationId,
           title: title || 'Conversation',
           agent: 'main',
-          context: ctx,
-          contexts: contexts || (ctx ? [ctx] : undefined),
+          context: normalizedContext,
+          contexts: contexts || (normalizedContext ? [normalizedContext] : undefined),
           object_ref: objectRef || undefined,
           source_surface: 'versatile.chat',
         }, '*')

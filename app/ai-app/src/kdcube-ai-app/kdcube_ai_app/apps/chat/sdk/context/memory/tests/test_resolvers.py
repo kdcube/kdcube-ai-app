@@ -76,6 +76,7 @@ def test_memory_resolver_preview_reads_memory_store():
     assert result["ok"] is True
     assert result["resolver"] == "sdk.memory"
     assert result["namespace"] == "mem"
+    assert result["object_kind"] == "memory.record"
     assert result["object_ref"] == "mem:record:mem_1"
     assert result["memory"]["id"] == "mem_1"
     assert result["memory"]["object_ref"] == "mem:record:mem_1"
@@ -94,6 +95,7 @@ def test_memory_resolver_open_returns_ui_open_event():
 
     assert result["ok"] is True
     assert result["default_open_effect_action"] == "open"
+    assert result["object_kind"] == "memory.record"
     assert result["object_ref"] == "mem:record:mem_1"
     assert result["ui_event"]["target_surface"] == "sdk.memory.viewer"
     assert result["ui_event"]["object_ref"] == "mem:record:mem_1"

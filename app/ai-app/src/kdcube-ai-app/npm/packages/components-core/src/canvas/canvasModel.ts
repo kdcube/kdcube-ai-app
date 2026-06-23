@@ -430,14 +430,13 @@ function canvasBounds(cards: CanvasCard[]): CanvasProjection['bounds'] {
   }
 }
 
-function cardMapPrefix(kind: string): string {
-  if (kind === 'user.attachment') return 'A'
-  if (kind === 'user.text') return 'U'
-  if (kind === 'agent.text') return 'R'
-  if (kind === 'file') return 'F'
-  if (kind === 'memory') return 'M'
-  if (kind === 'source' || kind === 'search.result') return 'S'
-  return 'O'
+function cardMapPrefix(card: CanvasCard): string {
+  const source = cleanNamespaceValue(card.object_kind) || cleanNamespaceValue(card.namespace)
+  if (!source) return 'O'
+  const parts = source.split(/[^a-z0-9]+/i).filter(Boolean)
+  if (!parts.length) return 'O'
+  if (parts.length === 1) return parts[0].slice(0, 3).toUpperCase()
+  return parts.map((part) => part.slice(0, 1).toUpperCase()).join('').slice(0, 4) || 'O'
 }
 
 export function canvasProjection(canvas: CanvasDefinition): CanvasProjection {
@@ -445,7 +444,7 @@ export function canvasProjection(canvas: CanvasDefinition): CanvasProjection {
   const legend = canvas.cards.map((card) => ({
     id: card.id,
     map_label: (() => {
-      const prefix = cardMapPrefix(card.kind)
+      const prefix = cardMapPrefix(card)
       const next = (counters.get(prefix) || 0) + 1
       counters.set(prefix, next)
       return `${prefix}${next}`
@@ -453,7 +452,7 @@ export function canvasProjection(canvas: CanvasDefinition): CanvasProjection {
     kind: card.kind,
     title: card.title,
     mime: card.mime,
-    namespace: namespaceFromRef(card.ref) || cleanNamespaceValue(card.namespace),
+    namespace: cleanNamespaceValue(card.namespace),
     object_kind: cleanNamespaceValue(card.object_kind),
     content_preview: card.summary,
     description: card.description,
@@ -483,6 +482,7 @@ export function canvasProjection(canvas: CanvasDefinition): CanvasProjection {
 
 export function canvasContext(canvas: CanvasDefinition): CanvasContextItem {
   const projection = canvasProjection(canvas)
+  const selectedCards = canvas.cards.filter((card) => card.selected)
   return {
     id: canvas.id,
     kind: 'canvas',
@@ -496,23 +496,11 @@ export function canvasContext(canvas: CanvasDefinition): CanvasContextItem {
     revision: canvas.revision,
     data: {
       card_count: canvas.cards.length,
-      selected_card_ids: canvas.cards.filter((card) => card.selected).map((card) => card.id),
+      selected_card_ids: selectedCards.map((card) => card.id),
+      focused_cards: selectedCards.map((card) => cardContext(canvas, card)),
       projection,
     },
   }
-}
-
-export function namespaceFromRef(ref?: string): string | undefined {
-  const match = String(ref || '').trim().match(/^([A-Za-z][A-Za-z0-9_.-]*):/)
-  return match?.[1]?.toLowerCase()
-}
-
-export function ownerKeyFromRef(ref?: string): string | undefined {
-  const value = String(ref || '').trim()
-  const index = value.lastIndexOf(':')
-  if (index <= 0) return namespaceFromRef(value)
-  const owner = value.slice(0, index).trim().toLowerCase()
-  return owner || namespaceFromRef(value)
 }
 
 function cleanNamespaceValue(value?: string): string | undefined {
@@ -521,16 +509,13 @@ function cleanNamespaceValue(value?: string): string | undefined {
 }
 
 function proxiedCardKind(card: CanvasCard): string {
-  const rootNamespace = namespaceFromRef(card.ref) || cleanNamespaceValue(card.namespace)
-  if (rootNamespace && rootNamespace !== 'cnv') return 'object.ref'
-  if (rootNamespace === 'cnv') return card.kind || 'canvas.owned'
   return card.kind || 'object.ref'
 }
 
 export function cardContext(canvas: CanvasDefinition, card: CanvasCard): CanvasContextItem {
   const ref = String(card.ref || '').trim()
   const cardKind = proxiedCardKind(card)
-  const namespace = namespaceFromRef(ref) || cleanNamespaceValue(card.namespace)
+  const namespace = cleanNamespaceValue(card.namespace)
   const objectKind = cleanNamespaceValue(card.object_kind)
   return {
     id: ref || `${canvas.id}:${card.id}:r${canvas.revision}`,

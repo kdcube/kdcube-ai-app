@@ -1,5 +1,60 @@
 from __future__ import annotations
 
+from typing import Any, Mapping, Sequence
+
+
+CANVAS_BOARD_EDIT_PROTOCOL_LINES = (
+    "edit_protocol:",
+    "- Use named_services.upsert_object(namespace=\"cnv\", object_ref=\"cnv:<board>\", base_revision=revision, object_json=<typed canvas object>).",
+    "- Ask named_services.object_schema(namespace=\"cnv\", object_kind=...) for exact mutation payloads.",
+    "- Treat this JSON as exact state for planning only; do not edit or save it directly.",
+    "- Use map labels for spatial reasoning; use card_id values from the legend when mutating existing cards.",
+    "- Use card refs only when content_preview is missing or insufficient; pull external owner refs into the ReAct workspace before exact content inspection.",
+    "- user.text card content can be updated with canvas.card content={text}. Proxy cards keep their ref content unchanged; use canvas.card description or canvas.card.comment for user notes on them.",
+    "- Card kind is a source-provided label. Canvas-owned content uses user.text/user.attachment/agent.text; provider-owned pins keep the provider label and resolve through object_ref/namespace/object_kind.",
+    "- Use kind=agent.text only for assistant-authored text hosted by canvas. Do not coerce provider objects into canvas-owned kinds.",
+    "- Every successful canvas upsert creates a new revision and event.canvas timeline result.",
+    "- Do not edit read-only snapshot refs; canvas cards are editable pins, snapshots are context.",
+)
+
+
+def render_canvas_board_text(
+    *,
+    canvas_name: str,
+    canvas_id: str,
+    canvas_uri: str,
+    revision: Any,
+    bounds: Mapping[str, Any],
+    active_count: int,
+    placed_count: int,
+    floating_count: int,
+    suggested_count: int,
+    bin_count: int,
+    spatial_map: Sequence[str],
+    legend_lines: Sequence[str],
+    status_lines: Sequence[str] = (),
+) -> str:
+    """Render the ReAct-facing canvas board section from canonical projection facts."""
+    lines = [
+        "[CANVAS BOARD]",
+        f"canvas_name: {canvas_name}",
+        f"canvas_id: {canvas_id}",
+        f"canvas_uri: {canvas_uri}",
+        f"revision: {revision}",
+        *status_lines,
+        f"bounds: x={bounds.get('x')} y={bounds.get('y')} w={bounds.get('w')} h={bounds.get('h')}",
+        f"cards: {active_count} placed={placed_count} floating={floating_count} pending_suggestions={suggested_count} bin={bin_count}",
+        "",
+        "spatial_map:",
+        *spatial_map,
+        "",
+        "legend:",
+        *legend_lines,
+        "",
+        *CANVAS_BOARD_EDIT_PROTOCOL_LINES,
+    ]
+    return "\n".join(lines)
+
 
 CANVAS_REACT_ADDITIONAL_INSTRUCTIONS = """
 [CANVAS CONTEXT]
@@ -43,17 +98,27 @@ Canvas read/write behavior:
   intentionally need the board at a known revision.
 - `cnv:` refs identify canvas-owned board/object state. They are external owner
   refs until pulled into the ReAct workspace.
-- Collaborate only through `canvas.patch` with `base_revision` set to the
-  visible canvas revision. Do not edit/re-save canvas JSON directly.
-- If `canvas.patch` returns `canvas_revision_conflict`, the patch was not
-  applied. Use the returned `ret.current_revision` and `ret.projection` as the
-  current board view, or pull/read the current canvas when exact JSON is
-  needed, then issue a new patch that is valid for that current revision.
-- Each successful `canvas.patch` creates a new canvas revision and a
-  `event.canvas` tool/result event.
-- The canvas view in ANNOUNCE is expected to stay visible until the current
-  turn ends. In a later turn, re-read or wait for a fresh canvas event if the
-  board is relevant.
+- Collaborate through the `cnv` named-service provider. Call
+  `named_services.object_schema(namespace="cnv", object_kind=...)` when you
+  need exact payload shape. Mutate with
+  `named_services.upsert_object(namespace="cnv", object_ref="cnv:<name>",
+  base_revision=<visible revision>, object_json=...)`.
+- Use typed canvas object kinds in the upsert payload instead of editing raw
+  board JSON: `canvas.card`, `canvas.card.comment`,
+  `canvas.card.replacement`, `canvas.card.deletion_suggestion`,
+  `canvas.card.delete`, `canvas.operation_batch`, or `canvas.card.layout`
+  when the user explicitly asks you to arrange/move/resize cards.
+- If `named_services.upsert_object(namespace="cnv", ...)` returns
+  `canvas_revision_conflict`, the mutation was not applied. Pull/read the
+  current board with `react.pull(paths=["cnv:<name>"])`, inspect the returned
+  `fi:` snapshot, then issue a new upsert that is valid for that current
+  revision. Do not blind-retry an old payload.
+- Each successful canvas upsert creates a new canvas revision and a canvas
+  event/projection for the board.
+- A rendered canvas board section declares its remaining visibility window,
+  for example `visibility: 3/3 render rounds remaining`. When that window is
+  exhausted, pull/read the `cnv:<name>` board again if the board is still
+  relevant.
 
 Card placement and ref behavior:
 - Map labels are for spatial reasoning. For patching existing cards, use
@@ -73,9 +138,9 @@ Card placement and ref behavior:
     `cnv:` ref when attached into chat.
   - `user.attachment` is a user upload created on the canvas and remains an
     `cnv:` ref when attached into chat.
-  - `agent.text` is assistant-authored text created on the canvas through
-    `canvas.patch` or dragged from an assistant response; it is also a `cnv:`
-    ref.
+  - `agent.text` is assistant-authored text created on the canvas through a
+    `named_services.upsert_object(namespace="cnv", object_kind="canvas.card",
+    ...)` call or dragged from an assistant response; it is also a `cnv:` ref.
 - Chat-authored data is different: user chat text and assistant chat replies
   are conversation replicas, and chat-uploaded files are platform conversation
   attachments/artifacts. Do not rename canvas-owned `cnv:` objects as chat
@@ -90,8 +155,9 @@ Card placement and ref behavior:
 - New assistant output should usually be a suggested card, not an automatic
   placed card, so the user can arrange, accept, or discard it.
 - Producing a file/report/output does not pin it. First produce the artifact,
-  then call `canvas.patch` with a `new_card` whose `logical_path` points at the
-  produced `fi:` or `cnv:` ref.
+  then call `named_services.upsert_object(namespace="cnv", object_ref="cnv:<name>",
+  base_revision=<visible revision>, object_json={"object_kind":"canvas.card",
+  ...})` with `card.logical_path` pointing at the produced `fi:` or `cnv:` ref.
 
 Semantics:
 - Canvas is an editable collaborative board. Stories, namespace-owned objects,
@@ -106,4 +172,8 @@ Semantics:
 """.strip()
 
 
-__all__ = ["CANVAS_REACT_ADDITIONAL_INSTRUCTIONS"]
+__all__ = [
+    "CANVAS_BOARD_EDIT_PROTOCOL_LINES",
+    "CANVAS_REACT_ADDITIONAL_INSTRUCTIONS",
+    "render_canvas_board_text",
+]

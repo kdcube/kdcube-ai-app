@@ -22,28 +22,39 @@ bundles:
         namespace_styles:
           fi:
             label: file
+            icon_svg: '<svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>'
             color: "#ca8a04"
             border: "#ca8a04"
             focus: "#facc15"
             background: "#fffbeb"
           cnv:
             label: canvas
+            icon_svg: '<svg viewBox="0 0 24 24"><path d="M12 17v5"/><path d="M9 10.76V6a3 3 0 0 1 6 0v4.76"/><path d="M5 10h14l-1 7H6z"/></svg>'
             color: "#7c3aed"
             border: "#7c3aed"
             focus: "#a78bfa"
             background: "#f5f3ff"
           mem:
             label: memory
+            icon_svg: '<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>'
             color: "#16a34a"
             border: "#16a34a"
             focus: "#22c55e"
             background: "#ecfdf5"
           task:
             label: task
+            icon_svg: '<svg viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13"/><path d="m3 6 1 1 2-2M3 12l1 1 2-2M3 18l1 1 2-2"/></svg>'
             color: "#2563eb"
             border: "#2563eb"
             focus: "#60a5fa"
             background: "#eff6ff"
+          conv:
+            label: conversation
+            icon_svg: '<svg viewBox="0 0 24 24"><path d="M21 15a4 4 0 0 1-4 4H7l-4 4V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/></svg>'
+            color: "#08bdb2"
+            border: "#08bdb2"
+            focus: "#5eead4"
+            background: "#e8fbf8"
         canvas:
           artifact_prefix: canvas
           origin_prefix: canvas
@@ -95,14 +106,6 @@ bundles:
                   #       strategy: [neutral]
                   #     retire_memory:
                   #       strategy: [neutral]
-                  - name: canvas
-                    kind: python
-                    module: kdcube_ai_app.apps.chat.sdk.solutions.canvas.tools
-                    alias: canvas
-                    allowed: [patch]
-                    tool_traits:
-                      patch:
-                        strategy: [exploitation]
                   - name: exec
                     kind: python
                     module: kdcube_ai_app.apps.chat.sdk.tools.exec_tools
@@ -194,6 +197,23 @@ bundles:
                         tool_traits:
                           upsert_object:
                             strategy: [neutral]
+                      cnv:
+                        # Canvas is exposed to ReAct as a normal namespace
+                        # service. The provider schema explains board/card
+                        # mutation object kinds such as canvas.card,
+                        # canvas.card.comment, canvas.card.replacement,
+                        # canvas.card.deletion_suggestion, canvas.card.delete,
+                        # canvas.card.layout, and canvas.operation_batch.
+                        # The direct canvas.patch tool remains an internal
+                        # implementation path only.
+                        allowed:
+                          - provider.about
+                          - object.search
+                          - object.schema
+                          - object.upsert
+                        tool_traits:
+                          upsert_object:
+                            strategy: [exploitation]
                     tool_traits:
                       provider_about:
                         strategy: [exploration]

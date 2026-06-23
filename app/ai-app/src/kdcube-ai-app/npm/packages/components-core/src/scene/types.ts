@@ -1,4 +1,5 @@
 export type SceneRecord = Record<string, unknown>
+export type SceneObjectSelectorConfig = string | string[] | Record<string, string | string[] | undefined>
 
 export const SCENE_CONFIG_REQUEST = 'CONFIG_REQUEST'
 export const SCENE_CONFIG_RESPONSE = 'CONFIG_RESPONSE'
@@ -104,7 +105,7 @@ export interface SceneContextDropRequest {
 export interface SceneDropTarget {
   surfaceRef: string
   targetSurface?: string
-  acceptsRootNamespaces: string[]
+  accepts?: SceneObjectSelectorConfig
   dropEffect?: SceneContextDropEffect
   label?: string
   deliverContext?: (request: SceneContextDropRequest) => void | Promise<void>
@@ -114,8 +115,7 @@ export interface SceneContextDropTargetConfig extends SceneRecord {
   surfaceRef?: string
   railId?: string
   targetSurface?: string
-  acceptsRootNamespaces?: string[] | string
-  accepts?: string[] | string
+  accepts?: SceneObjectSelectorConfig
   dropEffect?: SceneContextDropEffect | string
   label?: string
   delivery?: string
@@ -126,7 +126,7 @@ export interface NormalizedSceneContextDropTargetConfig {
   key: string
   surfaceRef: string
   railId: string
-  acceptsRootNamespaces: string[]
+  accepts: SceneObjectSelectorConfig
   dropEffect: SceneContextDropEffect | string
   label?: string
   targetSurface?: string
@@ -139,7 +139,6 @@ export type SceneContextDropTargetIssueCode =
   | 'target_not_record'
   | 'surface_ref_missing'
   | 'rail_id_missing'
-  | 'accepted_namespaces_missing'
   | 'delivery_unknown'
   | 'delivery_missing'
   | 'open_route_missing'

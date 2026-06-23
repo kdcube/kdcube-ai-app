@@ -1,15 +1,12 @@
 import {
-  Archive,
   Check,
   Copy,
   Download,
   ExternalLink,
-  FileText,
   Frame,
   Grip,
   Info,
   Maximize2,
-  MessageSquare,
   MessageSquarePlus,
   Minimize2,
   Paperclip,
@@ -18,7 +15,6 @@ import {
   Plus,
   RotateCcw,
   Search,
-  Sparkles,
   Trash2,
   X,
 } from 'lucide-react'
@@ -33,8 +29,6 @@ import {
   cardContext,
   canvasFromReadResponse,
   findCanvas,
-  namespaceFromRef,
-  ownerKeyFromRef,
   normalizeCanvasPatchEvent,
   type CanvasCard,
   type CanvasDefinition,
@@ -48,6 +42,9 @@ export interface CanvasNamespaceStyle {
   border?: string
   focus?: string
   background?: string
+  icon?: string
+  icon_svg?: string
+  iconSvg?: string
 }
 
 export type CanvasBrokeredDrop =
@@ -118,50 +115,52 @@ interface CanvasRevisionConflict {
 
 type CanvasCardFilter = 'all' | 'suggestions' | 'board'
 
-function iconForKind(kind: string) {
-  if (kind.includes('attachment')) return Paperclip
-  if (kind === 'memory') return Search
-  if (kind === 'agent.text') return Sparkles
-  if (kind === 'file') return FileText
-  if (kind === 'object.ref') return ExternalLink
-  if (kind === 'conversation') return MessageSquare
-  return Pin
+function cleanPresentationKey(value?: string): string {
+  return String(value || '').trim().toLowerCase()
 }
 
-const NAMESPACE_BY_KIND: Record<string, string> = {
-  'user.text': 'ut',
-  'user.attachment': 'ua',
-  'agent.text': 'at',
-  'file': 'fi',
-  'memory': 'mem',
-  'source': 'src',
-  'search.result': 'sr',
-  'note': 'note',
-  'object.ref': 'obj',
-  'conversation': 'conv',
+function presentationEntry(
+  key: string,
+  namespaceStyles?: Record<string, CanvasNamespaceStyle | string>,
+): CanvasNamespaceStyle | undefined {
+  const raw = key ? namespaceStyles?.[key] : undefined
+  if (!raw) return undefined
+  return typeof raw === 'string' ? { color: raw } : raw
 }
 
-function namespaceForCard(card: CanvasCard): string {
-  return namespaceFromRef(card.ref) || card.namespace || NAMESPACE_BY_KIND[card.kind] || card.kind.replace(/\./g, '-').slice(0, 4)
-}
-
-function namespaceLabelForCard(card: CanvasCard, namespaceStyles?: Record<string, CanvasNamespaceStyle | string>): string {
-  const namespace = namespaceForCard(card)
-  const style = namespaceStyles?.[namespace]
-  if (style && typeof style === 'object' && typeof style.label === 'string' && style.label.trim()) {
-    return style.label.trim()
-  }
-  return namespace
-}
-
-function namespaceCssForCard(
+function cardPresentation(
   card: CanvasCard,
   namespaceStyles?: Record<string, CanvasNamespaceStyle | string>,
-): CSSProperties {
-  const namespace = namespaceForCard(card)
-  const raw = namespaceStyles?.[namespace]
-  if (!raw) return {}
-  const style: CanvasNamespaceStyle = typeof raw === 'string' ? { color: raw } : raw
+  resolverState?: CanvasObjectActionResponse,
+): { key: string; label: string; style: CanvasNamespaceStyle; configured: boolean } {
+  const objectKind = cleanPresentationKey(card.object_kind || String(resolverState?.object_kind || ''))
+  const namespace = cleanPresentationKey(card.namespace || String(resolverState?.namespace || ''))
+  const exact = presentationEntry(objectKind, namespaceStyles)
+  if (exact) {
+    return { key: objectKind, label: exact.label?.trim() || objectKind, style: exact, configured: true }
+  }
+  const root = presentationEntry(namespace, namespaceStyles)
+  if (root) {
+    return { key: namespace, label: root.label?.trim() || namespace, style: root, configured: true }
+  }
+  return { key: namespace || objectKind || 'unknown', label: namespace || objectKind || 'unknown', style: {}, configured: false }
+}
+
+function NamespaceIcon({ style }: { style: CanvasNamespaceStyle }) {
+  const svg = String(style.icon_svg || style.iconSvg || '').trim()
+  if (svg) {
+    return (
+      <span
+        className="canvas-card-origin-icon"
+        aria-hidden="true"
+        dangerouslySetInnerHTML={{ __html: svg }}
+      />
+    )
+  }
+  return <Pin size={13} />
+}
+
+function presentationCssForCard(style: CanvasNamespaceStyle): CSSProperties {
   const ink = style.ink || style.color
   const border = style.border || style.color
   const focus = style.focus
@@ -472,8 +471,8 @@ function providerObjectAttachmentContexts(
     const mime = stringValue(attachment.mime || attachment.mime_type || attachment.mimeType) || 'application/octet-stream'
     const sizeBytes = numberValue(attachment.size_bytes || attachment.sizeBytes || attachment.size)
     const version = numberValue(attachment.version)
-    const objectKind = stringValue(attachment.object_kind || attachment.objectKind || attachment.kind) ||
-      (namespaceFromRef(ref) ? `${namespaceFromRef(ref)}.attachment` : 'object.attachment')
+    const objectKind = stringValue(attachment.object_kind || attachment.objectKind || attachment.kind) || 'object.attachment'
+    const namespace = stringValue(attachment.namespace)
     const summaryParts = [
       issueId,
       mime,
@@ -488,6 +487,7 @@ function providerObjectAttachmentContexts(
       logical_path: ref,
       hosted_uri: stringValue(attachment.hosted_uri || attachment.hostedUri) || ref,
       mime,
+      namespace,
       card_id: card.id,
       card_type: card.kind,
       event_source_id: stringValue(resolverState?.event_source_id) || 'named_services.object',
@@ -498,6 +498,7 @@ function providerObjectAttachmentContexts(
         attachment_id: attachmentId,
         object_ref: ref,
         object_kind: objectKind,
+        namespace,
         filename,
         mime,
         size_bytes: sizeBytes,
@@ -690,6 +691,11 @@ function cssAttrValue(value: string): string {
   return String(value).replace(/["\\]/g, '\\$&')
 }
 
+function cssClassToken(value: string): string {
+  const token = String(value || '').toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '')
+  return token || 'unknown'
+}
+
 export function CanvasBoard({
   activeCanvasName,
   canvases,
@@ -748,6 +754,10 @@ export function CanvasBoard({
   const [resolverStateByCard, setResolverStateByCard] = useState<Record<string, CanvasObjectActionResponse>>({})
   const [resolverLoadingByCard, setResolverLoadingByCard] = useState<Record<string, boolean>>({})
   const [resolverNoticeByCard, setResolverNoticeByCard] = useState<Record<string, string>>({})
+  const resolverStateRef = useRef(resolverStateByCard)
+  const resolverLoadingRef = useRef(resolverLoadingByCard)
+  const resolverInFlightRef = useRef<Set<string>>(new Set())
+  const mountedRef = useRef(true)
   const [cardFilter, setCardFilter] = useState<CanvasCardFilter>('all')
   // Pin search. `searchResults === null` means search is inactive (full board);
   // a non-null array (even empty) means search-filter mode is engaged.
@@ -775,6 +785,19 @@ export function CanvasBoard({
   useEffect(() => {
     cardsRef.current = cards
   }, [cards])
+
+  useEffect(() => {
+    resolverStateRef.current = resolverStateByCard
+  }, [resolverStateByCard])
+
+  useEffect(() => {
+    resolverLoadingRef.current = resolverLoadingByCard
+  }, [resolverLoadingByCard])
+
+  useEffect(() => () => {
+    mountedRef.current = false
+    resolverInFlightRef.current.clear()
+  }, [])
 
   useEffect(() => {
     canvasIdRef.current = canvasId
@@ -1116,15 +1139,13 @@ export function CanvasBoard({
     })
     const counts: Record<string, number> = {}
     for (const card of sorted) {
-      // Show the FULL ref path (all segments, colon-separated) — e.g. mem:record,
-      // task:issue, task:attachment — not the kind-derived label ("memory"). The
-      // counter is per distinct path. Ref-less cards fall back to the kind ns.
-      const key = (card.ref ? ownerKeyFromRef(card.ref) : '') || namespaceLabelForCard(card, namespaceStyles)
+      const presentation = cardPresentation(card, namespaceStyles, resolverStateByCard[card.id])
+      const key = presentation.key || 'unknown'
       counts[key] = (counts[key] || 0) + 1
       out[card.id] = `${key}:${String(counts[key]).padStart(2, '0')}`
     }
     return out
-  }, [cards, namespaceStyles])
+  }, [cards, namespaceStyles, resolverStateByCard])
   const canvasStats = useMemo(() => {
     const created = cards
       .map((card) => parseCardTime(card.createdAt || card.updatedAt))
@@ -1151,6 +1172,45 @@ export function CanvasBoard({
     }
     return cards
   }, [cardFilter, cards])
+
+  useEffect(() => {
+    if (!onObjectAction) return
+    const candidates = visibleCards
+      .filter((card) => (
+        card.ref &&
+        !resolverStateRef.current[card.id] &&
+        !resolverLoadingRef.current[card.id] &&
+        !resolverInFlightRef.current.has(card.id)
+      ))
+      .slice(0, 40)
+    if (!candidates.length) return
+    candidates.forEach((card) => {
+      resolverInFlightRef.current.add(card.id)
+      setResolverLoadingByCard((current) => ({ ...current, [card.id]: true }))
+      onObjectAction(card, 'capabilities')
+        .then((result) => {
+          if (!mountedRef.current) return
+          setResolverStateByCard((current) => ({
+            ...current,
+            [card.id]: {
+              ...(current[card.id] || {}),
+              ...result,
+              capabilities: result.capabilities || current[card.id]?.capabilities,
+            },
+          }))
+        })
+        .catch(() => {
+          // Resolver misses stay visually neutral and non-actionable. Expanded
+          // cards surface resolver errors through the preview path.
+        })
+        .finally(() => {
+          resolverInFlightRef.current.delete(card.id)
+          if (!mountedRef.current) return
+          setResolverLoadingByCard((current) => ({ ...current, [card.id]: false }))
+        })
+    })
+  }, [onObjectAction, visibleCards])
+
   const selectedVisibleCards = useMemo(() => (
     visibleCards.filter((card) => selectedCardIds.has(card.id))
   ), [selectedCardIds, visibleCards])
@@ -2408,7 +2468,6 @@ export function CanvasBoard({
             </div>
           ) : null}
           {visibleCards.map((card) => {
-            const Icon = iconForKind(card.kind)
             const context = cardContext(liveCanvas, card)
             const pinned = expandedCardId === card.id
             const pendingSuggestion = card.suggested && card.placement !== 'placed'
@@ -2432,19 +2491,18 @@ export function CanvasBoard({
               '',
               pinned ? 'Click to release the drawer.' : 'Click to pin the drawer open.',
             ].join('\n')
-            const kind = card.kind
             const capabilities = resolverState?.capabilities
-            const wantsDownload = capabilities?.download === true || kind === 'file' || kind === 'user.attachment'
-            const wantsOpen = kind === 'memory' || kind === 'source' || kind === 'search.result' || kind === 'object.ref' || kind === 'conversation' || Boolean(namespaceFromRef(card.ref))
-            const isObjectRefCard = kind === 'object.ref' || (Boolean(namespaceFromRef(card.ref)) && kind !== 'file' && kind !== 'user.attachment')
-            const namespaceLabel = namespaceLabelForCard(card, namespaceStyles)
+            const wantsDownload = capabilities?.download === true
+            const wantsOpen = capabilities?.open === true
+            const isObjectRefCard = Boolean(card.ref)
+            const presentation = cardPresentation(card, namespaceStyles, resolverState)
             const visibleSummary = card.summary || (isObjectRefCard ? card.ref : '')
             const providerAttachmentContexts = providerObjectAttachmentContexts(card, resolverState)
             return (
               <article
                 key={card.id}
                 data-card-id={card.id}
-                className={`canvas-card ${pinned ? 'expanded' : ''} ${dragged ? 'moving' : ''} ${card.selected || locallySelected ? 'selected' : ''} ${locallySelected ? 'multi-selected' : ''} ${pendingSuggestion ? 'suggested' : ''} ${card.kind.replace('.', '-')} ${searchActive ? (matchedCardIds?.has(card.id) ? 'search-match' : 'search-dim') : ''}`}
+                className={`canvas-card ${pinned ? 'expanded' : ''} ${dragged ? 'moving' : ''} ${card.selected || locallySelected ? 'selected' : ''} ${locallySelected ? 'multi-selected' : ''} ${pendingSuggestion ? 'suggested' : ''} ns-${cssClassToken(presentation.key)} ${searchActive ? (matchedCardIds?.has(card.id) ? 'search-match' : 'search-dim') : ''}`}
                 draggable
                 onClick={(event) => selectCard(card, event)}
                 onDragStart={(event) => {
@@ -2462,13 +2520,13 @@ export function CanvasBoard({
                   top: card.rect.y,
                   width: card.rect.w,
                   height: card.rect.h,
-                  ...namespaceCssForCard(card, namespaceStyles),
+                  ...presentationCssForCard(presentation.style),
                 }}
               >
                 <div className="canvas-card-top">
-                  <span className="canvas-card-origin" title={card.ref ? `${namespaceLabel} · ${card.kind}` : card.kind}>
-                    <Icon size={13} />
-                    <span className="canvas-card-origin-label">{namespaceLabel}</span>
+                  <span className="canvas-card-origin" title={card.ref ? `${presentation.label} · ${card.object_kind || card.namespace || 'unknown'}` : presentation.label}>
+                    <NamespaceIcon style={presentation.style} />
+                    <span className="canvas-card-origin-label">{presentation.label}</span>
                   </span>
                   {enumTag ? <span className="canvas-card-enum" title={`${enumTag} — pin position in this kind on the board`}>{enumTag}</span> : null}
                   <span className="canvas-card-buttons">
@@ -2504,14 +2562,12 @@ export function CanvasBoard({
                       <button
                         type="button"
                         className="primary"
-                        title={kind === 'conversation' ? 'Open conversation in chat' : 'Open in owning surface'}
+                        title="Open in owning surface"
                         disabled={capabilities && capabilities.open === false}
                         onClick={(event) => {
                           event.stopPropagation()
-                          // Open through the registered object resolver — for a
-                          // conversation pin the resolver returns a ui_event the
-                          // scene routes to the chat surface (drag-onto-chat
-                          // remains a separate direct-load shortcut).
+                          // Open through the registered object resolver. The
+                          // owner can return a ui_event for the scene to route.
                           void runObjectAction(card, 'open')
                         }}
                         onMouseDown={(event) => event.stopPropagation()}
@@ -2617,26 +2673,17 @@ export function CanvasBoard({
                     <pre className="canvas-card-flyout-preview-text">{resolverNotice}</pre>
                   ) : null}
                   {!resolverLoading && !resolverNotice ? (
-                    kind === 'conversation' ? (
-                      <dl className="canvas-card-flyout-kv">
-                        <div><dt>chat</dt><dd>{card.title || 'Conversation'}</dd></div>
-                        {card.summary ? <div><dt>last</dt><dd>{card.summary}</dd></div> : null}
-                      </dl>
-                    ) : isObjectRefCard ? (
+                    isObjectRefCard ? (
                       <dl className="canvas-card-flyout-kv">
                         <div><dt>object URI</dt><dd>{card.ref || card.title}</dd></div>
-                        <div><dt>namespace</dt><dd>{namespaceLabel}</dd></div>
-                        <div><dt>object kind</dt><dd>{card.object_kind || card.kind || 'object.ref'}</dd></div>
+                        <div><dt>namespace</dt><dd>{card.namespace || 'unknown'}</dd></div>
+                        <div><dt>object kind</dt><dd>{card.object_kind || 'unknown'}</dd></div>
                         {card.summary ? <div><dt>preview</dt><dd>{card.summary}</dd></div> : null}
                       </dl>
                     ) : wantsDownload ? (
                       <dl className="canvas-card-flyout-kv">
                         <div><dt>file</dt><dd>{card.ref || card.title}</dd></div>
                         <div><dt>mime</dt><dd>{card.mime || '—'}</dd></div>
-                      </dl>
-                    ) : wantsOpen && (kind === 'source' || kind === 'search.result') ? (
-                      <dl className="canvas-card-flyout-kv">
-                        <div><dt>url</dt><dd>{card.ref || '—'}</dd></div>
                       </dl>
                     ) : card.summary ? (
                       <pre className="canvas-card-flyout-preview-text">{card.summary}</pre>

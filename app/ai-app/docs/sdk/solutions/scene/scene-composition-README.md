@@ -126,7 +126,7 @@ Source surface or host
 | Runtime config delivery | Scene host relay. |
 | Local surface messages | Scene host broker. |
 | Panel size, drag, z-order, shell CSS | Scene host. |
-| Namespace visual styles | Scene host config, passed through to surfaces by root namespace. |
+| Namespace visual styles | Runtime presentation config, passed through to surfaces by `object_kind`/`namespace` lookup keys. |
 | Object identity and semantics | Namespace provider/resolver. |
 | What a surface renders and how it behaves | The target surface. |
 
@@ -273,14 +273,15 @@ the frame/source that sent it. This is the standard widget contract from
 ## Namespace Presentation Config
 
 Namespace presentation is app-owned runtime metadata. It gives the visual
-identity for root namespaces such as `mem`, `task`, `fi`, and `cnv`. The
+identity for source/provider presentation keys such as `mem`, `task`,
+`task:attachment`, `fi`, and `cnv`. The
 same map is used by:
 
 | Consumer | Use |
 | --- | --- |
 | Chat widget | Colors attached-context chips, search-result chips, and namespaced object refs. |
 | Scene drag overlay | Colors compatible target areas while a namespaced object is being dragged. |
-| Canvas / pinboard | Colors object pins/cards by the represented object's root namespace. |
+| Canvas / pinboard | Colors object pins/cards by the represented object's `object_kind` or `namespace`. |
 
 The app exposes the map through a public read endpoint:
 
@@ -402,7 +403,7 @@ For this path to work, every participant has a narrow responsibility:
 | Participant | Required behavior |
 | --- | --- |
 | Source surface | Emit `kdcube-context-drag-start` / `kdcube-context-drag-end` with canonical `contexts`. |
-| Scene host | Track the active context, match drop zones by root namespace, call the backend object action, and dispatch by `target_surface`. |
+| Scene host | Track the active context, match drop zones by declarative selector policy, call the backend object action, and dispatch by `target_surface`. |
 | Namespace provider | Resolve `open` for the full object URI and return the target surface UI event. |
 | Target surface | Register with the scene and implement only its own local open/focus command. |
 

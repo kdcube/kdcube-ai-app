@@ -5,32 +5,15 @@
  * with `canvas/api.py` and `canvas/storage.py`; if the patch op set or
  * card field set changes there, update both.
  *
- * Card kind reference (per `doc/design/canvas.md`):
- *   - `user.text`          canvas-hosted user-authored text (cnv: ref)
- *   - `user.attachment`    canvas-hosted user upload (cnv: ref)
- *   - `agent.text`         canvas-hosted assistant-authored text (cnv: ref); not the same as suggestion state
- *   - `file`               file artifact, including cross-conversation fi: refs
- *   - `memory`             memory store result (mem: ref)
- *   - `source`             source-pool row (so: ref)
- *   - `search.result`      generic search result with whatever resolver-backed ref
- *   - `object.ref`         opaque resolver-backed namespace ref
- *   - `note`               free-form authored note
+ * Card `kind` is a source-provided display label, not a behavior selector.
+ * Canvas-owned hosted cards may use labels such as `user.text`,
+ * `user.attachment`, or `agent.text`; provider-owned refs keep the label
+ * supplied by their source component and resolve through `object_ref`.
  */
+export type CanvasCardKind = string
 
-export type CanvasCardKind =
-  | 'user.text'
-  | 'user.attachment'
-  | 'agent.text'
-  | 'file'
-  | 'memory'
-  | 'source'
-  | 'search.result'
-  | 'note'
-  | 'object.ref'
-  | 'conversation'
-
-/** `suggested` is a pending/limbo state for any card kind: file, memory,
- *  source result, link, or text. It is not equivalent to `agent.text`. */
+/** `suggested` is a pending/limbo placement state for any card. It is not
+ *  equivalent to `agent.text`. */
 export type CanvasCardPlacement = 'floating' | 'placed' | 'suggested' | 'trashed'
 
 /** Geometry rectangle used by placed cards. Mirrors the Python shape; the
@@ -52,11 +35,12 @@ export interface CanvasNewCardInput {
   title: string
   mime: string
   /** Optional owner namespace for resolver-backed refs. When omitted, the
-   *  UI derives it from `logical_path` by reading the prefix before `:`. */
+   *  card is treated as an unresolved/unknown object until the owner/resolver
+   *  provides metadata. Components must not infer this from `logical_path`. */
   namespace?: string
-  /** Optional provider-owned object kind/subnamespace hint such as
-   *  `<namespace>.<kind>`. Canvas uses it only for presentation;
-   *  resolver dispatch still uses the URI root namespace before `:`. */
+  /** Optional provider-owned presentation subtype such as `task:issue` or
+   *  `task:attachment`. Canvas uses this as a lookup key into namespace
+   *  presentation config. Resolver dispatch still passes the full URI. */
   object_kind?: string
   /** Compact object preview shown on cards and preserved in canvas legend rows. */
   content_preview?: string
@@ -323,6 +307,8 @@ export interface CanvasUploadCardDescriptor {
   kind: CanvasCardKind
   title: string
   mime: string
+  namespace?: string
+  object_kind?: string
   logical_path: string
   storage_ref: string
   version: number

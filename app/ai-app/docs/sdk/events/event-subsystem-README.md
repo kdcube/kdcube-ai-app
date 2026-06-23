@@ -81,9 +81,11 @@ make a callable visible to the model by itself.
 Keep this distinction strict. A source can have policy bindings without being a
 tool. For example, canvas board resolution may have a `canvas.read` source with
 `kind="react.event_source_reader"` for runtime/policy use, while exact
-model-facing board content is imported through `react.pull(paths=["cnv:main@7"])`.
-The write source `canvas.patch` remains `kind="react.tool"` because the agent
-calls `canvas.patch(...)` directly.
+model-facing board content is imported through `react.pull(paths=["cnv:main"])`
+or `react.pull(paths=["cnv:main@7"])`. Canvas writes are model-facing
+`named_services.upsert_object(namespace="cnv", ...)` calls; the provider may
+implement that upsert by emitting a `canvas.patch` storage/event occurrence, but
+`canvas.patch` is no longer the ReAct-visible write contract.
 
 Event-source policy bindings are the integration contract. For ReAct, a source
 can declare policies that find result surfaces, convert them to timeline

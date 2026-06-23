@@ -19,6 +19,7 @@ from typing import Any, Awaitable, Callable, Mapping, Optional
 
 CONVERSATION_RESOLVER_NAME = "sdk.chat.conversation"
 CONVERSATION_OBJECT_NAMESPACE = "conv"
+CONVERSATION_OBJECT_KIND = "chat.conversation"
 
 # (user_id, conversation_id, bundle_id) -> conversation details mapping.
 # The details mapping is expected to expose `conversation_title` and
@@ -69,8 +70,10 @@ def _base_response(*, ref: str, action: str) -> dict[str, Any]:
         "ref": ref,
         "object_ref": ref,
         "namespace": CONVERSATION_OBJECT_NAMESPACE,
+        "object_kind": CONVERSATION_OBJECT_KIND,
         "resolver": CONVERSATION_RESOLVER_NAME,
         "resolver_status": "implemented",
+        "mime": "application/vnd.kdcube.conversation+json;version=1",
         "capabilities": conversation_ref_capabilities(),
         "default_open_effect_action": "open",
     }
@@ -152,6 +155,7 @@ async def resolve_conversation_ref_action(
 
 __all__ = [
     "CONVERSATION_OBJECT_NAMESPACE",
+    "CONVERSATION_OBJECT_KIND",
     "CONVERSATION_RESOLVER_NAME",
     "ConversationDetailsFetcher",
     "conversation_id_from_ref",

@@ -228,6 +228,38 @@ selection uses `object_ref`.
 This is the URI used by `react.read`, owner event-source routing, and
 `block.produce`.
 
+## Projection And Rendering Ownership
+
+Provider storage and projection code must return canonical structured state,
+not model-facing prose. Storage may return fields such as `object_ref`,
+`revision`, `bounds`, `legend`, `cards_count`, `namespace`, and
+`object_kind`; it must not hide ReAct instructions, edit protocols, or prompt
+framing inside those storage objects.
+
+The generic `react.pull` / `react.read` tools must remain provider-agnostic.
+If a provider needs stats, owner revision, refresh guidance, or rendering
+metadata, its block-production policy should place that metadata on the block
+it produces, using stable fields such as `original_object_stats`. The generic
+tool may read documented metadata fields, but it must not branch on concrete
+namespaces such as `cnv`, `mem`, or `task`. See
+[Object Refs, Presentation, And Actions](object-ref-presentation-and-actions-README.md).
+
+Model-facing text is owned by one of these layers:
+
+- `block.produce`, when a concrete object is read through `react.read`;
+- local timeline/announce/compaction projection policies, when runtime-local
+  volatile state such as a canvas board needs bounded prompt visibility;
+- provider `block.render`, when provider-owned visible blocks need final
+  prompt-time patches.
+
+Instruction strings used by those policies belong in the namespace or solution
+instruction module, not in storage. For example, canvas storage returns the
+board projection facts, while the canvas announce policy decides whether the
+board is visible and renders `[CANVAS BOARD]` text using canvas instructions.
+This keeps ReAct generic: `react.read` does not branch on `cnv`, `mem`, `task`,
+or any future namespace, and storage remains reusable by UI, API, event, and
+model clients.
+
 ## Provider Contract
 
 For an object namespace that supports ReAct materialization:

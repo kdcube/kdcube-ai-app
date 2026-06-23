@@ -143,10 +143,14 @@ Canvas follows the same model. When a bundle registers the SDK canvas provider,
 `object.schema`, and, when mutation is allowed, `object.upsert`. Then
 `named_services.search_objects(namespace="cnv", ...)` searches canvas card
 snapshots, `named_services.object_schema(namespace="cnv")` returns
-`canvas.board` / `canvas.card` / `canvas.object` schemas and filter contracts,
-and `named_services.upsert_object(namespace="cnv", ...)` creates or updates
-boards/cards. If a runtime has not registered `cnv`, the generic named-service
-tools correctly list only the namespaces that are configured.
+`canvas.board` / `canvas.card` / `canvas.object` schemas, typed mutation
+schemas such as `canvas.card.comment` and `canvas.card.replacement`, and filter
+contracts. `named_services.upsert_object(namespace="cnv", ...)` creates or
+updates boards/cards and applies typed mutations. Use `cnv:<board-name>` as the
+live pull/read and upsert target; use `cnv:<board-name>@<revision>` only when
+you intentionally need a fixed historical revision. If a runtime has not
+registered `cnv`, the generic named-service tools correctly list only the
+namespaces that are configured.
 
 ## Consumer Contract For All Surfaces
 
@@ -207,6 +211,12 @@ The provider owns:
 | `download_url` and file metadata | How the browser downloads provider-owned bytes. |
 | streamed `object.get` representation | How ReAct or other materializers pull the object into a workspace. |
 | `block.produce` output | How the object becomes model-visible context. |
+
+See [Object Refs, Presentation, And Actions](object-ref-presentation-and-actions-README.md)
+for the shared UI boundary: clients pass the full `object_ref`, load
+colors/icons/labels from namespace presentation config, and use provider
+resolver results for capabilities/actions. Client code must not infer behavior
+from `kind`, visual label, or URI shape.
 
 When a consumer materializes a namespace ref with `react.pull`, the resulting
 workspace artifact is local (`fi:...`) but not semantically anonymous. The pull

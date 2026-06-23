@@ -5,8 +5,8 @@ from typing import Any, Dict, Mapping
 
 from kdcube_ai_app.apps.chat.sdk.solutions.react.events import canonicalize_event_ref_for_context
 
-from .ids import timestamp_id
-from .storage import CanvasStore
+from kdcube_ai_app.apps.chat.sdk.solutions.canvas.ids import timestamp_id
+from kdcube_ai_app.apps.chat.sdk.solutions.canvas.storage import CanvasStore
 
 
 DEFAULT_CANVAS_TOOL_EVENT_SOURCE_DESCRIPTIONS: Dict[str, str] = {
@@ -19,7 +19,7 @@ DEFAULT_CANVAS_TOOL_EVENT_SOURCE_DESCRIPTIONS: Dict[str, str] = {
         "suggesting content edits. Agents do not manage card positions."
     ),
     "read": (
-        "Read a canvas board by cnv: URI and return agent_view plus exact state. "
+        "Read a canvas board by cnv: URI and return exact structured state. "
         "This is an internal runtime/policy reader, not an agent-visible canvas tool; "
         "agents import exact cnv: content with react.pull."
     ),
@@ -188,7 +188,6 @@ async def patch_canvas_for_agent(
             "expected_revision": result.get("expected_revision"),
             "current_revision": result.get("current_revision"),
             "projection": result.get("projection") or {},
-            "agent_view": result.get("agent_view") or "",
             "result": result,
         }
     event = store.state_event(

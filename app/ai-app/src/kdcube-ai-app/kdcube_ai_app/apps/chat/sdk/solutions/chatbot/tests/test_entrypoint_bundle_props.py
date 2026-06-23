@@ -77,3 +77,37 @@ async def test_on_bundle_load_refreshes_effective_props_before_ui_build(monkeypa
     assert widgets["alpha"]["src_folder"] == "ui/widgets/alpha"
     assert widgets["beta"]["enabled"] is True
     assert widgets["beta"]["src_folder"] == "ui/widgets/beta"
+
+
+def test_bundle_prop_model_overrides_rebuild_model_service():
+    entrypoint = _EntrypointForPropsTest.__new__(_EntrypointForPropsTest)
+    entrypoint.bundle_props = {
+        "role_models": {
+            "answer_generator": {
+                "provider": "anthropic",
+                "model": "claude-test",
+            },
+        },
+        "embedding": {
+            "embedder_id": "openai-text-embedding-3-small",
+        },
+    }
+    entrypoint.config = SimpleNamespace(
+        role_models={},
+        set_role_models=lambda value: setattr(entrypoint, "role_models_seen", value),
+        set_embedding=lambda value: setattr(entrypoint, "embedding_seen", value),
+    )
+    entrypoint.models_service = object()
+    entrypoint.rebuild_count = 0
+
+    def _rebuild_models_service():
+        entrypoint.rebuild_count += 1
+        entrypoint.models_service = object()
+
+    entrypoint._rebuild_models_service = _rebuild_models_service
+
+    entrypoint._apply_bundle_props_overrides()
+
+    assert entrypoint.role_models_seen["answer_generator"]["model"] == "claude-test"
+    assert entrypoint.embedding_seen["embedder_id"] == "openai-text-embedding-3-small"
+    assert entrypoint.rebuild_count == 1

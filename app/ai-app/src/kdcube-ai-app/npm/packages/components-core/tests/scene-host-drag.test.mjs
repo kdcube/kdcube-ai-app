@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
   computeSceneDragScreenCalibration,
-  namespaceStyleCandidates,
+  presentationStyleCandidates,
   normalizeHostContextDragStartMessage,
   scenePointFromChildDragMessage,
   selectSceneDropTargetAtPoint,
@@ -31,14 +31,15 @@ test('rejects non-canonical drag-start messages', () => {
   )
 })
 
-test('builds namespace style candidates from explicit namespace and ref', () => {
+test('builds presentation style candidates from explicit metadata only', () => {
   assert.deepEqual(
-    namespaceStyleCandidates({
+    presentationStyleCandidates({
       namespace: 'task:attachment',
       ref: 'task:issue:attachment:T-1/file.docx',
-      kind: 'file',
+      object_kind: 'task:file',
+      kind: 'legacy-local-label',
     }),
-    ['task:attachment', 'task', 'file'],
+    ['task:file', 'task:attachment'],
   )
 })
 

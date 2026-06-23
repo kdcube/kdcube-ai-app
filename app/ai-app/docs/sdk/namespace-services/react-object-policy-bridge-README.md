@@ -252,3 +252,9 @@ For a namespace-owning app/provider:
     `original_object_stats`.
 - Keep namespace-specific parsing and rendering in the owner module.
 - Do not add namespace-specific branches to generic ReAct tools.
+
+This is the same boundary described in
+[Object Refs, Presentation, And Actions](object-ref-presentation-and-actions-README.md):
+the owner policy may put fields such as `original_object_stats` directly on
+the produced block, and generic ReAct code may consume those documented fields
+without knowing which provider created them.

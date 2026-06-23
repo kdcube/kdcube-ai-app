@@ -377,8 +377,23 @@ Canvas exposes these object families:
 | `object_kind` | Refs / payloads | Notes |
 |---|---|---|
 | `canvas.board` | `cnv:<board-name>` and `cnv:<board-name>@<revision>` | Board document with cards, layout, and revision metadata. `object.upsert` writes/replaces the board document. |
-| `canvas.card` | card body inside a board; hosted content may produce `cnv:canvas/users/.../objects/...` | `object.upsert` creates or updates a card by calling the existing canvas patch path. Cards may host canvas-owned content or pin `fi:`, `mem:`, `task:`, `so:`, or other refs. |
+| `canvas.card` | card body inside a board; hosted content may produce `cnv:canvas/users/.../objects/...` | `object.upsert` creates or updates a card. Cards may host canvas-owned content or pin `fi:`, `mem:`, `task:`, `so:`, or other refs. |
 | `canvas.object` | `cnv:canvas/users/<user>/canvases/<board>/objects/<kind>/<card-id>/v000001.<ext>` | Versioned bytes/text hosted by a card. Mutate the owning `canvas.card`; do not upsert this hosted object directly. |
+| `canvas.card.comment` | `object_ref=cnv:<board-name>`, payload names `card_id` and `text` | Appends a comment to a card without mutating the proxied object. |
+| `canvas.card.replacement` | `object_ref=cnv:<board-name>`, payload names `card_id`, `mode`, and replacement `card` | Suggests a floating replacement by default; `mode=in_place` is explicit. |
+| `canvas.card.deletion_suggestion` | `object_ref=cnv:<board-name>`, payload names `card_id` and optional `reason` | Records a deletion suggestion for user review without deleting. |
+| `canvas.card.delete` | `object_ref=cnv:<board-name>`, payload names `card_id` | Deletes the card. Prefer suggestions unless the user explicitly asks to delete. |
+| `canvas.card.layout` | `object_ref=cnv:<board-name>`, payload names `card_id`, `op`, and coordinates/sizes | UI layout move/resize operation. Agents should only use this when explicitly asked to arrange the board. |
+| `canvas.operation_batch` | `object_ref=cnv:<board-name>`, payload contains ordered `operations[]` | Atomic batch escape hatch for multi-step board edits. Prefer typed object kinds for single-card changes. |
+
+Canvas is therefore a normal named-service provider from a ReAct point of view:
+the model asks `named_services.object_schema(namespace="cnv", object_kind=...)`
+for the exact payload contract and mutates with
+`named_services.upsert_object(namespace="cnv", object_ref="cnv:<board-name>",
+base_revision=<visible revision>, object_json=...)`. The provider owns the
+translation from those typed objects to its storage implementation. Today that
+implementation still applies a canvas patch internally, but the patch operation
+is not the public agent interface.
 
 ### Object Operations
 
@@ -424,10 +439,17 @@ resolution object, usually in `ret.extra`, for example:
 {
   "event_source_id": "named_services.task",
   "object_ref": "task:issue:BUG-123",
-  "object_kind": "task.issue",
+  "object_kind": "task:issue",
   "namespace": "task"
 }
 ```
+
+`object_kind` is provider-owned metadata and may also be used as a presentation
+lookup key by generic clients. It must not make the generic client parse the
+URI. Visual identity for `object_kind` / namespace keys comes from
+`namespace_presentation_config`; behavior comes from provider
+`capabilities`, `actions`, and `object.action` results. See
+[Object Refs, Presentation, And Actions](object-ref-presentation-and-actions-README.md).
 
 The resolver is the routing step used before block production. Object content
 belongs to `object.get`; model-visible projection belongs to `block.produce`;

@@ -43,9 +43,11 @@ party. For example:
   resolver function.
 
 If a step uses data, the diagram names the owner of that data. No host layer
-derives task object kinds or task rendering rules from URI shape. The host may
-split `task:...` into namespace `task` only to find the namespace resolver;
-the provider function owns the rest of the interpretation.
+derives task object kinds, task rendering rules, colors, icons, open actions,
+or download actions from URI shape. Scene/widget/canvas clients pass the full
+`object_ref`; the resolver router finds the owner resolver, and the provider
+function owns URI interpretation. See
+[Object Refs, Presentation, And Actions](object-ref-presentation-and-actions-README.md).
 
 ## System Picture
 
@@ -934,8 +936,9 @@ operation name or the two-step host/cite strategy.
    same helper handles `response_mode: stream`.
 7. Return canonical object descriptors under `ret.object`, list/search results
    under `ret.items`, common response metadata under `ret.attrs`, UI commands
-   under `ret.ui_event`, and bounded provider-specific details under
-   `ret.extra`.
+   under `ret.ui_event`, and bounded provider-specific action metadata under
+   `ret.extra`. Consumer surfaces must not inspect `ret.object` internals to
+   invent labels, object kinds, capabilities, open actions, or download actions.
 8. Implement `object.schema` for each object kind that agents may mutate.
 9. Implement `event.resolve` as the lightweight provider function for
    `uri -> resolution info` such as `event_source_id`, `object_ref`, and

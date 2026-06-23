@@ -12,6 +12,7 @@ import {
   focusMemories,
   loadMemories,
   loadMemoryEvents,
+  loadMemory,
   normalizeMemoryRefs,
   setViewMode,
   updateMemoryPreferences,
@@ -151,16 +152,14 @@ export default function App() {
     });
   }
 
-  function focusAndExpandMemoryIds(memoryIds: string[]) {
-    // Used by the host 'open' message — an explicit request to open this
-    // memory in the full editor layout.
+  function openMemoryIds(memoryIds: string[]) {
     const ids = normalizeMemoryRefs(memoryIds);
     if (!ids.length) return;
     setCompact(false);
     setEditorMode('');
     dispatch(setViewMode('full'));
     dispatch(focusMemories(ids));
-    void dispatch(loadMemories()).then(() => {
+    void dispatch(loadMemory(ids[0])).then(() => {
       void dispatch(loadMemoryEvents(ids[0]));
     });
   }
@@ -173,7 +172,7 @@ export default function App() {
   // Single-record mode boot: focus + load the one record named in ?record=<id>,
   // reusing the same path the host 'open' command uses.
   useEffect(() => {
-    if (singleRecord) focusAndExpandMemoryIds([singleRecord]);
+    if (singleRecord) openMemoryIds([singleRecord]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [singleRecord]);
 
@@ -251,7 +250,7 @@ export default function App() {
               ...(Array.isArray(data.memory_ids) ? data.memory_ids : []),
               ...(Array.isArray(data.object_refs) ? data.object_refs : []),
             ]);
-        focusAndExpandMemoryIds(memoryIds);
+        openMemoryIds(memoryIds);
         return;
       }
       // Focus a set of records in the list WITHOUT forcing the expanded view —

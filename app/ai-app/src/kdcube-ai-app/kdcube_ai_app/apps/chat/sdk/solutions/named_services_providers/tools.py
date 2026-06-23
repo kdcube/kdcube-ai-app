@@ -759,7 +759,7 @@ async def object_action(
 
 async def upsert_object(
     namespace: Annotated[str, "Configured named-service namespace or provider-declared scoped namespace, for example 'sensor'."],
-    object_json: Annotated[str, "JSON object to create or update."],
+    object_json: Annotated[str, "Provider-schema JSON object to create or update."],
     object_ref: Annotated[str, "Canonical object ref when updating an existing object."] = "",
     object_id: Annotated[str, "Owner-local object id when object_ref is not known."] = "",
     base_revision: Annotated[str, "Optional expected revision for optimistic concurrency."] = "",

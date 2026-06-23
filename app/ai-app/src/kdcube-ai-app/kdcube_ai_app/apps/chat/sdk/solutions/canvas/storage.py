@@ -10,8 +10,8 @@ from typing import Any, Dict, Mapping
 from kdcube_ai_app.apps.chat.sdk.storage.bundle_artifact_storage import BundleArtifactStorage
 from kdcube_ai_app.storage.observed_file_locks import observed_file_lock
 
-from .ids import timestamp_id, timestamp_slug_id
-from .storage_utils import safe_storage_segment
+from kdcube_ai_app.apps.chat.sdk.solutions.canvas.ids import timestamp_id, timestamp_slug_id
+from kdcube_ai_app.apps.chat.sdk.solutions.canvas.storage_utils import safe_storage_segment
 
 
 CANVAS_SCHEMA = "kdcube.canvas.v1"
@@ -20,7 +20,6 @@ CANVAS_MIME = "application/vnd.kdcube.canvas+json;version=1"
 CANVAS_PATCH_MIME = "application/vnd.kdcube.canvas.patch+json;version=1"
 DEFAULT_CANVAS_NAME = "main"
 LOGGER = logging.getLogger("kdcube.sdk.solutions.canvas.storage")
-_CANVAS_DURABLE_FI_RE = re.compile(r"^fi:conv_[^.]+\.turn_[^.]+\.")
 
 
 def _decode_json(raw: Any) -> Dict[str, Any]:
@@ -200,26 +199,7 @@ def _card_identity_ref(card: Mapping[str, Any]) -> str:
 
 
 def _validate_canvas_proxy_ref(ref: str) -> None:
-    value = str(ref or "").strip()
-    if value.startswith("fi:") and not _CANVAS_DURABLE_FI_RE.match(value):
-        raise ValueError("canvas fi refs must include conv_<conversation_id>")
-
-
-def _card_id_prefix(kind: Any) -> str:
-    value = str(kind or "").strip()
-    if value == "user.attachment":
-        return "A"
-    if value == "user.text":
-        return "U"
-    if value == "agent.text":
-        return "R"
-    if value == "file":
-        return "F"
-    if value == "memory":
-        return "M"
-    if value in {"source", "search.result"}:
-        return "S"
-    return "O"
+    del ref
 
 
 def _canvas_owned_card_prefix(kind: Any) -> str:
@@ -237,8 +217,33 @@ def _is_canvas_owned_kind(kind: Any) -> bool:
     return str(kind or "").strip() in {"user.text", "user.attachment", "agent.text"}
 
 
+def _canvas_object_kind(kind: Any) -> str:
+    value = str(kind or "").strip()
+    if value == "user.text":
+        return "cnv:user:text"
+    if value == "user.attachment":
+        return "cnv:user:attachment"
+    if value == "agent.text":
+        return "cnv:agent:text"
+    return "cnv:object"
+
+
 def _new_card_id(kind: Any) -> str:
     return timestamp_slug_id(_canvas_owned_card_prefix(kind))
+
+
+def _map_label_prefix(row: Mapping[str, Any]) -> str:
+    for key in ("object_kind", "namespace"):
+        raw = str(row.get(key) or "").strip()
+        if not raw:
+            continue
+        parts = [part for part in re.split(r"[^A-Za-z0-9]+", raw) if part]
+        if not parts:
+            continue
+        if len(parts) == 1:
+            return parts[0][:3].upper()
+        return "".join(part[:1].upper() for part in parts)[:4] or "O"
+    return "O"
 
 
 def _assign_map_labels(legend: list[Dict[str, Any]]) -> list[Dict[str, Any]]:
@@ -253,7 +258,7 @@ def _assign_map_labels(legend: list[Dict[str, Any]]) -> list[Dict[str, Any]]:
             copy["map_label"] = existing
             labelled.append(copy)
             continue
-        prefix = _card_id_prefix(copy.get("kind"))
+        prefix = _map_label_prefix(copy)
         counters[prefix] = counters.get(prefix, 0) + 1
         copy["map_label"] = f"{prefix}{counters[prefix]}"
         labelled.append(copy)
@@ -282,7 +287,6 @@ class CanvasStore:
         state_event_source_id: str = "canvas.state",
         ui_event_type: str = "canvas.patch.applied",
         artifact_resolver_name: str = "sdk.canvas.artifact_storage",
-        handoff_resolver_names: Mapping[str, str] | None = None,
     ) -> None:
         tenant = str(tenant or "").strip()
         project = str(project or "").strip()
@@ -303,11 +307,6 @@ class CanvasStore:
             str(artifact_resolver_name or "sdk.canvas.artifact_storage").strip()
             or "sdk.canvas.artifact_storage"
         )
-        self.handoff_resolver_names = {
-            str(namespace or "").strip(): str(resolver or "").strip()
-            for namespace, resolver in dict(handoff_resolver_names or {}).items()
-            if str(namespace or "").strip() and str(resolver or "").strip()
-        }
 
     @classmethod
     def from_scope(
@@ -321,7 +320,6 @@ class CanvasStore:
         state_event_source_id: str = "canvas.state",
         ui_event_type: str = "canvas.patch.applied",
         artifact_resolver_name: str = "sdk.canvas.artifact_storage",
-        handoff_resolver_names: Mapping[str, str] | None = None,
         revision_retention: int | None = None,
     ) -> "CanvasStore":
         if isinstance(scope, Mapping):
@@ -340,7 +338,6 @@ class CanvasStore:
             state_event_source_id=state_event_source_id,
             ui_event_type=ui_event_type,
             artifact_resolver_name=artifact_resolver_name,
-            handoff_resolver_names=handoff_resolver_names,
         )
 
     def canvas_name(self, value: Any = None) -> str:
@@ -673,6 +670,8 @@ class CanvasStore:
             "kind": "user.attachment",
             "title": safe_name,
             "mime": mime or "application/octet-stream",
+            "namespace": "cnv",
+            "object_kind": "cnv:user:attachment",
             "logical_path": f"cnv:{relpath}",
             "storage_ref": f"cnv:{relpath}",
             "storage_uri": uri,
@@ -692,6 +691,9 @@ class CanvasStore:
         identity_ref = _card_identity_ref(card)
         _validate_canvas_proxy_ref(identity_ref)
         canvas_owned = _is_canvas_owned_kind(card.get("kind")) or "content" in card
+        if canvas_owned:
+            card.setdefault("namespace", "cnv")
+            card.setdefault("object_kind", _canvas_object_kind(card.get("kind")))
         default_id = _new_card_id(card.get("kind"))
         if identity_ref and not canvas_owned:
             # Proxy pins are identified by the original resolver URI. This keeps
@@ -746,6 +748,8 @@ class CanvasStore:
                 "kind": str(card.get("kind") or "note"),
                 "title": str(card.get("title") or card.get("label") or "")[:120],
                 "mime": str(card.get("mime") or ""),
+                "namespace": str(card.get("namespace") or ""),
+                "object_kind": str(card.get("object_kind") or ""),
                 "content_preview": str(card.get("content_preview") or card.get("preview") or "")[:500],
                 "description": str(card.get("description") or "")[:500],
                 "content_size": content_size,
@@ -786,32 +790,6 @@ class CanvasStore:
         canvas_id = str(canvas.get("canvas_id") or "")
         revision = int(canvas.get("revision") or 0)
         canvas_uri = self.canvas_uri(canvas_name=canvas_name, revision=revision)
-        lines = [
-            "[CANVAS BOARD]",
-            f"canvas_name: {canvas_name}",
-            f"canvas_id: {canvas_id}",
-            f"canvas_uri: {canvas_uri}",
-            f"revision: {revision}",
-            f"bounds: x={bounds.get('x')} y={bounds.get('y')} w={bounds.get('w')} h={bounds.get('h')}",
-            f"cards: {len(active_legend)} placed={len(placed)} floating={len(floating)} pending_suggestions={len(suggested)} bin={len(legend) - len(active_legend)}",
-            "",
-            "spatial_map:",
-            *spatial_map,
-            "",
-            "legend:",
-            *_legend_text_lines(legend),
-            "",
-            "edit_protocol:",
-            "- Use canvas.patch with canvas_id and base_revision equal to revision.",
-            "- Treat this JSON as exact state for planning only; do not edit or save it directly.",
-            "- Use map labels for spatial reasoning; use card_id values from the legend when patching existing cards.",
-            "- Use card refs only when content_preview is missing or insufficient; pull external owner refs into the ReAct workspace before exact content inspection.",
-            "- user.text card content can be updated with update_card content={text}. Proxy cards keep their ref content unchanged; use description/comment_card for user notes on them.",
-            "- Card kind describes content. Suggestion is placement/state: use placement=suggested for pending bot output.",
-            "- Use kind=agent.text only for assistant-authored text; files, memories, sources, search results, and links keep their own kinds.",
-            "- Every canvas.patch creates a new revision and event.canvas timeline result.",
-            "- Do not edit read-only snapshot refs; canvas cards are editable pins, snapshots are context.",
-        ]
         return {
             "schema": "kdcube.canvas.projection.v1",
             "canvas_id": canvas_id,
@@ -828,7 +806,6 @@ class CanvasStore:
             "suggested_count": len(suggested),
             "spatial_map": spatial_map,
             "legend": legend,
-            "text": "\n".join(lines),
         }
 
     def _manifest_update(
@@ -1093,7 +1070,6 @@ class CanvasStore:
             "latest_ref": latest_ref if found else "",
             "canvas": canvas,
             "projection": projection,
-            "agent_view": projection.get("text") or "",
             "canvas_uri": projection.get("canvas_uri") or self.canvas_uri(canvas_name=canvas_name, revision=int(canvas.get("revision") or 0)),
         }
 
@@ -1171,7 +1147,6 @@ class CanvasStore:
             "ok": True,
             **result,
             "projection": projection,
-            "agent_view": projection.get("text") or "",
             "canvas_uri": projection.get("canvas_uri") or "",
         }
 
@@ -1451,7 +1426,6 @@ class CanvasStore:
                         "current_revision": int(current.get("revision") or 0),
                         "canvas": current,
                         "projection": current_projection,
-                        "agent_view": current_projection.get("text") or "",
                     }
             next_canvas = self.apply_patch(
                 canvas=current,
@@ -1508,7 +1482,6 @@ class CanvasStore:
             "changed_cards": changed_cards,
             "noop": bool(result.get("noop")),
             "projection": projection,
-            "agent_view": projection.get("text") or "",
             "canvas_uri": projection.get("canvas_uri") or "",
             "ui_event": {
                 "type": self.ui_event_type,

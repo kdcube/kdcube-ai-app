@@ -7,7 +7,8 @@ tags: ["sdk", "solutions", "canvas", "react", "external-events", "announce", "co
 keywords:
   [
     "sdk canvas",
-    "canvas.patch",
+    "cnv",
+    "named_services.upsert_object",
     "canvas.read",
     "event.canvas",
     "event.canvas.focus",
@@ -79,7 +80,7 @@ Canvas and snapshot are deliberately different:
 
 | Object | Direction | Editable by agent | Purpose |
 |---|---|---:|---|
-| Canvas | collaborative | yes, only through `canvas.patch` | Working board of pins and suggestions |
+| Canvas | collaborative | yes, through `named_services.upsert_object(namespace="cnv", ...)` | Working board of pins and suggestions |
 | Snapshot | external state -> model | no | Read-only view of a provider/UI state surface |
 | Chat prompt | user -> model | no | Reactive wake-up request |
 | Chat attachment | user -> model/platform | no | Platform conversation attachment, usually `fi:` |
@@ -92,7 +93,7 @@ The canvas module owns these card/object kinds:
 |---|---|---|---|
 | `user.text` | `U` | canvas `cnv:` storage | User-authored note/text placed directly on canvas |
 | `user.attachment` | `A` | canvas `cnv:` storage | User file uploaded to canvas |
-| `agent.text` | `R` | canvas `cnv:` storage | Assistant-authored text card created through `canvas.patch` or dragged from assistant output |
+| `agent.text` | `R` | canvas `cnv:` storage | Assistant-authored text card created through `cnv` named-service upsert or dragged from assistant output |
 | `file` | `F` | platform `fi:` or canvas/domain owner namespace | Produced or found file/report artifact |
 | `memory` | `M` | memory named-service provider `mem:record:<id>` | Memory/search object pin |
 | `source` / `search.result` | `S` | source/search resolver `so:` or subsystem | Source row or search result pin |
@@ -105,8 +106,8 @@ These are not platform-managed chat replicas:
 - Files dropped/uploaded on canvas are canvas-owned `user.attachment` objects
   with `cnv:` refs.
 - Assistant final answers in chat are `ar:` assistant replica data.
-- Assistant text put on canvas by `canvas.patch` is a canvas-owned `agent.text`
-  object with a `cnv:` ref.
+- Assistant text put on canvas by `named_services.upsert_object(namespace="cnv", ...)`
+  is a canvas-owned `agent.text` object with a `cnv:` ref.
 
 If a canvas-owned card is attached into chat, it remains a `cnv:` ref. Attaching
 does not convert it into a chat prompt, chat attachment, or `fi:` artifact.
@@ -161,8 +162,9 @@ browser dialog:
 All three share a markdown editor with a Raw / Rendered switch, and descriptions
 and comments render as markdown. This is presentation only; the persisted content
 is still markdown text stored on the canvas-owned object or in the card
-description/comments, and the agent contract (`canvas.patch` with `update_card` /
-`comment_card`) is unchanged.
+description/comments, and the agent contract is the `cnv` named-service upsert
+surface (`canvas.card` for content/description changes and `canvas.card.comment`
+for comments).
 
 Board help. An info (ⓘ) control opens an HTML help panel that tells scene users
 what the board is for. The host supplies the HTML; when none is supplied the
@@ -272,26 +274,32 @@ should show compact facts and causality, not dump full board JSON.
 
 ### 3. Agent Tool Events
 
-Canvas exposes one model-facing write operation and one workspace import path:
+Canvas exposes one model-facing mutation surface and one workspace import path:
 
 ```text
-react.pull(paths=["cnv:<name>@<revision>"])   import exact board state
-canvas.patch(...)                             write content changes
+react.pull(paths=["cnv:<name>"])              import live board state
+react.pull(paths=["cnv:<name>@<revision>"])   import fixed revision state
+named_services.upsert_object(namespace="cnv") write content changes
 ```
 
-`canvas.patch` is a ReAct tool source. Its result carries enough canvas
-projection for the announce policy to refresh `[CANVAS BOARD]` during the
-current turn.
+`named_services.upsert_object(namespace="cnv", object_ref="cnv:<name>", ...)`
+is the public ReAct write contract. The provider schema advertises typed
+payloads such as `canvas.card`, `canvas.card.comment`,
+`canvas.card.replacement`, `canvas.card.deletion_suggestion`,
+`canvas.card.delete`, `canvas.card.layout`, and `canvas.operation_batch`.
+The provider may implement those upserts by creating a `canvas.patch`
+storage/event occurrence, and that occurrence carries enough canvas projection
+for the announce policy to refresh `[CANVAS BOARD]` during the current turn.
 
 `canvas.read` is not an agent-visible tool. Exact board content is materialized
 through the `cnv:` namespace rehoster used by `react.pull`. The pull result
 returns an ordinary ReAct workspace artifact path; the agent can then inspect
 that returned `fi:` or physical path with `react.read`, `react.rg`, or exec.
 
-Agent-originated patches do not require the client to rebroadcast a canvas
-event to the backend. The tool result is already the authoritative event source
-for ReAct rendering. UI notification currently goes through the communicator
-step bridge; later this should move to the data bus.
+Agent-originated canvas upserts do not require the client to rebroadcast a
+canvas event to the backend. The provider result is already the authoritative
+event source for ReAct rendering. UI notification currently goes through the
+communicator step bridge; later this should move to the data bus.
 
 ## Canvas Events
 
@@ -328,13 +336,16 @@ The canvas module contributes additional instructions through
 `canvas/instructions.py`. Any bundle using this module must append those
 instructions to the ReAct prompt, not hide them as an optional skill.
 
-The module exposes one ReAct-visible write tool and one workspace import path:
+The module exposes one ReAct-visible named-service write surface and one
+workspace import path:
 
 ```text
+react.pull(paths=["cnv:<name>"])
 react.pull(paths=["cnv:<name>@<revision>"])
-canvas.patch(canvas_name="main", base_revision=<visible revision>, operations=<json>)
+named_services.upsert_object(namespace="cnv", object_ref="cnv:<name>", base_revision=<visible revision>, object_json=<typed canvas object>)
 ```
 
+`react.pull(paths=["cnv:<name>"])` or
 `react.pull(paths=["cnv:<name>@<revision>"])`:
 
 - imports exact board JSON plus an `agent_view` into the ReAct workspace;
@@ -342,13 +353,15 @@ canvas.patch(canvas_name="main", base_revision=<visible revision>, operations=<j
 - should be used only when the ANNOUNCE map/legend is insufficient;
 - returns `fi:` and physical paths that can be read or searched locally.
 
-`canvas.patch`:
+`named_services.upsert_object(namespace="cnv", ...)`:
 
-- is the only supported agent write path;
+- is the supported agent write path;
 - persists a new board revision;
-- accepts content operations such as `new_card`, `update_card`,
-  `replace_card`, `suggest_deletion`, `delete_card`, and `comment_card`;
-- does not expose layout operations to ReAct.
+- accepts typed objects such as `canvas.card`, `canvas.card.comment`,
+  `canvas.card.replacement`, `canvas.card.deletion_suggestion`,
+  `canvas.card.delete`, and `canvas.operation_batch`;
+- exposes `canvas.card.layout` for explicit user-requested arrange/resize
+  actions, but agents should not use layout mutations otherwise.
 
 Agent rules:
 
@@ -358,7 +371,8 @@ Agent rules:
   update the canvas-owned description/comments for those cards.
 - `user.text` content may be updated when the user asks.
 - Generated files are not pinned automatically. Produce the file, then call
-  `canvas.patch(new_card logical_path=fi:...)`.
+  `named_services.upsert_object(namespace="cnv", object_kind="canvas.card", ...)`
+  with `card.logical_path=fi:...`.
 - New assistant outputs should usually be `placement=suggested`, so the user
   can accept, arrange, or discard them.
 
@@ -385,15 +399,16 @@ legend:
 - O1 object.ref card_id=acme:ticket:ticket_2026-06-07-10-19-00-123456789 title=Upload fails after selecting screenshot ref=acme:ticket:ticket_2026-06-07-10-19-00-123456789
 - R1 agent.text card_id=at_2026-06-07-10-23-00_h7pn suggested title=Suggested repro steps ref=cnv:...
 
-canvas_read: react.pull(paths=["cnv:main@27"]) returns a workspace artifact with exact JSON plus agent_view.
-canvas_write: collaborate only through canvas.patch with base_revision=revision.
+canvas_read: react.pull(paths=["cnv:main"]) returns a workspace artifact with exact JSON plus agent_view.
+canvas_fixed_revision_read: react.pull(paths=["cnv:main@27"]) returns revision 27.
+canvas_write: collaborate through named_services.upsert_object(namespace="cnv", object_ref="cnv:main", base_revision=revision, object_json=<typed canvas object>).
 ```
 
 Map labels are for spatial reasoning and are assigned by the ANNOUNCE renderer.
 Canvas-owned durable card ids are timestamp-bearing (`ut_...`, `ua_...`,
 `at_...`). Proxy card ids are the original resolver refs (`acme:...`, `fi:...`,
 `mem:record:<id>`, etc.). The legend's `card_id` is the value to use in
-`canvas.patch`.
+`named_services.upsert_object(namespace="cnv", ...)` typed card mutations.
 
 `[CANVAS FOCUSED CONTEXT]` is separate and turn-local. It represents the user's
 selected or multi-selected cards on the attached canvas, for requests such as

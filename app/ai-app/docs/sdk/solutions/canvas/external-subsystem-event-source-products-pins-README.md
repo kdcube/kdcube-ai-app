@@ -93,8 +93,9 @@ acme:ticket:BUG-123
 
 ReAct should not patch snapshots through canvas tools. If it needs to update
 the provider object, it should use provider CRUD tools. If it needs to annotate
-the object pin on the board, it can use `canvas.patch(comment_card)` or
-`canvas.patch(update_card set.description=...)`.
+the object pin on the board, it can use `named_services.upsert_object` against
+`namespace="cnv"` with typed payloads such as `canvas.card.comment` or
+`canvas.card`.
 
 ## Object Search And Drag To Canvas
 

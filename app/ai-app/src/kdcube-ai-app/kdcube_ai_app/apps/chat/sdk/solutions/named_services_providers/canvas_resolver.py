@@ -131,22 +131,9 @@ class NamedServiceCanvasObjectResolver(CanvasObjectResolver):
             "items": list(response.items or []),
             "extra": dict(response.extra or {}),
         }
-        for key in (
-            "content_base64",
-            "download_url",
-            "filename",
-            "mime",
-            "size_bytes",
-            "text",
-            "summary",
-            "message",
-            "json",
-            "actions",
-            "default_open_effect_action",
-            "parent",
-        ):
-            if key in response.extra:
-                result[key] = response.extra[key]
+        result.update(dict(response.extra or {}))
+        if response.namespace:
+            result["namespace"] = response.namespace
         if response.capabilities:
             result["capabilities"] = dict(response.capabilities)
         if response.ui_event is not None:
@@ -154,21 +141,8 @@ class NamedServiceCanvasObjectResolver(CanvasObjectResolver):
         if response.object_ref:
             result["object_ref"] = response.object_ref
             result["ref"] = response.object_ref
-        object_payload = dict(response.object or {})
-        identity = object_payload.get("identity") if isinstance(object_payload.get("identity"), Mapping) else {}
-        meta = object_payload.get("meta") if isinstance(object_payload.get("meta"), Mapping) else {}
-        body = object_payload.get("body") if isinstance(object_payload.get("body"), Mapping) else {}
-        derived = {
-            "title": body.get("title") or body.get("filename") or object_payload.get("title"),
-            "description": body.get("description") or object_payload.get("description"),
-            "mime": meta.get("mime") or object_payload.get("mime"),
-            "object_kind": identity.get("object_kind") or object_payload.get("object_kind"),
-        }
-        for key, value in derived.items():
-            if value is not None:
-                result[key] = value
         LOGGER.info(
-            "Named-service canvas resolver call complete: namespace=%s provider=%s bundle=%s operation=%s action=%s object_ref=%s status=%s ui_event=%s",
+            "Named-service canvas resolver call complete: namespace=%s provider=%s bundle=%s operation=%s action=%s object_ref=%s status=%s capabilities=%s default_open_effect_action=%s object_kind=%s ui_event=%s target_surface=%s",
             self.namespace,
             self.endpoint.provider or "",
             self.endpoint.bundle_id,
@@ -176,7 +150,11 @@ class NamedServiceCanvasObjectResolver(CanvasObjectResolver):
             action,
             object_ref,
             response.status,
+            result.get("capabilities"),
+            result.get("default_open_effect_action"),
+            result.get("object_kind"),
             bool(response.ui_event),
+            dict(response.ui_event or {}).get("target_surface") if response.ui_event is not None else None,
         )
         return result
 

@@ -38,6 +38,8 @@ export interface CanvasIngressArtifactPayload {
    *  `mem:record:<id>` flow through verbatim. */
   ref: string
   mime: string
+  namespace?: string
+  object_kind?: string
   filename?: string
   /** Optional UI-only preview text for the card title before the ref
    *  resolves. */
@@ -85,16 +87,6 @@ function parseSource(value: unknown): { conversation_id?: string; turn_id?: stri
   return { conversation_id, turn_id }
 }
 
-function isDurableCanvasFiRef(ref: string): boolean {
-  return /^fi:conv_[^.]+\.(turn_[^.]+)\./.test(String(ref || '').trim())
-}
-
-function isValidCanvasArtifactRef(ref: string): boolean {
-  const value = String(ref || '').trim()
-  if (!value) return false
-  return !value.startsWith('fi:') || isDurableCanvasFiRef(value)
-}
-
 /** Normalize an inbound postMessage envelope. Returns `null` when the data
  *  is not a recognized ingress message; defensive on every shape so a
  *  malformed payload never throws into the main UI's event loop. */
@@ -110,12 +102,16 @@ export function parseIngressMessage(data: unknown): CanvasIngressMessage | null 
       const ref = asString(payload.ref).trim()
       const mime = asString(payload.mime).trim()
       const source = parseSource(payload.source)
-      if (!ref || !mime || !isValidCanvasArtifactRef(ref)) return null
+      if (!ref || !mime) return null
       const result: CanvasIngressArtifactPayload = {
         kind: 'chat.artifact',
         ref,
         mime,
       }
+      const namespace = trimOrUndefined(payload.namespace)
+      if (namespace) result.namespace = namespace
+      const objectKind = trimOrUndefined(payload.object_kind ?? payload.objectKind)
+      if (objectKind) result.object_kind = objectKind
       const filename = trimOrUndefined(payload.filename)
       if (filename) result.filename = filename
       const preview = trimOrUndefined(payload.preview)

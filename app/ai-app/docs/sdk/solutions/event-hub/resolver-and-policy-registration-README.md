@@ -87,7 +87,10 @@ The resolver contract is one operation family inside the broader
 model. New cross-bundle/client object operations should use the named service
 provider vocabulary and may delegate existing resolver code underneath.
 
-A resolver answers actions for one namespace.
+A resolver answers actions for provider-owned object refs. The caller passes
+the full `object_ref`; the registry/router selects the owner resolver, and the
+provider resolver parses the URI it owns. Generic surfaces must not parse the
+URI to decide open/download/preview behavior.
 
 ```text
 input:
@@ -119,6 +122,11 @@ Action meanings:
 The resolver must not return implementation-only UI handles as object
 identity. For a ReAct artifact card, the identity remains `fi:...`; download
 transport is returned only by the `fi:` resolver when `download` is called.
+
+Resolver results control actions and capabilities. Colors, icons, and labels
+come from namespace presentation config, not from resolver implementation code.
+See
+[Object Refs, Presentation, And Actions](../../namespace-services/object-ref-presentation-and-actions-README.md).
 
 ## Policy Contract
 

@@ -66,7 +66,6 @@ def _store_from_scope(tool_scope: Mapping[str, Any]) -> CanvasStore:
         state_event_source_id=str(cfg.get("state_event_source_id") or "canvas.state"),
         ui_event_type=str(cfg.get("ui_event_type") or "canvas.patch.applied"),
         artifact_resolver_name=str(cfg.get("artifact_resolver_name") or "sdk.canvas.artifact_storage"),
-        handoff_resolver_names=dict(cfg.get("handoff_resolver_names") or {}),
         revision_retention=int(cfg.get("revision_retention") or 80),
     )
 
@@ -205,7 +204,6 @@ class CanvasTools:
                         "expected_revision": result.get("expected_revision"),
                         "current_revision": result.get("current_revision"),
                         "projection": result.get("projection") or {},
-                        "agent_view": result.get("agent_view") or "",
                     },
                 }
             return ok({

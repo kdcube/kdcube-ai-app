@@ -144,7 +144,8 @@ board content is not `canvas.read(...)`; import it with `react.pull` first:
 ```
 
 Then inspect the `fi:`/physical path returned by `react.pull`. The model-visible
-write path remains `canvas.patch(...)`.
+write path is `named_services.upsert_object(namespace="cnv", object_ref="cnv:<board>", ...)`
+with a typed canvas object from `named_services.object_schema(namespace="cnv", object_kind=...)`.
 
 Skills are not read-capped. If a regular text-backed logical path (`fi:`,
 `tc:`, `ar:`) is too large, call `react.read` with `stats_only:true` to get

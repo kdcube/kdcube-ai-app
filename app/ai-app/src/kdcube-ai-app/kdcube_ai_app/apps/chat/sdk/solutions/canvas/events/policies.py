@@ -14,6 +14,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.events.policies import (
 from kdcube_ai_app.apps.chat.sdk.solutions.react.events.policies.rendering_common import (
     EVENT_RENDER_POLICY_META_KEY,
 )
+from kdcube_ai_app.apps.chat.sdk.solutions.canvas.instructions import render_canvas_board_text
 
 
 DEFAULT_CANVAS_STATE_SOURCE_ID = "canvas.state"
@@ -89,7 +90,6 @@ def _canvas_payload_from_ret(ret: Mapping[str, Any]) -> dict[str, Any]:
         "canvas_ref": str(candidate.get("canvas_ref") or ret.get("canvas_ref") or event_payload.get("event_ref") or "").strip(),
         "latest_ref": str(candidate.get("latest_ref") or ret.get("latest_ref") or "").strip(),
         "projection": dict(projection),
-        "agent_view": str(candidate.get("agent_view") or ret.get("agent_view") or projection.get("text") or ""),
     }
 
 
@@ -899,41 +899,38 @@ def produce_canvas_announce_blocks(
     full_legend = _labelled_legend(projection)
     recent_legend = _recent_legend(projection)
     cards_count = len(full_legend)
-    header = [
-        "[CANVAS BOARD]",
-        f"canvas_name: {canvas_name}",
-        f"canvas_id: {canvas_id}",
-        f"canvas_uri: {canvas_uri}",
-        f"revision: {revision}",
-    ]
+    status_lines: list[str] = []
     if remaining_rounds is not None:
-        header.append(
+        status_lines.append(
             f"visibility: {remaining_rounds}/{retention_rounds} render rounds remaining; "
             f"use react.pull(paths=['cnv:{canvas_name}']) and react.read on the returned fi: path if you need it updated/prolonged."
         )
-    if bounds:
-        header.append(f"bounds: x={bounds.get('x')} y={bounds.get('y')} w={bounds.get('w')} h={bounds.get('h')}")
     if cards_count > len(recent_legend):
-        header.append(f"showing: latest {len(recent_legend)} of {cards_count} cards by updated_at")
+        status_lines.append(f"showing: latest {len(recent_legend)} of {cards_count} cards by updated_at")
     else:
-        header.append(f"showing: {cards_count} cards")
-
-    lines = [
-        *header,
-        "",
-        "spatial_map:",
-        *_canvas_map(projection=projection, legend=recent_legend),
-        "",
-        "legend:",
-        *_legend_lines(recent_legend, total_count=cards_count),
-    ]
+        status_lines.append(f"showing: {cards_count} cards")
+    text = render_canvas_board_text(
+        canvas_name=canvas_name,
+        canvas_id=canvas_id,
+        canvas_uri=canvas_uri,
+        revision=revision,
+        bounds=bounds,
+        active_count=cards_count,
+        placed_count=int(projection.get("placed_count") or 0),
+        floating_count=int(projection.get("floating_count") or 0),
+        suggested_count=int(projection.get("suggested_count") or 0),
+        bin_count=int(projection.get("bin_count") or 0),
+        spatial_map=_canvas_map(projection=projection, legend=recent_legend),
+        legend_lines=_legend_lines(recent_legend, total_count=cards_count),
+        status_lines=status_lines,
+    )
     announce_path = f"{announce_path_prefix.rstrip('/')}/{canvas_id or canvas_name}"
     if any(isinstance(block, Mapping) and block.get("path") == announce_path for block in target):
         return target
     target.append({
         "type": "announce.canvas",
         "path": announce_path,
-        "text": "\n".join(lines),
+        "text": text,
         "meta": {
             "event_source_id": event_source_id,
             "canvas_id": canvas_id,

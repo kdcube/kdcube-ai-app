@@ -61,7 +61,6 @@ def _store_from_runtime(runtime: Any) -> CanvasStore:
         state_event_source_id=str(cfg.get("state_event_source_id") or "canvas.state"),
         ui_event_type=str(cfg.get("ui_event_type") or "canvas.patch.applied"),
         artifact_resolver_name=str(cfg.get("artifact_resolver_name") or "sdk.canvas.artifact_storage"),
-        handoff_resolver_names=dict(cfg.get("handoff_resolver_names") or {}),
         revision_retention=int(cfg.get("revision_retention") or 80),
     )
 
@@ -288,6 +287,12 @@ class CanvasObjectResolver:
     namespace = ""
     resolver = "unknown"
     resolver_status = "unknown"
+
+    def matches_ref(self, ref: str) -> bool:
+        return bool(self.namespace) and namespace_for_ref(ref) == self.namespace
+
+    def match_score(self, ref: str) -> int:
+        return 100 if self.matches_ref(ref) else 0
 
     def capabilities_for_ref(self, ref: str) -> Dict[str, bool]:
         return {"preview": False, "open": False, "download": False, "rehost": False}
@@ -563,70 +568,11 @@ class CanvasArtifactResolver(CanvasObjectResolver):
         }
 
 
-class NamespaceHandoffResolver(CanvasObjectResolver):
-    """Known namespace with no local resolver implementation in this bundle."""
-
-    def __init__(
-        self,
-        *,
-        namespace: str,
-        resolver: str,
-        resolver_status: str,
-        capabilities: Mapping[str, bool] | None = None,
-        read_behavior: str = "",
-    ) -> None:
-        self.namespace = str(namespace or "").strip().lower()
-        self.resolver = str(resolver or self.namespace or "unknown")
-        self.resolver_status = str(resolver_status or "handoff")
-        self._capabilities = {
-            "preview": False,
-            "open": False,
-            "download": False,
-            "rehost": False,
-            **{str(key): bool(value) for key, value in dict(capabilities or {}).items()},
-        }
-        self._read_behavior = str(read_behavior or "").strip()
-
-    def capabilities_for_ref(self, ref: str) -> Dict[str, bool]:
-        return dict(self._capabilities)
-
-    async def object_action(
-        self,
-        payload: Mapping[str, Any],
-        *,
-        user_id: str,
-        action: str,
-    ) -> Dict[str, Any]:
-        ref = object_ref_from_payload(payload)
-        base = self.base_response(ref=ref, action=action)
-        if action in {"capabilities", "describe"}:
-            if self._read_behavior:
-                base["read_behavior"] = self._read_behavior
-            return base
-        return {
-            **base,
-            "ok": False,
-            "resolved": False,
-            "read_behavior": self._read_behavior,
-            "error": "namespace_resolver_not_registered_here",
-            "message": f"{self.namespace}: is owned by {self.resolver}; register that subsystem resolver to enable {action}.",
-            "status": 404,
-        }
-
-    def read_ref(self, ref: str) -> Dict[str, Any]:
-        return {
-            **self.base_response(ref=ref, action="preview"),
-            "resolved": False,
-            "read_behavior": self._read_behavior,
-            "message": f"{self.namespace}: refs are resolved by the named resolver, not canvas bundle artifact storage.",
-        }
-
-
 class CanvasObjectResolverRegistry:
     """Small dispatch registry; namespace behavior stays in each owner system."""
 
     def __init__(self, resolvers: Sequence[CanvasObjectResolver] | None = None) -> None:
-        self._resolvers: Dict[str, CanvasObjectResolver] = {}
+        self._resolvers: list[CanvasObjectResolver] = []
         for resolver in resolvers or ():
             self.register(resolver)
 
@@ -634,10 +580,17 @@ class CanvasObjectResolverRegistry:
         namespace = str(getattr(resolver, "namespace", "") or "").strip().lower()
         if not namespace:
             raise ValueError("canvas object resolver namespace is required")
-        self._resolvers[namespace] = resolver
+        self._resolvers.append(resolver)
 
     def resolver_for_ref(self, ref: str) -> CanvasObjectResolver | None:
-        return self._resolvers.get(namespace_for_ref(ref))
+        raw_ref = str(ref or "").strip()
+        if not raw_ref:
+            return None
+        candidates = [resolver for resolver in self._resolvers if resolver.matches_ref(raw_ref)]
+        if not candidates:
+            return None
+        candidates.sort(key=lambda resolver: resolver.match_score(raw_ref), reverse=True)
+        return candidates[0]
 
     def capabilities_for_ref(self, ref: str) -> Dict[str, Any]:
         raw_ref = str(ref or "").strip()
@@ -688,67 +641,9 @@ def object_ref_from_payload(payload: Mapping[str, Any]) -> str:
     return str(payload.get("object_ref") or payload.get("ref") or payload.get("logical_path") or "").strip()
 
 
-def default_handoff_resolvers(*, resolver_names: Mapping[str, str] | None = None) -> list[CanvasObjectResolver]:
-    resolver_names = dict(resolver_names or {})
-    resolvers: list[CanvasObjectResolver] = [
-        NamespaceHandoffResolver(
-            namespace="fi",
-            resolver="react.event_ref",
-            resolver_status="registered_elsewhere",
-            read_behavior="Use the React event/artifact resolver for fi: refs; durable canvas refs must include conv_<conversation_id>.",
-        ),
-        NamespaceHandoffResolver(
-            namespace="mem",
-            resolver="sdk.memory",
-            resolver_status="registered_elsewhere",
-            read_behavior="Use the memory module resolver/tools; mem: is not a filesystem artifact.",
-        ),
-        NamespaceHandoffResolver(
-            namespace="so",
-            resolver="platform.sources_pool",
-            resolver_status="registered_elsewhere",
-            read_behavior="Use the source/search resolver registered by the owning subsystem.",
-        ),
-        NamespaceHandoffResolver(
-            namespace="su",
-            resolver="subsystem.search",
-            resolver_status="reserved",
-            read_behavior="Reserved for subsystem-specific search rows when so: is not enough.",
-        ),
-        NamespaceHandoffResolver(
-            namespace="ev",
-            resolver="platform.timeline_event",
-            resolver_status="provenance_handoff",
-            read_behavior="Use only for provenance/event inspection, not as normal card content.",
-        ),
-    ]
-    for namespace, resolver_name in sorted(resolver_names.items()):
-        namespace_value = str(namespace or "").strip().lower()
-        resolver_value = str(resolver_name or "").strip()
-        if not namespace_value or namespace_value in {"fi", "mem", "so", "su", "ev", "cnv"}:
-            continue
-        resolvers.append(NamespaceHandoffResolver(
-            namespace=namespace_value,
-            resolver=resolver_value or f"{namespace_value}.resolver",
-            resolver_status="registered_elsewhere",
-            capabilities={"preview": True, "open": True, "download": False, "rehost": False},
-            read_behavior=(
-                f"{namespace_value}: refs are owned by {resolver_value or 'the configured namespace resolver'}; "
-                "use that provider's resolver/tools for object reads, opens, and mutations."
-            ),
-        ))
-    return resolvers
-
-
 def build_default_canvas_resolver_registry(store: CanvasStore) -> CanvasObjectResolverRegistry:
     return CanvasObjectResolverRegistry([
         CanvasArtifactResolver(store),
-        CanvasArtifactResolver(
-            store,
-            namespace="ext",
-            read_behavior="Bundle-owned external refs are previewed here and can be imported into ReAct with react.pull ext:<path>.",
-        ),
-        *default_handoff_resolvers(resolver_names=getattr(store, "handoff_resolver_names", None)),
     ])
 
 
@@ -770,8 +665,6 @@ class CanvasPinResolver:
         resolver = self.registry.resolver_for_ref(raw_ref)
         if isinstance(resolver, CanvasArtifactResolver):
             return resolver.read_ref(raw_ref, mime=mime, max_text_chars=max_text_chars)
-        if isinstance(resolver, NamespaceHandoffResolver):
-            return resolver.read_ref(raw_ref)
         return {
             "ok": False,
             "resolved": False,
@@ -846,7 +739,6 @@ __all__ = [
     "CanvasObjectResolver",
     "CanvasObjectResolverRegistry",
     "CanvasPinResolver",
-    "NamespaceHandoffResolver",
     "build_default_canvas_resolver_registry",
     "list_event_sources",
     "namespace_for_ref",

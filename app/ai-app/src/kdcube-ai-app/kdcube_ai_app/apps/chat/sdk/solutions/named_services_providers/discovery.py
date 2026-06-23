@@ -128,7 +128,7 @@ def _object_kind_from_request(request: NamedServiceRequest) -> str:
     for source in (request.payload, request.object, request.filters):
         if not isinstance(source, Mapping):
             continue
-        value = str(source.get("object_kind") or source.get("kind") or "").strip()
+        value = str(source.get("object_kind") or "").strip()
         if value:
             return value
     return ""

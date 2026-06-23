@@ -511,6 +511,38 @@ async def test_discovery_routes_one_namespace_to_multiple_provider_bundles_by_op
 
 
 @pytest.mark.asyncio
+async def test_discovery_ignores_provider_payload_kind_when_routing_object_upsert():
+    redis = FakeDiscoveryRedis()
+    discovery = RedisNamedServiceDiscovery(redis, tenant="tenant-a", project="project-a")
+    await discovery.register_provider(
+        NamedServiceProviderSpec(
+            provider_id="sdk.memory",
+            bundle_id="versatile@1-0",
+            namespace="mem",
+            refs=("mem:record:*",),
+            object_kinds=("memory.record",),
+            operations={"object.upsert": {"transports": ["local"]}},
+        ),
+        bundle_id="versatile@1-0",
+    )
+
+    entry = await discovery.resolve(
+        NamedServiceRequest(
+            operation="object.upsert",
+            namespace="mem",
+            object_ref="mem:record:mem_1",
+            object={
+                "memory": "Use matplotlib PNGs for Apple Numbers-safe charts.",
+                "kind": "rule",
+            },
+        )
+    )
+
+    assert entry is not None
+    assert entry.spec.provider_id == "sdk.memory"
+
+
+@pytest.mark.asyncio
 async def test_discovery_registration_is_persistent_by_default():
     redis = FakeDiscoveryRedis()
     discovery = RedisNamedServiceDiscovery(redis, tenant="tenant-a", project="project-a")
@@ -756,6 +788,7 @@ async def test_configured_canvas_resolver_helper_registers_namespace_resolver():
                         "object_ref": call.data["object_ref"],
                     },
                     "object": _canonical_issue_object(ref=call.data["object_ref"], title="Registered from config"),
+                    "extra": {"title": "Registered from config"},
                 },
             }
         }
@@ -975,12 +1008,13 @@ async def test_configured_canvas_resolver_promotes_provider_download_fields():
                             "namespace": "task",
                         },
                         "body": {
-                            "filename": "evidence.md",
+                            "filename": "provider-object-body-is-not-a-canvas-contract.md",
                             "mime": "text/markdown",
                         },
                     },
                     "extra": {
                         "download_url": "/api/integrations/bundles/tenant-a/project-a/task-tracker%401-0/operations/issue_attachment_download?object_ref=task%3Aissue%3Aattachment%3ABUG-123%2Fattachments%2Fta_1%2Fv000001%2Fevidence.md",
+                        "title": "evidence.md",
                         "filename": "evidence.md",
                         "mime": "text/markdown",
                         "size_bytes": 11,
@@ -1029,6 +1063,7 @@ async def test_configured_canvas_resolver_promotes_provider_download_fields():
     assert result["filename"] == "evidence.md"
     assert result["mime"] == "text/markdown"
     assert result["title"] == "evidence.md"
+    assert "object_kind" not in result
     assert result["capabilities"]["download"] is True
 
 

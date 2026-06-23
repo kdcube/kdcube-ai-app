@@ -28,12 +28,18 @@ function memoryContextPayload(memory: MemoryEntry) {
     label: memory.memory,
     summary: memory.context || undefined,
     ref,
+    object_ref: ref,
     logical_path: ref,
     mime: 'application/json',
+    namespace: 'mem',
+    object_kind: 'memory.record',
     event_source_id: 'memory.context',
     surface: 'memory.widget',
     data: {
       memory_id: memory.id,
+      object_ref: ref,
+      namespace: 'mem',
+      object_kind: 'memory.record',
       bundle_id: memory.bundle_id,
       kind: memory.kind,
       status: memory.status,
@@ -129,11 +135,15 @@ export function MemoryList() {
               // record in the dedicated editor window (the host listens; this is a
               // no-op when the widget runs standalone).
               try {
+                const context = memoryContextPayload(memory);
                 window.parent.postMessage({
-                  type: 'kdcube-memory-open-item',
+                  type: 'kdcube.surface.command',
+                  target_surface: 'sdk.memory.viewer',
+                  action: 'open',
                   widget: 'memories',
                   memory_id: memory.id,
-                  object_ref: `mem:${memory.id}`,
+                  object_ref: context.object_ref,
+                  context,
                 }, '*');
               } catch {
                 /* no host listening */

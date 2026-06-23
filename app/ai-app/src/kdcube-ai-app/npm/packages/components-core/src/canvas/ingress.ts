@@ -108,17 +108,10 @@ function compactFilename(value: string): string {
   return compactPreview(colonTail, 48)
 }
 
-export function isCanvasDurableFiRef(ref: string): boolean {
-  return /^fi:conv_[^.]+\.(turn_[^.]+)\./.test(String(ref || '').trim())
-}
-
 function assertCanvasLogicalPath(ref: string, source: string): void {
   const value = String(ref || '').trim()
   if (!value) {
     throw new Error(`${source}: ref is required`)
-  }
-  if (value.startsWith('fi:') && !isCanvasDurableFiRef(value)) {
-    throw new Error(`${source}: canvas fi: refs must include conv_<conversation_id>`)
   }
 }
 
@@ -139,6 +132,8 @@ export function cardFromSelectedText(
     kind: 'user.text',
     title: options.title ?? compactPreview(text),
     mime: 'text/markdown',
+    namespace: 'cnv',
+    object_kind: 'cnv:user:text',
     content: { text },
     placement: options.placement ?? 'floating',
     rect: options.rect,
@@ -159,6 +154,7 @@ export function cardFromSearchResult(
     mime?: string
     summary?: string
     kind?: CanvasCardKind
+    namespace?: string
     object_kind?: string
   },
   options: CardOptions = {},
@@ -170,7 +166,7 @@ export function cardFromSearchResult(
     kind: hit.kind ?? 'object.ref',
     title: options.title ?? hit.title,
     mime: hit.mime ?? 'application/json',
-    namespace: namespaceFromLogicalPath(hit.ref),
+    namespace: hit.namespace,
     object_kind: hit.object_kind,
     content_preview: preview,
     summary: preview,
@@ -183,47 +179,27 @@ export function cardFromSearchResult(
   }
 }
 
-function namespaceFromLogicalPath(ref: string): string | undefined {
-  const match = String(ref || '').trim().match(/^([A-Za-z][A-Za-z0-9_.-]*):/)
-  return match?.[1]?.toLowerCase()
-}
-
 /** User dragged an agent-produced file from the chat iframe onto canvas.
  *  Preserves cross-conversation `fi:conv_<id>.turn_<id>...` refs verbatim
  *  per the canvas namespace contract. */
 export function cardFromChatArtifact(
-  artifact: { ref: string; mime: string; filename?: string; preview?: string },
+  artifact: { ref: string; mime: string; filename?: string; preview?: string; namespace?: string; object_kind?: string },
   options: CardOptions = {},
 ): CanvasNewCardInput {
   assertCanvasLogicalPath(artifact.ref, 'cardFromChatArtifact')
-  const namespace = namespaceFromLogicalPath(artifact.ref)
-  if (namespace && namespace !== 'fi') {
-    const filename = String(artifact.filename || '').trim()
-    const refTitle = filename && filename !== artifact.ref ? compactFilename(filename) : ''
-    const preview = compactPreview(artifact.preview || artifact.ref, 240)
-    const title = options.title ?? (refTitle || compactPreview(artifact.preview || artifact.ref, 64))
-    return {
-      id: options.id ?? artifact.ref,
-      kind: 'object.ref',
-      title,
-      mime: artifact.mime || 'application/vnd.kdcube.object-ref+json',
-      namespace,
-      content_preview: preview,
-      summary: preview,
-      logical_path: artifact.ref,
-      placement: options.placement ?? 'floating',
-      rect: options.rect,
-      source_card_ids: options.source_card_ids,
-      source_refs: options.source_refs,
-      created_by: 'user',
-    }
-  }
-  const title = options.title || compactFilename(artifact.filename || '') || compactFilename(artifact.ref) || 'File'
+  const filename = String(artifact.filename || '').trim()
+  const refTitle = filename && filename !== artifact.ref ? compactFilename(filename) : ''
+  const preview = compactPreview(artifact.preview || artifact.ref, 240)
+  const title = options.title ?? (refTitle || compactPreview(artifact.preview || artifact.ref, 64))
   return {
     id: options.id ?? artifact.ref,
-    kind: 'file',
+    kind: artifact.object_kind || 'object.ref',
     title,
-    mime: artifact.mime,
+    mime: artifact.mime || 'application/vnd.kdcube.object-ref+json',
+    namespace: artifact.namespace,
+    object_kind: artifact.object_kind,
+    content_preview: preview,
+    summary: preview,
     logical_path: artifact.ref,
     placement: options.placement ?? 'floating',
     rect: options.rect,
@@ -248,6 +224,8 @@ export function cardFromChatAssistantText(
     kind: 'agent.text',
     title: options.title ?? compactPreview(text),
     mime: 'text/markdown',
+    namespace: 'cnv',
+    object_kind: 'cnv:agent:text',
     content: { text },
     placement: options.placement ?? 'floating',
     rect: options.rect,
@@ -340,6 +318,8 @@ function uploadedCardToInput(card: CanvasUploadCardDescriptor): CanvasNewCardInp
     kind: card.kind,
     title: card.title,
     mime: card.mime,
+    namespace: card.namespace,
+    object_kind: card.object_kind,
     logical_path: card.logical_path,
     placement: card.placement,
     rect: card.rect,

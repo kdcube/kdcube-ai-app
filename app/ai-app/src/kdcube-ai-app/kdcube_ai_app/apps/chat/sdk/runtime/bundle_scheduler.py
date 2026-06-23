@@ -637,6 +637,8 @@ class BundleSchedulerManager:
                 redis=self._job_redis,
                 props=props,
             )
+            if inspect.isawaitable(bundle_config):
+                bundle_config = await bundle_config
 
             if not is_bundle_enabled(props):
                 _log.info(
@@ -758,7 +760,7 @@ class BundleSchedulerManager:
 # Headless bundle config
 # ---------------------------------------------------------------------------
 
-def _make_headless_config(
+async def _make_headless_config(
     *,
     tenant: str,
     project: str,
@@ -774,12 +776,16 @@ def _make_headless_config(
     can resolve self.config.ai_bundle_spec.id for Redis props lookup.
     """
     from types import SimpleNamespace
-    from kdcube_ai_app.infra.service_hub.inventory import Config
+    from kdcube_ai_app.infra.service_hub.inventory import (
+        ConfigRequest,
+        create_workflow_config,
+        resolve_config_request_secrets,
+    )
     from kdcube_ai_app.infra.plugin.bundle_registry import BundleSpec
 
-    config = Config()
-    config.tenant = tenant
-    config.project = project
+    cfg_req = ConfigRequest(agentic_bundle_id=bundle_id, tenant=tenant, project=project)
+    cfg_req = await resolve_config_request_secrets(cfg_req, bundle_id=bundle_id)
+    config = create_workflow_config(cfg_req)
     config.ai_bundle_spec = BundleSpec(
         id=bundle_id,
         path=getattr(bundle_spec, "path", ""),

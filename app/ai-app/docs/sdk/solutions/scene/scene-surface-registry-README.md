@@ -124,11 +124,12 @@ The host may attach presentation metadata, but it must not rewrite the object
 into a host-specific identity. Ownership stays with the namespace.
 
 Visual identity follows the same rule. Namespace colors and badges are app-level
-presentation metadata keyed by the root namespace (`mem`, `task`, `fi`, `cnv`,
-and so on). A scene may pass that already-owned `namespaceStyles` map into
-surfaces it mounts, but the metadata is not scene-owned and not canvas-owned.
-The style affects presentation only; resolver dispatch still uses the canonical
-object ref and the namespace provider still owns the object's behavior.
+presentation metadata keyed by provider/source presentation keys (`mem`, `task`,
+`task:attachment`, `fi`, `cnv`, and so on). A scene may pass that already-owned
+`namespaceStyles` map into surfaces it mounts, but the metadata is not
+scene-owned and not canvas-owned. The style affects presentation only; resolver
+dispatch still uses the canonical object ref and the namespace provider still
+owns the object's behavior.
 
 ## Open Flow
 
@@ -294,7 +295,7 @@ Source surface
 Scene host
  |
  | active drag context = task:issue:ticket_123
- | drop target accepts root namespace "task"
+ | drop target selector accepts "task:*"
  |
  | object.action(
  |   action="open",

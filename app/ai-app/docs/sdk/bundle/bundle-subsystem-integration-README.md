@@ -616,16 +616,19 @@ Validation:
 
 - canvas board loads and stores revisions
 - card pins keep canonical refs (`fi:`, `mem:`, `task:`, canvas-owned refs)
-- board refs use the canvas namespace, for example `cnv:main@27`; exact board
-  content is imported with `react.pull(paths=["cnv:main@27"])`, then inspected
-  through the returned workspace path
+- board refs use the canvas namespace. Import the live board with
+  `react.pull(paths=["cnv:main"])`; import `cnv:main@27` only when a fixed
+  historical revision is intentional. Inspect the returned workspace path.
 - object action calls route through resolver registry
 - unknown refs stay pinned but expose no owner-specific actions
 - ReAct timeline contains compact canvas facts and ANNOUNCE contains current
   board/focused context
-- `canvas.patch` is the only model-visible canvas write tool; exact board reads
-  are materialized by the `cnv:` namespace rehoster behind `react.pull`
-- `canvas.patch` uses base revision and returns a new revision fact
+- model-visible canvas writes use
+  `named_services.upsert_object(namespace="cnv", object_ref="cnv:<board>", base_revision=<visible revision>, object_json=<typed canvas object>)`
+  after consulting `named_services.object_schema(namespace="cnv", object_kind=...)`
+- exact board reads are materialized by the `cnv:` namespace rehoster behind
+  `react.pull`
+- each successful canvas upsert uses base revision and returns a new revision fact
 
 ## Common Failure Modes
 

@@ -93,37 +93,17 @@ function dragEndPoint(event?: DragEvent<HTMLElement>): Record<string, number> {
   }
 }
 
-// Local card builders for the two ingress paths the scene also handles
-// inline (these are not exported by the component package).
-const CANVAS_CONTEXT_CARD_KINDS = new Set([
-  'user.text',
-  'user.attachment',
-  'agent.text',
-  'file',
-  'memory',
-  'source',
-  'search.result',
-  'note',
-  'object.ref',
-  'conversation',
-])
-
-function cardKindFromContext(context: CanvasContextItem, ref: string): CanvasCard['kind'] | undefined {
-  const kind = String(context.kind || '').trim()
-  if (CANVAS_CONTEXT_CARD_KINDS.has(kind)) return kind as CanvasCard['kind']
-  void ref
-  return undefined
-}
-
 function cardFromContext(context: CanvasContextItem, rect: CanvasCard['rect']) {
   const ref = String(context.object_ref ?? context.logical_path ?? context.ref ?? context.id ?? '').trim()
+  const kind = String(context.kind || context.object_kind || 'object.ref').trim() || 'object.ref'
   return cardFromSearchResult(
     {
       ref,
       title: context.label ? context.label : ref,
       mime: context.mime,
       summary: context.summary,
-      kind: cardKindFromContext(context, ref),
+      kind,
+      namespace: context.namespace,
       object_kind: context.object_kind,
     },
     { placement: 'placed', rect },
@@ -209,7 +189,18 @@ export default function App() {
 
   const applyPatchResponse = useCallback((response: CanvasPatchResponse) => {
     if (!response.ok) return
-    const event = normalizeCanvasPatchEvent(response.ui_event ?? response)
+    const event = normalizeCanvasPatchEvent(response.ui_event ?? {
+      type: 'canvas.patch.applied',
+      source: 'canvas.patch',
+      canvas_name: response.canvas_name,
+      canvas_id: response.canvas_id,
+      revision: response.revision,
+      canvas_ref: response.canvas_ref,
+      latest_ref: response.latest_ref,
+      changed: response.changed,
+      changed_cards: response.changed_cards,
+      projection: response.projection,
+    })
     if (!event) return
     setCanvasPatchEvent(event)
     setCanvases((current) => upsertCanvasDefinition(current, canvasFromPatchEvent(event, activeCanvasRef.current)))
@@ -333,13 +324,13 @@ export default function App() {
   const onAttachCard = useCallback((input: CanvasContextItem | CanvasContextItem[]) => {
     const items = Array.isArray(input) ? input : [input]
     if (!items.length) return
-    const conversation = items.find((item) => item.kind === 'conversation')
+    const primary = items[0]
     postToHost({
       type: SURFACE_COMMAND_MESSAGE_TYPE,
-      target_surface: conversation ? 'sdk.chat.conversation' : 'sdk.chat.context',
-      action: conversation ? 'open' : 'attach',
-      object_ref: String((conversation || items[0]).object_ref || (conversation || items[0]).ref || '').trim(),
-      context: conversation || items[0],
+      target_surface: 'sdk.chat.context',
+      action: 'attach',
+      object_ref: String(primary.object_ref || primary.ref || '').trim(),
+      context: primary,
       contexts: items.length > 1 ? items : undefined,
     })
   }, [])

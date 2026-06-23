@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useAppDispatch, useAppSelector } from '../../app/hooks';
+import type { MemoryEntry } from '../../api/types';
 import { confirmMemory, loadMemories, loadMemoryEvents, pinMemory, retireMemory } from './memoriesSlice';
 
 function formatDate(value: string): string {
@@ -25,6 +26,37 @@ function uniqueTerms(...groups: string[][]): string[] {
     result.push(clean);
   });
   return result;
+}
+
+function memoryContextPayload(memory: MemoryEntry) {
+  const ref = `mem:record:${memory.id}`;
+  return {
+    id: ref,
+    kind: 'memory',
+    label: memory.memory,
+    summary: memory.context || undefined,
+    ref,
+    object_ref: ref,
+    logical_path: ref,
+    mime: 'application/json',
+    namespace: 'mem',
+    object_kind: 'memory.record',
+    event_source_id: 'memory.context',
+    surface: 'memory.widget',
+    data: {
+      memory_id: memory.id,
+      object_ref: ref,
+      namespace: 'mem',
+      object_kind: 'memory.record',
+      bundle_id: memory.bundle_id,
+      kind: memory.kind,
+      status: memory.status,
+      tier: memory.tier,
+      pinned: memory.pinned,
+      labels: memory.labels,
+      keywords: memory.keywords,
+    },
+  };
 }
 
 interface MemoryDetailProps {
@@ -65,11 +97,15 @@ export function MemoryDetail({ onEdit, single = false }: MemoryDetailProps) {
             title="Open this memory in its own editor window"
             onClick={() => {
               try {
+                const context = memoryContextPayload(memory);
                 window.parent.postMessage({
-                  type: 'kdcube-memory-open-item',
+                  type: 'kdcube.surface.command',
+                  target_surface: 'sdk.memory.viewer',
+                  action: 'open',
                   widget: 'memories',
                   memory_id: memory.id,
-                  object_ref: `mem:${memory.id}`,
+                  object_ref: context.object_ref,
+                  context,
                 }, '*');
               } catch {
                 /* no host listening — inline-only context */

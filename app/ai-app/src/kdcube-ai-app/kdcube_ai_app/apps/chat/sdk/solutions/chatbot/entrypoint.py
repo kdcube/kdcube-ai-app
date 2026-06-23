@@ -112,12 +112,12 @@ class BaseEntrypoint:
         self.kv_cache = create_kv_cache_from_env()
 
         self.logger = AgentLogger(f"{self.BUNDLE_ID}.Workflow", config.log_level)
-        self.models_service = ModelServiceBase(self.config)
 
         if getattr(self, "ctx_client", None) is None:
             self.ctx_client = None
 
         self._apply_configuration_overrides()
+        self._rebuild_models_service()
 
     @property
     def comm_context(self) -> Optional[ExternalEventPayload]:
@@ -191,6 +191,9 @@ class BaseEntrypoint:
         wf_embedding = configuration.get("embedding") or {}
         if wf_embedding:
             self.config.set_embedding(wf_embedding)
+
+    def _rebuild_models_service(self) -> None:
+        self.models_service = ModelServiceBase(self.config)
 
     @property
     def bundle_props_defaults(self) -> Dict[str, Any]:
@@ -1292,12 +1295,18 @@ class BaseEntrypoint:
         props = self.bundle_props or {}
 
         role_models = self.get_prop_path(props, "role_models")
+        changed = False
         if isinstance(role_models, dict) and role_models:
             self.config.set_role_models({**(self.config.role_models or {}), **role_models})
+            changed = True
 
         embedding = self.get_prop_path(props, "embedding")
         if isinstance(embedding, dict) and embedding:
             self.config.set_embedding(embedding)
+            changed = True
+
+        if changed and hasattr(self, "models_service"):
+            self._rebuild_models_service()
 
     def _sync_runtime_ctx_bundle_props(self) -> None:
         runtime_ctx = getattr(self, "runtime_ctx", None)

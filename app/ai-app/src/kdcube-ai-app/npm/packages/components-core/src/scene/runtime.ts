@@ -46,6 +46,40 @@ export function isSceneRecord(value: unknown): value is SceneRecord {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value))
 }
 
+export function sceneListValues(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map((item) => asSceneString(item)).filter(Boolean)
+  const item = asSceneString(value)
+  return item ? [item] : []
+}
+
+export function sceneSelectorMode(value: unknown): string {
+  if (Array.isArray(value) || isSceneRecord(value)) return ''
+  const text = asSceneString(value).toLowerCase()
+  return ['context', 'any', '*', 'provider-open', 'ingress'].includes(text) ? text : ''
+}
+
+export function sceneSelectorPatterns(value: unknown, effect: string): string[] {
+  if (sceneSelectorMode(value)) return []
+  if (Array.isArray(value) || typeof value === 'string') return sceneListValues(value)
+  const record = asSceneRecord(value)
+  if (!Object.keys(record).length) return []
+  return sceneListValues(record[effect] ?? record.context ?? record.any ?? record['*'])
+}
+
+export function sceneMatchObjectSelector(ref: unknown, selector: unknown): boolean {
+  const value = asSceneString(ref)
+  const pattern = asSceneString(selector)
+  if (!value || !pattern) return false
+  if (pattern === '*') return true
+  if (pattern.endsWith('*')) return value.startsWith(pattern.slice(0, -1))
+  return value === pattern
+}
+
+export function sceneMatchesAnySelector(ref: unknown, selectors: unknown): boolean {
+  const list = sceneListValues(selectors)
+  return list.length > 0 && list.some((selector) => sceneMatchObjectSelector(ref, selector))
+}
+
 export function canonicalObjectRef(value: unknown): string {
   const record = asSceneRecord(value)
   const data = asSceneRecord(record.data)
@@ -62,15 +96,6 @@ export function canonicalObjectRef(value: unknown): string {
   )
 }
 
-export function rootNamespaceFromRef(ref: unknown): string {
-  const match = asSceneString(ref).match(/^([A-Za-z][A-Za-z0-9_.-]*):/)
-  return match ? match[1].toLowerCase() : ''
-}
-
-export function rootNamespaceFromNamespace(namespace: unknown): string {
-  return asSceneString(namespace).toLowerCase().split(':', 1)[0] || ''
-}
-
 export function normalizeSceneContext(value: unknown): SceneContextItem | null {
   if (!isSceneRecord(value)) return null
   const ref = canonicalObjectRef(value)
@@ -80,25 +105,7 @@ export function normalizeSceneContext(value: unknown): SceneContextItem | null {
   context.ref = ref
   context.object_ref = ref
   context.logical_path = asSceneString(context.logical_path) || ref
-  context.namespace = asSceneString(context.namespace) || rootNamespaceFromRef(ref)
   return context
-}
-
-export function rootNamespaceCandidates(item: SceneContextItem | null | undefined): string[] {
-  if (!item) return []
-  const seen = new Set<string>()
-  const out: string[] = []
-  const add = (value: unknown): void => {
-    const root = rootNamespaceFromNamespace(value)
-    if (!root || seen.has(root)) return
-    seen.add(root)
-    out.push(root)
-  }
-  add(item.namespace)
-  add(rootNamespaceFromRef(item.ref))
-  add(rootNamespaceFromRef(item.object_ref))
-  add(rootNamespaceFromRef(item.logical_path))
-  return out
 }
 
 export function contextFromSceneMessage(message: unknown): SceneContextItem | null {
@@ -214,9 +221,13 @@ export function createContextDragBroker(options: SceneContextDragBrokerOptions):
   function accepts(target: SceneDropTarget, contextInput?: SceneContextItem | null): boolean {
     const context = contextInput ?? getActiveContext()
     if (!context) return false
-    const accepted = new Set((target.acceptsRootNamespaces || []).map((item) => asSceneString(item).toLowerCase()).filter(Boolean))
-    if (accepted.has('*')) return true
-    return rootNamespaceCandidates(context).some((candidate) => accepted.has(candidate))
+    const effect = asSceneString(target.dropEffect) || 'open'
+    const patterns = sceneSelectorPatterns(target.accepts, effect)
+    if (patterns.length) return sceneMatchesAnySelector(context.ref, patterns)
+    const mode = sceneSelectorMode(target.accepts) || (effect === 'open' ? 'provider-open' : 'context')
+    if (mode === 'context' || mode === 'any' || mode === '*') return true
+    if (mode === 'provider-open') return Boolean(asSceneString(context.ref) && asSceneString(target.targetSurface))
+    return true
   }
 
   async function dropOnTarget(target: SceneDropTarget, point?: { x: number; y: number }): Promise<SceneContextDropResult> {
@@ -228,7 +239,7 @@ export function createContextDragBroker(options: SceneContextDragBrokerOptions):
       return contextDropError('context_missing', 'Active context drag did not include a usable context.', target.targetSurface)
     }
     if (!accepts(target, context)) {
-      return contextDropError('target_rejected', 'The drop target does not accept this context namespace.', target.targetSurface, context)
+      return contextDropError('target_rejected', 'The drop target is not compatible with this context.', target.targetSurface, context)
     }
 
     const targetSurface = asSceneString(target.targetSurface)

@@ -14,8 +14,14 @@ from kdcube_ai_app.apps.chat.sdk.solutions.canvas.events.resolver import (
 from kdcube_ai_app.apps.chat.sdk.solutions.canvas.search import CanvasPinSearch
 from kdcube_ai_app.apps.chat.sdk.solutions.canvas.search import (
     CANVAS_BOARD_OBJECT_KIND,
+    CANVAS_CARD_COMMENT_OBJECT_KIND,
+    CANVAS_CARD_DELETE_OBJECT_KIND,
+    CANVAS_CARD_DELETION_SUGGESTION_OBJECT_KIND,
+    CANVAS_CARD_LAYOUT_OBJECT_KIND,
     CANVAS_CARD_OBJECT_KIND,
+    CANVAS_CARD_REPLACEMENT_OBJECT_KIND,
     CANVAS_NAMESPACE,
+    CANVAS_OPERATION_BATCH_OBJECT_KIND,
     CanvasPinSearchNamedServiceProvider,
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.canvas.storage import CanvasStore
@@ -283,7 +289,74 @@ class VersatileCanvasService:
             payload=payload,
         )
 
+    @staticmethod
+    def _patch_with_op(op: Mapping[str, Any], obj: Mapping[str, Any]) -> Dict[str, Any]:
+        patch: Dict[str, Any] = {
+            "schema": "kdcube.canvas.patch.v1",
+            "operations": [dict(op)],
+        }
+        if obj.get("reason"):
+            patch["reason"] = obj.get("reason")
+        return patch
+
+    def _patch_payload_from_typed_named_object(self, obj: Mapping[str, Any], object_kind: str) -> Dict[str, Any] | None:
+        card_id = (
+            protocol_string(obj, "card_id")
+            or protocol_string(obj, "target_card_id")
+            or protocol_string(obj, "object_id")
+        )
+        if object_kind == CANVAS_OPERATION_BATCH_OBJECT_KIND:
+            return None
+        if object_kind == CANVAS_CARD_COMMENT_OBJECT_KIND:
+            op: Dict[str, Any] = {
+                "op": "comment_card",
+                "card_id": card_id,
+                "text": protocol_string(obj, "text") or protocol_string(obj, "comment"),
+            }
+            if obj.get("comment_id"):
+                op["comment_id"] = obj.get("comment_id")
+            return self._patch_with_op(op, obj)
+        if object_kind == CANVAS_CARD_REPLACEMENT_OBJECT_KIND:
+            replacement = obj.get("card") if isinstance(obj.get("card"), Mapping) else obj.get("replacement")
+            return self._patch_with_op(
+                {
+                    "op": "replace_card",
+                    "card_id": card_id,
+                    "mode": protocol_string(obj, "mode") or "suggested",
+                    "card": dict(replacement) if isinstance(replacement, Mapping) else {},
+                },
+                obj,
+            )
+        if object_kind == CANVAS_CARD_DELETION_SUGGESTION_OBJECT_KIND:
+            return self._patch_with_op(
+                {
+                    "op": "suggest_deletion",
+                    "card_id": card_id,
+                    "reason": protocol_string(obj, "reason"),
+                },
+                obj,
+            )
+        if object_kind == CANVAS_CARD_DELETE_OBJECT_KIND:
+            return self._patch_with_op({"op": "delete_card", "card_id": card_id}, obj)
+        if object_kind == CANVAS_CARD_LAYOUT_OBJECT_KIND:
+            op_name = protocol_string(obj, "op") or protocol_string(obj, "operation")
+            if op_name not in {"move_card", "resize_card"}:
+                op_name = "resize_card" if ("w" in obj or "h" in obj) and "x" not in obj and "y" not in obj else "move_card"
+            op: Dict[str, Any] = {"op": op_name, "card_id": card_id}
+            for key in ("x", "y", "w", "h"):
+                if key in obj:
+                    op[key] = obj.get(key)
+            return self._patch_with_op(op, obj)
+        return None
+
     def _patch_payload_from_named_object(self, obj: Mapping[str, Any], base_revision: Any = None) -> Dict[str, Any]:
+        object_kind = protocol_string(obj, "object_kind", CANVAS_CARD_OBJECT_KIND)
+        typed_patch = self._patch_payload_from_typed_named_object(obj, object_kind)
+        if typed_patch is not None:
+            out = typed_patch
+            if base_revision is not None and "base_revision" not in out:
+                out["base_revision"] = base_revision
+            return out
         patch = obj.get("patch")
         if isinstance(patch, Mapping):
             out = dict(patch)
@@ -293,7 +366,7 @@ class VersatileCanvasService:
                 "operations": [dict(op) for op in obj.get("operations") if isinstance(op, Mapping)],
             }
         elif obj.get("op"):
-            out = {
+            op = {
                 key: value
                 for key, value in dict(obj).items()
                 if key
@@ -304,8 +377,12 @@ class VersatileCanvasService:
                     "board",
                     "base_revision",
                     "object_ref",
-                    "actor",
+                        "actor",
                 }
+            }
+            out = {
+                "schema": "kdcube.canvas.patch.v1",
+                "operations": [op],
             }
         else:
             card_payload = obj.get("card") if isinstance(obj.get("card"), Mapping) else obj

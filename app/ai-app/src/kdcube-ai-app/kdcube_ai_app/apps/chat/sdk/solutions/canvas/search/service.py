@@ -3,10 +3,10 @@
 """Generic pin-board search service — usable by ANY bundle that mounts the canvas
 solution, not just one bundle's service.
 
-It derives the two runtime dependencies from the host entrypoint:
-  - the raw embedder, `entrypoint.models_service.embed_texts`, for index writes, and
-  - the search model-service facade, `entrypoint.search_model_service(flow=...)`,
-    for query embeddings that need economics enforcement and settlement.
+It derives its runtime model dependency from the host entrypoint's
+`entrypoint.search_model_service(flow=...)` facade. That facade is the single
+place where the runtime decides how semantic embeddings are authorized,
+accounted, and degraded.
 
 A bundle's canvas mount then needs no bespoke embed/guard code:
 
@@ -86,11 +86,11 @@ class CanvasPinSearch:
                 pass
         return DEFAULT_MIN_SEMANTIC_SCORE
 
-    def _embed_fn(self):
-        model_service = getattr(self.entrypoint, "models_service", None)
+    def _embed_fn(self, model_service: Any | None = None):
+        model_service = model_service or self._model_service()
         embed_texts = getattr(model_service, "embed_texts", None)
         if embed_texts is None:
-            raise RuntimeError("models_service.embed_texts is not available for canvas pin search")
+            raise RuntimeError("search model_service.embed_texts is not available for canvas pin search")
         return embed_texts
 
     def _model_service(self):
@@ -105,16 +105,18 @@ class CanvasPinSearch:
         return getattr(self.entrypoint, "models_service", None)
 
     async def index(self, *, store: Any, user_id: str, payload: Mapping[str, Any]) -> dict:
+        model_service = self._model_service()
         return await index_pins(
             store=store, user_id=user_id, payload=payload,
-            embed_fn=self._embed_fn(), model_service=self._model_service(), dim=self.dim,
+            embed_fn=self._embed_fn(model_service), model_service=model_service, dim=self.dim,
             vector_backend=self.vector_backend, vector_store=self.vector_store,
         )
 
     async def clear(self, *, store: Any, user_id: str, payload: Mapping[str, Any]) -> dict:
+        model_service = self._model_service()
         return await clear_pins(
             store=store, user_id=user_id, payload=payload,
-            embed_fn=self._embed_fn(), model_service=self._model_service(), dim=self.dim,
+            embed_fn=self._embed_fn(model_service), model_service=model_service, dim=self.dim,
             vector_backend=self.vector_backend, vector_store=self.vector_store,
         )
 
@@ -127,9 +129,10 @@ class CanvasPinSearch:
                 floor = float(payload["min_semantic_score"])
             except (TypeError, ValueError):
                 pass
+        model_service = self._model_service()
         return await search_pins(
             store=store, user_id=user_id, payload=payload,
-            embed_fn=self._embed_fn(), model_service=self._model_service(), dim=self.dim,
+            embed_fn=self._embed_fn(model_service), model_service=model_service, dim=self.dim,
             vector_backend=self.vector_backend, vector_store=self.vector_store,
             semantic_guard=None, min_semantic_score=floor,
         )

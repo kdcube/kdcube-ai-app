@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import {
   createContextDragBroker,
   normalizeContextDragMessage,
-  rootNamespaceCandidates,
+  sceneMatchObjectSelector,
 } from '../dist/scene/index.js'
 
 test('normalizes canonical context drag messages', () => {
@@ -21,14 +21,13 @@ test('normalizes canonical context drag messages', () => {
   assert.equal(active.sourceSurfaceRef, 'chat')
   assert.equal(active.contexts[0].ref, 'task:issue:T-1')
   assert.equal(active.contexts[0].object_ref, 'task:issue:T-1')
-  assert.deepEqual(rootNamespaceCandidates(active.contexts[0]), ['task'])
 })
 
 test('rejects non-canonical drag start messages', () => {
   assert.equal(normalizeContextDragMessage({ type: 'not-canonical-drag-start', contexts: [{ ref: 'task:issue:T-1' }] }), null)
 })
 
-test('matches drop targets by root namespace', () => {
+test('matches drop targets by selector policy', () => {
   const broker = createContextDragBroker({
     objectAction: async () => ({ ok: true }),
     dispatchOpenResponse: () => ({ ok: true, code: 'dispatched', targetSurface: 'task.issue', message: 'ok' }),
@@ -38,8 +37,10 @@ test('matches drop targets by root namespace', () => {
     contexts: [{ ref: 'task:attachment:T-1/file', namespace: 'task:attachment' }],
   })
 
-  assert.equal(broker.accepts({ surfaceRef: 'tasks', targetSurface: 'task.issue', acceptsRootNamespaces: ['task'] }), true)
-  assert.equal(broker.accepts({ surfaceRef: 'memory', targetSurface: 'memory.viewer', acceptsRootNamespaces: ['mem'] }), false)
+  assert.equal(sceneMatchObjectSelector('task:attachment:T-1/file', 'task:*'), true)
+  assert.equal(sceneMatchObjectSelector('task:attachment:T-1/file', 'task:issue:*'), false)
+  assert.equal(broker.accepts({ surfaceRef: 'tasks', targetSurface: 'task.issue', accepts: { open: ['task:*'] } }), true)
+  assert.equal(broker.accepts({ surfaceRef: 'memory', targetSurface: 'memory.viewer', accepts: { open: ['mem:*'] } }), false)
 })
 
 test('opens owning surfaces through provider object action', async () => {
@@ -71,7 +72,7 @@ test('opens owning surfaces through provider object action', async () => {
   const result = await broker.dropOnTarget({
     surfaceRef: 'memories',
     targetSurface: 'sdk.memory.viewer',
-    acceptsRootNamespaces: ['mem'],
+    accepts: { open: ['mem:*'] },
     dropEffect: 'open',
   })
 
@@ -97,7 +98,7 @@ test('delivers pin and attach targets locally without provider open', async () =
   const result = await broker.dropOnTarget({
     surfaceRef: 'pinboard',
     targetSurface: 'canvas.main',
-    acceptsRootNamespaces: ['*'],
+    accepts: { pin: ['*'] },
     dropEffect: 'pin',
     deliverContext: ({ context, target }) => delivered.push([context.ref, target.surfaceRef]),
   })

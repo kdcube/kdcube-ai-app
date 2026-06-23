@@ -622,6 +622,8 @@ class DataBusRuntimeManager:
                 redis=self._redis,
                 props=props,
             )
+            if inspect.isawaitable(bundle_config):
+                bundle_config = await bundle_config
             desired[_DataBusWorkerKey(bundle_id=bundle_id)] = (
                 signature,
                 spec,

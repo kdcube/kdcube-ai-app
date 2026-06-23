@@ -6,9 +6,14 @@ from __future__ import annotations
 import pytest
 
 from kdcube_ai_app.apps.chat.sdk.solutions.canvas.search import (
+    CANVAS_CARD_COMMENT_OBJECT_KIND,
+    CANVAS_CARD_DELETE_OBJECT_KIND,
+    CANVAS_CARD_DELETION_SUGGESTION_OBJECT_KIND,
+    CANVAS_CARD_LAYOUT_OBJECT_KIND,
     CANVAS_BOARD_OBJECT_KIND,
     CANVAS_CARD_OBJECT_KIND,
     CANVAS_OBJECT_OBJECT_KIND,
+    CANVAS_OPERATION_BATCH_OBJECT_KIND,
     CANVAS_PIN_OBJECT_KIND,
     CanvasPinSearchNamedServiceProvider,
 )
@@ -37,7 +42,14 @@ async def test_canvas_pin_provider_schema_exposes_search_filters() -> None:
         CANVAS_BOARD_OBJECT_KIND,
         CANVAS_CARD_OBJECT_KIND,
         CANVAS_OBJECT_OBJECT_KIND,
+        CANVAS_OPERATION_BATCH_OBJECT_KIND,
+        CANVAS_CARD_COMMENT_OBJECT_KIND,
+        CANVAS_CARD_DELETE_OBJECT_KIND,
+        CANVAS_CARD_DELETION_SUGGESTION_OBJECT_KIND,
+        CANVAS_CARD_LAYOUT_OBJECT_KIND,
     }
+    assert "comment" in schema["tools"]
+    assert schema["tools"]["comment"]["tool"] == "named_services.upsert_object"
     filters = schema["search"]["filters"]
     assert "kinds" in filters
     assert "namespaces" in filters
@@ -210,6 +222,103 @@ async def test_canvas_provider_raw_patch_preserves_patch_batch() -> None:
     assert store.patch_args["patch"]["base_revision"] == "2"
     assert [op["op"] for op in store.patch_args["patch"]["operations"]] == ["move_card", "resize_card"]
     assert response.extra["raw_result"]["canvas_ref"] == "cnv:main@3"
+
+
+@pytest.mark.asyncio
+async def test_canvas_provider_typed_comment_upsert_maps_to_comment_card() -> None:
+    class Store:
+        def __init__(self) -> None:
+            self.patch_args = None
+
+        def canvas_id(self, *, canvas_name, canvas_id=None):
+            return canvas_id or f"cnv:user-a:{canvas_name}"
+
+        def patch(self, *, canvas_name, canvas_id, patch, actor):
+            self.patch_args = {
+                "canvas_name": canvas_name,
+                "canvas_id": canvas_id,
+                "patch": patch,
+                "actor": actor,
+            }
+            return {
+                "ok": True,
+                "canvas_ref": "cnv:main@4",
+                "latest_ref": "cnv:main",
+                "canvas_uri": "cnv:main@4",
+                "canvas": {
+                    "canvas_id": canvas_id,
+                    "canvas_name": canvas_name,
+                    "revision": 4,
+                    "cards": [{"id": "card-1", "kind": "memory", "logical_path": "mem:record:1"}],
+                },
+                "changed_cards": [{"id": "card-1", "kind": "memory", "logical_path": "mem:record:1"}],
+            }
+
+    store = Store()
+    provider = CanvasPinSearchNamedServiceProvider(store_factory=lambda _ctx: store)
+    response = await provider.object_upsert(
+        NamedServiceContext(tenant="tenant-a", project="project-a", user_id="user-a"),
+        NamedServiceRequest(
+            operation="object.upsert",
+            namespace="cnv",
+            object_ref="cnv:main",
+            object={
+                "object_kind": CANVAS_CARD_COMMENT_OBJECT_KIND,
+                "canvas_name": "main",
+                "card_id": "card-1",
+                "text": "Looks correct.",
+            },
+            base_revision="3",
+        ),
+    )
+
+    assert response.ok is True
+    assert store.patch_args["patch"]["base_revision"] == "3"
+    op = store.patch_args["patch"]["operations"][0]
+    assert op == {"op": "comment_card", "card_id": "card-1", "text": "Looks correct."}
+
+
+@pytest.mark.asyncio
+async def test_canvas_provider_typed_deletion_suggestion_maps_to_suggest_deletion() -> None:
+    class Store:
+        def __init__(self) -> None:
+            self.patch_args = None
+
+        def canvas_id(self, *, canvas_name, canvas_id=None):
+            return canvas_id or f"cnv:user-a:{canvas_name}"
+
+        def patch(self, *, canvas_name, canvas_id, patch, actor):
+            self.patch_args = {"canvas_name": canvas_name, "canvas_id": canvas_id, "patch": patch, "actor": actor}
+            return {
+                "ok": True,
+                "canvas_ref": "cnv:main@5",
+                "latest_ref": "cnv:main",
+                "canvas_uri": "cnv:main@5",
+                "canvas": {"canvas_id": canvas_id, "canvas_name": canvas_name, "revision": 5, "cards": []},
+                "changed_cards": [],
+            }
+
+    store = Store()
+    provider = CanvasPinSearchNamedServiceProvider(store_factory=lambda _ctx: store)
+    response = await provider.object_upsert(
+        NamedServiceContext(tenant="tenant-a", project="project-a", user_id="user-a"),
+        NamedServiceRequest(
+            operation="object.upsert",
+            namespace="cnv",
+            object_ref="cnv:main",
+            object={
+                "object_kind": CANVAS_CARD_DELETION_SUGGESTION_OBJECT_KIND,
+                "canvas_name": "main",
+                "card_id": "card-1",
+                "reason": "Duplicate of newer card.",
+            },
+            base_revision="4",
+        ),
+    )
+
+    assert response.ok is True
+    op = store.patch_args["patch"]["operations"][0]
+    assert op == {"op": "suggest_deletion", "card_id": "card-1", "reason": "Duplicate of newer card."}
 
 
 @pytest.mark.asyncio

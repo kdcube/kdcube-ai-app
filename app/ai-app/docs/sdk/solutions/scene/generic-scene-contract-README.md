@@ -75,7 +75,7 @@ into context chips. The scene core still emits the same envelope.
 | Surface alias | Host-local name used to mount and address a surface instance, for example `chat`, `pinboard`, or `usage_card`. |
 | Target surface | Provider-owned logical surface id, for example `sdk.memory.viewer` or `task_tracker.issue_editor`. |
 | Object ref | Canonical URI owned by a namespace, for example `mem:record:...`, `task:issue:...`, `fi:...`, or `cnv:...`. |
-| Root namespace | First segment before `:`, for example `mem`, `task`, `fi`, or `cnv`. |
+| Namespace / object kind | Optional provider/source metadata used as presentation lookup keys. These are not routing rules. |
 | Namespace provider | Backend owner of object semantics. It resolves object actions and can return UI events. |
 | Scene transport | Browser-local communication between host and surfaces, normally `postMessage` for iframes or callbacks for in-page components. |
 | Event Bus | Runtime service-event stream, normally SSE. |
@@ -104,10 +104,10 @@ into context chips. The scene core still emits the same envelope.
              object.action(open), object.get, block.produce/render
 ```
 
-The scene knows aliases, routes, target-surface ids, accepted namespaces,
-transport modes, readiness policies, and presentation config. It does not
-derive local entity ids from object refs. The object URI is passed intact to
-the surface and to the provider.
+The scene knows aliases, routes, target-surface ids, declarative selector
+policies, transport modes, readiness policies, and presentation config. It does
+not derive local entity ids or provider behavior from object refs. The object
+URI is passed intact to the surface and to the provider.
 
 ## Scene Configuration
 
@@ -155,6 +155,21 @@ Target shape:
       "authRequired": true,
       "ready": { "type": "message", "messageType": "kdcube-chat-ready" },
       "commands": ["attach", "open", "focus"],
+      "dropTargets": [
+        {
+          "accepts": { "attach": ["*"] },
+          "effect": "attach"
+        },
+        {
+          "accepts": { "open": ["conv:*"] },
+          "effect": "open",
+          "providerOpen": {
+            "enabled": true,
+            "requestedTargetSurface": "sdk.chat.context",
+            "allowedTargetSurfaces": ["sdk.chat.viewer", "sdk.chat.conversation"]
+          }
+        }
+      ],
       "contextDrag": { "source": true, "target": true }
     },
     "pinboard": {
@@ -169,7 +184,7 @@ Target shape:
       "commands": ["pin", "open", "focus"],
       "dropTargets": [
         {
-          "acceptsRootNamespaces": ["*"],
+          "accepts": { "pin": ["*"] },
           "effect": "pin"
         }
       ],
@@ -189,7 +204,7 @@ Target shape:
       "liveEventsTransport": "scene",
       "dropTargets": [
         {
-          "acceptsRootNamespaces": ["task"],
+          "accepts": { "open": ["task:*"] },
           "effect": "open",
           "requestedTargetSurface": "task_tracker.issue_editor"
         }
@@ -271,7 +286,7 @@ hardcoded into the widgets.
 | `authRequired` | Surface is visible/mountable only after scene auth reports an authenticated user. |
 | `ready` | How the scene knows commands can be flushed. |
 | `commands` | Generic actions the surface accepts. |
-| `dropTargets` | Root namespaces and effects accepted by this surface. |
+| `dropTargets` | Declarative object selector policy and effect for this surface: attach, pin, or provider-backed open. |
 | `liveEventsTransport` / `liveDataTransport` | Transport ownership mode exposed to the component. Exact event claims are component-owned runtime messages. |
 | `contextDrag` | Whether the surface can be a drag source and/or drop target. |
 
@@ -279,12 +294,84 @@ Scene core should build surface registry entries from this data. Adding a new
 component should add configuration and a component-side command handler, not a new
 `if (alias === "...")` branch in scene core.
 
-### Namespace Presentation Config
+### Surface Compatibility Selectors
 
-Namespace presentation is the shared visual map keyed by root namespace:
+Drop target compatibility is declarative. The scene can do generic pattern
+matching so it can highlight candidate targets without knowing provider
+semantics.
+
+Selector examples:
+
+| Selector | Meaning |
+| --- | --- |
+| `*` | Any object ref is a candidate. |
+| `mem:*` | Any ref whose URI starts with `mem:` is a candidate. |
+| `task:issue:*` | Any ref whose URI starts with `task:issue:` is a candidate. |
+| `conv:*` | Any ref whose URI starts with `conv:` is a candidate. |
+
+Selectors are grouped by effect:
 
 ```json
 {
+  "dropTargets": [
+    {
+      "accepts": { "pin": ["*"] },
+      "effect": "pin"
+    },
+    {
+      "accepts": { "open": ["mem:*", "mem:snapshot:*"] },
+      "effect": "open",
+      "requestedTargetSurface": "sdk.memory.viewer"
+    }
+  ]
+}
+```
+
+This selector layer answers only:
+
+```text
+Should this surface be shown as a candidate target for this dragged object?
+```
+
+It does not answer:
+
+```text
+How does this object open?
+Which local id does it contain?
+Which provider action is allowed?
+Which bytes should be downloaded?
+```
+
+Those questions belong to provider resolvers and component-local command
+handlers. For provider-backed `open`, the scene must still call
+`object.action(open)` with the full `object_ref`. The provider returns the final
+`target_surface`, capabilities, or failure.
+
+The scene may use a small generic URI selector helper for patterns such as
+`mem:*`. That helper must not contain provider-specific branches. It matches
+strings; it does not parse task ids, memory ids, canvas ids, or conversation ids.
+
+The selector policy can arrive from:
+
+- scene host configuration, as in the current website;
+- a component scene claim after config handshake;
+- backend/provider metadata exposed with the component/app contract.
+
+All three forms describe the same compatibility contract. Adding a new
+namespace or subtype should require provider/component config, not scene core
+code.
+
+### Namespace Presentation Config
+
+Namespace presentation is the shared visual map keyed by provider metadata.
+Consumers look up exact `object_kind` first, then root `namespace`, then a
+neutral unknown fallback. These keys are supplied by the source component or by
+the provider resolver; scene/canvas/chat must not parse `object_ref` to invent
+them.
+
+```json
+{
+  "task:attachment": { "label": "Task file", "color": "#0f766e" },
   "mem": { "label": "Memory", "color": "#16a34a" },
   "task": { "label": "Task", "color": "#2563eb" },
   "fi": { "label": "File", "color": "#ca8a04" },
@@ -486,8 +573,8 @@ Scene behavior:
 
 ```text
 normalize contexts
-  -> derive root namespace from context.ref
-  -> activate configured drop targets
+  -> use context.namespace/object_kind when provided; otherwise unknown
+  -> activate drop targets whose selector policy matches context.ref
   -> apply namespace presentation style to overlays
   -> on drop, deliver configured effect:
        attach -> kdcube.surface.command(action="attach")
@@ -550,8 +637,9 @@ Data Bus forwarding must preserve subject and partition metadata.
 
 ## Provider-Backed Open Routing
 
-Provider-backed open routing means the scene asks the namespace owner what the
-default UI effect is for an object. The scene then routes only the provider's
+Provider-backed open routing means the scene asks the object owner what the
+default UI effect is for an object. The scene may use selector policy to decide
+that a target is a candidate, but the scene then routes only the provider's
 response.
 
 Flow:
@@ -582,9 +670,10 @@ scene sends kdcube.surface.command(action="open")
 This is how unknown-yet subsystems join the ecosystem. The scene can route a new
 namespace when:
 
-1. the provider resolves `object.action(open)`;
-2. a scene surface is registered for the returned `target_surface`;
-3. that surface implements the generic `kdcube.surface.command` contract.
+1. a surface/provider contract declares a selector policy such as `open: ["abc:*"]`;
+2. the provider resolves `object.action(open)` for the full `object_ref`;
+3. a scene surface is registered for the returned `target_surface`;
+4. that surface implements the generic `kdcube.surface.command` contract.
 
 ## Component Contract
 
@@ -668,7 +757,8 @@ When composing a scene:
 4. Declare mount mode, size, layer tier, and rail position.
 5. Declare auth requirements for each surface.
 6. Declare readiness policy for each iframe surface.
-7. Declare accepted root namespaces and drop effects.
+7. Declare surface selector policies and drop effects, or ensure components
+   claim them during scene handshake.
 8. Declare Event Bus/Data Bus transport ownership:
    - `scene` when the host relays;
    - `sse` or `data-bus-self` when the component owns the stream;
@@ -742,7 +832,7 @@ The scene should produce enough console traces to answer these questions:
 | Did a widget claim events? | `scene subscriber registered` with bus, events, runtime scope. |
 | Did the scene receive a runtime event? | `scene event received` with bus, event type, channel, runtime scope. |
 | Did the event dispatch? | `scene event dispatched` with target surface/alias and command action. |
-| Did a drag arm targets? | `context drag armed` with root namespaces and target aliases. |
+| Did a drag arm targets? | `context drag armed` with selector matches and target aliases. |
 | Did an object open route? | `surface command dispatched` with target surface, action, object ref, queued/dispatched. |
 | Was a route impossible? | Explicit unavailable/error trace with missing config key or target surface. |
 
@@ -783,7 +873,7 @@ The scene is generic when all of the following are true:
 | Criterion | Expected result |
 | --- | --- |
 | Add a new component by config | The scene can mount/register it without editing scene core. |
-| Add a new provider namespace | The scene can color, drag, pin, and provider-open it when namespace presentation and provider `object.action(open)` exist. |
+| Add a new provider namespace | The scene can color, drag, pin, and provider-open it when namespace presentation, selector policy, and provider `object.action(open)` exist. |
 | Drop object on owning surface | Scene calls provider and dispatches generic `open` command to returned `target_surface`. |
 | Drop object on chat | Scene dispatches generic `attach` command; chat owns chip creation. |
 | Drop object on canvas | Scene dispatches generic `pin` command; canvas owns card creation. |

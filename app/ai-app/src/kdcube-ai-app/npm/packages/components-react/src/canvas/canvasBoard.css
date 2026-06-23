@@ -612,42 +612,6 @@ button {
   --pin-ink: #287243;
 }
 
-.canvas-card.file {
-  --pin-bg: linear-gradient(180deg, rgba(255, 247, 221, 0.82), rgba(255, 255, 255, 0.96));
-  --pin-border: rgba(240, 178, 34, 0.32);
-  --pin-focus: rgba(240, 178, 34, 0.16);
-  --pin-ink: #8b6500;
-}
-
-.canvas-card.memory {
-  --pin-bg: linear-gradient(180deg, rgba(234, 248, 231, 0.78), rgba(255, 255, 255, 0.96));
-  --pin-border: rgba(82, 176, 68, 0.28);
-  --pin-focus: rgba(82, 176, 68, 0.16);
-  --pin-ink: #2b6f32;
-}
-
-.canvas-card.source,
-.canvas-card.search-result {
-  --pin-bg: linear-gradient(180deg, rgba(246, 240, 255, 0.82), rgba(255, 255, 255, 0.96));
-  --pin-border: rgba(138, 112, 220, 0.28);
-  --pin-focus: rgba(138, 112, 220, 0.15);
-  --pin-ink: #604aa8;
-}
-
-.canvas-card.object-ref {
-  --pin-bg: linear-gradient(180deg, rgba(237, 244, 255, 0.82), rgba(255, 255, 255, 0.96));
-  --pin-border: rgba(67, 114, 195, 0.26);
-  --pin-focus: rgba(67, 114, 195, 0.15);
-  --pin-ink: #24508f;
-}
-
-.canvas-card.conversation {
-  --pin-bg: linear-gradient(180deg, rgba(232, 251, 248, 0.76), rgba(255, 255, 255, 0.96));
-  --pin-border: rgba(8, 189, 178, 0.28);
-  --pin-focus: rgba(8, 189, 178, 0.16);
-  --pin-ink: #08766f;
-}
-
 .canvas-card-top,
 .canvas-card-kind {
   display: flex;
@@ -713,6 +677,22 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.canvas-card-origin-icon {
+  display: inline-flex;
+  width: 13px;
+  height: 13px;
+  flex: 0 0 auto;
+  color: currentColor;
+}
+
+.canvas-card-origin-icon svg {
+  width: 13px;
+  height: 13px;
+  display: block;
+  fill: none;
+  stroke: currentColor;
 }
 
 .canvas-card-buttons {

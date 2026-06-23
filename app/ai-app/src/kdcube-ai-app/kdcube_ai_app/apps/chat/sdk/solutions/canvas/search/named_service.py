@@ -39,21 +39,35 @@ CANVAS_NAMESPACE = "cnv"
 CANVAS_BOARD_OBJECT_KIND = "canvas.board"
 CANVAS_CARD_OBJECT_KIND = "canvas.card"
 CANVAS_OBJECT_OBJECT_KIND = "canvas.object"
-CANVAS_OBJECT_KINDS = (CANVAS_BOARD_OBJECT_KIND, CANVAS_CARD_OBJECT_KIND, CANVAS_OBJECT_OBJECT_KIND)
+CANVAS_OPERATION_BATCH_OBJECT_KIND = "canvas.operation_batch"
+CANVAS_CARD_COMMENT_OBJECT_KIND = "canvas.card.comment"
+CANVAS_CARD_REPLACEMENT_OBJECT_KIND = "canvas.card.replacement"
+CANVAS_CARD_DELETION_SUGGESTION_OBJECT_KIND = "canvas.card.deletion_suggestion"
+CANVAS_CARD_DELETE_OBJECT_KIND = "canvas.card.delete"
+CANVAS_CARD_LAYOUT_OBJECT_KIND = "canvas.card.layout"
+CANVAS_OBJECT_KINDS = (
+    CANVAS_BOARD_OBJECT_KIND,
+    CANVAS_CARD_OBJECT_KIND,
+    CANVAS_OBJECT_OBJECT_KIND,
+    CANVAS_OPERATION_BATCH_OBJECT_KIND,
+    CANVAS_CARD_COMMENT_OBJECT_KIND,
+    CANVAS_CARD_REPLACEMENT_OBJECT_KIND,
+    CANVAS_CARD_DELETION_SUGGESTION_OBJECT_KIND,
+    CANVAS_CARD_DELETE_OBJECT_KIND,
+    CANVAS_CARD_LAYOUT_OBJECT_KIND,
+)
 CANVAS_PIN_OBJECT_KIND = CANVAS_CARD_OBJECT_KIND
 CANVAS_PIN_PROVIDER_ID = "sdk.canvas.pins"
 
-CANVAS_CARD_KINDS = (
-    "user.text",
-    "user.attachment",
-    "agent.text",
-    "file",
-    "memory",
-    "source",
-    "search.result",
-    "note",
-    "object.ref",
-    "conversation",
+CANVAS_PATCH_OPS = (
+    "new_card",
+    "update_card",
+    "move_card",
+    "resize_card",
+    "replace_card",
+    "suggest_deletion",
+    "delete_card",
+    "comment_card",
 )
 
 CANVAS_BOARD_SCHEMA: dict[str, Any] = {
@@ -79,6 +93,36 @@ CANVAS_BOARD_SCHEMA: dict[str, Any] = {
         },
         "description": "Replace/write a board document. Use base_revision when the caller must protect against concurrent edits.",
     },
+    "tools": {
+        "get_latest": {"tool": "react.pull", "required": {"paths": ["cnv:<board-name>"]}},
+        "get_revision": {"tool": "react.pull", "required": {"paths": ["cnv:<board-name>@<revision>"]}},
+        "replace_board": {
+            "tool": "named_services.upsert_object",
+            "required": {
+                "namespace": CANVAS_NAMESPACE,
+                "object_ref": "cnv:<board-name>",
+                "base_revision": "<visible revision>",
+                "object_json": {
+                    "object_kind": CANVAS_BOARD_OBJECT_KIND,
+                    "canvas_name": "<board-name>",
+                    "canvas": {"cards": []},
+                },
+            },
+        },
+        "apply_atomic_operations": {
+            "tool": "named_services.upsert_object",
+            "required": {
+                "namespace": CANVAS_NAMESPACE,
+                "object_ref": "cnv:<board-name>",
+                "base_revision": "<visible revision>",
+                "object_json": {
+                    "object_kind": CANVAS_OPERATION_BATCH_OBJECT_KIND,
+                    "canvas_name": "<board-name>",
+                    "operations": [{"op": "<canvas patch op>"}],
+                },
+            },
+        },
+    },
 }
 
 CANVAS_CARD_SCHEMA: dict[str, Any] = {
@@ -91,8 +135,7 @@ CANVAS_CARD_SCHEMA: dict[str, Any] = {
         "card_id": {"type": "string", "description": "Canvas-local card id."},
         "kind": {
             "type": "string",
-            "enum": list(CANVAS_CARD_KINDS),
-            "description": "Canvas card kind. user.text/user.attachment/agent.text host content as cnv: objects; file/memory/source/search.result/object.ref/conversation usually pin an existing ref.",
+            "description": "Source-provided card type label. Canvas preserves this value; resolver ownership is determined from logical_path/object_ref namespace and object_kind.",
         },
         "title": {"type": "string", "description": "Card title/label."},
         "summary": {"type": "string", "description": "Card summary or description when present."},
@@ -101,6 +144,7 @@ CANVAS_CARD_SCHEMA: dict[str, Any] = {
         "namespace": {"type": "string", "description": "Root namespace of the pinned object ref."},
         "board": {"type": "string", "description": "Canvas board id containing the card."},
         "score": {"type": "number", "description": "Provider-local relevance score; use returned order as rank."},
+        "base_revision": {"type": "integer|string", "description": "Expected current board revision for optimistic concurrency."},
     },
     "upsert": {
         "tool": "named_services.upsert_object",
@@ -121,6 +165,45 @@ CANVAS_CARD_SCHEMA: dict[str, Any] = {
             "set": {"title": "Updated title"},
         },
     },
+    "mutations": {
+        "create": {
+            "object_kind": CANVAS_CARD_OBJECT_KIND,
+            "description": "Create a new card or pin an existing namespace ref onto a board.",
+            "maps_to_patch_op": "new_card",
+            "required": ["canvas_name", "card.kind", "card.title or card.logical_path"],
+        },
+        "update": {
+            "object_kind": CANVAS_CARD_OBJECT_KIND,
+            "description": "Update card-owned metadata/content. Proxy object bytes remain owned by the proxied namespace.",
+            "maps_to_patch_op": "update_card",
+            "required": ["canvas_name", "card_id", "set or content"],
+        },
+        "comment": {
+            "object_kind": CANVAS_CARD_COMMENT_OBJECT_KIND,
+            "description": "Append a markdown/plain-text comment to an existing card.",
+            "maps_to_patch_op": "comment_card",
+        },
+        "replace": {
+            "object_kind": CANVAS_CARD_REPLACEMENT_OBJECT_KIND,
+            "description": "Suggest or apply a replacement for a card. Default mode is suggested/floating.",
+            "maps_to_patch_op": "replace_card",
+        },
+        "suggest_deletion": {
+            "object_kind": CANVAS_CARD_DELETION_SUGGESTION_OBJECT_KIND,
+            "description": "Record a deletion suggestion without removing the card.",
+            "maps_to_patch_op": "suggest_deletion",
+        },
+        "delete": {
+            "object_kind": CANVAS_CARD_DELETE_OBJECT_KIND,
+            "description": "Remove a card from the board.",
+            "maps_to_patch_op": "delete_card",
+        },
+        "layout": {
+            "object_kind": CANVAS_CARD_LAYOUT_OBJECT_KIND,
+            "description": "UI layout operation. Agents should not use this unless explicitly asked to arrange layout.",
+            "maps_to_patch_ops": ["move_card", "resize_card"],
+        },
+    },
     "search": {
         "namespace": CANVAS_NAMESPACE,
         "query": "Hybrid semantic/lexical/recency search over canvas card snapshots. It does not search full source object bytes.",
@@ -131,6 +214,242 @@ CANVAS_CARD_SCHEMA: dict[str, Any] = {
         "search": {"tool": "named_services.search_objects", "required": {"namespace": CANVAS_NAMESPACE, "query": "<text>"}},
         "pull_ref": {"tool": "react.pull", "required": {"paths": ["<object_ref from search result>"]}},
         "upsert": {"tool": "named_services.upsert_object", "required": {"namespace": CANVAS_NAMESPACE, "object_json": "<canvas card or board JSON>"}},
+        "comment": {
+            "tool": "named_services.upsert_object",
+            "required": {
+                "namespace": CANVAS_NAMESPACE,
+                "object_ref": "cnv:<board-name>",
+                "base_revision": "<visible revision>",
+                "object_json": {
+                    "object_kind": CANVAS_CARD_COMMENT_OBJECT_KIND,
+                    "canvas_name": "<board-name>",
+                    "card_id": "<card-id>",
+                    "text": "<comment text>",
+                },
+            },
+        },
+        "suggest_replacement": {
+            "tool": "named_services.upsert_object",
+            "required": {
+                "namespace": CANVAS_NAMESPACE,
+                "object_ref": "cnv:<board-name>",
+                "base_revision": "<visible revision>",
+                "object_json": {
+                    "object_kind": CANVAS_CARD_REPLACEMENT_OBJECT_KIND,
+                    "canvas_name": "<board-name>",
+                    "card_id": "<card-id>",
+                    "mode": "suggested",
+                    "card": {"kind": "agent.text", "title": "<replacement title>", "content": {"text": "<markdown>"}},
+                },
+            },
+        },
+        "suggest_deletion": {
+            "tool": "named_services.upsert_object",
+            "required": {
+                "namespace": CANVAS_NAMESPACE,
+                "object_ref": "cnv:<board-name>",
+                "base_revision": "<visible revision>",
+                "object_json": {
+                    "object_kind": CANVAS_CARD_DELETION_SUGGESTION_OBJECT_KIND,
+                    "canvas_name": "<board-name>",
+                    "card_id": "<card-id>",
+                    "reason": "<why>",
+                },
+            },
+        },
+    },
+}
+
+CANVAS_OPERATION_BATCH_SCHEMA: dict[str, Any] = {
+    "object_kind": CANVAS_OPERATION_BATCH_OBJECT_KIND,
+    "namespace": CANVAS_NAMESPACE,
+    "ref_pattern": "cnv:<board-name>",
+    "title": "Canvas atomic operation batch",
+    "description": "Atomic canvas board mutation batch. Use when one user intent requires multiple canvas operations in one revision.",
+    "fields": {
+        "canvas_name": {"type": "string", "required": True, "description": "Board name, for example main."},
+        "base_revision": {"type": "integer|string", "required": True, "description": "Expected current board revision. On conflict, pull/read cnv:<board-name> again before issuing another upsert."},
+        "operations": {
+            "type": "array",
+            "required": True,
+            "items": "canvas operation object",
+            "allowed_ops": list(CANVAS_PATCH_OPS),
+            "description": "Ordered operations applied in one store.patch call. Prefer typed schemas for single card comments/replacements/deletions.",
+        },
+        "reason": {"type": "string", "description": "Short reason recorded in canvas history."},
+    },
+    "tools": {
+        "apply_batch": {
+            "tool": "named_services.upsert_object",
+            "required": {
+                "namespace": CANVAS_NAMESPACE,
+                "object_ref": "cnv:<board-name>",
+                "base_revision": "<visible revision>",
+                "object_json": {
+                    "object_kind": CANVAS_OPERATION_BATCH_OBJECT_KIND,
+                    "canvas_name": "<board-name>",
+                    "operations": [{"op": "new_card", "card": {"kind": "agent.text", "title": "<title>", "content": {"text": "<markdown>"}}}],
+                },
+            },
+        },
+    },
+    "conflict_behavior": "If the provider returns canvas_revision_conflict, the mutation was not applied. Pull/read cnv:<board-name> again and compose a new upsert against the returned revision.",
+}
+
+CANVAS_CARD_COMMENT_SCHEMA: dict[str, Any] = {
+    "object_kind": CANVAS_CARD_COMMENT_OBJECT_KIND,
+    "namespace": CANVAS_NAMESPACE,
+    "ref_pattern": "cnv:<board-name>#<card-id>/comments",
+    "title": "Canvas card comment",
+    "description": "Append a comment to a card without changing the proxied object.",
+    "fields": {
+        "canvas_name": {"type": "string", "required": True},
+        "card_id": {"type": "string", "required": True},
+        "text": {"type": "string", "required": True, "format": "markdown"},
+        "comment_id": {"type": "string", "description": "Optional idempotent comment id."},
+        "base_revision": {"type": "integer|string", "required": True},
+    },
+    "tools": {
+        "append_comment": {
+            "tool": "named_services.upsert_object",
+            "required": {
+                "namespace": CANVAS_NAMESPACE,
+                "object_ref": "cnv:<board-name>",
+                "base_revision": "<visible revision>",
+                "object_json": {
+                    "object_kind": CANVAS_CARD_COMMENT_OBJECT_KIND,
+                    "canvas_name": "<board-name>",
+                    "card_id": "<card-id>",
+                    "text": "<comment>",
+                },
+            },
+        },
+    },
+}
+
+CANVAS_CARD_REPLACEMENT_SCHEMA: dict[str, Any] = {
+    "object_kind": CANVAS_CARD_REPLACEMENT_OBJECT_KIND,
+    "namespace": CANVAS_NAMESPACE,
+    "ref_pattern": "cnv:<board-name>#<card-id>/replacement",
+    "title": "Canvas card replacement",
+    "description": "Suggest a floating replacement card or explicitly overwrite a card in place.",
+    "fields": {
+        "canvas_name": {"type": "string", "required": True},
+        "card_id": {"type": "string", "required": True},
+        "mode": {"type": "string", "enum": ["suggested", "in_place"], "default": "suggested"},
+        "card": {"type": "object", "required": True, "description": "Replacement card body. Suggested mode creates a new floating card linked to source_card_ids."},
+        "base_revision": {"type": "integer|string", "required": True},
+    },
+    "tools": {
+        "suggest_replacement": {
+            "tool": "named_services.upsert_object",
+            "required": {
+                "namespace": CANVAS_NAMESPACE,
+                "object_ref": "cnv:<board-name>",
+                "base_revision": "<visible revision>",
+                "object_json": {
+                    "object_kind": CANVAS_CARD_REPLACEMENT_OBJECT_KIND,
+                    "canvas_name": "<board-name>",
+                    "card_id": "<card-id>",
+                    "mode": "suggested",
+                    "card": {"kind": "agent.text", "title": "<title>", "content": {"text": "<markdown>"}},
+                },
+            },
+        },
+    },
+}
+
+CANVAS_CARD_DELETION_SUGGESTION_SCHEMA: dict[str, Any] = {
+    "object_kind": CANVAS_CARD_DELETION_SUGGESTION_OBJECT_KIND,
+    "namespace": CANVAS_NAMESPACE,
+    "ref_pattern": "cnv:<board-name>#<card-id>/deletion-suggestion",
+    "title": "Canvas card deletion suggestion",
+    "description": "Record a deletion suggestion for user review; does not delete the card.",
+    "fields": {
+        "canvas_name": {"type": "string", "required": True},
+        "card_id": {"type": "string", "required": True},
+        "reason": {"type": "string", "description": "Why the card may be removed."},
+        "base_revision": {"type": "integer|string", "required": True},
+    },
+    "tools": {
+        "suggest_deletion": {
+            "tool": "named_services.upsert_object",
+            "required": {
+                "namespace": CANVAS_NAMESPACE,
+                "object_ref": "cnv:<board-name>",
+                "base_revision": "<visible revision>",
+                "object_json": {
+                    "object_kind": CANVAS_CARD_DELETION_SUGGESTION_OBJECT_KIND,
+                    "canvas_name": "<board-name>",
+                    "card_id": "<card-id>",
+                    "reason": "<why>",
+                },
+            },
+        },
+    },
+}
+
+CANVAS_CARD_DELETE_SCHEMA: dict[str, Any] = {
+    "object_kind": CANVAS_CARD_DELETE_OBJECT_KIND,
+    "namespace": CANVAS_NAMESPACE,
+    "ref_pattern": "cnv:<board-name>#<card-id>/delete",
+    "title": "Canvas card delete",
+    "description": "Remove a card from the board. Prefer deletion suggestions unless the user explicitly asks to delete.",
+    "fields": {
+        "canvas_name": {"type": "string", "required": True},
+        "card_id": {"type": "string", "required": True},
+        "base_revision": {"type": "integer|string", "required": True},
+    },
+    "tools": {
+        "delete_card": {
+            "tool": "named_services.upsert_object",
+            "required": {
+                "namespace": CANVAS_NAMESPACE,
+                "object_ref": "cnv:<board-name>",
+                "base_revision": "<visible revision>",
+                "object_json": {
+                    "object_kind": CANVAS_CARD_DELETE_OBJECT_KIND,
+                    "canvas_name": "<board-name>",
+                    "card_id": "<card-id>",
+                },
+            },
+        },
+    },
+}
+
+CANVAS_CARD_LAYOUT_SCHEMA: dict[str, Any] = {
+    "object_kind": CANVAS_CARD_LAYOUT_OBJECT_KIND,
+    "namespace": CANVAS_NAMESPACE,
+    "ref_pattern": "cnv:<board-name>#<card-id>/layout",
+    "title": "Canvas card layout",
+    "description": "Move or resize a card. This is primarily a UI operation; agents should not arrange cards unless the user explicitly asks.",
+    "fields": {
+        "canvas_name": {"type": "string", "required": True},
+        "card_id": {"type": "string", "required": True},
+        "op": {"type": "string", "enum": ["move_card", "resize_card"], "required": True},
+        "x": {"type": "number"},
+        "y": {"type": "number"},
+        "w": {"type": "number"},
+        "h": {"type": "number"},
+        "base_revision": {"type": "integer|string", "required": True},
+    },
+    "tools": {
+        "move_or_resize": {
+            "tool": "named_services.upsert_object",
+            "required": {
+                "namespace": CANVAS_NAMESPACE,
+                "object_ref": "cnv:<board-name>",
+                "base_revision": "<visible revision>",
+                "object_json": {
+                    "object_kind": CANVAS_CARD_LAYOUT_OBJECT_KIND,
+                    "canvas_name": "<board-name>",
+                    "card_id": "<card-id>",
+                    "op": "move_card",
+                    "x": 0,
+                    "y": 0,
+                },
+            },
+        },
     },
 }
 
@@ -152,8 +471,25 @@ CANVAS_SCHEMAS: dict[str, dict[str, Any]] = {
     CANVAS_BOARD_OBJECT_KIND: CANVAS_BOARD_SCHEMA,
     CANVAS_CARD_OBJECT_KIND: CANVAS_CARD_SCHEMA,
     CANVAS_OBJECT_OBJECT_KIND: CANVAS_OBJECT_SCHEMA,
+    CANVAS_OPERATION_BATCH_OBJECT_KIND: CANVAS_OPERATION_BATCH_SCHEMA,
+    CANVAS_CARD_COMMENT_OBJECT_KIND: CANVAS_CARD_COMMENT_SCHEMA,
+    CANVAS_CARD_REPLACEMENT_OBJECT_KIND: CANVAS_CARD_REPLACEMENT_SCHEMA,
+    CANVAS_CARD_DELETION_SUGGESTION_OBJECT_KIND: CANVAS_CARD_DELETION_SUGGESTION_SCHEMA,
+    CANVAS_CARD_DELETE_OBJECT_KIND: CANVAS_CARD_DELETE_SCHEMA,
+    CANVAS_CARD_LAYOUT_OBJECT_KIND: CANVAS_CARD_LAYOUT_SCHEMA,
 }
 CANVAS_PIN_SCHEMA = CANVAS_CARD_SCHEMA
+CANVAS_MUTATION_OBJECT_KINDS = {
+    CANVAS_BOARD_OBJECT_KIND,
+    CANVAS_CARD_OBJECT_KIND,
+    CANVAS_OPERATION_BATCH_OBJECT_KIND,
+    CANVAS_CARD_COMMENT_OBJECT_KIND,
+    CANVAS_CARD_REPLACEMENT_OBJECT_KIND,
+    CANVAS_CARD_DELETION_SUGGESTION_OBJECT_KIND,
+    CANVAS_CARD_DELETE_OBJECT_KIND,
+    CANVAS_CARD_LAYOUT_OBJECT_KIND,
+    "canvas.pin",
+}
 
 CANVAS_PIN_SEARCH_SCOPES: tuple[NamedServiceSearchScope, ...] = (
     NamedServiceSearchScope(
@@ -186,6 +522,7 @@ CANVAS_PIN_SERVICE_ABOUT: dict[str, Any] = {
     ],
     "search_scopes": [scope.to_dict() for scope in CANVAS_PIN_SEARCH_SCOPES],
     "schema_hint": "Call named_services.object_schema with namespace='cnv' for canvas board/card/object fields, search filters, and upsert payloads.",
+    "mutation_hint": "Use named_services.upsert_object with object_kind canvas.card, canvas.card.comment, canvas.card.replacement, canvas.card.deletion_suggestion, canvas.card.delete, canvas.card.layout, or canvas.operation_batch. Always pass object_ref='cnv:<board-name>' and base_revision when mutating a visible board.",
 }
 
 CANVAS_PIN_OPERATIONS = {
@@ -389,11 +726,76 @@ def _raw_patch_from_object(obj: Mapping[str, Any]) -> dict[str, Any] | None:
             "operations": [dict(op) for op in operations if isinstance(op, Mapping)],
         }
     if obj.get("op"):
-        return {
+        op = {
             key: value
             for key, value in dict(obj).items()
             if key not in _CANVAS_REQUEST_FIELDS
         }
+        return {
+            "schema": "kdcube.canvas.patch.v1",
+            "operations": [op],
+        }
+    return None
+
+
+def _patch_with_op(op: Mapping[str, Any], obj: Mapping[str, Any]) -> dict[str, Any]:
+    patch: dict[str, Any] = {
+        "schema": "kdcube.canvas.patch.v1",
+        "operations": [dict(op)],
+    }
+    if obj.get("reason"):
+        patch["reason"] = obj.get("reason")
+    return patch
+
+
+def _patch_from_typed_object(obj: Mapping[str, Any], object_kind: str) -> dict[str, Any] | None:
+    card_id = _text(obj.get("card_id") or obj.get("target_card_id") or obj.get("object_id"))
+    if object_kind == CANVAS_OPERATION_BATCH_OBJECT_KIND:
+        raw_patch = _raw_patch_from_object(obj)
+        if raw_patch is not None:
+            return raw_patch
+        return None
+    if object_kind == CANVAS_CARD_COMMENT_OBJECT_KIND:
+        op: dict[str, Any] = {
+            "op": "comment_card",
+            "card_id": card_id,
+            "text": _text(obj.get("text") or obj.get("comment")),
+        }
+        if obj.get("comment_id"):
+            op["comment_id"] = obj.get("comment_id")
+        return _patch_with_op(op, obj)
+    if object_kind == CANVAS_CARD_REPLACEMENT_OBJECT_KIND:
+        replacement = obj.get("card") if isinstance(obj.get("card"), Mapping) else obj.get("replacement")
+        op = {
+            "op": "replace_card",
+            "card_id": card_id,
+            "mode": _text(obj.get("mode")) or "suggested",
+            "card": dict(replacement) if isinstance(replacement, Mapping) else {},
+        }
+        return _patch_with_op(op, obj)
+    if object_kind == CANVAS_CARD_DELETION_SUGGESTION_OBJECT_KIND:
+        return _patch_with_op({
+            "op": "suggest_deletion",
+            "card_id": card_id,
+            "reason": _text(obj.get("reason")),
+        }, obj)
+    if object_kind == CANVAS_CARD_DELETE_OBJECT_KIND:
+        return _patch_with_op({
+            "op": "delete_card",
+            "card_id": card_id,
+        }, obj)
+    if object_kind == CANVAS_CARD_LAYOUT_OBJECT_KIND:
+        op_name = _text(obj.get("op") or obj.get("operation"))
+        if op_name not in {"move_card", "resize_card"}:
+            op_name = "resize_card" if ("w" in obj or "h" in obj) and "x" not in obj and "y" not in obj else "move_card"
+        op: dict[str, Any] = {
+            "op": op_name,
+            "card_id": card_id,
+        }
+        for key in ("x", "y", "w", "h"):
+            if key in obj:
+                op[key] = obj.get(key)
+        return _patch_with_op(op, obj)
     return None
 
 
@@ -504,9 +906,9 @@ class CanvasPinSearchNamedServiceProvider(NamedServiceProvider):
                 provider=self.provider_identity(),
                 namespace=namespace,
                 object_ref=request.object_ref,
-                details={"object_kind": object_kind, "supported_object_kinds": [CANVAS_BOARD_OBJECT_KIND, CANVAS_CARD_OBJECT_KIND]},
+                details={"object_kind": object_kind, "supported_object_kinds": sorted(CANVAS_MUTATION_OBJECT_KINDS)},
             )
-        if object_kind not in {CANVAS_BOARD_OBJECT_KIND, CANVAS_CARD_OBJECT_KIND, "canvas.pin"}:
+        if object_kind not in CANVAS_MUTATION_OBJECT_KINDS:
             return NamedServiceResponse.error_response(
                 code="canvas_upsert_kind_not_supported",
                 message=f"Canvas upsert does not support object_kind {object_kind!r}",
@@ -514,7 +916,7 @@ class CanvasPinSearchNamedServiceProvider(NamedServiceProvider):
                 provider=self.provider_identity(),
                 namespace=namespace,
                 object_ref=request.object_ref,
-                details={"supported_object_kinds": [CANVAS_BOARD_OBJECT_KIND, CANVAS_CARD_OBJECT_KIND]},
+                details={"supported_object_kinds": sorted(CANVAS_MUTATION_OBJECT_KINDS)},
             )
         if self._upsert_handler is not None:
             response = await self._upsert_handler(ctx, request)
@@ -543,7 +945,7 @@ class CanvasPinSearchNamedServiceProvider(NamedServiceProvider):
         base_revision = request.base_revision or request.object.get("base_revision")
         actor = _actor_from_context(ctx)
 
-        raw_patch = _raw_patch_from_object(request.object)
+        raw_patch = _patch_from_typed_object(request.object, object_kind) or _raw_patch_from_object(request.object)
         if raw_patch is not None:
             if base_revision is not None and "base_revision" not in raw_patch:
                 raw_patch["base_revision"] = base_revision
@@ -552,7 +954,7 @@ class CanvasPinSearchNamedServiceProvider(NamedServiceProvider):
                 result,
                 provider=self.provider_identity(),
                 namespace=namespace,
-                default_object_kind=CANVAS_BOARD_OBJECT_KIND if object_kind == CANVAS_BOARD_OBJECT_KIND else CANVAS_CARD_OBJECT_KIND,
+                default_object_kind=CANVAS_BOARD_OBJECT_KIND if object_kind in {CANVAS_BOARD_OBJECT_KIND, CANVAS_OPERATION_BATCH_OBJECT_KIND} else CANVAS_CARD_OBJECT_KIND,
                 fallback_card_id=_text(request.object.get("card_id") or request.object_id),
             )
 
@@ -621,13 +1023,27 @@ __all__ = [
     "CANVAS_BOARD_OBJECT_KIND",
     "CANVAS_CARD_OBJECT_KIND",
     "CANVAS_OBJECT_OBJECT_KIND",
+    "CANVAS_OPERATION_BATCH_OBJECT_KIND",
+    "CANVAS_CARD_COMMENT_OBJECT_KIND",
+    "CANVAS_CARD_REPLACEMENT_OBJECT_KIND",
+    "CANVAS_CARD_DELETION_SUGGESTION_OBJECT_KIND",
+    "CANVAS_CARD_DELETE_OBJECT_KIND",
+    "CANVAS_CARD_LAYOUT_OBJECT_KIND",
     "CANVAS_OBJECT_KINDS",
+    "CANVAS_PATCH_OPS",
     "CANVAS_PIN_OBJECT_KIND",
     "CANVAS_PIN_PROVIDER_ID",
     "CANVAS_BOARD_SCHEMA",
     "CANVAS_CARD_SCHEMA",
     "CANVAS_OBJECT_SCHEMA",
+    "CANVAS_OPERATION_BATCH_SCHEMA",
+    "CANVAS_CARD_COMMENT_SCHEMA",
+    "CANVAS_CARD_REPLACEMENT_SCHEMA",
+    "CANVAS_CARD_DELETION_SUGGESTION_SCHEMA",
+    "CANVAS_CARD_DELETE_SCHEMA",
+    "CANVAS_CARD_LAYOUT_SCHEMA",
     "CANVAS_SCHEMAS",
+    "CANVAS_MUTATION_OBJECT_KINDS",
     "CANVAS_PIN_SCHEMA",
     "CANVAS_PIN_SEARCH_SCOPES",
     "CANVAS_PIN_SERVICE_ABOUT",
