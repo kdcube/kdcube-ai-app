@@ -4,6 +4,7 @@ title: "External Events"
 summary: "Semantic and transport model for conversation-scoped external events, including reactive/non-reactive behavior, story targeting, Redis transport, and ReAct folding."
 status: draft
 tags: ["sdk", "events", "external-events", "ingress", "react", "conversation"]
+updated_at: 2026-06-23
 keywords:
   [
     "external_event",
@@ -17,6 +18,7 @@ keywords:
     "react event source",
   ]
 see_also:
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/ecosystem-component/components-ecosystem-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/events/namespaces-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-events-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-conversation-events-and-react-output-README.md
@@ -202,7 +204,7 @@ kinds exist for different occurrence families:
 | --- | --- |
 | `react.external` | Authored external event in `external_events[]`. |
 | `react.tool` | ReAct tool-call/result source. |
-| `react.event_source_reader` | Namespace-owner reader for runtime/policy resolution. Exact model-facing content should enter through `react.pull` when the namespace has a registered rehoster. |
+| `react.event_source_reader` | Namespace-owner reader for runtime/policy resolution. Exact model-facing content should enter through `react.pull`; named-service namespaces use provider `object.get`/`block.produce`, while custom owner namespaces may use a registered rehoster. |
 
 The transported `external_events[]` payload does not carry this declaration
 `kind`; it carries `event_source_id`, `event_id`, `type`, and occurrence facts
@@ -230,10 +232,12 @@ send `external_events[].reactive=true`.
 `payload.event_ref` or fields inside `payload.event` may contain custom
 namespace artifact URIs, for example `nmsp:...` refs produced by bundle-owned
 storage. ReAct does not treat those refs as local files. A bundle or SDK module
-must register an artifact namespace rehoster, such as
-`@artifact_namespace_rehoster(namespace="nmsp")`, and the agent materializes the
-ref explicitly with `react.pull(paths=["nmsp:..."])`. The rehoster resolves the
-custom URI and copies the bytes into the current ReAct artifact surface. The
+must expose a materialization path. Prefer a named-service provider with
+`object.get` and `block.produce` when the namespace is a reusable ecosystem
+provider; use `@artifact_namespace_rehoster(namespace="nmsp")` for custom owner
+namespaces that are not yet named-service providers. The agent materializes the
+ref explicitly with `react.pull(paths=["nmsp:..."])`. The materializer resolves
+the custom URI and copies the bytes into the current ReAct artifact surface. The
 pull result then contains the materialized `fi:` logical path and current-turn
 physical path that `react.read` or generated code can use. Agents should follow
 the returned rows instead of deriving a target path from the owner-domain ref.

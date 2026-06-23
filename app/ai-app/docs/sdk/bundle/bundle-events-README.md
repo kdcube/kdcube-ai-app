@@ -4,6 +4,7 @@ title: "Bundle Events"
 summary: "Bundle-facing guide for authored UI events, tool-backed event sources, ReAct policies, story-aware widgets, snapshots, and custom artifact namespace rehosters."
 status: draft
 tags: ["sdk", "bundle", "events", "react", "tools", "ui", "snapshots"]
+updated_at: 2026-06-23
 keywords:
   [
     "bundle events",
@@ -22,6 +23,9 @@ keywords:
     "custom namespace",
   ]
 see_also:
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/ecosystem-component/components-ecosystem-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/ecosystem-component/ecosystem-component-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/react-object-materialization-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/service/comm/bus-routing-and-partitioning-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-conversation-events-and-react-output-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/events/event-subsystem-README.md
@@ -523,9 +527,9 @@ ReAct `EventSourceSubsystem`.
    event_source_id selects bundle policies
    policy renders concise context and preserves refs
 
-5. Agent needs snapshot bytes
+5. Agent needs snapshot/object bytes
    agent calls react.pull(paths=["<namespace>:..."])
-   namespace rehoster materializes snapshot as fi:turn_<id>.snapshots/...
+   named-service object.get or namespace rehoster materializes it as fi:...
 
 6. Agent responds in side chat or produces artifacts
    bundle UI can render the response next to the wizard/canvas
@@ -547,7 +551,9 @@ selection metadata.
 - Emit authored events for meaningful transitions: saved, uploaded, deleted,
   assistance requested, review requested, snapshot available.
 - Carry refs to snapshots/artifacts in event data. Materialize through
-  `react.pull` when the agent needs bytes.
+  `react.pull` when the agent needs bytes. Prefer a named-service provider
+  with `object.get` and `block.produce`; use a custom namespace rehoster only
+  for owner domains that are not yet exposed through named services.
 - Keep snapshot data in the source of truth the bundle controls; rehost into
   ReAct artifact space when the agent needs to read or search it.
 
@@ -558,8 +564,9 @@ selection metadata.
 3. Declare bundle UI event sources with `event_source_declaration(...)`.
 4. Add tool `@event_source(...)` declarations when tools need custom policy
    behavior.
-5. Register `@artifact_namespace_rehoster(...)` for custom owner refs such as
-   `nmsp:...`, `mem:...`, or `cnv:...`.
+5. Register a named-service provider with `object.get` / `block.produce` for
+   namespace-owned refs. Register `@artifact_namespace_rehoster(...)` only for
+   custom owner refs that are not yet named-service providers.
 6. Make UI events carry `payload.target.agent_id`, `story_kind`, `story_id`,
    and `external_events[].event_source_id`.
 7. Use `external_events[].reactive=true` only for events intended

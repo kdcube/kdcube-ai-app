@@ -2,9 +2,9 @@
 id: repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/event-hub/resolver-and-policy-registration-README.md
 title: "Event Domain Resolvers And Policies"
 summary: "Concrete SDK contract for namespace-owning event domains, their object resolvers, ReAct rendering policies, and the composition bundle that mounts multiple integrations."
-status: draft
+status: current
 tags: ["sdk", "solutions", "event-hub", "resolvers", "react", "events", "namespaces", "composition-bundle"]
-updated_at: 2026-06-09
+updated_at: 2026-06-23
 keywords:
   [
     "event domain resolver",
@@ -18,6 +18,7 @@ keywords:
     "react event policy",
   ]
 see_also:
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/ecosystem-component/components-ecosystem-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/providers-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/event-hub/design/resolver-directory-and-operation-routing-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/canvas/pin-integration-README.md
@@ -56,12 +57,14 @@ one working assistant scene.
 2. A composition bundle registers resolvers; it does not redefine them.
 3. Canvas stores canonical refs and board metadata; it does not rehost or
    reinterpret non-canvas objects.
-4. ReAct rendering uses event policies; it must not depend on UI card code.
+4. ReAct rendering uses event policies and provider `block.produce`; it must
+   not depend on UI card code.
 5. Exact owner-domain content is imported with `react.pull`, which invokes the
    namespace owner's rehoster and returns a workspace path.
 6. A ref keeps its original namespace when it moves between surfaces.
-7. Current resolver registration is local Python import plus explicit
-   registration. Remote resolver discovery is not implemented.
+7. Current owner resolver discovery for cross-app providers is through Named
+   Service Discovery where configured. Local resolver registration remains an
+   implementation option for namespaces owned by the same SDK subsystem.
 8. Tool visibility and event visibility are separate even when implemented in
    the same subsystem package. A bundle exposes callable tools through
    `TOOLS_SPECS`; it exposes owner-domain event policies, readers, and
@@ -73,7 +76,7 @@ one working assistant scene.
 | --- | --- | --- | --- | --- | --- |
 | ReAct artifacts | `fi:<artifact-ref>` | ReAct event/artifact layer | `kdcube_ai_app.apps.chat.sdk.solutions.react.events.resolver` | ReAct event policies | ReAct SDK |
 | Memory | `mem:<memory-id>` | SDK memory module | `kdcube_ai_app.apps.chat.sdk.context.memory.events.resolver` | memory event policies when present | Memory SDK |
-| Task issue story | `task:issues/<issue-id>` | Task/issue subsystem | bundle task module, for example `issues/events/resolver.py` | task issue policies | Task subsystem |
+| Task issue story | `task:issue:<issue-id>` | Task/issue subsystem | bundle task module, for example `issues/events/resolver.py` | task issue policies | Task subsystem |
 | Canvas board | canvas events and canvas-owned refs | Canvas subsystem | canvas module, for example `canvas/events/resolver.py` | canvas event policies | Canvas subsystem |
 | Knowledge source | `repo:<repo>/<path>` | Knowledge subsystem | knowledge resolver module | knowledge/source policies | Knowledge subsystem |
 
@@ -268,8 +271,8 @@ Runtime resolver graph:
 canvas/card action or other object action request
   -> composition bundle operation
   -> resolver registry
-  -> namespace_for_ref(object_ref)
-  -> owner resolver
+  -> registry selects owner resolver from full object_ref
+  -> owner resolver parses URI grammar it owns
   -> bounded result or ui_event
 ```
 
@@ -358,7 +361,7 @@ An `open` resolver action can return a UI request:
 {
   "type": "kdcube.ui.object.open.requested",
   "subject": "ui.object.open.requested",
-  "object_ref": "task:issues/ticket_2026-06-08-120000",
+  "object_ref": "task:issue:ticket_2026-06-08-120000",
   "target_surface": "task_tracker.issue_editor",
   "mode": "focus"
 }
@@ -418,7 +421,7 @@ The current runtime uses local Python import plus explicit registration in the
 composition bundle. The proposed cross-bundle design for a Redis TTL resolver
 directory, direct resolver operation calls, temporary blob exchange, and Data
 Bus handoff for async/UI cases is tracked in
-[Resolver Directory And Operation Routing Design](design/resolver-directory-and-operation-routing-README.md).
+[Resolver Directory And Operation Routing Proposal](design/resolver-directory-and-operation-routing-README.md).
 
 ## Implementation Status
 

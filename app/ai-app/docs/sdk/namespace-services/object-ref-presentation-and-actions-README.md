@@ -39,11 +39,11 @@ Actions come from the object resolver owned by the provider.
 No scene, widget, canvas board, chat chip, or generic component should parse an
 object URI to decide behavior. They pass the full `object_ref` through.
 
-There is one narrow exception: a scene or surface registry may use generic
-selector matching such as `mem:*`, `task:issue:*`, or `*` to decide whether a
-surface is a candidate drop target. That selector layer is not behavior
-resolution. It is equivalent to a typed route declaration. The provider resolver
-still owns open/download/preview semantics.
+There is one narrow exception: a scene or surface registry may use declarative
+compatibility selectors supplied by scene config, a component claim, or provider
+metadata to decide whether a surface is a candidate drop target. That selector
+layer is not behavior resolution. It is equivalent to a route hint. The
+provider resolver still owns open/download/preview semantics.
 
 ## Boundary
 
@@ -201,7 +201,10 @@ choose a widget.
 
 ## Surface Compatibility
 
-Surface compatibility is declarative and separate from object behavior.
+Surface compatibility is declarative and separate from object behavior. It may
+be authored in host config for a concrete scene, emitted by a component as part
+of its surface claim, or returned by provider/component metadata. It must not be
+implemented as scene-core code branches.
 
 Example:
 
@@ -222,7 +225,7 @@ Example:
 This says:
 
 ```text
-Refs that match mem:* are candidates for the memory viewer.
+Refs that match this declared route hint are candidates for this surface.
 ```
 
 It does not say:
@@ -235,7 +238,7 @@ The open flow remains:
 
 ```text
 drag/drop candidate
-  -> scene sees selector match
+  -> scene sees declared compatibility match
   -> scene calls object.action(open, object_ref, requestedTargetSurface)
   -> provider validates object_ref and returns ui_event.target_surface
   -> scene dispatches kdcube.surface.command to the registered surface
@@ -244,7 +247,9 @@ drag/drop candidate
 Selectors may be declared by scene host config, component claims, or provider
 metadata. They are matched by a generic string matcher. The matcher understands
 only exact values and prefix wildcards; it does not know task, memory, file,
-conversation, or canvas semantics.
+conversation, or canvas semantics. Prefer provider/component-declared
+compatibility for reusable components; use host config only to compose a
+specific scene profile.
 
 Good selectors:
 

@@ -5,6 +5,8 @@ summary: "Concise system architecture overview with key components and integrati
 tags: ["arch", "architecture", "overview"]
 keywords: ["high-level architecture", "ingress", "proc", "gateway", "SSE", "redis"]
 see_also:
+  - repo:kdcube-ai-app/app/ai-app/docs/arch/architecture-of-what-we-built-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/arch/architecture-of-what-you-build-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/arch/architecture-long.md
   - repo:kdcube-ai-app/app/ai-app/docs/service/comm/README-comm.md
   - repo:kdcube-ai-app/app/ai-app/docs/service/comm/conversation-event-bus-and-data-bus-README.md
@@ -13,8 +15,12 @@ see_also:
 ---
 # KDCube AI App — System Architecture (Short)
 
-This is a **concise overview** of the current system and integrations.
-For a deeper dive, see `architecture-long.md` in this folder.
+This is the historical concise overview of the physical KDCube runtime.
+Start with [Architecture Of What We Built](architecture-of-what-we-built-README.md)
+for the current runtime map and
+[Architecture Of What You Build](architecture-of-what-you-build-README.md) for
+the app/ecosystem architecture. For a deeper operational dive, see
+`architecture-long.md` in this folder.
 
 ---
 

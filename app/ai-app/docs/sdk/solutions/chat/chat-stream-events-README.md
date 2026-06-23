@@ -4,8 +4,9 @@ title: "Chat Stream Events"
 summary: "Reference catalog for the client-visible chat stream: shared event envelope and lifecycle across SSE and Socket.IO, plus continuation acknowledgements, rate limits, backpressure, ReAct progress, and app-emitted events."
 tags: ["sdk", "solutions", "chat", "sse", "socketio", "protocol", "events", "streaming"]
 keywords: ["chat stream event catalog", "socketio event catalog", "sse event catalog", "client visible event lifecycle", "continuation acknowledgements", "chat step events", "rate limit events", "backpressure events", "app emitted events", "stream protocol reference"]
-updated_at: 2026-06-21
+updated_at: 2026-06-23
 see_also:
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/ecosystem-component/components-ecosystem-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/how-to-integrate-with-kdcube-apps-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/chat/chat-component-communication-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/service/comm/client-transport-protocols-README.md

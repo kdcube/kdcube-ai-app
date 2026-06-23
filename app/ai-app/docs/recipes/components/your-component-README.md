@@ -1,13 +1,21 @@
 # Recipe: Your Component
 
-Use this checklist when adding a new app widget to a scene. The goal is that the scene can compose the widget without learning its domain internals.
+Use this checklist when adding a component role to an app. A component can be a
+standalone service, API, MCP surface, cron producer, named-service provider, UI
+widget, or scene participant.
+
+Start with [Architecture Of What You Build](../../arch/architecture-of-what-you-build-README.md)
+and [Component Recipes](./README.md). This recipe is the short implementation
+checklist.
 
 ## Minimum Shape
 
 ```text
 your app
   server side
+    optional @api / @mcp surface
     optional named-service provider
+    optional @cron / @on_job producer
     optional widget static route
     optional Event Bus/Data Bus producers
   client side
@@ -94,8 +102,11 @@ A widget that already owns a stream should not also subscribe through the scene 
 
 ## Related Docs
 
+- [Architecture Of What You Build](../../arch/architecture-of-what-you-build-README.md)
+- [Component Recipes](./README.md)
+- [Ecosystem Component Contract](../../sdk/solutions/ecosystem-component/ecosystem-component-README.md)
 - [Scene Recipe](./scene-README.md)
-- [Bundle Widget Integration](../../sdk/bundle/bundle-widget-integration-README.md)
-- [Bundle Client UI](../../sdk/bundle/bundle-client-ui-README.md)
+- [App Widget Integration](../../sdk/bundle/bundle-widget-integration-README.md)
+- [App Client UI](../../sdk/bundle/bundle-client-ui-README.md)
 - [UI Components Lifecycle](../../sdk/bundle/ui-components-lifecycle-README.md)
 - [Widget Integration Package Notes](../../sdk/npm/widget-integration-README.md)

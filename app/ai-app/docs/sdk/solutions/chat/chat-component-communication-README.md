@@ -4,7 +4,7 @@ title: "Chat Component Communication"
 summary: "Schematic map of the reusable KDCube chat component, including the headless engine, React widget, iframe host bridge, chat ingress/stream, app operations, and the boundary between conversation events and Data Bus."
 status: draft
 tags: ["sdk", "solutions", "chat", "component", "widget", "communication", "event-bus", "external-events", "iframe", "sse"]
-updated_at: 2026-06-21
+updated_at: 2026-06-23
 keywords:
   [
     "chat component communication",
@@ -19,6 +19,7 @@ keywords:
     "Data Bus boundary",
   ]
 see_also:
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/ecosystem-component/components-ecosystem-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/chat/chat-widget-solution-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/chat/chat-stream-events-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/events/external-events-README.md
@@ -337,12 +338,13 @@ user clicks context chip
   |
   v
 chat engine calls app operation canvas_object_action(action="capabilities")
+  (current compatible operation name for the generic object-action facade)
   |
   v
 resolver returns default_open_effect_action
   |
-  | download -> canvas_object_action(action="download") -> browser download
-  | open     -> canvas_object_action(action="open") -> host kdcube-object-open
+  | download -> object.action("download") -> browser download
+  | open     -> object.action("open") -> host kdcube-object-open
 ```
 
 The chat component does not decide that `mem:`, `task:`, `cnv:`, or `fi:` means

@@ -4,7 +4,7 @@ title: "Logical Reference Namespaces"
 summary: "Foundational model for model-facing logical refs such as ar:, ev:, tc:, fi:, task:, mem:, cnv:, and so:, and how they relate to events, react.read, react.pull, and react.checkout."
 status: draft
 tags: ["sdk", "events", "react", "logical-references", "namespaces", "artifacts"]
-updated_at: 2026-06-17
+updated_at: 2026-06-23
 keywords:
   [
     "logical reference namespace",
@@ -21,6 +21,7 @@ keywords:
     "cnv:",
   ]
 see_also:
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/ecosystem-component/components-ecosystem-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/providers-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/react-object-materialization-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/events/external-events-README.md
@@ -83,9 +84,9 @@ namespace.
 | `ev:` | External event objects on a turn timeline | yes, for the event object/metadata | no; pull refs carried by the event payload instead | no |
 | `tc:` | ReAct tool call/result records | yes, for call/result records | no; pull artifact refs carried by the tool result instead | no |
 | `fi:` | ReAct artifact/file storage | yes | yes, to materialize bytes locally | only for supported `fi:...files/...` workspace refs |
-| `task:` | Task subsystem object refs | not directly by default; use visible context or owner tools | yes only when a task namespace rehoster is registered; returns `fi:` rows | no; pull first, then checkout only if the returned `fi:` is a supported files ref |
-| `mem:` | Memory subsystem refs | not directly by default; use visible context | yes when the memory namespace rehoster is registered; returns a `fi:` mirror | no |
-| `cnv:` | Canvas subsystem refs, including boards such as `cnv:main@7` and canvas-owned objects | not directly by default; use visible canvas ANNOUNCE/context | yes when the canvas namespace rehoster is registered; returns a `fi:` mirror | no |
+| `task:` | Task subsystem object refs | not directly by default; use visible context or owner tools | yes through the task provider materializer, normally named-service `object.get`; returns `fi:` rows | no; pull first, then checkout only if the returned `fi:` is a supported files ref |
+| `mem:` | Memory subsystem refs | not directly by default; use visible context | yes through the memory provider materializer, normally named-service `object.get`; returns a `fi:` mirror | no |
+| `cnv:` | Canvas subsystem refs, including live boards such as `cnv:main`, fixed revisions such as `cnv:main@7`, and canvas-owned objects | not directly by default; use visible canvas ANNOUNCE/context | yes through the canvas provider materializer; returns a `fi:` mirror | no |
 | `so:` / `su:` | Source/search subsystems | through source/search tooling or visible source pools | subsystem-defined | no |
 
 This table describes the default architectural contract. A bundle can add a

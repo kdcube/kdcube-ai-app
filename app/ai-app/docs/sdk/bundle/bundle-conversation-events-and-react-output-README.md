@@ -4,7 +4,7 @@ title: "App Conversation Events And ReAct Output"
 summary: "App contract for submitting conversation events into the platform event lane and consuming ReAct output from timeline/turn-log blocks instead of private runtime state."
 status: active
 tags: ["sdk", "app", "bundle-legacy-path", "events", "react", "timeline", "telegram", "webhooks", "integration"]
-updated_at: 2026-06-21
+updated_at: 2026-06-23
 keywords:
   [
     "app conversation events",
@@ -18,6 +18,8 @@ keywords:
     "turn log",
   ]
 see_also:
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/ecosystem-component/components-ecosystem-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/ecosystem-component/ecosystem-component-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/events/event-ingress-to-react-turn-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/events/external-events-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/events/external-events-journey-and-handling-README.md
@@ -36,6 +38,10 @@ This page is the app contract for two operations:
 
 These are separate contracts. Events are inputs. ReAct timeline/turn-log blocks
 are outputs.
+
+For the wider architecture that connects conversation events to scene surfaces,
+Pinboard, named-service providers, and ReAct object materialization, read
+[Components Ecosystem Architecture](../solutions/ecosystem-component/components-ecosystem-README.md).
 
 ## Ownership Boundary
 

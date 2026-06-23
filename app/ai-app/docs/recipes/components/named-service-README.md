@@ -1,6 +1,14 @@
 # Recipe: Named-Service App
 
-A named-service app gives a namespace behavior. It lets unfamiliar apps interoperate through object URIs such as `mem:record:...`, `task:issue:...`, `fi:...`, and `cnv:...`.
+A named-service app makes a domain realm usable by generic agents and UI
+surfaces. It lets unfamiliar apps interoperate through object refs such as
+`mem:record:...`, `task:issue:...`, `fi:...`, and `cnv:...` without copying the
+realm's storage or action rules.
+
+This is not the only way apps interact in KDCube. Apps can also expose API/MCP,
+Event Bus, Data Bus, cron/jobs, or UI surfaces. Use named services when the
+realm needs generic ReAct exploration/exploitation, Pinboard pins, Chat context,
+Scene open actions, and provenance.
 
 ## Runtime Shape
 
@@ -83,6 +91,10 @@ Today some widget-local event names still exist. The direction is namespace-owne
 
 ## Related Docs
 
+- [Architecture Of What You Build](../../arch/architecture-of-what-you-build-README.md)
+- [Component Recipes](./README.md)
+- [Components Ecosystem Architecture](../../sdk/solutions/ecosystem-component/components-ecosystem-README.md)
+- [Ecosystem Component Contract](../../sdk/solutions/ecosystem-component/ecosystem-component-README.md)
 - [Namespace Services](../../sdk/namespace-services/README.md)
 - [Namespace Service Providers](../../sdk/namespace-services/providers-README.md)
 - [Namespace Service Clients](../../sdk/namespace-services/clients-README.md)

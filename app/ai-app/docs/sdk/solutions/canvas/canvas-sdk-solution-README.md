@@ -16,6 +16,7 @@ keywords:
     "canvas ui component",
   ]
 see_also:
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/ecosystem-component/components-ecosystem-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-subsystem-integration-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/canvas/canvas-module-guide-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/canvas/pin-operations-README.md
@@ -60,8 +61,8 @@ kdcube_ai_app.apps.chat.sdk.solutions.canvas
   instructions.py         Stable additional ReAct instructions for canvas
   ids.py                  Timestamp-bearing canvas/message id helpers
   storage_utils.py        Storage-safe segment helper
-  events/resolver.py      Canvas object resolver registry and built-in
-                          canvas-owned artifact resolver/handoff resolvers
+  events/resolver.py      Canvas object resolver registry and canvas-owned
+                          cnv: resolver helpers
   events/policies.py      Reusable canvas timeline/compaction/ANNOUNCE policy
                           helpers and generic canvas policy ids
   events/focus_policies.py
@@ -179,18 +180,18 @@ Canvas has a resolver registry because pins are object proxies. The resolver
 for a ref namespace owns object actions:
 
 ```text
-canvas.object_action(ref="acme:ticket:...", action="open")
-  -> namespace_for_ref("acme:ticket:...") == "acme"
-  -> owner_key_from_ref("acme:ticket:...") == "acme:ticket"
-  -> provider resolver handles open
-  -> provider widget decides dirty-state behavior
+canvas.object_action(object_ref="acme:ticket:...", action="open")
+  -> resolver router receives the full object_ref
+  -> owner resolver is selected by registration/matching
+  -> owner resolver parses the URI grammar it owns
+  -> owner resolver returns capabilities/action result/ui_event
 ```
 
-The first URI segment before `:` is the routing namespace. Everything before
-the last `:` is the provider-owned owner key/subnamespace. Canvas may display
-that owner key, but it dispatches resolver calls by the root namespace only.
-That is why `mem:record:<id>` routes through the configured `mem` resolver and
-`task:issue:<id>` routes through the configured `task` resolver.
+Canvas passes the full `object_ref`; it does not compute provider subtypes or
+derive behavior from URI segments. A registry/router may use private matching
+to choose a registered owner resolver, but that parsing is not exposed to
+cards, scene, chat, or canvas UI code. The selected owner resolver is the only
+code that interprets the concrete URI grammar.
 
 Core contract:
 
@@ -207,7 +208,7 @@ Built-in SDK resolver support:
 | --- | --- | --- |
 | `CanvasArtifactResolver` | `cnv:` | Handles canvas-owned refs only. |
 | `NamedServiceCanvasObjectResolver` | configured | Calls the namespace-owning bundle's named-service API endpoint. |
-| `CanvasObjectResolverRegistry` | all | Dispatches actions to registered resolvers by namespace. |
+| `CanvasObjectResolverRegistry` | all | Dispatches full `object_ref` action requests to registered owner resolvers. |
 
 Composition bundles can register named-service resolvers from bundle config:
 

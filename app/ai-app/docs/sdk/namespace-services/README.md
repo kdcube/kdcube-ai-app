@@ -1,10 +1,10 @@
 ---
 id: repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/README.md
 title: "Namespace Services"
-summary: "Index and mental model for namespace-owning service providers, clients, object resolution, and bundle-to-bundle integration."
-status: design
-tags: ["sdk", "namespace-services", "providers", "clients", "resolvers", "bundles"]
-updated_at: 2026-06-22
+summary: "Index and mental model for namespace-owning service providers, clients, object resolution, and app-to-app integration."
+status: current
+tags: ["sdk", "namespace-services", "providers", "clients", "resolvers", "apps"]
+updated_at: 2026-06-23
 keywords:
   [
     "namespace services",
@@ -13,9 +13,15 @@ keywords:
     "object_ref",
     "service client",
     "object resolver",
-    "bundle integration",
+    "app integration",
+    "agentic network",
+    "realm",
+    "cron",
   ]
 see_also:
+  - repo:kdcube-ai-app/app/ai-app/docs/arch/architecture-of-what-you-build-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/recipes/components/README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/ecosystem-component/components-ecosystem-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/providers-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/clients-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/integration-README.md
@@ -28,9 +34,17 @@ see_also:
 ---
 # Namespace Services
 
-Namespace services are the SDK pattern for one bundle or subsystem to own a
-semantic namespace and let other bundles, widgets, agents, jobs, and external
-clients use that namespace without copying owner logic.
+Namespace services are one integration plane in the broader KDCube component
+ecosystem. Apps and services can also interact through REST/API operations,
+MCP tools/resources, Event Bus, Data Bus, scene surface commands, or direct
+runtime composition, including cron and scheduled jobs.
+
+The named-services plane exists for provider-owned object realms: one app or
+subsystem owns a semantic namespace and lets other apps, widgets, agents,
+jobs, and external clients use that namespace without copying owner logic. This
+is the plane that gives ReAct generic exploration/exploitation tools, lets UI
+surfaces open/preview/drop objects, and keeps provenance when context from one
+realm is reused in another.
 
 The first concrete use case is object resolution:
 
@@ -71,10 +85,10 @@ the adapter that fits the call path.
 
 ## At A Glance
 
-Two bundles, one configured edge, no shared code:
+Two apps, one configured edge, no shared code:
 
 ```text
-  PROVIDER bundle (owns task:)            CONSUMER bundle (shows task: refs)
+  PROVIDER app (owns task:)               CONSUMER app (shows task: refs)
  ┌────────────────────────────┐         ┌─────────────────────────────────┐
  │ NamedServiceProvider       │         │ canvas card / chat chip / tool  │
  │   object.search/get/action │         │   object_ref "task:issue:42"   │
@@ -91,32 +105,33 @@ Two bundles, one configured edge, no shared code:
 
 ## Resolution Tiers
 
-A canvas/chat surface resolves a pinned `object_ref` through one of two tiers,
-chosen by namespace prefix:
+A canvas/chat surface resolves a pinned `object_ref` by asking the resolver
+router for the owner. In practice there are two implementation tiers:
 
 | Tier | Namespaces | Resolver | Knows |
 | --- | --- | --- | --- |
-| Surface-local concrete | `cnv:` `conv:` and sometimes same-surface `mem:` | the surface's own resolver | local board/chat/widget state and local UI actions |
-| Named-service generic | configured provider namespaces such as `task:` or `mem:` | `NamedServiceCanvasObjectResolver` / named-service tool and event-source adapters | opaque `object_ref`; provider supplies capabilities, actions, pull/read/render behavior |
+| Owner-local concrete | Namespaces owned by the same subsystem, such as `cnv:` inside Pinboard/Canvas or `conv:` inside Chat | the namespace owner's resolver | local owner state and local UI actions |
+| Named-service generic | configured provider namespaces such as `task:`, `mem:`, or a future app namespace | named-service tool, resolver, and event-source adapters | opaque `object_ref`; provider supplies capabilities, actions, pull/read/render behavior |
 
-The same namespace may appear in different tiers depending on the runtime
-surface. For example, a memory widget may open `mem:` objects through its local
-viewer, while ReAct materializes and reads `mem:` through the named-service
-provider. The shared identity remains the canonical `object_ref`; the tier only
-describes which adapter receives the current request.
+The tier is an implementation detail of the owner/adapter, not behavior that a
+generic surface infers. For example, a memory viewer can open `mem:` through
+its local owner adapter, while ReAct materializes and reads the same `mem:`
+object through the named-service provider. The shared identity remains the
+canonical `object_ref`.
 
 The named-service generic tier is additive. It registers after concrete
-resolvers and fires for namespaces listed in the consumer bundle's
+resolvers and fires for namespaces listed in the consumer app's
 `surfaces.as_consumer` config. Local surfaces keep their own direct handlers,
-and provider-backed refs gain a live cross-bundle/object-owner bridge.
+and provider-backed refs gain a live cross-app/object-owner bridge.
 
 ## Documents
 
 | Document | Purpose |
 | --- | --- |
+| [Components Ecosystem Architecture](../solutions/ecosystem-component/components-ecosystem-README.md) | End-to-end architecture map for provider apps, consumer apps, scene, ReAct, Pinboard, chat, events, data bus, and config. |
 | [Providers](providers-README.md) | Provider contract, operation vocabulary, auth context, and transport adapters. |
 | [Clients](clients-README.md) | Client config, tool exposure, current resolver behavior, and client ids. |
-| [Integration](integration-README.md) | Visual provider-host/client-bundle flow using task-tracker and versatile. |
+| [Integration](integration-README.md) | Visual provider-host/client-app flow using task-tracker and versatile. |
 | [Object Refs, Presentation, And Actions](object-ref-presentation-and-actions-README.md) | Canonical UI/provider boundary: `object_ref` is opaque to components, visual identity comes from `namespace_presentation_config`, and actions come from provider resolvers. |
 | [ReAct Object Materialization](react-object-materialization-README.md) | Runtime-boundary diagram for `react.pull`, streamed `object.get`, `react.read`, owner `block.produce`, and prompt rendering. |
 | [ReAct Object Policy Bridge](react-object-policy-bridge-README.md) | Owner policy contract for namespace rehosters, event-source routing, block production, render hooks, and `original_object_stats`. |
@@ -127,12 +142,12 @@ and provider-backed refs gain a live cross-bundle/object-owner bridge.
 The current implementation is generic enough for provider/client integration
 through Named Service Discovery:
 
-- a provider bundle exposes a `named_services()` registry object and may also
+- a provider app exposes a `named_services()` registry object and may also
   expose a `named_service` API operation backed by that registry;
-- a provider bundle registers its providers into Redis-backed Named Service
+- a provider app registers its providers into Redis-backed Named Service
   Discovery after its local prerequisites are ready, including provider
   `search_scopes` when it exposes multiple searchable object spaces;
-- a client bundle configures `surfaces.as_consumer` for the model tools,
+- a client app configures `surfaces.as_consumer` for the model tools,
   event-source/pull policies, and resolver surfaces allowed to use that
   namespace;
 - ReAct named-service search tools render provider-declared search scopes from
@@ -163,7 +178,7 @@ through Named Service Discovery:
 - canvas/chat clients only enable namespace resolution; concrete resolver
   actions remain provider decisions;
 - same-KDCube calls prefer the `bundle_registry` transport, which calls the
-  owning bundle's registry object directly under the current tenant/project/user
+  owning app's registry object directly under the current tenant/project/user
   context;
 - provider discovery scope is part of the platform cross-runtime context room,
   so tools can resolve provider records after subprocess or ISO bootstrap
@@ -171,8 +186,8 @@ through Named Service Discovery:
 - `bundle_operation` remains available when the owner exposes only the API
   facade or when the call path intentionally wants the operation envelope.
 
-Named Service Discovery is a provider index, not a one-namespace/one-bundle
-map. More than one bundle may register providers for the same namespace. Each
+Named Service Discovery is a provider index, not a one-namespace/one-app
+map. More than one app may register providers for the same namespace. Each
 provider advertises the operations, refs, and object kinds it supports; the
 runtime chooses the provider per request.
 

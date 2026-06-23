@@ -4,6 +4,10 @@ A scene is a host page that composes app widgets into one working surface. It ow
 
 Current platform code still uses the word `bundle` in many APIs. In this recipe, an app is the user-facing concept; a bundle id is the current internal app package identifier.
 
+Read [Architecture Of What You Build](../../arch/architecture-of-what-you-build-README.md)
+first for the interaction planes. This recipe covers only the browser scene
+plane.
+
 ## Runtime Shape
 
 ```text
@@ -135,6 +139,9 @@ Namespace styling belongs to namespace presentation config. Canvas, chat, and ov
 
 ## Related Docs
 
+- [Architecture Of What You Build](../../arch/architecture-of-what-you-build-README.md)
+- [Component Recipes](./README.md)
+- [Components Ecosystem Architecture](../../sdk/solutions/ecosystem-component/components-ecosystem-README.md)
 - [Scene Composition](../../sdk/solutions/scene/scene-composition-README.md)
 - [Scene Event Orchestration](../../sdk/solutions/scene/scene-event-orchestration-README.md)
 - [Cross-Surface Context Drag](../../sdk/solutions/scene/cross-surface-context-drag-README.md)

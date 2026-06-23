@@ -4,7 +4,7 @@ title: "Namespace Services: Integration Flow"
 summary: "Visual host/client integration flow for namespace service providers, using task-tracker and versatile as the current reference path."
 status: design
 tags: ["sdk", "namespace-services", "integration", "task-tracker", "versatile", "scene", "canvas", "chat"]
-updated_at: 2026-06-22
+updated_at: 2026-06-23
 keywords:
   [
     "namespace service integration",
@@ -16,6 +16,7 @@ keywords:
     "canvas object resolver",
   ]
 see_also:
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/ecosystem-component/components-ecosystem-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/providers-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/clients-README.md
@@ -262,8 +263,9 @@ In this section:
 - **consumer app** means the app that mounted the canvas/chat/scene surface and
   configured `surfaces.as_consumer`; in the current reference this is
   `versatile@2026-03-31-13-36`;
-- **consumer app operation** means an ordinary bundle/app `@api` method, for
-  example `@api(alias="canvas_object_action", route="operations")`;
+- **consumer app operation** means an ordinary bundle/app object-action facade.
+  The current compatible API alias is
+  `@api(alias="canvas_object_action", route="operations")`;
 - **provider app** means the app that owns the namespace and registered
   `named_services()` for it; in the current reference this is
   `task-tracker@1-0`.
@@ -286,7 +288,8 @@ In this section:
    surface: browser-to-app operation adapter
    customized: yes, per consumer app
    call:
-     POST ConsumerApp.@api(alias="canvas_object_action", route="operations")
+     POST ConsumerApp object-action facade
+       current compatible alias: @api(alias="canvas_object_action", route="operations")
      payload.object_ref = Canvas.card.object_ref
      payload.action = download
 
@@ -888,7 +891,7 @@ Provider storage and response
   TaskProvider returns:
     TaskProvider.ret.attrs.object_ref =
       task:issue:attachment:issue_123/attachments/ta_1/v000001/report.md
-    TaskProvider.ret.object.identity.object_kind = task.attachment
+    TaskProvider.ret.extra.object_kind = task:attachment
     TaskProvider.ret.extra.attach_with = provider-specific upsert hint
 ```
 
@@ -1000,9 +1003,11 @@ the same namespace when they expose different operations, refs, or object
 kinds. The runtime selects a provider per request.
 
 For model clients, `provider.about` explains the service and base objects.
-`object.schema` explains concrete object payloads such as `task.issue` or
-`task.attachment`. Generic CRUD tools stay generic; the provider supplies the
-entity shape.
+`object.schema` explains concrete object payloads. Provider ids may use an
+internal dotted id such as `task.issue`; presentation/object-kind keys should
+match the provider's advertised `object_kind` values, commonly
+`task:issue` or `task:attachment`. Generic CRUD tools stay generic; the
+provider supplies the entity shape.
 
 For canvas/chat resolution, the client only enables the namespace resolver.
 The provider remains the authority for concrete resolver actions and returns a

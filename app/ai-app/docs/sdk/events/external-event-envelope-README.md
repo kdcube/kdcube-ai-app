@@ -4,6 +4,7 @@ title: "External Event Envelope"
 summary: "Canonical plural external-event payload shape, accepted event fields, event logical paths (`ev:`), hosted event payload URIs, inline payloads, snapshot events, file upload events, and text-selection context events."
 status: draft
 tags: ["sdk", "events", "external-events", "event-envelope", "snapshots", "react"]
+updated_at: 2026-06-23
 keywords:
   [
     "external_events[]",
@@ -21,6 +22,7 @@ keywords:
     "canvas event",
   ]
 see_also:
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/ecosystem-component/components-ecosystem-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/events/namespaces-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/events/external-events-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/events/event-ingress-to-react-turn-README.md

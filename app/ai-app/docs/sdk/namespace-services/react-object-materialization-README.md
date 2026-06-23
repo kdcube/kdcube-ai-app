@@ -4,7 +4,7 @@ title: "Namespace Services: ReAct Object Materialization"
 summary: "Runtime-boundary diagram for how ReAct pulls, reads, owner-projects, and renders named-service objects."
 status: design
 tags: ["sdk", "namespace-services", "react", "pull", "read", "block-production", "events"]
-updated_at: 2026-06-22
+updated_at: 2026-06-23
 keywords:
   [
     "react.pull",
@@ -16,6 +16,7 @@ keywords:
     "source_namespace",
   ]
 see_also:
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/ecosystem-component/components-ecosystem-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/react-object-policy-bridge-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/providers-README.md

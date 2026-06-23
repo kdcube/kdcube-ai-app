@@ -1,10 +1,10 @@
 ---
 id: repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/event-hub/design/resolver-directory-and-operation-routing-README.md
-title: "Resolver Directory And Operation Routing Design"
-summary: "Design for fast cross-bundle object resolver discovery using a Redis TTL directory, local-first dispatch, direct resolver operation calls, temporary blob exchange, and Data Bus only for durable/asynchronous coordination."
-status: design
+title: "Resolver Directory And Operation Routing Proposal"
+summary: "Non-current proposal for fast cross-bundle object resolver discovery using a Redis TTL directory, local-first dispatch, direct resolver operation calls, temporary blob exchange, and Data Bus only for durable/asynchronous coordination."
+status: proposal
 tags: ["sdk", "solutions", "event-hub", "design", "resolvers", "redis", "data-bus", "namespaces", "canvas", "widgets"]
-updated_at: 2026-06-08
+updated_at: 2026-06-23
 keywords:
   [
     "resolver directory",
@@ -27,16 +27,17 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/service/comm/data-bus-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-subsystem-integration-README.md
 ---
-# Resolver Directory And Operation Routing Design
+# Resolver Directory And Operation Routing Proposal
 
-This is a design document for resolver directory mechanics under the broader
+This is a non-current proposal for resolver directory mechanics under the broader
 [Namespace Services: Providers](../../../namespace-services/providers-README.md)
 concept. It is not the current runtime contract.
 
-The current implemented mode is local Python import plus explicit resolver
-registration inside a composition bundle. That local path stays valid and
-remains the first dispatch path. This design adds a second path for resolver
-owners that are alive in other bundles or runtime processes.
+Current live cross-app object routing is the named-service provider/client
+contract plus Named Service Discovery. Same-subsystem local registration remains
+an implementation option. This proposal records an older Redis TTL resolver
+directory direction and should not be used as the implementation source of
+truth.
 
 ## Problem
 
@@ -44,7 +45,7 @@ Canvas, chat, and other UI surfaces need to operate on objects owned by many
 subsystems:
 
 ```text
-task:issues/...
+task:issue:...
 mem:...
 fi:conv_.../turn_.../outputs/report.md
 repo:kdcube-ai-app/app/ai-app/docs/...
@@ -52,7 +53,7 @@ cnv:.../ut_...
 ```
 
 The surface that displays or pins an object should not own the object's
-semantics. A canvas card for `task:issues/...` should not know task storage. A
+semantics. A canvas card for `task:issue:...` should not know task storage. A
 chat widget that displays `mem:...` should not implement memory preview. A
 download button for `fi:...` should go to the ReAct/platform artifact resolver,
 not to a canvas-specific file path.
@@ -67,7 +68,7 @@ That is too slow and too indirect for latency-sensitive actions such as
 `preview`, `open`, and `download`. It also makes simple object actions depend
 on stream workers and reply timing.
 
-## Design Goal
+## Proposal Goal
 
 Use a hybrid resolver path:
 
@@ -129,7 +130,6 @@ event plane:
 | `task:` | Task/issue subsystem | Task solution or bundle task domain |
 | `repo:` | Repository-backed knowledge subsystem | Knowledge bundle/module |
 | `cnv:` | Canvas subsystem | SDK canvas module |
-| `ext:` | Existing bundle-hosted external artifacts | The bundle/module that minted the ref |
 
 The resolver owner defines supported operations and default semantics. A
 composition bundle registers or discovers that owner. It does not reimplement
@@ -279,7 +279,7 @@ Input:
   "namespace": "task",
   "resolver_id": "task_tracker.issue_story",
   "operation": "preview",
-  "object_ref": "task:issues/issue_2026-06-08-100000",
+  "object_ref": "task:issue:issue_2026-06-08-100000",
   "request": {
     "max_inline_bytes": 32768,
     "surface": "canvas",
@@ -302,7 +302,7 @@ Output:
   "namespace": "task",
   "resolver_id": "task_tracker.issue_story",
   "operation": "preview",
-  "object_ref": "task:issues/issue_2026-06-08-100000",
+  "object_ref": "task:issue:issue_2026-06-08-100000",
   "mime": "application/json",
   "result": {
     "title": "Batch ReAct Actions validation",
@@ -477,7 +477,8 @@ local resolver execution
 
 ```text
 user clicks Show on task card
-  -> canvas_object_action(task:..., open)
+  -> object_action facade(task:..., open)
+     current compatible alias: canvas_object_action
   -> resolver client finds task resolver
   -> direct resolver_execute(open)
   -> result contains ui_event
@@ -492,7 +493,8 @@ there are unsaved edits.
 
 ```text
 user clicks Download on fi: card
-  -> canvas_object_action(fi:..., download)
+  -> object_action facade(fi:..., download)
+     current compatible alias: canvas_object_action
   -> resolver client finds ReAct artifact resolver
   -> direct resolver_execute(download)
   -> inline bytes or tmp: output_ref
@@ -594,7 +596,7 @@ Canvas should depend on a generic resolver client, not on every subsystem.
 
 ```text
 canvas UI
-  -> canvas_object_action
+  -> object_action facade
   -> canvas backend
   -> resolver client
      1. local registry
@@ -608,7 +610,7 @@ Canvas storage keeps:
 ```json
 {
   "card_id": "T_2026-06-08-100000",
-  "object_ref": "task:issues/issue_2026-06-08-100000",
+  "object_ref": "task:issue:issue_2026-06-08-100000",
   "kind": "issue.ref",
   "rect": {"x": 80, "y": 160, "w": 260, "h": 120},
   "description": "",

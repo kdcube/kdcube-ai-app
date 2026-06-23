@@ -4,7 +4,7 @@ title: "Scene Composition"
 summary: "Canonical app-scene building guide: how an app assembles a host scene from configured UI surfaces, shared scene runtime sources, config handshakes, namespace presentation, local message routing, and optional Data Bus subscriptions."
 status: draft
 tags: ["sdk", "solutions", "scene", "surface", "widget", "iframe", "composition", "data-bus", "postmessage"]
-updated_at: 2026-06-17
+updated_at: 2026-06-23
 keywords:
   [
     "scene composition",
@@ -18,6 +18,7 @@ keywords:
     "multi component scene",
   ]
 see_also:
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/ecosystem-component/components-ecosystem-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/scene/scene-event-orchestration-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/scene/cross-surface-context-drag-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/scene/scene-surface-registry-README.md

@@ -4,7 +4,7 @@ title: "Conversation Event Lane State"
 summary: "SDK/runtime reference for the Redis state record that synchronizes conversation external-event ingress, readers, handlers, and wake handoff."
 status: active
 tags: ["sdk", "events", "external-events", "redis", "react", "synchronization"]
-updated_at: 2026-06-10
+updated_at: 2026-06-23
 keywords:
   [
     "conversation event lane state",
@@ -15,6 +15,7 @@ keywords:
     "event timestamp",
   ]
 see_also:
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/ecosystem-component/components-ecosystem-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/events/event-ingress-to-react-turn-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/service/comm/conversation-event-bus-orchestrator-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/events/external-events-journey-and-handling-README.md

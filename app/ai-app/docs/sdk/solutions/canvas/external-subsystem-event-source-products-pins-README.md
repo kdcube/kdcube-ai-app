@@ -17,6 +17,7 @@ keywords:
     "canvas host extension",
   ]
 see_also:
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/ecosystem-component/components-ecosystem-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/canvas/canvas-module-guide-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/canvas/pin-operations-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/canvas/search-operations-README.md
@@ -33,12 +34,13 @@ Keep this split:
 
 ```text
 canvas module
-  user.text, user.attachment, agent.text, file, memory, source/search refs,
+  cnv-owned user.text/user.attachment/agent.text objects,
+  opaque pins to file, memory, source/search, provider, and knowledge refs,
   canvas state/focus events, canvas storage, canvas tools
 
 external subsystem integrations
   provider refs, memory refs, file refs, source refs, knowledge refs,
-  subsystem-owned resolver behavior
+  subsystem-owned resolver behavior and bytes/actions/rendering
 ```
 
 ## Provider Object Pins

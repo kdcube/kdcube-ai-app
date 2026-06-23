@@ -2,6 +2,10 @@
 
 The chat widget is an app widget that hosts a ReAct conversation and participates in the scene as a context producer and context consumer. It should not know memory, task, or canvas internals.
 
+Read [Architecture Of What You Build](../../arch/architecture-of-what-you-build-README.md)
+first for the app/service-provider map. This recipe covers only the Chat/ReAct
+surface.
+
 ## Runtime Shape
 
 ```text
@@ -90,6 +94,9 @@ A scene should declare chat as a context drop target:
 
 ## Related Docs
 
+- [Architecture Of What You Build](../../arch/architecture-of-what-you-build-README.md)
+- [Component Recipes](./README.md)
+- [Components Ecosystem Architecture](../../sdk/solutions/ecosystem-component/components-ecosystem-README.md)
 - [Chat Widget Solution](../../sdk/solutions/chat/chat-widget-solution-README.md)
 - [Context Pin Contract](../../sdk/npm/components-core/context-pin-contract-README.md)
 - [Host Event Bus](../../sdk/npm/components-core/host-event-bus-README.md)

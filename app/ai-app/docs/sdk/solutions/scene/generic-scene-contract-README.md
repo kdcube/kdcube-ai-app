@@ -4,7 +4,7 @@ title: "Generic Scene Contract"
 summary: "Gold-standard target design for a config-driven scene: surfaces, namespace presentation, context drag, event relay, generic surface commands, and widget responsibilities."
 status: design
 tags: ["sdk", "solutions", "scene", "components", "widgets", "configuration", "surface-command", "event-bus", "data-bus", "named-services"]
-updated_at: 2026-06-21
+updated_at: 2026-06-23
 keywords:
   [
     "generic scene contract",
@@ -19,6 +19,7 @@ keywords:
     "app scene recipe"
   ]
 see_also:
+  - docs/sdk/solutions/ecosystem-component/components-ecosystem-README.md
   - docs/sdk/solutions/scene/scene-composition-README.md
   - docs/sdk/solutions/scene/scene-event-orchestration-README.md
   - docs/sdk/solutions/scene/cross-surface-context-drag-README.md
@@ -104,7 +105,7 @@ into context chips. The scene core still emits the same envelope.
              object.action(open), object.get, block.produce/render
 ```
 
-The scene knows aliases, routes, target-surface ids, declarative selector
+The scene knows aliases, routes, target-surface ids, declared compatibility
 policies, transport modes, readiness policies, and presentation config. It does
 not derive local entity ids or provider behavior from object refs. The object
 URI is passed intact to the surface and to the provider.
@@ -300,6 +301,11 @@ Drop target compatibility is declarative. The scene can do generic pattern
 matching so it can highlight candidate targets without knowing provider
 semantics.
 
+Selectors are route hints, not object semantics. Prefer selectors supplied by a
+component surface claim or provider/component metadata for reusable components.
+Scene host config may still compose those hints for a concrete website/profile,
+but scene core must not contain namespace-specific branches.
+
 Selector examples:
 
 | Selector | Meaning |
@@ -359,7 +365,8 @@ The selector policy can arrive from:
 
 All three forms describe the same compatibility contract. Adding a new
 namespace or subtype should require provider/component config, not scene core
-code.
+code. A selector match never authorizes an action and never replaces
+`object.action(open|preview|download)` on the owner provider.
 
 ### Namespace Presentation Config
 

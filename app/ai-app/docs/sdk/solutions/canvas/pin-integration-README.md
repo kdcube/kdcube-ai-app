@@ -18,6 +18,7 @@ keywords:
     "external_events",
   ]
 see_also:
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/ecosystem-component/components-ecosystem-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-subsystem-integration-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/canvas/canvas-module-guide-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/canvas/pin-operations-README.md
@@ -34,9 +35,9 @@ see_also:
 # Canvas Pin Integration
 
 The canvas module should be reusable. It cannot hardcode domain-provider,
-platform-file, memory, knowledge, or source-pool behavior. A bundle that embeds
-canvas registers object resolvers for the namespaces it wants canvas to
-understand.
+platform-file, memory, knowledge, conversation, or source-pool behavior. A
+bundle that embeds canvas enables owner resolvers for the namespaces whose refs
+may appear as pins. Canvas stores the ref; the owner resolver understands it.
 
 The bundle-level checklist for mounting canvas lives in
 [Bundle Subsystem Integration](../../bundle/bundle-subsystem-integration-README.md).
@@ -47,7 +48,7 @@ A composition bundle can integrate several subsystems. A typical shape is:
 ```text
 canvas module                  board, pins, revisions, comments, suggestions
 provider subsystem             acme:ticket:<id>, provider tools, provider editor
-chat subsystem                 ar: replicas, fi: chat attachments and ReAct artifacts
+chat subsystem                 conv: conversations, fi: artifacts through owner resolvers
 memory named-service provider  mem:record:<id>, memory search, memory actions
 knowledge subsystem            repo: repository-backed knowledge articles through MCP/search
 source/search pool             so: or future source refs
@@ -57,43 +58,45 @@ Canvas stores pins. Resolvers make pins useful.
 
 ## Registration Point
 
-At SDK level, the canvas module should accept a registry when it is mounted in
-a bundle:
+At SDK level, the canvas module accepts a resolver registry when it is mounted
+in a bundle. The registry receives full `object_ref` action requests and routes
+them to owner resolvers:
 
 ```python
 canvas = CanvasModule(
     storage=CanvasStorage(...),
     resolvers=[
-        PlatformArtifactResolver(),   # fi:
-        ProviderObjectResolver(),     # acme:
-        NamedServiceCanvasObjectResolver("mem"),  # mem:
-        KnowledgeArticleResolver(),   # repo:
-        CanvasOwnedResolver(),        # cnv:
+        ReactArtifactResolver(),                  # owns fi:
+        NamedServiceCanvasObjectResolver("acme"), # owner for acme:
+        NamedServiceCanvasObjectResolver("mem"),  # owner for mem:
+        KnowledgeArticleResolver(),               # owns repo: when registered
+        CanvasOwnedResolver(),                    # owns cnv:
     ],
 )
 ```
 
-Each resolver owns one namespace:
+Each resolver owns the URI grammar it registers for. Canvas passes the full ref:
 
 ```python
 class ProviderObjectResolver:
     namespace = "acme"
 
-    async def describe(self, ctx, ref):
+    async def describe(self, ctx, object_ref):
         ...
 
-    async def preview(self, ctx, ref):
+    async def preview(self, ctx, object_ref):
         ...
 
-    async def open(self, ctx, ref, request):
+    async def open(self, ctx, object_ref, request):
         ...
 ```
 
-The registry dispatches by URI prefix:
+The router can select a resolver from registered ownership, but that matching
+is registry internals. Canvas UI code should never inspect URI structure:
 
 ```text
 acme:ticket:ticket_...      -> ProviderObjectResolver
-fi:conv_...                 -> PlatformArtifactResolver
+fi:conv_...                 -> ReactArtifactResolver
 mem:record:mem_...          -> NamedServiceCanvasObjectResolver("mem")
 repo:kdcube-ai-app/app/ai-app/docs/...                 -> KnowledgeArticleResolver
 cnv:.../ut_...              -> CanvasOwnedResolver
@@ -166,18 +169,19 @@ itself.
 Recommended server operation:
 
 ```text
-canvas_object_action
+object_action facade
+  current compatible alias: canvas_object_action
   input: { canvas_id, card_id?, object_ref, action, params }
-  dispatch: registry[namespace].<action>(ctx, object_ref, params)
-  output: resolver-specific bounded result
+  dispatch: resolver registry receives the full object_ref
+  output: owner resolver bounded result
 ```
 
 The UI flow:
 
 ```text
 user clicks pin action
- -> canvas UI calls canvas_object_action
- -> server resolver handles action
+ -> canvas UI calls object_action facade
+ -> owner resolver handles action
  -> server returns result or emits a data-bus UI request
  -> UI updates from result or subscribed event
 ```
@@ -261,8 +265,9 @@ For a ReAct artifact:
 ```text
 pin.object_ref = fi:conv_....turn_...outputs/problem_statement.md
 click Download
- -> canvas_object_action(action=download, object_ref=fi:...)
- -> PlatformArtifactResolver.download(fi:...)
+ -> object_action(action=download, object_ref=fi:...)
+    current compatible alias: canvas_object_action
+ -> ReactArtifactResolver.download(fi:...)
  -> resolver returns download_url
  -> browser GETs download_url with its existing session cookie
  -> server streams bytes
@@ -413,20 +418,21 @@ preview/read repo:kdcube-ai-app/app/ai-app/docs/... through a repository resolve
 
 ## Current Resolver Contract
 
-The bundle now exposes the resolver entrypoint as:
+The bundle now exposes the resolver entrypoint as an object-action facade:
 
 ```text
-canvas_object_action({object_ref, action, card_id?, canvas_id?, canvas_name?, mime?})
+object_action({object_ref, action, card_id?, canvas_id?, canvas_name?, mime?})
+current compatible alias: canvas_object_action
 ```
 
 The main canvas UI asks this operation for `capabilities` when a card is
 expanded, then shows only resolver-supported actions. The generic behavior is:
 
-| Namespace | Preview | Open | Download | Notes |
+| Ref owner | Preview | Open | Download | Notes |
 |---|---:|---:|---:|---|
-| `cnv:` | yes | no | yes | Canvas-owned board/object artifact storage. |
+| Canvas-owned `cnv:` | yes | no | yes | Canvas-owned board/object artifact storage. |
 | provider namespace | provider-defined | provider-defined | provider-defined | Reads and opens through the provider subsystem. |
-| `mem:` | yes | yes | no | Memory is resolved through the configured named-service provider; canvas stores and forwards the canonical `mem:record:<id>` ref. |
+| configured memory provider | provider-defined | provider-defined | provider-defined | Canvas stores and forwards the canonical `mem:record:<id>` ref; memory owns actions. |
 | `fi:` | no | no | no | Canonical file refs are preserved. Download/preview waits for a platform artifact resolver. |
 
 For provider open, the resolver returns:

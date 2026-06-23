@@ -4,6 +4,7 @@ title: "External Events Journey And Handling"
 summary: "Current end-to-end journey for conversation-scoped external events: ingress admission, Redis lane ordering, bundle callbacks, policy-gated timeline sharing, ready-queue wakeups, processor resolution, and ReAct folding."
 status: draft
 tags: ["sdk", "events", "external-events", "processor", "react", "timeline", "redis"]
+updated_at: 2026-06-23
 keywords:
   [
     "external event journey",
@@ -17,6 +18,7 @@ keywords:
     "event timeline",
   ]
 see_also:
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/ecosystem-component/components-ecosystem-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/events/namespaces-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/events/external-event-envelope-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/events/event-ingress-to-react-turn-README.md
@@ -452,8 +454,11 @@ metadata and refs. File rows such as `artifact_rows`, `declared_file_items`, or
 `hosted_artifacts` preserve logical paths and hosted refs; they do not require
 the event source to inline the file body. ReAct can use the visible `fi:` ref
 with `react.read` when it needs text content, or `react.pull` when an owner
-namespace ref such as `nmsp:`, `cnv:`, or `mem:` must be rehosted first. Immediate bounded previews
-are source-owned and opt-in through explicit `text_preview`.
+namespace ref such as `nmsp:`, `cnv:`, or `mem:` must be materialized first.
+Named-service namespaces should materialize through provider `object.get` and
+owner `block.produce`; custom owner namespaces may use a registered rehoster.
+Immediate bounded previews are source-owned and opt-in through explicit
+`text_preview`.
 
 ## Payloads
 
@@ -646,7 +651,7 @@ history.
 | ReAct ContextBrowser | Handler open/close, consumer acknowledgement, lane-to-timeline folding before first render and during live turns, superseded-turn detection. |
 | Bundle/workflow event callbacks | Raw accepted-event side effects such as hosting, API calls, permission checks, storage updates, or ignoring events. |
 | Event-source subsystem | Source declaration and policy lookup. It does not own transport or processor queueing. |
-| Event-source readers | Namespace-owner hooks used by runtime/policy code to resolve canonical refs such as `mem:` or `cnv:`. Exact model-facing content is imported through `react.pull` when that namespace has a registered rehoster. They are not external-event transport and do not consume the Redis event lane. |
+| Event-source readers | Namespace-owner hooks used by runtime/policy code to resolve canonical refs such as `mem:` or `cnv:`. Exact model-facing content is imported through `react.pull`; named-service namespaces use provider `object.get` / `block.produce`, while custom owner namespaces may use a registered rehoster. They are not external-event transport and do not consume the Redis event lane. |
 | ReAct block-production policies | Decide which accepted events become durable ReAct blocks and which are consumed without timeline blocks. |
 
 ## Implementation Status

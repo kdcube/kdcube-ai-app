@@ -4,11 +4,14 @@ title: "Platform Documentation Index"
 summary: "Curated top-level map of the KDCube documentation tree for builders, integrators, operators, and agents."
 tags: ["docs", "index", "sdk", "service", "ops", "architecture"]
 keywords: ["documentation index", "platform architecture", "configuration guides", "service runtime docs", "bundle sdk docs", "execution docs", "deployment and operations docs", "bundle builder docs", "client widgets", "streaming", "memory", "claude code"]
-updated_at: 2026-05-27
+updated_at: 2026-06-23
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/what-you-can-do-with-kdcube-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/how-to-integrate-with-kdcube-apps-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/quick-start-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/arch/architecture-of-what-we-built-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/arch/architecture-of-what-you-build-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/recipes/components/README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-navigate-kdcube-docs-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-write-bundle-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-index-README.md
@@ -24,6 +27,9 @@ Curated index of platform, service, and SDK documentation.
 * What You Can Do With KDCube: [what-you-can-do-with-kdcube-README.md](what-you-can-do-with-kdcube-README.md)
 * How To Integrate With KDCube Apps: [how-to-integrate-with-kdcube-apps-README.md](how-to-integrate-with-kdcube-apps-README.md)
 * Quick Start: [quick-start-README.md](quick-start-README.md)
+* Architecture Of What We Built: [architecture-of-what-we-built-README.md](arch/architecture-of-what-we-built-README.md)
+* Architecture Of What You Build: [architecture-of-what-you-build-README.md](arch/architecture-of-what-you-build-README.md)
+* Component Recipes: [components/README.md](recipes/components/README.md)
 * How To Navigate Bundle Docs: [how-to-navigate-kdcube-docs-README.md](sdk/bundle/build/how-to-navigate-kdcube-docs-README.md)
 * Bundle Docs Index: [bundle-index-README.md](sdk/bundle/bundle-index-README.md)
 
@@ -36,6 +42,7 @@ Curated index of platform, service, and SDK documentation.
 * Release Bundle Content: [how-to-release-bundle-content-README.md](sdk/bundle/build/how-to-release-bundle-content-README.md)
 * Versatile Reference Bundle: [versatile-reference-bundle-README.md](sdk/bundle/versatile-reference-bundle-README.md)
 * Bundle Developer Guide: [bundle-developer-guide-README.md](sdk/bundle/bundle-developer-guide-README.md)
+* Component Recipes: [components/README.md](recipes/components/README.md)
 
 ## Bundle Interfaces And Frontend
 
@@ -90,8 +97,10 @@ Curated index of platform, service, and SDK documentation.
 
 ## Service, Deployment, And Operations
 
-* Architecture Short: [architecture-short.md](arch/architecture-short.md)
-* Architecture Long: [architecture-long.md](arch/architecture-long.md)
+* Architecture Of What We Built: [architecture-of-what-we-built-README.md](arch/architecture-of-what-we-built-README.md)
+* Architecture Of What You Build: [architecture-of-what-you-build-README.md](arch/architecture-of-what-you-build-README.md)
+* Architecture Short (historical runtime overview): [architecture-short.md](arch/architecture-short.md)
+* Architecture Long (historical runtime detail): [architecture-long.md](arch/architecture-long.md)
 * Current CLI: [cli-README.md](service/cicd/cli-README.md)
 * Descriptors And CI/CD: [descriptors-README.md](service/cicd/descriptors-README.md)
 * Custom CI/CD: [custom-cicd-README.md](service/cicd/custom-cicd-README.md)

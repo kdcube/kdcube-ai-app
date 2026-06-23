@@ -4,7 +4,7 @@ title: "Event Ingress To React Turn"
 summary: "Concrete field-level journey from browser, Socket.IO, webhook, Telegram, or backend event submission into the Redis conversation event lane, the ReAct runtime turn, timeline materialization, close gate, and persistence."
 status: active
 tags: ["sdk", "events", "ingress", "external-events", "react", "turns", "telegram", "socketio", "sse"]
-updated_at: 2026-06-18
+updated_at: 2026-06-23
 keywords:
   [
     "event ingress to react turn",
@@ -19,6 +19,7 @@ keywords:
     "chat submitter",
   ]
 see_also:
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/ecosystem-component/components-ecosystem-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/events/external-events-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/events/external-events-journey-and-handling-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/events/external-event-envelope-README.md

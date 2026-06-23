@@ -4,8 +4,12 @@ title: "Bundle Interfaces"
 summary: "Bundle-facing interface surface: communicator streams, Data Bus handlers, background jobs, operations, widgets, panels, artifacts, and other bundle-visible interfaces exposed by the platform runtime."
 tags: ["sdk", "bundle", "interfaces", "streaming", "sse", "widgets", "operations", "communicator", "knowledge", "background-jobs", "data-bus"]
 keywords: ["communicator interface", "data bus handler interface", "background job interface", "on_job interface", "operations interface", "widget and panel interface", "artifact surface", "bundle visible runtime interfaces", "streaming and interaction surfaces", "knowledge and attachment surfaces"]
-updated_at: 2026-05-22
+updated_at: 2026-06-23
 see_also:
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/ecosystem-component/components-ecosystem-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/ecosystem-component/ecosystem-component-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/providers-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/clients-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/service/comm/bus-routing-and-partitioning-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-developer-guide-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-runtime-README.md
@@ -27,6 +31,8 @@ This doc describes how a bundle connects to clients:
 - **Data Bus** handlers for durable, bundle-owned non-conversation messages
 - **Widgets + React panels** returned by bundles
 - **Operations API** to invoke bundle methods over REST
+- **Named Service Provider / Client surfaces** for namespace-owned objects,
+  ReAct materialization, scene object actions, and pinboard integration
 - **Background jobs** claimed by proc from Redis Streams and handled by `@on_job`
 - **Artifacts & attachments** surfaced in the timeline and chat stream events
 - **Execution boundaries** when selected helper functions run through `@venv(...)`
@@ -34,6 +40,10 @@ This doc describes how a bundle connects to clients:
 For the higher-level transport map, including how `@mcp(...)` and Data Bus fit
 beside REST/widget/browser routes, use
 [bundle-transports-README.md](bundle-transports-README.md).
+
+For the full ecosystem map that connects bundle interfaces to scene, ReAct,
+Pinboard, chat, Event Bus, Data Bus, and named-service providers, use
+[Components Ecosystem Architecture](../solutions/ecosystem-component/components-ecosystem-README.md).
 
 ```mermaid
 graph LR

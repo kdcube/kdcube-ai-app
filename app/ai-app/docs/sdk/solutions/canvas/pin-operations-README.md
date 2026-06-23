@@ -20,6 +20,7 @@ keywords:
     "mem refs",
   ]
 see_also:
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/ecosystem-component/components-ecosystem-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/canvas/canvas-module-guide-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/canvas/pin-integration-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/canvas/external-subsystem-event-source-products-pins-README.md
@@ -62,18 +63,20 @@ recoverable), and delete (entry removed, artifacts purged) — is owned by the
 canvas storage layer and surfaced through the Pin Board toolbar; archived and
 deleted boards drop out of active resolution.
 
-## Owned vs Foreign Refs
+## Canvas-Owned vs Provider-Owned Refs
 
-A pin's `object_ref` resolves through one of two tiers, picked by namespace
-prefix:
+A pin's `object_ref` is always passed to an owner resolver.
 
-- **Owned** (`cnv:`, `conv:`) — a concrete resolver on this surface knows the
-  kind, preview, and open semantics directly.
-- **Configured namespace** (for example `mem:`, `task:`, or `acme:`) — the
-  generic `NamedServiceCanvasObjectResolver` treats the ref as opaque and asks
-  the namespace owner over the in-runtime bridge. It is additive (registered
-  after the concrete resolvers, only for namespaces configured under
-  `surfaces.as_consumer.ui.canvas.resolvers`) and never shadows owned refs.
+- **Canvas-owned** (`cnv:`) — canvas owns the board and canvas-hosted object
+  grammar.
+- **Provider-owned** (for example `conv:`, `fi:`, `mem:`, `task:`, or
+  `acme:`) — canvas treats the ref as opaque and asks the owner resolver or
+  named-service provider for metadata/actions.
+
+The resolver router may privately choose a resolver from the full
+`object_ref`, but canvas cards and canvas UI do not parse provider URI grammar.
+`conv:` is owned by chat/conversation, `fi:` by the ReAct artifact layer,
+`mem:` by memory, and so on.
 
 See [Namespace Services](../../namespace-services/README.md) for the
 provider/consumer contract behind foreign refs.
@@ -205,13 +208,15 @@ download is hidden. Same for `open`, `preview`, and `rehost`.
 The host exposes the operation as:
 
 ```text
-canvas_object_action({object_ref, action, card_id?, canvas_id?, canvas_name?, mime?})
+object_action({object_ref, action, card_id?, canvas_id?, canvas_name?, mime?})
+current compatible alias: canvas_object_action
 ```
 
-The operation first resolves the namespace from `object_ref`, then dispatches
-to the namespace resolver. The UI may ask for `capabilities`, but it should not
-hardcode object behavior. Capabilities are live resolver facts, not canvas card
-metadata.
+The operation passes the full `object_ref` into the resolver registry. The
+registry selects the owner resolver from registered ownership and the owner
+resolver interprets the URI. The UI may ask for `capabilities`, but it should
+not hardcode object behavior. Capabilities are live resolver facts, not canvas
+card metadata.
 
 Recommended operation meanings:
 

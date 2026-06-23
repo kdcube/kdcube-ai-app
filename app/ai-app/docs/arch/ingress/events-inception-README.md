@@ -93,7 +93,7 @@ Platform turn routing stays in message-level `active_turn_id` and
       "payload": {
         "mime": "application/json",
         "event": {
-          "snapshot_ref": "ext:task-tracker/inv_123/invoice-draft.yaml",
+          "snapshot_ref": "invoice:draft:inv_123",
           "request": "Review this draft and suggest the next useful step."
         }
       }

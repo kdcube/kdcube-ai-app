@@ -5,6 +5,8 @@ summary: "End‑to‑end system architecture: transports, gateway, processing, r
 tags: ["arch", "architecture", "system", "services", "dataflow", "ecs", "fargate"]
 keywords: ["ingress", "proc", "gateway", "SSE", "redis", "storage", "economics", "auth", "ecs", "fargate", "alb", "cloud-map"]
 see_also:
+  - repo:kdcube-ai-app/app/ai-app/docs/arch/architecture-of-what-we-built-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/arch/architecture-of-what-you-build-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/arch/architecture-short.md
   - repo:kdcube-ai-app/app/ai-app/docs/service/comm/README-comm.md
   - repo:kdcube-ai-app/app/ai-app/docs/service/comm/conversation-event-bus-and-data-bus-README.md
@@ -14,8 +16,15 @@ see_also:
 ---
 # KDCube AI App — System Architecture (Long)
 
-This document captures the **end‑to‑end architecture**: transports, gateway, processing, relay, storage, economics, and integrations.
+This historical long-form document captures the **end-to-end runtime
+architecture**: transports, gateway, processing, relay, storage, economics, and
+integrations.
 It reflects the current production model (SSE‑first, cookie‑based auth, Redis relay, RDS + S3) while keeping Socket.IO fully supported.
+
+Use [Architecture Of What We Built](architecture-of-what-we-built-README.md) as
+the current entry point for platform/runtime architecture, and
+[Architecture Of What You Build](architecture-of-what-you-build-README.md) for
+the app/ecosystem architecture built on top of the runtime.
 
 ---
 

@@ -2,6 +2,10 @@
 
 The canvas pinboard is an app widget that materializes object references as spatial pins. It is a context target for almost every namespace and a context source when the user drags pins back to other widgets.
 
+Read [Architecture Of What You Build](../../arch/architecture-of-what-you-build-README.md)
+first for the app/service-provider map. This recipe covers only the Pinboard
+surface.
+
 ## Runtime Shape
 
 ```text
@@ -92,6 +96,9 @@ The widget can run standalone by opening its own runtime connections. In a scene
 
 ## Related Docs
 
+- [Architecture Of What You Build](../../arch/architecture-of-what-you-build-README.md)
+- [Component Recipes](./README.md)
+- [Components Ecosystem Architecture](../../sdk/solutions/ecosystem-component/components-ecosystem-README.md)
 - [Canvas SDK Solution](../../sdk/solutions/canvas/canvas-sdk-solution-README.md)
 - [Canvas Module Guide](../../sdk/solutions/canvas/canvas-module-guide-README.md)
 - [Pin Integration](../../sdk/solutions/canvas/pin-integration-README.md)

@@ -1,10 +1,10 @@
 ---
 id: repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/scene/scene-event-orchestration-README.md
 title: "Scene Event Orchestration"
-summary: "Concrete contract for host-side scene event routing: one scene-level event stream, widget subscription claims, self-owned stream opt-out, and event-bus/data-bus boundaries."
+summary: "Concrete contract for host-side scene event routing: runtime-scoped event streams, widget subscription claims, self-owned stream opt-out, and Event Bus/Data Bus boundaries."
 status: draft
 tags: ["sdk", "solutions", "scene", "events", "event-bus", "data-bus", "widgets", "postmessage", "sse"]
-updated_at: 2026-06-19
+updated_at: 2026-06-23
 keywords:
   [
     "scene event orchestration",
@@ -18,6 +18,7 @@ keywords:
     "event bus data bus boundary"
   ]
 see_also:
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/ecosystem-component/components-ecosystem-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/scene/scene-composition-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/scene/scene-surface-registry-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/scene/cross-surface-context-drag-README.md
@@ -27,9 +28,10 @@ see_also:
 ---
 # Scene Event Orchestration
 
-A scene can contain widgets from several apps. Some widgets open their own live
-stream. Other widgets are passive iframes and need the scene host to relay live
-events to them. This document defines the common contract for that relay.
+A scene can contain widgets from several apps and several KDCube runtimes. Some
+widgets open their own live stream. Other widgets are passive iframes and need
+the scene host to relay live events to them. This document defines the common
+contract for that relay.
 
 This document covers persistent runtime events. Cross-surface drag/drop uses the
 scene overlay control plane in

@@ -4,7 +4,7 @@ title: "Namespace Services: ReAct Object Policy Bridge"
 summary: "How named-service objects, event sources, namespace rehosters, block-production policies, rendering policies, and ReAct pull/read fit together without namespace-specific ReAct code."
 status: design
 tags: ["sdk", "namespace-services", "react", "block-production", "object-ref", "event-source", "policies"]
-updated_at: 2026-06-22
+updated_at: 2026-06-23
 keywords:
   [
     "react.pull",
@@ -18,6 +18,7 @@ keywords:
     "block.render",
   ]
 see_also:
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/ecosystem-component/components-ecosystem-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/react-object-materialization-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/providers-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/clients-README.md

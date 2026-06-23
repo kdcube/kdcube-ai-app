@@ -4,7 +4,7 @@ title: "Ecosystem Component Event Subscription And Transport"
 summary: "Shared event subscription contract for reusable KDCube components, with scene, widget-owned SSE, and future data-bus transports as interchangeable delivery mechanisms."
 status: design
 tags: ["sdk", "solutions", "ecosystem-component", "events", "scene", "sse", "data-bus", "components-core"]
-updated_at: 2026-06-21
+updated_at: 2026-06-23
 keywords:
   [
     "ecosystem component events",
@@ -16,6 +16,8 @@ keywords:
     "components-core events"
   ]
 see_also:
+  - docs/sdk/solutions/ecosystem-component/components-ecosystem-README.md
+  - docs/sdk/solutions/ecosystem-component/ecosystem-component-README.md
   - docs/sdk/solutions/scene/generic-scene-contract-README.md
   - docs/sdk/solutions/scene/scene-event-orchestration-README.md
   - docs/sdk/solutions/scene/scene-composition-README.md

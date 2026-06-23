@@ -4,7 +4,7 @@ title: "Chat Widget Solution"
 summary: "How to mount the reusable SDK chat widget in an app, configure its event-source profile, and reuse its headless engine (useChatEngine + ChatStoreProvider) to skin the chat with a custom UI or drive the backend from an external client."
 status: draft
 tags: ["sdk", "solutions", "chat", "widget", "bundle", "react", "external-events", "headless", "useChatEngine"]
-updated_at: 2026-06-15
+updated_at: 2026-06-23
 keywords:
   [
     "sdk chat widget",
@@ -14,7 +14,7 @@ keywords:
     "bundle chat widget",
     "reusable chat component",
     "context chip object actions",
-    "canvas_object_action",
+    "object action facade",
     "useChatEngine",
     "ChatStoreProvider",
     "headless chat engine",
@@ -22,6 +22,7 @@ keywords:
     "reuse chat backend",
   ]
 see_also:
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/ecosystem-component/components-ecosystem-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/chat/chat-component-communication-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-client-ui-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-widget-integration-README.md
@@ -204,7 +205,7 @@ chatbot/ReAct solution stack:
 | stream transport | Live assistant events through SSE or Socket.IO. |
 | dry-run preview operation | Rendering `external_events[]` without invoking ReAct. |
 | file/artifact operations | Showing and dragging chat artifacts. |
-| `canvas_object_action` operation | Resolving context-chip object actions such as `capabilities`, `open`, and `download`. |
+| object-action facade | Resolving context-chip object actions such as `capabilities`, `open`, and `download`; current compatible alias is `canvas_object_action`. |
 
 The widget defaults match the task-tracker composition bundle. Other bundles
 can override the event-source profile either at build time with Vite env
@@ -274,11 +275,13 @@ uses the same resolver-backed operation that canvas pins use:
 
 ```text
 user clicks context chip
-  -> chat widget calls canvas_object_action(action=capabilities, object_ref)
-  -> resolver returns capabilities plus default_open_effect_action
+  -> chat widget calls the app object-action facade
+       { action: capabilities, object_ref }
+     (current compatible operation name: canvas_object_action)
+  -> owner resolver returns capabilities plus default_open_effect_action
   -> chat runs exactly that declared effect
-       default_open_effect_action=download -> canvas_object_action(action=download)
-       default_open_effect_action=open     -> canvas_object_action(action=open)
+       default_open_effect_action=download -> object.action(download)
+       default_open_effect_action=open     -> object.action(open)
   -> download bytes locally OR ask the host scene to orchestrate the open reaction
 ```
 
@@ -287,13 +290,11 @@ ref as `ref`, `logicalPath` / `logical_path`, `hostedUri` / `hosted_uri`,
 `object_ref`, or `event_ref`; the widget forwards the resolved `object_ref` to
 the bundle operation. The provider/resolver owns what that ref means.
 
-The same canonical-ref normalization drives chip labels and visual identity.
-The widget derives the visual class from the root namespace of the resolved ref,
-not from the source surface that produced the chip. For example,
-`mem:record:<id>` is a `mem` chip and `task:issue:<id>` /
-`task:attachment:<id>` are `task` chips. App CSS or config may map those root
-namespaces to colors; the chat component should not hardcode memory, task, or
-provider semantics.
+The same canonical context payload drives chip labels and visual identity. The
+widget first uses source/provider metadata such as `namespace` and
+`object_kind`, then the shared namespace presentation map, and finally a
+neutral unknown fallback. It should not parse the URI or ship local hardcoded
+memory/task/file color tables.
 
 Because context chips are persisted and replayed through the conversation
 timeline, every producer should use the same canonical context-pin shape:

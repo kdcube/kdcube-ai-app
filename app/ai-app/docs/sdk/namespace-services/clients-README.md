@@ -4,7 +4,7 @@ title: "Namespace Services: Clients"
 summary: "How bundles, agents, widgets, jobs, and external clients consume configured namespace service providers."
 status: design
 tags: ["sdk", "namespace-services", "clients", "tools", "resolvers", "bundles"]
-updated_at: 2026-06-22
+updated_at: 2026-06-23
 keywords:
   [
     "namespace service client",
@@ -16,6 +16,7 @@ keywords:
     "chat resolver",
   ]
 see_also:
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/ecosystem-component/components-ecosystem-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/providers-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/integration-README.md
@@ -282,7 +283,8 @@ Consumer browser adapter
         v
 
 Consumer app backend operation
-  executor: consumer app @api(alias="canvas_object_action", route="operations")
+  executor: consumer app object-action facade
+            current compatible alias: @api(alias="canvas_object_action", route="operations")
   surface: operations API of the consumer app
   owns: AuthContext, resolver registry construction, allowed resolver config
   customized: yes, consumer chooses configured resolvers

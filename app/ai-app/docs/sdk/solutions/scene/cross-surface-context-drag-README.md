@@ -4,7 +4,7 @@ title: "Cross-Surface Context Drag"
 summary: "Concrete design for generic object drag/drop between scene surfaces: source drag lifecycle, scene broker state, selector-based candidate targets, provider open resolution, target-surface command dispatch, and current migration gaps."
 status: implementation
 tags: ["sdk", "solutions", "scene", "drag-drop", "context-pin", "surfaces", "named-services", "canvas", "chat"]
-updated_at: 2026-06-17
+updated_at: 2026-06-23
 keywords:
   [
     "cross surface drag",
@@ -18,6 +18,7 @@ keywords:
     "target_surface",
   ]
 see_also:
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/ecosystem-component/components-ecosystem-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/scene/scene-event-orchestration-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/scene/scene-composition-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/scene/scene-surface-registry-README.md

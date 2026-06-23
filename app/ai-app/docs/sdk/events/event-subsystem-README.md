@@ -4,7 +4,7 @@ title: "SDK Events Subsystem"
 summary: "Shared event-source declarations and discovery used by tools today and by broader SDK event flows over time."
 status: draft
 tags: ["sdk", "events", "event-source", "tools", "react"]
-updated_at: 2026-06-22
+updated_at: 2026-06-23
 keywords:
   [
     "event_source",
@@ -19,6 +19,7 @@ keywords:
     "react.pull",
   ]
 see_also:
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/ecosystem-component/components-ecosystem-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/events/namespaces-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/react-object-materialization-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/react-object-policy-bridge-README.md
@@ -74,7 +75,7 @@ make a callable visible to the model by itself.
 | `kind` | Meaning | Agent-visible tool? |
 |---|---|---:|
 | `react.tool` | ReAct tool-call lifecycle source. The occurrence is a tool call/result; `event_source_id` normally equals the tool id. | Yes, only when the callable is also loaded as a tool, for example through `@kernel_function`. |
-| `react.event_source_reader` | Owner-domain reader that resolves a canonical namespace ref for runtime/policy code. Model-facing exact content access should use `react.pull` through a namespace rehoster. | No |
+| `react.event_source_reader` | Owner-domain reader that resolves a canonical namespace ref for runtime/policy code. Model-facing exact content access should use `react.pull`; named-service namespaces use provider `object.get` / `block.produce`, while custom owner namespaces may use a registered rehoster. | No |
 | `react.external` | Authored external event from UI, integration, Data Bus, or another bundle surface. Reactivity is an occurrence property on transported `external_events[]`. | No |
 | `react.native_tool.write` / `react.native_tool.source` | Built-in ReAct-native source families such as write/source-pool handling. | Runtime-owned |
 
@@ -185,8 +186,8 @@ Tool visibility and event visibility are intentionally separate:
 The two inputs are cumulative. Passing `event_source_specs` to
 `BaseWorkflow.build_react(...)` adds event-only modules to the event subsystem;
 it does not replace declarations discovered from loaded tool modules. Use this
-when a bundle needs a namespace rehoster such as `cnv:` or `mem:` without
-exposing the namespace owner's tools.
+when a bundle needs owner event policies/materializers such as `cnv:` or
+`mem:` without exposing the namespace owner's tools.
 
 ## Event Source Readers
 

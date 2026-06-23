@@ -4,7 +4,7 @@ title: "Namespace Services: Providers"
 summary: "Transport-neutral SDK concept for bundles and platform subsystems that publish namespace service provider surfaces: namespace ownership, object operations, resolvers, capabilities, relations, and integrations over API, MCP, Data Bus, or local adapters."
 status: design
 tags: ["sdk", "namespace-services", "named-service-provider", "services", "namespaces", "objects", "resolvers", "mcp", "api", "data-bus", "bundles"]
-updated_at: 2026-06-22
+updated_at: 2026-06-23
 keywords:
   [
     "named service provider",
@@ -20,6 +20,7 @@ keywords:
     "data bus object command",
   ]
 see_also:
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/ecosystem-component/components-ecosystem-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/integration-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/clients-README.md
@@ -153,6 +154,12 @@ Surfaces stay generic. Chat context chips, canvas cards, pinboard items, scene
 hosts, and ReAct call `object.resolve` or `object.action` and follow the
 provider-returned contract. The provider response distinguishes cases such as a
 `task:` attachment downloading and a `task:` issue opening an editor.
+
+`provider_id` is a registry identifier and can use an internal convention such
+as `task.issue`. `object_kind` is a provider-owned presentation/schema key and
+should match the namespace presentation config used by UI clients, for example
+`task:issue` or `task:attachment`. Neither value is behavior inferred by
+generic surfaces.
 
 ## Provider Schemas
 
@@ -1364,9 +1371,10 @@ browser session exists.
 ### Configured Canvas/Chat Resolver
 
 Composition bundles can configure namespace resolvers for canvas cards and chat
-context chips. The chat widget already routes object actions through the
-bundle's `canvas_object_action` operation, so the same resolver registry covers
-both surfaces.
+context chips. The chat widget routes object actions through the bundle's
+object-action facade; the current compatible operation alias is
+`canvas_object_action`, and it should delegate to the same resolver registry as
+Pinboard.
 
 ```yaml
 surfaces:
