@@ -444,6 +444,131 @@ async def reserve_paid_funding(
 
 
 # ---------------------------------------------------------------------------
+# Unified split reservation (single split, no lanes)
+# ---------------------------------------------------------------------------
+def _split_deny_code(reason: Optional[str]) -> str:
+    """Map a wallet-aware admit reason to a reserve deny_code"""
+    r = (reason or "").strip()
+    if not r:
+        return "no_funding_source"
+    if "wallet_insufficient" in r:
+        return "wallet_insufficient"
+    return "rate_limited"
+
+
+async def reserve_funding(
+    ctx: FundingContext,
+    *,
+    admit: Any,
+    funding_source: str,
+    budget_bypass: bool,
+    has_wallet: bool,
+    ttl_sec: int = 900,
+) -> ReserveOutcome:
+    """Single split reservation.
+
+    This function only:
+      - maps a denied admit onto a ReserveOutcome (the caller releases the RL lock/hold),
+      - places the primary money hold for plan_part (project|subscription), and
+      - places the wallet hold for wallet_part = admit.wallet_part = R − plan_part.
+
+    The caller MUST size the admit's reserve_tokens by the primary funds
+    (min(R, P_tokens)) so reserved_tokens is bounded by quota AND funds; otherwise
+    the money hold below can exceed available funds. Returns OK / DENIED.
+    """
+    usd_per_token = ctx.usd_per_token
+    funding_limiter = ctx.subscription_limiter if funding_source == "subscription" else ctx.budget_limiter
+
+    if not bool(getattr(admit, "allowed", False)):
+        return _denied(
+            code=_split_deny_code(getattr(admit, "reason", None)),
+            message=f"Reservation denied: {getattr(admit, 'reason', None) or 'no funding source'}.",
+            funding_source=funding_source,
+            est_turn_tokens=int(getattr(admit, "wallet_part", 0) or 0) + int(getattr(admit, "reserved_tokens", 0) or 0),
+        )
+
+    plan_part = int(getattr(admit, "reserved_tokens", 0) or 0)
+    wallet_part = int(getattr(admit, "wallet_part", 0) or 0)
+    plan_reservation_id = getattr(admit, "reservation_id", None)
+
+    res = PlanFundingReservation(
+        funding_source=funding_source,
+        budget_bypass=budget_bypass,
+        est_turn_tokens=int(plan_part + wallet_part),
+        plan_reservation_id=plan_reservation_id,
+        plan_reserved_tokens=plan_part,
+        plan_reservation_active=(plan_part > 0 and plan_reservation_id is not None),
+        has_wallet=has_wallet,
+    )
+    res.plan_project_tokens_est = int(plan_part)
+
+    # --- primary money hold for the plan part ----------------------------
+    if plan_part > 0 and not budget_bypass:
+        app_reserved_usd = float(plan_part) * usd_per_token * SAFETY_MARGIN
+        if app_reserved_usd >= _MIN_RESERVE_USD:
+            app_reservation_id = uuid4()
+            reserve_kwargs = dict(
+                reservation_id=app_reservation_id,
+                bundle_id=ctx.bundle_id,
+                provider=None,
+                request_id=ctx.scope_id,
+                amount_usd=float(app_reserved_usd),
+                ttl_sec=int(ttl_sec),
+                notes=f"split reserve: scope={ctx.scope_id}, plan_part={plan_part}",
+            )
+            if funding_source == "project":
+                reserve_kwargs["user_id"] = ctx.user_id
+            try:
+                await funding_limiter.reserve(**reserve_kwargs)
+                res.app_reservation_id = app_reservation_id
+                res.app_reserved_usd = float(app_reserved_usd)
+                res.app_reservation_active = True
+            except BudgetInsufficientFunds as e:
+                # Funds vanished between the admit snapshot and this hold (race). The
+                # caller releases the RL token hold + lock on a DENIED outcome.
+                ctx.log("reserve.split", "primary money hold denied", "WARN", error=str(e))
+                return _denied(
+                    code=f"{funding_source}_reservation_failed",
+                    message=f"{funding_source} funding cannot reserve the plan part.",
+                    funding_source=funding_source,
+                    est_turn_tokens=int(plan_part + wallet_part),
+                )
+
+    # --- wallet hold for the over-quota/over-funds remainder -------------
+    if wallet_part > 0 and has_wallet:
+        ok = await ctx.cp_manager.user_credits_mgr.reserve_lifetime_tokens(
+            tenant=ctx.tenant, project=ctx.project, user_id=ctx.user_id,
+            reservation_id=ctx.scope_id, tokens=int(wallet_part),
+            ttl_sec=int(ttl_sec), bundle_id=ctx.bundle_id,
+            notes=f"split wallet reserve: scope={ctx.scope_id}, wallet_part={wallet_part}",
+        )
+        if not ok:
+            # release the primary hold we just took before denying
+            if res.app_reservation_active and res.app_reservation_id:
+                try:
+                    if funding_source == "subscription" and ctx.subscription_limiter is not None:
+                        await ctx.subscription_limiter.release_reservation(
+                            reservation_id=res.app_reservation_id, project_budget=ctx.budget_limiter,
+                        )
+                    else:
+                        await ctx.budget_limiter.release_reservation(reservation_id=res.app_reservation_id)
+                except Exception:
+                    pass
+                res.app_reservation_active = False
+            return _denied(
+                code="wallet_reservation_failed",
+                message="Insufficient personal credits to cover the over-quota remainder.",
+                funding_source=funding_source,
+                est_turn_tokens=int(plan_part + wallet_part),
+            )
+        res.wallet_reservation_id = ctx.scope_id
+        res.wallet_reserved_tokens = int(wallet_part)
+        res.wallet_reservation_active = True
+
+    return _ok(res)
+
+
+# ---------------------------------------------------------------------------
 # Post-run settlement
 # ---------------------------------------------------------------------------
 async def settle_plan_funding(
@@ -616,10 +741,12 @@ async def settle_plan_funding(
             primary_funding_reserved_tokens=int(res.plan_project_tokens_est or 0),
             wallet_available_tokens=int(wallet_available_tokens),
             wallet_reserved_tokens=int(res.wallet_reserved_tokens or 0) if res.wallet_reservation_active else 0,
+            primary_is_separate_budget=(funding_source == "subscription"),
         )
     )
     out.allocation = alloc
     plan_covered_usd = float(alloc.primary_funding_usd)
+    primary_overage_usd = float(alloc.primary_overage_usd)
     project_absorption_usd = float(alloc.project_absorption_usd)
     plan_quota_commit_tokens = int(alloc.quota_tokens)
     user_target_tokens = int(alloc.wallet_tokens)
@@ -661,13 +788,30 @@ async def settle_plan_funding(
         plan_quota_commit_tokens += min(int(user_uncovered_tokens), int(extra_room))
 
     # --- charge primary + project absorption ------------------------------
+    # The primary budget pays its quota-funded share (plan_covered_usd) PLUS the
+    # over-quota overage the wallet could not cover (primary_overage_usd, charged
+    # from the primary's own remaining funds). For project-primary primary_overage
+    # is 0, so this is a no-op there and the project-only split is unchanged.
     extra_project_items: list[tuple[float, str]] = []
-    app_spend_usd = float(plan_covered_usd)
+    subscription_extra_usd = 0.0
+    app_spend_usd = float(plan_covered_usd) + float(primary_overage_usd)
     if funding_source == "subscription":
+        # Runtime wallet shortfall (the wallet returned fewer tokens at consume than
+        # its fresh balance read promised): the subscription budget absorbs what its
+        # remaining headroom still allows before the project — same rule as the planned
+        # primary_overage. Only when that headroom is also exhausted does the project
+        # absorb the residual.
+        subscription_extra_tokens = min(int(user_uncovered_tokens), int(alloc.primary_overage_headroom_tokens))
+        if subscription_extra_tokens > 0:
+            subscription_extra_usd = _cost_for_tokens(
+                tokens=subscription_extra_tokens, ranked_tokens=ranked_tokens, total_cost=total_cost,
+            )
+        app_spend_usd += float(subscription_extra_usd)
+        wallet_to_project_usd = max(float(user_uncovered_usd) - float(subscription_extra_usd), 0.0)
         if project_absorption_usd > 0:
             extra_project_items.append((float(project_absorption_usd), "shortfall:subscription_overage"))
-        if user_uncovered_usd > 0:
-            extra_project_items.append((float(user_uncovered_usd), "shortfall:wallet_subscription"))
+        if wallet_to_project_usd > 0:
+            extra_project_items.append((float(wallet_to_project_usd), "shortfall:wallet_subscription"))
     else:  # project
         if project_absorption_usd > 0:
             note = "shortfall:wallet_plan" if (res.has_wallet or user_target_tokens > 0) else "shortfall:free_plan"
@@ -704,7 +848,7 @@ async def settle_plan_funding(
 
     await _commit_rl(ctx, res, tokens=int(plan_quota_commit_tokens))
 
-    out.primary_funding_usd = float(plan_covered_usd)
+    out.primary_funding_usd = float(app_spend_usd)
     out.wallet_usd = float(alloc.wallet_usd)
     out.project_absorption_usd = float(project_absorption_usd)
     out.quota_commit_tokens = int(plan_quota_commit_tokens)
