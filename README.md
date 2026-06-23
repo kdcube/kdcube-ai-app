@@ -8,9 +8,11 @@
 
 <p align="center">
   KDCube gives developers an app framework, reference ReAct runtime, reusable
-  widgets, named-service integration, isolated execution, tenancy, budgets, RBAC,
-  and accounting as platform primitives — so a prototype can become a governed
-  product without rebuilding the runtime from scratch.
+  API/MCP surfaces, Event Bus and Data Bus messaging, streaming, app storage,
+  cron/jobs, widgets, named-service integration, Claude Code/custom agent
+  runtimes, isolated execution, tenancy, budgets, RBAC, and accounting as
+  platform primitives — so a prototype can become a governed product without
+  rebuilding the runtime from scratch.
 </p>
 
 <p align="center">
@@ -35,8 +37,9 @@
 ## Build powerful AI apps fast. Keep them governable as they grow.
 
 The first reason to use KDCube is speed: developers can assemble chat, tools,
-UI widgets, APIs, MCP, cron, memory, Pinboard, named-service objects, and
-isolated execution into a working app without inventing the runtime envelope.
+UI widgets, APIs, MCP, Event Bus streams, Data Bus handlers, storage, cron/jobs,
+memory, named-service objects, Claude Code/custom agent runtimes, and isolated
+execution into a working app without inventing the runtime envelope.
 
 That speed matters because the first AI demo ships in a weekend. The trouble
 starts at the **second and third app in production**, when someone has to
@@ -71,18 +74,19 @@ It is probably not the first tool to reach for if you only need a one-off prompt
 
 KDCube is not only a place to run a chatbot. It is a way to turn internal systems, files, workflows, and human review loops into governed AI applications that can grow past the first demo.
 
-- **A private AI app store for your organization.** Each app ships as a complete internal product with its own chat, UI, API, jobs, MCP surface, config, secrets, state, and permissions.
+- **A private AI app store for your organization.** Each app ships as a complete internal product with its own chat, UI, API, MCP, Event Bus/Data Bus messaging, streaming, jobs, storage, config, secrets, state, and permissions.
 - **Domain objects the agent can actually understand.** Tasks, memories, files, incidents, cases, reports — or any namespace you define — become first-class refs with provider-owned schemas, previews, actions, and materialization paths.
 - **A governed ReAct runtime, not just a model call.** Apps can include KDCube's timeline-driven agent runtime with tools, event-source policies, ANNOUNCE, compaction, steer/followup, and named-service materialization.
 - **A real execution boundary for generated code.** Trusted app logic and secrets stay separate from untrusted/model-generated code, which can run through isolated local, Docker, split supervisor/executor, or Fargate execution modes.
-- **A shared work surface, not just a chat transcript.** Chat, canvas, widgets, files, tasks, and tools exchange context through stable refs instead of copy-pasted text.
+- **A service network for apps that are useful on their own.** Apps can expose API, MCP, Event Bus, Data Bus, cron/jobs, streaming, storage, UI, and named-service contracts; optional composition surfaces such as Scene and Pinboard let users and agents move context between those apps through stable refs instead of copy-pasted text.
+- **Hybrid deployments across runtimes.** Different apps can run in separate KDCube deployments, tenants, projects, or security zones, then interoperate through explicit API, MCP, event, and named-service contracts when a solution needs to mix them.
 - **Governed automation at the edge of real systems.** Agents can inspect, update, cite, or attach objects only through configured tools, namespace contracts, and auth-aware provider operations.
 - **AI products that can be operated.** Platform teams can see costs, enforce budgets, isolate execution, gate surface visibility, control event egress, and reload/apply configuration at runtime.
-- **Reusable intelligence.** An app that owns a namespace can serve its objects to other apps, agents, widgets, canvas, chat, and MCP clients without those consumers learning its storage model.
+- **Reusable intelligence.** An app that owns a namespace can serve its objects to other apps, agents, APIs, MCP clients, jobs, widgets, chat, and optional canvas/scene composition without those consumers learning its storage model.
 
 ### See it running
 
-The demo landing scene runs several governed surfaces on a single page — each panel is a separate app widget with its own visibility and runtime boundary: a versatile chat agent, a pin-board canvas, durable user memories, a task tracker, usage/economics, and an industry-news feed. Context is dragged between them as refs; any surface can be summoned or dismissed. One runtime, many independently governed AI surfaces.
+The demo landing scene shows one optional composition pattern: several independently useful app widgets on a single page, each with its own visibility and runtime boundary. A versatile chat agent, a pin-board canvas, durable user memories, a task tracker, usage/economics, and an industry-news feed can exchange context as refs when they are joined into the scene. One runtime, many independently governed AI surfaces.
 
 Project site and demo: **https://kdcube.tech/**
 
@@ -175,13 +179,13 @@ Built-in SDK/runtime capabilities include Neuro Search, rendering tools (PDF / P
 
 ## What you can build
 
-- **Internal AI workbenches** where chat, canvas, documents, tasks, memory, and domain widgets cooperate on one shared surface.
+- **Internal AI workbenches** where chat, documents, tasks, memory, domain widgets, and optional canvas/scene composition cooperate around shared refs.
 - **Operational assistants** that inspect and update owned systems through explicit provider contracts.
 - **Governed task/case/incident systems** where attachments, evidence, state changes, and summaries stay inside the organization boundary.
 - **AI-backed APIs, webhooks, and MCP surfaces** that let external tools and coding agents consume the same governed capabilities.
 - **Scheduled AI pipelines** for reports, monitoring, ingestion, review queues, and background enrichment.
 - **Customer or employee-facing mini apps** with their own frontend plus server-side tools, jobs, config, and authorization.
-- **Reusable namespace providers** that make domain objects available to chat, canvas, agents, and other apps without leaking implementation details.
+- **Reusable namespace providers** that make domain objects available to agents, APIs, MCP clients, jobs, chat, widgets, and optional canvas/scene composition without leaking implementation details.
 
 ## Quick start
 

@@ -1,8 +1,8 @@
 ---
 id: repo:kdcube-ai-app/app/ai-app/docs/what-you-can-do-with-kdcube-README.md
 title: "What You Can Do With KDCube"
-summary: "Dense product and builder overview of KDCube: how developers quickly build powerful governed AI apps, how apps become ecosystem components, which runtime surfaces they expose, and how ReAct, named services, Scene, Pinboard, APIs, MCP, events, cron, tools, and isolated execution fit together."
-tags: ["docs", "product", "overview", "sdk", "platform", "app", "ecosystem", "agent", "react", "scene", "pinboard", "named-services", "exec"]
+summary: "Dense product and builder overview of KDCube: how developers quickly build powerful governed AI apps, how apps become ecosystem components, which runtime surfaces they expose, and how ReAct, named services, APIs, MCP, Event Bus, Data Bus, storage, cron/jobs, tools, optional composition surfaces, and isolated execution fit together."
+tags: ["docs", "product", "overview", "sdk", "platform", "app", "ecosystem", "agent", "react", "named-services", "exec"]
 keywords: ["what is kdcube", "what can kdcube do", "ai product platform", "app runtime", "app reload", "kdcube app", "build ai app", "wrap existing app", "coding agent build app", "local to cloud workflow", "mcp endpoint", "react agent", "announce", "steer followup", "user memory", "namespace services", "named services", "scene", "pinboard", "iso runtime", "distributed exec", "streaming widgets", "artifact provenance"]
 updated_at: 2026-06-23
 see_also:
@@ -34,23 +34,37 @@ see_also:
 # What You Can Do With KDCube
 
 KDCube is a platform and SDK for quickly building powerful governed AI apps:
-chat workbenches, agentic operations tools, domain-object providers, UI scenes,
-MCP/API integrations, scheduled automations, and generated-code assistants that
-can move from local prototype to operated product without changing shape.
+chat workbenches, agentic operations tools, domain-object providers, API/MCP
+integrations, event-driven workflows, streaming widgets, scheduled automations,
+Claude Code/custom agent flows, and generated-code assistants that can move
+from local prototype to operated product without changing shape.
 
 The first value is builder speed. KDCube gives developers reusable app
-surfaces, a governed ReAct runtime, named-service object integration, Pinboard,
-Scene, memory, tools, skills, artifacts, and isolated execution as platform
-building blocks. The second value is that the same building blocks already sit
-inside tenancy, secrets, budgets, RBAC, accounting, event control, and
-deployment descriptors.
+surfaces: API and public webhook routes, MCP endpoints, Event Bus/SSE streams,
+Data Bus handlers, app storage/cache, cron/jobs, widgets, chat, memory, tools,
+skills, artifacts, a governed ReAct runtime, Claude Code/custom agent runtimes,
+named-service object integration, and isolated execution. Scene and Pinboard
+are optional composition/context surfaces that can join independently useful
+apps into a wider user-and-agent interaction network. The second value is that
+the same building blocks already sit inside tenancy, secrets, budgets, RBAC,
+accounting, event control, and deployment descriptors.
+
+Those contracts also support hybrid topologies. A solution can run different
+apps in different KDCube deployments, tenants, projects, or security zones and
+connect them deliberately through API, MCP, Event Bus, Data Bus, and
+named-service contracts. A scene or host app can then compose selected surfaces
+from multiple independently deployed KDCubes without forcing every app into one
+runtime.
 
 Use KDCube when an AI system needs product structure:
 
 - a fast path from idea to real multi-surface AI app
 - reusable SDK pieces instead of one-off app scaffolding
-- agent/UI/domain-object interop across chat, Scene, Pinboard, APIs, MCP, and
-  jobs
+- agent/UI/domain-object interop across chat, APIs, MCP, Event Bus streams,
+  Data Bus handlers, cron/jobs, named services, and optional Scene/Pinboard
+  composition surfaces
+- hybrid setups where separately deployed KDCube runtimes/apps interoperate
+  through explicit contracts
 - runtime configuration and secrets
 - user and environment isolation
 - chat plus APIs plus widgets plus MCP plus scheduled work
@@ -108,18 +122,21 @@ Common app shapes:
 
 | Product shape | KDCube surfaces |
 | --- | --- |
-| Internal AI workbench with files, tasks, memory, and reports | Chat, ReAct tools, Scene, Pinboard, widgets, rendering tools, hosted artifacts |
+| Internal AI workbench with files, tasks, memory, and reports | Chat, ReAct tools, widgets, rendering tools, hosted artifacts, optional Scene/Pinboard composition |
 | Governed agent product | ReAct runtime, tool policies, event-source rendering, named-service tools, steer/followup, compaction |
+| Coding or maintenance copilot | Claude Code/custom agent runtime, app APIs, storage, MCP, isolated exec, audit trail |
 | Generated-code assistant | ISO runtime, isolated exec, artifact capture, controlled tool proxying, workspace transport |
 | Internal operations tool | Authenticated APIs, admin widgets, Data Bus handlers, storage, role policy |
+| Event-driven backend app | Event Bus/SSE, Data Bus handlers, streaming, app storage/cache, idempotent mutations |
 | Public integration endpoint | Public `@api`, webhook auth, idempotent processing |
 | Telegram, email, or messaging assistant | SDK integration, public webhook/OAuth callback, user registry, delivery |
 | Browser/iframe app | App widget or full UI, operation APIs, shared SDK UI panels |
-| Docs or data assistant | Knowledge source, MCP endpoint, search/fetch/read tools |
+| Docs or data assistant | Knowledge source, MCP endpoint, app storage, search/fetch/read tools |
 | Scheduled automation | `@cron`, `@on_job`, jobs stream, task/memo solution |
 | Existing app wrapper | Thin KDCube app adapter around existing backend/UI/business logic |
-| Named-service provider | Namespace ownership, provider-owned refs, schemas, search/get/upsert/action, block rendering, canvas actions, file hosting |
+| Named-service provider | Namespace ownership, provider-owned refs, schemas, search/get/upsert/action, block rendering, UI/canvas actions, file hosting |
 | Ecosystem component | App, widget, provider realm, MCP surface, event publisher, Data Bus handler, cron worker, or any combination |
+| Hybrid multi-KDCube solution | Separate deployments connected by API/MCP/events/named services and optionally composed in one host scene |
 
 One app can expose several of these at once.
 
@@ -132,11 +149,12 @@ platform exists:
 app
   |
   +-- trusted product/runtime surfaces
-  |     APIs, widgets, MCP, cron, Data Bus handlers, provider operations
+  |     APIs, public webhooks, widgets, MCP, Event Bus streams,
+  |     Data Bus handlers, storage/cache, cron/jobs, provider operations
   |
-  +-- governed ReAct agent runtime
-  |     timeline, tools, ANNOUNCE, event-source policies, pull/read,
-  |     named-service exploration/exploitation, steer/followup, compaction
+  +-- agent runtimes
+  |     ReAct timeline/tools/ANNOUNCE/event policies/pull-read/compaction
+  |     Claude Code or custom Python agents where appropriate
   |
   +-- isolated execution boundary
         generated code, rendering jobs, heavy helpers, Docker/Fargate exec,
@@ -271,12 +289,17 @@ Read the full architecture map:
 - [Components Ecosystem Architecture](sdk/solutions/ecosystem-component/components-ecosystem-README.md)
 - [Ecosystem Component Contract](sdk/solutions/ecosystem-component/ecosystem-component-README.md)
 
-## 8. Scene And Pinboard
+## 8. Optional Scene And Pinboard Composition
 
-Scene is a browser host that composes multiple app surfaces and routes
-commands, events, and context between them. Pinboard/canvas is a neutral board:
-it stores opaque object refs, layout, comments, display cache, and context
-provenance. Object meaning stays with the provider.
+Scene and Pinboard are not prerequisites for an app to be useful. Apps can
+participate in the KDCube network through API, MCP, Event Bus, Data Bus,
+streams, cron/jobs, storage, and named services without a shared visual scene.
+
+When a product needs a user-facing interaction workspace, Scene is a browser
+host that composes multiple app surfaces and routes commands, events, and
+context between them. Pinboard/canvas is a neutral board: it stores opaque
+object refs, layout, comments, display cache, and context provenance. Object
+meaning stays with the provider.
 
 ```text
 User / Scene
@@ -392,9 +415,9 @@ runtime surfaces. A provider is the owner of a namespace such as `task:`,
 - which UI/canvas actions are meaningful
 - how namespace presentation is configured
 
-A consumer connects chat, Pinboard, ReAct, widgets, or MCP to that namespace by
-configuration and provider discovery, not by embedding provider-specific logic
-into shared components.
+A consumer connects chat, ReAct, widgets, MCP, APIs, jobs, or optional
+Pinboard/Scene composition to that namespace by configuration and provider
+discovery, not by embedding provider-specific logic into shared components.
 
 See:
 
