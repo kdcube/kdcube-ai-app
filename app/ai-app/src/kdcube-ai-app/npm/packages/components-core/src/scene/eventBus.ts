@@ -65,7 +65,6 @@ function envelopeEventType(envelope: unknown): string {
   if (isRecord(event)) {
     if (text(event.type)) return text(event.type)
     if (text(event.name)) return text(event.name)
-    if (event.step === 'accounting') return 'accounting.usage'
   }
   return ''
 }
@@ -133,7 +132,17 @@ export function createSceneEventBus(options: SceneEventBusOptions): SceneEventBu
   }
 
   function aliases(): string[] {
-    return Array.from(options.getAliases()).map((alias) => text(alias)).filter(Boolean)
+    const seen = new Set<string>()
+    const out: string[] = []
+    const add = (alias: unknown): void => {
+      const value = text(alias)
+      if (!value || seen.has(value)) return
+      seen.add(value)
+      out.push(value)
+    }
+    Array.from(options.getAliases()).forEach(add)
+    Array.from(subscribers.keys()).forEach(add)
+    return out
   }
 
   function subscriptionsFor(alias: string): SceneEventSubscriptionClaim[] {

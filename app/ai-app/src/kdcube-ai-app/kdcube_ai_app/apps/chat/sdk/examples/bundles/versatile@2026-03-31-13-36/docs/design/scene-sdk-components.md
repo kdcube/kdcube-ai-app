@@ -2,7 +2,7 @@
 title: Versatile Scene SDK Components
 kind: design-note
 bundle_id: versatile@2026-03-31-13-36
-updated_at: 2026-06-15
+updated_at: 2026-06-23
 ---
 
 # Versatile Scene SDK Components
@@ -47,6 +47,27 @@ ui/scene host page
         configured by surfaces.as_consumer.ui.scene.external_panels
 ```
 
+Runtime connections:
+
+```text
+ui/scene host
+  |
+  +-- scene_surface_config operation
+  |     reads surfaces.as_consumer.ui.scene
+  |
+  +-- namespace_presentation_config operation
+  |     reads namespace_styles
+  |
+  +-- Data Bus subject canvas.patch
+  |     carries ordered canvas revision writes
+  |
+  +-- Event Bus / service stream
+  |     fan-out only for widget-declared scene subscriptions
+  |
+  +-- canvas_object_action operation
+        delegates full object_ref actions to provider resolvers
+```
+
 Canvas is **not** inserted as an iframe in the main scene. It is imported and
 rendered directly:
 
@@ -76,19 +97,20 @@ import { createSceneRuntime } from "@kdcube/components-core/scene"
 import { CanvasBoard } from "@kdcube/components-react/canvas"
 ```
 
-Today the physical sources still live under existing SDK folders. The scene
-Vite config maps the future package names to the current source locations:
+The app config materializes package sources with `npm://` shared sources:
 
 ```text
 @kdcube/components-core/scene
-  -> sdk://solutions/scene
+  -> npm://components-core/src/scene
 
 @kdcube/components-react/canvas
-  -> sdk://solutions/canvas/ui/component
+  -> npm://components-react/src/canvas
 ```
 
-Compatibility aliases for the older names remain in `vite.config.js` only so
-already-materialized local bundles can still build during the transition.
+The scene also materializes `npm://components-core/src/canvas` and
+`npm://components-core/src/events` because canvas ingress and scene event
+claims are shared contracts. New app config should use `npm://` package
+sources; any older `sdk://solutions/...` aliases are compatibility scaffolding.
 
 ## Config Shape
 
@@ -101,10 +123,16 @@ ui:
     src_folder: ui/scene
     shared_sources:
       components_core_scene:
-        src_folder: sdk://solutions/scene
+        src_folder: npm://components-core/src/scene
         target: _shared/components-core/scene
+      components_core_events:
+        src_folder: npm://components-core/src/events
+        target: _shared/components-core/events
+      components_core_canvas:
+        src_folder: npm://components-core/src/canvas
+        target: _shared/components-core/canvas
       components_react_canvas:
-        src_folder: sdk://solutions/canvas/ui/component
+        src_folder: npm://components-react/src/canvas
         target: _shared/components-react/canvas
 ```
 
@@ -124,13 +152,45 @@ ui:
       src_folder: sdk://solutions/canvas/ui/widget/pinboard
       shared_sources:
         components_react_canvas:
-          src_folder: sdk://solutions/canvas/ui/component
+          src_folder: npm://components-react/src/canvas
           target: _shared/components-react/canvas
+        components_core_canvas:
+          src_folder: npm://components-core/src/canvas
+          target: _shared/components-core/canvas
 ```
 
 The `pinboard` widget is the canvas-as-iframe path. It reuses the same canvas
 React component, but hosts it inside its own widget. The versatile main scene
 does not use that path for the primary canvas; it uses direct React embedding.
+
+Scene surface composition is declared in server-side app config:
+
+```yaml
+surfaces:
+  as_consumer:
+    ui:
+      scene:
+        external_panels:
+          - id: task_panel
+            label: Tasks
+            bundle_id: task-tracker@1-0
+            widget_alias: task_tracker_tasks
+            widget_message_type: kdcube-task-tracker-widget-command
+            service_event_type: task_tracker.task.changed
+            service_forward_message_type: kdcube-task-tracker-task-changed
+            surfaces:
+              task_tracker.issue_list:
+                expanded: false
+                command:
+                  action: refresh
+              task_tracker.issue_editor:
+                expanded: true
+                command_from_open: provider_surface_open
+```
+
+The browser scene reads this through `scene_surface_config`, mounts the iframe,
+and registers each `target_surface` with `createSceneRuntime(...)`. The config
+declares composition; object semantics still come from provider resolvers.
 
 ## How Chat Is Connected
 
@@ -171,6 +231,29 @@ chat iframe -> scene host postMessage
 For example, when a chat context chip resolves an object-open action, chat sends
 the resolver response to the scene. The scene dispatches it through the scene
 runtime registry by `ui_event.target_surface`.
+
+## Scene Event Claims
+
+Widgets own their event subscriptions. The scene does not declare fallback
+subscriptions for usage, stats, task tracker, or any other widget.
+
+```text
+widget iframe
+  -> postMessage(kdcube-scene-subscribe, { alias, subscriptions })
+
+ui/scene host
+  -> createSceneEventBus.register(alias, subscriptions)
+  -> subscribes only to channels required by registered claims
+
+service event
+  -> sceneEventBus.normalizeEvent("sse", ...)
+  -> publish
+  -> matching widget receives configured command/event envelope
+```
+
+If a widget does not update, logs should show whether the widget never sent a
+claim, the scene rejected or misrouted the alias, or the provider event did not
+match the claim.
 
 ## Scene Runtime Registry
 
@@ -245,7 +328,7 @@ Canvas backend operations used by the scene:
 | `canvas_list` | List the current user's canvases for the scene story. |
 | `canvas_read` | Read one canvas projection. |
 | `canvas_attachment_upload` | Host local dropped files as canvas-owned attachments. |
-| `canvas_object_action` | Call the resolver for a pinned object's namespace. |
+| `canvas_object_action` | Call the resolver for a pinned object's full `object_ref`. |
 
 Canvas mutations are published over Data Bus:
 
@@ -283,7 +366,7 @@ The scene does not call memory APIs directly to load the object.
 
 ## Object Resolvers And External Surfaces
 
-The backend registers resolvers for namespaces the scene can display:
+The backend registers resolvers for object refs the scene can display:
 
 | Namespace | Owner |
 | --- | --- |
@@ -293,6 +376,10 @@ The backend registers resolvers for namespaces the scene can display:
 
 The canvas card or chat context chip stores one canonical object ref. The
 resolver owns preview, download, open, and rehost behavior.
+
+The centralized backend resolver router may use the URI namespace as a private
+dispatch key. The scene, canvas board, and chat widget pass the full
+`object_ref`; they do not parse URI grammar to decide behavior.
 
 Configured named-service resolvers are read from bundle props:
 
@@ -313,7 +400,7 @@ surfaces:
         - id: task_panel
           label: Tasks
           bundle_id: task-tracker@1-0
-          widget_alias: issue_list
+          widget_alias: task_tracker_tasks
           widget_message_type: task-widget-command
           surfaces:
             app.issue.viewer:
@@ -337,3 +424,56 @@ surface through the scene runtime registry, opens the configured iframe or
 component, and posts either the configured static command or the generic
 provider surface command. The scene does not parse provider object refs or
 hard-code provider widget ids.
+
+## Connected Map
+
+```text
+server-side app config (bundles.yaml)
+  |
+  +-- ui.main_view.shared_sources
+  |     -> npm://components-core/src/scene
+  |     -> npm://components-core/src/canvas
+  |     -> npm://components-core/src/events
+  |     -> npm://components-react/src/canvas
+  |
+  +-- ui.widgets
+  |     -> versatile_chat
+  |     -> memories
+  |     -> usage_card
+  |     -> pinboard
+  |
+  +-- namespace_styles
+  |     -> namespace_presentation_config
+  |     -> CanvasBoard / chat chips / scene overlays
+  |
+  +-- surfaces.as_consumer.agents.main.tools
+  |     -> named_services.* ReAct tools
+  |
+  +-- surfaces.as_consumer.agents.main.event_sources
+  |     -> react.pull / block.produce for external refs
+  |
+  +-- surfaces.as_consumer.ui.canvas.resolvers
+  |     -> canvas_object_action provider dispatch
+  |
+  +-- surfaces.as_consumer.ui.scene.external_panels
+        -> scene surface registry target_surface entries
+
+browser ui/scene
+  |
+  +-- mounts widgets / CanvasBoard
+  +-- receives widget event claims
+  +-- routes context drag and kdcube.canvas.ingress
+  +-- calls canvas_object_action(open, object_ref, target_surface)
+  +-- dispatches returned ui_event.target_surface to mounted surface
+```
+
+## Platform Docs
+
+- `docs/sdk/npm/components-core/scene-README.md`
+- `docs/sdk/npm/components-core/context-drag-README.md`
+- `docs/sdk/npm/components-core/canvas-pin-board-README.md`
+- `docs/sdk/npm/widget-integration-README.md`
+- `docs/sdk/solutions/scene/config/README.md`
+- `docs/sdk/solutions/scene/cross-surface-context-drag-README.md`
+- `docs/sdk/solutions/canvas/pin-integration-README.md`
+- `docs/sdk/namespace-services/README.md`

@@ -2,7 +2,7 @@
 title: Versatile Bundle Storage
 kind: storage-map
 bundle_id: versatile@2026-03-31-13-36
-updated_at: 2026-06-09
+updated_at: 2026-06-23
 ---
 
 # Versatile Bundle Storage
@@ -89,6 +89,26 @@ Canvas-owned text and attachments are stored under `objects/`. Proxy cards keep
 their canonical object refs (`fi:`, `mem:`, `cnv:`, etc.) and are not rehosted
 just because they were pinned.
 
+### Scene and resolver config
+
+Scene composition is not stored in the canvas data tree. It is runtime app
+configuration:
+
+```text
+bundles.yaml
+  config.namespace_styles
+  config.ui.main_view.shared_sources
+  config.ui.widgets
+  config.surfaces.as_consumer.ui.scene.external_panels
+  config.surfaces.as_consumer.ui.canvas.resolvers
+  config.surfaces.as_consumer.agents.main.event_sources
+```
+
+Those settings decide which widgets are mounted, which npm shared sources are
+materialized, which external panels are registered as target surfaces, and which
+provider resolvers are available for object actions. The actual widget build
+output remains rebuildable under `ui/`.
+
 ## Rebuildable Data
 
 ```text
@@ -155,6 +175,7 @@ temporary execution workspaces are cleaned.
 | Telegram user registry | `$B/admin/telegram-users.json` | Yes | Operator-managed mapping from Telegram users to KDCube users/roles/conversations. |
 | Telegram webhook update state | `$B/admin/telegram-updates/...` | Yes | Idempotency state for Bot API retries. |
 | Canvas state | `$B/canvas/users/<user_id>/canvases/...` | Yes | Versioned board state and canvas-owned objects for the active scene. |
+| Scene/resolver config | `bundles.yaml` effective app config | Yes, config-owned | Controls widgets, shared npm sources, external panels, presentation, and provider resolvers. |
 | Chat widget static output | `$B/ui/widgets/versatile_chat/...` | No | Built from `sdk://solutions/chat/ui/widget`. |
 | Memory widget static output | `$B/ui/widgets/memories/...` | No | Built from `sdk://context/memory/ui/widget/memories`. |
 | Usage-card widget static output | `$B/ui/widgets/usage_card/...` | No | Built from `sdk://infra/economics/ui/widget/usage-card`. |

@@ -60,6 +60,29 @@ The Telegram Mini App uses `telegram_miniapp_data` for bootstrap in both
 authenticated KDCube widget mode and Telegram public mode. Telegram mode sends
 raw `window.Telegram.WebApp.initData` on every public API call.
 
+## Scene And Canvas Contract
+
+Scene composition is server-configured. Put widget/source/surface/resolver
+configuration in `config/bundles.template.yaml` and deployment `bundles.yaml`:
+
+```yaml
+ui.main_view.shared_sources
+ui.widgets
+surfaces.as_consumer.ui.scene.external_panels
+surfaces.as_consumer.ui.canvas.resolvers
+surfaces.as_consumer.agents.main.event_sources
+```
+
+Do not add hidden widget subscriptions to `ui/scene/src/main.tsx`. Widgets must
+post `kdcube-scene-subscribe`; the scene logs registration and dispatch.
+
+Do not parse `mem:`, `task:`, `conv:`, or future provider refs in scene/canvas UI
+code to decide behavior. Pass the full `object_ref` to `canvas_object_action` or
+the scene runtime and let the provider resolver return `ui_event.target_surface`.
+
+Canvas stores proxy cards and canvas-owned annotations/layout. Provider objects
+stay in their owning app.
+
 ## Validation
 
 Run focused Python checks with:

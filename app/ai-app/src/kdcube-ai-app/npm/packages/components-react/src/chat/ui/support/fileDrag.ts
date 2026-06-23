@@ -1,7 +1,10 @@
-// Canvas-ingress drag message type (host protocol constant; default value).
-const CHAT_CANVAS_INGRESS_MESSAGE = 'kdcube.canvas.ingress'
+import {
+  INGRESS_DRAG_END_MESSAGE_TYPE,
+  INGRESS_DRAG_START_MESSAGE_TYPE,
+  INGRESS_MESSAGE_TYPE,
+} from '@kdcube/components-core/canvas'
 
-export const CANVAS_INGRESS_MESSAGE_TYPE = CHAT_CANVAS_INGRESS_MESSAGE
+export const CANVAS_INGRESS_MESSAGE_TYPE = INGRESS_MESSAGE_TYPE
 
 const DURABLE_FI_REF = /^fi:conv_[^.]+\.turn_[^.]+\./
 const NAMESPACE_REF = /^[a-z][a-z0-9_.-]*:/i
@@ -37,13 +40,14 @@ export function chatFileDragMessage(input: ChatFileDragInput) {
   return {
     type: CANVAS_INGRESS_MESSAGE_TYPE,
     payload: {
-      kind: 'chat.artifact',
-      ref: input.ref,
+      object_ref: input.ref,
       mime: input.mime || 'application/octet-stream',
+      title: input.filename,
       filename: input.filename,
       preview: input.preview || undefined,
-      source_kind: input.sourceKind,
-      attachment_compatible: true,
+      presentation: {
+        label: input.sourceKind === 'user.attachment' ? 'attachment' : 'file',
+      },
     },
   }
 }
@@ -74,9 +78,9 @@ export function setChatFileDragData(dataTransfer: DataTransfer, input: ChatFileD
     dataTransfer.setData('text/uri-list', input.ref)
   }
   postParentDragMessage({
-    type: 'kdcube-canvas-ingress-drag-start',
+    type: INGRESS_DRAG_START_MESSAGE_TYPE,
     source: 'chat-widget',
-    payload: message.payload,
+    ingress: message,
     // Include the dragstart point so the host can build a screen->client
     // calibration delta. Without it a cross-origin drop (released outside this
     // iframe, e.g. on the canvas) can't be mapped to host coordinates and misses
@@ -84,6 +88,6 @@ export function setChatFileDragData(dataTransfer: DataTransfer, input: ChatFileD
     ...(event ? dragPoint(event) : {}),
   })
   window.addEventListener('dragend', (endEvent) => {
-    postParentDragMessage({ type: 'kdcube-canvas-ingress-drag-end', source: 'chat-widget', ...dragPoint(endEvent) })
+    postParentDragMessage({ type: INGRESS_DRAG_END_MESSAGE_TYPE, source: 'chat-widget', ...dragPoint(endEvent) })
   }, { once: true })
 }

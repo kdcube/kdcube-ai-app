@@ -50,7 +50,7 @@ Add only data to the scene config:
   "contextDropTargets": {
     "your_widget": {
       "surfaceRef": "website.your_widget",
-      "acceptsRootNamespaces": ["your"],
+      "accepts": "provider-open",
       "dropEffect": "open",
       "targetSurface": "your.namespace.viewer",
       "action": "open"
@@ -81,11 +81,12 @@ drag out
 
 drop in
   accept object_ref
-  ask provider object.action(open) when the object is not already local
+  ask provider object.action(open, object_ref, target_surface)
   render using namespace presentation config
 ```
 
-The component should never infer namespace color locally when the scene or platform config can provide it.
+The component should never infer namespace color or action behavior locally when
+the scene/platform config and provider resolver can provide it.
 
 ## Event Rules
 

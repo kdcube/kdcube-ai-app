@@ -64,15 +64,14 @@ See [Context drag](./context-drag-README.md) for the packet format.
 
 ```text
 kdcube.canvas.ingress
-  payload_type: object.ref
   payload.object_ref: provider-owned ref
 
 kdcube.canvas.ingress
-  payload_type: content.text
   payload.content.text: inline text canvas will host
 ```
 
-`payload_type` is not a behavior key. It only selects payload shape.
+The packet is structural: `payload.object_ref` means "pin this provider
+object"; `payload.content.text` means "host this provided text on the canvas".
 
 ## Canvas-Owned Content
 

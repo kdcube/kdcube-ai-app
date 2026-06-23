@@ -19,9 +19,8 @@ browser tab
       merges scene defaults with profile overrides
     surface registry
       alias -> iframe route
-      alias -> accepted namespaces
-      alias -> event subscriptions
       target_surface -> command contract
+      widget alias -> event subscription claims
     event bridge
       one Event Bus stream per authenticated scene runtime
       per-widget subscription claims
@@ -65,7 +64,7 @@ The scene config is data, not hardcoded widget logic. A scene profile should dec
   "contextDropTargets": {
     "versatile": {
       "surfaceRef": "website.chat",
-      "acceptsRootNamespaces": ["*"],
+      "accepts": "context",
       "dropEffect": "attach",
       "targetSurface": "sdk.chat.context",
       "action": "attach"
@@ -119,9 +118,9 @@ source widget
   postMessage(kdcube-context-drag-start, { contexts: [{ ref: "mem:record:..." }] })
 
 scene
-  extracts root namespace: mem
-  asks namespace presentation config for color
-  highlights surfaces whose accepted namespaces include mem or *
+  normalizes the full object_ref
+  highlights configured candidate targets
+  never parses mem/task/conv semantics
 
 drop target
   chat     -> kdcube.surface.command target_surface=sdk.chat.context action=attach
@@ -129,13 +128,16 @@ drop target
   owner UI -> object.action(open) -> ui_event.target_surface -> kdcube.surface.command action=open
 ```
 
-Namespace styling belongs to namespace presentation config. Canvas, chat, and overlay rendering consume the same namespace-owned colors.
+Presentation styling belongs to namespace presentation config or resolver
+presentation metadata. Canvas, chat, and overlay rendering consume the same
+configured colors/icons. Actions come from provider resolvers, not from local
+namespace parsing.
 
 ## Current Gaps
 
-- Some widgets can operate either with scene Event Bus delivery or their own SSE; the selected mode must be explicit in profile config.
+- Some widgets can operate either with scene Event Bus delivery or their own SSE; the selected mode must be explicit in app/scene config.
 - Data Bus forwarding uses the same subscription idea but still needs a first-class scene adapter.
-- The website scene now follows the generic command envelope, but the reusable `components-core` scene package still needs the full website surface/config loader extracted into it.
+- Website config may still use explicit selector patterns for transitional compatibility. Canonical open behavior is provider-owned `object.action(open, object_ref, target_surface)`.
 
 ## Related Docs
 

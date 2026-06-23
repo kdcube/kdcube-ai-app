@@ -59,7 +59,8 @@ Allowed:
 - using host config to decide candidate drop targets;
 - passing full `object_ref` to an injected object-action client;
 - routing returned `ui_event.target_surface` to a registered surface;
-- using explicit host composition policy such as `task:*` for target hints.
+- using generic host composition policy such as `provider-open`, `context`,
+  `ingress`, or transitional explicit selector patterns for target hints.
 
 Not allowed:
 
@@ -81,10 +82,24 @@ drop/click object_ref
 The provider response is authoritative. Drop-target config is only candidate
 selection and user-interface policy.
 
+## Event Claims
+
+The scene event bus only dispatches events to widgets that register explicit
+claims:
+
+```text
+widget -> kdcube-scene-subscribe
+scene  -> createSceneEventBus.register(alias, claims)
+SSE/Event Bus event -> publish -> matching alias receives configured command
+```
+
+The scene package must not carry hidden default subscriptions for a widget. If a
+claim is missing, the failure should be visible in logs rather than masked by
+host fallback behavior.
+
 ## Related Docs
 
 - `docs/sdk/solutions/scene/generic-scene-contract-README.md`
 - `docs/sdk/solutions/scene/scene-composition-README.md`
 - `docs/sdk/solutions/scene/cross-surface-context-drag-README.md`
 - `docs/sdk/solutions/scene/config/README.md`
-

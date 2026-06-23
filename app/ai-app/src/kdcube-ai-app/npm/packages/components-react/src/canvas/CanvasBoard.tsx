@@ -21,7 +21,7 @@ import {
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import type { CanvasObjectActionName, CanvasObjectActionResponse, CanvasPatchInput, CanvasPatchOp, CanvasPatchResponse, CanvasReadInput, CanvasReadResponse, CanvasSearchInput, CanvasSearchItem, CanvasSearchResponse } from '@kdcube/components-core/canvas'
 import { normalizeContext, normalizeContextMessage, type CanvasContextItem } from '@kdcube/components-core/canvas'
-import { parseIngressMessage, type CanvasIngressPayload } from '@kdcube/components-core/canvas'
+import { parseIngressMessage, type CanvasIngressMessage } from '@kdcube/components-core/canvas'
 import {
   canvasContext,
   cardsFromProjection,
@@ -49,7 +49,7 @@ export interface CanvasNamespaceStyle {
 
 export type CanvasBrokeredDrop =
   | { kind: 'context'; context: CanvasContextItem }
-  | { kind: 'ingress'; payload: CanvasIngressPayload }
+  | { kind: 'ingress'; ingress: CanvasIngressMessage }
 
 export interface CanvasBoardProps {
   activeCanvasName: string
@@ -68,7 +68,7 @@ export interface CanvasBoardProps {
   onDropFiles: (files: File[], rect: CanvasCard['rect']) => void
   onDropText: (text: string, rect: CanvasCard['rect']) => void
   onDropContext: (context: CanvasContextItem, rect: CanvasCard['rect']) => void
-  onDropIngress: (payload: CanvasIngressPayload, rect: CanvasCard['rect']) => void
+  onDropIngress: (ingress: CanvasIngressMessage, rect: CanvasCard['rect']) => void
   getBrokeredDrop?: () => CanvasBrokeredDrop | null
   onBrokeredDropHandled?: () => void
   onObjectAction?: (card: CanvasCard, action: CanvasObjectActionName) => Promise<CanvasObjectActionResponse>
@@ -1712,7 +1712,7 @@ export function CanvasBoard({
         const parsed = JSON.parse(rawJson)
         const ingressMessage = parseIngressMessage(parsed)
         if (ingressMessage) {
-          onDropIngress(ingressMessage.payload, dropRect(event, 246, 112))
+          onDropIngress(ingressMessage, dropRect(event, 246, 112))
           return
         }
         const contextMessage = normalizeContextMessage(parsed)
@@ -1732,7 +1732,7 @@ export function CanvasBoard({
 
     const brokeredDrop = getBrokeredDrop?.()
     if (brokeredDrop?.kind === 'ingress') {
-      onDropIngress(brokeredDrop.payload, dropRect(event, 246, 112))
+      onDropIngress(brokeredDrop.ingress, dropRect(event, 246, 112))
       onBrokeredDropHandled?.()
       return
     }

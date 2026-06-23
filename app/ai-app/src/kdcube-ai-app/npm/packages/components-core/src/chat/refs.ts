@@ -7,38 +7,32 @@
  * helpers belong in the headless engine; the drag-data builders stay in the view.
  */
 
-const DURABLE_FI_REF = /^fi:conv_[^.]+\.turn_[^.]+\./
 const NAMESPACE_REF = /^[a-z][a-z0-9_.-]*:/i
 const BROWSER_SCHEMES = new Set(['blob:', 'data:', 'http:', 'https:', 'javascript:', 'mailto:'])
-
-export function isDurableFiRef(ref: string): boolean {
-  return DURABLE_FI_REF.test(ref)
-}
+const DURABLE_FI_REF = /^fi:conv_[^.]+\.turn_[^.]+\./
 
 export function canonicalObjectRef(...refs: Array<string | null | undefined>): string {
   for (const raw of refs) {
     const ref = typeof raw === 'string' ? raw.trim() : ''
     if (!ref) continue
-    if (ref.startsWith('fi:')) {
-      if (isDurableFiRef(ref)) return ref
-      continue
-    }
     const scheme = (ref.match(NAMESPACE_REF)?.[0] || '').toLowerCase()
     if (scheme && !BROWSER_SCHEMES.has(scheme)) return ref
   }
   return ''
 }
 
-/** A durable `fi:` ref opens by direct download; every other namespace ref opens
- *  through its resolver (object.action). Mirrors the in-tree widget's fileDrag. */
-export function isDirectDownloadObjectRef(ref: string): boolean {
-  return String(ref || '').trim().startsWith('fi:') && isDurableFiRef(ref)
-}
-
 /** The leading namespace token of an object ref (`task:issue:1` → `task`), or "". */
 export function namespaceFromObjectRef(ref: string): string {
   const match = String(ref || '').trim().match(/^([a-z][a-z0-9_.-]*):/i)
   return match?.[1]?.toLowerCase() || ''
+}
+
+export function isDurableFiRef(ref: string): boolean {
+  return DURABLE_FI_REF.test(String(ref || '').trim())
+}
+
+export function isDirectDownloadObjectRef(ref: string): boolean {
+  return isDurableFiRef(ref)
 }
 
 export function durableHistoricalObjectRef(value: unknown, conversationId?: string): string | null {

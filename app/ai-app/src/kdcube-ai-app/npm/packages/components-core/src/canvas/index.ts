@@ -3,7 +3,7 @@
  *
  * The pure, view-free layer of the canvas: the card/document data model and
  * patch/projection transforms (canvasModel), the wire types (canvasTypes), the
- * ingress builders that turn selected text / chat artifacts / search results into
+ * ingress builders that turn selected text / component artifacts / search results into
  * cards (ingress), the postMessage ingress parser (ingressBridge), context-pin
  * normalization (contextTypes), and id helpers (ids).
  *

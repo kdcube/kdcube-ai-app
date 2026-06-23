@@ -12,8 +12,8 @@
  *     text). The storage layer replaces `content` with a `logical_path` on
  *     write.
  *   - `logical_path`: the UI pins an existing resolver-backed ref
- *     (search results, chat artifacts, foreign namespace refs) without rehosting.
- *     This preserves cross-conversation `fi:conv_<id>...` refs verbatim.
+ *     (search results, provider objects, foreign namespace refs) without
+ *     rehosting. The ref flows through verbatim.
  *
  * The CanvasBoard wiring (drop zones, drag images, selection state) lives
  * separately — this module is consumable from both the parent main UI and
@@ -80,6 +80,7 @@ export interface CardOptions {
 function prefixForCardKind(kind: CanvasCardKind): string {
   if (kind === 'user.attachment') return 'ua'
   if (kind === 'user.text') return 'ut'
+  if (kind === 'provided.text') return 'pt'
   if (kind === 'agent.text') return 'at'
   return 'obj'
 }
@@ -179,14 +180,23 @@ export function cardFromSearchResult(
   }
 }
 
-/** User dragged an agent-produced file from the chat iframe onto canvas.
- *  Preserves cross-conversation `fi:conv_<id>.turn_<id>...` refs verbatim
- *  per the canvas namespace contract. */
-export function cardFromChatArtifact(
-  artifact: { ref: string; mime: string; filename?: string; preview?: string; namespace?: string; object_kind?: string },
+export interface ProviderObjectCardDescriptor {
+  ref: string
+  mime: string
+  filename?: string
+  preview?: string
+  namespace?: string
+  object_kind?: string
+}
+
+/** User dragged or selected a provider-owned object onto canvas. Canvas does
+ *  not parse or rewrite the ref; provider-owned refs resolve through the
+ *  configured object resolver/action contract. */
+export function cardFromProviderObject(
+  artifact: ProviderObjectCardDescriptor,
   options: CardOptions = {},
 ): CanvasNewCardInput {
-  assertCanvasLogicalPath(artifact.ref, 'cardFromChatArtifact')
+  assertCanvasLogicalPath(artifact.ref, 'cardFromProviderObject')
   const filename = String(artifact.filename || '').trim()
   const refTitle = filename && filename !== artifact.ref ? compactFilename(filename) : ''
   const preview = compactPreview(artifact.preview || artifact.ref, 240)
@@ -209,23 +219,25 @@ export function cardFromChatArtifact(
   }
 }
 
-/** User dragged assistant response text from chat onto canvas. The bundle
- *  rehosts it as a versioned `cnv:` `agent.text` object so the canvas
- *  carries a stable ref — the chat history alone is not a durable home. */
-export function cardFromChatAssistantText(
+/** Raw provided text dropped onto canvas. The app rehosts it as a versioned
+ *  `cnv:` text object so the canvas carries a stable ref. */
+export function cardFromProvidedText(
   text: string,
-  options: CardOptions & { title?: string } = {},
+  options: CardOptions & { title?: string; kind?: CanvasCardKind; object_kind?: string } = {},
 ): CanvasNewCardInput {
   if (!text.trim()) {
-    throw new Error('cardFromChatAssistantText: text is required')
+    throw new Error('cardFromProvidedText: text is required')
   }
+  const kind = options.kind || 'provided.text'
+  const objectKind = options.object_kind ||
+    (kind === 'agent.text' ? 'cnv:agent:text' : (kind === 'user.text' ? 'cnv:user:text' : 'cnv:provided:text'))
   return {
-    id: options.id ?? timestampCardIdForKind('agent.text'),
-    kind: 'agent.text',
+    id: options.id ?? timestampCardIdForKind(kind),
+    kind,
     title: options.title ?? compactPreview(text),
     mime: 'text/markdown',
     namespace: 'cnv',
-    object_kind: 'cnv:agent:text',
+    object_kind: objectKind,
     content: { text },
     placement: options.placement ?? 'floating',
     rect: options.rect,

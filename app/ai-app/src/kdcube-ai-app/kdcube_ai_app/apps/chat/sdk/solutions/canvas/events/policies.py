@@ -699,6 +699,8 @@ def _card_prefix(kind: Any) -> str:
         return "A"
     if value == "user.text":
         return "U"
+    if value == "provided.text":
+        return "T"
     if value == "agent.text":
         return "R"
     if value == "file":

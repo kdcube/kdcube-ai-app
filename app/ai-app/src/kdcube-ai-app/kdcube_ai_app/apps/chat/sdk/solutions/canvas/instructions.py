@@ -10,9 +10,9 @@ CANVAS_BOARD_EDIT_PROTOCOL_LINES = (
     "- Treat this JSON as exact state for planning only; do not edit or save it directly.",
     "- Use map labels for spatial reasoning; use card_id values from the legend when mutating existing cards.",
     "- Use card refs only when content_preview is missing or insufficient; pull external owner refs into the ReAct workspace before exact content inspection.",
-    "- user.text card content can be updated with canvas.card content={text}. Proxy cards keep their ref content unchanged; use canvas.card description or canvas.card.comment for user notes on them.",
-    "- Card kind is a source-provided label. Canvas-owned content uses user.text/user.attachment/agent.text; provider-owned pins keep the provider label and resolve through object_ref/namespace/object_kind.",
-    "- Use kind=agent.text only for assistant-authored text hosted by canvas. Do not coerce provider objects into canvas-owned kinds.",
+    "- provided.text and user.text card content can be updated with canvas.card content={text}. Proxy cards keep their ref content unchanged; use canvas.card description or canvas.card.comment for user notes on them.",
+    "- Card kind is a source-provided label. Canvas-owned content may use provided.text/user.text/user.attachment/agent.text; provider-owned pins keep the provider label and resolve through object_ref/namespace/object_kind.",
+    "- Use kind=provided.text for source-neutral text hosted by canvas. Use kind=agent.text only when the text is known to be assistant-authored. Do not coerce provider objects into canvas-owned kinds.",
     "- Every successful canvas upsert creates a new revision and event.canvas timeline result.",
     "- Do not edit read-only snapshot refs; canvas cards are editable pins, snapshots are context.",
 )
@@ -134,6 +134,8 @@ Card placement and ref behavior:
   reported by the pull result.
 - Canvas-owned cards are hosted by the runtime's canvas storage, not by the
   platform conversation artifact store:
+  - `provided.text` is source-neutral text provided to the canvas and remains a
+    `cnv:` ref when attached into chat.
   - `user.text` is user-authored text created on the canvas and remains an
     `cnv:` ref when attached into chat.
   - `user.attachment` is a user upload created on the canvas and remains an

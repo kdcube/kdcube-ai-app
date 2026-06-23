@@ -15,8 +15,8 @@ pinboard iframe
     pins
     positions
   namespace presentation
-    color by root namespace
-    label/icon by object metadata
+    color/icon by provider namespace or scoped object kind
+    label by object metadata
   drag adapter
     context drag start/end
     local pin movement
@@ -43,18 +43,20 @@ pin dragged from pinboard
 
 ## Namespace Styling
 
-Pin color is namespace-owned. The pinboard should consume the same namespace presentation config as chat and scene overlays:
+Pin color/icon is provider-owned presentation. The pinboard should consume the
+same namespace presentation config as chat and scene overlays:
 
 ```text
 object_ref = task:issue:...
-root namespace = task
-namespace presentation -> color
-pin rendering -> task color
-scene overlay -> same task color
-chat chip -> same task color
+presentation key = task or task:issue
+namespace presentation -> color/icon
+pin rendering -> configured presentation
+scene overlay -> same configured presentation
+chat chip -> same configured presentation
 ```
 
-Canvas-specific fallback colors hide configuration bugs. Missing namespace config should be visible in logs.
+Canvas-specific fallback colors hide configuration bugs. Missing presentation
+config should be visible in logs.
 
 ## Config
 
@@ -63,7 +65,7 @@ Canvas-specific fallback colors hide configuration bugs. Missing namespace confi
   "contextDropTargets": {
     "pinboard": {
       "surfaceRef": "website.pinboard",
-      "acceptsRootNamespaces": ["*"],
+      "accepts": "context",
       "dropEffect": "pin",
       "targetSurface": "sdk.canvas.pinboard",
       "action": "pin"
@@ -92,7 +94,8 @@ The widget can run standalone by opening its own runtime connections. In a scene
 ## Current Gaps
 
 - Data Bus relaying by the scene is not yet as complete as Event Bus relaying.
-- The pinboard still carries more local scene-awareness than the final shared component should.
+- Pinboard actions must stay resolver-backed. The board stores proxy cards and
+  never decides behavior from provider URI grammar.
 
 ## Related Docs
 

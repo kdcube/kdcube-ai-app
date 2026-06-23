@@ -206,6 +206,8 @@ def _canvas_owned_card_prefix(kind: Any) -> str:
     value = str(kind or "").strip()
     if value == "user.text":
         return "ut"
+    if value == "provided.text":
+        return "pt"
     if value == "user.attachment":
         return "ua"
     if value == "agent.text":
@@ -214,13 +216,15 @@ def _canvas_owned_card_prefix(kind: Any) -> str:
 
 
 def _is_canvas_owned_kind(kind: Any) -> bool:
-    return str(kind or "").strip() in {"user.text", "user.attachment", "agent.text"}
+    return str(kind or "").strip() in {"user.text", "provided.text", "user.attachment", "agent.text"}
 
 
 def _canvas_object_kind(kind: Any) -> str:
     value = str(kind or "").strip()
     if value == "user.text":
         return "cnv:user:text"
+    if value == "provided.text":
+        return "cnv:provided:text"
     if value == "user.attachment":
         return "cnv:user:attachment"
     if value == "agent.text":
@@ -558,6 +562,8 @@ class CanvasStore:
         kind = str(card.get("kind") or "object")
         if kind == "user.text":
             return "user-text"
+        if kind == "provided.text":
+            return "provided-text"
         if kind == "agent.text":
             return "agent-text"
         if kind == "user.attachment":

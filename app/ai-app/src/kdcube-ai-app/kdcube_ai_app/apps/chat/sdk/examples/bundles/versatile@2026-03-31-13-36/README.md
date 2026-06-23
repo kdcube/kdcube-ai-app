@@ -2,7 +2,7 @@
 title: Versatile Reference Bundle
 kind: reference-bundle
 bundle_id: versatile@2026-03-31-13-36
-updated_at: 2026-06-13
+updated_at: 2026-06-23
 ---
 
 # versatile bundle
@@ -272,15 +272,36 @@ The active source lives under `ui/scene/`. It is a scene shell that embeds the
 reusable SDK chat widget as `versatile_chat`, embeds the SDK memory widget as
 `memories`, and renders the SDK canvas component as the main work surface.
 
+The scene is configured from server-side app config:
+
+```text
+config/bundles.template.yaml
+  ui.main_view.shared_sources
+    -> @kdcube/components-core/scene
+    -> @kdcube/components-core/canvas
+    -> @kdcube/components-core/events
+    -> @kdcube/components-react/canvas
+
+  surfaces.as_consumer.ui.scene.external_panels
+    -> target_surface registrations for external widgets
+
+  surfaces.as_consumer.ui.canvas.resolvers
+    -> provider-owned object actions for pinned refs
+
+  surfaces.as_consumer.agents.main.event_sources
+    -> ReAct pull/block production for external refs
+```
+
 The scene writes canvas mutations through Data Bus subject `canvas.patch` and
 keeps request/response operations such as `canvas_read`, `canvas_list`,
 `canvas_attachment_upload`, and `canvas_object_action` as bundle operations.
 The canvas event source ids are generic protocol names: `canvas.state` and
 `canvas.focus`.
 
-The `canvas_object_action` operation also hosts configured named-service
-namespace resolvers for both canvas and chat object actions. For example,
-`crm:` refs can be delegated to a CRM owner bundle:
+The `canvas_object_action` operation hosts configured named-service resolvers
+for both canvas and chat object actions. The scene and widgets pass full
+`object_ref` values; the resolver/provider owns URI semantics. For example,
+`crm:` refs can be delegated to a CRM owner app:
 
 ```yaml
 surfaces:
@@ -306,7 +327,7 @@ surfaces:
 ```
 
 The configured resolver resolves the owner through Named Service Discovery and
-then calls the owning bundle through the request-bound local bridge, so it
+then calls the owning app through the request-bound local bridge, so it
 preserves the current tenant/project/user session without making an HTTP
 callback. A concrete `providers` list may be added only when this bundle must
 pin one or more provider endpoints instead of using discovery.
@@ -341,8 +362,9 @@ Reference backend endpoint:
 - `src/kdcube-ai-app/kdcube_ai_app/apps/chat/proc/rest/integrations/integrations.py`
 
 The scene uses the platform iframe config handshake, embeds configured SDK
-widgets, and calls canvas operations such as `canvas_read`, `canvas_write`,
-`canvas_patch`, `canvas_attachment_upload`, and `canvas_object_action`.
+widgets, and calls canvas operations such as `canvas_list`, `canvas_read`,
+`canvas_attachment_upload`, and `canvas_object_action`. Writes go through Data
+Bus subject `canvas.patch`.
 
 The custom main view follows the same handshake and auth model, but it talks to the
 chat runtime directly once mounted:

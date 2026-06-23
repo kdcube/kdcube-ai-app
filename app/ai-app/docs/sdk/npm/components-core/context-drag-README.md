@@ -9,8 +9,8 @@ keywords:
   [
     "kdcube-context-drag-start",
     "kdcube.canvas.ingress",
-    "payload_type object.ref",
-    "payload_type content.text",
+    "payload.object_ref",
+    "payload.content.text",
     "canvas ingress",
     "context drag",
   ]
@@ -78,7 +78,6 @@ Object-ref payload:
 ```json
 {
   "type": "kdcube.canvas.ingress",
-  "payload_type": "object.ref",
   "payload": {
     "object_ref": "task:issue:ticket_2026_06_23",
     "title": "Cancel membership",
@@ -97,7 +96,6 @@ Text payload:
 ```json
 {
   "type": "kdcube.canvas.ingress",
-  "payload_type": "content.text",
   "payload": {
     "title": "Selection",
     "content": {
@@ -110,14 +108,14 @@ Text payload:
 
 Rules:
 
-- `payload_type` is a schema selector only.
-- `payload_type` is not an object kind, namespace, or routing key.
+- `payload.object_ref` means "pin this existing provider object".
+- `payload.content.text` means "host this provided text on the canvas".
 - `presentation` is cosmetic and optional.
 - The scene host may stamp `payload.source` from its component registry:
   `surface_ref`, `component`, `app`, `runtime`, `tenant`, `project`.
 - The pin board stores a proxy card and preserves provider `object_ref`.
 - Actions come from provider resolvers, not from `kind`, `namespace`, or
-  `payload_type`.
+  presentation fields.
 
 ## Flow
 

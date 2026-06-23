@@ -2,7 +2,7 @@
 title: Versatile Runtime Scenarios
 kind: scenarios
 bundle_id: versatile@2026-03-31-13-36
-updated_at: 2026-06-13
+updated_at: 2026-06-23
 ---
 
 # Versatile Runtime Scenarios
@@ -40,17 +40,22 @@ KDCube control plane
   v
 iframe loads ui/scene
   |
+  +-- reads scene_surface_config and namespace_presentation_config
   +-- embeds widgets/versatile_chat
   +-- embeds widgets/memories
+  +-- embeds widgets/usage_card
   +-- renders SDK CanvasBoard
   |
   +-- canvas reads/uploads/actions -> bundle operations
   +-- canvas patches -> Data Bus subject canvas.patch
+  +-- widgets post kdcube-scene-subscribe claims
+  +-- service events -> scene event bus -> subscribed widgets
   +-- context attach/focus -> versatile_chat iframe
+  +-- object open -> canvas_object_action -> provider ui_event.target_surface
 ```
 
 The active scene is the reference for assembling reusable SDK components in one
-bundle. See `docs/design/scene-sdk-components.md` for the exact widget and
+app. See `docs/design/scene-sdk-components.md` for the exact widget and
 operation wiring.
 
 ## Scenario 2: Telegram Bot Chat

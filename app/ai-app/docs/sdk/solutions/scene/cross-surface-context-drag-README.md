@@ -102,7 +102,7 @@ drop hit areas in the parent page coordinate space.
 | --- | --- | --- | --- | --- |
 | `kdcube-context-drag-start` | source surface -> scene host | One browser drag | Dash-case transport name | Starts an active scene drag with canonical `contexts`. |
 | `kdcube-context-drag-end` | source surface -> scene host | One browser drag | Dash-case transport name | Supplies final coordinates and lets the host resolve a drop when native `drop` does not reach the parent overlay. |
-| `kdcube-canvas-ingress-drag-start/end` | source surface -> scene host | One browser drag | Dash-case transport name | Carries non-object ingress payloads, such as a user attachment/file payload, toward canvas pinning. |
+| `kdcube.canvas.ingress.drag_start/end` | source surface -> scene host | One browser drag | Dotted scene protocol name | Carries a `kdcube.canvas.ingress` packet toward canvas pinning while preserving drag coordinates. |
 | `object.action(open)` | scene host -> namespace provider | Drop handling | Namespace-service operation | Provider validates the full URI and returns the actual `ui_event.target_surface`. |
 | Target command, for example `kdcube-memory-widget-command` | scene host -> target iframe | Drop handling | Dash-case transport name | Local browser command delivered after provider/open resolution. |
 
@@ -132,8 +132,8 @@ canonical packet:
   kdcube.canvas.ingress
 
 optional drag lifecycle wrapper:
-  kdcube-canvas-ingress-drag-start
-  kdcube-canvas-ingress-drag-end
+  kdcube.canvas.ingress.drag_start
+  kdcube.canvas.ingress.drag_end
 ```
 
 The wrapper exists only so the browser scene can track pointer coordinates
@@ -147,7 +147,6 @@ Use this when the source already has a canonical object URI:
 ```json
 {
   "type": "kdcube.canvas.ingress",
-  "payload_type": "object.ref",
   "payload": {
     "object_ref": "fi:conv_.../weather_cli.zip",
     "mime": "application/zip",
@@ -170,8 +169,7 @@ Rules:
 - `presentation` is optional and cosmetic. It may provide label, namespace, or
   object-kind hints for immediate display while provider metadata is loading.
 - Actions such as open, download, attach, or edit come from the resolver or
-  provider response, not from `payload_type`, `presentation.label`, or card
-  `kind`.
+  provider response, not from `presentation.label` or card `kind`.
 
 ### Text Content Payload
 
@@ -180,7 +178,6 @@ Use this when the source has raw text, not a provider object URI:
 ```json
 {
   "type": "kdcube.canvas.ingress",
-  "payload_type": "content.text",
   "payload": {
     "title": "Selection",
     "content": {
@@ -197,9 +194,8 @@ Use this when the source has raw text, not a provider object URI:
 
 Rules:
 
-- `payload_type` is a schema selector only: `object.ref` means the payload has
-  `object_ref`; `content.text` means it has inline text content.
-- `payload_type` must not become a hidden object classifier or routing key.
+- `payload.object_ref` means "pin this existing provider object".
+- `payload.content.text` means "host this provided text on the canvas".
 - If the text is placed on canvas, canvas hosts it as a canvas-owned object and
   assigns the resulting `cnv:` identity.
 - `agent.text`, `user.text`, or `provided.text` are card/display labels after
@@ -233,12 +229,12 @@ forwarding the packet to canvas.
 chat/file chip, memory row, search result, or another source
   creates:
     kdcube.canvas.ingress
-    payload_type = object.ref | content.text
+    payload.object_ref OR payload.content.text
         |
         v
 source drag helper
   wraps during pointer drag:
-    kdcube-canvas-ingress-drag-start { ingress, x, y }
+    kdcube.canvas.ingress.drag_start { ingress, x, y }
         |
         v
 scene host
@@ -249,7 +245,7 @@ scene host
         v
 pinboard/canvas surface
   receives:
-    kdcube-pinboard-drop-ingress { ingress, x, y }
+    kdcube.canvas.ingress { payload, x, y }
   materializes a generic canvas card
   preserves object_ref for provider-owned objects
         |

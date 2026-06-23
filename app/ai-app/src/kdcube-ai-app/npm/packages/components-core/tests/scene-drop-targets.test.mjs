@@ -13,7 +13,7 @@ test('extracts context drop targets from active profile config', () => {
       chat: {
         surfaceRef: 'website.chat',
         railId: 'chat',
-        acceptsRootNamespaces: ['*'],
+        accepts: 'context',
         dropEffect: 'attach',
         delivery: 'chat.attach',
       },
@@ -29,7 +29,7 @@ test('merges scene-level and profile-level target overrides', () => {
       task_list: {
         surfaceRef: 'website.task_list',
         railId: 'task_list',
-        acceptsRootNamespaces: ['task'],
+        accepts: 'provider-open',
         dropEffect: 'open',
         targetSurface: 'task_tracker.issue_list',
         delivery: 'task.open',
@@ -37,7 +37,7 @@ test('merges scene-level and profile-level target overrides', () => {
       memories: {
         surfaceRef: 'website.memories',
         railId: 'memories',
-        acceptsRootNamespaces: ['mem'],
+        accepts: 'provider-open',
         dropEffect: 'open',
         targetSurface: 'sdk.memory.viewer',
       },
@@ -68,7 +68,7 @@ test('normalizes target config and accepts aliases', () => {
 
   assert.equal(result.issue, null)
   assert.equal(result.target?.key, 'pinboard')
-  assert.deepEqual(result.target?.acceptsRootNamespaces, ['*'])
+  assert.equal(result.target?.accepts, '*')
   assert.equal(result.target?.delivery, 'pinboard.pin')
 })
 
@@ -77,7 +77,7 @@ test('reports invalid delivery and missing open route', () => {
     normalizeSceneContextDropTarget('chat', {
       surfaceRef: 'website.chat',
       railId: 'chat',
-      acceptsRootNamespaces: ['*'],
+      accepts: 'context',
       dropEffect: 'attach',
       delivery: 'unknown.attach',
     }, {
@@ -90,7 +90,7 @@ test('reports invalid delivery and missing open route', () => {
     normalizeSceneContextDropTarget('viewer', {
       surfaceRef: 'website.viewer',
       railId: 'viewer',
-      acceptsRootNamespaces: ['mem'],
+      accepts: 'provider-open',
       dropEffect: 'open',
     }).issue?.code,
     'open_route_missing',
@@ -103,7 +103,7 @@ test('normalizes a target map and omits disabled targets from issues', () => {
       chat: {
         surfaceRef: 'website.chat',
         railId: 'chat',
-        acceptsRootNamespaces: ['*'],
+        accepts: 'context',
         dropEffect: 'attach',
         delivery: 'chat.attach',
       },

@@ -1,8 +1,8 @@
 import {
   CanvasBoard,
   applyCanvasCards,
-  cardFromChatArtifact,
-  cardFromChatAssistantText,
+  cardFromProviderObject,
+  cardFromProvidedText,
   cardFromSearchResult,
   cardFromSelectedText,
   canvasContext,
@@ -10,6 +10,10 @@ import {
   canvasFromPatchEvent,
   canvasFromReadResponse,
   emptyCanvasDefinition,
+  INGRESS_DRAG_END_MESSAGE_TYPE,
+  INGRESS_DRAG_START_MESSAGE_TYPE,
+  isCanvasIngressObjectRefPayload,
+  isCanvasIngressTextPayload,
   normalizeContext,
   normalizeCanvasPatchEvent,
   parseIngressMessage,
@@ -19,7 +23,7 @@ import {
   type CanvasCard,
   type CanvasContextItem,
   type CanvasDefinition,
-  type CanvasIngressPayload,
+  type CanvasIngressMessage,
   type CanvasListResponse,
   type CanvasNamespaceStyle,
   type CanvasObjectActionName,
@@ -33,6 +37,8 @@ import {
 } from '@kdcube/components-react/canvas'
 import {
   SCENE_SURFACE_COMMAND,
+  SCENE_SUBSCRIBE_MESSAGE,
+  SCENE_UNSUBSCRIBE_MESSAGE,
   createContextDragBroker,
   createSceneEventBus,
   createSceneRuntime,
@@ -61,24 +67,6 @@ const DEFAULT_CHAT_HEIGHT = 720
 const DEFAULT_CHAT_MIN_WIDTH = 340
 const DEFAULT_CHAT_MAX_WIDTH = 860
 const FLOATING_PANEL_BASE_Z = 72
-
-const SCENE_EVENT_SUBSCRIPTIONS: Record<string, SceneEventSubscriptionClaim[]> = {
-  [USAGE_CARD_WIDGET_ALIAS]: [
-    {
-      id: 'usage-card-accounting-refresh-default',
-      source: 'socketio',
-      events: ['accounting.usage'],
-      channels: ['chat_service'],
-      forward: {
-        type: SCENE_SURFACE_COMMAND,
-        target_surface: 'sdk.usage.card',
-        action: 'refresh',
-      },
-      reason: 'accounting.usage',
-      debounceMs: 800,
-    },
-  ],
-}
 
 interface RouteContext {
   tenant: string
@@ -244,7 +232,7 @@ function chatWidgetUrl(ctx: RouteContext): string {
     chat_canvas_state_event_source_id: 'canvas.state',
     chat_canvas_focus_event_source_id: 'canvas.focus',
     chat_canvas_surface: 'canvas',
-    chat_canvas_ingress_message: 'kdcube-canvas-ingress',
+    chat_canvas_ingress_message: 'kdcube.canvas.ingress',
     chat_canvas_patch_step: 'canvas.patch',
     chat_context_attach_message: 'kdcube-context-attach',
     chat_context_focus_message: 'kdcube-context-focus',
@@ -756,22 +744,31 @@ function cardFromContext(context: CanvasContextItem, rect: CanvasCard['rect']) {
   )
 }
 
-function cardFromIngress(payload: CanvasIngressPayload, rect: CanvasCard['rect']) {
-  if (payload.kind === 'chat.artifact') {
-    return cardFromChatArtifact(
+function cardFromIngress(ingress: CanvasIngressMessage, rect: CanvasCard['rect']) {
+  const payload = ingress.payload
+  if (isCanvasIngressObjectRefPayload(payload)) {
+    return cardFromProviderObject(
       {
-        ref: payload.ref,
-        filename: payload.filename,
-        mime: payload.mime,
+        ref: payload.object_ref,
+        filename: payload.filename || payload.title,
+        mime: payload.mime || 'application/vnd.kdcube.object-ref+json',
         preview: payload.preview,
+        namespace: payload.presentation?.namespace,
+        object_kind: payload.presentation?.object_kind,
       },
-      { placement: 'placed', rect },
+      { title: payload.title, placement: 'placed', rect },
     )
   }
-  if (payload.kind === 'chat.assistant.text') {
-    return cardFromChatAssistantText(payload.text, { title: payload.title, placement: 'placed', rect })
+  if (isCanvasIngressTextPayload(payload)) {
+    return cardFromProvidedText(payload.content.text, {
+      title: payload.title,
+      kind: payload.presentation?.label,
+      object_kind: payload.presentation?.object_kind,
+      placement: 'placed',
+      rect,
+    })
   }
-  throw new Error(`Unsupported canvas ingress kind: ${(payload as { kind?: string }).kind}`)
+  throw new Error('Unsupported canvas ingress payload shape')
 }
 
 function requestRuntimeConfig(): Promise<RuntimeConfig | null> {
@@ -909,6 +906,7 @@ function App() {
   const isRegistered = userType != null && userType !== 'anonymous'
   const externalPanel = sceneConfig.external_panels[0] ?? null
   const sceneRuntime = useMemo(() => createSceneRuntime({ logger: console }), [])
+  const [sceneSubscriptions, setSceneSubscriptions] = useState<Record<string, SceneEventSubscriptionClaim[]>>({})
 
   const sceneFrameForAlias = useCallback((alias: string): HTMLIFrameElement | null => {
     switch (alias) {
@@ -921,13 +919,23 @@ function App() {
       case 'external':
         return externalFrameRef.current
       default:
+        if (externalPanel && (alias === externalPanel.widget_alias || alias === externalPanel.id)) {
+          return externalFrameRef.current
+        }
         return null
     }
-  }, [])
+  }, [externalPanel])
+
+  const sceneAliasForSource = useCallback((source: MessageEventSource | null): string => {
+    if (source === chatFrameRef.current?.contentWindow) return CHAT_WIDGET_ALIAS
+    if (source === memoryFrameRef.current?.contentWindow) return MEMORY_WIDGET_ALIAS
+    if (source === usageFrameRef.current?.contentWindow) return USAGE_CARD_WIDGET_ALIAS
+    if (source === externalFrameRef.current?.contentWindow) return externalPanel?.widget_alias || externalPanel?.id || 'external'
+    return ''
+  }, [externalPanel])
 
   const sceneEventBus = useMemo<SceneEventBus>(() => createSceneEventBus({
-    getAliases: () => Object.keys(SCENE_EVENT_SUBSCRIPTIONS),
-    defaultSubscriptions: (alias) => SCENE_EVENT_SUBSCRIPTIONS[alias] ?? [],
+    getAliases: () => [],
     isReady: (alias) => Boolean(sceneFrameForAlias(alias)?.contentWindow),
     post: (alias, message, event, subscription) => {
       const frame = sceneFrameForAlias(alias)
@@ -1360,7 +1368,7 @@ function App() {
   // channels are consumed and which surface commands are delivered.
   useEffect(() => {
     if (!isRegistered) return undefined
-    const channels = sceneSubscriptionChannels(SCENE_EVENT_SUBSCRIPTIONS)
+    const channels = sceneSubscriptionChannels(sceneSubscriptions)
     if (!channels.length) return undefined
     let cancelled = false
     const detach: Array<() => void> = []
@@ -1373,7 +1381,7 @@ function App() {
         console.info('[kdc-scene] scene event relay connected', { channels })
         channels.forEach((channel) => {
           const onEvent = (payload: unknown) => {
-            const event = sceneEventBus.normalizeEvent('socketio', { type: channel }, payload)
+            const event = sceneEventBus.normalizeEvent('sse', { type: channel }, payload)
             sceneEventBus.publish(event)
           }
           socket.on(channel, onEvent)
@@ -1387,7 +1395,7 @@ function App() {
       cancelled = true
       detach.forEach((release) => release())
     }
-  }, [ctx, isRegistered, sceneEventBus])
+  }, [ctx, isRegistered, sceneEventBus, sceneSubscriptions])
 
   // Configured provider widgets may publish project-level service events. The
   // scene forwards only the configured event type to the mounted widget.
@@ -1496,57 +1504,10 @@ function App() {
     setNotice(`Attached ${contexts.length} item${contexts.length === 1 ? '' : 's'} to chat.`)
   }, [sendToChat])
 
-  // Open a conversation pin in the chat window. A `conversation` card is
-  // not attached as composer context — it switches the active chat
-  // conversation. The conversation id + coordinates come from the card's
-  // `data` (set when it was pinned), falling back to parsing the
-  // `conv:<tenant>/<project>/<user>/<bundle>/<agent>/<conversation_id>`
-  // ref tail.
-  const openChatConversation = useCallback((context: CanvasContextItem) => {
-    const data = (context.data ?? {}) as Record<string, unknown>
-    const refTail = String(context.ref ?? '').replace(/^conv:/, '')
-    const refParts = refTail ? refTail.split('/') : []
-    const conversationId = String(
-      data.conversation_id ?? data.conversationId ?? refParts[refParts.length - 1] ?? '',
-    ).trim()
-    if (!conversationId) {
-      setNotice('This conversation pin has no conversation id.')
-      return
-    }
-    // Open the chat pane and bring it forward, but DO NOT change its
-    // compact/expanded form — loading a conversation is content-only.
-    bringPanelToFront('chat')
-    setChatOpen(true)
-    const post = () => sendToChat({
-      type: SCENE_SURFACE_COMMAND,
-      target_surface: 'sdk.chat.conversation',
-      action: 'open',
-      object_ref: context.ref,
-      context,
-      conversation_id: conversationId,
-      tenant: data.tenant ?? refParts[0],
-      project: data.project ?? refParts[1],
-      user_id: data.user_id ?? refParts[2],
-      bundle_id: data.bundle_id ?? refParts[3],
-      agent: data.agent ?? refParts[4],
-    })
-    post()
-    // The pane may have just been opened; re-send next frame so the
-    // command lands after the iframe is mounted.
-    window.requestAnimationFrame(post)
-    setNotice('Opening conversation in chat…')
-  }, [bringPanelToFront, sendToChat])
-
   const handleAttachCards = useCallback((input: CanvasContextItem | CanvasContextItem[]) => {
     const items = Array.isArray(input) ? input : [input]
-    const conversation = items.find((item) => item.kind === 'conversation')
-    if (conversation) {
-      // Conversation pins load in chat; never land in the composer.
-      openChatConversation(conversation)
-      return
-    }
     attachContexts('kdcube-context-focus', items)
-  }, [attachContexts, openChatConversation])
+  }, [attachContexts])
 
   const applyPatchResponse = useCallback((response: CanvasPatchResponse) => {
     if (!response.ok) return
@@ -1660,9 +1621,9 @@ function App() {
     ).then(applyPatchResponse).catch((error) => setNotice(error instanceof Error ? error.message : String(error)))
   }, [applyPatchResponse, canvasIngressClient, canvasTarget])
 
-  const pinIngressPayloadToCanvas = useCallback((payload: CanvasIngressPayload, rect: CanvasCard['rect']) => {
+  const pinIngressPayloadToCanvas = useCallback((ingress: CanvasIngressMessage, rect: CanvasCard['rect']) => {
     void applyCanvasCards(
-      [cardFromIngress(payload, rect)],
+      [cardFromIngress(ingress, rect)],
       canvasTarget(rect),
       canvasIngressClient,
     ).then(applyPatchResponse).catch((error) => setNotice(error instanceof Error ? error.message : String(error)))
@@ -1800,7 +1761,6 @@ function App() {
   const memoryDropTarget = useMemo<SceneDropTarget>(() => ({
     surfaceRef: 'versatile.memory',
     targetSurface: 'sdk.memory.viewer',
-    acceptsRootNamespaces: ['mem'],
     dropEffect: 'open',
     label: 'memory viewer',
   }), [])
@@ -1811,7 +1771,6 @@ function App() {
     return {
       surfaceRef: externalPanel?.id || 'versatile.external',
       targetSurface,
-      acceptsRootNamespaces: targetSurface.startsWith('task_tracker.') ? ['task'] : ['*'],
       dropEffect: 'open',
       label: externalPanel?.label || 'external surface',
     }
@@ -1905,6 +1864,39 @@ function App() {
           })
           return
         }
+        if (data.type === SCENE_SUBSCRIBE_MESSAGE) {
+          const nested = asRecord(data.data)
+          const alias = asString(data.alias) || asString(data.widget) || sceneAliasForSource(event.source)
+          const subscriptions = Array.isArray(data.subscriptions)
+            ? data.subscriptions as SceneEventSubscriptionClaim[]
+            : Array.isArray(nested.subscriptions)
+              ? nested.subscriptions as SceneEventSubscriptionClaim[]
+              : []
+          if (!alias) {
+            console.warn('[kdc-scene] scene subscription request missing alias', { subscriptions: subscriptions.length })
+            return
+          }
+          sceneEventBus.register(alias, subscriptions)
+          setSceneSubscriptions((prev) => ({ ...prev, [alias]: subscriptions }))
+          console.info('[kdc-scene] scene subscription request', {
+            alias,
+            subscriptions: subscriptions.map((claim) => String(claim?.id || '')),
+          })
+          return
+        }
+        if (data.type === SCENE_UNSUBSCRIBE_MESSAGE) {
+          const alias = asString(data.alias) || asString(data.widget) || sceneAliasForSource(event.source)
+          if (alias) {
+            sceneEventBus.unregister(alias)
+            setSceneSubscriptions((prev) => {
+              const next = { ...prev }
+              delete next[alias]
+              return next
+            })
+            console.info('[kdc-scene] scene unsubscribe request', { alias })
+          }
+          return
+        }
         if (['CONFIG_REQUEST', 'kdcube-auth-required', 'kdcube-resize'].includes(data.type)) {
           if (event.source === memoryFrameRef.current?.contentWindow && data.type === 'kdcube-resize') {
             const height = Number(data.height)
@@ -1927,15 +1919,15 @@ function App() {
           }
           return
         }
-        if (data.type === 'kdcube-canvas-ingress-drag-start') {
-          const ingress = parseIngressMessage({ type: 'kdcube-canvas-ingress', payload: data.payload })
+        if (data.type === INGRESS_DRAG_START_MESSAGE_TYPE) {
+          const ingress = parseIngressMessage(data.ingress)
           if (ingress) {
-            brokeredCanvasDropRef.current = { kind: 'ingress', payload: ingress.payload }
+            brokeredCanvasDropRef.current = { kind: 'ingress', ingress }
             setBrokeredContextDragActive(false)
           }
           return
         }
-        if (data.type === 'kdcube-context-drag-end' || data.type === 'kdcube-canvas-ingress-drag-end') {
+        if (data.type === 'kdcube-context-drag-end' || data.type === INGRESS_DRAG_END_MESSAGE_TYPE) {
           contextDragBroker.handleDragEnd()
           clearBrokeredCanvasDrop()
           return
@@ -2013,10 +2005,10 @@ function App() {
           sendToChat(data)
           return
         }
-        if (data.type === 'kdcube-canvas-ingress') {
-          const payload = data.payload as CanvasIngressPayload | undefined
-          if (payload) {
-            pinIngressPayloadToCanvas(payload, { x: 40, y: 40, w: 246, h: 112 })
+        if (data.type === 'kdcube.canvas.ingress') {
+          const ingress = parseIngressMessage(data)
+          if (ingress) {
+            pinIngressPayloadToCanvas(ingress, { x: 40, y: 40, w: 246, h: 112 })
           }
           return
         }
@@ -2041,7 +2033,7 @@ function App() {
     }
     window.addEventListener('message', onMessage)
     return () => window.removeEventListener('message', onMessage)
-  }, [bringPanelToFront, clearBrokeredCanvasDrop, contextDragBroker, dispatchSurfaceOpen, externalPanel, flushSurfaceCommand, pinIngressPayloadToCanvas, pinConversationToCanvas, sceneRuntime, sendToChat])
+  }, [bringPanelToFront, clearBrokeredCanvasDrop, contextDragBroker, dispatchSurfaceOpen, externalPanel, flushSurfaceCommand, pinIngressPayloadToCanvas, pinConversationToCanvas, sceneAliasForSource, sceneEventBus, sceneRuntime, sendToChat])
 
   useEffect(() => {
     syncChatWidgetView(chatExpanded ? 'expanded' : 'compact')

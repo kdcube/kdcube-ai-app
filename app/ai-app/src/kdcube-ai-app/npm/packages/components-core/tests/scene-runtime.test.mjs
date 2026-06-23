@@ -30,17 +30,17 @@ test('rejects non-canonical drag start messages', () => {
 test('matches drop targets by selector policy', () => {
   const broker = createContextDragBroker({
     objectAction: async () => ({ ok: true }),
-    dispatchOpenResponse: () => ({ ok: true, code: 'dispatched', targetSurface: 'task.issue', message: 'ok' }),
+    dispatchOpenResponse: () => ({ ok: true, code: 'dispatched', targetSurface: 'alpha.viewer', message: 'ok' }),
   })
   broker.handleDragStart({
     type: 'kdcube-context-drag-start',
-    contexts: [{ ref: 'task:attachment:T-1/file', namespace: 'task:attachment' }],
+    contexts: [{ ref: 'alpha:item:1/file', namespace: 'alpha:item' }],
   })
 
-  assert.equal(sceneMatchObjectSelector('task:attachment:T-1/file', 'task:*'), true)
-  assert.equal(sceneMatchObjectSelector('task:attachment:T-1/file', 'task:issue:*'), false)
-  assert.equal(broker.accepts({ surfaceRef: 'tasks', targetSurface: 'task.issue', accepts: { open: ['task:*'] } }), true)
-  assert.equal(broker.accepts({ surfaceRef: 'memory', targetSurface: 'memory.viewer', accepts: { open: ['mem:*'] } }), false)
+  assert.equal(sceneMatchObjectSelector('alpha:item:1/file', 'alpha:*'), true)
+  assert.equal(sceneMatchObjectSelector('alpha:item:1/file', 'alpha:other:*'), false)
+  assert.equal(broker.accepts({ surfaceRef: 'alpha', targetSurface: 'alpha.viewer', accepts: { open: ['alpha:*'] } }), true)
+  assert.equal(broker.accepts({ surfaceRef: 'beta', targetSurface: 'beta.viewer', accepts: { open: ['beta:*'] } }), false)
 })
 
 test('opens owning surfaces through provider object action', async () => {
@@ -66,20 +66,20 @@ test('opens owning surfaces through provider object action', async () => {
   })
   broker.handleDragStart({
     type: 'kdcube-context-drag-start',
-    contexts: [{ ref: 'mem:record:mem_1', label: 'Memory' }],
+    contexts: [{ ref: 'alpha:record:1', label: 'Alpha item' }],
   })
 
   const result = await broker.dropOnTarget({
-    surfaceRef: 'memories',
-    targetSurface: 'sdk.memory.viewer',
-    accepts: { open: ['mem:*'] },
+    surfaceRef: 'alpha',
+    targetSurface: 'alpha.viewer',
+    accepts: { open: ['alpha:*'] },
     dropEffect: 'open',
   })
 
   assert.equal(result.ok, true)
   assert.equal(result.code, 'opened')
-  assert.equal(calls[0].object_ref, 'mem:record:mem_1')
-  assert.equal(calls[0].target_surface, 'sdk.memory.viewer')
+  assert.equal(calls[0].object_ref, 'alpha:record:1')
+  assert.equal(calls[0].target_surface, 'alpha.viewer')
 })
 
 test('delivers pin and attach targets locally without provider open', async () => {

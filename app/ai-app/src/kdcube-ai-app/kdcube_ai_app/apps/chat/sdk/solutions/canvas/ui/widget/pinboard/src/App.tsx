@@ -15,10 +15,14 @@ import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } fro
 import {
   CanvasBoard,
   applyCanvasCards,
-  cardFromChatArtifact,
-  cardFromChatAssistantText,
+  cardFromProviderObject,
+  cardFromProvidedText,
   cardFromSearchResult,
   cardFromSelectedText,
+  INGRESS_MESSAGE_TYPE,
+  isCanvasIngressObjectRefPayload,
+  isCanvasIngressTextPayload,
+  parseIngressMessage,
   normalizeContext,
   uploadAndPinFiles,
   emptyCanvasDefinition,
@@ -28,7 +32,7 @@ import {
   type CanvasCard,
   type CanvasContextItem,
   type CanvasDefinition,
-  type CanvasIngressPayload,
+  type CanvasIngressMessage,
   type CanvasNamespaceStyle,
   type CanvasObjectActionName,
   type CanvasObjectActionResponse,
@@ -45,7 +49,6 @@ import { createCanvasHost, type CanvasHost, type RouteContext } from './api/canv
 // object commands use the scene-wide generic command envelope.
 const SURFACE_COMMAND_MESSAGE_TYPE = 'kdcube.surface.command'
 const CLOSE_MESSAGE = 'kdcube-pinboard-close'
-const DROP_INGRESS_MESSAGE = 'kdcube-pinboard-drop-ingress'
 const CONTEXT_DRAG_START_MESSAGE = 'kdcube-context-drag-start'
 const CONTEXT_DRAG_END_MESSAGE = 'kdcube-context-drag-end'
 
@@ -110,17 +113,31 @@ function cardFromContext(context: CanvasContextItem, rect: CanvasCard['rect']) {
   )
 }
 
-function cardFromIngress(payload: CanvasIngressPayload, rect: CanvasCard['rect']) {
-  if (payload.kind === 'chat.artifact') {
-    return cardFromChatArtifact(
-      { ref: payload.ref, filename: payload.filename, mime: payload.mime, preview: payload.preview },
-      { placement: 'placed', rect },
+function cardFromIngress(ingress: CanvasIngressMessage, rect: CanvasCard['rect']) {
+  const payload = ingress.payload
+  if (isCanvasIngressObjectRefPayload(payload)) {
+    return cardFromProviderObject(
+      {
+        ref: payload.object_ref,
+        filename: payload.filename || payload.title,
+        mime: payload.mime || 'application/vnd.kdcube.object-ref+json',
+        preview: payload.preview,
+        namespace: payload.presentation?.namespace,
+        object_kind: payload.presentation?.object_kind,
+      },
+      { title: payload.title, placement: 'placed', rect },
     )
   }
-  if (payload.kind === 'chat.assistant.text') {
-    return cardFromChatAssistantText(payload.text, { title: payload.title, placement: 'placed', rect })
+  if (isCanvasIngressTextPayload(payload)) {
+    return cardFromProvidedText(payload.content.text, {
+      title: payload.title,
+      kind: payload.presentation?.label,
+      object_kind: payload.presentation?.object_kind,
+      placement: 'placed',
+      rect,
+    })
   }
-  throw new Error(`Unsupported canvas ingress kind: ${(payload as { kind?: string }).kind}`)
+  throw new Error('Unsupported canvas ingress payload shape')
 }
 
 function rectFromDropMessage(value: unknown): CanvasCard['rect'] {
@@ -266,8 +283,8 @@ export default function App() {
       .catch(failNotice)
   }, [applyPatchResponse, canvasIngressClient, canvasTarget, failNotice])
 
-  const onDropIngress = useCallback((payload: CanvasIngressPayload, rect: CanvasCard['rect']) => {
-    void applyCanvasCards([cardFromIngress(payload, rect)], canvasTarget(rect), canvasIngressClient)
+  const onDropIngress = useCallback((ingress: CanvasIngressMessage, rect: CanvasCard['rect']) => {
+    void applyCanvasCards([cardFromIngress(ingress, rect)], canvasTarget(rect), canvasIngressClient)
       .then(applyPatchResponse)
       .catch(failNotice)
   }, [applyPatchResponse, canvasIngressClient, canvasTarget, failNotice])
@@ -305,13 +322,13 @@ export default function App() {
         onDropContext(context, rectFromDropMessage(data))
         return
       }
-      if (data.type === DROP_INGRESS_MESSAGE) {
-        const payload = data.payload as CanvasIngressPayload | undefined
-        if (!payload || typeof payload !== 'object') {
+      if (data.type === INGRESS_MESSAGE_TYPE) {
+        const ingress = parseIngressMessage(data)
+        if (!ingress) {
           setNotice('Dropped canvas ingress is not valid.')
           return
         }
-        onDropIngress(payload, rectFromDropMessage(data))
+        onDropIngress(ingress, rectFromDropMessage(data))
         return
       }
     }

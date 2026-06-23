@@ -247,7 +247,7 @@ function isFullCanvasProjection(projection: unknown, projectedCardCount: number)
 
 export function emptyCanvasDefinition(name = 'main', canvasId = ''): CanvasDefinition {
   const canvasName = canvasNameValue(name)
-  const id = stringValue(canvasId) ?? `canvas:${canvasName}`
+  const id = stringValue(canvasId) ?? `cnv:${canvasName}`
   return {
     id,
     name: canvasName,
@@ -260,7 +260,7 @@ export function emptyCanvasDefinition(name = 'main', canvasId = ''): CanvasDefin
 
 export function canvasFromListItem(item: CanvasListItemLike): CanvasDefinition {
   const name = canvasNameValue(item.canvas_name ?? item.name)
-  const id = stringValue(item.canvas_id) ?? `canvas:${name}`
+  const id = stringValue(item.canvas_id) ?? `cnv:${name}`
   const revision = numberValue(item.latest_revision ?? item.revision, 0)
   return {
     id,
@@ -368,7 +368,7 @@ export function upsertCanvasDefinition(
       ...fallback,
       ...preferred,
       name: itemName,
-      id: stringValue(preferred.id) ?? stringValue(fallback.id) ?? `canvas:${itemName}`,
+      id: stringValue(preferred.id) ?? stringValue(fallback.id) ?? `cnv:${itemName}`,
       ref: stringValue(preferred.ref) ?? stringValue(fallback.ref) ?? `cnv:${itemName}`,
       cards: preferred.cards.length || !fallback.cards.length ? preferred.cards : fallback.cards,
     }

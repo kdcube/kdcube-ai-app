@@ -181,6 +181,19 @@ bundles:
                     kind: named_service
                     alias: named_services
                     namespaces:
+                      task:
+                        # Task refs are provider-owned objects. ReAct can
+                        # explore and mutate them through the generic
+                        # named_services.* tool surface when a task provider
+                        # app is present in the runtime.
+                        allowed:
+                          - provider.about
+                          - object.list
+                          - object.search
+                          - object.schema
+                          - object.upsert
+                          - object.host_file
+                          - object.delete
                       mem:
                         # object.get is intentionally not exposed as a model-callable
                         # named_service tool. Existing mem:record refs must be bound
@@ -193,9 +206,12 @@ bundles:
                           - object.search
                           - object.schema
                           - object.upsert
+                          - object.action
                           - object.delete
                         tool_traits:
                           upsert_object:
+                            strategy: [neutral]
+                          object_action:
                             strategy: [neutral]
                       cnv:
                         # Canvas is exposed to ReAct as a normal namespace
@@ -224,6 +240,10 @@ bundles:
                       object_schema:
                         strategy: [exploration]
                       upsert_object:
+                        strategy: [exploitation]
+                      object_action:
+                        strategy: [exploitation]
+                      host_file:
                         strategy: [exploitation]
                       delete_object:
                         strategy: [exploitation]
@@ -277,6 +297,18 @@ bundles:
                 #         operation: object.get
                 event_sources:
                   - kind: named_service
+                    namespace: task
+                    enabled: true
+                    discovery:
+                      mode: service_discovery
+                    policies:
+                      block_production:
+                        mode: provider
+                        operation: block.produce
+                      pull:
+                        mode: provider
+                        operation: object.get
+                  - kind: named_service
                     namespace: mem
                     enabled: true
                     discovery:
@@ -305,17 +337,41 @@ bundles:
                     allowed:
                       - object.resolve
                       - object.action
-                # Example:
-                #   - kind: named_service
-                #     namespace: task
-                #     enabled: true
-                #     discovery:
-                #       mode: service_discovery
-                #     allowed:
-                #       - object.resolve
-                #       - object.action
+                  - kind: named_service
+                    namespace: task
+                    enabled: true
+                    discovery:
+                      mode: service_discovery
+                    allowed:
+                      - object.resolve
+                      - object.action
               scene:
-                external_panels: []
+                # Scene composition is server-configured. The browser scene
+                # receives this through scene_surface_config and registers each
+                # target_surface locally; object semantics still come from the
+                # owning provider resolver.
+                external_panels:
+                  - id: task_panel
+                    label: Tasks
+                    title: Tasks
+                    bundle_id: task-tracker@1-0
+                    widget_alias: task_tracker_tasks
+                    widget_message_type: kdcube-task-tracker-widget-command
+                    service_event_type: task_tracker.task.changed
+                    service_forward_message_type: kdcube-task-tracker-task-changed
+                    open_message_types:
+                      - kdcube-task-tracker-open-issue
+                      - kdcube-task-tracker-create-issue
+                    surfaces:
+                      task_tracker.issue_list:
+                        label: task list
+                        expanded: false
+                        command:
+                          action: refresh
+                      task_tracker.issue_editor:
+                        label: task editor
+                        expanded: true
+                        command_from_open: provider_surface_open
         execution:
           runtime:
             mode: docker

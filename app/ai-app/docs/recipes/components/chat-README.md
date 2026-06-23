@@ -78,7 +78,7 @@ A scene should declare chat as a context drop target:
   "contextDropTargets": {
     "versatile": {
       "surfaceRef": "website.chat",
-      "acceptsRootNamespaces": ["*"],
+      "accepts": "context",
       "dropEffect": "attach",
       "targetSurface": "sdk.chat.context",
       "action": "attach"

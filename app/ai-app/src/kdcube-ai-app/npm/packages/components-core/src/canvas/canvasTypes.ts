@@ -6,8 +6,8 @@
  * card field set changes there, update both.
  *
  * Card `kind` is a source-provided display label, not a behavior selector.
- * Canvas-owned hosted cards may use labels such as `user.text`,
- * `user.attachment`, or `agent.text`; provider-owned refs keep the label
+ * Canvas-owned hosted cards may use labels such as `provided.text`,
+ * `user.text`, `user.attachment`, or `agent.text`; provider-owned refs keep the label
  * supplied by their source component and resolve through `object_ref`.
  */
 export type CanvasCardKind = string
