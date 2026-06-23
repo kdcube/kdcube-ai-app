@@ -7,6 +7,7 @@ import pytest
 from kdcube_ai_app.apps.chat.external_events import build_conversation_external_event_source
 from kdcube_ai_app.apps.chat.sdk.context.memory import tools as memory_tools
 from kdcube_ai_app.apps.chat.sdk.events import EventSourceSubsystem
+from kdcube_ai_app.apps.chat.sdk.events.event_bus.orchestrator import ConversationEventBusOrchestrator
 from kdcube_ai_app.apps.chat.sdk.runtime.user_inputs import iter_turn_user_input_entries
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v3.browser import ContextBrowser
 from kdcube_ai_app.apps.chat.sdk.solutions.react.proto import RuntimeCtx
@@ -227,6 +228,78 @@ async def test_browser_folds_accepted_external_events_into_current_turn(tmp_path
         assert hook_saw_current_prompt == [True]
         assert browser.timeline.last_external_event_id == "3-0"
         assert int(browser.timeline.last_external_event_seq or 0) == 3
+    finally:
+        await browser.stop_external_event_listener()
+
+
+@pytest.mark.asyncio
+async def test_browser_initial_fold_skips_events_already_processed_by_lane_state(tmp_path):
+    redis = _FakeRedis()
+    source = build_conversation_external_event_source(
+        redis=redis,
+        tenant="tenant",
+        project="project",
+        conversation_id="conv_1",
+    )
+    old_event = await source.publish(
+        kind="followup",
+        explicit=True,
+        target_turn_id="turn_old",
+        active_turn_id_at_ingress="turn_old",
+        owner_turn_id="turn_old",
+        source="ingress.sse",
+        text="already handled followup",
+        payload={"message": "already handled followup"},
+    )
+    await source.publish(
+        kind="followup",
+        explicit=True,
+        target_turn_id="turn_current",
+        active_turn_id_at_ingress="turn_current",
+        owner_turn_id="turn_current",
+        source="ingress.sse",
+        text="new followup",
+        payload={"message": "new followup"},
+    )
+
+    orchestrator = ConversationEventBusOrchestrator.for_source(source)
+    await orchestrator.open_handler(turn_id="turn_current")
+    await orchestrator.record_processed_events([old_event], turn_id="turn_current")
+
+    runtime = RuntimeCtx(
+        tenant="tenant",
+        project="project",
+        user_id="user_1",
+        user_type="privileged",
+        conversation_id="conv_1",
+        turn_id="turn_current",
+        bundle_id="bundle@1",
+        started_at="2026-04-11T10:00:00Z",
+        outdir=str(tmp_path / "out"),
+        workdir=str(tmp_path / "work"),
+        external_event_source=source,
+    )
+    browser = ContextBrowser(
+        ctx_client=_FakeCtxClient(),
+        runtime_ctx=runtime,
+    )
+
+    await browser.load_timeline()
+    try:
+        current_blocks = browser.timeline.get_turn_blocks()
+        assert not any(
+            b.get("type") == "user.followup"
+            and b.get("text") == "already handled followup"
+            for b in current_blocks
+        )
+        assert any(
+            b.get("type") == "user.followup"
+            and b.get("turn_id") == "turn_current"
+            and b.get("text") == "new followup"
+            for b in current_blocks
+        )
+        user_entries = iter_turn_user_input_entries(current_blocks, turn_id="turn_current")
+        assert [entry.get("plain_text") for entry in user_entries] == ["new followup"]
     finally:
         await browser.stop_external_event_listener()
 

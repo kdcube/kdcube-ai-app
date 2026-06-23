@@ -45,8 +45,10 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.events import (
 from kdcube_ai_app.apps.chat.sdk.events.event_bus.exceptions import ExternalEventLaneTurnSuperseded
 from kdcube_ai_app.apps.chat.sdk.events.event_bus.orchestrator import ConversationEventBusOrchestrator
 from kdcube_ai_app.apps.chat.sdk.events.event_bus.state import (
+    event_id,
     event_is_reactive,
     event_timestamp,
+    timestamp_lt,
     timestamp_lte,
 )
 
@@ -641,7 +643,51 @@ class ContextBrowser:
             call_hooks=True,
         )
 
+    async def _filter_unprocessed_external_events(self, events: List[Any]) -> List[Any]:
+        filtered: List[Any] = []
+        if not events:
+            return filtered
+        orchestrator = self._event_bus_orchestrator()
+        if orchestrator is None and self.external_event_source is not None:
+            try:
+                orchestrator = ConversationEventBusOrchestrator.for_source(self.external_event_source)
+            except Exception:
+                orchestrator = None
+        state = None
+        if orchestrator is not None:
+            try:
+                state = await orchestrator.state()
+            except Exception:
+                state = None
+        last_ts = str(getattr(state, "last_processed_event_timestamp", "") or "") if state is not None else ""
+        last_event_id = str(getattr(state, "last_processed_event_id", "") or "") if state is not None else ""
+        skipped = 0
+        for event in events or []:
+            if getattr(event, "consumed_at", None) is not None:
+                skipped += 1
+                continue
+            ts = event_timestamp(event)
+            eid = event_id(event)
+            already_processed = False
+            if last_ts and ts:
+                already_processed = timestamp_lt(ts, last_ts) or (
+                    timestamp_lte(ts, last_ts) and (not last_event_id or eid == last_event_id)
+                )
+            if already_processed:
+                skipped += 1
+                continue
+            filtered.append(event)
+        if skipped:
+            self.log.log(
+                f"[timeline.external]: skipped already processed lane events "
+                f"conversation={self._runtime_ctx.conversation_id} turn_id={self._runtime_ctx.turn_id} "
+                f"skipped={skipped} kept={len(filtered)} last_processed_ts={last_ts} last_processed_event_id={last_event_id}",
+                "INFO",
+            )
+        return filtered
+
     async def _accept_external_events_for_open_handler(self, events: List[Any], *, call_hooks: bool) -> int:
+        events = await self._filter_unprocessed_external_events(list(events or []))
         if not events:
             return 0
         orchestrator = self._event_bus_orchestrator()
@@ -714,6 +760,7 @@ class ContextBrowser:
             return [], []
         last_cursor = self._timeline.last_external_event_id or int(self._timeline.last_external_event_seq or 0)
         events = await source.read_since(last_cursor)
+        events = await self._filter_unprocessed_external_events(list(events or []))
         self._last_external_event_reader_result["events_read"] = len(events or [])
         if not events:
             return [], []
@@ -814,6 +861,7 @@ class ContextBrowser:
             return 0
         last_cursor = self._timeline.last_external_event_id or int(self._timeline.last_external_event_seq or 0)
         events = await source.read_since(last_cursor)
+        events = await self._filter_unprocessed_external_events(list(events or []))
         return await self._accept_external_events_for_open_handler(list(events or []), call_hooks=call_hooks)
 
     @staticmethod
