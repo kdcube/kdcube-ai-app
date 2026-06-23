@@ -69,14 +69,14 @@ def test_build_announce_text_includes_git_workspace_summary(tmp_path):
     assert "[WORKSPACE]" in announce_text
     assert "current_turn_root: turn_123/" in announce_text
     assert "materialized on disk THIS turn." in announce_text
-    assert "turn_123/" in announce_text and "EDITABLE" in announce_text
+    assert "turn_123/" in announce_text and "WRITABLE" in announce_text
     assert "turn_122/" in announce_text and "READ-ONLY" in announce_text
     assert "checked out from fi:turn_122.files/projectA" in announce_text
     assert "REMOTE git branch" in announce_text
     assert "latest committed turn: turn_122" in announce_text
     assert "fi:turn_122.files/<project>" in announce_text
     assert "files/projectA" in announce_text
-    assert "[editable in current turn]" in announce_text
+    assert "[writable in current turn]" in announce_text
     assert 'react.checkout(mode="replace", paths=["fi:turn_122.files/projectA"])' in announce_text
 
 
@@ -116,13 +116,13 @@ def test_build_announce_text_lists_actual_workdir_paths_except_files_tree(tmp_pa
     assert "external_event/attachments/evt_1/diagram.svg" in announce_text
     assert "snapshots/" in announce_text
     assert "cnv/main.json" in announce_text
-    assert "diagnostics/" in announce_text
-    assert "note.txt" in announce_text
+    assert "diagnostics/" not in announce_text
+    assert "note.txt" not in announce_text
     assert "projectA/" in announce_text
     assert "src/app.py" not in announce_text
 
 
-def test_build_announce_text_omits_empty_turn_namespace_placeholders(tmp_path):
+def test_build_announce_text_renders_empty_current_turn_namespaces(tmp_path):
     outdir = tmp_path / "out"
     artifact_outdir = artifact_outdir_for(outdir)
     turn_root = artifact_outdir / "turn_123"
@@ -152,11 +152,14 @@ def test_build_announce_text_omits_empty_turn_namespace_placeholders(tmp_path):
     assert "Timeline fi: refs that are not listed here are hosted/unhydrated" in announce_text
     assert "use react.pull to hydrate them before local-byte tools" in announce_text
     assert "react.read may inspect provider-rendered text" in announce_text
-    assert "turn_123/   (current turn" not in announce_text
-    assert "    files/" not in announce_text
-    assert "    outputs/" not in announce_text
-    assert "    snapshots/" not in announce_text
-    assert "(no materialized files in the artifact workdir yet)" in announce_text
+    assert "turn_123/   (current turn · WRITABLE)" in announce_text
+    assert "    files/" in announce_text
+    assert "    outputs/" in announce_text
+    assert "    attachments/" in announce_text
+    assert "    external/" in announce_text
+    assert "    snapshots/" in announce_text
+    assert announce_text.count("      (empty)") >= 5
+    assert "(no materialized files in the artifact workdir yet)" not in announce_text
 
 
 def test_build_announce_text_includes_context_caps(tmp_path):
@@ -305,7 +308,19 @@ def test_build_announce_text_includes_current_turn_live_events(tmp_path):
                 "turn_id": "turn_123",
                 "path": "ar:turn_123.external.followup.evt_1",
                 "text": "especially interesting in quantum",
-                "meta": {"sequence": 7, "explicit": True},
+                "meta": {"sequence": 7, "explicit": True, "batch_id": "batch_1"},
+            },
+            {
+                "type": "user.attachment.meta",
+                "turn_id": "turn_123",
+                "path": "fi:turn_123.external.external_event.attachments/evt_1/diagram.svg",
+                "meta": {
+                    "sequence": 7,
+                    "batch_id": "batch_1",
+                    "message_id": "evt_1",
+                    "filename": "diagram.svg",
+                    "mime": "image/svg+xml",
+                },
             },
             {
                 "type": "user.steer",
@@ -331,6 +346,8 @@ def test_build_announce_text_includes_current_turn_live_events(tmp_path):
     assert "[LIVE TURN EVENTS]" in announce_text
     assert "• followup seq=7 explicit=True" in announce_text
     assert "text=especially interesting in quantum" in announce_text
+    assert "attachments=1" in announce_text
+    assert "attachment.1 diagram.svg | image/svg+xml | ref=fi:turn_123.external.external_event.attachments/evt_1/diagram.svg" in announce_text
     assert "• steer seq=8 explicit=True" in announce_text
     assert "text=(empty stop control)" in announce_text
     assert "old turn event should stay out of announce" not in announce_text

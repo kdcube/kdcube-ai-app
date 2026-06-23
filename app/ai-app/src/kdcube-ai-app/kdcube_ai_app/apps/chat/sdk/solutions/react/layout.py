@@ -746,27 +746,25 @@ def build_announce_workspace_lines(
 
     def _workdir_entries() -> List[pathlib.Path]:
         if artifact_root is None or not artifact_root.is_dir():
-            return []
+            return [artifact_root / turn_id] if turn_id and artifact_root is not None else []
         try:
             children = list(artifact_root.iterdir())
         except Exception:
-            return []
+            children = []
         turn_root_names = set(roots)
         current: List[pathlib.Path] = []
         prior_turns: List[pathlib.Path] = []
-        other: List[pathlib.Path] = []
         for child in children:
             name = child.name
             if turn_id and name == turn_id:
                 current.append(child)
-            elif name in turn_root_names:
+            elif child.is_dir() and name in turn_root_names:
                 prior_turns.append(child)
-            else:
-                other.append(child)
+        if turn_id and not current and artifact_root is not None:
+            current.append(artifact_root / turn_id)
         current.sort(key=lambda p: p.name.lower())
         prior_turns.sort(key=lambda p: p.name, reverse=True)
-        other.sort(key=lambda p: p.name.lower())
-        return current + prior_turns + other
+        return current + prior_turns
 
     def _direct_children(base: pathlib.Path) -> List[pathlib.Path]:
         if not base.is_dir():
@@ -794,10 +792,19 @@ def build_announce_workspace_lines(
             return [], 0
         return rels[:cap], len(rels)
 
-    def _render_files_namespace(out: List[str], root_path: pathlib.Path, *, is_current: bool) -> None:
+    def _render_files_namespace(
+        out: List[str],
+        root_path: pathlib.Path,
+        *,
+        is_current: bool,
+        show_empty: bool = False,
+    ) -> None:
         files_root = root_path / "files"
         children = _direct_children(files_root)
         if not children:
+            if show_empty:
+                out.append("    files/")
+                out.append("      (empty)")
             return
         out.append("    files/")
         for child in children:
@@ -811,7 +818,13 @@ def build_announce_workspace_lines(
             marker = "/" if child.is_dir() else ""
             out.append(f"      {name}{marker}{suffix}")
 
-    def _render_recursive_namespace(out: List[str], ns_path: pathlib.Path, *, is_current: bool) -> None:
+    def _render_recursive_namespace(
+        out: List[str],
+        ns_path: pathlib.Path,
+        *,
+        is_current: bool,
+        show_empty: bool = False,
+    ) -> None:
         name = ns_path.name
         if name in {".git", "__pycache__"}:
             return
@@ -819,9 +832,15 @@ def build_announce_workspace_lines(
             out.append(f"    {name}")
             return
         if not ns_path.is_dir():
+            if show_empty:
+                out.append(f"    {name}/")
+                out.append("      (empty)")
             return
         files, total = _rel_files(ns_path)
         if not files:
+            if show_empty:
+                out.append(f"    {name}/")
+                out.append("      (empty)")
             return
         out.append(f"    {name}/")
         for rel in files:
@@ -856,37 +875,42 @@ def build_announce_workspace_lines(
         name = entry.name
         is_current = bool(turn_id and name == turn_id)
         is_turn_root = name in set(roots)
-        if entry.is_file():
-            local_lines.append(f"  {name}   (local workdir file)")
-            continue
         if is_current:
-            label = "current turn \u00b7 EDITABLE"
+            label = "current turn \u00b7 WRITABLE"
         elif is_turn_root:
-            label = "pulled reference \u00b7 READ-ONLY \u2014 checkout into the current turn to edit"
+            label = "pulled reference \u00b7 READ-ONLY \u2014 checkout into the current turn to write"
         else:
             label = "local workdir entry"
-        if not entry.is_dir():
+        if not entry.is_dir() and not is_current:
             continue
 
         entry_lines: List[str] = []
         children = _direct_children(entry)
         by_name = {child.name: child for child in children}
         rendered: set[str] = set()
-        if "files" in by_name:
+        if is_current:
+            _render_files_namespace(entry_lines, entry, is_current=is_current, show_empty=True)
+            rendered.add("files")
+        elif "files" in by_name:
             _render_files_namespace(entry_lines, entry, is_current=is_current)
             rendered.add("files")
-        ordered_names = ["outputs", "snapshots", "attachments", "external"]
+        ordered_names = ["outputs", "attachments", "external", "snapshots"]
         for child_name in ordered_names:
             child = by_name.get(child_name)
-            if child is None or child_name in rendered:
+            if child_name in rendered:
                 continue
-            _render_recursive_namespace(entry_lines, child, is_current=is_current)
+            if child is None:
+                if is_current:
+                    _render_recursive_namespace(entry_lines, entry / child_name, is_current=is_current, show_empty=True)
+                    rendered.add(child_name)
+                continue
+            _render_recursive_namespace(entry_lines, child, is_current=is_current, show_empty=is_current)
             rendered.add(child_name)
         for child in children:
             if child.name in rendered:
                 continue
             _render_recursive_namespace(entry_lines, child, is_current=is_current)
-        if entry_lines:
+        if entry_lines or is_current:
             local_lines.append(f"  {name}/   ({label})")
             local_lines.extend(entry_lines)
     if local_lines:
@@ -918,7 +942,7 @@ def build_announce_workspace_lines(
         if projects:
             for p in projects[:12]:
                 if p in current_files_projects:
-                    tag = "   [editable in current turn]"
+                    tag = "   [writable in current turn]"
                 elif p in readonly_files_projects:
                     tag = "   [pulled \u00b7 read-only]"
                 else:
@@ -932,7 +956,7 @@ def build_announce_workspace_lines(
             ex = projects[0]
             lines.append("  examples:")
             lines.append(f'    pull a subfolder:  react.pull(paths=["fi:{anchor}.files/{ex}/<subpath>"])')
-            lines.append(f'    make editable:     react.checkout(mode="replace", paths=["fi:{anchor}.files/{ex}"])')
+            lines.append(f'    make writable:     react.checkout(mode="replace", paths=["fi:{anchor}.files/{ex}"])')
 
     return lines
 
@@ -950,11 +974,16 @@ def build_announce_live_turn_event_lines(
         return []
 
     visible: List[Dict[str, Any]] = []
+    attachment_blocks: List[Dict[str, Any]] = []
     for block in timeline_blocks:
         btype = str(block.get("type") or "").strip()
-        if btype not in {"user.followup", "user.steer"}:
+        block_turn_id = str(block.get("turn_id") or "").strip()
+        if block_turn_id != turn_id:
             continue
-        if str(block.get("turn_id") or "").strip() != turn_id:
+        if btype == "user.attachment.meta":
+            attachment_blocks.append(block)
+            continue
+        if btype not in {"user.followup", "user.steer"}:
             continue
         visible.append(block)
 
@@ -969,6 +998,43 @@ def build_announce_live_turn_event_lines(
         lines.append(f"  - events: showing last {len(kept)} of {total}")
     else:
         lines.append(f"  - events: {total} total")
+
+    def _event_attachment_blocks(event_block: Dict[str, Any]) -> List[Dict[str, Any]]:
+        meta = event_block.get("meta") if isinstance(event_block.get("meta"), dict) else {}
+        batch_id = str(meta.get("batch_id") or "").strip()
+        event_id = str(meta.get("event_id") or meta.get("message_id") or "").strip()
+        seq = meta.get("sequence")
+        out: List[Dict[str, Any]] = []
+        for att in attachment_blocks:
+            att_meta = att.get("meta") if isinstance(att.get("meta"), dict) else {}
+            att_batch_id = str(att_meta.get("batch_id") or "").strip()
+            att_event_id = str(att_meta.get("message_id") or att_meta.get("event_id") or "").strip()
+            att_seq = att_meta.get("sequence")
+            if batch_id and att_batch_id == batch_id:
+                out.append(att)
+                continue
+            if event_id and att_event_id == event_id:
+                out.append(att)
+                continue
+            if seq is not None and att_seq == seq:
+                out.append(att)
+                continue
+        return out
+
+    def _attachment_label(block: Dict[str, Any]) -> str:
+        meta = block.get("meta") if isinstance(block.get("meta"), dict) else {}
+        path = str(block.get("path") or meta.get("logical_path") or "").strip()
+        filename = str(meta.get("filename") or "").strip()
+        if not filename and path:
+            filename = path.rsplit("/", 1)[-1]
+        mime = str(meta.get("mime") or block.get("mime") or "").strip()
+        parts = [filename or "(attachment)"]
+        if mime:
+            parts.append(mime)
+        if path:
+            parts.append(f"ref={path}")
+        return " | ".join(parts)
+
     for block in kept:
         btype = str(block.get("type") or "").strip()
         meta = block.get("meta") if isinstance(block.get("meta"), dict) else {}
@@ -983,6 +1049,13 @@ def build_announce_live_turn_event_lines(
             lines.append(f"      text={_shorten(text, 120)}")
         elif kind == "steer":
             lines.append("      text=(empty stop control)")
+        attachments = _event_attachment_blocks(block)
+        if attachments:
+            lines.append(f"      attachments={len(attachments)}")
+            for idx, attachment in enumerate(attachments[:3], start=1):
+                lines.append(f"        attachment.{idx} {_shorten(_attachment_label(attachment), 180)}")
+            if len(attachments) > 3:
+                lines.append(f"        … +{len(attachments) - 3} more")
     return lines
 
 
