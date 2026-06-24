@@ -321,6 +321,13 @@ The activity stream is transport-level progress. It is not the same thing as
 the final answer reducer. The final Telegram answer is still produced after
 `runner()` returns by `deliver_react_turn_to_telegram(...)`.
 
+`integrations.telegram.stream_activity_display=false` suppresses the progress
+display part of the streamer, but the streamer still accepts `chat.files` and
+`chat.error` events. This lets Telegram stay quiet during a turn while preserving
+live file delivery and final-delivery de-duplication. Set
+`integrations.telegram.stream_activity=false` only when the streamer itself
+should be disabled.
+
 The wrapper passes `delivered_file_keys` from the streamer to final delivery so
 file artifacts already sent during progress streaming are not sent twice.
 

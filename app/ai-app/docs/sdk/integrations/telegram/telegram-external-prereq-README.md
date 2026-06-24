@@ -96,6 +96,8 @@ bundles:
             enabled: true
             webhook_url: "https://<PUBLIC_HOST>/api/integrations/bundles/<TENANT>/<PROJECT>/<BUNDLE_ID>/public/telegram_webhook"
             send_responses: true
+            stream_activity: true
+            stream_activity_display: true
             web_app_auth_max_age_seconds: 86400
 ```
 

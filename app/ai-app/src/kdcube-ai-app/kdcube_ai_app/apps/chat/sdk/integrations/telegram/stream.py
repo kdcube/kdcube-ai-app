@@ -57,6 +57,7 @@ class TelegramActivityStreamer:
         chat_id: str | int,
         turn_id: str | None = None,
         enabled: bool = True,
+        show_progress: bool = True,
         quiet_seconds: float = 1.5,
         min_send_interval_seconds: float = 3.0,
         max_message_chars: int = 1400,
@@ -68,6 +69,10 @@ class TelegramActivityStreamer:
         self.chat_id = str(chat_id or "").strip()
         self.turn_id = str(turn_id or "").strip()
         self.enabled = bool(enabled and self.bot_token and self.chat_id)
+        # When False, suppress the activity/thinking/step progress display
+        # (chat.delta / chat.step / chat.service / chat.compaction / chat.citations)
+        # but KEEP file delivery (chat.files) and error surfacing (chat.error).
+        self.show_progress = bool(show_progress)
         self.quiet_seconds = max(0.3, float(quiet_seconds or 1.5))
         self.min_send_interval_seconds = max(0.5, float(min_send_interval_seconds or 3.0))
         self.max_message_chars = max(300, int(max_message_chars or 1400))
@@ -137,6 +142,8 @@ class TelegramActivityStreamer:
     async def _on_activity(self, activity: dict[str, Any]) -> None:
         if not self._activity_matches_turn(activity):
             return
+        if not self._should_accept_activity(activity):
+            return
         sig = self._activity_signature(activity)
         if sig:
             now = time.monotonic()
@@ -168,6 +175,18 @@ class TelegramActivityStreamer:
         if not isinstance(conv, Mapping):
             return ""
         return str(conv.get("turn_id") or "").strip()
+
+    def _should_accept_activity(self, activity: Mapping[str, Any]) -> bool:
+        if self.show_progress:
+            return True
+        return self._activity_type(activity) in {"chat.files", "chat.error"}
+
+    @staticmethod
+    def _activity_type(activity: Mapping[str, Any]) -> str:
+        env = activity.get("data") if isinstance(activity, Mapping) else None
+        if not isinstance(env, Mapping):
+            return ""
+        return str(env.get("type") or "").strip()
 
     async def _on_relay_message(self, message: dict[str, Any]) -> None:
         if not isinstance(message, dict):
@@ -299,6 +318,10 @@ class TelegramActivityStreamer:
         if not isinstance(env, Mapping):
             return
         typ = str(env.get("type") or "")
+        # When progress display is suppressed, process ONLY file delivery
+        # (chat.files) and errors (chat.error); skip thinking/step/progress.
+        if not self.show_progress and typ not in {"chat.files", "chat.error"}:
+            return
         if typ == "chat.delta":
             await self._handle_delta(env)
             return

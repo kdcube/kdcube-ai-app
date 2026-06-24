@@ -187,9 +187,33 @@ async def test_telegram_submit_react_turn_sends_external_events(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_telegram_inline_run_react_turn_derives_external_event_type(tmp_path):
+async def test_telegram_inline_run_react_turn_derives_external_event_type(tmp_path, monkeypatch):
     from kdcube_ai_app.apps.chat.sdk.integrations.telegram import TelegramUserAdminStorage
     from kdcube_ai_app.apps.chat.sdk.integrations.telegram import user_admin
+
+    streamer_kwargs: list[dict] = []
+
+    class _FakeStreamer:
+        def __init__(self, **kwargs):
+            streamer_kwargs.append(dict(kwargs))
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        def delivered_file_keys(self):
+            return set()
+
+        def progress_message_id(self):
+            return None
+
+        def progress_summary(self):
+            return ""
+
+    monkeypatch.setattr(user_admin, "TelegramActivityStreamer", _FakeStreamer)
+    monkeypatch.setattr(user_admin, "bot_token", lambda entrypoint=None: "telegram-token")
 
     storage = TelegramUserAdminStorage(tmp_path)
     storage.upsert_user(
@@ -236,6 +260,11 @@ async def test_telegram_inline_run_react_turn_derives_external_event_type(tmp_pa
         def set_state(self, state):
             self.state = dict(state)
 
+        def bundle_prop(self, path, default=None):
+            if path == "integrations.telegram.stream_activity_display":
+                return False
+            return default
+
         async def run(self, **params):
             self.run_params = dict(params)
             return {"final_answer": "ok", "followups": [], "turn_log": {"blocks": []}, "timeline": {"blocks": []}}
@@ -259,6 +288,7 @@ async def test_telegram_inline_run_react_turn_derives_external_event_type(tmp_pa
     assert events[0]["event_source_id"] == "telegram.user.followup"
     assert events[0]["payload"]["event"]["text"] == "and then?"
     assert entrypoint.initial_payload["message_kind"] == "followup"
+    assert streamer_kwargs[0]["show_progress"] is False
 
 
 @pytest.mark.asyncio
@@ -266,6 +296,7 @@ async def test_queued_telegram_delivery_uses_processor_payload_telegram(monkeypa
     from kdcube_ai_app.apps.chat.sdk.integrations.telegram import user_admin
 
     delivered: dict[str, object] = {}
+    streamer_kwargs: list[dict] = []
 
     async def _deliver(**kwargs):
         delivered.update(kwargs)
@@ -276,11 +307,32 @@ async def test_queued_telegram_delivery_uses_processor_payload_telegram(monkeypa
             "progress_final_appended": False,
         }
 
+    class _FakeStreamer:
+        def __init__(self, **kwargs):
+            streamer_kwargs.append(dict(kwargs))
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        def delivered_file_keys(self):
+            return set()
+
+        def progress_message_id(self):
+            return None
+
+        def progress_summary(self):
+            return ""
+
     monkeypatch.setattr(user_admin, "deliver_react_turn_to_telegram", _deliver)
+    monkeypatch.setattr(user_admin, "TelegramActivityStreamer", _FakeStreamer)
     monkeypatch.setattr(user_admin, "bot_token", lambda entrypoint=None: "telegram-token")
 
     class _Entrypoint:
         BUNDLE_ID = "test.telegram-queued"
+        config = SimpleNamespace(ai_bundle_spec=SimpleNamespace(id="test.telegram-queued"))
         comm_context = SimpleNamespace(
             request=SimpleNamespace(
                 payload={
@@ -301,6 +353,8 @@ async def test_queued_telegram_delivery_uses_processor_payload_telegram(monkeypa
         )
 
         def bundle_prop(self, path, default=None):
+            if path == "integrations.telegram.stream_activity_display":
+                return False
             return default
 
     async def _runner():
@@ -331,6 +385,7 @@ async def test_queued_telegram_delivery_uses_processor_payload_telegram(monkeypa
     assert delivered["update_id"] == "upd-queued"
     assert delivered["react_turn"]["answer"] == "Queued answer"
     assert delivered["react_turn"]["turn_log"]["turn_id"] == "turn_queued"
+    assert streamer_kwargs[0]["show_progress"] is False
 
 
 def test_telegram_user_admin_uses_bound_comm_bundle_id(tmp_path):
@@ -1791,3 +1846,103 @@ async def test_telegram_delivery_uploads_local_document(monkeypatch, tmp_path):
             "mime_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_telegram_activity_streamer_show_progress_false_delivers_files_only():
+    """show_progress=False keeps chat.files delivery but suppresses progress
+    (chat.step / chat.delta) display."""
+    from kdcube_ai_app.apps.chat.sdk.integrations.telegram.stream import TelegramActivityStreamer
+
+    class _FakeComm:
+        def __init__(self):
+            self.listeners = []
+
+        def add_activity_listener(self, cb):
+            self.listeners.append(cb)
+
+        def remove_activity_listener(self, cb):
+            self.listeners.remove(cb)
+
+        async def emit(self, activity):
+            for cb in list(self.listeners):
+                await cb(activity)
+
+    sent = []
+
+    async def _send(messages):
+        sent.extend(messages)
+        return {"ok": True}
+
+    comm = _FakeComm()
+    async with TelegramActivityStreamer(
+        comm=comm,
+        bot_token="token",
+        chat_id="chat",
+        send_messages=_send,
+        show_progress=False,
+        quiet_seconds=0.01,
+        min_send_interval_seconds=0.01,
+    ) as streamer:
+        # Suppressed: step/status progress.
+        for index in range(1105):
+            await comm.emit(
+                {
+                    "event": "chat_step",
+                    "data": {
+                        "type": "chat.step",
+                        "event": {"step": f"gate-{index}", "status": "completed", "title": "Gate Completed"},
+                    },
+                }
+            )
+        # Suppressed: thinking/timeline delta.
+        await comm.emit(
+            {
+                "event": "chat_delta",
+                "data": {
+                    "type": "chat.delta",
+                    "event": {"agent": "react.decision"},
+                    "delta": {"marker": "timeline_text", "text": "checking inbox", "index": 0, "completed": True},
+                    "extra": {"artifact_name": "react.notes", "format": "markdown"},
+                },
+            }
+        )
+        # Suppressed: citations are progress metadata for Telegram, not file delivery.
+        await comm.emit(
+            {
+                "event": "chat_step",
+                "data": {
+                    "type": "chat.citations",
+                    "event": {"step": "citations", "status": "completed", "title": "Citations (1)"},
+                    "data": {"count": 1, "items": [{"sid": 1, "title": "Source", "url": "https://example.test/src"}]},
+                },
+            }
+        )
+        # KEPT: file delivery.
+        await comm.emit(
+            {
+                "event": "chat_step",
+                "data": {
+                    "type": "chat.files",
+                    "event": {"step": "files", "status": "completed", "title": "Files Ready (1)"},
+                    "data": {
+                        "count": 1,
+                        "items": [
+                            {
+                                "filename": "report.pdf",
+                                "mime": "application/pdf",
+                                "description": "Generated report",
+                                "hosted_uri": "https://example.test/report.pdf",
+                                "physical_path": "turn_1/outputs/report.pdf",
+                                "artifact_path": "fi:turn_1.outputs/report.pdf",
+                            }
+                        ],
+                    },
+                },
+            }
+        )
+
+    assert len(sent) == 1
+    assert sent[0].kind == "document"
+    assert sent[0].files[0]["filename"] == "report.pdf"
+    assert streamer.delivered_file_keys() == {"https://example.test/report.pdf"}

@@ -94,6 +94,7 @@ Non-secret props demonstrated here include:
 - `integrations.telegram.webhook_url`
 - `integrations.telegram.send_responses`
 - `integrations.telegram.stream_activity`
+- `integrations.telegram.stream_activity_display`
 - `integrations.telegram.web_app_auth_max_age_seconds`
 - `visibility.bundle.allowed_roles`
 - `canvas.artifact_prefix`
