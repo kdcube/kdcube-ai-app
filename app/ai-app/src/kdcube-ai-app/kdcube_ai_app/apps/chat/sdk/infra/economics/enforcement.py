@@ -129,12 +129,6 @@ class FlowPolicy:
     reservation_ttl_sec: int = 900      # configurable per flow
     lock_ttl_sec: int = 180             # configurable per flow
     emit_user_events: bool = False      # background flows log only, no UI delivery
-    # When the plan quota/funds are exhausted, may the over-quota remainder be drawn
-    # from the user's wallet (the unified split's wallet_part)? Off by default so
-    # external surfaces (memory/tasks) DENY on exhaustion instead of silently billing
-    # the wallet; interactive chat draws the wallet directly in run() (not via this
-    # guard). A non-chat flow that wants wallet overflow opts in by setting True.
-    allow_wallet_overflow: bool = False
     # Serialize the admit->reserve planning window per user with a distributed
     # Redis lock (mirrors run()'s quota_lock). Only meaningful for RESERVING
     # surfaces (full guard) — closes the read-remaining-quota -> reserve TOCTOU
@@ -600,11 +594,10 @@ class EconomicsGuard:
                 primary_cap_tokens, sub_limiter = await self._primary_cap_tokens(r, funding_source)
             want_resv = min(int(est_turn_tokens), int(primary_cap_tokens))
 
-            # Wallet overflow is opt-in per surface: when disallowed, the split sees no
-            # wallet, so an over-quota/over-funds turn DENIES instead of billing it.
-            allow_wallet = bool(self.policy.allow_wallet_overflow)
-            eff_has_wallet = bool(r["has_wallet"]) and allow_wallet
-            eff_wallet_tokens = int(r["wallet_tokens"]) if allow_wallet else 0
+            # The wallet always covers the over-quota/over-funds remainder (the unified
+            # split's wallet_part) — identical to chat run(). No per-surface gate.
+            eff_has_wallet = bool(r["has_wallet"])
+            eff_wallet_tokens = int(r["wallet_tokens"])
 
             admit = await self._admit(
                 r["base_policy"], reserve_tokens=want_resv,

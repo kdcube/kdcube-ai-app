@@ -3,7 +3,7 @@ id: repo:kdcube-ai-app/app/ai-app/docs/economics/economic-enforcement-engine-REA
 title: "Economics Enforcement Engine"
 summary: "Reusable API for enforcing the economics model (quota, funding, settlement) on accountable flows outside the chat entrypoint."
 tags: ["economics", "enforcement", "engine", "api", "integration"]
-keywords: ["EconomicsGuard", "economic_preflight", "EconomicsSubject", "RoleResolver", "FlowPolicy", "reservation", "settlement", "scope_id", "quota lock", "wallet overflow", "allow_wallet_overflow", "enforce_quota_lock"]
+keywords: ["EconomicsGuard", "economic_preflight", "EconomicsSubject", "RoleResolver", "FlowPolicy", "reservation", "settlement", "scope_id", "quota lock", "wallet overflow", "enforce_quota_lock"]
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/economics/economic-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/economics/economics-events-README.md
@@ -212,7 +212,6 @@ Semantic-search economics denial logs a facade-level fallback line and returns
 | `reservation_ttl_sec` | `900` | reservation hold lifetime |
 | `lock_ttl_sec` | `180` | admit lock lifetime |
 | `emit_user_events` | `False` | emit `rate_limit.*` SSE events on denial (needs a `comm` channel); background flows log only |
-| `allow_wallet_overflow` | `False` | when the plan quota/funds are exhausted, allow the over‑quota remainder to be drawn from the user's wallet (the split's `wallet_part`) instead of denying (see *Wallet overflow* below) |
 | `enforce_quota_lock` | `False` | serialize the admit→reserve window per user with a distributed lock (reserving flows only; see *Quota lock* below) |
 | `quota_lock_ttl_sec` | `60` | quota‑lock key lifetime (safety net if the holder dies) |
 | `quota_lock_wait_sec` | `5.0` | how long to wait for the lock before denying as `quota_lock_timeout` |
@@ -232,11 +231,10 @@ Carries the resolved `lane` (`plan` / `bypass`), `plan_id`,
   `exc.data` carries the snapshot. See
   [economics-events-README.md](./economics-events-README.md) for the event payloads
   emitted when `emit_user_events` is on.
-- **Wallet overflow.** With `allow_wallet_overflow` on, when the plan quota/funds are
-  exhausted the over‑quota remainder (`wallet_part = R − plan_part`) is drawn from the
-  user's wallet within the **same** wallet‑aware admit. Off by default, so an external 
-  flow **denies** on exhaustion rather than silently billing the wallet unless it opts 
-  in (interactive chat draws the wallet directly in `run()`, not via this guard).
+- **Wallet overflow.** When the plan quota/funds are exhausted, the over‑quota remainder
+  (`wallet_part = R − plan_part`) is drawn from the user's wallet within the **same**
+  wallet‑aware admit — identical to chat `run()`, on every surface. The turn only denies
+  when there is no wallet (or the wallet can't cover the remainder).
 - **Settlement (guard only).** On exit, actual spend is settled with the same split as
   chat — plan quota + primary funds (subscription/project) first, the wallet for the
   over‑quota remainder, with the subscription budget's headroom and then the project

@@ -523,35 +523,22 @@ async def test_economics_guard_emits_centralized_trace_messages():
 
 
 # --------------------------------------------------------------------------
-# Wallet overflow gate (allow_wallet_overflow) — external surfaces opt-in
+# Wallet overflow — the wallet always covers the over-funds remainder (== run())
 # --------------------------------------------------------------------------
 class _FiniteBudget(_Budget):
     # $0.02 with no overdraft -> primary covers only part of the turn, forcing an
-    # over-funds remainder (wallet_part > 0) that the gate decides what to do with.
+    # over-funds remainder (wallet_part > 0) that the wallet must absorb.
     async def get_app_budget_balance(self):
         return {"available_usd": 0.02, "overdraft_limit_usd": 0.0}
 
 
-async def test_allow_wallet_overflow_disabled_denies_on_exhaustion():
-    # default (non-chat): the over-funds remainder must NOT be drawn from the wallet
-    # -> the split sees no wallet and the turn denies (no wallet hold taken).
-    cp = _CP(wallet=1_000_000, plan_balance=_PlanBalance(wallet=True))
-    ep = _EP(cp=cp, rl=_RL(), budget=_FiniteBudget())
-    g = EconomicsGuard(ep, subject=_subject("registered"), scope_id="wo1", flow="f",
-                       estimate=EconomicsEstimate(reservation_usd=0.05),
-                       policy=FlowPolicy(allow_wallet_overflow=False))
-    with pytest.raises(EconomicsLimitException):
-        await g.__aenter__()
-    assert ep.cp_manager.user_credits_mgr.reserved == []   # wallet never touched
-
-
-async def test_allow_wallet_overflow_enabled_funds_via_wallet():
-    # opt-in: the same exhaustion is covered by a primary partial hold + wallet overflow.
+async def test_wallet_overflow_funds_over_funds_remainder():
+    # The guard funds like chat run(): primary covers what it can, the wallet holds
+    # the over-funds remainder (unified split, no per-surface opt-in gate).
     cp = _CP(wallet=1_000_000, plan_balance=_PlanBalance(wallet=True))
     ep = _EP(cp=cp, rl=_RL(), budget=_FiniteBudget())
     g = EconomicsGuard(ep, subject=_subject("registered"), scope_id="wo2", flow="f",
-                       estimate=EconomicsEstimate(reservation_usd=0.05),
-                       policy=FlowPolicy(allow_wallet_overflow=True))
+                       estimate=EconomicsEstimate(reservation_usd=0.05))
     decision = await g.__aenter__()
     assert decision.funding_source == "project"
     assert len(ep.budget_limiter.reserved) == 1             # primary partial hold
