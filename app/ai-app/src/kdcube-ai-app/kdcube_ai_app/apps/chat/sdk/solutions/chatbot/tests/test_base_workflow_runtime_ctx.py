@@ -21,9 +21,13 @@ class _CtxBrowserStub:
         self.runtime_ctx = runtime_ctx
         self.timeline = _TimelineStub()
         self.contributed = []
+        self.closed_external_event_handler = False
 
     def contribute(self, blocks):
         self.contributed.extend(list(blocks or []))
+
+    async def close_external_event_handler(self):
+        self.closed_external_event_handler = True
 
 
 def _payload(
@@ -899,6 +903,7 @@ async def test_handle_turn_exception_sanitizes_wrapped_react_connection_error(mo
     assert data["error_type"] == "APIConnectionError"
     assert data["service_error"]["error_type"] == "APIConnectionError"
     assert deleted_turns
+    assert wf.ctx_browser.closed_external_event_handler is True
 
 
 @pytest.mark.asyncio

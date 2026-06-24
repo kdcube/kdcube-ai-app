@@ -3345,6 +3345,14 @@ class BaseWorkflow():
 
         # no-op (kept for alignment with prior error handling)
 
+        try:
+            if self.ctx_browser:
+                close_external_event_handler = getattr(self.ctx_browser, "close_external_event_handler", None)
+                if callable(close_external_event_handler):
+                    await close_external_event_handler()
+        except Exception:
+            self.logger.log(traceback.format_exc(), "ERROR")
+
         # ---- rollback ----
         try:
             await self.ctx_client.delete_turn(
