@@ -142,6 +142,8 @@ class TelegramActivityStreamer:
     async def _on_activity(self, activity: dict[str, Any]) -> None:
         if not self._activity_matches_turn(activity):
             return
+        if not self._should_accept_activity(activity):
+            return
         sig = self._activity_signature(activity)
         if sig:
             now = time.monotonic()
@@ -173,6 +175,18 @@ class TelegramActivityStreamer:
         if not isinstance(conv, Mapping):
             return ""
         return str(conv.get("turn_id") or "").strip()
+
+    def _should_accept_activity(self, activity: Mapping[str, Any]) -> bool:
+        if self.show_progress:
+            return True
+        return self._activity_type(activity) in {"chat.files", "chat.error"}
+
+    @staticmethod
+    def _activity_type(activity: Mapping[str, Any]) -> str:
+        env = activity.get("data") if isinstance(activity, Mapping) else None
+        if not isinstance(env, Mapping):
+            return ""
+        return str(env.get("type") or "").strip()
 
     async def _on_relay_message(self, message: dict[str, Any]) -> None:
         if not isinstance(message, dict):

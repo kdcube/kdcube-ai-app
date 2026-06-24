@@ -148,6 +148,8 @@ def configuration_defaults(self):
                 "enabled": False,
                 "webhook_url": "",
                 "send_responses": True,
+                "stream_activity": True,
+                "stream_activity_display": True,
                 "web_app_auth_max_age_seconds": 86400,
             },
         },
@@ -271,6 +273,8 @@ integrations:
     enabled: true
     webhook_url: "https://<PUBLIC_HOST>/api/integrations/bundles/<TENANT>/<PROJECT>/<BUNDLE_ID>/public/telegram_webhook"
     send_responses: true
+    stream_activity: true
+    stream_activity_display: true
     web_app_auth_max_age_seconds: 86400
 ```
 
@@ -662,6 +666,13 @@ ReAct turns where the final answer may take minutes.
 Thinking and note deltas are rendered as Telegram HTML blockquotes. The streamer
 tracks already-sent file keys so final delivery does not duplicate files that
 were emitted during the turn.
+
+Two bundle properties control this behavior:
+
+| Property | Meaning |
+| --- | --- |
+| `integrations.telegram.stream_activity` | Enables the Telegram activity streamer. When this is `false`, no live progress or live file delivery is sent by the streamer. Final delivery can still run after the turn according to `send_responses`. |
+| `integrations.telegram.stream_activity_display` | Controls the progress display inside the streamer. When this is `false`, the streamer suppresses progress/status/thinking/source messages but still delivers `chat.files` events and `chat.error` messages. Use this when Telegram should stay quiet during long turns but files produced during the turn must still be delivered immediately and de-duplicated from final delivery. |
 
 When `turn_id` is provided, the streamer ignores activity whose
 `conversation.turn_id` belongs to another turn. This matters because the relay
