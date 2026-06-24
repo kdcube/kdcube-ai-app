@@ -57,10 +57,18 @@ echo "[entrypoint] Switching to user $APPUSER (UID $APPUSER_UID)"
 # Ensure appuser owns the exec workspace (volume overrides image ownership)
 chown -R appuser:appuser /exec-workspace || true
 
-# Ensure appuser owns the managed bundle root when it is bind-mounted from host.
+# Ensure appuser can create managed bundle cache entries without recursively
+# walking the shared cache on every start. Recursive repair is expensive on EFS
+# and can block the HTTP server from binding long enough for service discovery
+# to route traffic to a non-listening task.
 MANAGED_BUNDLES_ROOT="${MANAGED_BUNDLES_ROOT:-/managed-bundles}"
 if [ -d "$MANAGED_BUNDLES_ROOT" ]; then
-    chown -R appuser:appuser "$MANAGED_BUNDLES_ROOT" || true
+    if [ "${CHOWN_MANAGED_BUNDLES_RECURSIVE:-0}" = "1" ]; then
+        echo "[entrypoint] Recursively repairing managed bundle ownership: $MANAGED_BUNDLES_ROOT"
+        chown -R appuser:appuser "$MANAGED_BUNDLES_ROOT" || true
+    else
+        chown appuser:appuser "$MANAGED_BUNDLES_ROOT" || true
+    fi
 fi
 
 # Ensure appuser can access git SSH materials (used for git bundles)
