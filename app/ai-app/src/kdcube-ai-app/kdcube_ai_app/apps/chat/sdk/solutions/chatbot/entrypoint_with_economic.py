@@ -1110,7 +1110,7 @@ class BaseEntrypointWithEconomics(BaseEntrypoint):
                             remaining_tokens=int(plan_project_tokens_est),
                         )
                         await _econ_fail(
-                            code="personal_reservation_failed_plan",
+                            code="personal_reservation_failed",
                             title="Insufficient personal credits",
                             message="Insufficient personal credits to cover the over-quota remainder.",
                             event_type="rate_limit.denied",

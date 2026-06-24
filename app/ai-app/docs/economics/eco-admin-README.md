@@ -42,7 +42,7 @@ From the Economics dashboard you can:
 
 - **Plan** = quota policy (limits for requests/tokens/concurrency).
 - **Plan override** = temporary per‑user override of plan limits.
-- **Lane** = `plan` lane or `paid` lane.
+- **Funding split** = one pass: the primary source (subscription/project) covers `plan_part`, the wallet covers the over‑quota remainder.
 
 ## Plan Quotas and Limits
 
@@ -55,18 +55,28 @@ UI card: **Quota Policies**
 - Plan overrides (`user_plan_overrides`) can temporarily replace these values per user.
 - Quotas are enforced **per tenant/project** (global across bundles).
 - Hourly limits use a **rolling 60‑minute** window; daily limits use the **current 24‑hour quota period since the last daily reset**; monthly limits use the **current 30‑day quota period since the last monthly reset**.
-- Reservation floor is **per bundle**, configured via bundle props `economics.reservation_amount_dollars` (not in this UI).
+- Reservation floor default comes from the economics descriptor (`reservation.chat`), editable in the **Reservation** card below, and overridable per bundle.
 
-### Bundle reservation floor (per bundle)
+### Reservation floor (descriptor default + per-bundle override)
 
-This is configured via bundle props (not the economics UI):
+UI card: **Reservation**
 
-- Key: `economics.reservation_amount_dollars`
-- Scope: tenant/project + bundle_id
+The reservation floor (USD) sizes a turn's pre-run hold. It is resolved per turn from two layers:
 
-Admin API (Integrations):
-- `GET /admin/integrations/bundles/{bundle_id}/props`
-- `POST /admin/integrations/bundles/{bundle_id}/props`
+1. **Descriptor default** — `reservation.<floor>` in the economics descriptor (e.g. `chat: 2.0`),
+   seeded at deploy and read live per turn. Edit it from the **Reservation** card, which writes
+   straight into the descriptor (survives a re-seed; bundles pick it up live):
+   - `GET /economics/reservation` — current floors
+   - `POST /economics/reservation` — set `{floor, amount}` (amount `<= 0` disables the floor)
+   - `DELETE /economics/reservation/{floor}` — remove the floor (the surface inherits the default again)
+2. **Per-bundle override** — `config.economics.reservation.<floor>` in `bundles.yaml` (legacy bundle
+   prop `economics.reservation_amount_dollars` is still accepted), via the Integrations bundle props API:
+   - `GET /admin/integrations/bundles/{bundle_id}/props`
+   - `POST /admin/integrations/bundles/{bundle_id}/props`
+
+Runtime resolution (chat): the bundle override wins if set; otherwise the descriptor default
+applies. A positive value enables the floor (`est_turn_tokens = ceil(amount / (usd_per_token × SAFETY_MARGIN))`);
+`<= 0` disables it (token-based estimate).
 
 Special case (wallet + no subscription):
 - Plan stays `free`, but **service limits** (requests/concurrency) are taken from `wallet`.
@@ -77,20 +87,22 @@ Special case (subscription + wallet):
 - **Subscription balance and subscription plan quota** cover the maximum eligible request share.
 - **Wallet** covers only overflow; wallet-paid tokens do **not** consume subscription plan quota.
 - If actual spend exceeds both plan funding and wallet, project budget absorbs the remainder (shortfall note in ledger). If plan quota remains, that absorbed fallback also consumes quota.
-- If subscription funds **zero** for the turn, the request switches to **paid lane** and **wallet** quotas apply.
+- If the subscription budget can't fully fund a turn, the over‑quota remainder is covered by the **wallet** via the unified split.
 - Subscriptions and wallets never go negative; only project budget can absorb shortfalls.
 
 ### How plan limits are initialized
 
-Plan quotas are seeded once by a master bundle:
+Plan quotas are **seeded at deploy time** from the economics descriptor
+(`deployment/economics.yaml`) by the postgres-setup job 
+(see [economics-descriptor-README.md](./economics-descriptor-README.md)). The mandatory
+plans (`anonymous`/`free`/`wallet`/`admin`) have a built-in baseline (`DEFAULT_QUOTA_POLICIES`);
+descriptor entries override it per field.
 
-- The entrypoint seeds from `app_quota_policies` if `plan_quota_policies` is missing records.
-- After seeding, updates should be made in the admin UI.
+- `enforce: false` (default) seeds only missing entries, preserving operator/admin edits.
+- `enforce: true` realigns every listed entity back to the descriptor.
 
-If you change `app_quota_policies` in code, you must either:
-
-- Update the policies directly in the admin UI, or
-- Clear the table and let the master bundle re‑seed
+After seeding, adjust limits in the admin UI, or re-run the seeder with an updated descriptor.
+The legacy bundle-runtime seeder (`ensure_policies_initialized()`) is a deprecated no-op shim.
 
 ## Subscription Plans
 

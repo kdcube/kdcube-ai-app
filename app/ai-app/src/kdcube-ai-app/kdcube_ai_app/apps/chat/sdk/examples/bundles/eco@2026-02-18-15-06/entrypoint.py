@@ -17,7 +17,6 @@
 #   Extends BaseEntrypoint with quota enforcement, accounting, and the
 #   execute_core() contract. Your bundle overrides:
 #     - configuration      → role_models (which LLM for which agent)
-#     - app_quota_policies  → per-tier rate/token limits
 #     - execute_core()      → the async method called after quota checks pass
 #
 # To create your own bundle:
@@ -25,7 +24,6 @@
 #   - Decorate with @bundle_entrypoint(name=..., version=..., priority=...)
 #   - Implement _build_graph() → LangGraph StateGraph
 #   - Implement execute_core() to invoke the graph
-#   - Override configuration (role_models) and app_quota_policies
 
 from __future__ import annotations
 
@@ -172,49 +170,6 @@ class EcoEntrypoint(BaseEntrypointWithEconomics):
             role_models.setdefault(key, value)
         config["role_models"] = role_models
         return config
-
-    @property
-    def app_quota_policies(self):
-        """
-        Per-user-tier quota policies enforced by the economics layer.
-        Each key matches state["user_type"]. QuotaPolicy caps concurrent
-        requests, daily/monthly request counts, and hourly/daily/monthly tokens.
-        """
-        from kdcube_ai_app.apps.chat.sdk.infra.economics.policy import QuotaPolicy
-
-        anonymous_policy = QuotaPolicy(
-            max_concurrent=1,
-            requests_per_day=2,
-            requests_per_month=60,
-            total_requests=None,
-            tokens_per_hour=150_000,
-            tokens_per_day=1_500_000,
-            tokens_per_month=20_000_000,
-        )
-        return {
-            "anonymous": anonymous_policy,
-            "free": QuotaPolicy(
-                max_concurrent=2,
-                requests_per_day=100,
-                requests_per_month=30000,
-                total_requests=None,
-                tokens_per_hour=500_000,
-                tokens_per_day=2_000_000,
-                tokens_per_month=30_000_000,
-            ),
-            "wallet": QuotaPolicy(
-                max_concurrent=2,
-                requests_per_day=200,
-                requests_per_month=6000,
-                total_requests=None,
-                tokens_per_hour=1_500_000,
-                tokens_per_day=4_000_000,
-                tokens_per_month=60_000_000,
-            ),
-            "admin": QuotaPolicy(
-                max_concurrent=10,
-            )
-        }
 
     async def execute_core(self, *, state: Dict[str, Any], thread_id: str, params: Dict[str, Any]):
         """Required by BaseEntrypointWithEconomics — runs the compiled LangGraph."""

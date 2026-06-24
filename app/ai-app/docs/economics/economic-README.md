@@ -3,7 +3,7 @@ id: repo:kdcube-ai-app/app/ai-app/docs/economics/economic-README.md
 title: "Economic"
 summary: "Authoritative economics model and runtime enforcement rules."
 tags: ["economics", "model", "runtime", "control-plane"]
-keywords: ["plans", "wallets", "lanes", "rate limits", "charging", "project scope"]
+keywords: ["plans", "wallets", "funding split", "rate limits", "charging", "project scope"]
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/economics/eco-test-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/economics/eco-admin-README.md
@@ -23,7 +23,7 @@ Runtime entrypoint:
 The economics subsystem covers:
 
 - Rate limits and quotas (requests, tokens, concurrency)
-- Funding lanes (subscription budget, project budget, wallet credits)
+- Funding sources (subscription budget, project budget, wallet credits)
 - Reservation semantics for correctness under concurrency
 - Accounting and cost attribution
 - Subscription period management and rollovers
@@ -34,12 +34,12 @@ The economics subsystem covers:
 
 - **Plan** = quota policy identity (limits for requests/tokens/concurrency).
 - **Plan override** = temporary per‑user override of plan limits.
-- **Lane** = `plan` lane or `paid` lane.
+- **Funding source** = the plan's primary budget: `subscription` (active subscription) or `project` (everyone else). The **wallet** is never a primary source — it covers the over‑quota/over‑funds remainder.
 
-Lane vs funding (important):
-- **Lane** is only `plan` (plan lane) or `paid` (wallet‑only lane).
-- **Funding source** is `subscription` or `project` (for plan lane), or `wallet` (for paid lane).
-- A **subscription plan** runs in the **plan lane**; it just uses **subscription funding**.
+Unified funding split (important):
+- Every request is **one split**: `plan_part = min(R, Q, P)` is funded by the primary source (bounded by the remaining quota `Q` **and** the primary funds `P`); `wallet_part = R − plan_part` is covered by the wallet.
+- When the plan quota/funds run out, `plan_part` simply shrinks (to 0) and the wallet covers the rest within the same pass.
+- A **subscription plan** uses **subscription funding** as its primary; a registered/free user uses **project funding**.
 
 Tracing a single request:
 - Chat requests use the chat **turn_id** as `request_id`.
@@ -94,7 +94,7 @@ Special handling for wallet users with no subscription:
 
 - The **plan stays `free`**, but **service limits** (requests/concurrency) are taken from the `wallet` plan.
 - **Token limits** still come from the `free` plan.
-- When the free token quota is insufficient and a wallet exists, the request switches to **paid lane**.
+- When the free token quota is insufficient and a wallet exists, the over‑quota remainder is covered by the **wallet** via the unified split.
 
 **What "active subscription" means** (`subscription_is_active`): a **chargeable**
 (`monthly_price_cents > 0`), `status='active'`, **not `past_due`** row within its
@@ -136,7 +136,7 @@ Plan quotas are stored in the control plane table `plan_quota_policies`.
 - Total requests do not reset.
 Reservation amount configuration:
 - Per‑bundle fixed reservation can be set via bundle props: `economics.reservation_amount_dollars`.
-- If set, the reservation estimate uses that fixed USD amount (lane‑independent).
+- If set, the reservation estimate uses that fixed USD amount (regardless of funding source).
   Configure via Integrations bundle props API (see `eco-admin-README.md`).
 
 Accounting and spend are still recorded **per bundle** for reporting, but quota enforcement is global per tenant/project.
@@ -144,55 +144,69 @@ Global quota counters use bundle id `__project__` in Redis keys (subject_id alre
 
 Seeding flow:
 
-- A master bundle calls `ensure_policies_initialized()`.
-- The entrypoint seeds `plan_quota_policies` from `app_quota_policies` only if records are missing.
-- After initial seeding, updates should be made in the admin UI or directly in the table.
-- Runtime always prefers the DB policy, with a fallback to `app_quota_policies` if a plan is missing.
+- Plan quotas are **seeded at deploy time** from the economics descriptor
+  (`deployment/economics.yaml`) by the postgres-setup job (see
+  [economics-descriptor-README.md](./economics-descriptor-README.md)).
+- The mandatory plans (`anonymous`/`free`/`wallet`/`admin`) have a built-in baseline
+  (`DEFAULT_QUOTA_POLICIES`, the single source shared with the seeder); descriptor entries
+  override that baseline per field. `enforce: false` (default) seeds only missing entries and
+  preserves operator/admin edits; `enforce: true` realigns every listed entity to the descriptor.
+- After seeding, adjust limits in the admin UI (or re-run the seeder with an updated descriptor).
+- Runtime prefers the DB policy, with a defensive fallback to the built-in defaults if a plan
+  row is missing. The legacy bundle-runtime seeder `ensure_policies_initialized()` is a
+  deprecated no-op shim.
 
 ```mermaid
 flowchart TD
-  A[Master bundle starts] --> B[ensure_policies_initialized]
-  B --> C{plan_quota_policies empty?}
-  C -- yes --> D[Insert defaults from app_quota_policies]
-  C -- no --> E[No changes]
-  D --> F[Runtime uses DB policies]
-  E --> F
-  F --> G[Fallback to app_quota_policies only if DB missing]
+  A[Deploy: postgres-setup job] --> B[Read economics.yaml descriptor]
+  B --> C[Merge over built-in baseline DEFAULT_QUOTA_POLICIES]
+  C --> D{enforce?}
+  D -- false --> E[Seed only missing plan_quota_policies]
+  D -- true --> F[Realign all listed entities]
+  E --> G[Runtime uses DB policies]
+  F --> G
+  G --> H[Defensive fallback to built-in defaults if a plan row is missing]
 ```
 
-## Funding Lanes and Reservation Semantics
+## Funding Sources and Reservation Semantics
 
-### Plan lane
+Every request runs as **one split**. The primary funding source covers the plan
+part; the wallet covers the over‑quota/over‑funds remainder.
 
-Plan lane is the normal path when rate‑limit admit succeeds.
+### Reserve (pre‑run)
 
-Funding for plan lane:
-
-- Active subscription → reserve from subscription period budget.
-  - If a wallet exists and subscription funding cannot cover the full reservation, reserve **subscription up to available** and reserve **wallet overflow** for the remainder.
-  - If subscription funds **zero** for the turn, the request switches to **paid lane** and **wallet** quotas apply.
-  - If no wallet exists and actual spend exceeds reservation, **project budget absorbs the overage** (`shortfall:subscription_overage`).
-- Registered role (no subscription) → reserve from project budget.
+- `plan_part = min(R, Q, P)` — R is the estimated turn cost (tokens), Q the remaining plan
+  token quota, P the primary funds (subscription period budget for subscribers, project
+  budget for everyone else). The primary money hold is placed for `plan_part`.
+- `wallet_part = R − plan_part` — reserved against the wallet (lifetime tokens) when a wallet
+  is present and allowed for the surface.
+- Admit succeeds if, and only if the wallet can cover `wallet_part` and any indivisible
+  requests/concurrency gate is satisfied (a wallet lifts that gate). Otherwise the request is
+  denied and **no money hold is left behind**.
 - Privileged bypass → no pre‑check; project budget is charged after run.
-- If project‑funded (free plan) actual spend exceeds reservation, **project budget absorbs the overage** (`shortfall:free_plan`).
-- Wallet‑backed free users keep `plan_id=free` but use **wallet service limits** (requests/concurrency) while **token limits** remain from `free`.
+- Wallet‑backed free users keep `plan_id=free` but use **wallet service limits**
+  (requests/concurrency) while **token limits** remain from `free`.
 
-Post-run settlement uses current available capacity net of active reservations, then adds back this request's own still-live reservation for each funding source. Settlement consumes the maximum possible share from plan quota and normal plan funding first. Wallet pays only the overflow, and wallet-paid tokens do **not** consume plan quota.
+### Settle (post‑run)
 
-If the **actual** spend exceeds both plan funding and wallet (e.g., underestimated cost), the **project budget absorbs the remainder** and a ledger entry is written with a shortfall note. If plan quota remains, that project-absorbed fallback also consumes quota. **Subscriptions and wallets never go negative.**
-Shortfall notes are tagged as `shortfall:wallet_subscription`, `shortfall:wallet_paid`, `shortfall:wallet_plan`, `shortfall:subscription_overage`, or `shortfall:free_plan` for reporting.
+Settlement reads current available capacity net of active reservations, then adds back this
+request's own still‑live reservation per source. It charges the **maximum possible share to
+plan quota + primary funds first**; the wallet pays only the over‑quota remainder, and
+wallet‑paid tokens do **not** consume plan quota.
 
-### Paid lane
+If the **actual** spend exceeds what the primary funds and the wallet covered, the residual
+cascades: for a **subscription** primary it first draws the subscription budget's remaining
+headroom (`shortfall:subscription_overage`), and only then the **project budget absorbs** the
+rest as a last resort; for a **project** primary the project absorbs directly
+(`shortfall:wallet_plan` / `shortfall:free_plan`). If plan quota remains, a project‑absorbed
+fallback also consumes quota. **Subscriptions and wallets never go negative.**
 
-Paid lane is used when plan admit is denied **and** a wallet is available, when plan funding cannot be reserved, **or** when subscription funding for the turn is zero and the wallet must cover the full request.
-
-Funding for paid lane:
-
-- Reserve wallet credits (lifetime tokens).
+Shortfall notes are tagged `shortfall:wallet_subscription`, `shortfall:wallet_plan`,
+`shortfall:subscription_overage`, or `shortfall:free_plan` for reporting.
 
 ### Reservation types
 
-- Rate limiter token reservation (Redis) for plan lane
+- Rate limiter token reservation (Redis) for the plan part
 - Subscription reservations in `user_subscription_period_reservations`
 - Project budget reservations in `tenant_project_budget_reservations`
 - Wallet reservations in `user_token_reservations`
@@ -206,29 +220,17 @@ flowchart TD
   A[Request] --> B[Resolve role]
   B --> C[Resolve plan_id]
   C --> D[Load plan quota policy]
-  D --> E{"Rate‑limit admit?"}
-  E -- No --> F{Personal funding available?}
-  F -- No --> X[Deny: rate limit]
-  F -- Yes --> P1[Paid lane]
-
-  E -- Yes --> T1["Plan lane"]
-
-  T1 --> S{Active subscription?}
-  S -- Yes --> SB[Reserve subscription budget]
-  SB --> W1{Wallet exists and subscription short?}
-  W1 -- Yes --> PW[Reserve wallet overflow]
-  W1 -- No --> RUN
-  S -- No --> R{Role allows project budget?}
-  R -- Yes --> PB[Reserve project budget]
-  R -- No --> P1
-
-  P1 --> PW[Reserve wallet credits]
-
-  PB --> RUN
-  PW --> RUN
+  D --> P[Size primary funds P]
+  P --> AD{"Wallet‑aware admit: wallet covers wallet_part?"}
+  AD -- No --> X[Deny]
+  AD -- Yes --> H1[Hold primary for plan_part]
+  H1 --> H2{wallet_part > 0?}
+  H2 -- Yes --> HW[Hold wallet for wallet_part]
+  H2 -- No --> RUN
+  HW --> RUN
 
   RUN --> ACC[Accounting]
-  ACC --> COMMIT[Commit reservations and spend]
+  ACC --> COMMIT["Settle: primary + wallet; project absorbs residual"]
 ```
 
 ## Subscription Periods and Rollovers

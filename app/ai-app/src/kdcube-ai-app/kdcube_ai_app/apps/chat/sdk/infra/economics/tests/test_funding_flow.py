@@ -72,8 +72,15 @@ class _Budget:
 
 
 class _SubBudget(_Budget):
+    def __init__(self, *a, **kw):
+        super().__init__(*a, **kw)
+        self.sub_forced = []
+
     async def get_subscription_budget_balance(self):
         return {"available_usd": self.available_usd}
+
+    async def force_subscription_spend(self, **kw):
+        self.sub_forced.append(kw)
 
 
 class _Credits:
@@ -411,3 +418,34 @@ async def test_settle_subscription_runtime_shortfall_falls_to_project_when_no_he
     assert ctx.budget_limiter.forced[0]["spent_usd"] == pytest.approx(0.02, rel=1e-6)
     # subscription committed only its plan share (~$0.04; token-capacity floor rounding)
     assert sub.committed[0]["spent_usd"] == pytest.approx(0.04, rel=1e-3)
+
+
+async def test_settle_subscription_no_reservation_charges_subscription_not_project():
+    # Quota exhausted (plan_part == 0) so NO subscription reservation was placed and
+    # the wallet was the in-flight primary. A runtime wallet shortfall absorbed by the
+    # subscription headroom must debit the SUBSCRIPTION budget directly — never the
+    # project (which is the last resort). Regression for the no-reservation settle path.
+    credits = _Credits(balance=10**9, commit_uncovered=2000, consume_uncovered=2000)
+    sub = _SubBudget(available_usd=1.0)                  # plenty of headroom at settle
+    rl = _RL(available_tokens=0)                         # quota fully exhausted
+    ctx = _ctx(rl=rl, sub=sub, credits=credits)
+    res = ff.PlanFundingReservation(
+        funding_source="subscription", budget_bypass=False, est_turn_tokens=10000,
+        app_reservation_id=None, app_reserved_usd=0.0, app_reservation_active=False,
+        plan_project_tokens_est=0,
+        wallet_reservation_id="w1", wallet_reserved_tokens=10000, wallet_reservation_active=True,
+        has_wallet=True,
+    )
+    out = await ff.settle_plan_funding(
+        ctx, res, ranked_tokens=10000, total_cost_usd=0.10,
+        effective_policy=QuotaPolicy(tokens_per_month=10**9),
+        plan_has_lifetime_budget=True, user_budget_tokens=10**9,
+    )
+    assert out.user_uncovered_tokens == 2000
+    # subscription headroom (not the project) absorbed the runtime shortfall
+    assert ctx.budget_limiter.forced == []
+    assert len(sub.sub_forced) == 1
+    assert sub.sub_forced[0]["spent_usd"] == pytest.approx(0.02, rel=1e-6)
+    assert sub.committed == []                           # no reservation was committed
+    assert out.primary_funding_usd == pytest.approx(0.02, rel=1e-6)
+    assert out.project_absorption_usd == 0.0

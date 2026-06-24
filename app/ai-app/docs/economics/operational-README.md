@@ -34,17 +34,20 @@ Key table groups:
 
 ## Plan Policy Seeding
 
-Plan quotas are seeded once by a master bundle:
+Plan quotas are **seeded at deploy time** from the economics descriptor
+(`deployment/economics.yaml`) by the postgres-setup job (see [economics-descriptor-README.md](./economics-descriptor-README.md)).
 
-- `ensure_policies_initialized()` inserts defaults from `app_quota_policies` into `plan_quota_policies` if missing.
-- After the first seed, use the admin UI to adjust limits.
-- If you change code defaults, update DB policies in the admin UI or clear the table to re‑seed.
+- The mandatory plans (`anonymous`/`free`/`wallet`/`admin`) have a built-in baseline
+  (`DEFAULT_QUOTA_POLICIES`); descriptor entries override it per field.
+- `enforce: false` (default) seeds only missing entries, preserving operator edits; `enforce: true` realigns to the descriptor.
+- After seeding, adjust limits in the admin UI or re-run the seeder. The legacy bundle-runtime
+  seeder `ensure_policies_initialized()` is a deprecated no-op shim.
 
 Window semantics (global per tenant/project):
 - Hourly tokens: rolling 60‑minute window (minute buckets).
 - Daily requests/tokens: current 24‑hour quota period since the last daily reset. API fields still use `requests_today` / `tokens_today`.
 - Monthly requests/tokens: current 30‑day quota period since the last monthly reset.
-- Reservation floor is configured per bundle via props `economics.reservation_amount_dollars`.
+- Reservation floor default lives in the economics descriptor (`reservation.chat`, editable in the admin UI **Reservation** card); a bundle may override it via `config.economics.reservation.<floor>` (legacy `economics.reservation_amount_dollars`).
 
 Billing widget:
 - `GET /api/economics/me/budget-breakdown` accepts an optional `bundle_id`.
@@ -57,7 +60,7 @@ Funding split (runtime):
 - Plan quota/funding is consumed first. Wallet covers only overflow and wallet-paid tokens do **not** consume plan quota.
 - Settlement uses current available capacity net of active reservations, then adds this request's own still-live reservation back for each source.
 - If actual spend exceeds both plan funding and wallet, project budget absorbs the remainder (shortfall note in ledger). If plan quota remains, that absorbed remainder also consumes quota.
-- If subscription funds **zero** for a turn, the request switches to **paid lane** and **wallet** quotas apply.
+- If the subscription budget can't fully fund a turn, the over‑quota remainder is covered by the **wallet** via the unified split.
 - Subscriptions and wallets never go negative; only project budget can absorb shortfalls.
 
 Absorption reporting:

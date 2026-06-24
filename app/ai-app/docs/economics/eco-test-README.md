@@ -19,16 +19,15 @@ Use these definitions while testing:
 
 - **Role** decides funding access (`registered`, `paid`, `privileged`).
 - **Plan** decides quota limits (`free`, `wallet`, `beta-30`, `beta-50`, etc.).
-- **Lane** is only:
-  - `plan lane`
-  - `paid lane` (wallet‑only lane)
-- **Funding sources** are `subscription`, `project`, `wallet`.
+- **Funding split**: every request is one split — the primary source covers
+  `plan_part = min(R, Q, P)`, the wallet covers the over‑quota remainder. No paid lane, no switch.
+- **Funding sources**: primary is `subscription` or `project`; the `wallet` is overflow only.
 - **Important**: subscription and wallet never go negative. **Only** project budget can go negative (absorption).
 
 ### A) Free user (no wallet, no subscription)
 
 - **Plan**: `free`
-- **Lane**: plan lane
+- **Split**: project funds the plan part; no wallet, so quota exhaustion denies
 - **Funding**: project budget only
 - **Limits**: free plan quotas apply (requests/tokens)
 - **Absorption**: any actual spend beyond reservation is absorbed by **project budget**.
@@ -38,16 +37,16 @@ Use these definitions while testing:
 ### B) Plan user (subscription, no wallet)
 
 - **Plan**: subscription plan (e.g., `beta-30`)
-- **Lane**: plan lane
+- **Split**: subscription funds the plan part; no wallet, so exhaustion denies
 - **Funding**: subscription budget only
 - **Limits**: plan quotas apply
 - **Absorption**: any actual spend beyond reservation is absorbed by **project budget** (`shortfall:subscription_overage`).
 - **Expected**: when subscription budget is exhausted → request denied (unless wallet exists)
 
-### C) Pay‑as‑you‑go user (wallet, no subscription)
+### C) Wallet user (wallet, no subscription)
 
 - **Plan**: stays `free`
-- **Lane**: plan lane unless plan quota is exceeded; can switch to paid lane if needed
+- **Split**: project funds the plan part within quota; the wallet covers the over‑quota remainder
 - **Funding**:
   - First: free plan quota and project budget cover the maximum plan-funded portion
   - Overflow: wallet covers remaining usage; wallet-paid tokens do **not** consume free plan quota
@@ -61,7 +60,7 @@ Use these definitions while testing:
 ### D) Hybrid user (subscription + wallet)
 
 - **Plan**: subscription plan
-- **Lane**: plan lane while subscription funds the turn; switches to paid lane if subscription funds **zero**
+- **Split**: subscription funds the plan part; the wallet covers the over‑quota remainder
 - **Funding**:
   - Subscription quota/funding covers the maximum plan-funded portion (cannot go negative)
   - Wallet covers overflow (cannot go negative); wallet-paid tokens do **not** consume subscription plan quota
@@ -74,7 +73,7 @@ Use these definitions while testing:
 ### E) Privileged user
 
 - **Plan**: `admin`
-- **Lane**: plan lane
+- **Split**: budget bypass — project charged after run
 - **Funding**: budget bypass (no pre‑check)
 - **Absorption**: all spend is absorbed by **project budget** (can go negative).
 - **Limits**: `admin` plan quotas (usually very high)

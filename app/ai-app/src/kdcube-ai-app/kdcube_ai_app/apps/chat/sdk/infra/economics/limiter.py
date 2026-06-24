@@ -1856,10 +1856,13 @@ class UserEconomicsRateLimiter:
         """
         Return settlement-time token capacity for one in-flight reservation.
 
-        Current availability is net of active reservations. This returns that
-        availability with other requests' reservations still excluded, and
-        returns this request's still-live reservation separately so settlement
-        can add back only the capacity this request already held.
+        `available_tokens` is RAW capacity: net of ALL active reservations,
+        including this request's own still-live hold. The own hold is returned
+        separately as `own_reserved_tokens` so settlement adds back exactly the
+        capacity this request already held (`available + own_reserved`). This is
+        the same "available is raw; add own back" convention the budget snapshots
+        follow — subtracting only OTHER reservations here would leave the own hold
+        inside `available` and the caller's add-back would double-count it.
         """
         now = (now or datetime.utcnow()).replace(tzinfo=timezone.utc)
 
@@ -1934,7 +1937,14 @@ class UserEconomicsRateLimiter:
             if limit is None:
                 return
             other_reserved = max(int(reserved_total or 0) - own_reserved, 0)
-            available = max(int(limit) - int(committed or 0) - int(other_reserved), 0)
+            # available is RAW capacity: net of ALL active reservations (including our
+            # own). The caller adds `own_reserved_tokens` back to size what THIS request
+            # may still commit — the same "available is raw; add own back" convention the
+            # budget snapshots follow (subscription/project available = balance − all
+            # active reservations). Subtracting only `other_reserved` here would leave our
+            # own reservation's room inside `available`, so the caller's add-back would
+            # double-count it and over-commit quota by the reservation size.
+            available = max(int(limit) - int(committed or 0) - int(reserved_total or 0), 0)
             windows.append({
                 "name": name,
                 "limit": int(limit),

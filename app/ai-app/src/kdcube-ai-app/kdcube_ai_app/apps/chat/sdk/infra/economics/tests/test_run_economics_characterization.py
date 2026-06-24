@@ -374,12 +374,14 @@ def _trace(ep) -> dict:
 # --------------------------------------------------------------------------
 @pytest.mark.asyncio
 async def test_characterize_registered_project_unlimited(monkeypatch):
-    # registered, project-funded, unlimited overdraft, no wallet -> project covers all
+    # registered, project-funded, unlimited overdraft, no wallet -> project covers all.
+    # Unified split reserves the full reservation floor ($2 -> est_turn tokens); settle
+    # commits the actual cost ($0.03).
     ep = _make_ep(role="registered", wallet=0, budget=_Budget(overdraft=None),
                   cost_usd=0.03, ranked_tokens=1000, monkeypatch=monkeypatch)
     await ep.run()
     assert _trace(ep) == {
-        "budget_reserved_usd": [0.069], "budget_committed_usd": [0.03],
+        "budget_reserved_usd": [2.0], "budget_committed_usd": [0.03],
         "budget_forced": [], "budget_released": 0,
         "wallet_reserved_tokens": [], "wallet_committed_tokens": [], "wallet_consumed_tokens": [],
         "wallet_released": 0, "rl_committed_tokens": [1000], "rl_released": [], "events": [],
@@ -388,7 +390,10 @@ async def test_characterize_registered_project_unlimited(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_characterize_registered_project_finite_plus_wallet_split(monkeypatch):
-    # finite project ($0.05, overdraft 0) + wallet; cost exceeds project cap -> split
+    # finite project ($0.05, overdraft 0) + wallet; project caps plan_part at ~2898
+    # tokens, the wallet holds the rest of the reservation floor (R - plan_part). The
+    # reservation now covers the whole turn, so settle commits the wallet hold (no
+    # extra overage consume).
     ep = _make_ep(role="registered", wallet=200_000,
                   budget=_Budget(available_usd=0.05, overdraft=0.0),
                   cost_usd=0.25, ranked_tokens=16_000, monkeypatch=monkeypatch)
@@ -396,24 +401,25 @@ async def test_characterize_registered_project_finite_plus_wallet_split(monkeypa
     assert _trace(ep) == {
         "budget_reserved_usd": [0.05], "budget_committed_usd": [0.0453],
         "budget_forced": [], "budget_released": 0,
-        "wallet_reserved_tokens": [1102], "wallet_committed_tokens": [1102],
-        "wallet_consumed_tokens": [12000], "wallet_released": 0,
+        "wallet_reserved_tokens": [113045], "wallet_committed_tokens": [13102],
+        "wallet_consumed_tokens": [], "wallet_released": 0,
         "rl_committed_tokens": [2898], "rl_released": [], "events": [],
     }
 
 
 @pytest.mark.asyncio
 async def test_characterize_project_shortfall_absorption(monkeypatch):
-    # no wallet, actual cost far exceeds reservation -> project absorbs the overage
+    # no wallet, actual cost ($2.50) exceeds the reservation floor ($2) -> the project
+    # absorbs the overage at settle as shortfall:free_plan (no wallet to take it).
     ep = _make_ep(role="registered", wallet=0,
                   budget=_Budget(available_usd=1000.0, overdraft=None),
-                  cost_usd=0.50, ranked_tokens=20_000, monkeypatch=monkeypatch)
+                  cost_usd=2.50, ranked_tokens=160_000, monkeypatch=monkeypatch)
     await ep.run()
     assert _trace(ep) == {
-        "budget_reserved_usd": [0.069], "budget_committed_usd": [0.1],
-        "budget_forced": [(0.4, "shortfall:free_plan")], "budget_released": 0,
+        "budget_reserved_usd": [2.0], "budget_committed_usd": [1.8116],
+        "budget_forced": [(0.6884, "shortfall:free_plan")], "budget_released": 0,
         "wallet_reserved_tokens": [], "wallet_committed_tokens": [], "wallet_consumed_tokens": [],
-        "wallet_released": 0, "rl_committed_tokens": [20000], "rl_released": [], "events": [],
+        "wallet_released": 0, "rl_committed_tokens": [160000], "rl_released": [], "events": [],
     }
 
 
@@ -442,7 +448,7 @@ async def test_characterize_project_exhausted_wallet_covers(monkeypatch):
     assert _trace(ep) == {
         "budget_reserved_usd": [], "budget_committed_usd": [],
         "budget_forced": [], "budget_released": 0,
-        "wallet_reserved_tokens": [4000], "wallet_committed_tokens": [2000],
+        "wallet_reserved_tokens": [115943], "wallet_committed_tokens": [2000],
         "wallet_consumed_tokens": [], "wallet_released": 0,
         # plan_part=0 (no project funds) -> no plan token quota consumed
         "rl_committed_tokens": [0], "rl_released": [], "events": [],
@@ -464,7 +470,7 @@ async def test_characterize_subscription_funding(monkeypatch):
                   budget=_Budget(overdraft=None), cost_usd=0.03, ranked_tokens=1000, monkeypatch=monkeypatch)
     await ep.run()
     sub_lim = _SubBudget.instances[-1]
-    assert [round(float(k.get("amount_usd")), 4) for k in sub_lim.reserved] == [0.069]
+    assert [round(float(k.get("amount_usd")), 4) for k in sub_lim.reserved] == [2.0]
     assert [round(float(k.get("spent_usd")), 4) for k in sub_lim.committed] == [0.03]
     assert ep.budget_limiter.forced == []        # project not touched
     assert ep.budget_limiter.committed == []
@@ -490,7 +496,7 @@ async def test_characterize_subscription_with_wallet_untouched(monkeypatch):
     await ep.run()
     sub_lim = _SubBudget.instances[-1]
     credits = ep.cp_manager.user_credits_mgr
-    assert [round(float(k.get("amount_usd")), 4) for k in sub_lim.reserved] == [0.069]
+    assert [round(float(k.get("amount_usd")), 4) for k in sub_lim.reserved] == [2.0]
     assert [round(float(k.get("spent_usd")), 4) for k in sub_lim.committed] == [0.03]
     assert ep.budget_limiter.forced == [] and ep.budget_limiter.committed == []  # project untouched
     assert credits.reserved == [] and credits.committed == [] and credits.consumed == []  # wallet untouched

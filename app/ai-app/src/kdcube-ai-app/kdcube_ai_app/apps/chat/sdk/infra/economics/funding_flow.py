@@ -477,11 +477,20 @@ async def settle_plan_funding(
                     reservation_id=res.app_reservation_id, spent_usd=float(app_spend_usd),
                 )
             res.app_reservation_active = False
+        elif funding_source == "subscription" and ctx.subscription_limiter is not None:
+            # No subscription reservation was placed (plan_part == 0, e.g. the quota was
+            # exhausted so the wallet was the in-flight primary). The subscription budget
+            # still owes its share — the planned overage and the headroom-absorbed runtime
+            # shortfall — and both are already bounded by its remaining funds, so debit the
+            # subscription budget directly (NOT the project, which is the last resort).
+            await ctx.subscription_limiter.force_subscription_spend(
+                spent_usd=float(app_spend_usd), bundle_id=ctx.bundle_id, provider=None,
+                request_id=ctx.scope_id, note="settle: subscription_cost; no_reservation",
+            )
         else:
             await ctx.budget_limiter.force_project_spend(
                 spent_usd=float(app_spend_usd), bundle_id=ctx.bundle_id, provider=None,
-                request_id=ctx.scope_id, user_id=ctx.user_id,
-                note=("settle: subscription_cost; no_reservation" if funding_source == "subscription" else "settle: plan_cost"),
+                request_id=ctx.scope_id, user_id=ctx.user_id, note="settle: plan_cost",
             )
 
     for spend_usd, note in extra_project_items:
