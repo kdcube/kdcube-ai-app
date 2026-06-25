@@ -224,6 +224,7 @@ bundles:
                         # implementation path only.
                         allowed:
                           - provider.about
+                          - object.list
                           - object.search
                           - object.schema
                           - object.upsert

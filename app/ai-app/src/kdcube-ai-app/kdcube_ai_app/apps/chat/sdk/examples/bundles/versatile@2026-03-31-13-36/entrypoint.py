@@ -394,6 +394,7 @@ class VersatileEntrypoint(BaseEntrypointWithEconomicsAndMemory):
                     state_event_source_id=CANVAS_STATE_EVENT_SOURCE_ID,
                     ui_event_type=CANVAS_UI_EVENT_TYPE,
                     artifact_resolver_name=CANVAS_ARTIFACT_RESOLVER_NAME,
+                    data_bus_subject=CANVAS_DATA_BUS_SUBJECT,
                 ),
                 logger=_log,
             )

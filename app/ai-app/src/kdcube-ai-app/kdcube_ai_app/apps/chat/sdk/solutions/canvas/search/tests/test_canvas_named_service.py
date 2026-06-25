@@ -90,6 +90,37 @@ async def test_canvas_pin_provider_search_normalizes_pin_results() -> None:
 
 
 @pytest.mark.asyncio
+async def test_canvas_provider_lists_boards_with_canonical_board_refs() -> None:
+    async def _list_handler(_ctx, _request):
+        return {
+            "ok": True,
+            "active_canvas": "demo-board",
+            "canvases": [
+                {
+                    "canvas_name": "demo-board",
+                    "canvas_id": "cnv:user-a:demo-board",
+                    "latest_revision": 7,
+                    "canvas_ref": "cnv:demo-board@7",
+                }
+            ],
+        }
+
+    provider = CanvasPinSearchNamedServiceProvider(list_handler=_list_handler)
+    response = await provider.object_list(
+        NamedServiceContext(tenant="tenant-a", project="project-a", user_id="user-a"),
+        NamedServiceRequest(operation="object.list", namespace="cnv", limit=5),
+    )
+
+    assert response.ok is True
+    assert response.ret["attrs"]["source"] == "canvas.board_list"
+    item = response.ret["items"][0]
+    assert item["object_ref"] == "cnv:demo-board"
+    assert item["object_kind"] == CANVAS_BOARD_OBJECT_KIND
+    assert item["body"]["canvas_id"] == "cnv:user-a:demo-board"
+    assert item["body"]["active"] is True
+
+
+@pytest.mark.asyncio
 async def test_canvas_provider_card_upsert_maps_to_canvas_patch() -> None:
     class Store:
         def __init__(self) -> None:
@@ -222,6 +253,35 @@ async def test_canvas_provider_raw_patch_preserves_patch_batch() -> None:
     assert store.patch_args["patch"]["base_revision"] == "2"
     assert [op["op"] for op in store.patch_args["patch"]["operations"]] == ["move_card", "resize_card"]
     assert response.extra["raw_result"]["canvas_ref"] == "cnv:main@3"
+
+
+@pytest.mark.asyncio
+async def test_canvas_provider_rejects_sanitized_storage_id_as_board_ref() -> None:
+    class Store:
+        def canvas_id(self, *, canvas_name, canvas_id=None):
+            return canvas_id or f"cnv:user-a:{canvas_name}"
+
+        def patch(self, **_kwargs):
+            raise AssertionError("malformed refs must fail before storage mutation")
+
+    provider = CanvasPinSearchNamedServiceProvider(store_factory=lambda _ctx: Store())
+    response = await provider.object_upsert(
+        NamedServiceContext(tenant="tenant-a", project="project-a", user_id="user-a"),
+        NamedServiceRequest(
+            operation="object.upsert",
+            namespace="cnv",
+            object_ref="cnv:user-a_demo-board",
+            object={
+                "object_kind": CANVAS_CARD_OBJECT_KIND,
+                "card": {"kind": "agent.text", "title": "Report", "logical_path": "fi:turn.outputs/report.html"},
+            },
+            base_revision="1",
+        ),
+    )
+
+    assert response.ok is False
+    assert response.error is not None
+    assert response.error.code == "canvas_object_ref_not_canonical"
 
 
 @pytest.mark.asyncio

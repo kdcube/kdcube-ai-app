@@ -5,7 +5,7 @@ from typing import Any, Mapping, Sequence
 
 CANVAS_BOARD_EDIT_PROTOCOL_LINES = (
     "edit_protocol:",
-    "- Use named_services.upsert_object(namespace=\"cnv\", object_ref=\"cnv:<board>\", base_revision=revision, object_json=<typed canvas object>).",
+    "- Use named_services.upsert_object(namespace=\"cnv\", object_ref=<board object_ref from visible canvas context or named_services.list_objects>, base_revision=revision, object_json=<typed canvas object>).",
     "- Ask named_services.object_schema(namespace=\"cnv\", object_kind=...) for exact mutation payloads.",
     "- Treat this JSON as exact state for planning only; do not edit or save it directly.",
     "- Use map labels for spatial reasoning; use card_id values from the legend when mutating existing cards.",
@@ -99,9 +99,17 @@ Canvas read/write behavior:
 - `cnv:` refs identify canvas-owned board/object state. They are external owner
   refs until pulled into the ReAct workspace.
 - Collaborate through the `cnv` named-service provider. Call
+  `named_services.list_objects(namespace="cnv")` to discover boards when no
+  board is visible in context. Do not use `search_objects(namespace="cnv",
+  query="canvas board")` for board discovery; canvas search semantically
+  matches card snapshots/content.
+- Use `canvas_id` only as returned metadata. Do not convert storage ids such as
+  `cnv:<user>:<board>` into guessed refs such as `cnv:<user>_<board>`.
+- Call
   `named_services.object_schema(namespace="cnv", object_kind=...)` when you
-  need exact payload shape. Mutate with
-  `named_services.upsert_object(namespace="cnv", object_ref="cnv:<name>",
+  need exact payload shape. Mutate with the board `object_ref` from visible
+  canvas context, `named_services.list_objects`, or a recent canvas pull/read:
+  `named_services.upsert_object(namespace="cnv", object_ref=<board object_ref>,
   base_revision=<visible revision>, object_json=...)`.
 - Use typed canvas object kinds in the upsert payload instead of editing raw
   board JSON: `canvas.card`, `canvas.card.comment`,
@@ -157,7 +165,8 @@ Card placement and ref behavior:
 - New assistant output should usually be a suggested card, not an automatic
   placed card, so the user can arrange, accept, or discard it.
 - Producing a file/report/output does not pin it. First produce the artifact,
-  then call `named_services.upsert_object(namespace="cnv", object_ref="cnv:<name>",
+  discover/reuse the board `object_ref`, then call
+  `named_services.upsert_object(namespace="cnv", object_ref=<board object_ref>,
   base_revision=<visible revision>, object_json={"object_kind":"canvas.card",
   ...})` with `card.logical_path` pointing at the produced `fi:` or `cnv:` ref.
 

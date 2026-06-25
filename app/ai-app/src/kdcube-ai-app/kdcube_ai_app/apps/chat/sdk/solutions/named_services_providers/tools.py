@@ -616,7 +616,7 @@ async def list_objects(
 
 async def search_objects(
     namespace: Annotated[str, "Configured named-service namespace or provider-declared searchable scoped namespace, for example 'sensor:temperature' or 'sensor:humidity:aggr'."],
-    query: Annotated[str, "Search query. Namespace about/schema declares per-scope semantics and filters."],
+    query: Annotated[str, "Semantic/lexical content query for matching indexed object text, labels, summaries, or provider-declared searchable fields. Do not use this for inventory/discovery of containers or boards; use list_objects/provider_about/object_schema when available."],
     limit: Annotated[int, "Maximum objects to return. Keep this bounded."] = 10,
     cursor: Annotated[str, "Optional pagination cursor from a previous response."] = "",
     filters: Annotated[str, "Optional JSON object with provider-specific filters."] = "",
