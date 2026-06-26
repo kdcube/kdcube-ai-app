@@ -20,6 +20,10 @@ type RuntimeConfigPayload = {
   tenant_id?: string;
   project?: string;
   project_id?: string;
+  // Telegram Mini App host adds this to the SAME CONFIG_RESPONSE the scene /
+  // browser hosts use. When present, the API client attaches it as
+  // X-Telegram-Init-Data; the gateway + Connection Hub validate it centrally.
+  telegramInitData?: string | null;
 };
 
 function isPlaceholder(value: string | null | undefined): boolean {
@@ -61,6 +65,9 @@ class Settings {
     tenant: PLACEHOLDER_TENANT,
     project: PLACEHOLDER_PROJECT,
     bundleId: PLACEHOLDER_BUNDLE_ID,
+    // Host-supplied (Telegram Mini App) — empty until a CONFIG_RESPONSE
+    // carries it. Never a placeholder: a browser/scene host simply omits it.
+    telegramInitData: '',
   };
 
   getBaseUrl(): string {
@@ -83,6 +90,12 @@ class Settings {
 
   getWidgetAlias(): string {
     return context.widgetAlias || 'memories';
+  }
+
+  // The relayed Telegram proof, when a host supplied one. Empty for
+  // browser/scene hosts — the client then uses the Bearer/cookie path.
+  getTelegramInitData(): string {
+    return this.values.telegramInitData || '';
   }
 
   authHeaders(base?: HeadersInit): Headers {
@@ -109,6 +122,7 @@ class Settings {
     const tenant = config.defaultTenant || config.tenant || config.tenant_id;
     const project = config.defaultProject || config.project || config.project_id;
     const idTokenHeader = config.idTokenHeader || config.idTokenHeaderName || config.auth?.idTokenHeaderName;
+    const telegramInitData = typeof config.telegramInitData === 'string' ? config.telegramInitData : undefined;
     this.values = {
       ...this.values,
       baseUrl: config.baseUrl || this.values.baseUrl,
@@ -118,8 +132,21 @@ class Settings {
       tenant: tenant || this.values.tenant,
       project: project || this.values.project,
       bundleId: config.defaultAppBundleId || this.values.bundleId,
+      telegramInitData: telegramInitData ?? this.values.telegramInitData,
     };
-    return Boolean(tenant || project || config.baseUrl || config.accessToken !== undefined || config.idToken !== undefined || idTokenHeader || config.defaultAppBundleId);
+    return Boolean(
+      tenant || project || config.baseUrl || config.accessToken !== undefined ||
+      config.idToken !== undefined || idTokenHeader || config.defaultAppBundleId ||
+      telegramInitData,
+    );
+  }
+
+  private isEmbedded(): boolean {
+    try {
+      return window.parent !== window;
+    } catch {
+      return true;
+    }
   }
 
   private async loadFrontendConfig(): Promise<boolean> {
@@ -141,11 +168,36 @@ class Settings {
     }
   }
 
-  setupParentListener(): Promise<boolean> {
-    if (!this.needsRuntimeConfig()) {
-      return Promise.resolve(true);
-    }
+  private authChangedCallback: (() => void) | null = null;
+  private parentListenerReady: Promise<boolean> | null = null;
 
+  // Re-run the caller's initial data load when the auth context changes —
+  // e.g. the Telegram host delivers its proof slightly after first render, or
+  // a kdcube-auth-changed signal makes the user become authenticated.
+  onAuthContextChanged(callback: () => void): void {
+    this.authChangedCallback = callback;
+  }
+
+  private requestParentConfig(): void {
+    if (!this.isEmbedded()) return;
+    try {
+      window.parent.postMessage({
+        type: 'CONFIG_REQUEST',
+        data: {
+          identity: 'MEMORIES_WIDGET',
+          // telegramInitData rides the SAME config payload as the tokens —
+          // hosts that have a Telegram proof include it, others omit it.
+          requestedFields: ['baseUrl', 'accessToken', 'idToken', 'idTokenHeader', 'defaultTenant', 'defaultProject', 'defaultAppBundleId', 'telegramInitData'],
+        },
+      }, '*');
+    } catch {
+      // Parent may be opaque; widget falls back to route-derived config.
+    }
+  }
+
+  setupParentListener(): Promise<boolean> {
+    if (this.parentListenerReady) return this.parentListenerReady;
+    const embedded = this.isEmbedded();
     let resolveReady: ((value: boolean) => void) | null = null;
     let resolved = false;
     const finish = (ready: boolean) => {
@@ -154,32 +206,47 @@ class Settings {
       resolveReady?.(ready);
     };
 
+    // Persistent listener: the host may push a fresh CONFIG_RESPONSE later
+    // (e.g. once the Telegram client populates initData). Re-apply and signal
+    // when the proof/tokens actually change so the caller can reload.
     window.addEventListener('message', (event: MessageEvent) => {
-      if (event.data?.type !== 'CONN_RESPONSE' && event.data?.type !== 'CONFIG_RESPONSE') return;
-      if (event.data.identity !== 'MEMORIES_WIDGET' || !event.data.config) return;
-      this.applyRuntimeConfig(event.data.config);
+      const data = event.data;
+      if (!data || typeof data !== 'object') return;
+      // The standard host re-auth nudge: re-request config from the parent.
+      if (data.type === 'kdcube-auth-changed') {
+        this.requestParentConfig();
+        return;
+      }
+      if (data.type !== 'CONN_RESPONSE' && data.type !== 'CONFIG_RESPONSE') return;
+      if (data.identity !== 'MEMORIES_WIDGET' || !data.config) return;
+      const before = `${this.values.accessToken}|${this.values.idToken}|${this.values.telegramInitData}`;
+      this.applyRuntimeConfig(data.config);
+      const after = `${this.values.accessToken}|${this.values.idToken}|${this.values.telegramInitData}`;
       finish(true);
+      if (resolved && after !== before) this.authChangedCallback?.();
     });
-    return new Promise((resolve) => {
+
+    this.parentListenerReady = new Promise((resolve) => {
       resolveReady = resolve;
-      const requestParentConfig = () => {
-        window.parent.postMessage({
-          type: 'CONFIG_REQUEST',
-          data: {
-            identity: 'MEMORIES_WIDGET',
-            requestedFields: ['baseUrl', 'accessToken', 'idToken', 'idTokenHeader', 'defaultTenant', 'defaultProject', 'defaultAppBundleId'],
-          },
-        }, '*');
+      // Even when route-derived tenant/project already suffice, an embedded
+      // widget must still handshake so a Telegram host can deliver its proof.
+      if (!this.needsRuntimeConfig() && !embedded) {
+        finish(true);
+        return;
+      }
+      // Embedded widgets prefer the host handshake (so they pick up any
+      // host-only proof); only standalone frames fall back to the platform
+      // config endpoint.
+      if (embedded) {
+        this.requestParentConfig();
         window.setTimeout(() => finish(true), 3000);
-      };
+        return;
+      }
       this.loadFrontendConfig().then((loaded) => {
-        if (loaded) {
-          finish(true);
-        } else {
-          requestParentConfig();
-        }
+        finish(loaded || Boolean(this.getTenant() && this.getProject()));
       });
     });
+    return this.parentListenerReady;
   }
 }
 

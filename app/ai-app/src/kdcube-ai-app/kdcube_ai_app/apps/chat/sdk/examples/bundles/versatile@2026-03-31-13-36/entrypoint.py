@@ -1346,10 +1346,6 @@ class VersatileEntrypoint(BaseEntrypointWithEconomicsAndMemory):
                         "src_folder": "ui/widgets/telegram_miniapp",
                         "build_command": "npm install --no-package-lock && OUTDIR=<VI_BUILD_DEST_ABSOLUTE_PATH> npm run build",
                         "shared_sources": {
-                            "memory_widget": {
-                                "src_folder": "sdk://context/memory/ui/widget/memories",
-                                "target": "_shared/memory-widget",
-                            },
                             "telegram_widget": {
                                 "src_folder": "sdk://integrations/telegram/ui/widget.telegram",
                                 "target": "_shared/telegram-widget",

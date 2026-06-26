@@ -50,6 +50,7 @@ export function routeContextFromLocation(): RouteContext {
       bundleId: params.get('bundle_id') || params.get('bundleId') || 'versatile@2026-03-31-13-36',
       widgetAlias: params.get('widget') || 'telegram_miniapp',
       widgetPath: params.get('widget_path') || params.get('widgetPath') || '',
+      publicRoute: params.get('public') === '1',
     };
   }
   const rest = path.slice(index + marker.length);
@@ -63,6 +64,7 @@ export function routeContextFromLocation(): RouteContext {
     bundleId: parts[2] || 'versatile@2026-03-31-13-36',
     widgetAlias: widgetAnchor >= 0 ? parts[widgetAnchor + 1] || 'telegram_miniapp' : 'telegram_miniapp',
     widgetPath: widgetAnchor >= 0 ? parts.slice(widgetAnchor + 2).join('/') : '',
+    publicRoute: publicWidgetsIndex >= 0 && publicWidgetsIndex < widgetAnchor,
   };
 }
 
@@ -141,6 +143,22 @@ class SettingsManager {
 
   getIdToken(): string | null {
     return !this.settings.idToken || isPlaceholder(this.settings.idToken) ? null : this.settings.idToken;
+  }
+
+  // Build a served-widget iframe URL for another bundle (mirrors how the
+  // scene host composes `widgetUrlForBundle`). Carries tenant/project/bundle
+  // in the path and honours the public-vs-private route this host loaded from
+  // so an anonymous Telegram session still resolves the public widget route.
+  widgetUrlForBundle(bundleId: string, alias: string, params?: Record<string, string>): string {
+    const tenant = encodeURIComponent(this.getTenant());
+    const project = encodeURIComponent(this.getProject());
+    const base = `${this.getBaseUrl()}/api/integrations/bundles/${tenant}/${project}/${encodeURIComponent(bundleId)}`;
+    const route = ROUTE_CONTEXT.publicRoute ? 'public/widgets' : 'widgets';
+    const url = new URL(`${base}/${route}/${encodeURIComponent(alias)}`);
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, value));
+    }
+    return url.toString();
   }
 
   update(partial: Partial<AppSettings>): void {

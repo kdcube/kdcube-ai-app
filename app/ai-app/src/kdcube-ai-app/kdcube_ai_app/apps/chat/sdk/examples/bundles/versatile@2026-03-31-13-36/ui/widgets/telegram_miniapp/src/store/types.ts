@@ -21,6 +21,7 @@ export interface RouteContext {
   bundleId: string;
   widgetAlias: string;
   widgetPath: string;
+  publicRoute: boolean;
 }
 
 export interface MemoryEntry {

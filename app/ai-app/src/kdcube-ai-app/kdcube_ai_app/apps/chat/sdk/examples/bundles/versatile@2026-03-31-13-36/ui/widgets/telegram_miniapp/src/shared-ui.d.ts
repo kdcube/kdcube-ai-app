@@ -1,13 +1,3 @@
-declare module '@kdcube/memory-widget' {
-  import type { ComponentType } from 'react';
-  import type { TelegramWidgetCallOperation } from './store/types';
-
-  export const MemoriesWidgetEmbed: ComponentType<{
-    callOperation?: TelegramWidgetCallOperation;
-  }>;
-  export default MemoriesWidgetEmbed;
-}
-
 declare module '@kdcube/telegram-widget' {
   import type {
     ConversationsPayload,

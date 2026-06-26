@@ -27,7 +27,7 @@ const GET_OPERATIONS = new Set(['telegram_profile', 'conversations_list']);
 
 function telegramOperationAlias(operation: string): string {
   if (TELEGRAM_OPERATION_ALIASES[operation]) return TELEGRAM_OPERATION_ALIASES[operation];
-  return operation.startsWith('memories_widget_') ? `telegram_${operation}` : '';
+  return '';
 }
 
 function authHeaders(base?: HeadersInit): Headers {

@@ -135,7 +135,7 @@ export default function App() {
           detail="Once approved, reopen this Mini App and it will load normally."
         />
       )}
-      {!loading && !pendingTelegramApproval && tab === 'memory' && <MemoryPage memory={payload.memory} reload={load} callOperation={callOperation} />}
+      {!loading && !pendingTelegramApproval && tab === 'memory' && <MemoryPage memory={payload.memory} reload={load} />}
       {!loading && !pendingTelegramApproval && tab === 'conversations' && <ConversationsPage conversations={payload.conversations} reload={load} />}
       {!loading && !pendingTelegramApproval && tab === 'connections' && !linkMode && <ConnectionLinkPage />}
       {!loading && !pendingTelegramApproval && tab === 'telegram_admin' && showAdmin && <TelegramAdminPage />}
