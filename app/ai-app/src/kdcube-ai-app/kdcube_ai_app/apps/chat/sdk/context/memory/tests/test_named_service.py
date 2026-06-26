@@ -417,10 +417,11 @@ async def test_memory_block_produce_projects_pulled_read_payload() -> None:
     assert block["meta"]["materialized_path"] == "fi:turn_read.files/mem_1.json"
 
 
-def test_memory_record_schema_appends_label_and_keyword_groups() -> None:
+def test_memory_record_schema_replaces_label_and_keyword_groups() -> None:
     fields = MEMORY_RECORD_SCHEMA["fields"]
 
-    # Labels and keywords are set-union merged (append), never replaced, so an
-    # update that omits them does not drop earlier label/keyword groups.
-    assert fields["labels"]["update_strategy"] == "append"
-    assert fields["keywords"]["update_strategy"] == "append"
+    # Labels and keywords are value-lists (bare strings), so the only way to
+    # remove an item is to re-send the list without it. The provided list
+    # replaces the stored set; omitting the field preserves the existing set.
+    assert fields["labels"]["update_strategy"] == "replace"
+    assert fields["keywords"]["update_strategy"] == "replace"

@@ -617,8 +617,11 @@ class UserMemoryTools:
                     kind=kind,
                     event_type=event_type,
                     originator=str(raw.get("originator") or "agent"),
-                    labels=labels_list,
-                    keywords=keywords_list,
+                    # Replace-on-provide / preserve-on-omit: pass None when the
+                    # caller did not supply labels/keywords so an update keeps the
+                    # existing set; provide the list to replace it.
+                    labels=(labels_list if labels else None),
+                    keywords=(keywords_list if keywords else None),
                     visibility=visibility,
                     confidence=confidence,
                     importance=importance,

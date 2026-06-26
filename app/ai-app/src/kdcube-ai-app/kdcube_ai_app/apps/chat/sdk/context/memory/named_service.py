@@ -163,8 +163,8 @@ MEMORY_RECORD_SCHEMA: dict[str, Any] = {
         },
         "status": {"type": "string", "default": "active"},
         "visibility": {"type": "string", "default": "user"},
-        "labels": {"type": "array", "items": "string", "update_strategy": "append", "description": "Label/alias groups. Appended (set-union) to existing labels on update; not replaced."},
-        "keywords": {"type": "array", "items": "string", "update_strategy": "append", "description": "Search keywords. Appended (set-union) to existing keywords on update; not replaced."},
+        "labels": {"type": "array", "items": "string", "update_strategy": "replace", "description": "Label/alias groups. The provided list replaces the existing labels on update (send the full set; omit an item to remove it). Omit the field entirely to preserve existing labels."},
+        "keywords": {"type": "array", "items": "string", "update_strategy": "replace", "description": "Search keywords. The provided list replaces the existing keywords on update (send the full set; omit a term to remove it). Omit the field entirely to preserve existing keywords."},
         "confidence": {"type": "number", "description": "Confidence for the new evidence event."},
         "importance": {"type": "number", "description": "Importance for ranking and tiering."},
         "pinned": {"type": "boolean"},
@@ -1148,8 +1148,10 @@ class MemoryNamedServiceProvider(NamedServiceProvider):
             originator=_text(body.get("originator") or "agent"),
             status=_text(body.get("status") or "active"),
             visibility=_text(body.get("visibility") or "user"),
-            labels=normalize_terms(body.get("labels")),
-            keywords=normalize_terms(body.get("keywords")),
+            # Pass through presence: omitted -> None (preserve existing on
+            # update); provided (even empty) -> normalized list (replace).
+            labels=(normalize_terms(body.get("labels")) if "labels" in body else None),
+            keywords=(normalize_terms(body.get("keywords")) if "keywords" in body else None),
             confidence=_float(body.get("confidence"), 0.6),
             importance=_float(body.get("importance"), 0.5),
             pinned=_bool_or_none(body.get("pinned")),

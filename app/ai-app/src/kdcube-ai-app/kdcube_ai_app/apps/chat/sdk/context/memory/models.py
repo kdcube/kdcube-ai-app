@@ -118,8 +118,11 @@ class MemorySignal:
     originator: str = "agent"
     status: str = "active"
     visibility: str = "user"
-    labels: Sequence[str] = field(default_factory=list)
-    keywords: Sequence[str] = field(default_factory=list)
+    # None means "not provided" (preserve existing on update); an empty list
+    # means "provided empty" (clear the stored set). Both normalize to [] for
+    # writes, but the supplied/omitted distinction drives replace-vs-preserve.
+    labels: Optional[Sequence[str]] = None
+    keywords: Optional[Sequence[str]] = None
     confidence: float = 0.5
     importance: float = 0.5
     pinned: Optional[bool] = None

@@ -2024,6 +2024,8 @@ class UserMemoryStore:
         memory = str(signal.memory or "").strip()
         if not memory:
             raise ValueError("memory signal requires non-empty memory")
+        labels_supplied = signal.labels is not None
+        keywords_supplied = signal.keywords is not None
         labels = normalize_terms(signal.labels)
         keywords = normalize_terms(signal.keywords)
         canonical_key_supplied = bool(str(signal.canonical_key or "").strip())
@@ -2048,6 +2050,8 @@ class UserMemoryStore:
             "visible_to_user": is_user_visible(visibility),
             "labels": labels,
             "keywords": keywords,
+            "labels_supplied": labels_supplied,
+            "keywords_supplied": keywords_supplied,
             "pinned": signal.pinned if signal.pinned is not None else None,
             "confidence": max(0.0, min(1.0, float(signal.confidence))),
             "importance": max(0.0, min(1.0, float(signal.importance))),
@@ -2302,8 +2306,13 @@ class UserMemoryStore:
             last_event_at=now,
             pinned=pinned,
         )
-        labels = sorted(set(_array(row.get("labels")) + signal["labels"]))
-        keywords = sorted(set(_array(row.get("keywords")) + signal["keywords"]))
+        # Replace-on-provide / preserve-on-omit: labels/keywords are value-lists
+        # (bare strings), so removal is only possible by re-sending the list
+        # without the item. When the signal provides the field, the stored set
+        # becomes exactly the provided set (an empty list clears it); when the
+        # field is omitted, the existing stored set is kept unchanged.
+        labels = sorted(set(signal["labels"])) if signal.get("labels_supplied") else _array(row.get("labels"))
+        keywords = sorted(set(signal["keywords"])) if signal.get("keywords_supplied") else _array(row.get("keywords"))
         memory_text = signal["memory"] if signal["event_type"] in {"user_edit", "manual_update", "refinement", "squash"} else row["memory"]
         context = signal["context"] or row.get("context") or ""
         updated = await con.fetchrow(
