@@ -16,9 +16,12 @@ Two consumers share this single source of truth:
     them per field);
   - the runtime keeps a defensive fallback when a DB policy row is absent.
 
-Subscription plans have a small baked-in baseline too: `free` and `admin` are
-always seeded (descriptor entries override them per field), mirroring the quota
-baseline. Any other subscription plan is descriptor opt-in.
+Plans have a baked-in baseline too: the same four ids `anonymous`, `free`,
+`admin`, and `wallet` are always seeded (descriptor entries override them per
+field), mirroring the quota baseline. `free` and `admin` are internal grant
+plans; `wallet` and `anonymous` are built-in non-subscribable plans (they exist
+as catalog entities so users resolve onto them, but no one subscribes to them).
+Any other plan is descriptor opt-in.
 
 `budget_policies` has NO baked-in baseline: it is descriptor opt-in and
 admin-driven only, so there are no default constants here.
@@ -75,11 +78,14 @@ def default_quota_policy(plan_id: str) -> QuotaPolicy:
     )
 
 
-# Subscription plan ids that the platform always seeds (descriptor overrides per
-# field). Both are internal, free-of-charge catalog entries by default.
-MANDATORY_SUBSCRIPTION_PLAN_IDS = ("free", "admin")
+# Plan ids that the platform always seeds (descriptor overrides per field). All
+# are internal, free-of-charge catalog entries by default. `free`/`admin` are
+# grant plans; `wallet`/`anonymous` are built-in non-subscribable plans.
+MANDATORY_PLAN_IDS = ("anonymous", "free", "admin", "wallet")
 
-DEFAULT_SUBSCRIPTION_PLANS: Dict[str, Dict[str, Any]] = {
+DEFAULT_PLANS: Dict[str, Dict[str, Any]] = {
+    "anonymous": {"provider": "internal", "monthly_price_cents": 0, "active": True},
     "free": {"provider": "internal", "monthly_price_cents": 0, "active": True},
     "admin": {"provider": "internal", "monthly_price_cents": 0, "active": True},
+    "wallet": {"provider": "internal", "monthly_price_cents": 0, "active": True},
 }

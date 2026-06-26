@@ -436,6 +436,9 @@ class SubscriptionManager:
             overridden onto an internal plan.
           - Otherwise, ensure/refresh an internal row.
           - Internal plans carry no charge schedule: next_charge_at is always NULL.
+          - Overriding a non-active stripe row onto internal keeps
+            stripe_customer_id (a later checkout reuses the same Customer) and
+            clears only stripe_subscription_id.
         """
         now = now or _now()
         plan = await self.get_plan(tenant=tenant, project=project, plan_id=plan_id, conn=conn)
@@ -475,7 +478,10 @@ class SubscriptionManager:
 
           provider = 'internal',
 
-          stripe_customer_id = NULL,
+          -- keep the Stripe customer id: the Customer persists in Stripe across
+          -- subscription state, so a later checkout reuses it. Only the ended
+          -- subscription id is cleared.
+          stripe_customer_id = {tbl}.stripe_customer_id,
           stripe_subscription_id = NULL,
 
           updated_at = NOW()
@@ -594,9 +600,8 @@ class SubscriptionManager:
         Rules (self-serve, operator=False):
           - admin is locked: a user currently on `admin` cannot move to any
             other plan.
-          - `wallet`/`anonymous` are quota-only policies, never subscribable
-            plans — they can never be a target (and should not exist in
-            subscription_plans, this is defense-in-depth).
+          - `wallet` and `anonymous` are built-in non-subscribable plans —
+            neither can ever be a subscription target.
           - free (or no subscription yet) may only move to a chargeable plan
             (monthly_price_cents > 0); moving free→free / free→zero-cost is a
             no-op that the baseline already covers.
@@ -611,7 +616,7 @@ class SubscriptionManager:
         target_id = (target_plan.plan_id or "").strip().lower()
         if target_id in ("wallet", "anonymous"):
             raise PlanChangeNotAllowed(
-                f"plan '{target_plan.plan_id}' is a quota-only policy and cannot be subscribed to",
+                f"plan '{target_plan.plan_id}' is not subscribable",
                 code="target_not_subscribable",
             )
 

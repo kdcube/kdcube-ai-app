@@ -103,11 +103,11 @@ async def build_economics_descriptor(
         for b in budget
     }
 
-    plans = await cp_manager.subscription_mgr.list_plans(
+    plan_rows = await cp_manager.subscription_mgr.list_plans(
         tenant=tenant, project=project, active_only=False, limit=5000
     )
-    subscription_plans: Dict[str, Any] = {}
-    for pl in plans:
+    plans: Dict[str, Any] = {}
+    for pl in plan_rows:
         entry = {
             "provider": pl.provider,
             "monthly_price_cents": int(pl.monthly_price_cents or 0),
@@ -115,7 +115,7 @@ async def build_economics_descriptor(
         }
         if getattr(pl, "stripe_price_id", None):
             entry["stripe_price_id"] = pl.stripe_price_id
-        subscription_plans[pl.plan_id] = entry
+        plans[pl.plan_id] = entry
 
     # Overdraft limit lives in tenant_project_budget; the balance is intentionally
     # never part of the descriptor.
@@ -147,7 +147,7 @@ async def build_economics_descriptor(
         "project_budget": {"overdraft_limit_usd": overdraft_usd},
         "quota_policies": quota_policies,
         "budget_policies": budget_policies,
-        "subscription_plans": subscription_plans,
+        "plans": plans,
     }
     price_tables = existing.get("price_tables")
     if isinstance(price_tables, dict):

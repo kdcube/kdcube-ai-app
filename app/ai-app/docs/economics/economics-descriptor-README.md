@@ -3,7 +3,7 @@ id: repo:kdcube-ai-app/app/ai-app/docs/economics/economics-descriptor-README.md
 title: "Economics Descriptor"
 summary: "The per tenant/project economics.yaml descriptor and how it is seeded at deploy time."
 tags: ["economics", "descriptor", "seeding", "deployment"]
-keywords: ["economics.yaml", "seeder", "reservation floor", "quota policies", "budget policies", "subscription plans", "overdraft"]
+keywords: ["economics.yaml", "seeder", "reservation floor", "quota policies", "budget policies", "plans", "overdraft"]
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/economics/economic-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/economics/economic-enforcement-engine-README.md
@@ -78,9 +78,9 @@ budget_policies:
   anthropic:  { usd_per_hour: 10.0, usd_per_day: 200.0, usd_per_month: 5000.0 }
   duckduckgo: { usd_per_hour: null, usd_per_day: null,  usd_per_month: null }
 
-subscription_plans:
-  wallet: { provider: internal, monthly_price_cents: 0, active: true }
-
+plans:
+  free: { provider: internal, monthly_price_cents: 0, active: true }
+  
 price_tables:            # optional; whole-table replacement of the baseline (either/or)
   llm:                   # must include the reference model, else the baseline is used
     - { provider: anthropic, model: claude-sonnet-4-5-20250929, input_tokens_1M: 3.0, output_tokens_1M: 15.0 }
@@ -157,11 +157,26 @@ unlimited for that window. Seeded into `plan_quota_policies`.
 `usd_per_day`, `usd_per_month`; `null` means unlimited for that window. Seeded
 into `application_budget_policies`.
 
-### `subscription_plans`
+### `plans`
 
-`plan_id -> catalog entry`: `provider` (`internal` or `stripe`),
-`monthly_price_cents`, `active`, optional `stripe_price_id` (required when
-`provider: stripe`), optional `metadata`. Seeded into `subscription_plans`.
+Plans are the catalog/runtime entitlement records. A plan id appears in two
+sections that play complementary roles:
+
+- `quota_policies.<plan_id>` defines the **limits** (the RL token/request
+  windows) for users on that plan;
+- `plans.<plan_id>` defines the **catalog entry** — `provider` (`internal` or
+  `stripe`), `monthly_price_cents`, `active` state, optional `stripe_price_id`
+  (required when `provider: stripe`), optional `metadata` — i.e. price and
+  subscribe/grant behaviour.
+
+Most plans are subscribable. `wallet` and `anonymous` are built-in,
+**non-subscribable** plans (they exist as catalog entities so users can be
+resolved onto them, but no one subscribes to them). `admin` is
+internal/operator-assigned. `anonymous`/`free`/`admin`/`wallet` are seeded from
+the built-in baseline automatically; you only list a plan here to override a
+baseline field or to add a chargeable catalog plan.
+
+Seeded into the `subscription_plans` table.
 
 ## Built-in baseline
 
@@ -173,7 +188,7 @@ fields override the baseline per field.
 | Entity | Baseline | Descriptor behaviour |
 |---|---|---|
 | `quota_policies` | `anonymous`, `free`, `wallet`, `admin` (`DEFAULT_QUOTA_POLICIES`) | Always seeded; descriptor overrides per field; extra `plan_id`s seeded as-is. |
-| `subscription_plans` | `free`, `admin` — internal, `monthly_price_cents: 0`, `active: true` (`DEFAULT_SUBSCRIPTION_PLANS`) | Always seeded; descriptor overrides per field; extra `plan_id`s seeded as-is. |
+| `plans` | `anonymous`, `free`, `admin`, `wallet` — internal, `monthly_price_cents: 0`, `active: true` (`DEFAULT_PLANS`) | Always seeded; descriptor overrides per field; extra `plan_id`s seeded as-is. |
 | `budget_policies` | none | Opt-in; seeded only for the providers listed. |
 
 The four baseline quota plans (`anonymous` / `free` / `wallet` / `admin`)
@@ -201,7 +216,7 @@ Behaviour:
   decides `DO NOTHING` vs `DO UPDATE SET` for every entity.
 - Writes:
   - `plan_quota_policies` — baseline four + descriptor entries/extras;
-  - `subscription_plans` — baseline `free`/`admin` + descriptor entries/extras;
+  - `subscription_plans` — baseline `anonymous`/`free`/`admin`/`wallet` + descriptor entries/extras;
   - `application_budget_policies` — descriptor providers only;
   - `tenant_project_budget` — `overdraft_limit_cents` only (balance untouched).
 - Idempotent: re-running with `enforce: false` is a no-op for existing rows.
@@ -238,7 +253,7 @@ from the live database state
 This keeps the file current so the next deploy-time seed does not regress the
 change.
 
-- Rebuilds `quota_policies`, `budget_policies`, `subscription_plans`, and
+- Rebuilds `quota_policies`, `budget_policies`, `plans`, and
   `project_budget.overdraft_limit_usd` from the database; **preserves** the
   `reservation` and `price_tables` sections (which are never stored in the database).
 - Writes atomically (temp file + `os.replace`) under an exclusive `flock`, so

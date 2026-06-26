@@ -304,7 +304,7 @@ def _make_ep(
     ep.config = _Config()
     ep.redis = None  # disables the quota distributed lock
     ep.pg_pool = None
-    ep.bundle_props = {}
+    ep.bundle_props = {"economics": {"reservation": {"chat": 2.0}}}
     # app_quota_policies is a computed property on the entrypoint (real plans).
     ep.subj = "t:p:u1"
     ep._turn_id = "turn_char_1"

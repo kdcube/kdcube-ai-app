@@ -72,7 +72,6 @@ Create internal plans:
 
 - `beta-30` (provider: internal, monthly_price_cents: 3000)
 - `beta-50` (provider: internal, monthly_price_cents: 5000)
-- `wallet` (provider: internal, monthly_price_cents: 0)
 
 Notes:
 

@@ -1853,7 +1853,7 @@ const EconomicsAdmin: React.FC = () => {
     }, [api, configStatus]);
 
     const loadDataForView = async (mode: string) => {
-        const needsData = ['quotaPolicies', 'budgetPolicies', 'appBudget', 'subscriptions', 'reservation'].includes(mode);
+        const needsData = ['quotaPolicies', 'budgetPolicies', 'appBudget', 'plans', 'reservation'].includes(mode);
         if (!needsData) return;
 
         setLoadingData(true);
@@ -1872,7 +1872,7 @@ const EconomicsAdmin: React.FC = () => {
             } else if (mode === 'reservation') {
                 const res = await api.getReservation();
                 setReservation(res.reservation || {});
-            } else if (mode === 'subscriptions') {
+            } else if (mode === 'plans') {
                 const res = await api.listSubscriptionPlans({ limit: 200, offset: 0, activeOnly: false });
                 setSubscriptionPlans(res.plans || []);
             }
@@ -2603,7 +2603,7 @@ const EconomicsAdmin: React.FC = () => {
         { id: 'budgetPolicies', label: 'Project Budget Policies' },
         { id: 'lifetimeCredits', label: 'Lifetime Credits' },
         { id: 'appBudget', label: 'App Budget' },
-        { id: 'subscriptions', label: 'Subscriptions' },
+        { id: 'plans', label: 'Plans' },
     ];
 
     const usdPerToken =
@@ -4479,11 +4479,11 @@ Shortfall ledger notes:
                         </div>
                     )}
                     {/* Subscriptions */}
-                    {viewMode === 'subscriptions' && (
+                    {viewMode === 'plans' && (
                         <div className="space-y-6">
                             <Card>
                                 <CardHeader
-                                    title="Subscription Plans"
+                                    title="Plans"
                                     subtitle="Define plan_id → price mapping (internal or Stripe). Plan IDs drive quota policies."
                                     action={
                                         <Button
