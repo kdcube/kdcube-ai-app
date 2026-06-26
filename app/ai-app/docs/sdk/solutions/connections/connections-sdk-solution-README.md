@@ -5,6 +5,8 @@ summary: "Identity links, connected external accounts, and authority projection 
 tags: ["sdk", "solutions", "connections", "identity", "auth", "authority", "telegram", "automations"]
 updated_at: 2026-06-26
 see_also:
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/authenticators-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/service/auth/auth-selector-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/automations/automations-sdk-solution-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/runtime/cross-runtime-context-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/service/auth/auth-README.md
@@ -35,7 +37,8 @@ operate on**.
 | Platform principal | KDCube platform user id that owns platform roles, permissions, subscriptions, budgets, and admin authority. |
 | Connected account | A delegated external resource account, such as Gmail or Slack, that an app/agent may use with consent. |
 | Authority projection | The one-time conversion from actor/channel identity to effective platform roles and economics identity for this execution. |
-| Channel authorizer | The ingress component that validates a channel proof, resolves links, asks platform authority for roles, and stamps execution context. |
+| Connection Hub request-auth bridge | Gateway/SDK adapter that passes a request envelope to Connection Hub and receives linked authority back. |
+| Connection Hub provider module | Provider-specific verifier inside Connection Hub, for example Telegram, Slack, webhook HMAC, API key, Gmail/OIDC. Modules have access to Connection Hub config, secrets, and identity-link data. |
 
 ## The Three Layers
 
@@ -105,6 +108,12 @@ Important helpers:
 | `normalize_execution_authority(...)` | Normalize an authority envelope before storing it in a queued job source or `bundle_call_context`. |
 | `apply_authority_to_comm_context(...)` | Stamp effective role/permissions into `REQUEST_CONTEXT.user` before tools/ReAct run. |
 
+Request-facing authentication is documented separately in
+[Connection Authenticators](authenticators-README.md). That layer takes a raw
+request envelope, calls Connection Hub, lets Connection Hub select a provider
+module, verifies provider proof, resolves identity links, and returns authority
+material that the gateway turns into a `UserSession`.
+
 Automations use this through:
 
 ```python
@@ -126,26 +135,33 @@ invent platform roles.
 | Surface | How it should work |
 | --- | --- |
 | Browser REST/SSE/Socket.IO | Normal platform auth creates `UserSession`; roles are already present in request context. |
-| Telegram Mini App public routes | Telegram init data proves Telegram actor. A channel authorizer should resolve the linked platform principal and stamp authority before protected app work. |
-| Telegram webhook | Webhook signature/bot token proves the channel event. A channel authorizer should resolve the Telegram identity to platform authority if platform roles/economics are needed. |
+| Telegram-hosted widgets | The Telegram host passes `telegramInitData` through the standard `CONFIG_RESPONSE`; the widget sends `X-Telegram-Init-Data` on normal app operations. Gateway auth flows through the Connection Hub bridge; the Telegram module resolves the linked platform principal and stamps authority before protected app work. |
+| App-owned Telegram public routes | Use only when the app intentionally exposes a Telegram-specific public API. The route must still validate Telegram proof and resolve authority; do not treat public static widget loading as public data/action authorization. |
+| Telegram webhook | Webhook signature/bot token proves the channel event. The Connection Hub Telegram module should resolve the Telegram identity to platform authority if platform roles/economics are needed. |
 | Scheduled automations | Supported now through `scheduler_identity_resolver`; authority is stored in durable job source and rebound when the job runs. |
 | Manual queued jobs | If the request starts from a platform browser session, roles are already present. If it queues detached work for a surface actor, the queue source should carry `identity_authority`. |
-| Data Bus | Messages must carry enough actor/auth metadata for a channel authorizer or provider to stamp authority before trusted work. |
-| MCP/API integration tokens | Integration tokens should authenticate as a platform principal or be resolved through the same channel-authorizer path before role checks. |
+| Data Bus | Messages must carry enough actor/auth metadata for Connection Hub or the producing provider to stamp authority before trusted work. |
+| MCP/API integration tokens | Integration tokens should authenticate as a platform principal or be resolved through the same Connection Hub bridge path before role checks. |
 
-## Target Channel Authorizer
+## Request-Auth Bridge
 
-We still need a generic authorizer component at ingress/channel boundaries.
-
-Target flow:
+The generic request-facing mechanism is the Connection Hub request-auth bridge:
 
 ```text
 incoming request/event/job
   |
-  | validate channel proof
-  |   browser cookie / Telegram initData / webhook signature / API key / MCP token
+  | browser cookie / Telegram initData / webhook signature / API key / MCP token
   v
-channel authorizer
+request-auth selector
+  |
+  +-- platform token/cookie auth
+  |
+  +-- Connection Hub request-auth bridge
+        |
+        | provider module inside Connection Hub
+        |   Telegram / Slack / webhook HMAC / API key / Gmail-OIDC / ...
+        v
+      Connection Hub data boundary
   |
   | actor identity = provider:subject
   | platform principal = Connections.resolve(actor identity)
@@ -159,9 +175,10 @@ execution context
 app code, role checks, economics, ReAct, tools, child runtimes
 ```
 
-This should be platform/SDK-owned, not repeated by every app. Apps should only
-declare which channel proofs they accept and how their local storage scope maps
-to actor identity.
+This is platform/SDK-owned at the bridge layer and Connection-Hub-owned at the
+provider-module layer. Apps should not repeat Telegram/Slack/OIDC verification;
+they should pass provider proof through the request envelope and let Connection
+Hub resolve authority.
 
 ## Relationship To Service Auth
 
@@ -173,6 +190,7 @@ transport. Connections is higher-level:
 - authority projection answers "what effective platform roles/funding does this
   execution carry after the channel identity is linked?"
 
-Do not put channel-specific identity-link policy into generic token extraction.
-Token extraction belongs to service auth. Link resolution and authority
-projection belong to Connections / channel authorizers.
+Do not put provider-specific identity-link policy into generic token extraction.
+Token extraction belongs to service auth. Provider proof verification, link
+resolution, and authority projection belong to Connection Hub provider modules
+and the Connection Hub request-auth bridge.

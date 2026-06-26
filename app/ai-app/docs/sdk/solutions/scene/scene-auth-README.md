@@ -1,10 +1,10 @@
 ---
 id: docs/sdk/solutions/scene/scene-auth-README.md
 title: "Scene Auth State Contract"
-summary: "How a scene host announces authentication state to surfaces (kdcube-auth-changed) and how surfaces react to it instead of carrying or polling for auth."
+summary: "How a scene host announces authentication state to surfaces (kdcube-auth-changed) and hands them runtime config (CONFIG_REQUEST/CONFIG_RESPONSE), including how a host supplies an auth proof such as telegramInitData as a normal config field."
 status: design
 tags: ["sdk", "solutions", "scene", "auth", "session", "components", "widgets", "event-bus"]
-updated_at: 2026-06-24
+updated_at: 2026-06-26
 keywords:
   [
     "kdcube-auth-changed",
@@ -15,7 +15,13 @@ keywords:
     "profile endpoint",
     "surface auth",
     "login event",
-    "auth broadcast"
+    "auth broadcast",
+    "CONFIG_REQUEST",
+    "CONFIG_RESPONSE",
+    "CONN_RESPONSE",
+    "config handshake",
+    "telegramInitData",
+    "X-Telegram-Init-Data"
   ]
 see_also:
   - docs/sdk/solutions/scene/generic-scene-contract-README.md
@@ -106,6 +112,80 @@ and sends no auth headers of its own.
      roles you need) and reload the data those privileges unlock.
 4. Make the derivation idempotent — the host may announce the same state more
    than once (for example `user-loaded` then `login`).
+
+## Host → iframe config handshake (carrying the proof)
+
+The announcement above tells a surface *that* auth changed. A separate, equally
+standard channel hands a surface the runtime config it needs to talk to the
+backend — including whatever auth proof the host holds. This is the existing
+config handshake; there is **no `kdcube.auth.*` message family**.
+
+An iframe surface requests its config from the host on mount:
+
+```js
+window.parent.postMessage({
+  type: 'CONFIG_REQUEST',
+  data: { identity: 'MY_WIDGET', requestedFields: ['baseUrl', 'accessToken', 'idToken', 'idTokenHeader', 'defaultTenant', 'defaultProject', 'defaultAppBundleId'] },
+}, '*');
+```
+
+The host answers with `CONFIG_RESPONSE` (a relaying host may forward the
+upstream `CONN_RESPONSE` instead — surfaces accept either) whose `config` the
+surface applies, filtered by `identity`:
+
+```js
+{ type: 'CONFIG_RESPONSE', identity: 'MY_WIDGET', config: { baseUrl, accessToken, idToken, idTokenHeader, defaultTenant, defaultProject, defaultAppBundleId } }
+```
+
+The host supplies whatever proof it has as **normal config fields**: a
+cookie/Bearer host fills `accessToken` / `idToken`; the surface then attaches
+those as `Authorization` / its ID-token header on each request (and keeps
+`credentials: 'include'` for the cookie path). Per request, the surface picks
+the proof by what the config actually provided.
+
+### `telegramInitData` — a config-field extension
+
+A host that authenticates via a Telegram proof adds one more field to the
+**same** `config` payload:
+
+```js
+{ type: 'CONFIG_RESPONSE', identity: 'MY_WIDGET', config: { /* …baseUrl/tenant/project… */, telegramInitData: '<Telegram.WebApp.initData>' } }
+```
+
+It is just another config field, supplied the same way a Bearer host supplies
+`accessToken`. When present, the surface attaches it to every backend request as
+the `X-Telegram-Init-Data` header. The host (the Telegram Mini App) reads
+`window.Telegram.WebApp.initData` and includes it; it never sends a bot token or
+any server secret. The surface only transports the proof — the gateway and
+Connection Hub authenticate centrally (see
+[ecosystem-component](../ecosystem-component/ecosystem-component-README.md) for
+the backend split).
+
+`telegramInitData` does not require the surface to switch to a
+`/public/telegram_*` API. A surface that is meant to use normal platform/gateway
+auth keeps calling its standard `/operations/{alias}` routes and sends the
+Telegram proof as a header.
+
+### `kdcube-auth-changed` refreshes the handshake
+
+The handshake is event-driven, not a one-time mount snapshot. On
+`kdcube-auth-changed`, a surface **re-requests its config** (re-sends
+`CONFIG_REQUEST`) and re-applies the answer; the host **re-answers** with the
+current proof. This covers a proof that arrives slightly after the surface
+mounts (for example the Telegram client populating `initData` late) and a
+visitor who authenticates after the surface loaded — the surface reloads the
+data the now-available proof unlocks.
+
+### Worked example: memories widget in the Telegram Mini App
+
+The memories widget is the standard surface and is used unchanged across hosts.
+In a browser scene/website it receives `accessToken` / `idToken` (or relies on
+the session cookie) through `CONFIG_RESPONSE`. Hosted as an iframe in the
+Telegram Mini App, it receives `telegramInitData` through the **same**
+`CONFIG_RESPONSE` and attaches `X-Telegram-Init-Data`. The Mini App host answers
+the widget's `CONFIG_REQUEST` (matched on its `MEMORIES_WIDGET` identity) and
+nudges it with `kdcube-auth-changed` once `initData` is available — one
+handshake, both hosts, no Telegram-specific protocol.
 
 ## Reference implementations
 

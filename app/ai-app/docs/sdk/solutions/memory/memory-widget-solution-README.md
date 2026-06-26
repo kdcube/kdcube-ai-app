@@ -176,6 +176,45 @@ The "use my memory" toggle governs only runtime use of memories by the agent.
 Note management stays available while it is off — the widget banner says notes
 remain visible for review, export, and deletion.
 
+## Auth And Host Config
+
+The memory widget uses the standard widget runtime config handshake. It does not
+have a memory-specific auth protocol.
+
+```text
+memory iframe -> host
+  CONFIG_REQUEST { identity: "MEMORIES_WIDGET", requestedFields: [...] }
+
+host -> memory iframe
+  CONFIG_RESPONSE { identity: "MEMORIES_WIDGET", config: {...} }
+```
+
+Browser/scene hosts may supply `accessToken`, `idToken`, `idTokenHeader`, or rely
+on cookies. A Telegram Mini App host supplies the same base runtime fields and,
+when available, one extra field in the same `config` object:
+
+```json
+{
+  "telegramInitData": "<Telegram.WebApp.initData>"
+}
+```
+
+When `telegramInitData` is present, the memory widget still calls the standard
+`/operations/memories_widget_*` routes and attaches the proof as
+`X-Telegram-Init-Data`. It does not switch itself to a Telegram-specific
+`/public/telegram_*` API. The widget does not read `window.parent.Telegram`,
+validate Telegram, call Connection Hub directly, or use any `kdcube.auth.*`
+message family. The gateway and Connection Hub validate the proof centrally and
+project linked authority into the request session before the operation sees the
+request.
+
+If the host session or proof changes, the host announces `kdcube-auth-changed`.
+The widget re-sends `CONFIG_REQUEST`, applies the latest `CONFIG_RESPONSE`, and
+reloads memory data if the effective auth material changed.
+
+See [Scene Auth State Contract](../scene/scene-auth-README.md) and
+[Connection Authenticators](../connections/authenticators-README.md).
+
 ## Drag And Context Payload
 
 A memory row is draggable. The widget writes a context payload that chat or

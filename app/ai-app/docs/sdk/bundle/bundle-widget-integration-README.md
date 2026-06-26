@@ -557,11 +557,9 @@ WebApp `initData` verification or a bundle-issued federated Data Bus token.
 
 ## Dual Runtime Pattern
 
-When the same widget app runs in KDCube control plane and Telegram, select the
-transport at runtime:
-
-- if `window.Telegram?.WebApp?.initData` exists, treat it as Telegram
-- otherwise, use the normal KDCube runtime config handshake
+When the same widget app runs in KDCube control plane and inside a Telegram Mini
+App host, keep one frontend contract: the widget asks its host for runtime
+config and sends backend requests to the configured KDCube app.
 
 KDCube control-plane runtime:
 
@@ -570,16 +568,30 @@ KDCube control-plane runtime:
 - call `/operations/{alias}`
 - pass KDCube auth headers from runtime config
 
-Telegram Mini App runtime:
+Telegram-hosted iframe runtime:
 
-- do not wait for the KDCube runtime config handshake
-- call `window.Telegram.WebApp.ready()` and `expand()` when available
-- serve the app from `/public/widgets/{widget_alias}`
-- call bundle public aliases such as `/public/{telegram_alias}`
-- send the exact `window.Telegram.WebApp.initData` string as
+- the Telegram host reads `window.Telegram.WebApp.initData`
+- the hosted widget still sends `CONFIG_REQUEST`
+- the host answers the same `CONFIG_RESPONSE` / `CONN_RESPONSE` with normal
+  runtime config plus `telegramInitData`
+- the widget calls `/operations/{alias}` and sends `telegramInitData` as
   `X-Telegram-Init-Data`
+- `kdcube-auth-changed` is the refresh signal; the widget re-sends
+  `CONFIG_REQUEST`
 
-Keep the API aliases explicit. A common pattern is:
+This route lets gateway auth invoke the Connection Hub request-auth bridge:
+
+```text
+widget /operations/{alias} + X-Telegram-Init-Data
+  -> gateway request-auth selector
+  -> Connection Hub provider module
+  -> linked platform authority
+  -> operation visibility / roles / economics
+```
+
+Use `/public/{telegram_alias}` only when an app explicitly owns a
+Telegram-specific public API and documents that API as separate from the
+generic gateway-auth path. In that case, keep the API aliases explicit:
 
 ```ts
 const telegramAliases: Record<string, string> = {
@@ -590,8 +602,9 @@ const telegramAliases: Record<string, string> = {
 };
 ```
 
-The public route loads the app; the public operation verifies the user. Do not
-trust caller-supplied `user_id` or `fingerprint` in Telegram mode.
+The public widget route may load static assets; it does not by itself choose the
+data/action auth path. Do not trust caller-supplied `user_id` or `fingerprint`
+in Telegram mode.
 
 Use `npm ci` in `build_command` when the widget source commits a lockfile. For
 early prototype widgets without a lockfile, `npm install --no-package-lock`
