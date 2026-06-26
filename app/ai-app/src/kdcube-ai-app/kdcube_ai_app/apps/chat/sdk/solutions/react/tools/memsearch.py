@@ -28,6 +28,15 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import (
 TOOL_SPEC = {
     "id": "react.memsearch",
     "purpose": (
+        "Conversations are one of the user's memory realms - what was actually said in chat - "
+        "alongside durable memories (`mem`) and context boards (`cnv`); together they are districts "
+        "of the user's memory. Searches what the USER said (prompts and follow-ups), what the ASSISTANT "
+        "said (replies and working summaries), and the user's UPLOADED attachments (their indexed "
+        "summaries): pick `targets` by what the user is recalling ('I said...' -> user/attachment; "
+        "'you said...' -> assistant). Reach for it whenever a look back would likely help: on an explicit "
+        "recall request, AND when the user's intent implies earlier context matters - they refer to "
+        "something from before, say it was clearer earlier, can't find or re-locate something, or resume "
+        "a dropped thread. "
         "Search prior conversation memory and return turn-level recovery handles. "
         "Use only when the exact needed path is not already visible. "
         "Behavior is inferred from which fields you set: "

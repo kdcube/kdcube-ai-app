@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, Mapping, Sequence
 
 
-CANVAS_NAMESPACE_INTRO = "Canvas (also called the pin board — both names mean this same board) — a board of pinned cards for quick access later. A pin (card) can point to an object from any connected namespace (a task, a memory, a file), a file you produced, or an entire conversation. Pin when the user signals they want to keep, bookmark, or set something aside for later — in particular, when they want to remember a specific thing that isn't a durable memory, that's the cue to pin it here; if you're unsure, you can suggest pinning. You don't need to ask which board: unless the user names a specific board, just pin to the board, and the pin board service decides which canvas it lands on."
+CANVAS_NAMESPACE_INTRO = "Canvas (also called the pin board — both names mean this same board) — a board of pinned cards for quick access later. A pin (card) can point to an object from any connected namespace (a task, a memory, a file), a file you produced, or an entire conversation. Pin when the user signals they want to keep, bookmark, or set something aside for later — in particular, when they want to remember a specific thing that isn't a durable memory, that's the cue to pin it here; if you're unsure, you can suggest pinning. You don't need to ask which board: unless the user names a specific board, just pin to the board, and the pin board service decides which canvas it lands on. It's one of the user's memory realms — the context-board kind: things pinned or set aside for later. When recalling what the user kept for quick access, look here alongside their durable memories (`mem`) and past conversations."
 
 CANVAS_BOARD_EDIT_PROTOCOL_LINES = (
     "edit_protocol:",
