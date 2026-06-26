@@ -62,6 +62,18 @@ function operationUrl(operation: string, payload: Record<string, unknown> = {}):
   return GET_OPERATIONS.has(operation) ? `${path}${queryString(payload)}` : path;
 }
 
+function connectionHubBundleId(): string {
+  const params = new URLSearchParams(window.location.search);
+  return params.get('connection_hub_bundle_id') || params.get('connectionHubBundleId') || 'connection-hub@1-0';
+}
+
+function connectionHubPublicUrl(alias: string): string {
+  const tenant = encodeURIComponent(settings.getTenant());
+  const project = encodeURIComponent(settings.getProject());
+  const bundleId = encodeURIComponent(connectionHubBundleId());
+  return `${settings.getBaseUrl()}/api/integrations/bundles/${tenant}/${project}/${bundleId}/public/${alias}`;
+}
+
 function responseAlias(operation: string): string {
   const publicAlias = telegramOperationAlias(operation);
   return isTelegramWebApp() && publicAlias ? publicAlias : operation;
@@ -94,6 +106,32 @@ export async function callOperation<T>(operation: string, payload: Record<string
   }
   if (parsed && typeof parsed === 'object' && operation in parsed) {
     return (parsed as Record<string, unknown>)[operation] as T;
+  }
+  return parsed as T;
+}
+
+export async function callConnectionHubPublic<T>(alias: string, payload: Record<string, unknown> = {}): Promise<T> {
+  const response = await fetch(connectionHubPublicUrl(alias), {
+    method: 'POST',
+    credentials: 'include',
+    headers: authHeaders({ 'Content-Type': 'application/json', Accept: 'application/json' }),
+    body: JSON.stringify({ data: payload }),
+  });
+  const text = await response.text();
+  let parsed: unknown = {};
+  try {
+    parsed = text ? JSON.parse(text) : {};
+  } catch {
+    parsed = { raw: text };
+  }
+  if (!response.ok) {
+    const detail = typeof parsed === 'object' && parsed && 'detail' in parsed
+      ? String((parsed as Record<string, unknown>).detail)
+      : text || response.statusText;
+    throw new Error(detail);
+  }
+  if (parsed && typeof parsed === 'object' && alias in parsed) {
+    return (parsed as Record<string, unknown>)[alias] as T;
   }
   return parsed as T;
 }
