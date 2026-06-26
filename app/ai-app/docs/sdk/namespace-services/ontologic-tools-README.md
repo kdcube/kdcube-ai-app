@@ -91,8 +91,8 @@ the realm fills in meaning through `about` and `object.schema`.
 | `list_objects` | Browse a collection with pagination. |
 | `search_objects` | Find objects by query within a provider-declared scope. |
 | `get_object` | Fetch one object by ref (live realm state). |
-| `upsert_object` | Create or modify one object that satisfies a kind's schema. On update, check each non-scalar field's `update_strategy`: for `replace` send the full intended value; for `append`/`patch` send only the delta. Scalars are replace (set if provided, preserved if omitted). |
-| `delete_object` | Delete or archive one object. |
+| `upsert_object` | Create or modify one object that satisfies a kind's schema. On update, a collection field accepts either a bare list (set/append per `update_strategy`) or a `{add, remove}` delta; objects use `patch`/`replace`; scalars are replace (set if provided, preserved if omitted). |
+| `delete_object` | Destroy one object itself (the file/record everywhere it is used). Not a list-editing tool — to take an item off a list use that field's `{remove}` delta. |
 | `object_action` | Run a schema-declared bounded action on an object (`preview`, `open`, `download`, or a provider-defined action). |
 | `host_file` | Host a runtime file/ref into the realm and get back a realm-owned file ref to cite via `upsert_object`. |
 
@@ -175,45 +175,63 @@ generic tools plus the schema's `tools` block are the whole surface.
 
 ### Per-Field `update_strategy`
 
-Collection fields declare an `update_strategy` that tells the agent what
-*providing* the field does:
+A collection (array) field in `upsert_object` accepts **either** a bare list
+**or** a `{ "add": [...], "remove": [...] }` delta. `update_strategy` tells the
+agent what the bare-list form does:
 
-- **Arrays:** `append` (add to the existing list) or `replace` (swap the whole
-  list).
+- **Arrays:** `append` (the bare list is added to the existing list) or
+  `replace` (the bare list swaps the whole list). The `{add, remove}` delta is
+  always an incremental edit regardless of strategy.
 - **Objects:** `patch` (set the provided keys, keep the rest) or `replace`
   (overwrite the whole object).
 - **Scalars** have no strategy — a provided value is set (replace), an omitted
   one is preserved.
 
-Read the strategy before an update: it is the difference between adding to a
-field and silently overwriting it.
+Read the strategy before a bare-list update: it is the difference between
+adding to a field and silently overwriting it. Omit a field to leave it
+unchanged.
+
+#### The `{add, remove}` delta
+
+The delta form edits a list incrementally: removes are applied first, then adds.
+
+- `add` appends the listed item(s).
+- `remove` removes matching item(s) — by value for value-lists, by ref or
+  `dedup_key` for ref-lists.
+
+| Goal | What to send |
+| --- | --- |
+| Set / overwrite the whole list | a bare list (field is `replace`, or send the full intended value) |
+| Add or remove some items | a `{add, remove}` delta |
+| Replace one item | `add` it with a matching `dedup_key` (see below) |
 
 #### `dedup_key` (per-parent supersede)
 
 An `append` collection field may also declare a `dedup_key`. Adding an item
-whose key matches an existing one **within the same parent object**
-**replaces/supersedes** it. So "update an item" is just "add it again with the
-same key" — there is no add-then-delete dance. Example: a task's `attachments`
-keyed by `filename` — re-host the same `filename` and the new version
-supersedes the old one on that issue.
+(bare or via `add`) whose key matches an existing one **within the same parent
+object** **replaces/supersedes** it. So "replace one item" is just "add it again
+with the same key" — there is no add-then-delete dance. Example: a task's
+`attachments` keyed by `filename` — re-host the same `filename` and the new
+version supersedes the old one on that issue.
 
 #### Removing a collection item
 
-Removal depends on whether the items are refs or plain values:
+Removal is **one way: the field's `{remove: [...]}` delta** — list the item(s)
+to drop (by value for value-lists; by ref or `dedup_key` for ref-lists). For a
+ref-list (e.g. `attachments`), `{remove}` **detaches** the item from this parent
+object; a shared underlying object is preserved.
 
-- **Namespace refs** (e.g. `attachments`): `delete_object(<item ref>)`
-  **detaches** the item from its parent object. A shared underlying object is
-  preserved (only the link to this parent is removed); you do **not** re-send
-  the list.
-- **Plain values** (e.g. labels/`tags`): the field is `replace` — re-send the
-  list without that value.
+`delete_object` is **not** a list-editing tool. It **destroys the object
+itself** — the underlying file/record everywhere it is used — and is a separate,
+rarer operation, never the way to take an item off a list.
 
-These add / replace / `dedup_key` / removal defaults are also injected into the
-named-services ReAct agent instruction, so the agent applies them without
-reading each schema in detail.
+These bare-list / `{add, remove}` / `dedup_key` / removal defaults are also
+injected into the named-services ReAct agent instruction, so the agent applies
+them without reading each schema in detail.
 
-`update_strategy`, `dedup_key`, and these removal rules are **shipped** on the
-task realm. Other surface improvements below remain proposed.
+`update_strategy`, `dedup_key`, the `{add, remove}` delta, and these removal
+rules are **shipped** on the task realm. Other surface improvements below remain
+proposed.
 
 ## Improvements (PROPOSED — not shipped)
 
