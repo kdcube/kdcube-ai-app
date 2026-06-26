@@ -22,6 +22,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers import (
     named_service_provider,
 )
 
+from .instructions import MEMORY_NAMESPACE_INTRO
 from .events.resolver import (
     MEMORY_OBJECT_NAMESPACE,
     MEMORY_RESOLVER_NAME,
@@ -235,6 +236,7 @@ def memory_named_service_spec(*, bundle_id: str | None = None) -> NamedServicePr
         operations=build_default_operations((TRANSPORT_LOCAL, TRANSPORT_API)),
         label="User memories",
         description="SDK memory namespace provider for durable user-memory records.",
+        intro=MEMORY_NAMESPACE_INTRO,
         metadata={
             "canonical_ref": "mem:record:<memory_id>",
             "viewer_surface": "sdk.memory.viewer",
@@ -564,6 +566,7 @@ def _memory_object_read_text(obj: Mapping[str, Any], *, object_ref: str) -> str:
     operations=build_default_operations((TRANSPORT_LOCAL, TRANSPORT_API)),
     label="User memories",
     description="SDK memory namespace provider for durable user-memory records.",
+    intro=MEMORY_NAMESPACE_INTRO,
     metadata={"canonical_ref": "mem:record:<memory_id>", "viewer_surface": "sdk.memory.viewer"},
 )
 class MemoryNamedServiceProvider(NamedServiceProvider):
@@ -573,7 +576,6 @@ class MemoryNamedServiceProvider(NamedServiceProvider):
         store_factory: MemoryStoreFactory,
         scope_factory: MemoryScopeFactory,
         bundle_id: str | None = None,
-        allow_write: bool = False,
         default_scope_filter: str = "current_bundle",
         model_service: Any | None = None,
         embedding_factory: EmbeddingFactory | None = None,
@@ -584,7 +586,6 @@ class MemoryNamedServiceProvider(NamedServiceProvider):
         super().__init__(memory_named_service_spec(bundle_id=bundle_id))
         self._store_factory = store_factory
         self._scope_factory = scope_factory
-        self._allow_write = bool(allow_write)
         self._default_scope_filter = normalize_scope_filter(default_scope_filter)
         self._model_service = model_service
         self._embedding_factory = embedding_factory
@@ -689,18 +690,6 @@ class MemoryNamedServiceProvider(NamedServiceProvider):
             "turn_id": ctx.turn_id or "",
         }
 
-    def _writable_or_error(self, request: NamedServiceRequest) -> NamedServiceResponse | None:
-        if self._allow_write:
-            return None
-        return NamedServiceResponse.error_response(
-            code="memory_write_disabled",
-            message="Memory named-service writes are disabled by bundle policy.",
-            status=403,
-            provider=self.provider_identity(),
-            namespace=request.namespace or NAMESPACE,
-            object_ref=request.object_ref,
-        )
-
     async def provider_about(self, ctx: NamedServiceContext, request: NamedServiceRequest) -> NamedServiceResponse:
         del ctx, request
         return NamedServiceResponse.ok_response(
@@ -722,8 +711,8 @@ class MemoryNamedServiceProvider(NamedServiceProvider):
             capabilities={
                 "search": True,
                 "get": True,
-                "upsert": self._allow_write,
-                "delete": self._allow_write,
+                "upsert": True,
+                "delete": True,
                 "actions": ["preview", "open", "describe", "capabilities", "confirm", "retire"],
                 "default_open_effect_action": "open",
             },
@@ -1063,9 +1052,6 @@ class MemoryNamedServiceProvider(NamedServiceProvider):
     async def object_action(self, ctx: NamedServiceContext, request: NamedServiceRequest) -> NamedServiceResponse:
         action = _text(request.action or request.payload.get("action") or "preview").lower()
         if action in {"confirm", "retire"}:
-            write_error = self._writable_or_error(request)
-            if write_error is not None:
-                return write_error
             store = self._store(ctx)
             await self._ensure_store_schema(store)
             memory_id = memory_id_from_ref(request.object_ref or "") or _text(request.object_id)
@@ -1142,9 +1128,6 @@ class MemoryNamedServiceProvider(NamedServiceProvider):
         )
 
     async def object_upsert(self, ctx: NamedServiceContext, request: NamedServiceRequest) -> NamedServiceResponse:
-        write_error = self._writable_or_error(request)
-        if write_error is not None:
-            return write_error
         store = self._store(ctx)
         await self._ensure_store_schema(store)
         body = dict(request.object or {})
@@ -1163,6 +1146,12 @@ class MemoryNamedServiceProvider(NamedServiceProvider):
             memory=memory_text,
             context=_text(body.get("context") or body.get("summary") or body.get("description")),
             kind=_text(body.get("kind") or "fact"),
+            # upsert_object on an existing record is an authoritative edit:
+            # an explicitly provided scalar (memory text) must REPLACE the
+            # canonical value (set-if-provided), not be merged in as a passive
+            # observation. "agent_refinement" is an authoritative edit event the
+            # store apply path promotes to canonical text (see store.py
+            # AUTHORITATIVE_EDIT_EVENTS). New records start as an observation.
             event_type=_text(body.get("event_type") or ("agent_refinement" if memory_id else "agent_observation")),
             originator=_text(body.get("originator") or "agent"),
             status=_text(body.get("status") or "active"),
@@ -1204,9 +1193,6 @@ class MemoryNamedServiceProvider(NamedServiceProvider):
         )
 
     async def object_delete(self, ctx: NamedServiceContext, request: NamedServiceRequest) -> NamedServiceResponse:
-        write_error = self._writable_or_error(request)
-        if write_error is not None:
-            return write_error
         store = self._store(ctx)
         await self._ensure_store_schema(store)
         memory_id = memory_id_from_ref(request.object_ref or "") or _text(request.object_id)
@@ -1270,7 +1256,6 @@ def make_memory_named_service_provider(
     store_factory: MemoryStoreFactory,
     scope_factory: MemoryScopeFactory,
     bundle_id: str | None = None,
-    allow_write: bool = False,
     default_scope_filter: str = "current_bundle",
     model_service: Any | None = None,
     embedding_factory: EmbeddingFactory | None = None,
@@ -1282,7 +1267,6 @@ def make_memory_named_service_provider(
         store_factory=store_factory,
         scope_factory=scope_factory,
         bundle_id=bundle_id,
-        allow_write=allow_write,
         default_scope_filter=default_scope_filter,
         model_service=model_service,
         embedding_factory=embedding_factory,

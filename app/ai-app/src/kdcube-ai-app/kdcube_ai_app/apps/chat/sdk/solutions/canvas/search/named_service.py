@@ -35,6 +35,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers.types import
 )
 
 from .pin_search import CANVAS_PIN_SEARCH_FILTERS
+from ..instructions import CANVAS_NAMESPACE_INTRO
 
 
 CANVAS_NAMESPACE = "cnv"
@@ -555,6 +556,7 @@ def _provider_spec() -> NamedServiceProviderSpec:
         operations=CANVAS_PIN_OPERATIONS,
         label="Canvas",
         description="Named-service provider for canvas boards, cards, hosted objects, and card search.",
+        intro=CANVAS_NAMESPACE_INTRO,
     )
 
 
@@ -988,6 +990,7 @@ def _patch_from_typed_object(obj: Mapping[str, Any], object_kind: str) -> dict[s
     operations=CANVAS_PIN_OPERATIONS,
     label="Canvas",
     description="Named-service provider for canvas boards, cards, hosted objects, and card search.",
+    intro=CANVAS_NAMESPACE_INTRO,
 )
 class CanvasPinSearchNamedServiceProvider(NamedServiceProvider):
     """Provider facade for canvas search and upsert.
