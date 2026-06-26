@@ -122,16 +122,16 @@ def _telegram_user_admin_storage(entrypoint: Any) -> TelegramUserAdminStorage:
     return TelegramUserAdminStorage(_storage_root_or_error(entrypoint))
 
 
-class _VersatileTaskWidgets:
+class _VersatileAutomationWidgets:
     @staticmethod
     async def payload(entrypoint: Any, **kwargs) -> Dict[str, Any]:
         del entrypoint, kwargs
         return {
             "user_id": "",
-            "tasks": [],
+            "automations": [],
             "count": 0,
             "supported_now": {
-                "tasks": False,
+                "automations": False,
                 "reason": "versatile reference webapp demonstrates memory, conversations, and Telegram admin.",
             },
         }
@@ -173,11 +173,11 @@ class _VersatileSettingsWidgets:
         }
 
 
-class _VersatileTaskOperations:
+class _VersatileAutomationOperations:
     @staticmethod
-    async def list_tasks(*args, **kwargs) -> Dict[str, Any]:
+    async def list_automations(*args, **kwargs) -> Dict[str, Any]:
         del args, kwargs
-        return {"ok": True, "tasks": [], "count": 0}
+        return {"ok": True, "automations": [], "count": 0}
 
 
 telegram_user_admin.configure_telegram_user_admin(
@@ -193,12 +193,12 @@ telegram_widget_auth.configure_telegram_widget_auth(
 telegram_webapp.configure_telegram_webapp(
     memory_widgets_module=_VersatileMemoryWidgets,
     settings_widgets_module=_VersatileSettingsWidgets,
-    task_widgets_module=_VersatileTaskWidgets,
+    automation_widgets_module=_VersatileAutomationWidgets,
     telegram_user_admin_module=telegram_user_admin,
     bundle_id=BUNDLE_ID,
 )
 telegram_widget_ops.configure_telegram_widget_ops(
-    task_operations_module=_VersatileTaskOperations,
+    automation_operations_module=_VersatileAutomationOperations,
     telegram_user_admin_module=telegram_user_admin,
     telegram_widget_auth_module=telegram_widget_auth,
     webapp_module=telegram_webapp,
@@ -1278,16 +1278,17 @@ class VersatileEntrypoint(BaseEntrypointWithEconomicsAndMemory):
             },
             "memory": {
                 "enabled": True,
-                "announce": {
-                    "enabled": True,
-                    "limit": 8,
-                    "scope_filter": "all_user_memories",
-                },
-                "tools": {
-                    "enabled": True,
-                    "allow_write": True,
-                    "default_scope_filter": "current_bundle",
-                },
+                # Announce (the [USER MEMORY HOTSET] injection) is a consumer
+                # concern and is declared via this agent's as_consumer mem
+                # namespace (surfaces.as_consumer.agents.main.tools[mem].
+                # namespaces.mem.announce), supplied by the runtime bundles.yaml.
+                # base_workflow reads it from there first and only falls back to
+                # the legacy memory.announce.* block for un-migrated bundles.
+                # The durable memory write path is the `mem` named service
+                # (named_services.upsert_object), not the legacy in-process
+                # memory tools, so this consumer app carries no `memory.tools`
+                # block. Provider/maintenance config (reconciliation, snapshots)
+                # lives only in the dedicated memory app.
                 "widget": {
                     "enabled": True,
                     "allow_write": True,
