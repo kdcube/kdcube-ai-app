@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2025 Elena Viter
+# Copyright (c) 2026 Elena Viter
 
 """
 KDCube OAuth2 Authorization Server + MCP resource server.
@@ -18,13 +18,14 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
-from .metadata import (
+from kdcube_ai_app.apps.chat.ingress.oauth_mcp.config import oauth_mcp_config
+from kdcube_ai_app.apps.chat.ingress.oauth_mcp.metadata import (
     authorization_server_metadata,
     protected_resource_metadata,
 )
-from .discovery import router as discovery_router
-from .routes import router as oauth_routes_router
-from .mcp_server import router as mcp_router
+from kdcube_ai_app.apps.chat.ingress.oauth_mcp.discovery import router as discovery_router
+from kdcube_ai_app.apps.chat.ingress.oauth_mcp.routes import router as oauth_routes_router
+from kdcube_ai_app.apps.chat.ingress.oauth_mcp.mcp_server import router as mcp_router
 
 __all__ = [
     "mount_oauth_mcp",
@@ -36,10 +37,11 @@ __all__ = [
 def mount_oauth_mcp(app: FastAPI) -> FastAPI:
     """Mount the OAuth2 AS discovery routes and the MCP resource onto ``app``.
 
-    The MCP protocol handler itself is added in a later increment; for now the
-    ``/mcp`` route answers unauthenticated requests with the RFC 9728 challenge
-    so the discovery handshake is wired end to end.
+    This is an opt-in ingress feature controlled by
+    ``auth.oauth_mcp.enabled`` in ``assembly.yaml``.
     """
+    if not oauth_mcp_config(app).enabled:
+        return app
     app.include_router(discovery_router, tags=["oauth-mcp discovery"])
     app.include_router(oauth_routes_router, tags=["oauth-mcp authorize"])
     app.include_router(mcp_router, tags=["oauth-mcp server"])

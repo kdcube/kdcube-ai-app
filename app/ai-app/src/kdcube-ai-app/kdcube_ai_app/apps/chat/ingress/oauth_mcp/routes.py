@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2025 Elena Viter
+# Copyright (c) 2026 Elena Viter
 
 """
 /oauth/authorize + /oauth/authorize/consent routes.
@@ -16,18 +16,26 @@ from typing import Optional, Tuple
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
-from .clients import client_from_record, dcr_redirect_allowed, get_client
-from .consent import render_consent_html, tools_for_scopes
-from .deps import (
+from kdcube_ai_app.apps.chat.ingress.oauth_mcp.clients import (
+    client_from_record,
+    dcr_redirect_allowed,
+    get_client,
+)
+from kdcube_ai_app.apps.chat.ingress.oauth_mcp.consent import render_consent_html, tools_for_scopes
+from kdcube_ai_app.apps.chat.ingress.oauth_mcp.deps import (
     extract_bearer,
     get_access_token_minter,
     get_authenticate,
     get_grant_store,
     is_admin,
 )
-from .discovery import resolve_issuer
-from .flow import AuthorizeError, build_redirect, parse_authorize_request
-from .pkce import verify_s256
+from kdcube_ai_app.apps.chat.ingress.oauth_mcp.discovery import resolve_issuer
+from kdcube_ai_app.apps.chat.ingress.oauth_mcp.flow import (
+    AuthorizeError,
+    build_redirect,
+    parse_authorize_request,
+)
+from kdcube_ai_app.apps.chat.ingress.oauth_mcp.pkce import verify_s256
 
 router = APIRouter()
 
@@ -92,7 +100,7 @@ async def register_client(request: Request) -> Response:
     # DCR is open (pre-auth), so restrict registrable redirects to the trusted set
     # (claude.ai callback + loopback) — an attacker cannot register a client that
     # delivers a stolen code to their own server.
-    if not all(dcr_redirect_allowed(u) for u in redirect_uris):
+    if not all(dcr_redirect_allowed(u, request) for u in redirect_uris):
         return JSONResponse(
             status_code=400,
             content={
@@ -122,7 +130,11 @@ async def authorize(request: Request) -> Response:
     params = dict(request.query_params)
     resolver = await _dyn_client_resolver(request, params.get("client_id"))
     try:
-        req = parse_authorize_request(params, client_resolver=resolver)
+        req = parse_authorize_request(
+            params,
+            client_resolver=resolver,
+            public_client_resolver=lambda cid: get_client(cid, request),
+        )
     except AuthorizeError as err:
         return _error_response(err, issuer)
 
@@ -134,7 +146,7 @@ async def authorize(request: Request) -> Response:
     csrf = await get_grant_store(request).create_csrf_token(user["sub"])
     # trusted = a statically pre-registered client (not a dynamically-registered one),
     # so the consent screen can flag unknown clients for anti-phishing.
-    trusted = get_client(req.client_id) is not None
+    trusted = get_client(req.client_id, request) is not None
     return HTMLResponse(render_consent_html(req, issuer, csrf_token=csrf, trusted=trusted))
 
 
@@ -145,7 +157,11 @@ async def authorize_consent(request: Request) -> Response:
     params = {k: form.get(k) for k in _AUTHORIZE_FORM_KEYS}
     resolver = await _dyn_client_resolver(request, params.get("client_id"))
     try:
-        req = parse_authorize_request(params, client_resolver=resolver)
+        req = parse_authorize_request(
+            params,
+            client_resolver=resolver,
+            public_client_resolver=lambda cid: get_client(cid, request),
+        )
     except AuthorizeError as err:
         return _error_response(err, issuer)
 

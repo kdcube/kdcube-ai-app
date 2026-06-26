@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2025 Elena Viter
+# Copyright (c) 2026 Elena Viter
 
 """
 Tests for the OAuth2 Authorization Server + MCP resource discovery metadata.
@@ -19,6 +19,7 @@ from kdcube_ai_app.apps.chat.ingress.oauth_mcp import (
     authorization_server_metadata,
     protected_resource_metadata,
 )
+from kdcube_ai_app.apps.chat.ingress.oauth_mcp.tests.helpers import enable_oauth_mcp
 
 ISSUER = "https://yey.boats"
 
@@ -56,9 +57,9 @@ def test_protected_resource_metadata_points_at_as():
 # ----------------------------- served endpoints -----------------------------
 
 @pytest.fixture
-def client(monkeypatch):
-    monkeypatch.setenv("KDCUBE_OAUTH_ISSUER", ISSUER)
+def client():
     app = FastAPI()
+    enable_oauth_mcp(app, issuer=ISSUER)
     mount_oauth_mcp(app)
     return TestClient(app)
 

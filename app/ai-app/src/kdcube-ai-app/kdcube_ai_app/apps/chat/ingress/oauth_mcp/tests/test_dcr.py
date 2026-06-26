@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2025 Elena Viter
+# Copyright (c) 2026 Elena Viter
 
 """
 Tests for Dynamic Client Registration (RFC 7591). When the Claude.ai "Add custom
@@ -16,6 +16,7 @@ from kdcube_ai_app.apps.chat.ingress.oauth_mcp import mount_oauth_mcp, authoriza
 from kdcube_ai_app.apps.chat.ingress.oauth_mcp.store import GrantStore
 from kdcube_ai_app.apps.chat.ingress.oauth_mcp.pkce import make_s256_challenge
 from kdcube_ai_app.apps.chat.ingress.oauth_mcp.tests.test_clients_and_store import FakeRedis
+from kdcube_ai_app.apps.chat.ingress.oauth_mcp.tests.helpers import enable_oauth_mcp
 
 ISSUER = "https://yey.boats"
 CB = "https://claude.ai/api/mcp/auth_callback"
@@ -28,9 +29,9 @@ async def _authenticate(token):
 
 
 @pytest.fixture
-def client(monkeypatch):
-    monkeypatch.setenv("KDCUBE_OAUTH_ISSUER", ISSUER)
+def client():
     app = FastAPI()
+    enable_oauth_mcp(app, issuer=ISSUER)
     mount_oauth_mcp(app)
     app.state.oauth_authenticate = _authenticate
     app.state.oauth_grant_store = GrantStore(FakeRedis(), tenant="home", project="demo")

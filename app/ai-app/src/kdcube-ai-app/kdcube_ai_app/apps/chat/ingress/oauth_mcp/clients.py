@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2025 Elena Viter
+# Copyright (c) 2026 Elena Viter
 
 """
 Public OAuth client registry.
@@ -12,10 +12,16 @@ redirects must match exactly.
 """
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
+from typing import Any
 from typing import Optional, Tuple
 from urllib.parse import urlsplit
+
+from kdcube_ai_app.apps.chat.ingress.oauth_mcp.config import (
+    DEFAULT_CLAUDE_REDIRECT_URIS,
+    DEFAULT_DCR_REDIRECT_URIS,
+    oauth_mcp_config,
+)
 
 _LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
 
@@ -24,14 +30,6 @@ _LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
 # register a client pointing at their own server. Restricting it to claude.ai's
 # MCP callback + loopback (any port, matched by redirect_uri_allowed) means a
 # stolen auth code can only reach claude.ai or the victim's own machine.
-# Override with KDCUBE_OAUTH_DCR_REDIRECT_URIS (comma-separated).
-_DEFAULT_DCR_REDIRECTS = (
-    "https://claude.ai/api/mcp/auth_callback",
-    "http://localhost/callback",
-    "http://127.0.0.1/callback",
-)
-
-
 @dataclass(frozen=True)
 class PublicClient:
     client_id: str
@@ -50,30 +48,35 @@ def client_from_record(record: dict) -> "PublicClient":
 
 CLAUDE_CLIENT = PublicClient(
     client_id="claude",
-    redirect_uris=(
-        "http://localhost/callback",
-        "http://127.0.0.1/callback",
-        "https://claude.ai/api/mcp/auth_callback",
-    ),
+    redirect_uris=DEFAULT_CLAUDE_REDIRECT_URIS,
 )
 
 _REGISTRY = {CLAUDE_CLIENT.client_id: CLAUDE_CLIENT}
 
 
-def get_client(client_id: str) -> Optional[PublicClient]:
-    return _REGISTRY.get(client_id)
+def get_client(client_id: str, source: Any | None = None) -> Optional[PublicClient]:
+    if source is None:
+        return _REGISTRY.get(client_id)
+    cfg = oauth_mcp_config(source)
+    for client in cfg.public_clients:
+        if client.client_id == client_id:
+            return PublicClient(
+                client_id=client.client_id,
+                redirect_uris=client.redirect_uris,
+                token_endpoint_auth_method=client.token_endpoint_auth_method,
+            )
+    return None
 
 
-def _dcr_allowed_redirects() -> Tuple[str, ...]:
-    env = os.environ.get("KDCUBE_OAUTH_DCR_REDIRECT_URIS")
-    if env:
-        return tuple(u.strip() for u in env.split(",") if u.strip())
-    return _DEFAULT_DCR_REDIRECTS
+def _dcr_allowed_redirects(source: Any | None = None) -> Tuple[str, ...]:
+    if source is None:
+        return DEFAULT_DCR_REDIRECT_URIS
+    return oauth_mcp_config(source).dynamic_client_registration.allowed_redirect_uris
 
 
-def dcr_redirect_allowed(uri: str) -> bool:
+def dcr_redirect_allowed(uri: str, source: Any | None = None) -> bool:
     """True iff ``uri`` is a permitted redirect for dynamic client registration."""
-    allowlist = PublicClient(client_id="__dcr__", redirect_uris=_dcr_allowed_redirects())
+    allowlist = PublicClient(client_id="__dcr__", redirect_uris=_dcr_allowed_redirects(source))
     return redirect_uri_allowed(allowlist, uri)
 
 

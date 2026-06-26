@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2025 Elena Viter
+# Copyright (c) 2026 Elena Viter
 
 """
 conversations:read -> feedback-reader grant.
@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import Iterable, List, Optional
 
-from .deps import ADMIN_ROLES, oauth_tenant_project
+from kdcube_ai_app.apps.chat.ingress.oauth_mcp.deps import ADMIN_ROLES, oauth_tenant_project
 
 FEEDBACK_READER_ROLE = "kdcube:role:feedback-reader"
 

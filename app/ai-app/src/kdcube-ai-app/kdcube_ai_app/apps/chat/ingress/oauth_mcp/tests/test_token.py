@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2025 Elena Viter
+# Copyright (c) 2026 Elena Viter
 
 """
 Tests for POST /oauth/token: authorization_code exchange (with PKCE) and
@@ -16,6 +16,7 @@ from kdcube_ai_app.apps.chat.ingress.oauth_mcp import mount_oauth_mcp
 from kdcube_ai_app.apps.chat.ingress.oauth_mcp.store import GrantStore
 from kdcube_ai_app.apps.chat.ingress.oauth_mcp.pkce import make_s256_challenge
 from kdcube_ai_app.apps.chat.ingress.oauth_mcp.tests.test_clients_and_store import FakeRedis
+from kdcube_ai_app.apps.chat.ingress.oauth_mcp.tests.helpers import enable_oauth_mcp
 
 VERIFIER = "code-verifier-" + "z" * 60
 CHALLENGE = make_s256_challenge(VERIFIER)
@@ -28,6 +29,7 @@ async def _fake_minter(sub, scopes):
 @pytest.fixture
 def ctx():
     app = FastAPI()
+    enable_oauth_mcp(app)
     mount_oauth_mcp(app)
     store = GrantStore(FakeRedis(), tenant="home", project="demo")
     app.state.oauth_grant_store = store

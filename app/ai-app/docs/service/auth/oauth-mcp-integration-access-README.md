@@ -164,30 +164,29 @@ matching selected-tool grant must fail closed for non-admin integration calls.
 
 ## Descriptor Contract
 
-This is a platform ingress feature, not an app feature. Its non-secret
-configuration belongs in `assembly.yaml` under
-`platform.services.ingress.oauth_mcp`.
+This is a platform auth/MCP integration access feature served by chat-ingress.
+It is an auth capability, not an ingress-service descriptor setting and not an
+app configuration field. Its non-secret configuration belongs in
+`assembly.yaml` under `auth.oauth_mcp`.
 
 Reference shape:
 
 ```yaml
-platform:
-  services:
-    ingress:
-      oauth_mcp:
-        enabled: false
-        issuer: ""
-        public_clients:
-          - client_id: "claude"
-            redirect_uris:
-              - "https://claude.ai/api/mcp/auth_callback"
-              - "http://localhost/callback"
-              - "http://127.0.0.1/callback"
-        dynamic_client_registration:
-          allowed_redirect_uris:
-            - "https://claude.ai/api/mcp/auth_callback"
-            - "http://localhost/callback"
-            - "http://127.0.0.1/callback"
+auth:
+  oauth_mcp:
+    enabled: false
+    issuer: ""
+    public_clients:
+      - client_id: "claude"
+        redirect_uris:
+          - "https://claude.ai/api/mcp/auth_callback"
+          - "http://localhost/callback"
+          - "http://127.0.0.1/callback"
+    dynamic_client_registration:
+      allowed_redirect_uris:
+        - "https://claude.ai/api/mcp/auth_callback"
+        - "http://localhost/callback"
+        - "http://127.0.0.1/callback"
 ```
 
 Rules:
@@ -266,4 +265,4 @@ Use focused tests and one live connector test.
 9. `/mcp tools/list` and `/mcp tools/call` return MCP-shaped responses, not
    unhandled HTTP 500s for authorization failures.
 10. The feature is disabled when
-    `platform.services.ingress.oauth_mcp.enabled: false`.
+    `auth.oauth_mcp.enabled: false`.

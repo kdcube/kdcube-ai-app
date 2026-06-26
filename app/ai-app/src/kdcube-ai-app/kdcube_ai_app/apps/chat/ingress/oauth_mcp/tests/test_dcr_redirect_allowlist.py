@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2025 Elena Viter
+# Copyright (c) 2026 Elena Viter
 
 """
 DCR redirect-URI allowlist.
@@ -21,6 +21,7 @@ from kdcube_ai_app.apps.chat.ingress.oauth_mcp import mount_oauth_mcp
 from kdcube_ai_app.apps.chat.ingress.oauth_mcp.clients import dcr_redirect_allowed
 from kdcube_ai_app.apps.chat.ingress.oauth_mcp.store import GrantStore
 from kdcube_ai_app.apps.chat.ingress.oauth_mcp.tests.test_clients_and_store import FakeRedis
+from kdcube_ai_app.apps.chat.ingress.oauth_mcp.tests.helpers import enable_oauth_mcp
 
 CLAUDE_CB = "https://claude.ai/api/mcp/auth_callback"
 
@@ -46,6 +47,7 @@ def test_rejects_foreign_host():
 @pytest.fixture
 def client():
     app = FastAPI()
+    enable_oauth_mcp(app)
     mount_oauth_mcp(app)
     app.state.oauth_grant_store = GrantStore(FakeRedis(), tenant="home", project="demo")
     return TestClient(app)

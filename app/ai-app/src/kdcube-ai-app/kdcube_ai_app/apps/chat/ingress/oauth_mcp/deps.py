@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2025 Elena Viter
+# Copyright (c) 2026 Elena Viter
 
 """
 Per-request dependency resolution for the OAuth2 AS / MCP routes.
@@ -12,14 +12,15 @@ builds the real platform-backed implementation lazily:
 - the :class:`GrantStore` on the platform Redis client.
 
 The OAuth tenant/project (which session namespace the consenting admin belongs
-to) and the auth cookie name are configurable via environment.
+to) and the auth cookie name are resolved from platform descriptors.
 """
 from __future__ import annotations
 
-import os
 from typing import Any, Awaitable, Callable, Optional
 
 from fastapi import Request
+
+from kdcube_ai_app.apps.chat.ingress.oauth_mcp.config import oauth_mcp_config
 
 AuthenticateFn = Callable[[str], Awaitable[Optional[dict]]]
 
@@ -27,11 +28,9 @@ AuthenticateFn = Callable[[str], Awaitable[Optional[dict]]]
 ADMIN_ROLES = {"kdcube:role:super-admin"}
 
 
-def oauth_tenant_project() -> tuple[str, str]:
-    return (
-        os.environ.get("KDCUBE_OAUTH_TENANT", "home"),
-        os.environ.get("KDCUBE_OAUTH_PROJECT", "demo"),
-    )
+def oauth_tenant_project(source: Any | None = None) -> tuple[str, str]:
+    cfg = oauth_mcp_config(source)
+    return cfg.tenant, cfg.project
 
 
 def get_authenticate(request: Request) -> AuthenticateFn:
@@ -41,7 +40,7 @@ def get_authenticate(request: Request) -> AuthenticateFn:
 
     from kdcube_ai_app.auth.bundle import BundleSessionAuthManager, get_bundle_session_authority
 
-    tenant, project = oauth_tenant_project()
+    tenant, project = oauth_tenant_project(request)
     authority = get_bundle_session_authority(tenant=tenant, project=project)
     manager = BundleSessionAuthManager(authority=authority)
 
@@ -63,9 +62,9 @@ def get_grant_store(request: Request) -> Any:
     from kdcube_ai_app.apps.chat.sdk.config import get_settings
     from kdcube_ai_app.infra.redis.client import get_async_redis_client
 
-    from .store import GrantStore
+    from kdcube_ai_app.apps.chat.ingress.oauth_mcp.store import GrantStore
 
-    tenant, project = oauth_tenant_project()
+    tenant, project = oauth_tenant_project(request)
     redis = get_async_redis_client(get_settings().REDIS_URL)
     return GrantStore(redis, tenant, project)
 
@@ -80,7 +79,7 @@ def get_access_token_minter(request: Request) -> Callable[[str, list], Awaitable
     if fn is not None:
         return fn
 
-    from .grants import mint_feedback_reader_access_token
+    from kdcube_ai_app.apps.chat.ingress.oauth_mcp.grants import mint_feedback_reader_access_token
 
     return mint_feedback_reader_access_token
 
@@ -90,7 +89,7 @@ def extract_bearer(request: Request) -> Optional[str]:
     auth = request.headers.get("authorization") or ""
     if auth.lower().startswith("bearer "):
         return auth[7:].strip()
-    cookie_name = os.environ.get("KDCUBE_AUTH_COOKIE", "__Secure-LATC")
+    cookie_name = oauth_mcp_config(request).auth_cookie_name
     return request.cookies.get(cookie_name)
 
 

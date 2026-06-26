@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2025 Elena Viter
+# Copyright (c) 2026 Elena Viter
 
 """
 Tests for /oauth/authorize: request validation, the granular consent screen,
@@ -26,6 +26,7 @@ from kdcube_ai_app.apps.chat.ingress.oauth_mcp.consent import render_consent_htm
 from kdcube_ai_app.apps.chat.ingress.oauth_mcp.store import GrantStore
 from kdcube_ai_app.apps.chat.ingress.oauth_mcp.pkce import make_s256_challenge
 from kdcube_ai_app.apps.chat.ingress.oauth_mcp.tests.test_clients_and_store import FakeRedis
+from kdcube_ai_app.apps.chat.ingress.oauth_mcp.tests.helpers import enable_oauth_mcp
 
 ISSUER = "https://yey.boats"
 CHALLENGE = make_s256_challenge("verifier-" + "x" * 50)
@@ -131,9 +132,9 @@ async def _fake_authenticate(token):
 
 
 @pytest.fixture
-def client(monkeypatch):
-    monkeypatch.setenv("KDCUBE_OAUTH_ISSUER", ISSUER)
+def client():
     app = FastAPI()
+    enable_oauth_mcp(app, issuer=ISSUER)
     mount_oauth_mcp(app)
     app.state.oauth_authenticate = _fake_authenticate
     app.state.oauth_grant_store = GrantStore(FakeRedis(), tenant="home", project="demo")

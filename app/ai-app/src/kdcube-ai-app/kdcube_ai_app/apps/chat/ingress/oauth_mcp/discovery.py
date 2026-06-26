@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2025 Elena Viter
+# Copyright (c) 2026 Elena Viter
 
 """
 Discovery + unauthenticated-handshake routes for the OAuth2 AS / MCP resource.
@@ -10,12 +10,11 @@ documents, and answers an unauthenticated MCP request with a ``401`` carrying a
 """
 from __future__ import annotations
 
-import os
-
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from .metadata import (
+from kdcube_ai_app.apps.chat.ingress.oauth_mcp.config import oauth_mcp_config
+from kdcube_ai_app.apps.chat.ingress.oauth_mcp.metadata import (
     WELL_KNOWN_AS_PATH,
     WELL_KNOWN_PR_PATH,
     authorization_server_metadata,
@@ -28,11 +27,11 @@ router = APIRouter()
 def resolve_issuer(request: Request) -> str:
     """Public origin of this AS.
 
-    Prefers the explicit ``KDCUBE_OAUTH_ISSUER`` setting (the deployment knows
-    its CloudFront-fronted public host); falls back to the request's own base
-    URL so local/dev runs work without configuration.
+    Prefers ``auth.oauth_mcp.issuer`` from ``assembly.yaml``
+    (the deployment knows its CloudFront-fronted public host); falls back to the
+    request's own base URL so local/dev runs work without configuration.
     """
-    configured = os.environ.get("KDCUBE_OAUTH_ISSUER")
+    configured = oauth_mcp_config(request).issuer
     if configured:
         return configured.rstrip("/")
     return str(request.base_url).rstrip("/")

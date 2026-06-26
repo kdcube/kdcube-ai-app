@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2025 Elena Viter
+# Copyright (c) 2026 Elena Viter
 
 """
 Pure /oauth/authorize request validation and redirect construction.
@@ -15,8 +15,8 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-from .clients import get_client, redirect_uri_allowed
-from .metadata import CONVERSATIONS_READ_SCOPE
+from kdcube_ai_app.apps.chat.ingress.oauth_mcp.clients import get_client, redirect_uri_allowed
+from kdcube_ai_app.apps.chat.ingress.oauth_mcp.metadata import CONVERSATIONS_READ_SCOPE
 
 SUPPORTED_SCOPES = {CONVERSATIONS_READ_SCOPE}
 
@@ -50,12 +50,18 @@ class AuthorizeError(Exception):
         self.redirect_uri = redirect_uri
 
 
-def parse_authorize_request(params: Dict[str, Any], *, client_resolver=None) -> AuthorizeRequest:
+def parse_authorize_request(
+    params: Dict[str, Any],
+    *,
+    client_resolver=None,
+    public_client_resolver=None,
+) -> AuthorizeRequest:
     client_id = (params.get("client_id") or "").strip()
     redirect_uri = (params.get("redirect_uri") or "").strip()
 
     # Static pre-registered client first, then any dynamically-registered (DCR) one.
-    client = get_client(client_id)
+    resolver = public_client_resolver or get_client
+    client = resolver(client_id)
     if client is None and client_resolver is not None:
         client = client_resolver(client_id)
     if client is None:

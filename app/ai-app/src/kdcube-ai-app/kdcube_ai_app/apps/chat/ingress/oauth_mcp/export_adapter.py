@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2025 Elena Viter
+# Copyright (c) 2026 Elena Viter
 
 """
 Production data adapter for the conversations_export MCP tool.
@@ -15,7 +15,7 @@ from __future__ import annotations
 import datetime as _dt
 from typing import Any, Dict, List, Optional
 
-from .export_tool import export_conversations
+from kdcube_ai_app.apps.chat.ingress.oauth_mcp.export_tool import export_conversations
 
 
 def _payload(data: Any) -> Dict[str, Any]:

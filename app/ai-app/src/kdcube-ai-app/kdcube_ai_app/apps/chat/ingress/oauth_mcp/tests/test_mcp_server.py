@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2025 Elena Viter
+# Copyright (c) 2026 Elena Viter
 
 """
 Tests for the MCP JSON-RPC endpoint at /mcp: the bearer -> feedback-reader gate,
@@ -17,6 +17,7 @@ from fastapi.testclient import TestClient
 from kdcube_ai_app.apps.chat.ingress.oauth_mcp import mount_oauth_mcp
 from kdcube_ai_app.apps.chat.ingress.oauth_mcp.store import GrantStore
 from kdcube_ai_app.apps.chat.ingress.oauth_mcp.tests.test_clients_and_store import FakeRedis
+from kdcube_ai_app.apps.chat.ingress.oauth_mcp.tests.helpers import enable_oauth_mcp
 
 ISSUER = "https://yey.boats"
 
@@ -43,9 +44,9 @@ def _seed_grant(store, token, tools):
 
 
 @pytest.fixture
-def client(monkeypatch):
-    monkeypatch.setenv("KDCUBE_OAUTH_ISSUER", ISSUER)
+def client():
     app = FastAPI()
+    enable_oauth_mcp(app, issuer=ISSUER)
     mount_oauth_mcp(app)
     app.state.oauth_authenticate = _authenticate
     app.state.mcp_tools = {"conversations_export": _export_runner}

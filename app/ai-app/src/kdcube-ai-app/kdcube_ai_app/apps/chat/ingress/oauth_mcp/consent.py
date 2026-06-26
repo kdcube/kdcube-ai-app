@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2025 Elena Viter
+# Copyright (c) 2026 Elena Viter
 
 """
 The /oauth/authorize consent screen.
@@ -14,7 +14,7 @@ from __future__ import annotations
 import html as _html
 from typing import List, Tuple
 
-from .flow import AuthorizeRequest
+from kdcube_ai_app.apps.chat.ingress.oauth_mcp.flow import AuthorizeRequest
 
 # scope -> [(tool_name, human description)]. Extensible as more MCP tools land.
 SCOPE_TOOLS = {

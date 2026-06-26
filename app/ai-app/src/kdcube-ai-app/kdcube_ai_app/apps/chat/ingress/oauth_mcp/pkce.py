@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2025 Elena Viter
+# Copyright (c) 2026 Elena Viter
 
 """PKCE (RFC 7636) S256 challenge helpers."""
 from __future__ import annotations

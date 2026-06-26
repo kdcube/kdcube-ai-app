@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2025 Elena Viter
+# Copyright (c) 2026 Elena Viter
 
 """
 Minimal MCP server at /mcp (JSON-RPC 2.0 over HTTP POST).
@@ -20,9 +20,14 @@ from typing import Any, Awaitable, Callable, Dict, Optional
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, Response
 
-from .deps import ADMIN_ROLES, extract_bearer, get_authenticate, get_grant_store
-from .discovery import resolve_issuer, unauthorized_challenge
-from .grants import FEEDBACK_READER_ROLE, can_call_tool
+from kdcube_ai_app.apps.chat.ingress.oauth_mcp.deps import (
+    ADMIN_ROLES,
+    extract_bearer,
+    get_authenticate,
+    get_grant_store,
+)
+from kdcube_ai_app.apps.chat.ingress.oauth_mcp.discovery import resolve_issuer, unauthorized_challenge
+from kdcube_ai_app.apps.chat.ingress.oauth_mcp.grants import FEEDBACK_READER_ROLE, can_call_tool
 
 router = APIRouter()
 
@@ -61,7 +66,7 @@ def get_mcp_tools(request: Request) -> Dict[str, ToolRunner]:
     if tools is not None:
         return tools
     # Production: build the conversations_browser-backed tool set.
-    from .export_adapter import build_default_tools
+    from kdcube_ai_app.apps.chat.ingress.oauth_mcp.export_adapter import build_default_tools
 
     return build_default_tools(request)
 
