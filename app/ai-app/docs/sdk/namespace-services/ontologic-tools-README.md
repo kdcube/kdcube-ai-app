@@ -188,6 +188,33 @@ Collection fields declare an `update_strategy` that tells the agent what
 Read the strategy before an update: it is the difference between adding to a
 field and silently overwriting it.
 
+#### `dedup_key` (per-parent supersede)
+
+An `append` collection field may also declare a `dedup_key`. Adding an item
+whose key matches an existing one **within the same parent object**
+**replaces/supersedes** it. So "update an item" is just "add it again with the
+same key" — there is no add-then-delete dance. Example: a task's `attachments`
+keyed by `filename` — re-host the same `filename` and the new version
+supersedes the old one on that issue.
+
+#### Removing a collection item
+
+Removal depends on whether the items are refs or plain values:
+
+- **Namespace refs** (e.g. `attachments`): `delete_object(<item ref>)`
+  **detaches** the item from its parent object. A shared underlying object is
+  preserved (only the link to this parent is removed); you do **not** re-send
+  the list.
+- **Plain values** (e.g. labels/`tags`): the field is `replace` — re-send the
+  list without that value.
+
+These add / replace / `dedup_key` / removal defaults are also injected into the
+named-services ReAct agent instruction, so the agent applies them without
+reading each schema in detail.
+
+`update_strategy`, `dedup_key`, and these removal rules are **shipped** on the
+task realm. Other surface improvements below remain proposed.
+
 ## Improvements (PROPOSED — not shipped)
 
 These tighten the surface without adding domain tools. They are conventions and
