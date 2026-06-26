@@ -190,28 +190,30 @@ host -> memory iframe
 ```
 
 Browser/scene hosts may supply `accessToken`, `idToken`, `idTokenHeader`, or rely
-on cookies. A Telegram Mini App host supplies the same base runtime fields and,
-when available, one extra field in the same `config` object:
+on cookies. Any host with additional request auth material supplies it as an
+opaque `authContext.headers` map in the same `config` object:
 
 ```json
 {
-  "telegramInitData": "<Telegram.WebApp.initData>",
-  "authProvider": "telegram",
-  "authConnectionId": "telegram.default"
+  "authContext": {
+    "headers": {
+      "X-KDCube-Auth-Connection-ID": "telegram.default"
+    }
+  }
 }
 ```
 
-When `telegramInitData` is present, the memory widget still calls the standard
-`/operations/memories_widget_*` routes and attaches the proof as
-`X-Telegram-Init-Data`. If `authConnectionId` is present, it also attaches
-`X-KDCube-Auth-Connection-ID` and `X-KDCube-Auth-Provider`. It does not switch
-itself to a Telegram-specific `/public/telegram_*` API. The widget does not
-read `window.parent.Telegram`, validate Telegram, call Connection Hub directly,
-or use any `kdcube.auth.*` message family. The gateway and Connection Hub
-validate the proof centrally and project linked authority into the request
-session before the operation sees the request.
+The memory widget does not interpret those headers. It still calls the standard
+`/operations/memories_widget_*` routes, always uses `credentials: 'include'` for
+the cookie/session path, and blindly promotes `authContext.headers` on each
+request. It does not switch itself to a provider-specific public API. It does
+not read `window.parent.Telegram`, validate Telegram, call Connection Hub
+directly, or use any `kdcube.auth.*` message family. The gateway and Connection
+Hub validate provider proofs centrally and project linked authority into the
+request session before the operation sees the request.
 
-If the host session or proof changes, the host announces `kdcube-auth-changed`.
+If the host session or auth context changes, the host announces
+`kdcube-auth-changed`.
 The widget re-sends `CONFIG_REQUEST`, applies the latest `CONFIG_RESPONSE`, and
 reloads memory data if the effective auth material changed.
 

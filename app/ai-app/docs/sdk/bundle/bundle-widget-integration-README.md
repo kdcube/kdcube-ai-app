@@ -573,10 +573,9 @@ Telegram-hosted iframe runtime:
 - the Telegram host reads `window.Telegram.WebApp.initData`
 - the hosted widget still sends `CONFIG_REQUEST`
 - the host answers the same `CONFIG_RESPONSE` / `CONN_RESPONSE` with normal
-  runtime config plus `telegramInitData` and `authConnectionId`
-- the widget calls `/operations/{alias}` and sends `telegramInitData` as
-  `X-Telegram-Init-Data`, plus `authConnectionId` as
-  `X-KDCube-Auth-Connection-ID`
+  runtime config plus `authContext.headers`
+- the widget calls `/operations/{alias}` and blindly promotes
+  `authContext.headers` on backend requests
 - `kdcube-auth-changed` is the refresh signal; the widget re-sends
   `CONFIG_REQUEST`
 
@@ -584,8 +583,7 @@ This route lets gateway auth invoke the Connection Hub request-auth bridge:
 
 ```text
 widget /operations/{alias}
-  + X-Telegram-Init-Data
-  + X-KDCube-Auth-Connection-ID
+  + authContext.headers
   -> gateway request-auth selector
   -> Connection Hub provider module
   -> linked platform authority
@@ -919,6 +917,7 @@ The widget should request these fields from the runtime display environment:
 - `defaultTenant`
 - `defaultProject`
 - `defaultAppBundleId`
+- `authContext`
 
 ### Tolerated Alternate Keys
 
@@ -937,6 +936,7 @@ back left-to-right within each group:
 | Access token | `accessToken` | (no alternate; preserve explicit `null`) |
 | ID token | `idToken` | (no alternate; preserve explicit `null`) |
 | App bundle id | `defaultAppBundleId` | (no alternate in the runtime-config payload; URL params accept `bundle_id` or `bundleId`) |
+| Host auth context | `authContext.headers` | provider-specific headers are opaque to the widget |
 
 Reference widgets should read:
 

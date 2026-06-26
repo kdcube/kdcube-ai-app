@@ -1,7 +1,7 @@
 ---
 id: docs/sdk/solutions/scene/scene-auth-README.md
 title: "Scene Auth State Contract"
-summary: "How a scene host announces authentication state to surfaces (kdcube-auth-changed) and hands them runtime config (CONFIG_REQUEST/CONFIG_RESPONSE), including how a host supplies an auth proof such as telegramInitData as a normal config field."
+summary: "How a scene host announces authentication state to surfaces (kdcube-auth-changed) and hands them runtime config (CONFIG_REQUEST/CONFIG_RESPONSE), including opaque authContext header promotion for hosted widgets."
 status: design
 tags: ["sdk", "solutions", "scene", "auth", "session", "components", "widgets", "event-bus"]
 updated_at: 2026-06-26
@@ -20,8 +20,9 @@ keywords:
     "CONFIG_RESPONSE",
     "CONN_RESPONSE",
     "config handshake",
-    "telegramInitData",
-    "X-Telegram-Init-Data"
+    "authContext",
+    "host auth context",
+    "auth header promotion"
   ]
 see_also:
   - docs/sdk/solutions/scene/generic-scene-contract-README.md
@@ -113,7 +114,7 @@ and sends no auth headers of its own.
 4. Make the derivation idempotent — the host may announce the same state more
    than once (for example `user-loaded` then `login`).
 
-## Host → iframe config handshake (carrying the proof)
+## Host → iframe config handshake (carrying auth context)
 
 The announcement above tells a surface *that* auth changed. A separate, equally
 standard channel hands a surface the runtime config it needs to talk to the
@@ -125,7 +126,7 @@ An iframe surface requests its config from the host on mount:
 ```js
 window.parent.postMessage({
   type: 'CONFIG_REQUEST',
-  data: { identity: 'MY_WIDGET', requestedFields: ['baseUrl', 'accessToken', 'idToken', 'idTokenHeader', 'defaultTenant', 'defaultProject', 'defaultAppBundleId'] },
+  data: { identity: 'MY_WIDGET', requestedFields: ['baseUrl', 'accessToken', 'idToken', 'idTokenHeader', 'defaultTenant', 'defaultProject', 'defaultAppBundleId', 'authContext'] },
 }, '*');
 ```
 
@@ -134,19 +135,47 @@ upstream `CONN_RESPONSE` instead — surfaces accept either) whose `config` the
 surface applies, filtered by `identity`:
 
 ```js
-{ type: 'CONFIG_RESPONSE', identity: 'MY_WIDGET', config: { baseUrl, accessToken, idToken, idTokenHeader, defaultTenant, defaultProject, defaultAppBundleId } }
+{
+  type: 'CONFIG_RESPONSE',
+  identity: 'MY_WIDGET',
+  config: {
+    baseUrl,
+    accessToken,
+    idToken,
+    idTokenHeader,
+    defaultTenant,
+    defaultProject,
+    defaultAppBundleId,
+    authContext: { headers: { /* host-owned request headers */ } }
+  }
+}
 ```
 
-The host supplies whatever proof it has as **normal config fields**: a
-cookie/Bearer host fills `accessToken` / `idToken`; the surface then attaches
-those as `Authorization` / its ID-token header on each request (and keeps
-`credentials: 'include'` for the cookie path). Per request, the surface picks
-the proof by what the config actually provided.
+The host supplies whatever proof it owns as runtime config. Browser hosts may
+fill `accessToken` / `idToken`; the surface attaches those as `Authorization` /
+its ID-token header. Hosts with channel-specific auth material put the concrete
+request headers into `authContext.headers`.
 
-### Telegram proof and connection id as config-field extensions
+The surface does not interpret `authContext.headers`. It only promotes them on
+its KDCube API calls:
 
-A host that authenticates via a Telegram proof adds one more field to the
-**same** `config` payload:
+```ts
+const headers = new Headers(baseHeaders);
+Object.entries(config.authContext?.headers || {}).forEach(([name, value]) => {
+  if (value) headers.set(name, String(value));
+});
+fetch(url, { credentials: 'include', headers });
+```
+
+`credentials: 'include'` is not a credential value. It is the browser fetch
+policy that sends the normal KDCube cookie/session path when cookies are
+available. Auth material that is not cookie-based travels in
+`authContext.headers`.
+
+### Telegram proof and connection id as authContext headers
+
+A Telegram Mini App host constructs the Telegram-specific headers, then sends
+them as opaque `authContext.headers` in the **same** `config` payload:
 
 ```js
 {
@@ -154,34 +183,34 @@ A host that authenticates via a Telegram proof adds one more field to the
   identity: 'MY_WIDGET',
   config: {
     /* …baseUrl/tenant/project… */
-    telegramInitData: '<Telegram.WebApp.initData>',
-    authProvider: 'telegram',
-    authConnectionId: 'telegram.default'
+    authContext: {
+      headers: {
+        'X-Telegram-Init-Data': '<Telegram.WebApp.initData>',
+        'X-KDCube-Auth-Provider': 'telegram',
+        'X-KDCube-Auth-Connection-ID': 'telegram.default'
+      }
+    }
   }
 }
 ```
 
-It is just another config field, supplied the same way a Bearer host supplies
-`accessToken`. When present, the surface attaches it to every backend request as
-the `X-Telegram-Init-Data` header. The `authConnectionId` field is a non-secret
-selector handle, not a bot id; the surface attaches it as
-`X-KDCube-Auth-Connection-ID`, usually with
-`X-KDCube-Auth-Provider: telegram`. The host (the Telegram Mini App) reads
-`window.Telegram.WebApp.initData`, reads `authConnectionId` from server config,
-and includes both; it never sends a bot token or any server secret. The surface
-only transports the proof and selector — the gateway and Connection Hub
-authenticate centrally (see
+The `X-KDCube-Auth-Connection-ID` value is a non-secret selector handle, not a
+bot id. The host reads `window.Telegram.WebApp.initData`, reads the connection
+id from server config, and builds the headers. It never sends a bot token or
+any server secret. The iframe only transports the header map; the gateway and
+Connection Hub authenticate centrally (see
 [ecosystem-component](../ecosystem-component/ecosystem-component-README.md) for
 the backend split).
 
-`telegramInitData` does not require the surface to switch to a
+Telegram auth does not require the surface to switch to a
 `/public/telegram_*` API. A surface that is meant to use normal platform/gateway
 auth keeps calling its standard `/operations/{alias}` routes and sends the
-Telegram proof as a header.
+host-provided `authContext.headers`.
 
-For KDCube-controlled surfaces, `authConnectionId` should be present whenever an
-external proof is present. Uncontrolled inbound hooks may lack this hint and can
-fall back to provider-specific request-shape matching inside Connection Hub.
+For KDCube-controlled surfaces, a connection id header should be present
+whenever an external proof is present. Uncontrolled inbound hooks may lack this
+hint and can fall back to provider-specific request-shape matching inside
+Connection Hub.
 
 ### `kdcube-auth-changed` refreshes the handshake
 
@@ -198,12 +227,11 @@ data the now-available proof unlocks.
 The memories widget is the standard surface and is used unchanged across hosts.
 In a browser scene/website it receives `accessToken` / `idToken` (or relies on
 the session cookie) through `CONFIG_RESPONSE`. Hosted as an iframe in the
-Telegram Mini App, it receives `telegramInitData` through the **same**
-`CONFIG_RESPONSE`, plus `authConnectionId`, and attaches
-`X-Telegram-Init-Data` and `X-KDCube-Auth-Connection-ID`. The Mini App host
+Telegram Mini App, it receives `authContext.headers` through the **same**
+`CONFIG_RESPONSE` and promotes those headers on its API calls. The Mini App host
 answers the widget's `CONFIG_REQUEST` (matched on its `MEMORIES_WIDGET`
 identity) and nudges it with `kdcube-auth-changed` once `initData` is available
-— one handshake, both hosts, no Telegram-specific protocol.
+— one handshake, both hosts, no widget-specific Telegram protocol.
 
 ## Reference implementations
 

@@ -5,12 +5,10 @@
 //   iframe -> host: { type: 'CONFIG_REQUEST', data: { identity, requestedFields } }
 //   host -> iframe: { type: 'CONFIG_RESPONSE', identity, config: { ... } }
 //
-// The only Telegram-specific part is that, when running inside Telegram, the
-// host adds `telegramInitData` and the server-configured `authConnectionId` to
-// the SAME config payload. The widget then attaches X-Telegram-Init-Data plus
-// X-KDCube-Auth-Connection-ID; the gateway + Connection Hub validate it
-// centrally. The host NEVER sends the bot token or any server secret — only
-// the public initData proof and a non-secret connection selector.
+// The host owns its surface-specific auth context. In Telegram it builds an
+// opaque `authContext.headers` map containing the surface proof and connection
+// selector; the iframe only promotes those headers on KDCube API calls. The
+// host NEVER sends provider tokens or server secrets.
 //
 // When initData becomes available after the iframe mounted, the host posts the
 // standard `kdcube-auth-changed` nudge so the widget re-requests config. No new
@@ -19,7 +17,7 @@
 import { settings } from '../store/settings';
 
 interface ConfigHandshakeHostOptions {
-  // Identity advertised by the child in its CONFIG_REQUEST. The host answers
+  // Identity advertised by the iframe in its CONFIG_REQUEST. The host answers
   // only requests carrying this identity (the memory widget uses
   // 'MEMORIES_WIDGET').
   identity: string;
@@ -35,7 +33,6 @@ function buildConfig(): Record<string, unknown> {
     defaultTenant: settings.getTenant(),
     defaultProject: settings.getProject(),
     defaultAppBundleId: settings.getBundleId(),
-    authProvider: settings.getAuthProvider(),
   };
   // Forward normal token fields only when the host actually has them; the
   // memory widget keeps its cookie/credentials fallback otherwise.
@@ -46,11 +43,19 @@ function buildConfig(): Record<string, unknown> {
     config.idToken = idToken;
     config.idTokenHeader = settings.getIdTokenHeader();
   }
-  // The Telegram proof rides the same payload when present.
+  // Surface auth rides the same config payload as an opaque header map. The
+  // iframe does not know whether these headers are Telegram, Slack, OIDC, or
+  // another host-owned proof.
+  const authHeaders: Record<string, string> = {};
   const initData = telegramInitData();
-  if (initData) config.telegramInitData = initData;
+  if (initData) authHeaders['X-Telegram-Init-Data'] = initData;
+  const provider = settings.getAuthProvider();
+  if (provider) authHeaders['X-KDCube-Auth-Provider'] = provider;
   const connectionId = settings.getAuthConnectionId();
-  if (connectionId) config.authConnectionId = connectionId;
+  if (connectionId) authHeaders['X-KDCube-Auth-Connection-ID'] = connectionId;
+  if (Object.keys(authHeaders).length > 0) {
+    config.authContext = { headers: authHeaders };
+  }
   return config;
 }
 
@@ -65,11 +70,11 @@ function postConfigResponse(win: Window | null, identity: string): void {
   win.postMessage({ type: 'CONFIG_RESPONSE', identity, config: buildConfig() }, '*');
 }
 
-// Install the host handshake against a child iframe (element or its window):
-//   - answer the child's CONFIG_REQUEST (matched by identity) with the host
-//     runtime config + any Telegram proof, replying to the requesting window
+// Install the host handshake against a hosted iframe (element or its window):
+//   - answer the iframe's CONFIG_REQUEST (matched by identity) with the host
+//     runtime config + host-owned authContext, replying to the requesting window
 //   - when initData populates after mount (the Telegram client can be late),
-//     post `kdcube-auth-changed` so the child re-requests config
+//     post `kdcube-auth-changed` so the iframe re-requests config
 // Returns a disposer that removes the listener and stops the poll.
 export function installConfigHandshakeHost(
   target: HTMLIFrameElement | Window | null,
@@ -84,19 +89,19 @@ export function installConfigHandshakeHost(
     const requested = (data as { data?: { identity?: unknown } }).data?.identity
       ?? (data as { identity?: unknown }).identity;
     if (requested && requested !== identity) return;
-    // Reply to the requester directly when resolvable; otherwise the child.
+    // Reply to the requester directly when resolvable; otherwise the iframe.
     const source = event.source as Window | null;
     postConfigResponse(source ?? targetWindow(target), identity);
   };
   window.addEventListener('message', onMessage);
 
   // Standard CONFIG_RESPONSE is safe to push as well as to return. This covers
-  // the iframe-load race where the child posts CONFIG_REQUEST before this host
+  // the iframe-load race where the iframe posts CONFIG_REQUEST before this host
   // effect has installed its listener.
   window.setTimeout(() => postConfigResponse(targetWindow(target), identity), 0);
 
   // initData can populate slightly after mount inside the Telegram client.
-  // Watch for it and, once it appears, nudge the child to re-request config
+  // Watch for it and, once it appears, nudge the iframe to re-request config
   // via the standard kdcube-auth-changed signal.
   let lastInitData = telegramInitData();
   const timer = window.setInterval(() => {

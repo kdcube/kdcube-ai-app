@@ -14,14 +14,10 @@ type RuntimeConfigPayload = {
   idTokenHeaderName?: string;
   auth?: {
     idTokenHeaderName?: string;
-    provider?: string;
-    connection_id?: string;
-    connectionId?: string;
   };
-  authProvider?: string;
-  authConnectionId?: string;
-  connection_id?: string;
-  connectionId?: string;
+  authContext?: {
+    headers?: Record<string, unknown>;
+  };
   defaultTenant?: string;
   defaultProject?: string;
   defaultAppBundleId?: string;
@@ -29,10 +25,6 @@ type RuntimeConfigPayload = {
   tenant_id?: string;
   project?: string;
   project_id?: string;
-  // Telegram Mini App host adds this to the SAME CONFIG_RESPONSE the scene /
-  // browser hosts use. When present, the API client attaches it as
-  // X-Telegram-Init-Data; the gateway + Connection Hub validate it centrally.
-  telegramInitData?: string | null;
 };
 
 function isPlaceholder(value: string | null | undefined): boolean {
@@ -63,6 +55,19 @@ function routeContext() {
   };
 }
 
+function normalizeAuthContextHeaders(input?: Record<string, unknown>): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!input || typeof input !== 'object') return out;
+  Object.entries(input).forEach(([key, value]) => {
+    const name = String(key || '').trim();
+    if (!name || value === undefined || value === null) return;
+    const text = String(value);
+    if (!text) return;
+    out[name] = text;
+  });
+  return out;
+}
+
 const context = routeContext();
 
 class Settings {
@@ -71,14 +76,12 @@ class Settings {
     accessToken: PLACEHOLDER_ACCESS_TOKEN,
     idToken: PLACEHOLDER_ID_TOKEN,
     idTokenHeader: PLACEHOLDER_ID_TOKEN_HEADER,
-    authProvider: '',
-    authConnectionId: '',
     tenant: PLACEHOLDER_TENANT,
     project: PLACEHOLDER_PROJECT,
     bundleId: PLACEHOLDER_BUNDLE_ID,
-    // Host-supplied (Telegram Mini App) — empty until a CONFIG_RESPONSE
-    // carries it. Never a placeholder: a browser/scene host simply omits it.
-    telegramInitData: '',
+    // Host-supplied request auth context. The widget does not interpret these
+    // headers; it only promotes them on its KDCube API calls.
+    authContextHeaders: {} as Record<string, string>,
   };
 
   getBaseUrl(): string {
@@ -103,20 +106,6 @@ class Settings {
     return context.widgetAlias || 'memories';
   }
 
-  // The relayed Telegram proof, when a host supplied one. Empty for
-  // browser/scene hosts — the client then uses the Bearer/cookie path.
-  getTelegramInitData(): string {
-    return this.values.telegramInitData || '';
-  }
-
-  getAuthProvider(): string {
-    return this.values.authProvider || '';
-  }
-
-  getAuthConnectionId(): string {
-    return this.values.authConnectionId || '';
-  }
-
   authHeaders(base?: HeadersInit): Headers {
     const headers = new Headers(base);
     if (this.values.accessToken && !isPlaceholder(this.values.accessToken)) {
@@ -125,7 +114,17 @@ class Settings {
     if (this.values.idToken && !isPlaceholder(this.values.idToken)) {
       headers.set(isPlaceholder(this.values.idTokenHeader) ? 'X-ID-Token' : this.values.idTokenHeader, this.values.idToken);
     }
+    Object.entries(this.values.authContextHeaders).forEach(([name, value]) => {
+      if (name && value) headers.set(name, value);
+    });
     return headers;
+  }
+
+  private authContextFingerprint(): string {
+    return Object.keys(this.values.authContextHeaders)
+      .sort()
+      .map((name) => `${name}:${this.values.authContextHeaders[name]}`)
+      .join('\n');
   }
 
   private needsRuntimeConfig(): boolean {
@@ -141,15 +140,8 @@ class Settings {
     const tenant = config.defaultTenant || config.tenant || config.tenant_id;
     const project = config.defaultProject || config.project || config.project_id;
     const idTokenHeader = config.idTokenHeader || config.idTokenHeaderName || config.auth?.idTokenHeaderName;
-    const authProvider = config.authProvider || config.auth?.provider;
-    const authConnectionId = (
-      config.authConnectionId ||
-      config.connection_id ||
-      config.connectionId ||
-      config.auth?.connection_id ||
-      config.auth?.connectionId
-    );
-    const telegramInitData = typeof config.telegramInitData === 'string' ? config.telegramInitData : undefined;
+    const authContextHeaders = normalizeAuthContextHeaders(config.authContext?.headers);
+    const hasAuthContext = Object.keys(authContextHeaders).length > 0;
     this.values = {
       ...this.values,
       baseUrl: config.baseUrl || this.values.baseUrl,
@@ -159,14 +151,12 @@ class Settings {
       tenant: tenant || this.values.tenant,
       project: project || this.values.project,
       bundleId: config.defaultAppBundleId || this.values.bundleId,
-      authProvider: authProvider || this.values.authProvider,
-      authConnectionId: authConnectionId || this.values.authConnectionId,
-      telegramInitData: telegramInitData ?? this.values.telegramInitData,
+      authContextHeaders: hasAuthContext ? authContextHeaders : this.values.authContextHeaders,
     };
     return Boolean(
       tenant || project || config.baseUrl || config.accessToken !== undefined ||
       config.idToken !== undefined || idTokenHeader || config.defaultAppBundleId ||
-      telegramInitData || authProvider || authConnectionId,
+      hasAuthContext,
     );
   }
 
@@ -200,9 +190,8 @@ class Settings {
   private authChangedCallback: (() => void) | null = null;
   private parentListenerReady: Promise<boolean> | null = null;
 
-  // Re-run the caller's initial data load when the auth context changes —
-  // e.g. the Telegram host delivers its proof slightly after first render, or
-  // a kdcube-auth-changed signal makes the user become authenticated.
+  // Re-run the caller's initial data load when the host-supplied auth context
+  // changes after first render.
   onAuthContextChanged(callback: () => void): void {
     this.authChangedCallback = callback;
   }
@@ -214,8 +203,6 @@ class Settings {
         type: 'CONFIG_REQUEST',
         data: {
           identity: 'MEMORIES_WIDGET',
-          // telegramInitData rides the SAME config payload as the tokens —
-          // hosts that have a Telegram proof include it, others omit it.
           requestedFields: [
             'baseUrl',
             'accessToken',
@@ -224,9 +211,7 @@ class Settings {
             'defaultTenant',
             'defaultProject',
             'defaultAppBundleId',
-            'telegramInitData',
-            'authProvider',
-            'authConnectionId',
+            'authContext',
           ],
         },
       }, '*');
@@ -247,8 +232,8 @@ class Settings {
     };
 
     // Persistent listener: the host may push a fresh CONFIG_RESPONSE later
-    // (e.g. once the Telegram client populates initData). Re-apply and signal
-    // when the proof/tokens actually change so the caller can reload.
+    // (e.g. once a host acquires fresh auth material). Re-apply and signal when
+    // the tokens or opaque authContext actually change so the caller can reload.
     window.addEventListener('message', (event: MessageEvent) => {
       const data = event.data;
       if (!data || typeof data !== 'object') return;
@@ -259,9 +244,9 @@ class Settings {
       }
       if (data.type !== 'CONN_RESPONSE' && data.type !== 'CONFIG_RESPONSE') return;
       if (data.identity !== 'MEMORIES_WIDGET' || !data.config) return;
-      const before = `${this.values.accessToken}|${this.values.idToken}|${this.values.telegramInitData}|${this.values.authProvider}|${this.values.authConnectionId}`;
+      const before = `${this.values.accessToken}|${this.values.idToken}|${this.authContextFingerprint()}`;
       this.applyRuntimeConfig(data.config);
-      const after = `${this.values.accessToken}|${this.values.idToken}|${this.values.telegramInitData}|${this.values.authProvider}|${this.values.authConnectionId}`;
+      const after = `${this.values.accessToken}|${this.values.idToken}|${this.authContextFingerprint()}`;
       finish(true);
       if (resolved && after !== before) this.authChangedCallback?.();
     });
@@ -269,14 +254,14 @@ class Settings {
     this.parentListenerReady = new Promise((resolve) => {
       resolveReady = resolve;
       // Even when route-derived tenant/project already suffice, an embedded
-      // widget must still handshake so a Telegram host can deliver its proof.
+      // widget must still handshake so a host can deliver authContext.
       if (!this.needsRuntimeConfig() && !embedded) {
         finish(true);
         return;
       }
       // Embedded widgets prefer the host handshake (so they pick up any
-      // host-only proof); only standalone frames fall back to the platform
-      // config endpoint.
+      // host-only authContext); only standalone frames fall back to the
+      // platform config endpoint.
       if (embedded) {
         this.requestParentConfig();
         window.setTimeout(() => finish(true), 3000);

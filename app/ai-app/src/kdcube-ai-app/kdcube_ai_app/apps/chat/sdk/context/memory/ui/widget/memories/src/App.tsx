@@ -166,10 +166,9 @@ export default function App() {
 
   useEffect(() => {
     dispatch(setViewMode(compact ? 'compact' : 'full'));
-    // The auth context (Bearer/cookie tokens AND any Telegram proof) arrives on
-    // the standard CONFIG_RESPONSE handshake. If it changes after first render
-    // (Telegram host delivers initData late, or a kdcube-auth-changed nudge
-    // re-authenticates the user), reload so the data fetch runs authenticated.
+    // The auth context arrives through the standard CONFIG_RESPONSE handshake.
+    // If it changes after first render, reload so the data fetch runs with the
+    // latest host-provided request headers.
     settings.onAuthContextChanged(() => {
       void dispatch(loadMemories());
     });

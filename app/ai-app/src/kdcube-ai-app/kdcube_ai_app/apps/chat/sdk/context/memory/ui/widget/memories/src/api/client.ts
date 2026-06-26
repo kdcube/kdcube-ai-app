@@ -14,13 +14,6 @@ export function setMemoryWidgetCallOperation(callOperation: MemoryWidgetCallOper
   };
 }
 
-// The Telegram proof, when present, arrives on the standard CONFIG_RESPONSE
-// handshake (see settings.ts) — the same channel that carries Bearer/cookie
-// tokens for browser/scene hosts. No separate message family.
-function telegramInitData(): string {
-  return settings.getTelegramInitData();
-}
-
 function operationUrl(operation: string): string {
   const tenant = encodeURIComponent(settings.getTenant());
   const project = encodeURIComponent(settings.getProject());
@@ -33,12 +26,6 @@ export async function callOperation<T>(operation: string, payload: Record<string
     return hostCallOperation<T>(operation, payload);
   }
   const headers = settings.authHeaders({ 'Content-Type': 'application/json' });
-  const initData = telegramInitData();
-  if (initData) headers.set('X-Telegram-Init-Data', initData);
-  const authProvider = settings.getAuthProvider();
-  const authConnectionId = settings.getAuthConnectionId();
-  if (authProvider) headers.set('X-KDCube-Auth-Provider', authProvider);
-  if (authConnectionId) headers.set('X-KDCube-Auth-Connection-ID', authConnectionId);
   const response = await fetch(operationUrl(operation), {
     method: 'POST',
     credentials: 'include',
