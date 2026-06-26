@@ -22,6 +22,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers import (
     named_service_provider,
 )
 
+from .instructions import MEMORY_NAMESPACE_INTRO
 from .events.resolver import (
     MEMORY_OBJECT_NAMESPACE,
     MEMORY_RESOLVER_NAME,
@@ -235,6 +236,7 @@ def memory_named_service_spec(*, bundle_id: str | None = None) -> NamedServicePr
         operations=build_default_operations((TRANSPORT_LOCAL, TRANSPORT_API)),
         label="User memories",
         description="SDK memory namespace provider for durable user-memory records.",
+        intro=MEMORY_NAMESPACE_INTRO,
         metadata={
             "canonical_ref": "mem:record:<memory_id>",
             "viewer_surface": "sdk.memory.viewer",
@@ -564,6 +566,7 @@ def _memory_object_read_text(obj: Mapping[str, Any], *, object_ref: str) -> str:
     operations=build_default_operations((TRANSPORT_LOCAL, TRANSPORT_API)),
     label="User memories",
     description="SDK memory namespace provider for durable user-memory records.",
+    intro=MEMORY_NAMESPACE_INTRO,
     metadata={"canonical_ref": "mem:record:<memory_id>", "viewer_surface": "sdk.memory.viewer"},
 )
 class MemoryNamedServiceProvider(NamedServiceProvider):
