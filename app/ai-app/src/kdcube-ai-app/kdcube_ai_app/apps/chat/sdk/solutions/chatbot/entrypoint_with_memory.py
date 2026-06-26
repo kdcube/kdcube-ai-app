@@ -2529,6 +2529,96 @@ class MemoryEntrypointMixin:
             "count": len(events),
         }
 
+    async def _memory_evidence_result(
+        self, *, memory_id: str, scope_filter: str, record: Any, limit: Any = None
+    ) -> Dict[str, Any]:
+        """Build the apply/drop response: the re-derived record + refreshed tail."""
+        if record is None:
+            return self._memory_error("memory_not_found")
+        scope = self._memory_scope()
+        normalized_scope_filter = self._memory_scope_filter(scope_filter)
+        events = await self._memory_store().list_memory_events(
+            scope=scope,
+            memory_id=memory_id,
+            visible_to_user=True,
+            scope_filter=normalized_scope_filter,
+            limit=self._memory_limit(limit),
+        )
+        return {
+            "ok": True,
+            "memory": self._memory_record_payload(record),
+            "events": [self._memory_event_payload(event) for event in events],
+            "count": len(events),
+        }
+
+    @api(method="POST", alias="memories_widget_evidence_apply", route="operations", user_types=("registered", "paid", "privileged"))
+    async def memories_widget_evidence_apply(
+        self,
+        memory_id: str,
+        event_id: str,
+        scope_filter: str = "current_bundle",
+        base_revision: Optional[int] = None,
+        limit: int = 25,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        """Promote a chosen evidence entry's text to the canonical memory note."""
+        del kwargs
+        if not self._memory_widget_write_enabled():
+            return self._memory_error("memory_write_disabled")
+        disabled_error = await self._memory_usage_disabled_error()
+        if disabled_error:
+            return disabled_error
+        memory_id = _memory_id_from_ref(memory_id)
+        try:
+            record = await self._memory_store().apply_evidence(
+                scope=self._memory_scope(),
+                memory_id=memory_id,
+                event_id=str(event_id or "").strip(),
+                visible_to_user=True,
+                scope_filter=self._memory_scope_filter(scope_filter),
+                base_revision=base_revision,
+                ensure_schema=_truthy(self._memory_widget_config().get("ensure_schema"), True),
+            )
+        except ValueError as exc:
+            return self._memory_error(str(exc) or "evidence_apply_failed")
+        return await self._memory_evidence_result(
+            memory_id=memory_id, scope_filter=scope_filter, record=record, limit=limit
+        )
+
+    @api(method="POST", alias="memories_widget_evidence_delete", route="operations", user_types=("registered", "paid", "privileged"))
+    async def memories_widget_evidence_delete(
+        self,
+        memory_id: str,
+        event_id: str,
+        scope_filter: str = "current_bundle",
+        base_revision: Optional[int] = None,
+        limit: int = 25,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        """Drop one evidence entry, then re-derive the record from the rest."""
+        del kwargs
+        if not self._memory_widget_write_enabled():
+            return self._memory_error("memory_write_disabled")
+        disabled_error = await self._memory_usage_disabled_error()
+        if disabled_error:
+            return disabled_error
+        memory_id = _memory_id_from_ref(memory_id)
+        try:
+            record = await self._memory_store().delete_evidence(
+                scope=self._memory_scope(),
+                memory_id=memory_id,
+                event_id=str(event_id or "").strip(),
+                visible_to_user=True,
+                scope_filter=self._memory_scope_filter(scope_filter),
+                base_revision=base_revision,
+                ensure_schema=_truthy(self._memory_widget_config().get("ensure_schema"), True),
+            )
+        except ValueError as exc:
+            return self._memory_error(str(exc) or "evidence_delete_failed")
+        return await self._memory_evidence_result(
+            memory_id=memory_id, scope_filter=scope_filter, record=record, limit=limit
+        )
+
     @api(method="POST", alias="memories_widget_create", route="operations", user_types=("registered", "paid", "privileged"))
     async def memories_widget_create(
         self,

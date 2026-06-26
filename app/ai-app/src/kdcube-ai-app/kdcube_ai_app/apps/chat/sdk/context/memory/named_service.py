@@ -1166,6 +1166,12 @@ class MemoryNamedServiceProvider(NamedServiceProvider):
             memory=memory_text,
             context=_text(body.get("context") or body.get("summary") or body.get("description")),
             kind=_text(body.get("kind") or "fact"),
+            # upsert_object on an existing record is an authoritative edit:
+            # an explicitly provided scalar (memory text) must REPLACE the
+            # canonical value (set-if-provided), not be merged in as a passive
+            # observation. "agent_refinement" is an authoritative edit event the
+            # store apply path promotes to canonical text (see store.py
+            # AUTHORITATIVE_EDIT_EVENTS). New records start as an observation.
             event_type=_text(body.get("event_type") or ("agent_refinement" if memory_id else "agent_observation")),
             originator=_text(body.get("originator") or "agent"),
             status=_text(body.get("status") or "active"),

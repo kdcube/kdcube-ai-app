@@ -479,3 +479,81 @@ def test_collection_update_coercion_shapes() -> None:
     assert _collection_update(
         {"labels": {"add": ["Ready"], "remove": ["Draft"]}}, "labels"
     ) == {"add": ["ready"], "remove": ["draft"]}
+
+
+class _UpsertStore:
+    """Fake store reproducing the apply-path canonical-text + labels rule.
+
+    Mirrors store.UserMemoryStore._append_event_and_update_scores: an
+    authoritative-edit event promotes its text to canonical; labels accept a
+    bare list (replace) or a {add, remove} delta against the existing set.
+    """
+
+    def __init__(self, record: MemoryRecord) -> None:
+        self.record = record
+        self.signals = []
+
+    async def ensure_schema(self) -> None:
+        return None
+
+    async def record_signal(self, *, scope, signal, match_memory_id=None, require_match=False):
+        from dataclasses import replace as _dc_replace
+
+        from kdcube_ai_app.apps.chat.sdk.context.memory.store import (
+            AUTHORITATIVE_EDIT_EVENTS,
+        )
+
+        self.signals.append(signal)
+        event_type = (signal.event_type or "").strip()
+        # Canonical text: promoted only for authoritative edits (latest wins).
+        memory_text = (
+            signal.memory if event_type in AUTHORITATIVE_EDIT_EVENTS else self.record.memory
+        )
+        # Labels: bare list replaces; {add, remove} delta applies incrementally.
+        labels = resolve_collection_update(self.record.labels, signal.labels) if signal.labels is not None else list(self.record.labels)
+        self.record = _dc_replace(
+            self.record,
+            memory=memory_text,
+            labels=tuple(labels),
+            revision=self.record.revision + 1,
+            evidence_count=self.record.evidence_count + 1,
+            update_count=self.record.update_count + 1,
+        )
+        return self.record
+
+
+@pytest.mark.asyncio
+async def test_upsert_object_replaces_memory_text_on_existing_record() -> None:
+    from dataclasses import replace as _dc_replace
+
+    original = _dc_replace(
+        _record("mem_travel"),
+        memory="Cities: Aachen, Bonn",
+        labels=("travel",),
+        revision=1,
+    )
+    store = _UpsertStore(original)
+    provider = _provider_with_store(store)
+
+    new_text = "Cities: Aachen, Bonn, Rotterdam"
+    response = await provider.object_upsert(
+        NamedServiceContext(tenant="tenant-a", project="project-a", user_id="user-a"),
+        NamedServiceRequest(
+            operation="object.upsert",
+            namespace="mem",
+            object_ref="mem:record:mem_travel",
+            base_revision="1",
+            object={"memory": new_text, "labels": {"add": ["rotterdam"]}},
+        ),
+    )
+
+    assert response.ok is True
+    # The explicit edit's text is promoted to canonical (latest edit wins).
+    assert response.object["memory"] == new_text
+    # The labels delta still applies in the same call.
+    assert "rotterdam" in response.object["labels"]
+    assert "travel" in response.object["labels"]
+    # The update was routed as an authoritative edit, not a passive observation.
+    assert store.signals[0].event_type == "agent_refinement"
+    # Optimistic concurrency: base_revision flows through and revision advances.
+    assert response.revision == "2"
