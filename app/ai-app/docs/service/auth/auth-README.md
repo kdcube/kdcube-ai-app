@@ -7,7 +7,8 @@ keywords: ["delegated auth", "cookie auth", "JWT", "SSE auth", "Socket.IO"]
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/service/auth/auth-selector-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/service/auth/oauth-mcp-integration-access-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/connections-sdk-solution-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/connection-hub-solution-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/request-authenticators/request-authenticators-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/service/auth/bundle-session-auth-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/service/auth/bundle-simple-idp-bridge-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/service/comm/README-comm.md
@@ -58,10 +59,15 @@ platform REST/SSE/Socket.IO/MCP/API requests. It should not contain every
 provider-specific identity-link rule.
 
 When a request starts from another channel, such as Telegram init data, webhook
-signature, API key, or a bundle-owned proof, KDCube-controlled callers should
-send the external proof plus a stable non-secret `connection_id` selector
-(`X-KDCube-Auth-Connection-ID`). Uncontrolled hooks may lack that hint and are
-handled by provider-specific request-shape matching. Connection Hub should:
+signature, API key, or an app-owned proof, KDCube-controlled callers should
+send the external proof plus the stable non-secret `integration_id` that names
+the app integration row being used. API and iframe calls normally carry it as
+`X-KDCube-Auth-Integration-ID`; provider
+webhooks that cannot add arbitrary selector headers, such as Telegram
+`setWebhook`, should put the same selector in the webhook URL query string:
+`?integration_id=<integration-id>`. Uncontrolled hooks may lack that
+hint and are handled by provider-specific request-shape matching as a fallback.
+Connection Hub should:
 
 1. select the provider module from the request shape;
 2. validate the provider/request proof;
@@ -77,7 +83,7 @@ state.
 
 That authority projection is documented in
 [Auth Selector](auth-selector-README.md),
-[Connections SDK Solution](../../sdk/solutions/connections/connections-sdk-solution-README.md) and
+[Connection Hub Solution](../../sdk/solutions/connections/connection-hub-solution-README.md) and
 [Cross-Runtime Context](../../runtime/cross-runtime-context-README.md).
 
 ## Supported auth providers

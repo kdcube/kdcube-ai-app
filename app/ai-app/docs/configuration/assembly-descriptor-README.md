@@ -185,7 +185,7 @@ falling back to normal platform token/cookie auth. Provider-specific
 authenticators, such as Telegram Mini App `initData`, are Connection Hub modules
 with access to Connection Hub config, secrets, and identity-link data. See
 [Auth Selector](../service/auth/auth-selector-README.md) and
-[Connection Authenticators](../sdk/solutions/connections/authenticators-README.md).
+[Request Authenticators](../sdk/solutions/connections/request-authenticators/request-authenticators-README.md).
 
 `auth.idp: multi-cognito` selects the multi-provider Cognito verifier. The
 browser-facing OIDC config still comes from `auth.cognito`; ingress/proc also

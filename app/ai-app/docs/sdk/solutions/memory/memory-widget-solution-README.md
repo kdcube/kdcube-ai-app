@@ -221,8 +221,9 @@ If the host session or auth context changes, the host announces
 The widget re-sends `CONFIG_REQUEST`, applies the latest `CONFIG_RESPONSE`, and
 reloads memory data if the effective auth material changed.
 
-See [Scene Auth State Contract](../scene/scene-auth-README.md) and
-[Connection Authenticators](../connections/authenticators-README.md).
+See [Scene Auth State Contract](../scene/scene-auth-README.md),
+[Widget Auth Context Transport](../connections/widget-auth-context/widget-auth-context-README.md),
+and [Request Authenticators](../connections/request-authenticators/request-authenticators-README.md).
 
 ## Drag And Context Payload
 

@@ -7,6 +7,7 @@ keywords: ["OAuth2 authorization server", "MCP protected resource", "Claude Code
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/service/auth/auth-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/service/auth/bundle-session-auth-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/connection-hub-solution-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/configuration/assembly-descriptor-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/configuration/service-runtime-configuration-mapping-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/service/servicing-interfaces-README.md
@@ -248,6 +249,54 @@ This mechanism is not:
 
 It is a descriptor-configured bridge from an already-authenticated platform
 admin consent flow to a least-privilege MCP integration token.
+
+## Relationship To Connection Hub
+
+OAuth MCP integration access and Connection Hub are adjacent, but they solve
+different problems. The shared diagram lives in
+[OAuth MCP Vs Connection Hub](design/oauth-mcp-vs-connection-hub-README.md).
+
+OAuth MCP starts with a platform-authenticated human, usually an admin:
+
+```text
+platform browser session
+  -> /oauth/authorize
+  -> consent scopes + selected MCP tools
+  -> auth code + PKCE
+  -> integration token
+  -> /mcp tools/list or tools/call
+```
+
+Connection Hub often starts from the opposite direction:
+
+```text
+provider/channel proof
+  Telegram initData / Slack signature / API key / OIDC claim
+  -> request authenticator
+  -> identity link
+  -> platform authority
+  -> UserSession
+```
+
+The boundary is:
+
+| Concern | OAuth MCP Integration Access | Connection Hub |
+| --- | --- | --- |
+| Primary user story | External MCP client needs narrow access after consent. | App/channel needs to prove/link an external identity or use delegated accounts. |
+| Starts with | Existing platform browser session. | Provider proof or platform user connecting a provider. |
+| Produces | Integration access/refresh token and selected-tool grant. | Identity link, request-auth authority, or delegated account capability. |
+| Main consumer | External MCP client such as Claude Code. | Gateway auth selector, widgets, apps, automations, agents. |
+| Storage | OAuth clients, codes, grants, refresh tokens, selected tools. | Identity links, request-authenticator metadata, delegated account tokens. |
+
+Connection Hub delegated OAuth accounts, such as Gmail or Slack user accounts,
+are not OAuth MCP tokens. They are user-granted capabilities for app/automation
+work. OAuth MCP tokens are KDCube-issued integration access tokens for an
+external client calling KDCube MCP resources.
+
+Do not put Telegram/Slack/webhook proof verification into the OAuth MCP
+authorization server. That verification belongs to Connection Hub request
+authenticators. Do not put MCP consent/tool-grant issuance into Connection Hub
+identity links. That belongs to this OAuth MCP integration access mechanism.
 
 ## Regression Checklist
 

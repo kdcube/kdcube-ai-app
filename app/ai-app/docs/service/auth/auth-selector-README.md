@@ -4,10 +4,11 @@ title: "Auth Selector"
 summary: "Gateway request-authentication stack: request in, selected authenticator, complete UserSession out."
 status: active
 tags: ["service", "auth", "gateway", "connections", "authenticators", "sessions"]
-updated_at: 2026-06-26
+updated_at: 2026-06-27
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/service/auth/auth-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/authenticators-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/connection-hub-solution-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/request-authenticators/request-authenticators-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/runtime/cross-runtime-context-README.md
 ---
 # Auth Selector
@@ -106,26 +107,36 @@ Connection Hub stores request-authenticator metadata in its own app store
 secrets. The gateway sees neither bot tokens nor provider-specific verifier
 configuration.
 
-## Controlled Surfaces Carry A Connection Id
+## Controlled Surfaces Carry An Integration Id
 
 For surfaces KDCube controls, request-auth should not depend on guessing. The
 surface sends either platform auth material or external proof plus a stable
-non-secret connection selector:
+non-secret integration selector:
 
 ```http
 X-Telegram-Init-Data: <Telegram.WebApp.initData>
 X-KDCube-Auth-Provider: telegram
-X-KDCube-Auth-Connection-ID: telegram.default
+X-KDCube-Auth-Integration-ID: telegram.kdcube_ref
 ```
 
-`connection_id` is configured in app props and in Connection Hub authenticator
-metadata. It is not a bot id and not a secret. The Telegram Mini App host reads
-it from server config, forwards it to hosted iframes through the standard
+For provider callbacks where the provider controls the request headers, put the
+same selector into the callback URL. Telegram webhooks should be registered as:
+
+```text
+/public/telegram_webhook?integration_id=telegram.kdcube_ref
+```
+
+The integration id is configured in app props. It names the integration row
+used by the app for this surface or provider callback. It is not a bot id and
+not a secret. The Telegram Mini App host reads it from server config, forwards it to
+hosted iframes through the standard
 `CONFIG_RESPONSE`, and attaches it on its own app API calls.
 
 Uncontrolled third-party hooks are the only place where a provider module may
-need to infer from raw request shape alone. If a controlled request supplies
-`connection_id`, Connection Hub tries that row only and fails closed when no
+need to infer from raw request shape alone. All new
+controlled webhook examples should include `integration_id`; the fallback exists
+for uncontrolled provider callbacks, not as the preferred setup. If a controlled request supplies
+`integration_id`, Connection Hub tries that row only and fails closed when no
 enabled row matches.
 
 ## Header-Only Auth Paths
@@ -180,10 +191,10 @@ verifiers:
 request has x-telegram-init-data
   -> gateway calls Connection Hub bridge
   -> Connection Hub module family = telegram
-  -> if x-kdcube-auth-connection-id=telegram.support:
+  -> if x-kdcube-auth-integration-id=telegram.support:
        try telegram.support only
      else:
-       use provider fallback order for compatibility/uncontrolled hooks
+       use provider fallback order for uncontrolled hooks
   -> selected_authenticator = telegram.support
 ```
 

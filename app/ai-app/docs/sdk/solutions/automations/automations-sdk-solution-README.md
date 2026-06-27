@@ -5,7 +5,8 @@ summary: "Reusable scheduled/executable automation component for KDCube bundles:
 tags: ["sdk", "solutions", "automations", "scheduler", "executions", "artifacts", "react", "identity-authority"]
 updated_at: 2026-06-26
 see_also:
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/connections-sdk-solution-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/connection-hub-solution-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/authority-projection/authority-projection-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/runtime/cross-runtime-context-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/service/auth/auth-README.md
 ---
