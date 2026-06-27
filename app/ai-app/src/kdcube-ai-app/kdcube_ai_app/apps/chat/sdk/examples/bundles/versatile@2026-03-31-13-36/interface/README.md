@@ -333,65 +333,12 @@ Telegram Admin mapping. If no Telegram row is linked to that KDCube user, the
 response returns `ok: false` with `error.code == "telegram_mapping_required"`.
 In the Telegram Mini App, the same logical calls use signed Telegram initData.
 
-SDK durable memory maintenance uses the shared `memories_widget_*` operations.
-When the memory widget is embedded inside the Telegram Mini App, the host passes
-a server-authored `authContext.headers` template through the standard widget
-config handshake. The host adds Telegram `initData` to that header map only
-because the backend template declares Telegram as the provider. The widget
-blindly promotes the resulting headers on the same `memories_widget_*`
-operations. Gateway request-auth delegates the proof to Connection Hub.
-
-The `telegram_memories_widget_*` public operations are legacy app-owned
-compatibility wrappers. New reusable widgets should not map shared operation
-names to Telegram-specific public aliases.
-The reconciliation flow is intentionally two phase: a dry run writes a proposal
-and artifacts; a later apply call mutates memory only after explicit
-confirmation.
-
-```ts
-const analysis = await callOperation("memories_widget_reconcile_analyze", {
-  scope_filter: "current_bundle",
-  limit: 30
-});
-
-const dryRun = await callOperation("memories_widget_reconcile_run", {
-  scope_filter: "current_bundle",
-  limit: 30,
-  reason: "manual widget reconciliation dry run",
-  agent_type: "regular", // "lite" | "regular" | "strong"
-  reconciliation_context: {
-    // Optional JSON-safe bundle-owned controls for this reconciliation job.
-  }
-});
-
-const jobs = await callOperation("memories_widget_reconcile_jobs");
-
-const proposal = await callOperation("memories_widget_reconcile_export", {
-  job_id: dryRun.job.job_id,
-  artifact: "proposal_md"
-});
-
-await callOperation("memories_widget_reconcile_apply", {
-  job_id: dryRun.job.job_id,
-  confirm: true
-});
-```
-
-`memories_widget_reconcile_run` does not change user memory. It creates a
-snapshot, queues a background proposal job, and writes `proposal.json` /
-`proposal.md` artifacts. `agent_type` selects the reconciler strength for that
-job. The value is persisted in the job payload and rebound when the background
-worker runs so `memory.reconciler` uses the configured
-`memory.reconciler.lite`, `.regular`, or `.strong` role model for this job only.
-`reconciliation_context` is an optional JSON object. It is persisted with the
-job, enqueued with the background task, and rebound under
-`bundle_call_context.memory.reconciliation.context` when the reconciler runs.
-Bundles that need more request-local controls can override
-`on_memory_reconciliation_request(request=...)` to validate or augment the
-request without changing the platform operation signature.
-`memories_widget_reconcile_apply` is the mutating operation; it only accepts a
-`succeeded` proposal job and creates another safety snapshot before applying
-retire, weaken, or merge actions.
+Durable user memory lives in the dedicated user-memories app, which owns the
+memory widget, the `mem` named-service provider, and all maintenance operations
+(reconciliation, snapshots). The versatile bundle is a memory consumer only: it
+reads memory through the `mem` named service and the announce hotset, and every
+memory surface (including the Telegram Mini App Memory tab) iframes that app.
+This contract therefore exposes no `memories_widget_*` operations.
 
 Telegram admin operations:
 
@@ -416,7 +363,8 @@ have role `admin`.
 
 ## What The Frontend Must Not Call
 
-- `telegram_webhook`: called by Telegram Bot API, not the Mini App.
+- `telegram_webhook?integration_id=<integration-id>`: called by Telegram Bot
+  API, not the Mini App.
 - `telegram_user_admin_*` from non-admin users: the operation route is for
   KDCube admins; the public facade is for signed Telegram users with role
   `admin`.

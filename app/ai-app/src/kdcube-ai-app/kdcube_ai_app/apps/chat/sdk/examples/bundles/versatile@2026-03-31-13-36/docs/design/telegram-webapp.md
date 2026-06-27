@@ -13,14 +13,14 @@ Mini App shell that can also be opened as a KDCube widget for operator testing.
 ```text
 KDCube control plane iframe
   -> operations/telegram_miniapp_data
-  -> operations/memories_widget_*
   -> operations/conversations_*
   -> operations/telegram_user_admin_* (admin role)
+  -> embedded user-memories iframe (Memory tab; user-memories app owns its APIs)
 
 Telegram Mini App
   -> public/telegram_miniapp_data
-  -> embedded user-memories iframe
-       -> operations/memories_widget_* with authContext.headers
+  -> embedded user-memories iframe (Memory tab)
+       -> user-memories app's own APIs with authContext.headers
   -> public/telegram_conversations_*
   -> public/telegram_webapp_user_admin_* (Telegram admin role)
 ```
@@ -37,8 +37,10 @@ delegates the Telegram proof to Connection Hub, whose Telegram authenticator
 module validates the signed initData, resolves any identity link, and stamps
 platform authority.
 
-The older `public/telegram_memories_widget_*` wrappers remain an app-owned
-compatibility lane. They are not the generic SDK-widget embedding contract.
+The Memory tab carries no bundle-owned memory operations. It iframes the
+dedicated user-memories app, which serves its own widget and owns the durable
+memory contract; the Telegram shell only forwards the `authContext` proof to
+that iframe through the same `CONFIG_REQUEST` / `CONFIG_RESPONSE` handshake.
 
 ## Auth Lanes
 

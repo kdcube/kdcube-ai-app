@@ -21,14 +21,13 @@ It intentionally demonstrates the main SDK bundle surfaces together in one place
 | Bundle props / effective config        | `entrypoint.py`, `agents/main.py`                                                |
 | Bundle secrets via `get_secret(...)`   | `config/bundles.secrets.template.yaml`, `entrypoint.py`                                    |
 | Agent and UI consumer surfaces         | `config/bundles.template.yaml` under `surfaces.as_consumer`                                |
-| SDK durable memory                     | `memory.*` tools, SDK memory widget, and `BaseEntrypointWithEconomicsAndMemory`            |
+| Durable memory consumer                | `mem` named service + announce hotset under `surfaces.as_consumer.agents.main.tools[mem]` |
 | Canvas and telemetry services          | `services/canvas.py`, `services/telemetry.py`                                               |
 | Agent tool consumers                   | `surfaces.as_consumer.agents.main.tools`                                                   |
 | MCP tool consumers                     | `surfaces.as_consumer.agents.main.tools`                                                   |
 | Active iframe main view                | `ui/scene`, `entrypoint.py` main-view config                                               |
 | SDK chat widget mount                  | `versatile_chat`, backed by `sdk://solutions/chat/ui/widget`                               |
-| SDK durable memory widget              | shared memory widget source, inherited `memories_widget_*` operations                      |
-| Memory maintenance                     | `memories_widget_snapshot_*`, `memories_widget_reconcile_*` inherited from SDK memory mixin |
+| Memory tab (iframe)                    | Telegram Mini App Memory tab iframes the user-memories app                                  |
 | Bundle interface contract              | `interface/README.md`                                                                       |
 | Bundle config templates                | `config/bundles.template.yaml`, `config/bundles.secrets.template.yaml`                     |
 | Bundle release metadata                | `release.yaml`                                                                              |
@@ -75,34 +74,22 @@ documentation expected from real bundles:
   - `memory.confirm_memory(...)`
   - `memory.retire_memory(...)`
 - The bundle demonstrates the reusable Telegram bot transport:
-  - `telegram_webhook` receives Bot API updates through a public route guarded
-    by Telegram's webhook secret header
+  - `telegram_webhook?integration_id=<integration-id>` receives Bot API updates
+    through a public route guarded by Telegram's webhook secret header
   - `telegram_user_admin_*` operations manage the bundle-owned Telegram user
     registry from KDCube-authenticated operations routes
   - queued Telegram turns are wrapped with
     `telegram_user_admin.run_with_queued_telegram_delivery(...)`, so the normal
     workflow result is rendered back to Telegram as text and files
-- The bundle inherits the SDK memory widget operations through
-  `BaseEntrypointWithEconomicsAndMemory`:
-  - `memories_widget_snapshot_create`, `memories_widget_snapshots`, and
-    `memories_widget_snapshot_export` manage memory snapshots
-  - `memories_widget_reconcile_analyze` inspects candidate memory records
-  - `memories_widget_reconcile_run` queues a dry-run proposal job and does not
-    mutate memory records; it accepts `agent_type: lite | regular | strong`
-    and stores the selected reconciler strength with the background job.
-    It also accepts optional JSON-safe `reconciliation_context`, which is
-    persisted, enqueued, and rebound under
-    `bundle_call_context.memory.reconciliation.context` when the job runs.
-    Override `on_memory_reconciliation_request(request=...)` for bundle-local
-    validation or request augmentation.
-  - `memories_widget_reconcile_export` exposes proposal artifacts for review
-  - `memories_widget_reconcile_apply` applies a succeeded proposal only with
-    explicit confirmation and first creates a safety snapshot
-  - when embedded in the Telegram Mini App, the reusable memory widget uses the
-    same `memories_widget_*` operations and sends `X-Telegram-Init-Data`; the
-    gateway delegates that proof to Connection Hub request-auth
-  - `telegram_memories_widget_reconcile_*` public APIs remain app-owned
-    compatibility wrappers, not the generic SDK-widget embedding contract
+- The bundle is a memory consumer only. It derives from
+  `BaseEntrypointWithEconomics` and exposes no `memories_widget_*` operations
+  and no `sdk.memory` provider:
+  - durable user memory (the widget, the `mem` named-service provider, snapshot
+    and reconciliation maintenance) lives in the dedicated user-memories app
+  - versatile reads memory through the `mem` named service and the announce
+    hotset declared under `surfaces.as_consumer.agents.main.tools[mem]`
+  - every memory surface, including the Telegram Mini App Memory tab, iframes
+    the user-memories app rather than calling bundle-owned memory operations
 
 Telegram requires external operator setup. Hosting this bundle in KDCube is not
 enough by itself: an operator must create or choose a bot in BotFather, expose
@@ -112,9 +99,11 @@ admin screen. See `docs/integrations/telegram-setup.md`.
 
 ## Durable memory storage
 
-Versatile uses the SDK durable-memory subsystem for remembered user facts,
-preferences, and corrections. The solver reaches that memory through the
-configured SDK memory tool surface and the shared memory widget.
+Versatile consumes durable user memory for remembered user facts, preferences,
+and corrections. The solver reaches that memory through the `mem` named service
+and the announce hotset; the records themselves are owned and stored by the
+dedicated user-memories app, which versatile iframes wherever a memory surface
+is shown.
 
 The full storage map, including Telegram admin state, canvas state, and
 rebuildable UI output, lives in `docs/storage/README.md`.
@@ -152,12 +141,25 @@ bundles:
         execution:
           runtime:
             mode: docker
+        connections:
+          connection_hub:
+            bundle_id: connection-hub@1-0
         integrations:
-          telegram:
+          telegram.kdcube_ref:
+            provider: telegram
+            where: built-in
             enabled: false
-            auth_connection_id: telegram.default
-            webhook_url: ""
-            send_responses: true
+            secret_refs:
+              bot_token: integrations.telegram_kdcube_ref.definition.bot_token
+              webhook_secret: integrations.telegram_kdcube_ref.definition.webhook_secret
+            definition:
+              bot_name: kdcube-ref
+              bot_username: kdcube_doc_bot
+              webhook:
+                url: "https://<PUBLIC_HOST>/api/integrations/bundles/<TENANT>/<PROJECT>/versatile@2026-03-31-13-36/public/telegram_webhook?integration_id=telegram.kdcube_ref"
+                send_responses: true
+                stream_activity: true
+              web_app_auth_max_age_seconds: 86400
         mcp:
           services:
             mcpServers:
@@ -190,9 +192,10 @@ bundles:
           auth:
             token: "<RANDOM_TELEMETRY_SINK_BEARER_TOKEN>"
         integrations:
-          telegram:
-            bot_token: null
-            webhook_secret: null
+          telegram_kdcube_ref:
+            definition:
+              bot_token: null
+              webhook_secret: null
 ```
 
 The CLI injects those values into the configured secrets provider under the
@@ -262,7 +265,7 @@ webhook / Telegram-authenticated bridge operations.
 
 Concrete routes:
 
-- `POST /api/integrations/bundles/{tenant}/{project}/{bundle_id}/public/telegram_webhook`
+- `POST /api/integrations/bundles/{tenant}/{project}/{bundle_id}/public/telegram_webhook?integration_id=telegram.kdcube_ref`
 - `POST /api/integrations/bundles/{tenant}/{project}/{bundle_id}/operations/telegram_user_admin_data`
 - `POST /api/integrations/bundles/{tenant}/{project}/{bundle_id}/operations/telegram_user_admin_upsert`
 - `POST /api/integrations/bundles/{tenant}/{project}/{bundle_id}/operations/telegram_user_admin_delete`

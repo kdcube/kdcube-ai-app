@@ -3,7 +3,6 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 
-import inspect
 import logging
 from typing import Any, Dict, Mapping, Optional
 
@@ -23,8 +22,8 @@ from kdcube_ai_app.apps.chat.sdk.integrations.telegram import widget_auth as tel
 from kdcube_ai_app.apps.chat.sdk.integrations.telegram import widget_ops as telegram_widget_ops
 from kdcube_ai_app.apps.chat.sdk.protocol import ExternalEventPayload
 from kdcube_ai_app.apps.chat.sdk.solutions.chat import chat_widget_ui_config
-from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint_with_memory import (
-    BaseEntrypointWithEconomicsAndMemory,
+from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint_with_economic import (
+    BaseEntrypointWithEconomics,
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.canvas import api as canvas_api
 from kdcube_ai_app.apps.chat.sdk.solutions.canvas.events.defaults import default_canvas_event_source_specs
@@ -50,11 +49,7 @@ BUNDLE_ID = "versatile@2026-03-31-13-36"
 WORKFLOW_NAME = "versatile"
 TELEGRAM_ADMIN_ROLE = "kdcube:role:super-admin"
 TELEGRAM_WEBHOOK_SECRET_HEADER = "X-Telegram-Bot-Api-Secret-Token"
-TELEGRAM_WEBHOOK_PUBLIC_AUTH = {
-    "mode": "header_secret",
-    "header": TELEGRAM_WEBHOOK_SECRET_HEADER,
-    "secret_key": "integrations.telegram.webhook_secret",
-}
+TELEGRAM_WEBHOOK_PUBLIC_AUTH = "none"
 TELEGRAM_WEBAPP_PUBLIC_AUTH = "none"
 PUBLIC_READ_AUTH = "none"
 TELEMETRY_SINK_TOKEN_SECRET = "b:telemetry_sink.auth.token"
@@ -137,25 +132,6 @@ class _VersatileAutomationWidgets:
         }
 
 
-class _VersatileMemoryWidgets:
-    @staticmethod
-    async def payload(
-        entrypoint: Any,
-        *,
-        user_id: Optional[str] = None,
-        fingerprint: Optional[str] = None,
-        mark_seen: bool = False,
-        **kwargs,
-    ) -> Dict[str, Any]:
-        del mark_seen, kwargs
-        with entrypoint._memory_user_identity(
-            user_id=user_id or "",
-            fingerprint=fingerprint or "",
-            user_type="registered",
-        ):
-            return await entrypoint.memories_widget_data(scope_filter="current_bundle", limit=30)
-
-
 class _VersatileSettingsWidgets:
     @staticmethod
     def payload(
@@ -191,7 +167,6 @@ telegram_widget_auth.configure_telegram_widget_auth(
     bundle_id=BUNDLE_ID,
 )
 telegram_webapp.configure_telegram_webapp(
-    memory_widgets_module=_VersatileMemoryWidgets,
     settings_widgets_module=_VersatileSettingsWidgets,
     automation_widgets_module=_VersatileAutomationWidgets,
     telegram_user_admin_module=telegram_user_admin,
@@ -212,7 +187,7 @@ telegram_widget_ops.configure_telegram_widget_ops(
     priority=100,
     allowed_roles_config="visibility.bundle.allowed_roles",
 )
-class VersatileEntrypoint(BaseEntrypointWithEconomicsAndMemory):
+class VersatileEntrypoint(BaseEntrypointWithEconomics):
     """All-features reference bundle for bundle builders."""
 
     def __init__(
@@ -748,6 +723,7 @@ class VersatileEntrypoint(BaseEntrypointWithEconomicsAndMemory):
             mark_memory_seen=mark_memory_seen,
             widget_path=widget_path or path,
             include_admin=telegram_webapp.user_has_role(self, TELEGRAM_ADMIN_ROLE),
+            integration_id="telegram.kdcube_ref",
         )
 
     @api(method="GET", alias="conversations_list", route="operations", **_api_visibility("conversations_list"))
@@ -877,8 +853,8 @@ class VersatileEntrypoint(BaseEntrypointWithEconomicsAndMemory):
         route="public",
         public_auth=TELEGRAM_WEBHOOK_PUBLIC_AUTH,
     )
-    async def telegram_webhook(self, **update) -> Dict[str, Any]:
-        return await telegram_user_admin.handle_webhook(self, **update)
+    async def telegram_webhook(self, request: Any = None, **update) -> Dict[str, Any]:
+        return await telegram_user_admin.handle_webhook(self, request=request, **update)
 
     @api(method="GET", alias="telegram_profile", route="public", public_auth=TELEGRAM_WEBAPP_PUBLIC_AUTH)
     async def telegram_profile(
@@ -1054,117 +1030,6 @@ class VersatileEntrypoint(BaseEntrypointWithEconomicsAndMemory):
             "allowed_subjects": [DATA_BUS_ECHO_SUBJECT],
         }
 
-    async def _telegram_memory_widget_call(
-        self,
-        operation: str,
-        *,
-        request: Any = None,
-        telegram_init_data: str = "",
-        **kwargs,
-    ) -> Dict[str, Any]:
-        identity = await telegram_widget_auth.resolve_identity(
-            self,
-            request=request,
-            telegram_init_data=telegram_init_data,
-            allowed_roles=("registered", "admin"),
-        )
-        method = getattr(self, operation)
-        with self._memory_user_identity(
-            user_id=identity.user_id,
-            fingerprint=identity.fingerprint,
-            user_type="privileged" if identity.role == "admin" else "registered",
-        ):
-            result = method(**kwargs)
-            if inspect.isawaitable(result):
-                result = await result
-        if isinstance(result, dict):
-            result.setdefault("auth_surface", "telegram_webapp")
-            result.setdefault("telegram_user_id", identity.telegram_user_id)
-            result.setdefault("user_id", identity.user_id)
-        return result if isinstance(result, dict) else {"ok": True, "result": result}
-
-    # Public Telegram bridge APIs for Telegram-authenticated clients. These are
-    # operation endpoints, not separate widget surfaces in bundle config.
-    @api(method="POST", alias="telegram_memories_widget_data", route="public", public_auth=TELEGRAM_WEBAPP_PUBLIC_AUTH)
-    async def telegram_memories_widget_data(self, request: Any = None, telegram_init_data: str = "", **kwargs) -> Dict[str, Any]:
-        return await self._telegram_memory_widget_call("memories_widget_data", request=request, telegram_init_data=telegram_init_data, **kwargs)
-
-    @api(method="POST", alias="telegram_memories_widget_get", route="public", public_auth=TELEGRAM_WEBAPP_PUBLIC_AUTH)
-    async def telegram_memories_widget_get(self, request: Any = None, telegram_init_data: str = "", **kwargs) -> Dict[str, Any]:
-        return await self._telegram_memory_widget_call("memories_widget_get", request=request, telegram_init_data=telegram_init_data, **kwargs)
-
-    @api(method="POST", alias="telegram_memories_widget_events", route="public", public_auth=TELEGRAM_WEBAPP_PUBLIC_AUTH)
-    async def telegram_memories_widget_events(self, request: Any = None, telegram_init_data: str = "", **kwargs) -> Dict[str, Any]:
-        return await self._telegram_memory_widget_call("memories_widget_events", request=request, telegram_init_data=telegram_init_data, **kwargs)
-
-    @api(method="POST", alias="telegram_memories_widget_create", route="public", public_auth=TELEGRAM_WEBAPP_PUBLIC_AUTH)
-    async def telegram_memories_widget_create(self, request: Any = None, telegram_init_data: str = "", **kwargs) -> Dict[str, Any]:
-        return await self._telegram_memory_widget_call("memories_widget_create", request=request, telegram_init_data=telegram_init_data, **kwargs)
-
-    @api(method="POST", alias="telegram_memories_widget_update", route="public", public_auth=TELEGRAM_WEBAPP_PUBLIC_AUTH)
-    async def telegram_memories_widget_update(self, request: Any = None, telegram_init_data: str = "", **kwargs) -> Dict[str, Any]:
-        return await self._telegram_memory_widget_call("memories_widget_update", request=request, telegram_init_data=telegram_init_data, **kwargs)
-
-    @api(method="POST", alias="telegram_memories_widget_pin", route="public", public_auth=TELEGRAM_WEBAPP_PUBLIC_AUTH)
-    async def telegram_memories_widget_pin(self, request: Any = None, telegram_init_data: str = "", **kwargs) -> Dict[str, Any]:
-        return await self._telegram_memory_widget_call("memories_widget_pin", request=request, telegram_init_data=telegram_init_data, **kwargs)
-
-    @api(method="POST", alias="telegram_memories_widget_confirm", route="public", public_auth=TELEGRAM_WEBAPP_PUBLIC_AUTH)
-    async def telegram_memories_widget_confirm(self, request: Any = None, telegram_init_data: str = "", **kwargs) -> Dict[str, Any]:
-        return await self._telegram_memory_widget_call("memories_widget_confirm", request=request, telegram_init_data=telegram_init_data, **kwargs)
-
-    @api(method="POST", alias="telegram_memories_widget_retire", route="public", public_auth=TELEGRAM_WEBAPP_PUBLIC_AUTH)
-    async def telegram_memories_widget_retire(self, request: Any = None, telegram_init_data: str = "", **kwargs) -> Dict[str, Any]:
-        return await self._telegram_memory_widget_call("memories_widget_retire", request=request, telegram_init_data=telegram_init_data, **kwargs)
-
-    @api(method="POST", alias="telegram_memories_widget_delete", route="public", public_auth=TELEGRAM_WEBAPP_PUBLIC_AUTH)
-    async def telegram_memories_widget_delete(self, request: Any = None, telegram_init_data: str = "", **kwargs) -> Dict[str, Any]:
-        return await self._telegram_memory_widget_call("memories_widget_delete", request=request, telegram_init_data=telegram_init_data, **kwargs)
-
-    @api(method="POST", alias="telegram_memories_widget_snapshot_create", route="public", public_auth=TELEGRAM_WEBAPP_PUBLIC_AUTH)
-    async def telegram_memories_widget_snapshot_create(self, request: Any = None, telegram_init_data: str = "", **kwargs) -> Dict[str, Any]:
-        return await self._telegram_memory_widget_call("memories_widget_snapshot_create", request=request, telegram_init_data=telegram_init_data, **kwargs)
-
-    @api(method="POST", alias="telegram_memories_widget_snapshots", route="public", public_auth=TELEGRAM_WEBAPP_PUBLIC_AUTH)
-    async def telegram_memories_widget_snapshots(self, request: Any = None, telegram_init_data: str = "", **kwargs) -> Dict[str, Any]:
-        return await self._telegram_memory_widget_call("memories_widget_snapshots", request=request, telegram_init_data=telegram_init_data, **kwargs)
-
-    @api(method="POST", alias="telegram_memories_widget_snapshot_export", route="public", public_auth=TELEGRAM_WEBAPP_PUBLIC_AUTH)
-    async def telegram_memories_widget_snapshot_export(self, request: Any = None, telegram_init_data: str = "", **kwargs) -> Dict[str, Any]:
-        return await self._telegram_memory_widget_call("memories_widget_snapshot_export", request=request, telegram_init_data=telegram_init_data, **kwargs)
-
-    @api(method="POST", alias="telegram_memories_widget_snapshot_restore_preview", route="public", public_auth=TELEGRAM_WEBAPP_PUBLIC_AUTH)
-    async def telegram_memories_widget_snapshot_restore_preview(self, request: Any = None, telegram_init_data: str = "", **kwargs) -> Dict[str, Any]:
-        return await self._telegram_memory_widget_call("memories_widget_snapshot_restore_preview", request=request, telegram_init_data=telegram_init_data, **kwargs)
-
-    @api(method="POST", alias="telegram_memories_widget_snapshot_restore_apply", route="public", public_auth=TELEGRAM_WEBAPP_PUBLIC_AUTH)
-    async def telegram_memories_widget_snapshot_restore_apply(self, request: Any = None, telegram_init_data: str = "", **kwargs) -> Dict[str, Any]:
-        return await self._telegram_memory_widget_call("memories_widget_snapshot_restore_apply", request=request, telegram_init_data=telegram_init_data, **kwargs)
-
-    @api(method="POST", alias="telegram_memories_widget_reconcile_analyze", route="public", public_auth=TELEGRAM_WEBAPP_PUBLIC_AUTH)
-    async def telegram_memories_widget_reconcile_analyze(self, request: Any = None, telegram_init_data: str = "", **kwargs) -> Dict[str, Any]:
-        return await self._telegram_memory_widget_call("memories_widget_reconcile_analyze", request=request, telegram_init_data=telegram_init_data, **kwargs)
-
-    @api(method="POST", alias="telegram_memories_widget_reconcile_run", route="public", public_auth=TELEGRAM_WEBAPP_PUBLIC_AUTH)
-    async def telegram_memories_widget_reconcile_run(self, request: Any = None, telegram_init_data: str = "", **kwargs) -> Dict[str, Any]:
-        return await self._telegram_memory_widget_call("memories_widget_reconcile_run", request=request, telegram_init_data=telegram_init_data, **kwargs)
-
-    @api(method="POST", alias="telegram_memories_widget_reconcile_jobs", route="public", public_auth=TELEGRAM_WEBAPP_PUBLIC_AUTH)
-    async def telegram_memories_widget_reconcile_jobs(self, request: Any = None, telegram_init_data: str = "", **kwargs) -> Dict[str, Any]:
-        return await self._telegram_memory_widget_call("memories_widget_reconcile_jobs", request=request, telegram_init_data=telegram_init_data, **kwargs)
-
-    @api(method="POST", alias="telegram_memories_widget_reconcile_job", route="public", public_auth=TELEGRAM_WEBAPP_PUBLIC_AUTH)
-    async def telegram_memories_widget_reconcile_job(self, request: Any = None, telegram_init_data: str = "", **kwargs) -> Dict[str, Any]:
-        return await self._telegram_memory_widget_call("memories_widget_reconcile_job", request=request, telegram_init_data=telegram_init_data, **kwargs)
-
-    @api(method="POST", alias="telegram_memories_widget_reconcile_export", route="public", public_auth=TELEGRAM_WEBAPP_PUBLIC_AUTH)
-    async def telegram_memories_widget_reconcile_export(self, request: Any = None, telegram_init_data: str = "", **kwargs) -> Dict[str, Any]:
-        return await self._telegram_memory_widget_call("memories_widget_reconcile_export", request=request, telegram_init_data=telegram_init_data, **kwargs)
-
-    @api(method="POST", alias="telegram_memories_widget_reconcile_apply", route="public", public_auth=TELEGRAM_WEBAPP_PUBLIC_AUTH)
-    async def telegram_memories_widget_reconcile_apply(self, request: Any = None, telegram_init_data: str = "", **kwargs) -> Dict[str, Any]:
-        return await self._telegram_memory_widget_call("memories_widget_reconcile_apply", request=request, telegram_init_data=telegram_init_data, **kwargs)
-
     @api(method="POST", alias="telegram_webapp_user_admin_data", route="public", public_auth=TELEGRAM_WEBAPP_PUBLIC_AUTH)
     async def telegram_user_admin_data_public(
         self,
@@ -1244,26 +1109,18 @@ class VersatileEntrypoint(BaseEntrypointWithEconomicsAndMemory):
                     },
                 },
                 "widget": {
-                    "memories": {"user_types": [], "roles": []},
                     "pinboard": {"user_types": [], "roles": []},
                     "telegram_miniapp": {"user_types": [], "roles": []},
                     "usage_card": {"user_types": [], "roles": []},
                     "versatile_chat": {"user_types": [], "roles": []},
                 },
             },
-            "integrations": {
+            "connections": {
                 "connection_hub": {
                     "bundle_id": "connection-hub@1-0",
                 },
-                "telegram": {
-                    "enabled": False,
-                    "auth_connection_id": "telegram.default",
-                    "webhook_url": "",
-                    "send_responses": True,
-                    "stream_activity": True,
-                    "web_app_auth_max_age_seconds": 86400,
-                },
             },
+            "integrations": {},
             "canvas": {
                 "artifact_prefix": CANVAS_ARTIFACT_PREFIX,
                 "origin_prefix": CANVAS_ORIGIN_PREFIX,
@@ -1277,27 +1134,13 @@ class VersatileEntrypoint(BaseEntrypointWithEconomicsAndMemory):
                 "endpoint_url": "",
                 "auth_header": "",
             },
-            "memory": {
-                "enabled": True,
-                # Announce (the [USER MEMORY HOTSET] injection) is a consumer
-                # concern and is declared via this agent's as_consumer mem
-                # namespace (surfaces.as_consumer.agents.main.tools[mem].
-                # namespaces.mem.announce), supplied by the runtime bundles.yaml.
-                # base_workflow reads it from there first and only falls back to
-                # the legacy memory.announce.* block for un-migrated bundles.
-                # The durable memory write path is the `mem` named service
-                # (named_services.upsert_object), not the legacy in-process
-                # memory tools, so this consumer app carries no `memory.tools`
-                # block. Provider/maintenance config (reconciliation, snapshots)
-                # lives only in the dedicated memory app.
-                "widget": {
-                    "enabled": True,
-                    "allow_write": True,
-                    "default_scope_filter": "current_bundle",
-                    "allow_all_user_memories": True,
-                    "limit": 30,
-                },
-            },
+            # versatile CONSUMES durable user memory via the `mem` named service
+            # (surfaces.as_consumer.agents.main.tools[mem]) plus the announce
+            # declared on that namespace; it owns no memory widget/provider/
+            # maintenance config. Every memory surface (including the Telegram
+            # Mini App memory tab) iframes the dedicated user-memories app, so
+            # this entrypoint derives from the economics-only base and registers
+            # no `sdk.memory` provider.
             "ui": {
                 "main_view": {
                     "src_folder": "ui/scene",
@@ -1326,11 +1169,6 @@ class VersatileEntrypoint(BaseEntrypointWithEconomicsAndMemory):
                     # (bundles.yaml `versatile_chat.engine: local|package|package-ui`),
                     # expanded by the build pipeline. This is just the code-side default.
                     "versatile_chat": chat_widget_ui_config(),
-                    "memories": {
-                        "enabled": True,
-                        "src_folder": "sdk://context/memory/ui/widget/memories",
-                        "build_command": "npm install --no-package-lock && OUTDIR=<VI_BUILD_DEST_ABSOLUTE_PATH> npm run build",
-                    },
                     "usage_card": {
                         "enabled": True,
                         "src_folder": "sdk://infra/economics/ui/widget/usage-card",
@@ -1382,7 +1220,6 @@ class VersatileEntrypoint(BaseEntrypointWithEconomicsAndMemory):
     @property
     def configuration(self) -> Dict[str, Any]:
         sonnet_45 = "claude-sonnet-4-5-20250929"
-        opus_46 = "claude-opus-4-6"
         haiku_4 = "claude-haiku-4-5-20251001"
 
         config = dict(super().configuration)
@@ -1393,10 +1230,6 @@ class VersatileEntrypoint(BaseEntrypointWithEconomicsAndMemory):
             "solver.coordinator.v2": {"provider": "anthropic", "model": sonnet_45},
             "solver.react.v2.decision.v2.strong": {"provider": "anthropic", "model": sonnet_45},
             "solver.react.v2.decision.v2.regular": {"provider": "anthropic", "model": haiku_4},
-            "memory.reconciler": {"provider": "anthropic", "model": sonnet_45},
-            "memory.reconciler.lite": {"provider": "anthropic", "model": haiku_4},
-            "memory.reconciler.regular": {"provider": "anthropic", "model": sonnet_45},
-            "memory.reconciler.strong": {"provider": "anthropic", "model": opus_46},
         }.items():
             role_models.setdefault(key, value)
         config["role_models"] = role_models

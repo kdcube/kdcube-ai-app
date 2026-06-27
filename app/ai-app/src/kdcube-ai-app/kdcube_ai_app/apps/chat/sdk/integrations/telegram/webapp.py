@@ -8,6 +8,7 @@ from kdcube_ai_app.apps.chat.sdk.integrations.telegram.bundle_registry import (
     register_config,
     resolve_config,
 )
+from kdcube_ai_app.apps.chat.sdk.integrations.integration_config import select_integration
 from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import get_current_bundle_id, get_current_request_context
 
 BUNDLE_ID = ""
@@ -21,13 +22,19 @@ _CONFIGS: Dict[str, Dict[str, Any]] = {}
 
 def configure_telegram_webapp(
     *,
-    memory_widgets_module: Any,
     settings_widgets_module: Any,
     automation_widgets_module: Any,
     telegram_user_admin_module: Any,
+    memory_widgets_module: Any = None,
     bundle_id: str = "",
 ) -> None:
-    """Bind bundle-owned widget modules used to build the common webapp payload."""
+    """Bind bundle-owned widget modules used to build the common webapp payload.
+
+    ``memory_widgets_module`` is optional: a bundle that owns no memory summary
+    (memory lives in a separate app the Mini App iframes) omits it, and the
+    payload simply carries no ``memory`` key. Bundles that still provide it keep
+    their host-side memory summary.
+    """
     global BUNDLE_ID, memory_widgets, settings_widgets, automation_widgets, telegram_user_admin
     BUNDLE_ID = str(bundle_id or "").strip()
     memory_widgets = memory_widgets_module
@@ -48,7 +55,7 @@ def configure_telegram_webapp(
 
 def _config(entrypoint: Any = None) -> Dict[str, Any]:
     cfg = resolve_config(_CONFIGS, entrypoint=entrypoint, label="telegram webapp integration")
-    if not cfg.get("memory_widgets") or not cfg.get("settings_widgets") or not cfg.get("automation_widgets") or not cfg.get("telegram_user_admin"):
+    if not cfg.get("settings_widgets") or not cfg.get("automation_widgets") or not cfg.get("telegram_user_admin"):
         raise RuntimeError("telegram webapp integration is not configured")
     return cfg
 
@@ -187,35 +194,26 @@ def _tenant_project(entrypoint: Any) -> tuple[str, str]:
     )
 
 
-def _auth_connection_id(entrypoint: Any) -> str:
-    bundle_prop = getattr(entrypoint, "bundle_prop", None)
-    connection_id = ""
-    if callable(bundle_prop):
-        connection_id = str(
-            bundle_prop("integrations.telegram.auth_connection_id", "")
-            or bundle_prop("integrations.telegram.connection_id", "")
-            or ""
-        ).strip()
-    if not connection_id:
-        connection_id = "telegram.default"
-    return connection_id
+def _auth_integration_id(entrypoint: Any, *, integration_id: str = "") -> str:
+    row = select_integration(entrypoint, provider="telegram", integration_id=integration_id)
+    return str(row.get("id") or "").strip()
 
 
-def _auth_context_config(entrypoint: Any) -> Dict[str, Any]:
-    connection_id = _auth_connection_id(entrypoint)
+def _auth_context_config(entrypoint: Any, *, integration_id: str = "") -> Dict[str, Any]:
+    selected_id = _auth_integration_id(entrypoint, integration_id=integration_id)
     return {
         "headers": {
             "X-KDCube-Auth-Provider": "telegram",
-            "X-KDCube-Auth-Connection-ID": connection_id,
+            "X-KDCube-Auth-Integration-ID": selected_id,
         }
     }
 
 
-def _legacy_auth_config(entrypoint: Any) -> Dict[str, Any]:
-    connection_id = _auth_connection_id(entrypoint)
+def _legacy_auth_config(entrypoint: Any, *, integration_id: str = "") -> Dict[str, Any]:
+    selected_id = _auth_integration_id(entrypoint, integration_id=integration_id)
     return {
         "provider": "telegram",
-        "connection_id": connection_id,
+        "integration_id": selected_id,
     }
 
 
@@ -334,9 +332,14 @@ async def payload(
     widget_path: str = "",
     telegram_identity: Optional[Dict[str, Any]] = None,
     include_admin: bool = True,
+    integration_id: str = "",
 ) -> Dict[str, Any]:
     cfg = _config(entrypoint)
-    memory_module = cfg["memory_widgets"]
+    # Optional: a bundle whose Memory tab iframes a separate memory app supplies
+    # no host-side memory summary, so memory_widgets is absent and the payload
+    # omits the `memory` key. The Memory tab itself still renders (it loads the
+    # memory app in an iframe); only the host-built summary is conditional.
+    memory_module = cfg.get("memory_widgets")
     settings_module = cfg["settings_widgets"]
     automation_module = cfg["automation_widgets"]
     admin = cfg["telegram_user_admin"]
@@ -351,22 +354,12 @@ async def payload(
     active_tab = _active_tab(widget_path)
     if active_tab == "telegram_admin" and not include_admin:
         active_tab = "automations"
-    memory_payload = memory_module.payload(
-        entrypoint,
-        user_id=user_id,
-        fingerprint=fingerprint,
-        mark_seen=mark_memory_seen,
-    )
-    if inspect.isawaitable(memory_payload):
-        memory_payload = await memory_payload
 
     data = {
         "ok": True,
         "bundle_id": _bundle_id(entrypoint),
-        "authContext": _auth_context_config(entrypoint),
-        # Back-compat for older Telegram Mini App builds. New hosts should use
-        # authContext.headers and only add browser-owned proof material.
-        "auth": _legacy_auth_config(entrypoint),
+        "authContext": _auth_context_config(entrypoint, integration_id=integration_id),
+        "auth": _legacy_auth_config(entrypoint, integration_id=integration_id),
         "active_tab": active_tab,
         "path": str(widget_path or "").strip("/"),
         "tabs": tabs,
@@ -378,8 +371,17 @@ async def payload(
             user_id=user_id,
             fingerprint=fingerprint,
         ),
-        "memory": memory_payload,
     }
+    if memory_module is not None:
+        memory_payload = memory_module.payload(
+            entrypoint,
+            user_id=user_id,
+            fingerprint=fingerprint,
+            mark_seen=mark_memory_seen,
+        )
+        if inspect.isawaitable(memory_payload):
+            memory_payload = await memory_payload
+        data["memory"] = memory_payload
     settings_payload = settings_module.payload(
         entrypoint,
         user_id=user_id,

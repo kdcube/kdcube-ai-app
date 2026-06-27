@@ -25,7 +25,6 @@ servers:
         default: versatile@2026-03-31-13-36
 tags:
   - name: Widget
-  - name: Memory
   - name: Conversations
   - name: Telegram Admin
   - name: Public Callbacks
@@ -245,29 +244,6 @@ paths:
         "200":
           $ref: "#/components/responses/ConversationsWrapped"
 
-  /operations/memories_widget_data:
-    post:
-      tags: [Memory]
-      summary: Load SDK durable-memory widget data.
-      operationId: memories_widget_data
-      x-kdcube-result-alias: memories_widget_data
-      responses:
-        "200":
-          $ref: "#/components/responses/MemoryCanvasWrapped"
-
-  /public/telegram_memories_widget_data:
-    post:
-      tags: [Memory]
-      summary: Load Telegram-authenticated SDK durable-memory widget data.
-      operationId: telegram_memories_widget_data
-      x-kdcube-result-alias: telegram_memories_widget_data
-      security: []
-      parameters:
-        - $ref: "#/components/parameters/TelegramInitData"
-      responses:
-        "200":
-          $ref: "#/components/responses/MemoryCanvasWrapped"
-
   /operations/telegram_user_admin_data:
     post:
       tags: [Telegram Admin]
@@ -388,10 +364,17 @@ paths:
     post:
       tags: [Public Callbacks]
       summary: Telegram Bot API webhook.
-      description: Called by Telegram Bot API and guarded by Telegram webhook secret header.
+      description: Called by Telegram Bot API and guarded by Telegram webhook secret header. New webhook registrations should include the non-secret integration selector query parameter.
       operationId: telegram_webhook
       x-kdcube-result-alias: telegram_webhook
       security: []
+      parameters:
+        - name: integration_id
+          in: query
+          required: false
+          description: Stable non-secret Telegram integration selector, for example `telegram.kdcube_ref`. Required in new setup procedures; runtime fallback can validate by webhook secret when the selector is absent.
+          schema:
+            type: string
       responses:
         "200":
           description: Wrapped acknowledgement.
@@ -442,16 +425,6 @@ components:
               - type: object
                 additionalProperties:
                   $ref: "#/components/schemas/TelegramConversationsResult"
-    MemoryCanvasWrapped:
-      description: Wrapped memory/preferences canvas response.
-      content:
-        application/json:
-          schema:
-            allOf:
-              - $ref: "#/components/schemas/KdcubeResponseEnvelope"
-              - type: object
-                additionalProperties:
-                  $ref: "#/components/schemas/MemoryCanvasResult"
     ExportWrapped:
       description: Wrapped Excel export response.
       content:
@@ -557,19 +530,6 @@ components:
           type: string
         updated_at:
           type: string
-    MemoryCanvasSaveRequestEnvelope:
-      type: object
-      properties:
-        data:
-          type: object
-          properties:
-            document_text:
-              type: string
-            entries:
-              type: array
-              items:
-                type: object
-                additionalProperties: true
     ImportExcelRequestEnvelope:
       type: object
       properties:
@@ -579,28 +539,6 @@ components:
           properties:
             content_b64:
               type: string
-    MemoryCanvasResult:
-      type: object
-      properties:
-        ok:
-          type: boolean
-        user_id:
-          type: string
-        document_text:
-          type: string
-        entries:
-          type: array
-          items:
-            type: object
-            additionalProperties: true
-        changed_keys:
-          type: array
-          items:
-            type: string
-        removed_keys:
-          type: array
-          items:
-            type: string
     ExcelExportResult:
       type: object
       properties:
