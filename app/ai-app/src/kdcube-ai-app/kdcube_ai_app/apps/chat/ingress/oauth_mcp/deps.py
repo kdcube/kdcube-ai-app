@@ -38,18 +38,43 @@ def get_authenticate(request: Request) -> AuthenticateFn:
     if fn is not None:
         return fn
 
+    # oauth_mcp authenticates TWO distinct token kinds, so try each validator in
+    # turn and accept the first that resolves a user. ORDER MATTERS:
+    #   1) the platform bundle authority — validates the integration ACCESS token
+    #      minted for /mcp by grants.mint_feedback_reader_access_token (a STATEFUL
+    #      bundle kst1: a real Redis session whose roles live in the user record).
+    #      It is strict: it rejects the stateless web-login token (no session
+    #      record), which then falls through to (2).
+    #   2) the platform gateway's configured session manager (resolved from
+    #      AUTH_PROVIDER) — validates the admin's web-login session at
+    #      /oauth/authorize (e.g. a stateless kdcube_ext kst1 carrying roles in its
+    #      claims).
+    # Bundle MUST come first: a custom provider's verifier may share the token
+    # schema and would otherwise ACCEPT the access token but read roles from its
+    # (role-less) claims -> empty roles -> 403 "feedback-reader role required".
+    # A single hardcoded manager breaks one of the two endpoints.
+    from kdcube_ai_app.apps.chat.ingress.resolvers import create_auth_manager
     from kdcube_ai_app.auth.bundle import BundleSessionAuthManager, get_bundle_session_authority
 
     tenant, project = oauth_tenant_project(request)
-    authority = get_bundle_session_authority(tenant=tenant, project=project)
-    manager = BundleSessionAuthManager(authority=authority)
+    managers = [
+        BundleSessionAuthManager(
+            authority=get_bundle_session_authority(tenant=tenant, project=project)
+        ),
+        create_auth_manager(),
+    ]
 
     async def _authenticate(token: str) -> Optional[dict]:
-        try:
-            user = await manager.authenticate(token)
-        except Exception:
-            return None
-        return {"sub": user.sub, "roles": list(user.roles or [])}
+        for manager in managers:
+            try:
+                user = await manager.authenticate(token)
+            except Exception:
+                continue
+            if user is None:
+                continue
+            sub = getattr(user, "sub", None) or getattr(user, "username", None)
+            return {"sub": sub, "roles": list(getattr(user, "roles", None) or [])}
+        return None
 
     return _authenticate
 
