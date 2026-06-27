@@ -141,9 +141,18 @@ def client():
     return TestClient(app)
 
 
-def test_authorize_requires_authentication(client):
-    r = client.get("/oauth/authorize", params=_params())
-    assert r.status_code == 401
+def test_authorize_unauthenticated_redirects_to_signin(client):
+    # A browser hitting /oauth/authorize without a session must be sent to the
+    # platform login (with a return-to) rather than getting a dead-end JSON 401.
+    r = client.get("/oauth/authorize", params=_params(), follow_redirects=False)
+    assert r.status_code == 302
+    loc = r.headers["location"]
+    assert loc.startswith("/signin?next=")
+    nxt = dict(up.parse_qsl(up.urlsplit(loc).query))["next"]
+    # the full authorize request (path + multi-param query) is preserved url-encoded
+    assert nxt.startswith("/oauth/authorize")
+    assert "client_id=claude" in up.unquote(nxt)
+    assert "code_challenge=" in up.unquote(nxt)
 
 
 def test_authorize_rejects_non_admin(client):
