@@ -140,6 +140,16 @@ async def authorize(request: Request) -> Response:
 
     user, denied = await _require_admin(request)
     if denied is not None:
+        # Browser entry point: on a missing session, send the user to the platform
+        # login with a return-to (url-encoded so the multi-param authorize URL
+        # survives) instead of a dead-end JSON 401. 403 (authenticated non-admin)
+        # still returns its JSON.
+        if getattr(denied, "status_code", None) == 401:
+            from urllib.parse import quote
+            return_to = request.url.path
+            if request.url.query:
+                return_to += "?" + request.url.query
+            return RedirectResponse(f"/signin?next={quote(return_to, safe='')}", status_code=302)
         return denied
 
     # Synchronizer CSRF token bound to the consenting admin, embedded in the form.
