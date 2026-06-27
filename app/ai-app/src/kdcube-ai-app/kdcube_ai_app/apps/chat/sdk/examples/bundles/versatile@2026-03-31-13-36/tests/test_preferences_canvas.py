@@ -89,9 +89,7 @@ def test_telegram_bot_transport_manifest_and_defaults():
         route=webhook.route,
     ) == "enabled.api.public.telegram_webhook.POST"
     assert webhook.public_auth is not None
-    assert webhook.public_auth.mode == "header_secret"
-    assert webhook.public_auth.header == "X-Telegram-Bot-Api-Secret-Token"
-    assert webhook.public_auth.secret_key == "integrations.telegram.webhook_secret"
+    assert webhook.public_auth.mode == "none"
 
     conversation_list_enabled_paths = {
         item.route: bundle_loader.canonical_enabled_path(
@@ -132,13 +130,8 @@ def test_telegram_bot_transport_manifest_and_defaults():
     assert "named_services" not in defaults
     assert "surfaces" not in defaults
     assert defaults["telemetry_sink"] == {"endpoint_url": "", "auth_header": ""}
-    assert defaults["integrations"]["telegram"] == {
-        "enabled": False,
-        "webhook_url": "",
-        "send_responses": True,
-        "stream_activity": True,
-        "web_app_auth_max_age_seconds": 86400,
-    }
+    assert defaults["connections"]["connection_hub"] == {"bundle_id": "connection-hub@1-0"}
+    assert defaults["integrations"] == {}
     assert defaults["ui"]["widgets"]["telegram_miniapp"]["src_folder"] == "ui/widgets/telegram_miniapp"
     assert "versatile_webapp" not in defaults["ui"]["widgets"]
 

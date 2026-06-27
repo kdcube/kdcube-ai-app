@@ -17,7 +17,7 @@ see_also:
 The bundle exposes:
 
 ```text
-POST /public/telegram_webhook
+POST /public/telegram_webhook?integration_id=<telegram-integration-id>
 GET  /public/widgets/telegram_miniapp
 POST /operations/telegram_user_admin_*
 ```
@@ -32,10 +32,11 @@ export WIDGET_ALIAS="telegram_miniapp"
 export PUBLIC_HOST="https://YOUR_PUBLIC_HTTPS_HOST" # no trailing slash
 export PUBLIC_HOST="${PUBLIC_HOST%/}"
 
-export TELEGRAM_BOT_TOKEN="..."       # from bundles.secrets.yaml / secrets provider
-export TELEGRAM_WEBHOOK_SECRET="..."  # same value as integrations.telegram.webhook_secret
+export TELEGRAM_BOT_TOKEN="..."       # same value as integrations.telegram_kdcube_ref.definition.bot_token
+export TELEGRAM_WEBHOOK_SECRET="..."  # same value as integrations.telegram_kdcube_ref.definition.webhook_secret
 
-export WEBHOOK_URL="${PUBLIC_HOST}/api/integrations/bundles/${TENANT}/${PROJECT}/${BUNDLE_ID}/public/telegram_webhook"
+export TELEGRAM_INTEGRATION_ID="telegram.kdcube_ref"
+export WEBHOOK_URL="${PUBLIC_HOST}/api/integrations/bundles/${TENANT}/${PROJECT}/${BUNDLE_ID}/public/telegram_webhook?integration_id=${TELEGRAM_INTEGRATION_ID}"
 export MINI_APP_URL="${PUBLIC_HOST}/api/integrations/bundles/${TENANT}/${PROJECT}/${BUNDLE_ID}/public/widgets/${WIDGET_ALIAS}"
 ```
 
@@ -46,6 +47,15 @@ curl -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook" \
   -d "url=${WEBHOOK_URL}" \
   -d "secret_token=${TELEGRAM_WEBHOOK_SECRET}"
 ```
+
+The Versatile webhook route is platform-public because Telegram is not a
+browser/platform session. The Telegram handler still enforces
+`X-Telegram-Bot-Api-Secret-Token`. New webhook registrations should always put
+the non-secret `integration_id` selector in the webhook URL, as shown above.
+With that selector present, the handler validates against that integration's
+configured `webhook_secret` only. Runtime fallback can still validate by
+checking enabled Telegram integration secrets when Telegram reaches a webhook
+without the query selector, but new setups should always include it.
 
 Check what Telegram currently uses:
 

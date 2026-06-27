@@ -14,14 +14,39 @@ export function ConnectionLinkPage({ challengeId }: ConnectionLinkPageProps) {
   const [draft, setDraft] = useState(challengeId || '');
   const [result, setResult] = useState<TelegramIdentityLinkResult | null>(null);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   const [loading, setLoading] = useState(Boolean(challengeId));
   const telegramFirst = !challengeId;
-  const linked = Boolean(result?.link?.platform_user_id || result?.challenge?.platform_user_id);
+  const link = result?.link;
+  const linked = Boolean(link?.platform_user_id || result?.challenge?.platform_user_id);
   const readyForKdcube = telegramFirst && Boolean(result?.ok && result?.platform_claim_url);
+
+  async function refreshLinkStatus(options: { silent?: boolean } = {}) {
+    if (!options.silent) {
+      setLoading(true);
+      setError('');
+    }
+    try {
+      const response = await callOperation<TelegramIdentityLinkResult>('telegram_identity_link_status', {});
+      if (response?.ok === false) {
+        if (!options.silent) setError(response.message || response.error || 'Telegram link status failed');
+      } else {
+        setResult((current) => {
+          if (response.link?.platform_user_id) return response;
+          return current?.platform_claim_url ? { ...current, ...response, platform_claim_url: current.platform_claim_url } : response;
+        });
+      }
+    } catch (e) {
+      if (!options.silent) setError(message(e));
+    } finally {
+      if (!options.silent) setLoading(false);
+    }
+  }
 
   async function startTelegramFirstLink() {
     setLoading(true);
     setError('');
+    setNotice('');
     setResult(null);
     try {
       const response = await callOperation<TelegramIdentityLinkResult>('telegram_identity_link_start', {});
@@ -45,6 +70,7 @@ export function ConnectionLinkPage({ challengeId }: ConnectionLinkPageProps) {
     }
     setLoading(true);
     setError('');
+    setNotice('');
     setResult(null);
     try {
       const response = await callOperation<TelegramIdentityLinkResult>('telegram_identity_link_complete', {
@@ -62,9 +88,34 @@ export function ConnectionLinkPage({ challengeId }: ConnectionLinkPageProps) {
     }
   }
 
+  async function unlinkTelegram() {
+    setLoading(true);
+    setError('');
+    setNotice('');
+    try {
+      const response = await callOperation<TelegramIdentityLinkResult>('telegram_identity_link_remove', {});
+      if (response?.ok === false) {
+        setError(response.message || response.error || 'Telegram unlink failed');
+      } else {
+        setResult({
+          ok: true,
+          provider: response.provider || 'telegram',
+          provider_subject: response.provider_subject,
+          linked: false,
+          removed: response.removed,
+        });
+        setNotice(response.message || 'Telegram account is no longer linked.');
+      }
+    } catch (e) {
+      setError(message(e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
   useEffect(() => {
     if (!challengeId) {
-      void startTelegramFirstLink();
+      void refreshLinkStatus();
       return undefined;
     }
     let cancelled = false;
@@ -93,28 +144,68 @@ export function ConnectionLinkPage({ challengeId }: ConnectionLinkPageProps) {
     };
   }, [challengeId]);
 
+  useEffect(() => {
+    if (!readyForKdcube || linked) return undefined;
+    const refresh = () => void refreshLinkStatus({ silent: true });
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    return () => {
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', refresh);
+    };
+  }, [readyForKdcube, linked]);
+
+  if (linked) {
+    return (
+      <section className="link-card">
+        <div className="link-badge">Connection Hub</div>
+        <h1>Telegram is linked</h1>
+        <p className="muted">
+          This Telegram account is attached to your KDCube identity. Requests from this Mini App can now be resolved through that platform account.
+        </p>
+        <div className="link-status-card done">
+          <strong>Connected account</strong>
+          <span>Telegram is linked to KDCube user <code>{link?.platform_user_id || result?.challenge?.platform_user_id}</code>.</span>
+        </div>
+        <div className="link-field">
+          <span>Telegram</span>
+          <code>{link?.label || result?.provider_subject || link?.provider_subject || 'current account'}</code>
+        </div>
+        <div className="link-field">
+          <span>KDCube user</span>
+          <code>{link?.platform_user_id || result?.challenge?.platform_user_id}</code>
+        </div>
+        <button className="link-button danger-button" type="button" disabled={loading} onClick={() => void unlinkTelegram()}>
+          Unlink Telegram account
+        </button>
+        {loading && <div className="notice">Updating link…</div>}
+        {error && <div className="notice error">{error}</div>}
+      </section>
+    );
+  }
+
   return (
     <section className="link-card">
       <div className="link-badge">Connection Hub</div>
       <h1>Link Telegram</h1>
       <p className="muted">
         {telegramFirst
-          ? 'Start here in Telegram, then open KDCube to attach this Telegram account to your signed-in KDCube user.'
-          : 'KDCube sent you here to confirm this Telegram account.'}
+          ? 'Attach this Telegram account to the KDCube account you use in the browser.'
+          : 'KDCube opened Telegram so you can confirm which Telegram account should be linked.'}
       </p>
 
       <ol className="link-steps">
         <li className={result?.ok ? 'done' : 'active'}>
-          <strong>1. Confirm this Telegram account</strong>
-          <span>Telegram tells KDCube which account is open now.</span>
+          <strong>1. Create a Telegram proof</strong>
+          <span>Telegram signs the account currently open in this Mini App.</span>
         </li>
         <li className={linked ? 'done' : readyForKdcube ? 'active' : ''}>
-          <strong>2. Open KDCube</strong>
-          <span>Sign in there and finish connecting the account.</span>
+          <strong>2. Open KDCube and sign in</strong>
+          <span>KDCube will show the browser account that will receive this Telegram link.</span>
         </li>
         <li className={linked ? 'done' : ''}>
-          <strong>3. Connected</strong>
-          <span>After KDCube confirms it, Telegram is linked.</span>
+          <strong>3. Approve the link in KDCube</strong>
+          <span>When you return here, this tab will show the linked KDCube account.</span>
         </li>
       </ol>
 
@@ -136,12 +227,12 @@ export function ConnectionLinkPage({ challengeId }: ConnectionLinkPageProps) {
 
       {telegramFirst && !result?.ok && (
         <button className="link-button" type="button" disabled={loading} onClick={() => void startTelegramFirstLink()}>
-          1. Confirm this Telegram account
+          Link this Telegram account
         </button>
       )}
       {readyForKdcube && (
         <a className="link-button link-anchor" href={result.platform_claim_url} target="_blank" rel="noreferrer">
-          2. Open KDCube to finish
+          Open KDCube to approve
         </a>
       )}
       {telegramFirst && !result?.platform_claim_url && draft.trim() && (
@@ -150,11 +241,12 @@ export function ConnectionLinkPage({ challengeId }: ConnectionLinkPageProps) {
         </button>
       )}
 
-      {loading && <div className="notice">{challengeId ? 'Connecting this Telegram account…' : 'Confirming this Telegram account…'}</div>}
+      {loading && <div className="notice">{challengeId ? 'Connecting this Telegram account…' : 'Checking Telegram link…'}</div>}
       {error && <div className="notice error">{error}</div>}
+      {notice && <div className="notice success">{notice}</div>}
       {!loading && readyForKdcube && (
         <div className="notice success">
-          Telegram is confirmed. Tap “Open KDCube to finish”, then sign in there to connect it.
+          Telegram proof is ready. Tap “Open KDCube to approve”, sign in there, and approve this Telegram link.
         </div>
       )}
       {result?.ok && !result.platform_claim_url && (
@@ -164,7 +256,7 @@ export function ConnectionLinkPage({ challengeId }: ConnectionLinkPageProps) {
               Connected. This Telegram account is linked to KDCube user <code>{result.link?.platform_user_id || result.challenge?.platform_user_id}</code>.
             </>
           ) : (
-            <>Telegram is confirmed. Return to KDCube to finish connecting it.</>
+            <>Telegram is not linked yet. Use the button above to start linking it to your KDCube account.</>
           )}
         </div>
       )}

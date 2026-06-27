@@ -142,8 +142,8 @@ export interface WebAppPayload {
   };
   auth?: {
     provider?: string;
-    connection_id?: string;
-    connectionId?: string;
+    integration_id?: string;
+    integrationId?: string;
   };
 }
 
@@ -159,7 +159,10 @@ export interface TelegramIdentityLinkResult {
   ok?: boolean;
   provider?: string;
   provider_subject?: string;
+  connection_id?: string;
   platform_claim_url?: string;
+  linked?: boolean;
+  removed?: boolean;
   challenge?: {
     challenge_id?: string;
     status?: string;
@@ -170,6 +173,11 @@ export interface TelegramIdentityLinkResult {
     provider_subject?: string;
     platform_user_id?: string;
     label?: string;
+  };
+  principal?: {
+    platform_user_id?: string;
+    roles?: string[];
+    permissions?: string[];
   };
   error?: string;
   message?: string;

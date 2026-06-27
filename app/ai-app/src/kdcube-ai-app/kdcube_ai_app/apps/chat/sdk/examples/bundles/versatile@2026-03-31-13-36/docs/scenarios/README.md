@@ -64,10 +64,10 @@ operation wiring.
 Telegram user sends message
   |
   v
-Telegram Bot API calls public/telegram_webhook
+Telegram Bot API calls public/telegram_webhook?integration_id=telegram.kdcube_ref
   |
   v
-bundle validates X-Telegram-Bot-Api-Secret-Token
+bundle selects the configured integration and validates X-Telegram-Bot-Api-Secret-Token
   |
   v
 telegram update idempotency claim

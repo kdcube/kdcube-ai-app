@@ -4025,19 +4025,30 @@ async def _enforce_public_api_auth(
         )
         raise HTTPException(status_code=401, detail="Unauthorized")
 
-    resolved_secret_key = _resolve_bundle_secret_key(
-        bundle_id=bundle_id,
-        secret_key=str(public_auth.secret_key or ""),
+    secret_keys = tuple(
+        key for key in (tuple(getattr(public_auth, "secret_keys", None) or ()) or (str(public_auth.secret_key or ""),))
+        if str(key or "").strip()
     )
-    expected_secret = await get_secret(resolved_secret_key)
-    if not expected_secret:
+    configured = []
+    missing = []
+    for secret_key in secret_keys:
+        resolved_secret_key = _resolve_bundle_secret_key(
+            bundle_id=bundle_id,
+            secret_key=str(secret_key or ""),
+        )
+        expected_secret = await get_secret(resolved_secret_key)
+        if expected_secret:
+            configured.append((resolved_secret_key, expected_secret))
+        else:
+            missing.append(resolved_secret_key)
+    if not configured:
         logger.warning(
-            "Bundle public operation %s requires missing secret %s",
+            "Bundle public operation %s requires missing public auth secrets %s",
             operation,
-            resolved_secret_key,
+            missing,
         )
         raise HTTPException(status_code=503, detail="Public endpoint is not configured")
-    if not hmac.compare_digest(provided_secret, expected_secret):
+    if not any(hmac.compare_digest(provided_secret, expected_secret) for _, expected_secret in configured):
         logger.warning(
             "Bundle public operation %s/%s rejected: invalid header secret %s",
             bundle_id,

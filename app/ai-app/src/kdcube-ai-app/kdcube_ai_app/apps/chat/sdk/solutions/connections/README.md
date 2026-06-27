@@ -60,7 +60,7 @@ result = await identity_links.telegram_link_start(
 Configure the Connection Hub app id on the calling app:
 
 ```yaml
-integrations:
+connections:
   connection_hub:
     bundle_id: connection-hub@1-0
 ```

@@ -327,6 +327,7 @@ input:focus, select:focus, textarea:focus {
 /* ─── Memory page (hosts the shared widget) ─── */
 .memory-page,
 .memory-embed-page { width: min(100%, 1180px); }
+.connections-embed-page { width: min(100%, 760px); }
 
 .loading-state {
   color: var(--muted);
@@ -337,20 +338,69 @@ input:focus, select:focus, textarea:focus {
   border-radius: var(--r-md);
   background: var(--surface);
 }
+/* Host-rendered compact memory header (mirrors the scene memory-pane head). */
+.memory-pane-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.memory-pane-title {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.memory-pane-title strong {
+  font-size: 15px;
+  font-weight: 600;
+}
+.memory-pane-title small {
+  color: var(--muted);
+  font-size: 12px;
+}
+.memory-pane-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.ghost-button.icon-only {
+  width: 28px;
+  padding: 0;
+}
+
 .memory-widget-frame {
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
   background: var(--surface);
-  min-height: 560px;
   overflow: hidden;
 }
 
 .memory-widget-iframe {
   display: block;
   width: 100%;
-  height: 70vh;
-  min-height: 560px;
+  /* Compact: a short glanceable list. */
+  height: 320px;
   border: 0;
+  transition: height 140ms ease;
+}
+
+.connection-widget-frame {
+  width: 100%;
+}
+
+.connection-widget-iframe {
+  display: block;
+  width: 100%;
+  min-height: 620px;
+  border: 0;
+  background: var(--bg);
+}
+
+/* Expanded: give the widget the full tab to show the rest + side panel. */
+.memory-embed-page.memory-expanded .memory-widget-iframe {
+  height: 76vh;
+  min-height: 560px;
 }
 
 /* ─── Telegram admin layout ─── */
@@ -480,6 +530,31 @@ input:focus, select:focus, textarea:focus {
   font-size: 12px;
 }
 
+.link-status-card {
+  margin: 14px 0;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  color: var(--text-2);
+  padding: 10px 12px;
+}
+
+.link-status-card.done {
+  border-color: rgba(82, 176, 68, 0.28);
+  background: rgba(232, 247, 229, 0.6);
+  color: var(--green-dark);
+}
+
+.link-status-card strong,
+.link-status-card span {
+  display: block;
+}
+
+.link-status-card span {
+  margin-top: 3px;
+  font-size: 12px;
+}
+
 .link-field {
   margin: 12px 0;
   display: flex;
@@ -536,6 +611,16 @@ input:focus, select:focus, textarea:focus {
   border-color: var(--line);
   background: var(--surface);
   color: var(--ink);
+}
+
+.link-button.danger-button {
+  border-color: rgba(247, 96, 154, 0.4);
+  background: var(--surface);
+  color: var(--pink-dark);
+}
+
+.link-button.danger-button:hover:not(:disabled) {
+  background: var(--pink-pale);
 }
 
 .link-button:disabled {

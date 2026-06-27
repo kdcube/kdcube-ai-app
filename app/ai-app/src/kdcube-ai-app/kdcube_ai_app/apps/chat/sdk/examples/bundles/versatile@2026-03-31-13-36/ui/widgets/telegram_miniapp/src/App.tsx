@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AppShell } from './components/AppShell';
 import { ConnectionLinkPage } from './pages/ConnectionLinkPage';
+import { ConnectionsPage } from './pages/ConnectionsPage';
 import { ConversationsPage } from './pages/ConversationsPage';
 import { MemoryPage } from './pages/MemoryPage';
 import { TelegramAdminPage } from './pages/TelegramAdminPage';
@@ -146,7 +147,7 @@ export default function App() {
       )}
       {!loading && !pendingTelegramApproval && tab === 'memory' && <MemoryPage memory={payload.memory} reload={load} />}
       {!loading && !pendingTelegramApproval && tab === 'conversations' && <ConversationsPage conversations={payload.conversations} reload={load} />}
-      {!loading && !pendingTelegramApproval && tab === 'connections' && !linkMode && <ConnectionLinkPage />}
+      {!loading && !pendingTelegramApproval && tab === 'connections' && !linkMode && <ConnectionsPage />}
       {!loading && !pendingTelegramApproval && tab === 'telegram_admin' && showAdmin && <TelegramAdminPage />}
     </AppShell>
   );

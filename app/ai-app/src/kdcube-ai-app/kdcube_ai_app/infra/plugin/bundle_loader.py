@@ -111,6 +111,7 @@ class PublicAPIAuthSpec:
     mode: str = "none"
     header: str | None = None
     secret_key: str | None = None
+    secret_keys: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -244,6 +245,7 @@ def _coerce_public_api_auth_spec(value: Any) -> PublicAPIAuthSpec | None:
             mode=str(getattr(value, "mode", "none") or "none"),
             header=getattr(value, "header", None),
             secret_key=getattr(value, "secret_key", None),
+            secret_keys=tuple(getattr(value, "secret_keys", None) or ()),
         )
     return value
 
@@ -504,10 +506,19 @@ def _normalize_public_api_auth(route: str, value: Any) -> PublicAPIAuthSpec | No
     header = str(value.get("header") or "X-KDCUBE-Public-Secret").strip()
     if not header:
         raise ValueError("Bundle api public_auth.header must be a non-empty HTTP header name")
+    raw_secret_keys = value.get("secret_keys")
+    secret_keys: list[str] = []
+    if isinstance(raw_secret_keys, (list, tuple)):
+        secret_keys.extend(str(item or "").strip() for item in raw_secret_keys)
+    elif raw_secret_keys:
+        secret_keys.append(str(raw_secret_keys or "").strip())
     secret_key = str(value.get("secret_key") or "").strip()
-    if not secret_key:
-        raise ValueError("Bundle api public_auth.secret_key is required for mode='header_secret'")
-    return PublicAPIAuthSpec(mode="header_secret", header=header, secret_key=secret_key)
+    if secret_key:
+        secret_keys.insert(0, secret_key)
+    secret_keys = [item for item in dict.fromkeys(secret_keys) if item]
+    if not secret_keys:
+        raise ValueError("Bundle api public_auth.secret_key or secret_keys is required for mode='header_secret'")
+    return PublicAPIAuthSpec(mode="header_secret", header=header, secret_key=secret_keys[0], secret_keys=tuple(secret_keys))
 
 
 def _normalize_icon_spec(value: Any) -> dict[str, str]:

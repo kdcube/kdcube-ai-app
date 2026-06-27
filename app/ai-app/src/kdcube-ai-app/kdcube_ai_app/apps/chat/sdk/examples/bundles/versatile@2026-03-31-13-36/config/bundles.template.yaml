@@ -3,22 +3,9 @@ bundles:
   items:
     - id: "versatile@2026-03-31-13-36"
       config:
-        memory:
-          enabled: true
-          # Announce (the [USER MEMORY HOTSET] injection) is a consumer concern
-          # and is declared under surfaces.as_consumer.agents.main.tools[mem].
-          # namespaces.mem.announce below. The legacy memory.announce.* block is
-          # still read as a back-compat fallback for un-migrated bundles.
-          tools:
-            enabled: true
-            allow_write: true
-            default_scope_filter: current_bundle
-          widget:
-            enabled: true
-            allow_write: true
-            default_scope_filter: current_bundle
-            allow_all_user_memories: true
-            limit: 30
+        # versatile CONSUMES durable user memory via the `mem` named service
+        # (surfaces.as_consumer.agents.main.tools[mem]) and the announce there.
+        # It owns no memory widget/provider config.
         namespace_styles:
           fi:
             label: file
@@ -373,19 +360,25 @@ bundles:
           # Authorization ingest header, for example X-Telemetry-Token, when the
           # receiver sits behind a gateway that parses Authorization as JWT.
           auth_header: ""
-        integrations:
+        connections:
           connection_hub:
             bundle_id: connection-hub@1-0
-          telegram:
+        integrations:
+          telegram.kdcube_ref:
+            provider: telegram
+            where: built-in
             enabled: false
-            # Non-secret selector handle sent by the Telegram Mini App host as
-            # X-KDCube-Auth-Connection-ID. Must match a Connection Hub
-            # identity.authenticators[].connection_id row.
-            auth_connection_id: telegram.default
-            webhook_url: "<domain name>/assembly.yaml service route/<tenant>/<project>/api/public/<alias>"
-            send_responses: true
-            stream_activity: true
-            web_app_auth_max_age_seconds: 86400
+            secret_refs:
+              bot_token: integrations.telegram_kdcube_ref.definition.bot_token
+              webhook_secret: integrations.telegram_kdcube_ref.definition.webhook_secret
+            definition:
+              bot_name: kdcube-ref
+              bot_username: kdcube_doc_bot
+              webhook:
+                url: "https://<PUBLIC_HOST>/api/integrations/bundles/<TENANT>/<PROJECT>/versatile@2026-03-31-13-36/public/telegram_webhook?integration_id=telegram.kdcube_ref"
+                send_responses: true
+                stream_activity: true
+              web_app_auth_max_age_seconds: 86400
         visibility:
           bundle:
             allowed_roles: []
@@ -403,9 +396,6 @@ bundles:
               roles:
                 - kdcube:role:super-admin
           widget:
-            memories:
-              user_types: []
-              roles: []
             pinboard:
               user_types: []
               roles: []
@@ -441,9 +431,6 @@ bundles:
             versatile_chat:
               src_folder: sdk://solutions/chat/ui/widget
               engine: package-ui
-            memories:
-              src_folder: sdk://context/memory/ui/widget/memories
-              build_command: npm install --no-package-lock && OUTDIR=<VI_BUILD_DEST_ABSOLUTE_PATH> npm run build
             usage_card:
               src_folder: sdk://infra/economics/ui/widget/usage-card
               build_command: npm install --no-package-lock && OUTDIR=<VI_BUILD_DEST_ABSOLUTE_PATH> npm run build

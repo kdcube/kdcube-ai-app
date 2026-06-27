@@ -24,16 +24,16 @@ interface RuntimeConfigPayload {
   auth?: {
     idTokenHeaderName?: string;
     provider?: string;
-    connection_id?: string;
-    connectionId?: string;
+    integration_id?: string;
+    integrationId?: string;
   };
   authContext?: {
     headers?: Record<string, unknown>;
   };
   authProvider?: string;
-  authConnectionId?: string;
-  connection_id?: string;
-  connectionId?: string;
+  authIntegrationId?: string;
+  integration_id?: string;
+  integrationId?: string;
 }
 
 function isPlaceholder(value: string | null | undefined): boolean {
@@ -95,16 +95,16 @@ function normalizeAuthContextHeaders(input?: Record<string, unknown>): Record<st
 
 function legacyAuthContextHeaders(config: RuntimeConfigPayload): Record<string, string> {
   const provider = config.authProvider || config.auth?.provider;
-  const connectionId = (
-    config.authConnectionId ||
-    config.connection_id ||
-    config.connectionId ||
-    config.auth?.connection_id ||
-    config.auth?.connectionId
+  const integrationId = (
+    config.authIntegrationId ||
+    config.integration_id ||
+    config.integrationId ||
+    config.auth?.integration_id ||
+    config.auth?.integrationId
   );
   const out: Record<string, string> = {};
   if (provider) out['X-KDCube-Auth-Provider'] = String(provider);
-  if (connectionId) out['X-KDCube-Auth-Connection-ID'] = String(connectionId);
+  if (integrationId) out['X-KDCube-Auth-Integration-ID'] = String(integrationId);
   return out;
 }
 

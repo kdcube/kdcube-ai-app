@@ -20,7 +20,19 @@ const AuthCallback = ()=>{
 
     useEffect(() => {
         if (navigateTo) {
-            navigate(navigateTo, {
+            const target = String(navigateTo);
+            if (target.startsWith("/api/")) {
+                window.location.replace(target);
+                return;
+            }
+            if (/^https?:\/\//i.test(target)) {
+                const url = new URL(target);
+                if (url.origin === window.location.origin) {
+                    window.location.replace(url.toString());
+                    return;
+                }
+            }
+            navigate(target, {
                 replace: true,
             })
         }

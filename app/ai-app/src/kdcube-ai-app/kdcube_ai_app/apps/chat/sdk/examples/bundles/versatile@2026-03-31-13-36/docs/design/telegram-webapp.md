@@ -2,7 +2,7 @@
 title: Versatile Telegram WebApp Design
 kind: design-note
 bundle_id: versatile@2026-03-31-13-36
-updated_at: 2026-05-12
+updated_at: 2026-06-27
 ---
 
 # Versatile Telegram Mini App Design
@@ -16,11 +16,15 @@ KDCube control plane iframe
   -> operations/conversations_*
   -> operations/telegram_user_admin_* (admin role)
   -> embedded user-memories iframe (Memory tab; user-memories app owns its APIs)
+  -> embedded connection-hub iframe (Connect tab; Connection Hub owns linking)
 
 Telegram Mini App
   -> public/telegram_miniapp_data
   -> embedded user-memories iframe (Memory tab)
        -> user-memories app's own APIs with authContext.headers
+  -> embedded connection-hub iframe (Connect tab)
+       -> connection-hub public APIs with authContext.headers
+       -> connection-hub Socket.IO live channel for link completion events
   -> public/telegram_conversations_*
   -> public/telegram_webapp_user_admin_* (Telegram admin role)
 ```
@@ -41,6 +45,19 @@ The Memory tab carries no bundle-owned memory operations. It iframes the
 dedicated user-memories app, which serves its own widget and owns the durable
 memory contract; the Telegram shell only forwards the `authContext` proof to
 that iframe through the same `CONFIG_REQUEST` / `CONFIG_RESPONSE` handshake.
+
+The Connect tab follows the same host/iframe rule. It iframes the Connection
+Hub `connections_settings` widget. The Telegram shell forwards only the opaque
+`authContext.headers` map through `CONFIG_RESPONSE`; it does not validate
+Telegram, does not know Connection Hub secrets, and does not call Connection
+Hub on the child's behalf. The Connection Hub iframe uses those headers on its
+own public APIs.
+
+For the link journey, the Connection Hub iframe creates its own short-lived
+Socket.IO live channel by calling Connection Hub's `federated_data_bus_claim`
+public operation. When the user finishes the browser-side claim, Connection
+Hub emits `connection_hub.identity.link_changed` to that session. This avoids
+polling and keeps Versatile out of Connection Hub's server-to-widget lifecycle.
 
 ## Auth Lanes
 
@@ -68,6 +85,21 @@ operations/* APIs + promoted authContext.headers
   gateway request-auth calls Connection Hub
   Connection Hub validates initData and resolves linked platform authority
 
+Connect tab link completion
+  Connection Hub iframe claims a connection-hub live Socket.IO session
+  |
+  v
+  telegram_identity_link_start stores that session on the link challenge
+  |
+  v
+  browser-side KDCube claim completes the challenge
+  |
+  v
+  Connection Hub emits connection_hub.identity.link_changed to the iframe
+  |
+  v
+  iframe refreshes linked/unlinked state
+
 public/telegram_* APIs, for app-owned Telegram routes
   app validates initData/webhook proof using bot token
   app resolves Telegram registry row and app-local role
@@ -81,6 +113,8 @@ Tabs:
 
 - Memory: SDK durable-memory widget embedded in the Mini App shell.
 - Chats: Telegram-linked conversation/channel selection.
+- Connect: Connection Hub widget embedded in the Mini App shell for linking the
+  Telegram subject to the signed-in platform account.
 - Admin: Telegram user registry, visible to KDCube admins in the control plane
   and to Telegram users with role `admin` in the registry.
 

@@ -43,14 +43,14 @@ def _prop(entrypoint: Any, path: str, default: Any = None) -> Any:
 def connection_hub_bundle_id(entrypoint: Any, *, default: str = DEFAULT_CONNECTION_HUB_BUNDLE_ID) -> str:
     """Resolve the Connection Hub app id from app config.
 
-    `integrations.connection_hub.bundle_id` is the preferred location for
+    `connections.connection_hub.bundle_id` is the preferred location for
     callers. The fallback keys keep existing local descriptors working while the
     config shape converges.
     """
 
     for path in (
-        "integrations.connection_hub.bundle_id",
         "connections.connection_hub.bundle_id",
+        "integrations.connection_hub.bundle_id",
         "identity.connection_hub.bundle_id",
         "identity.telegram.connection_hub_bundle_id",
     ):

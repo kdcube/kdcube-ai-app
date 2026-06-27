@@ -146,6 +146,7 @@ class AuthenticatorRegistration:
 
     authenticator_id: str
     provider: str
+    integration_id: str = ""
     connection_id: str = ""
     label: str = ""
     enabled: bool = True
@@ -159,6 +160,7 @@ class AuthenticatorRegistration:
         return {
             "authenticator_id": self.authenticator_id,
             "provider": self.provider,
+            "integration_id": self.integration_id or self.connection_id,
             "connection_id": self.connection_id,
             "label": self.label,
             "enabled": self.enabled,
@@ -175,7 +177,13 @@ class AuthenticatorRegistration:
         return cls(
             authenticator_id=_str(data.get("authenticator_id") or data.get("id")),
             provider=_str(data.get("provider")),
-            connection_id=_str(data.get("connection_id") or data.get("connectionId")),
+            integration_id=_str(data.get("integration_id") or data.get("integrationId")),
+            connection_id=_str(
+                data.get("connection_id")
+                or data.get("connectionId")
+                or data.get("integration_id")
+                or data.get("integrationId")
+            ),
             label=_str(data.get("label")),
             enabled=_bool(data.get("enabled"), default=True),
             role_providing=_bool(
@@ -205,6 +213,7 @@ class AuthenticatedRequest:
     provider: str = ""
     provider_subject: str = ""
     selected_authenticator: str = ""
+    integration_id: str = ""
     connection_id: str = ""
     actor_user_id: str = ""
     platform_user_id: str = ""
@@ -215,6 +224,7 @@ class AuthenticatedRequest:
     message: str = ""
 
     def to_dict(self) -> dict[str, Any]:
+        integration_id = self.integration_id or self.connection_id
         return {
             "ok": self.ok,
             "authenticated": self.authenticated,
@@ -222,6 +232,7 @@ class AuthenticatedRequest:
             "provider": self.provider,
             "provider_subject": self.provider_subject,
             "selected_authenticator": self.selected_authenticator,
+            "integration_id": integration_id,
             "connection_id": self.connection_id,
             "actor_user_id": self.actor_user_id,
             "platform_user_id": self.platform_user_id,
@@ -242,7 +253,13 @@ class AuthenticatedRequest:
             provider=_str(data.get("provider")),
             provider_subject=_str(data.get("provider_subject") or data.get("subject")),
             selected_authenticator=_str(data.get("selected_authenticator") or data.get("authenticator_id")),
-            connection_id=_str(data.get("connection_id") or data.get("connectionId")),
+            integration_id=_str(data.get("integration_id") or data.get("integrationId")),
+            connection_id=_str(
+                data.get("connection_id")
+                or data.get("connectionId")
+                or data.get("integration_id")
+                or data.get("integrationId")
+            ),
             actor_user_id=_str(data.get("actor_user_id")),
             platform_user_id=_str(data.get("platform_user_id")),
             identity_link=dict(data.get("identity_link") or {}) if isinstance(data.get("identity_link"), Mapping) else {},
