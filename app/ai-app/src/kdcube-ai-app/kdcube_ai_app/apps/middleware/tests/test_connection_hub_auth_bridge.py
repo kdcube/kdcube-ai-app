@@ -122,7 +122,7 @@ async def test_connection_hub_bridge_declines_when_hub_does_not_authenticate():
     assert session is None
 
 
-async def test_connection_hub_bridge_calls_hub_without_selector_hints_by_default():
+async def test_connection_hub_bridge_skips_hub_without_selector_hints_or_provider_proof():
     bridge = ConnectionHubRequestAuthBridge(
         redis=None,
         pg_pool=None,
@@ -152,7 +152,7 @@ async def test_connection_hub_bridge_calls_hub_without_selector_hints_by_default
     )
 
     assert session is None
-    assert called is True
+    assert called is False
 
 
 async def test_connection_hub_bridge_can_require_selector_hints_when_configured():

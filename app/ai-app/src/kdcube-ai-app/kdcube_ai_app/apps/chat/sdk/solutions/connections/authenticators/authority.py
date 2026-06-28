@@ -61,30 +61,52 @@ class AuthRequestHints:
         env = RequestEnvelope.coerce(envelope)
         headers = env.headers
         query = env.query
+        body = env.json_body()
         return cls(
             authority_id=_str(
                 headers.get(HEADER_AUTHORITY_ID)
+                or headers.get("x-kdcube-auth-authority")
+                or query.get("auth_authority_id")
+                or query.get("kdcube_auth_authority_id")
                 or query.get("authority_id")
                 or query.get("authority")
+                or (body.get("auth_authority_id") if isinstance(body, Mapping) else "")
+                or (body.get("authorityId") if isinstance(body, Mapping) else "")
             ),
             authenticator_id=_str(
                 headers.get(HEADER_AUTHENTICATOR_ID)
+                or query.get("auth_authenticator_id")
+                or query.get("kdcube_auth_authenticator_id")
                 or query.get("authenticator_id")
                 or query.get("authenticator")
+                or (body.get("auth_authenticator_id") if isinstance(body, Mapping) else "")
+                or (body.get("authenticatorId") if isinstance(body, Mapping) else "")
             ),
             integration_id=_str(
                 headers.get(HEADER_INTEGRATION_ID)
+                or headers.get("x-kdcube-integration-id")
+                or query.get("auth_integration_id")
+                or query.get("kdcube_auth_integration_id")
                 or query.get("integration_id")
                 or query.get("integration")
+                or (body.get("auth_integration_id") if isinstance(body, Mapping) else "")
+                or (body.get("integrationId") if isinstance(body, Mapping) else "")
             ),
             connection_id=_str(
                 headers.get(HEADER_CONNECTION_ID)
                 or query.get("connection_id")
                 or query.get("connection")
+                or (body.get("connection_id") if isinstance(body, Mapping) else "")
+                or (body.get("connectionId") if isinstance(body, Mapping) else "")
             ),
             provider=_str(
                 headers.get(HEADER_PROVIDER)
+                or headers.get("x-kdcube-auth-provider-id")
+                or query.get("auth_provider")
+                or query.get("kdcube_auth_provider")
                 or query.get("provider")
+                or (body.get("auth_provider") if isinstance(body, Mapping) else "")
+                or (body.get("authProvider") if isinstance(body, Mapping) else "")
             ),
         )
 

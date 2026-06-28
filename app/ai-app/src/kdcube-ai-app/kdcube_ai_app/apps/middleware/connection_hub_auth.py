@@ -29,6 +29,7 @@ from kdcube_ai_app.apps.chat.sdk.protocol import (
     ExternalEventRouting,
     ExternalEventUser,
 )
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.authenticators.authority import AuthRequestHints
 from kdcube_ai_app.apps.chat.sdk.solutions.connections.authenticators.models import (
     AuthenticatedRequest,
     RequestEnvelope,
@@ -86,34 +87,9 @@ def _first(*values: Any) -> str:
 
 
 def _external_auth_summary(envelope: RequestEnvelope) -> dict[str, Any]:
+    hints = AuthRequestHints.from_envelope(envelope)
     headers = envelope.headers or {}
     query = envelope.query or {}
-    authority_id = _first(
-        headers.get("x-kdcube-auth-authority-id"),
-        headers.get("x-kdcube-auth-authority"),
-        query.get("auth_authority_id"),
-        query.get("authority_id"),
-        query.get("kdcube_auth_authority_id"),
-    )
-    authenticator_id = _first(
-        headers.get("x-kdcube-auth-authenticator-id"),
-        query.get("authenticator_id"),
-        query.get("auth_authenticator_id"),
-        query.get("kdcube_auth_authenticator_id"),
-    )
-    provider = _first(
-        headers.get("x-kdcube-auth-provider"),
-        headers.get("x-kdcube-auth-provider-id"),
-        query.get("auth_provider"),
-        query.get("kdcube_auth_provider"),
-    )
-    integration_id = _first(
-        headers.get("x-kdcube-auth-integration-id"),
-        headers.get("x-kdcube-integration-id"),
-        query.get("auth_integration_id"),
-        query.get("integration_id"),
-        query.get("kdcube_auth_integration_id"),
-    )
     has_telegram_init_data = bool(
         _first(
             headers.get("x-telegram-init-data"),
@@ -133,10 +109,10 @@ def _external_auth_summary(envelope: RequestEnvelope) -> dict[str, Any]:
         )
     )
     return {
-        "authority_id": authority_id,
-        "authenticator_id": authenticator_id,
-        "provider": provider,
-        "integration_id": integration_id,
+        "authority_id": hints.authority_id,
+        "authenticator_id": hints.authenticator_id,
+        "provider": hints.provider,
+        "integration_id": hints.integration_id or hints.connection_id,
         "has_telegram_init_data": has_telegram_init_data,
         "has_provider_signature": has_provider_signature,
         "has_authorization": bool(headers.get("authorization")),
@@ -213,7 +189,15 @@ class ConnectionHubRequestAuthBridge:
         envelope = await RequestEnvelope.from_request(request, include_body=include_body)
         summary = _external_auth_summary(envelope)
         has_selector_hint = _should_attempt_connection_hub(summary)
-        if self.require_selector_hint and not has_selector_hint:
+        if not has_selector_hint:
+            logger.debug(
+                "[auth.selector.connection_hub] skipped tenant=%s project=%s bridge_bundle=%s method=%s path=%s reason=no_external_auth_material",
+                self.tenant,
+                self.project,
+                self.bundle_id,
+                envelope.method,
+                envelope.path,
+            )
             return None
         trace = _should_trace_auth_attempt(summary)
         if trace:

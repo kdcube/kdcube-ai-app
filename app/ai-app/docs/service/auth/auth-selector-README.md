@@ -102,7 +102,6 @@ auth:
       enabled: true
       app_id: "connection-hub@1-0"
       operation: "request_authenticate"
-      require_selector_hint: false
 ```
 
 When enabled, the gateway first accepts a valid platform token/cookie session
@@ -113,20 +112,25 @@ Those modules verify proof, read Connection Hub identity links and secrets,
 resolve platform authority, and return authority material. The gateway adapter
 converts that material into a normal `UserSession`.
 
-By default, when the Connection Hub bridge is enabled and no platform session
-was accepted, the gateway gives Connection Hub the request envelope. Connection
-Hub owns authenticator selection, Redis-backed selector caches, provider
-fallbacks, and the final decision to authenticate or decline. This is important
-for bundle-exposed public APIs, MCP surfaces, and widgets: the gateway must not
-pre-decide that an unknown request shape cannot be meaningful to a configured
-bundle/authority.
+The gateway does a cheap local prefilter before it calls Connection Hub. It
+only invokes the bridge when the request carries external auth material or a
+selector hint, such as:
 
-Deployments that fully control every caller may set
-`require_selector_hint: true` on the bridge. In that opt-in mode, the gateway
-only calls Connection Hub when the request carries `X-KDCube-Auth-*`, Telegram
-initData, provider signatures/API-key headers, or equivalent query hints. This
-is a latency optimization for closed surfaces, not the default platform
-contract.
+- `X-KDCube-Auth-*` authority/authenticator/provider/integration headers;
+- equivalent query parameters for provider-controlled callback URLs;
+- Telegram Mini App `initData`;
+- provider signature/API-key headers.
+
+If no such material is present, the Connection Hub candidate declines without
+calling the bundle. That does not reject the request. The normal gateway policy
+continues with an anonymous or platform-authenticated session, so public bundle
+APIs, MCP surfaces, widgets, and static assets remain public when their route
+contract says they are public.
+
+Once called, Connection Hub owns authenticator selection, Redis-backed selector
+caches, provider fallbacks, and the final decision to authenticate or decline.
+The gateway does not inspect provider secrets or run provider-specific verifier
+logic.
 
 Connection Hub stores request-authenticator metadata in its own app store
 (Postgres for widget-managed rows) and reads secret values only through bundle

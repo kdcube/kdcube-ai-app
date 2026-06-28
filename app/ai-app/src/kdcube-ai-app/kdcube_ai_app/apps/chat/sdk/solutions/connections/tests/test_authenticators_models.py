@@ -110,6 +110,28 @@ def test_request_hints_from_headers_are_selector_hints_not_truth():
     assert hints.has_explicit_selector is True
 
 
+def test_request_hints_accept_controlled_aliases_from_query_and_body():
+    envelope = RequestEnvelope.from_dict(
+        {
+            "query": {
+                "auth_authority_id": "telegram.kdcube_ref",
+                "auth_authenticator_id": "telegram.kdcube_ref",
+                "auth_integration_id": "telegram.kdcube_ref",
+                "auth_provider": "telegram",
+            },
+            "body_text": '{"connectionId": "telegram.body"}',
+        }
+    )
+
+    hints = AuthRequestHints.from_envelope(envelope)
+
+    assert hints.authority_id == "telegram.kdcube_ref"
+    assert hints.authenticator_id == "telegram.kdcube_ref"
+    assert hints.integration_id == "telegram.kdcube_ref"
+    assert hints.connection_id == "telegram.body"
+    assert hints.provider == "telegram"
+
+
 def test_select_authenticator_candidates_prefers_exact_authenticator_hint():
     rows = [
         AuthenticatorRegistration.from_dict(
