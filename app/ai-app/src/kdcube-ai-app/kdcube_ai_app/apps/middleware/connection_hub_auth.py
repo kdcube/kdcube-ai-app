@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Elena Viter
 
-"""Connection Hub request-auth bridge.
+"""Connection Hub request authentication surface.
 
 This module is intentionally middleware-facing. It can run before a platform
 session exists: the gateway passes a raw request envelope to Connection Hub.
 Connection Hub provider modules verify any recognized proof using Connection Hub
-config, secrets, and identity-link data. This bridge converts the returned
+config, secrets, and identity-link data. This surface converts the returned
 authority into a normal ``UserSession`` for the rest of the gateway.
 """
 
@@ -135,8 +135,14 @@ def _should_trace_auth_attempt(summary: Mapping[str, Any]) -> bool:
     return _should_attempt_connection_hub(summary)
 
 
-class ConnectionHubRequestAuthBridge:
-    """Gateway selector bridge backed by the Connection Hub app."""
+class ConnectionHubAuthenticationSurface:
+    """Gateway-facing authentication surface backed by the Connection Hub app.
+
+    Connection Hub owns the selector inside this surface: it decides whether
+    the request carries enough external auth material, which configured
+    authenticator can verify it, and which linked authority should be projected
+    onto the resulting session.
+    """
 
     def __init__(
         self,
@@ -163,7 +169,7 @@ class ConnectionHubRequestAuthBridge:
         pg_pool: Any,
         tenant: str,
         project: str,
-    ) -> "ConnectionHubRequestAuthBridge | None":
+    ) -> "ConnectionHubAuthenticationSurface | None":
         cfg = _authenticator_config()
         if not _bool(cfg.get("enabled"), default=False):
             return None
@@ -188,7 +194,7 @@ class ConnectionHubRequestAuthBridge:
         has_selector_hint = _should_attempt_connection_hub(summary)
         if not has_selector_hint:
             logger.debug(
-                "[auth.selector.connection_hub] skipped tenant=%s project=%s bridge_bundle=%s method=%s path=%s reason=no_external_auth_material",
+                "[auth.connection_hub.surface] skipped tenant=%s project=%s bundle=%s method=%s path=%s reason=no_external_auth_material",
                 self.tenant,
                 self.project,
                 self.bundle_id,
@@ -199,7 +205,7 @@ class ConnectionHubRequestAuthBridge:
         trace = _should_trace_auth_attempt(summary)
         if trace:
             logger.info(
-                "[auth.selector.connection_hub] start tenant=%s project=%s bridge_bundle=%s operation=%s method=%s path=%s authority_id=%s authenticator_id=%s provider_hint=%s integration_id=%s has_telegram_init_data=%s has_provider_signature=%s has_authorization=%s has_cookie=%s include_body=%s",
+                "[auth.connection_hub.surface] start tenant=%s project=%s bundle=%s operation=%s method=%s path=%s authority_id=%s authenticator_id=%s provider_hint=%s integration_id=%s has_telegram_init_data=%s has_provider_signature=%s has_authorization=%s has_cookie=%s include_body=%s",
                 self.tenant,
                 self.project,
                 self.bundle_id,
@@ -221,7 +227,7 @@ class ConnectionHubRequestAuthBridge:
         except Exception as exc:
             if trace:
                 logger.warning(
-                    "[auth.selector.connection_hub] failed tenant=%s project=%s bridge_bundle=%s operation=%s provider_hint=%s integration_id=%s error=%s",
+                    "[auth.connection_hub.surface] failed tenant=%s project=%s bundle=%s operation=%s provider_hint=%s integration_id=%s error=%s",
                     self.tenant,
                     self.project,
                     self.bundle_id,
@@ -235,7 +241,7 @@ class ConnectionHubRequestAuthBridge:
         if not (authenticated.ok and authenticated.authenticated):
             if trace:
                 logger.info(
-                    "[auth.selector.connection_hub] declined tenant=%s project=%s provider=%s integration_id=%s selected_authenticator=%s ok=%s authenticated=%s error=%s message=%s",
+                    "[auth.connection_hub.surface] declined tenant=%s project=%s provider=%s integration_id=%s selected_authenticator=%s ok=%s authenticated=%s error=%s message=%s",
                     self.tenant,
                     self.project,
                     authenticated.provider or summary.get("provider") or "",
@@ -283,7 +289,7 @@ class ConnectionHubRequestAuthBridge:
         session.identity_authority = authority
         if trace:
             logger.info(
-                "[auth.selector.connection_hub] accepted tenant=%s project=%s provider=%s integration_id=%s selected_authenticator=%s actor_user_id=%s platform_user_present=%s effective_user_type=%s roles=%s",
+                "[auth.connection_hub.surface] accepted tenant=%s project=%s provider=%s integration_id=%s selected_authenticator=%s actor_user_id=%s platform_user_present=%s effective_user_type=%s roles=%s",
                 self.tenant,
                 self.project,
                 authenticated.provider or summary.get("provider") or "",
@@ -346,7 +352,7 @@ class ConnectionHubRequestAuthBridge:
         return dict(result or {})
 
 
-def maybe_register_connection_hub_auth_bridge(
+def maybe_install_connection_hub_authentication_surface(
     gateway_adapter: Any,
     *,
     redis: Any,
@@ -357,33 +363,33 @@ def maybe_register_connection_hub_auth_bridge(
     cfg = _authenticator_config()
     if not _bool(cfg.get("enabled"), default=False):
         logger.info(
-            "Connection Hub request-auth bridge disabled tenant=%s project=%s config_present=%s",
+            "Connection Hub authentication surface disabled tenant=%s project=%s config_present=%s",
             tenant,
             project,
             bool(cfg),
         )
         return False
-    bridge = ConnectionHubRequestAuthBridge.from_descriptors(
+    surface = ConnectionHubAuthenticationSurface.from_descriptors(
         redis=redis,
         pg_pool=pg_pool,
         tenant=tenant,
         project=project,
     )
-    if bridge is None:
+    if surface is None:
         return False
-    gateway_adapter.register_request_auth_candidate(bridge)
+    gateway_adapter.install_connection_hub_authentication_surface(surface)
     logger.info(
-        "Connection Hub request-auth bridge registered tenant=%s project=%s bundle=%s operation=%s",
+        "Connection Hub authentication surface installed tenant=%s project=%s bundle=%s operation=%s",
         tenant,
         project,
-        bridge.bundle_id,
-        bridge.operation,
+        surface.bundle_id,
+        surface.operation,
     )
     return True
 
 
 __all__ = [
-    "ConnectionHubRequestAuthBridge",
+    "ConnectionHubAuthenticationSurface",
     "connection_hub_auth_enabled",
-    "maybe_register_connection_hub_auth_bridge",
+    "maybe_install_connection_hub_authentication_surface",
 ]

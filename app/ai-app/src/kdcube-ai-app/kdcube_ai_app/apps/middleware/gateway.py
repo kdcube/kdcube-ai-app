@@ -24,7 +24,7 @@ from kdcube_ai_app.apps.middleware.token_extract import (
     resolve_auth_from_headers,
     resolve_auth_from_headers_and_cookies,
 )
-from kdcube_ai_app.apps.middleware.request_auth import RequestAuthCandidate, RequestAuthSelector
+from kdcube_ai_app.apps.middleware.request_auth import RequestAuthenticationSurface, RequestAuthResolver
 import logging
 import os
 
@@ -104,7 +104,7 @@ class FastAPIGatewayAdapter:
             async def _missing_session_factory(*_args, **_kwargs):
                 raise RuntimeError("FastAPIGatewayAdapter requires a RequestGateway before processing requests")
             session_factory = _missing_session_factory
-        self.request_auth_selector = RequestAuthSelector(
+        self.request_auth_resolver = RequestAuthResolver(
             auth_manager=getattr(gateway, "auth_manager", None),
             session_factory=session_factory,
         )
@@ -118,8 +118,8 @@ class FastAPIGatewayAdapter:
         if hasattr(self.gateway, "register_post_session_create_hook"):
             self.gateway.register_post_session_create_hook(hook)
 
-    def register_request_auth_candidate(self, candidate: RequestAuthCandidate) -> None:
-        self.request_auth_selector.register_request_auth_candidate(candidate)
+    def install_connection_hub_authentication_surface(self, surface: RequestAuthenticationSurface) -> None:
+        self.request_auth_resolver.install_connection_hub_surface(surface)
 
     def _extract_context(self, request: Request, *, header_only_auth: bool = False) -> RequestContext:
         """Extract request context from FastAPI request"""
@@ -241,10 +241,10 @@ class FastAPIGatewayAdapter:
         endpoint = request.url.path
 
         try:
-            session = await self.request_auth_selector.resolve_session(
+            session = await self.request_auth_resolver.resolve_session(
                 request,
                 context,
-                allow_request_auth_candidates=not header_only_auth,
+                allow_connection_hub=not header_only_auth,
             )
             session = await self.gateway.process_request(
                 context,

@@ -6,7 +6,7 @@ from __future__ import annotations
 from starlette.requests import Request
 
 from kdcube_ai_app.apps.chat.sdk.solutions.connections.authenticators.models import AuthenticatedRequest
-from kdcube_ai_app.apps.middleware.connection_hub_auth import ConnectionHubRequestAuthBridge
+from kdcube_ai_app.apps.middleware.connection_hub_auth import ConnectionHubAuthenticationSurface
 from kdcube_ai_app.auth.sessions import RequestContext, UserSession, UserType
 
 
@@ -31,8 +31,8 @@ def _request(headers: dict[str, str] | None = None) -> Request:
     return Request(scope, receive)
 
 
-async def test_connection_hub_bridge_projects_identity_authority_to_session():
-    bridge = ConnectionHubRequestAuthBridge(
+async def test_connection_hub_surface_projects_identity_authority_to_session():
+    surface = ConnectionHubAuthenticationSurface(
         redis=None,
         pg_pool=None,
         tenant="demo-tenant",
@@ -61,7 +61,7 @@ async def test_connection_hub_bridge_projects_identity_authority_to_session():
             },
         ).to_dict()
 
-    bridge._call_connection_hub = _call_connection_hub
+    surface._call_connection_hub = _call_connection_hub
 
     async def _session_factory(context, user_type, user_data):
         return UserSession(
@@ -75,7 +75,7 @@ async def test_connection_hub_bridge_projects_identity_authority_to_session():
             identity_authority=user_data["identity_authority"],
         )
 
-    session = await bridge(
+    session = await surface(
         _request({
             "X-Telegram-Init-Data": "telegram-proof",
             "X-KDCube-Auth-Connection-ID": "telegram.support",
@@ -93,8 +93,8 @@ async def test_connection_hub_bridge_projects_identity_authority_to_session():
     assert session.identity_authority["connection_id"] == "telegram.support"
 
 
-async def test_connection_hub_bridge_declines_when_hub_does_not_authenticate():
-    bridge = ConnectionHubRequestAuthBridge(
+async def test_connection_hub_surface_declines_when_hub_does_not_authenticate():
+    surface = ConnectionHubAuthenticationSurface(
         redis=None,
         pg_pool=None,
         tenant="demo-tenant",
@@ -108,12 +108,12 @@ async def test_connection_hub_bridge_declines_when_hub_does_not_authenticate():
             error="no_authenticator_accepted",
         ).to_dict()
 
-    bridge._call_connection_hub = _call_connection_hub
+    surface._call_connection_hub = _call_connection_hub
 
     async def _session_factory(_context, _user_type, _user_data):
         raise AssertionError("declined request-auth must not create a session")
 
-    session = await bridge(
+    session = await surface(
         _request({"X-Telegram-Init-Data": "bad-proof"}),
         RequestContext(client_ip="127.0.0.1", user_agent="test"),
         _session_factory,
@@ -122,8 +122,8 @@ async def test_connection_hub_bridge_declines_when_hub_does_not_authenticate():
     assert session is None
 
 
-async def test_connection_hub_bridge_skips_hub_without_selector_hints_or_provider_proof():
-    bridge = ConnectionHubRequestAuthBridge(
+async def test_connection_hub_surface_skips_hub_without_selector_hints_or_provider_proof():
+    surface = ConnectionHubAuthenticationSurface(
         redis=None,
         pg_pool=None,
         tenant="demo-tenant",
@@ -140,12 +140,12 @@ async def test_connection_hub_bridge_skips_hub_without_selector_hints_or_provide
             error="no_authenticator_accepted",
         ).to_dict()
 
-    bridge._call_connection_hub = _call_connection_hub
+    surface._call_connection_hub = _call_connection_hub
 
     async def _session_factory(_context, _user_type, _user_data):
         raise AssertionError("declined request-auth must not create a session")
 
-    session = await bridge(
+    session = await surface(
         _request(),
         RequestContext(client_ip="127.0.0.1", user_agent="test"),
         _session_factory,

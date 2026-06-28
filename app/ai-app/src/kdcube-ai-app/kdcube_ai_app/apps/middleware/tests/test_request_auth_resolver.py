@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from kdcube_ai_app.apps.middleware.request_auth import RequestAuthSelector
+from kdcube_ai_app.apps.middleware.request_auth import RequestAuthResolver
 from kdcube_ai_app.auth.AuthManager import User
 from kdcube_ai_app.auth.sessions import RequestContext, UserSession, UserType
 
@@ -26,7 +26,7 @@ class _AuthManager:
         )
 
 
-async def test_request_auth_selector_standard_auth_creates_session():
+async def test_request_auth_resolver_standard_auth_creates_session():
     created = {}
 
     async def _factory(context, user_type, user_data):
@@ -43,7 +43,7 @@ async def test_request_auth_selector_standard_auth_creates_session():
         )
 
     auth = _AuthManager()
-    selector = RequestAuthSelector(auth_manager=auth, session_factory=_factory)
+    resolver = RequestAuthResolver(auth_manager=auth, session_factory=_factory)
     context = RequestContext(
         client_ip="127.0.0.1",
         user_agent="test",
@@ -51,7 +51,7 @@ async def test_request_auth_selector_standard_auth_creates_session():
         id_token="id-1",
     )
 
-    session = await selector.resolve_session(SimpleNamespace(), context)
+    session = await resolver.resolve_session(SimpleNamespace(), context)
 
     assert auth.called is True
     assert session.user_id == "platform-user"
@@ -59,11 +59,11 @@ async def test_request_auth_selector_standard_auth_creates_session():
     assert created["user_data"]["roles"] == ["kdcube:role:super-admin"]
 
 
-async def test_request_auth_selector_connection_hub_candidate_wins():
+async def test_request_auth_resolver_connection_hub_surface_wins():
     async def _factory(context, user_type, user_data):
         raise AssertionError("standard auth factory should not be called")
 
-    async def _connection_hub_bridge(_request, context, _session_factory):
+    async def _connection_hub_surface(_request, context, _session_factory):
         return UserSession(
             session_id="s-channel",
             user_type=UserType.PRIVILEGED,
@@ -74,18 +74,18 @@ async def test_request_auth_selector_connection_hub_candidate_wins():
         )
 
     auth = _AuthManager()
-    selector = RequestAuthSelector(auth_manager=auth, session_factory=_factory)
-    selector.register_request_auth_candidate(_connection_hub_bridge)
+    resolver = RequestAuthResolver(auth_manager=auth, session_factory=_factory)
+    resolver.install_connection_hub_surface(_connection_hub_surface)
     context = RequestContext(client_ip="127.0.0.1", user_agent="test")
 
-    session = await selector.resolve_session(SimpleNamespace(), context)
+    session = await resolver.resolve_session(SimpleNamespace(), context)
 
     assert auth.called is False
     assert session.user_id == "telegram_42"
     assert session.identity_authority == {"actor_user_id": "telegram_42"}
 
 
-async def test_request_auth_selector_valid_platform_auth_wins_before_bridge():
+async def test_request_auth_resolver_valid_platform_auth_wins_before_connection_hub():
     created = {}
 
     async def _factory(context, user_type, user_data):
@@ -101,12 +101,12 @@ async def test_request_auth_selector_valid_platform_auth_wins_before_bridge():
             request_context=context,
         )
 
-    async def _connection_hub_bridge(_request, _context, _session_factory):
+    async def _connection_hub_surface(_request, _context, _session_factory):
         raise AssertionError("valid platform auth is role-providing and must win first")
 
     auth = _AuthManager()
-    selector = RequestAuthSelector(auth_manager=auth, session_factory=_factory)
-    selector.register_request_auth_candidate(_connection_hub_bridge)
+    resolver = RequestAuthResolver(auth_manager=auth, session_factory=_factory)
+    resolver.install_connection_hub_surface(_connection_hub_surface)
     context = RequestContext(
         client_ip="127.0.0.1",
         user_agent="test",
@@ -114,7 +114,7 @@ async def test_request_auth_selector_valid_platform_auth_wins_before_bridge():
         id_token="id-1",
     )
 
-    session = await selector.resolve_session(SimpleNamespace(), context)
+    session = await resolver.resolve_session(SimpleNamespace(), context)
 
     assert auth.called is True
     assert session.user_id == "platform-user"
@@ -122,7 +122,7 @@ async def test_request_auth_selector_valid_platform_auth_wins_before_bridge():
     assert created["user_type"] == UserType.PRIVILEGED
 
 
-async def test_request_auth_selector_can_disable_bridge_candidates():
+async def test_request_auth_resolver_can_disable_connection_hub_surface():
     created = {}
 
     async def _factory(context, user_type, user_data):
@@ -138,12 +138,12 @@ async def test_request_auth_selector_can_disable_bridge_candidates():
             request_context=context,
         )
 
-    async def _connection_hub_bridge(_request, _context, _session_factory):
-        raise AssertionError("header-only auth must not invoke request-auth bridge candidates")
+    async def _connection_hub_surface(_request, _context, _session_factory):
+        raise AssertionError("header-only auth must not invoke Connection Hub surface")
 
     auth = _AuthManager()
-    selector = RequestAuthSelector(auth_manager=auth, session_factory=_factory)
-    selector.register_request_auth_candidate(_connection_hub_bridge)
+    resolver = RequestAuthResolver(auth_manager=auth, session_factory=_factory)
+    resolver.install_connection_hub_surface(_connection_hub_surface)
     context = RequestContext(
         client_ip="127.0.0.1",
         user_agent="test",
@@ -151,7 +151,7 @@ async def test_request_auth_selector_can_disable_bridge_candidates():
         id_token="id-1",
     )
 
-    session = await selector.resolve_session(SimpleNamespace(), context, allow_request_auth_candidates=False)
+    session = await resolver.resolve_session(SimpleNamespace(), context, allow_connection_hub=False)
 
     assert auth.called is True
     assert session.user_id == "platform-user"

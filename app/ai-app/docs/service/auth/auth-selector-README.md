@@ -1,7 +1,7 @@
 ---
 id: repo:kdcube-ai-app/app/ai-app/docs/service/auth/auth-selector-README.md
-title: "Auth Selector"
-summary: "Gateway request-authentication stack: request in, selected authenticator, complete UserSession out."
+title: "Auth Selector And Connection Hub Surface"
+summary: "Gateway request-authentication boundary: platform auth first, then the Connection Hub authentication surface, complete UserSession out."
 status: active
 tags: ["service", "auth", "gateway", "connections", "authenticators", "sessions"]
 updated_at: 2026-06-28
@@ -12,13 +12,16 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/request-authenticators/request-authenticators-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/runtime/cross-runtime-context-README.md
 ---
-# Auth Selector
+# Auth Selector And Connection Hub Surface
 
-The gateway authenticates requests through an authenticator selector stack. The
-selector chooses authenticator candidates. The selected authenticator verifies
-auth material and returns identity under an authority. Surface guards then
-authorize against required authority/grants and return one complete
-`UserSession`.
+The gateway request-auth boundary is intentionally small. It first accepts the
+configured platform authenticator when platform credentials are present. If that
+does not establish a session, it asks one configured Connection Hub
+authentication surface whether the request proves an external actor.
+
+Connection Hub owns the selector. It decides which Telegram/Slack/OIDC/API-key
+or custom authority authenticator should inspect the request, verifies the
+proof, links or projects authority, and returns one complete `UserSession`.
 
 ```text
 HTTP / SSE / Socket.IO / app API request
@@ -27,14 +30,16 @@ HTTP / SSE / Socket.IO / app API request
 FastAPIGatewayAdapter
         |
         v
-AuthenticatorSelector
+RequestAuthResolver
    |
    +-- descriptor-registered platform authenticator
    |     kdcube.cognito / kdcube.multi-cognito / kdcube.bundle-session / kdcube.simple-idp
    |
-   +-- Connection Hub request-auth bridge
-         Connection Hub authenticator modules:
-           Telegram initData / webhook HMAC / API key / Slack signature / ...
+   +-- ConnectionHubAuthenticationSurface
+         |
+         v
+      Connection Hub selector + authenticator modules
+        Telegram initData / webhook HMAC / API key / Slack signature / custom authority / ...
         |
         v
 verified identity + authority_id
@@ -87,13 +92,14 @@ KDCube has more than one way a user can arrive:
 - API key;
 - OAuth MCP integration token.
 
-Without an authenticator selector, every app/surface repeats "how do I authenticate this
-request, link it to a platform user, and turn that into roles?" The selector
-makes that one platform mechanism.
+Without Connection Hub's selector, every app/surface repeats "how do I
+authenticate this request, link it to a platform user, and turn that into
+roles?" Connection Hub makes that one platform mechanism.
 
-## Connection Hub Candidate
+## Connection Hub Authentication Surface
 
-Connection Hub is a selector candidate configured in `assembly.yaml`:
+Connection Hub is installed as the gateway's external-auth surface through
+`assembly.yaml`:
 
 ```yaml
 auth:
@@ -105,24 +111,24 @@ auth:
 ```
 
 When enabled, the gateway first accepts a valid platform token/cookie session
-when one is present. That path is role-providing and should win. If no platform
-session is established, the gateway can ask Connection Hub. Connection Hub
-receives a `RequestEnvelope` and dispatches to its own authenticator modules.
-Those modules verify proof, read Connection Hub identity links and secrets,
-resolve platform authority, and return authority material. The gateway adapter
-converts that material into a normal `UserSession`.
+when one is present. That path is role-providing and wins. If no platform
+session is established, the gateway asks the Connection Hub authentication
+surface. Connection Hub receives a `RequestEnvelope` and dispatches to its own
+authenticator modules. Those modules verify proof, read Connection Hub identity
+links and secrets, resolve authority, and return authority material. The
+surface converts that material into a normal `UserSession`.
 
-The gateway does a cheap local prefilter before it calls Connection Hub. It
-only invokes the bridge when the request carries external auth material or a
-selector hint, such as:
+The Connection Hub surface does a cheap local prefilter before it calls the
+Connection Hub bundle operation. It only invokes Connection Hub when the
+request carries external auth material or a selector hint, such as:
 
 - `X-KDCube-Auth-*` authority/authenticator/provider/integration headers;
 - equivalent query parameters for provider-controlled callback URLs;
 - Telegram Mini App `initData`;
 - provider signature/API-key headers.
 
-If no such material is present, the Connection Hub candidate declines without
-calling the bundle. That does not reject the request. The normal gateway policy
+If no such material is present, the Connection Hub surface declines without
+calling the bundle operation. That does not reject the request. The normal gateway policy
 continues with an anonymous or platform-authenticated session, so public bundle
 APIs, MCP surfaces, widgets, and static assets remain public when their route
 contract says they are public.
@@ -177,9 +183,9 @@ not participate in authentication.
 
 ```text
 header_only_auth=True
-  -> skip Connection Hub request-auth bridge
+  -> skip Connection Hub authentication surface
   -> extract Authorization / ID-token headers only
-  -> run standard platform token candidate
+  -> run standard platform token authenticator
 ```
 
 This preserves the existing strict behavior for header-only routes while still
@@ -201,7 +207,7 @@ authenticator: kdcube.bundle-session
   input: kst1 session cookie
   output: identity under kdcube.platform
 
-authenticator family: connection-hub
+authentication surface: connection-hub
   input: raw request envelope
   internal authenticator modules: telegram, slack, api-key, oidc, ...
   output: identity under module authority; linker/grant resolver produce session
@@ -222,7 +228,7 @@ authenticator rows:
 
 ```text
 request has x-telegram-init-data
-  -> gateway calls Connection Hub bridge
+  -> gateway asks Connection Hub authentication surface
   -> Connection Hub module family = telegram
   -> if x-kdcube-auth-authenticator-id=telegram.support.init_data:
        try telegram.support.init_data only
@@ -240,7 +246,7 @@ Implemented now:
 - the authenticator selector contract and SDK primitives;
 - descriptor-registered platform token/cookie auth as the role-providing first
   path;
-- optional Connection Hub bridge candidate;
+- Connection Hub authentication surface;
 - `UserSession.identity_authority`;
 - Connection Hub `request_authenticate` operation;
 - Connection Hub authenticator metadata widget/API backed by Postgres rows and

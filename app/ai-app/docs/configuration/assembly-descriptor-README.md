@@ -167,9 +167,9 @@ issue platform-recognized `kst1.*` cookies. It requires
 `services.session_token.secret` in `secrets.yaml`. See
 [Bundle Session Auth](../service/auth/bundle-session-auth-README.md).
 
-`auth.authenticators` configures optional request-auth selector bridge
-candidates. The selector returns a complete `UserSession`; downstream gateway
-policy does not need to know which bridge accepted the request.
+`auth.authenticators` configures request-auth surfaces. The resolver returns a
+complete `UserSession`; downstream gateway policy does not need to know whether
+platform auth or the Connection Hub surface accepted the request.
 
 ```yaml
 auth:
@@ -193,10 +193,11 @@ descriptors should name the platform authenticator explicitly.
 
 When Connection Hub is enabled, ingress/proc first accept a valid platform
 token/cookie session when one is present. If no platform session is established,
-the selector may call the Connection Hub request-auth bridge only when the
-request carries external auth material or selector hints. Provider-specific
-authenticators, such as Telegram Mini App `initData`, are Connection Hub
-modules with access to Connection Hub config, secrets, and identity-link data.
+the resolver asks the Connection Hub authentication surface. That surface calls
+the Connection Hub operation only when the request carries external auth
+material or selector hints. Provider-specific authenticators, such as Telegram
+Mini App `initData`, are Connection Hub modules with access to Connection Hub
+config, secrets, and identity-link data.
 See
 [Auth Selector](../service/auth/auth-selector-README.md) and
 [Request Authenticators](../sdk/solutions/connections/request-authenticators/request-authenticators-README.md).

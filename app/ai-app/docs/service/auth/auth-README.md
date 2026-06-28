@@ -23,18 +23,18 @@ options across REST, SSE, and Socket.IO.
 
 ## How auth works (current)
 
-1) **Request-auth selector**
-The gateway runs the request through the auth selector. A valid platform
+1) **Request-auth resolver**
+The gateway runs the request through the auth resolver. A valid platform
 token/cookie session wins first because it directly provides platform authority.
-If no platform session is established, the selector can accept the Connection
-Hub request-auth bridge. Provider-specific authenticator modules live inside
-Connection Hub.
+If no platform session is established, the resolver can ask the Connection Hub
+authentication surface. Provider-specific selector and authenticator modules
+live inside Connection Hub.
 
 2) **Authentication**
-The selected authenticator returns a complete `UserSession`. For classic
-platform requests this is Cognito/session/simple auth. For channel/provider
-requests this may be Connection Hub after one of its authenticator modules verifies
-proof and resolves linked authority.
+The accepted surface returns a complete `UserSession`. For classic platform
+requests this is Cognito/session/simple auth. For channel/provider requests this
+may be Connection Hub after one of its authenticator modules verifies proof and
+resolves linked authority.
 
 3) **User type classification**  
 User type is derived from roles:
@@ -80,7 +80,7 @@ older controlled surfaces; new surfaces should use `authority_id` and
 `authenticator_id`.
 Connection Hub should:
 
-1. select authenticator candidates from request hints and request shape;
+1. select authenticators from request hints and request shape;
 2. validate the provider/request proof;
 3. return verified identity + `authority_id`;
 4. link to the required authority when the surface requires a different one;

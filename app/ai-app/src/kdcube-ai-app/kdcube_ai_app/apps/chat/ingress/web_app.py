@@ -276,9 +276,11 @@ async def lifespan(app: FastAPI):
                                                 )
     app.state.pg_pool = await get_pg_pool()
     try:
-        from kdcube_ai_app.apps.middleware.connection_hub_auth import maybe_register_connection_hub_auth_bridge
+        from kdcube_ai_app.apps.middleware.connection_hub_auth import (
+            maybe_install_connection_hub_authentication_surface,
+        )
 
-        maybe_register_connection_hub_auth_bridge(
+        maybe_install_connection_hub_authentication_surface(
             app.state.gateway_adapter,
             redis=getattr(app.state, "redis_async", None),
             pg_pool=app.state.pg_pool,
@@ -286,7 +288,7 @@ async def lifespan(app: FastAPI):
             project=settings.PROJECT,
         )
     except Exception as e:
-        logger.warning("Failed to attach Connection Hub request-auth bridge: %s", e)
+        logger.warning("Failed to install Connection Hub authentication surface: %s", e)
     try:
         from kdcube_ai_app.apps.middleware.economics_role import EconomicsRoleResolver
         _econ_role_resolver = EconomicsRoleResolver(
