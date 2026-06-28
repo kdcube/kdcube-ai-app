@@ -1,12 +1,13 @@
 ---
-id: repo:kdcube-ai-app/app/ai-app/docs/service/auth/oauth-mcp-consent-branding.md
+id: repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/delegated-credentials/oauth-mcp-consent-branding-README.md
 title: "Branding the MCP Authorization Screen"
-summary: "How to configure the product name shown on the OAuth MCP consent screen through auth.oauth_mcp.brand."
+summary: "How to configure the product name shown on the current OAuth/MCP delegated-credential consent screen through auth.oauth_mcp.brand."
 status: active
 tags: ["service", "auth", "oauth", "mcp", "branding", "descriptor"]
 updated_at: 2026-06-27
 see_also:
-  - repo:kdcube-ai-app/app/ai-app/docs/service/auth/oauth-mcp-integration-access-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/delegated-credentials/oauth-mcp-protocol-adapter-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/delegated-credentials/delegated-credential-protocol-adapters-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/delegated-connections/delegated-connections-README.md
 ---
 # Branding the MCP Authorization Screen
@@ -41,7 +42,7 @@ auth:
 
 That is the only field involved. The other `auth.oauth_mcp` settings (`issuer`,
 `public_clients`, `dynamic_client_registration`, ...) are documented in
-[`oauth-mcp-integration-access-README.md`](./oauth-mcp-integration-access-README.md).
+[`oauth-mcp-protocol-adapter-README.md`](./oauth-mcp-protocol-adapter-README.md).
 
 ## What it changes
 

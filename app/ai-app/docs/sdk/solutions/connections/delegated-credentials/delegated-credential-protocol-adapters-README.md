@@ -1,23 +1,24 @@
 ---
-id: repo:kdcube-ai-app/app/ai-app/docs/service/auth/design/oauth-mcp-vs-connection-hub-README.md
-title: "OAuth MCP And Connection Hub Delegation"
-summary: "Shared diagram explaining OAuth/MCP as a delegated-connection protocol adapter within the Connection Hub model."
+id: repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/delegated-credentials/delegated-credential-protocol-adapters-README.md
+title: "Delegated Credential Protocol Adapters"
+summary: "Shared diagram explaining protocol adapters such as OAuth/MCP as delegated-credential implementations within the Connection Hub model."
 status: active
 tags: ["service", "auth", "oauth", "mcp", "connection-hub", "identity", "diagram"]
 updated_at: 2026-06-28
 see_also:
-  - repo:kdcube-ai-app/app/ai-app/docs/service/auth/oauth-mcp-integration-access-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/delegated-credentials/oauth-mcp-protocol-adapter-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/connection-hub-solution-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/authority-providers/credential-envelope-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/service/auth/auth-selector-README.md
 ---
-# OAuth MCP And Connection Hub Delegation
+# Delegated Credential Protocol Adapters
 
-OAuth MCP integration access is the current service/protocol adapter for one
-Connection Hub delegated-connection shape. Its token is not special at the
-Connection Hub layer: it is another credential that a registered authenticator
-must verify and a linker/grant resolver must attach to a principal, resource,
-and allowed actions.
+Protocol adapters issue, store, or verify credentials for delegated Connection
+Hub connections. OAuth/MCP is the current adapter for one inbound external
+client shape. Its token is not special at the Connection Hub layer: it is
+another credential that a registered authenticator must verify and a
+linker/grant resolver must attach to a principal, resource, and allowed
+actions.
 
 Implementation status: OAuth/MCP registers `oauth_mcp` as a local authority
 provider when the feature is mounted. Issued access tokens and grant records

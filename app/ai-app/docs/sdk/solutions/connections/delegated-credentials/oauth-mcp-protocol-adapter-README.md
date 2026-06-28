@@ -1,8 +1,8 @@
 ---
-id: repo:kdcube-ai-app/app/ai-app/docs/service/auth/oauth-mcp-integration-access-README.md
-title: "OAuth MCP Integration Access"
-summary: "How KDCube exposes a descriptor-configured OAuth2 authorization server and MCP protected resource for least-privilege external integration access."
-tags: ["service", "auth", "oauth", "mcp", "integration-access", "descriptor"]
+id: repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/delegated-credentials/oauth-mcp-protocol-adapter-README.md
+title: "OAuth/MCP Protocol Adapter"
+summary: "How the current OAuth2 + MCP protocol adapter issues and verifies delegated Connection Hub credentials for least-privilege external client access."
+tags: ["sdk", "solutions", "connections", "delegated-credentials", "oauth", "mcp", "descriptor"]
 keywords: ["OAuth2 authorization server", "MCP protected resource", "Claude Code", "PKCE", "dynamic client registration", "tool consent", "feedback reader", "descriptor configuration"]
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/service/auth/auth-README.md
@@ -10,16 +10,19 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/connection-hub-solution-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/authority-providers/credential-envelope-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/delegated-connections/delegated-connections-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/delegated-credentials/delegated-credential-protocol-adapters-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/delegated-connections/design/grant-storage-durability-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/configuration/assembly-descriptor-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/configuration/service-runtime-configuration-mapping-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/service/servicing-interfaces-README.md
 ---
-# OAuth MCP Integration Access
+# OAuth/MCP Protocol Adapter
 
-OAuth MCP integration access is the current service/protocol implementation of
-a Connection Hub delegated connection where an external tool, such as Claude
-Code, calls a narrow KDCube MCP surface after a human platform admin consents.
+OAuth/MCP is the current protocol adapter for one Connection Hub delegated
+credential shape: an external tool, such as Claude Code, calls a narrow KDCube
+MCP surface after a human platform admin consents. The product concept is
+delegated credentials under Connection Hub; OAuth/MCP is only this adapter's
+wire protocol and implementation name.
 
 At the Connection Hub authority layer this feature is:
 
@@ -289,16 +292,16 @@ This mechanism is not:
 - a place for operator-facing environment variables;
 - a broad "admin API" token.
 
-It is a descriptor-configured bridge from an already-authenticated platform
-admin consent flow to a least-privilege MCP integration token.
+It is a descriptor-configured protocol adapter from an already-authenticated
+platform admin consent flow to a least-privilege delegated credential.
 
 ## Relationship To Connection Hub
 
-OAuth MCP integration access is one delegated-connection authenticator/protocol
-under the Connection Hub concept. It is still implemented as service auth
-endpoints because `/oauth/*` and `/mcp` are platform ingress surfaces. The
-shared diagram lives in
-[OAuth MCP Vs Connection Hub](design/oauth-mcp-vs-connection-hub-README.md).
+OAuth/MCP is one delegated-connection authenticator/protocol adapter under the
+Connection Hub concept. It is still implemented as service auth endpoints
+because `/oauth/*` and `/mcp` are platform ingress surfaces. The shared diagram
+lives in
+[Delegated Credential Protocol Adapters](delegated-credential-protocol-adapters-README.md).
 
 At the Connection Hub layer, OAuth/MCP is not conceptually different from other
 credential-bearing integrations. It provides one authenticator and one grant

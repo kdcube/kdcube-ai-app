@@ -7,7 +7,7 @@ tags: ["sdk", "solutions", "connections", "delegated-connections", "oauth", "mcp
 updated_at: 2026-06-27
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/delegated-connections/delegated-connections-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/service/auth/oauth-mcp-integration-access-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/delegated-credentials/oauth-mcp-protocol-adapter-README.md
 ---
 # Grant Storage Durability
 

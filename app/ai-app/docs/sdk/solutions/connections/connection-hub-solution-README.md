@@ -252,7 +252,7 @@ Current implementation:
   the playground app.
 - Delegated Gmail/Slack/iCloud provider account storage uses the existing
   connections and email integration stores.
-- OAuth MCP integration access is the current inbound delegated-connection
+- OAuth/MCP is the current inbound delegated-connection
   protocol adapter.
 - Gateway auth selection is documented in service auth.
 
@@ -265,16 +265,16 @@ Production direction:
 - keep Connection Hub authenticators as the only place for Telegram/Slack/OIDC
   request-proof verification.
 
-## Boundary With OAuth MCP Integration Access
+## Boundary With Delegated Credential Protocol Adapters
 
-OAuth MCP integration access is the current service/protocol implementation of
-one delegated-connection authenticator and grant registry. It verifies
-KDCube-issued integration credentials, resolves the delegated representative,
-and enforces selected actions. The shared diagram lives in
-[OAuth MCP Vs Connection Hub](../../../service/auth/design/oauth-mcp-vs-connection-hub-README.md).
+OAuth/MCP is the current service/protocol implementation of one
+delegated-connection authenticator and grant registry. It verifies KDCube-issued
+integration credentials, resolves the delegated representative, and enforces
+selected actions. The shared diagram lives in
+[Delegated Credential Protocol Adapters](delegated-credentials/delegated-credential-protocol-adapters-README.md).
 
-Do not put Telegram/Slack/webhook proof verification into OAuth MCP. That
+Do not put Telegram/Slack/webhook proof verification into OAuth/MCP. That
 belongs to Connection Hub request authenticators. Do not put OAuth-code
 issuance, refresh-token rotation, or selected-tool grant state into Connection
 Hub identity links. That belongs to delegated connection protocol adapters such
-as [OAuth MCP Integration Access](../../../service/auth/oauth-mcp-integration-access-README.md).
+as [OAuth/MCP Protocol Adapter](delegated-credentials/oauth-mcp-protocol-adapter-README.md).

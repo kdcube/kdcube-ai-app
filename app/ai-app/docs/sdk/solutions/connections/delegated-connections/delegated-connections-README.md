@@ -10,9 +10,9 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/authority-providers/authority-provider-runtime-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/authority-providers/credential-envelope-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/delegated-accounts/delegated-accounts-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/service/auth/oauth-mcp-integration-access-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/service/auth/oauth-mcp-consent-branding.md
-  - repo:kdcube-ai-app/app/ai-app/docs/service/auth/design/oauth-mcp-vs-connection-hub-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/delegated-credentials/oauth-mcp-protocol-adapter-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/delegated-credentials/oauth-mcp-consent-branding-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/delegated-credentials/delegated-credential-protocol-adapters-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/delegated-connections/design/grant-storage-durability-README.md
 ---
 # Delegated Connections
@@ -58,7 +58,7 @@ connection model:
 Provider-account details are covered by
 [Delegated Accounts](../delegated-accounts/delegated-accounts-README.md).
 OAuth/MCP details are covered by
-[OAuth MCP Integration Access](../../../../service/auth/oauth-mcp-integration-access-README.md).
+[OAuth/MCP Protocol Adapter](../delegated-credentials/oauth-mcp-protocol-adapter-README.md).
 
 OAuth/MCP is the current authenticator/protocol adapter for a delegated
 representative that calls KDCube:
@@ -294,9 +294,9 @@ auth:
 ```
 
 The service-level descriptor and endpoint contract is documented in
-[OAuth MCP Integration Access](../../../../service/auth/oauth-mcp-integration-access-README.md).
+[OAuth/MCP Protocol Adapter](../delegated-credentials/oauth-mcp-protocol-adapter-README.md).
 Consent-page branding is documented in
-[Branding the MCP Authorization Screen](../../../../service/auth/oauth-mcp-consent-branding.md).
+[Branding the MCP Authorization Screen](../delegated-credentials/oauth-mcp-consent-branding-README.md).
 
 ## Session Provider Compatibility
 
@@ -347,7 +347,7 @@ connectors:
 | Understand authority provider and custom-authority registration | [Authority Provider Runtime](../authority-providers/authority-provider-runtime-README.md) |
 | Understand credential routing fields | [Authority Credential Envelope](../authority-providers/credential-envelope-README.md) |
 | Understand KDCube using external provider accounts | [Delegated Accounts](../delegated-accounts/delegated-accounts-README.md) |
-| Configure current OAuth/MCP protocol endpoints | [OAuth MCP Integration Access](../../../../service/auth/oauth-mcp-integration-access-README.md) |
-| Brand the consent page | [MCP Consent Branding](../../../../service/auth/oauth-mcp-consent-branding.md) |
-| Understand OAuth MCP vs identity linking | [OAuth MCP Vs Connection Hub](../../../../service/auth/design/oauth-mcp-vs-connection-hub-README.md) |
+| Configure current OAuth/MCP protocol endpoints | [OAuth/MCP Protocol Adapter](../delegated-credentials/oauth-mcp-protocol-adapter-README.md) |
+| Brand the consent page | [OAuth/MCP Consent Branding](../delegated-credentials/oauth-mcp-consent-branding-README.md) |
+| Understand delegated credential protocol adapters | [Delegated Credential Protocol Adapters](../delegated-credentials/delegated-credential-protocol-adapters-README.md) |
 | Decide Redis vs durable storage | [Grant Storage Durability](design/grant-storage-durability-README.md) |

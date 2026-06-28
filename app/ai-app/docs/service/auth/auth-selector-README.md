@@ -92,7 +92,7 @@ KDCube has more than one way a user can arrive:
 - Slack request signature;
 - app-specific HMAC webhook;
 - API key;
-- OAuth MCP integration token.
+- OAuth/MCP delegated credential token.
 
 Without Connection Hub's selector, every app/surface repeats "how do I
 authenticate this request, link it to a platform user, and turn that into

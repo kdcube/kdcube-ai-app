@@ -10,7 +10,7 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/configuration/bundles-descriptor-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/configuration/secrets-descriptor-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/configuration/gateway-descriptor-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/service/auth/oauth-mcp-integration-access-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/delegated-credentials/oauth-mcp-protocol-adapter-README.md
 ---
 # Platform Assembly Descriptor
 
@@ -269,7 +269,7 @@ Rules:
 - Tenant/project scope comes from `context.tenant` and `context.project`.
 - The browser session cookie used by the flow is `auth.auth_token_cookie_name`.
 
-See [OAuth MCP Integration Access](../service/auth/oauth-mcp-integration-access-README.md).
+See [OAuth/MCP Protocol Adapter](../sdk/solutions/connections/delegated-credentials/oauth-mcp-protocol-adapter-README.md).
 
 ### `infra.redis.topology`
 

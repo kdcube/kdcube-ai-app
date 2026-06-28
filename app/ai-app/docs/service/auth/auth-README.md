@@ -7,7 +7,7 @@ keywords: ["delegated auth", "cookie auth", "JWT", "SSE auth", "Socket.IO"]
 updated_at: 2026-06-28
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/service/auth/auth-selector-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/service/auth/oauth-mcp-integration-access-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/delegated-credentials/oauth-mcp-protocol-adapter-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/connection-hub-solution-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/request-authenticators/request-authenticators-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/service/auth/bundle-session-auth-README.md
@@ -138,14 +138,14 @@ That authority projection is documented in
   a non-masquerade flow where the real auth and identity cookies are already
   present on the request.
 
-6) OAuth MCP integration access
+6) OAuth/MCP protocol adapter for delegated credentials
 - Implementation: `kdcube_ai_app.apps.chat.ingress.oauth_mcp`.
 - KDCube hosts an OAuth2 authorization server and an MCP protected resource for
   external integration clients such as Claude Code.
 - Existing platform session auth proves the human admin before consent.
 - Consent issues a least-privilege integration session and binds the selected
   MCP tool allowlist to the issued grant.
-- Details: [OAuth MCP Integration Access](oauth-mcp-integration-access-README.md).
+- Details: [OAuth/MCP Protocol Adapter](../../sdk/solutions/connections/delegated-credentials/oauth-mcp-protocol-adapter-README.md).
 
 ### Multi-Cognito descriptor shape
 
@@ -186,7 +186,7 @@ clients for routing/logging, but token claims remain authoritative.
 | Understand how requests choose Cognito/session/Connection Hub authenticators | [Auth Selector](auth-selector-README.md) |
 | Bundle/front shell performs login and browser should become a platform user | [Bundle Session Auth](bundle-session-auth-README.md) |
 | Bundle writes a SimpleIDP token for local/embedded simple auth | [Bundle SimpleIDP Bridge](bundle-simple-idp-bridge-README.md) |
-| External tool should access a narrow MCP integration surface after admin consent | [OAuth MCP Integration Access](oauth-mcp-integration-access-README.md) |
+| External tool should access a narrow MCP integration surface after admin consent | [OAuth/MCP Protocol Adapter](../../sdk/solutions/connections/delegated-credentials/oauth-mcp-protocol-adapter-README.md) |
 | Public mini app needs Socket.IO Data Bus publish rights | [Bundle Federated Auth](../../sdk/bundle/auth-bundle-federated-README.md) |
 | Bundle endpoint should be public or role-protected | [Bundle Firewall](../../sdk/bundle/bundle-firewall-README.md) |
 
