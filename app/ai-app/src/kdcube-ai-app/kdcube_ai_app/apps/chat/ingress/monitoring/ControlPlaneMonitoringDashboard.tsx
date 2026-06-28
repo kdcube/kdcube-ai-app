@@ -1798,7 +1798,7 @@ const MonitoringDashboard: React.FC = () => {
                             </div>
                         ) : (
                             <div className="text-xs text-gray-500">
-                                Enable with `MONITORING_BURST_ENABLE=1` and `AUTH_PROVIDER=simple`.
+                                Enable with `MONITORING_BURST_ENABLE=1` and platform authenticator provider `simple`.
                             </div>
                         )}
                         {burstStatus && (

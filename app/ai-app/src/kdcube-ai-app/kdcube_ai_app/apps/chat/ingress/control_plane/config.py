@@ -12,6 +12,7 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
 from kdcube_ai_app.apps.chat.sdk.config import get_settings
+from kdcube_ai_app.apps.middleware.platform_auth import platform_authenticator_provider
 from kdcube_ai_app.infra.config.frontend_config import build_frontend_config as build_frontend_config_payload
 
 router = APIRouter()
@@ -56,7 +57,7 @@ def _assembly_from_settings(settings: Any) -> dict[str, Any]:
         },
         "auth": {
             "type": settings.plain("auth.type"),
-            "idp": getattr(settings, "AUTH_PROVIDER", ""),
+            "idp": platform_authenticator_provider(settings),
             "id_token_header_name": _text(getattr(auth_cfg, "ID_TOKEN_HEADER_NAME", "")),
             "turnstile_development_token": settings.plain("auth.turnstile_development_token"),
             "cognito": {

@@ -15,6 +15,7 @@ from kdcube_ai_app.apps.chat.ingress.resolvers import auth_without_pressure, INS
     reset_circuit_breaker, get_circuit_breaker_stats
 from kdcube_ai_app.apps.middleware.gateway import CircuitBreakersResponse, CircuitBreakerSummaryResponse, \
     CircuitBreakerStatusResponse
+from kdcube_ai_app.apps.middleware.platform_auth import is_simple_platform_auth
 from kdcube_ai_app.auth.AuthManager import RequireUser, RequireRoles
 from kdcube_ai_app.auth.sessions import UserSession
 from kdcube_ai_app.infra.availability.health_and_heartbeat import get_expected_services
@@ -234,13 +235,16 @@ def _burst_sim_enabled() -> bool:
 async def get_burst_users(session: UserSession = Depends(auth_without_pressure())):
     """
     Dev-only helper: expose SimpleIDP tokens for burst simulation in the monitoring UI.
-    Controlled by MONITORING_BURST_ENABLE=1 and AUTH_PROVIDER=simple.
+    Controlled by MONITORING_BURST_ENABLE=1 and descriptor platform authenticator provider=simple.
     """
     if not _burst_sim_enabled():
         raise HTTPException(status_code=404, detail="Burst simulator is disabled")
 
-    if (get_settings().AUTH_PROVIDER or "simple").lower() != "simple":
-        raise HTTPException(status_code=400, detail="Burst simulator requires AUTH_PROVIDER=simple")
+    if not is_simple_platform_auth():
+        raise HTTPException(
+            status_code=400,
+            detail="Burst simulator requires descriptor platform authenticator provider=simple",
+        )
 
     try:
         from kdcube_ai_app.apps.middleware.simple_idp import IDP_DB_PATH

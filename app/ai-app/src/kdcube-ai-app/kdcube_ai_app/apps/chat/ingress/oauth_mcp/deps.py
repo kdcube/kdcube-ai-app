@@ -45,8 +45,8 @@ def get_authenticate(request: Request) -> AuthenticateFn:
     #      bundle kst1: a real Redis session whose roles live in the user record).
     #      It is strict: it rejects the stateless web-login token (no session
     #      record), which then falls through to (2).
-    #   2) the platform gateway's configured session manager (resolved from
-    #      AUTH_PROVIDER) — validates the admin's web-login session at
+    #   2) the platform gateway's configured session manager (resolved from the
+    #      descriptor-registered platform authenticator) — validates the admin's web-login session at
     #      /oauth/authorize (e.g. a stateless kdcube_ext kst1 carrying roles in its
     #      claims).
     # Bundle MUST come first: a custom provider's verifier may share the token

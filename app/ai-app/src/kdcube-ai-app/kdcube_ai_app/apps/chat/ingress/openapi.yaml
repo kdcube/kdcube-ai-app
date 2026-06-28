@@ -125,7 +125,7 @@ paths:
       summary: Get Burst Users
       description: 'Dev-only helper: expose SimpleIDP tokens for burst simulation in the monitoring UI.
 
-        Controlled by MONITORING_BURST_ENABLE=1 and AUTH_PROVIDER=simple.'
+        Controlled by MONITORING_BURST_ENABLE=1 and descriptor platform authenticator provider=simple.'
       operationId: get_burst_users_admin_burst_users_get
       responses:
         '200':

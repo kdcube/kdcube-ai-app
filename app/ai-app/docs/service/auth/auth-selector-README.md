@@ -195,9 +195,9 @@ authenticator family: connection-hub
 
 The gateway derives the platform authenticator from
 `auth.authenticators.platform` when present, otherwise from existing
-`auth.idp`/`auth.providers` descriptors. Environment-only `AUTH_PROVIDER`
-selection is retained only as a compatibility fallback when no descriptor is
-available.
+`auth.idp`/`auth.providers` descriptors. If no descriptor declares platform
+auth, the development default is `simple`. Runtime code should not introduce
+new service-local `AUTH_PROVIDER` switches.
 
 ## Multiple Bots And Providers
 
