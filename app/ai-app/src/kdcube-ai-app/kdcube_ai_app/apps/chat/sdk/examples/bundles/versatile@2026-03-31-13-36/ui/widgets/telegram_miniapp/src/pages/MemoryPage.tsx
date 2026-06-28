@@ -22,6 +22,24 @@ const MEMORY_WIDGET_IDENTITY = 'MEMORIES_WIDGET';
 // preview count so the compact tab stays a glanceable summary.
 const COMPACT_LIMIT = '4';
 
+// Flip to false to silence the layout/handshake trace. Kept on so the
+// maintainer can confirm the initial-view-sync fix from the Telegram desktop
+// devtools console (or by opening the mini-app URL in a browser).
+const DEBUG = true;
+
+function frameHeight(frame: HTMLIFrameElement | null): number {
+  return frame ? Math.round(frame.getBoundingClientRect().height) : -1;
+}
+
+function debugLog(frame: HTMLIFrameElement | null, event: string, extra?: Record<string, unknown>): void {
+  if (!DEBUG) return;
+  console.log('[memory-tab]', new Date().toISOString().slice(11, 23), event, {
+    iframeHeight: frameHeight(frame),
+    hasContentWindow: Boolean(frame?.contentWindow),
+    ...extra,
+  });
+}
+
 interface MemoryPageProps {
   memory?: MemoryPayload;
   reload?: () => Promise<void>;
@@ -31,6 +49,14 @@ export function MemoryPage(_props: MemoryPageProps) {
   const frameRef = useRef<HTMLIFrameElement | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [count, setCount] = useState<number | null>(null);
+  // Keep `expanded` reachable inside the persistent message listener without
+  // re-subscribing on every toggle (which would drop the listener mid-handshake).
+  const expandedRef = useRef(expanded);
+  expandedRef.current = expanded;
+  // The widget's FIRST kdcube-memory-widget-status proves it has mounted and is
+  // listening — the iframe `onLoad` fires earlier (document load), before the
+  // React widget hydrates, so the set-view posted there can be dropped.
+  const widgetReadyRef = useRef(false);
 
   const memoryWidgetSrc = useMemo(
     () => settings.widgetUrlForBundle(MEMORY_WIDGET_BUNDLE_ID, MEMORY_WIDGET_ALIAS, {
@@ -56,13 +82,39 @@ export function MemoryPage(_props: MemoryPageProps) {
 
   // Tell the widget which view to render (compact/expanded). Posting on every
   // change keeps the widget in sync; it also re-posts on the iframe `onLoad`
-  // so a freshly (re)loaded frame picks up the current view.
+  // and on the widget's first status (see below) so the initial view always
+  // lands after the widget is mounted and listening.
   const syncView = useCallback((view: 'compact' | 'expanded') => {
+    debugLog(frameRef.current, 'post kdcube-set-view', { view });
     frameRef.current?.contentWindow?.postMessage({
       type: 'kdcube-set-view',
       widget: MEMORY_WIDGET_ALIAS,
       view,
     }, '*');
+  }, []);
+
+  // Force the widget to re-measure its layout. The widget recomputes its
+  // compact/expanded shell height on a window `resize` (ResizeObserver +
+  // resize listener); a same-value `kdcube-set-view` is a no-op for it, so when
+  // the very first set-view was dropped (posted before the widget hydrated) the
+  // shell can stay collapsed. Bumping the iframe height by 1px across two frames
+  // fires a real resize inside the frame and settles the layout — the same
+  // cross-frame jiggle the scene uses to wake the iframe — without a flash.
+  const nudgeFrameLayout = useCallback(() => {
+    const frame = frameRef.current;
+    if (!frame) return;
+    const base = frame.style.height;
+    const measured = Math.round(frame.getBoundingClientRect().height);
+    if (!measured) return;
+    frame.style.height = `${measured + 1}px`;
+    window.requestAnimationFrame(() => {
+      if (frameRef.current) frameRef.current.style.height = base;
+    });
+  }, []);
+
+  useEffect(() => {
+    debugLog(frameRef.current, 'mount', { expanded });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -77,16 +129,34 @@ export function MemoryPage(_props: MemoryPageProps) {
       if (!data || typeof data !== 'object' || data.widget !== MEMORY_WIDGET_ALIAS) return;
       if (data.type === 'kdcube-memory-widget-status') {
         const next = Number(data.count);
+        const firstStatus = !widgetReadyRef.current;
+        debugLog(frameRef.current, 'recv kdcube-memory-widget-status', {
+          count: next, compact: data.compact, firstStatus, expanded: expandedRef.current,
+        });
         setCount(Number.isFinite(next) ? next : null);
+        // First status = the widget has hydrated and its message listener is
+        // live. The set-view posted on iframe onLoad could have been dropped
+        // (fired before hydration), leaving the iframe at its un-synced default
+        // — the collapsed thin line. Re-post the current view now so compact
+        // applies without needing a manual expand/collapse toggle.
+        if (firstStatus) {
+          widgetReadyRef.current = true;
+          syncView(expandedRef.current ? 'expanded' : 'compact');
+          // The widget mounts compact from the URL params, so the re-posted
+          // view may be a no-op for it; nudge a resize so its shell settles to
+          // the iframe height instead of the collapsed initial line.
+          nudgeFrameLayout();
+        }
         return;
       }
       if (data.type === 'kdcube-widget-view') {
+        debugLog(frameRef.current, 'recv kdcube-widget-view', { view: data.view, expanded: expandedRef.current });
         setExpanded(data.view === 'expanded');
       }
     }
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, []);
+  }, [syncView, nudgeFrameLayout]);
 
   return (
     <section className={`page page-wide memory-embed-page${expanded ? ' memory-expanded' : ''}`}>
@@ -122,7 +192,10 @@ export function MemoryPage(_props: MemoryPageProps) {
           src={memoryWidgetSrc}
           title="Memories"
           className="memory-widget-iframe"
-          onLoad={() => syncView(expanded ? 'expanded' : 'compact')}
+          onLoad={() => {
+            debugLog(frameRef.current, 'iframe onLoad', { expanded });
+            syncView(expanded ? 'expanded' : 'compact');
+          }}
         />
       </div>
     </section>
