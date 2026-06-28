@@ -1,0 +1,20 @@
+bundle:
+  repo: "https://github.com/kdcube/kdcube-ai-app.git"
+  ref: ""
+  description: |
+    Initial release for user-memories@2026-06-26.
+
+    Highlights
+
+    - New memory-only app. Derives BaseEntrypointWithEconomicsAndMemory and
+      enables the SDK memories widget (built from sdk://context/memory/ui/widget/memories)
+      plus the `mem` named service. No UI copy and no domain storage of its own.
+    - Purpose: expose the user's memories once so other apps embed the widget by
+      iframe and consume `mem` as a named service instead of republishing the
+      memory module.
+
+    Known follow-ups
+
+    - versatile: stop embedding the memory module; consume `mem` as a named
+      service and iframe this app's widget (including the Telegram web app).
+    - Site scene (website): point the memory component at this app.

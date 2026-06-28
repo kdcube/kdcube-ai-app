@@ -1,0 +1,41 @@
+bundles:
+  version: "1"
+  default_bundle_id: "user-memories@2026-06-26"
+  items:
+    - id: "user-memories@2026-06-26"
+      name: "User Memories"
+      # Bundle-root shape: point `path` at this folder and use module "entrypoint".
+      # (Parent-dir shape also works: path=<parent>, module="user-memories@2026-06-26.entrypoint".)
+      path: "<LOCAL_HOST_BUNDLE_ROOT>"
+      module: "entrypoint"
+      singleton: false
+      config:
+        visibility:
+          bundle:
+            allowed_roles: []
+          widget:
+            memories:
+              user_types: []
+              roles: []
+        # Memory subsystem. Only the widget (and, implicitly, the `mem` named
+        # service) are on; announce/tools stay off — this app has no chat agent.
+        # The mixin fills in reconciliation/snapshots/schema defaults.
+        memory:
+          enabled: true
+          announce:
+            enabled: false
+          tools:
+            enabled: false
+          widget:
+            enabled: true
+            allow_write: true
+            default_scope_filter: all_user_memories
+            allow_all_user_memories: true
+            limit: 30
+        ui:
+          widgets:
+            memories:
+              enabled: true
+              # Shared SDK widget source — no per-app ui/ copy.
+              src_folder: "sdk://context/memory/ui/widget/memories"
+              build_command: "npm install --no-package-lock && OUTDIR=<VI_BUILD_DEST_ABSOLUTE_PATH> npm run build"
