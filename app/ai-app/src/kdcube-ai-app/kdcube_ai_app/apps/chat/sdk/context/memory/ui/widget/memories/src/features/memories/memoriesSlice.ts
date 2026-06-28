@@ -12,6 +12,7 @@ import type {
   MemoryMutationPayload,
   MemoryPreferences,
   MemoryPreferencesPayload,
+  MemoryScopePref,
   ReconciliationAnalysis,
   ReconciliationApplyPayload,
   ReconciliationAnalyzePayload,
@@ -50,6 +51,7 @@ interface MemoriesState {
   allowSnapshots: boolean;
   memoryPreferences: MemoryPreferences;
   memoryUseEnabled: boolean;
+  memoryScope: MemoryScopePref;
   loading: boolean;
   eventsLoading: boolean;
   saving: boolean;
@@ -99,8 +101,9 @@ const initialState: MemoriesState = {
   allowWrite: false,
   allowReconciliation: false,
   allowSnapshots: false,
-  memoryPreferences: { memory_enabled: true },
+  memoryPreferences: { memory_enabled: true, memory_scope: 'family' },
   memoryUseEnabled: true,
+  memoryScope: 'family',
   loading: false,
   eventsLoading: false,
   saving: false,
@@ -263,12 +266,17 @@ export const retireMemory = createAsyncThunk<MemoryMutationPayload, string>(
 
 export const updateMemoryPreferences = createAsyncThunk<
   MemoryPreferencesPayload,
-  { memoryEnabled: boolean }
+  { memoryEnabled?: boolean; memoryScope?: MemoryScopePref }
 >(
   'memories/preferencesUpdate',
-  async ({ memoryEnabled }) => callOperation<MemoryPreferencesPayload>('memories_widget_preferences_update', {
-    memory_enabled: memoryEnabled,
-  }),
+  async ({ memoryEnabled, memoryScope }) => {
+    // Send only the fields the user changed so toggling one preference
+    // (e.g. memory scope) does not clobber the other (e.g. use-my-memory).
+    const body: Record<string, unknown> = {};
+    if (memoryEnabled !== undefined) body.memory_enabled = memoryEnabled;
+    if (memoryScope !== undefined) body.memory_scope = memoryScope;
+    return callOperation<MemoryPreferencesPayload>('memories_widget_preferences_update', body);
+  },
 );
 
 export const pinMemory = createAsyncThunk<
@@ -628,6 +636,7 @@ const memoriesSlice = createSlice({
         state.allowSnapshots = action.payload.capabilities?.allow_snapshots === true;
         state.memoryPreferences = action.payload.preferences || state.memoryPreferences;
         state.memoryUseEnabled = action.payload.preferences?.memory_enabled !== false;
+        state.memoryScope = action.payload.preferences?.memory_scope === 'channel' ? 'channel' : 'family';
         state.hasMore = action.payload.has_more === true;
         if (!state.allowAllUserMemories && state.scopeFilter === 'all_user_memories') {
           state.scopeFilter = 'current_bundle';
@@ -766,6 +775,7 @@ const memoriesSlice = createSlice({
         }
         state.memoryPreferences = action.payload.preferences || state.memoryPreferences;
         state.memoryUseEnabled = action.payload.preferences?.memory_enabled !== false;
+        state.memoryScope = action.payload.preferences?.memory_scope === 'channel' ? 'channel' : 'family';
       })
       .addCase(pinMemory.fulfilled, (state, action) => {
         state.saving = false;

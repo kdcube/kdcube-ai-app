@@ -367,37 +367,68 @@ class MemoryEntrypointMixin:
         raw = widget_cfg.get("identity_family_bundle_id") or cfg.get("identity_family_bundle_id")
         return str(raw or "connection-hub@1-0").strip() or "connection-hub@1-0"
 
-    def _memory_identity_family_enabled(self) -> bool:
+    def _memory_identity_family_kill_switch_enabled(self) -> bool:
         cfg = self._memory_config()
         widget_cfg = cfg.get("widget") if isinstance(cfg.get("widget"), dict) else {}
-        # Default OFF: aggregation only happens where Connection Hub is wired.
-        return _truthy(widget_cfg.get("aggregate_identity_family"), False)
+        # Bundle-level kill-switch. Default ON: the per-user `memory_scope`
+        # preference (default "family") decides aggregation; set this False to
+        # force single-actor reads everywhere regardless of the user's choice.
+        return _truthy(widget_cfg.get("identity_family_aggregation"), True)
 
-    async def _memory_read_user_ids(self) -> Optional[list[str]]:
-        """Resolve the identity family (READ aggregation scope) for the actor.
+    async def _memory_scope_pref_for(self, scope) -> str:
+        """The effective memory read-scope preference for ``scope`` (default family)."""
+        from kdcube_ai_app.apps.chat.sdk.context.memory import (
+            MEMORY_SCOPE_PREF_DEFAULT,
+            normalize_memory_scope_pref,
+        )
 
-        Calls Connection Hub ``identity_family_resolve`` in-process for the
-        CURRENT authenticated actor and returns ``memory_user_ids`` — the set of
-        memory-owner user_ids belonging to the same linked person. The actor's
-        own user_id is always included. Returns ``None`` (single-user scope) when
-        aggregation is disabled, the actor is unlinked (one-item family), or the
-        resolver fails for any reason — a read must never error on resolution.
+        try:
+            store = self._memory_store()
+            get_preferences = getattr(store, "get_user_preferences", None)
+            if not callable(get_preferences):
+                return MEMORY_SCOPE_PREF_DEFAULT
+            prefs = await get_preferences(scope=scope)
+            return normalize_memory_scope_pref((prefs or {}).get("memory_scope"))
+        except Exception:
+            return MEMORY_SCOPE_PREF_DEFAULT
+
+    async def _memory_scope_pref(self) -> str:
+        """The current actor's effective memory read-scope preference."""
+        return await self._memory_scope_pref_for(self._memory_scope())
+
+    async def _memory_read_user_ids(self, scope=None) -> Optional[list[str]]:
+        """Resolve the identity family (READ aggregation scope) for ``scope``.
+
+        When the user's ``memory_scope`` preference is ``family`` (the default)
+        and the bundle kill-switch is on, this calls Connection Hub
+        ``identity_family_resolve`` in-process for that actor and returns
+        ``memory_user_ids`` — the set of memory-owner user_ids belonging to the
+        same linked person (the actor is always included). Returns ``None``
+        (single-actor scope) when the preference is ``channel``, the bundle
+        kill-switch is off, the actor is unlinked (one-item family), or the
+        resolver fails for any reason — a read must never error.
 
         Aggregation scope ONLY. The returned ids must never be used for any
         authority/economics/role decision; writes stay under the single actor.
         """
 
-        scope = self._memory_scope()
+        from kdcube_ai_app.apps.chat.sdk.context.memory import MEMORY_SCOPE_PREF_FAMILY
+
+        if scope is None:
+            scope = self._memory_scope()
         actor_user_id = str(scope.user_id or "").strip()
-        if not self._memory_identity_family_enabled():
+        if not self._memory_identity_family_kill_switch_enabled():
+            return None
+        if (await self._memory_scope_pref_for(scope)) != MEMORY_SCOPE_PREF_FAMILY:
             return None
         try:
             from kdcube_ai_app.apps.chat.sdk.infra.bundle_operations import call_bundle_operation
 
+            data = {"input_user_id": actor_user_id} if actor_user_id else {}
             result = await call_bundle_operation(
                 bundle_id=self._memory_identity_family_bundle_id(),
                 operation="identity_family_resolve",
-                data={},
+                data=data,
                 tenant=scope.tenant,
                 project=scope.project,
                 route="operations",
@@ -409,7 +440,7 @@ class MemoryEntrypointMixin:
                 pass
             return None
         memory_user_ids = None
-        if isinstance(result, Mapping):
+        if isinstance(result, Mapping) and result.get("ok", True):
             raw = result.get("memory_user_ids")
             if isinstance(raw, (list, tuple)):
                 memory_user_ids = [str(uid or "").strip() for uid in raw if str(uid or "").strip()]
@@ -419,10 +450,14 @@ class MemoryEntrypointMixin:
             if uid and uid not in seen:
                 seen.add(uid)
                 family.append(uid)
-        # One-item family (unlinked) -> single-user path (None).
+        # One-item family (unlinked / ok:false / empty) -> single-user path.
         if len(family) <= 1:
             return None
         return family
+
+    async def _memory_named_service_read_user_ids(self, ctx) -> Optional[list[str]]:
+        """Identity-family READ scope for a named-service ctx actor (mem reads)."""
+        return await self._memory_read_user_ids(scope=self._memory_named_service_scope(ctx))
 
     def _memory_named_service_scope(self, ctx):
         from kdcube_ai_app.apps.chat.sdk.context.memory import MemoryScope
@@ -467,6 +502,9 @@ class MemoryEntrypointMixin:
             model_service=self.search_model_service(flow="memory.search"),
             embedding_enabled=_truthy(tools_cfg.get("embedding_enabled"), True),
             ensure_schema=_truthy(widget_cfg.get("ensure_schema"), True),
+            # mem reads aggregate across the identity family when the ctx actor's
+            # memory_scope preference is "family" (default); writes stay single.
+            read_user_ids_factory=self._memory_named_service_read_user_ids,
         )
 
     def named_services(self):
@@ -523,6 +561,7 @@ class MemoryEntrypointMixin:
         now = datetime.now(timezone.utc).isoformat()
         return {
             "memory_enabled": True,
+            "memory_scope": "family",
             "updated_by": "",
             "metadata": {},
             "created_at": now,
@@ -2135,7 +2174,8 @@ class MemoryEntrypointMixin:
     @api(method="POST", alias="memories_widget_preferences_update", route="operations", user_types=("registered", "paid", "privileged"))
     async def memories_widget_preferences_update(
         self,
-        memory_enabled: bool = True,
+        memory_enabled: Optional[bool] = None,
+        memory_scope: Optional[str] = None,
         **kwargs,
     ) -> Dict[str, Any]:
         del kwargs
@@ -2144,9 +2184,12 @@ class MemoryEntrypointMixin:
         store = self._memory_store()
         if _truthy(self._memory_widget_config().get("ensure_schema"), True):
             await store.ensure_schema()
+        # Each field is optional so toggling one ("All my memories" vs the
+        # "Use my memory" checkbox) preserves the other.
         preferences = await store.set_user_preferences(
             scope=self._memory_scope(),
-            memory_enabled=_truthy(memory_enabled, True),
+            memory_enabled=(None if memory_enabled is None else _truthy(memory_enabled, True)),
+            memory_scope=(None if memory_scope is None else str(memory_scope or "")),
             updated_by="user",
         )
         return {

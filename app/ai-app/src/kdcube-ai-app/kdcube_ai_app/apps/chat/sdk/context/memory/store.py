@@ -243,6 +243,26 @@ def _normalize_user_ids(user_ids: Optional[Sequence[str]]) -> Optional[list[str]
     return out or None
 
 
+MEMORY_SCOPE_PREF_FAMILY = "family"
+MEMORY_SCOPE_PREF_CHANNEL = "channel"
+MEMORY_SCOPE_PREF_DEFAULT = MEMORY_SCOPE_PREF_FAMILY
+
+
+def normalize_memory_scope_pref(value: Any, default: str = MEMORY_SCOPE_PREF_DEFAULT) -> str:
+    """Normalize the per-user memory read-scope preference.
+
+    ``family`` aggregates reads across the identity family ("all my memories");
+    ``channel`` scopes reads to the current actor only ("only this channel").
+    Default is ``family`` (aggregate). Read-scope preference ONLY — never an
+    authority/economics/role signal.
+    """
+
+    text = str(value or "").strip().lower()
+    if text in {MEMORY_SCOPE_PREF_FAMILY, MEMORY_SCOPE_PREF_CHANNEL}:
+        return text
+    return default if default in {MEMORY_SCOPE_PREF_FAMILY, MEMORY_SCOPE_PREF_CHANNEL} else MEMORY_SCOPE_PREF_DEFAULT
+
+
 def _user_scope_value(scope_user_id: str, user_ids: Optional[Sequence[str]]) -> tuple[Any, bool]:
     """Pick the value bound at the user-scope placeholder and whether it is a set.
 
@@ -777,6 +797,7 @@ class UserMemoryStore:
             now = _utc_now().isoformat()
             return {
                 "memory_enabled": True,
+                "memory_scope": MEMORY_SCOPE_PREF_DEFAULT,
                 "updated_by": "",
                 "metadata": {},
                 "created_at": now,
@@ -788,6 +809,7 @@ class UserMemoryStore:
             prefs = {}
         return {
             "memory_enabled": bool(prefs.get("memory_enabled", True)),
+            "memory_scope": normalize_memory_scope_pref(prefs.get("memory_scope")),
             "updated_by": str(prefs.get("updated_by") or ""),
             "metadata": _json(prefs.get("metadata")),
             "created_at": _coerce_datetime(data.get("created_at")).isoformat(),
@@ -798,17 +820,28 @@ class UserMemoryStore:
         self,
         *,
         scope: MemoryScope,
-        memory_enabled: bool,
+        memory_enabled: Optional[bool] = None,
+        memory_scope: Optional[str] = None,
         updated_by: str = "user",
         metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         pool = self._require_pool()
         scope = scope.normalized()
         now = _utc_now()
+        # Merge over existing prefs so toggling one field (e.g. memory_scope)
+        # never clobbers the other (e.g. memory_enabled). Omitted -> preserve.
+        existing = await self.get_user_preferences(scope=scope)
+        resolved_enabled = bool(existing.get("memory_enabled", True)) if memory_enabled is None else bool(memory_enabled)
+        resolved_scope = (
+            normalize_memory_scope_pref(existing.get("memory_scope"))
+            if memory_scope is None
+            else normalize_memory_scope_pref(memory_scope)
+        )
         value = {
-            "memory_enabled": bool(memory_enabled),
+            "memory_enabled": resolved_enabled,
+            "memory_scope": resolved_scope,
             "updated_by": str(updated_by or "user"),
-            "metadata": metadata or {},
+            "metadata": metadata if metadata is not None else _json(existing.get("metadata")),
             "tenant": scope.tenant,
             "project": scope.project,
         }
@@ -837,7 +870,8 @@ class UserMemoryStore:
         if not isinstance(prefs, dict):
             prefs = value
         return {
-            "memory_enabled": bool(prefs.get("memory_enabled", memory_enabled)),
+            "memory_enabled": bool(prefs.get("memory_enabled", resolved_enabled)),
+            "memory_scope": normalize_memory_scope_pref(prefs.get("memory_scope"), default=resolved_scope),
             "updated_by": str(prefs.get("updated_by") or updated_by or "user"),
             "metadata": _json(prefs.get("metadata")),
             "created_at": _coerce_datetime(data.get("created_at"), default=now).isoformat(),

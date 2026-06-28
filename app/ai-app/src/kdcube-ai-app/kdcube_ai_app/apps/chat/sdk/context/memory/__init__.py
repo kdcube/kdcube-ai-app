@@ -25,7 +25,13 @@ from .scoring import (
     compute_memory_scores,
     compute_tier,
 )
-from .store import UserMemoryStore
+from .store import (
+    MEMORY_SCOPE_PREF_CHANNEL,
+    MEMORY_SCOPE_PREF_DEFAULT,
+    MEMORY_SCOPE_PREF_FAMILY,
+    UserMemoryStore,
+    normalize_memory_scope_pref,
+)
 from .tools import UserMemoryTools, UserMemoryToolConfig, make_user_memory_tools
 from .instructions import MEMORY_REACT_ADDITIONAL_INSTRUCTIONS, resolve_memory_react_additional_instructions
 from .named_service import (
@@ -73,6 +79,10 @@ __all__ = [
     "resolve_memory_react_additional_instructions",
     "normalize_scope_filter",
     "normalize_terms",
+    "normalize_memory_scope_pref",
+    "MEMORY_SCOPE_PREF_FAMILY",
+    "MEMORY_SCOPE_PREF_CHANNEL",
+    "MEMORY_SCOPE_PREF_DEFAULT",
     "MemoryReconciliationActionType",
     "UserMemoryStore",
     "UserMemoryToolConfig",

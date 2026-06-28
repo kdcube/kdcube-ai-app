@@ -111,6 +111,7 @@ export default function App() {
     focusedMemoryIds,
     memories,
     memoryUseEnabled,
+    memoryScope,
     mutationError,
     saving,
     selectedId,
@@ -301,6 +302,11 @@ export default function App() {
     void dispatch(updateMemoryPreferences({ memoryEnabled: !memoryUseEnabled })).then(() => dispatch(loadMemories()));
   };
 
+  const setMemoryScope = (scope: 'family' | 'channel') => {
+    if (scope === memoryScope) return;
+    void dispatch(updateMemoryPreferences({ memoryScope: scope })).then(() => dispatch(loadMemories()));
+  };
+
   function handleDragOver(event: DragEvent<HTMLElement>) {
     if (!Array.from(event.dataTransfer.types || []).some((type) => (
       type === 'application/vnd.kdcube.context+json' ||
@@ -345,6 +351,8 @@ export default function App() {
       allowWrite={allowWrite}
       count={count}
       memoryUseEnabled={memoryUseEnabled}
+      memoryScope={memoryScope}
+      onSetMemoryScope={setMemoryScope}
       saving={saving}
       dropActive={dropActive}
       compact={compact}

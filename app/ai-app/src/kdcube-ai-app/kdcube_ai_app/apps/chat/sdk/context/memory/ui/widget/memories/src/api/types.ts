@@ -72,8 +72,11 @@ export interface MemoriesPayload {
   has_more?: boolean;
 }
 
+export type MemoryScopePref = 'family' | 'channel';
+
 export interface MemoryPreferences {
   memory_enabled: boolean;
+  memory_scope?: MemoryScopePref;
   updated_by?: string;
   metadata?: Record<string, unknown>;
   created_at?: string;

@@ -1,8 +1,11 @@
-"""The memory mixin resolves the identity family server-side for READ scoping."""
+"""The memory mixin resolves the identity family server-side for READ scoping.
+
+Driven by the per-user ``memory_scope`` preference (default ``family``) and a
+bundle kill-switch, calling the real Connection Hub ``identity_family_resolve``
+operation shape (``connection_hub.identity_family.v1``).
+"""
 
 from __future__ import annotations
-
-import types
 
 import pytest
 
@@ -13,8 +16,20 @@ from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint_with_memory import
 )
 
 
-_ACTOR = "02e53484-actor"
+_ACTOR = "02e53484-0081-70ce-11c1-e96706b1a182"
 _LINKED = "telegram_434804821"
+
+
+def _family_v1(memory_user_ids, *, ok=True, linked=True):
+    """The connection_hub.identity_family.v1 response shape."""
+    return {
+        "ok": ok,
+        "schema": "connection_hub.identity_family.v1",
+        "linked": linked,
+        "platform_user_id": _ACTOR,
+        "user_ids": list(memory_user_ids),
+        "memory_user_ids": list(memory_user_ids),
+    }
 
 
 class _Logger:
@@ -25,9 +40,9 @@ class _Logger:
 class _Stub:
     """Minimal carrier exposing only what _memory_read_user_ids touches."""
 
-    def __init__(self, *, enabled: bool, resolve):
-        self._enabled = enabled
-        self._resolve = resolve
+    def __init__(self, *, kill_switch: bool = True, scope_pref: str = "family"):
+        self._kill_switch = kill_switch
+        self._scope_pref = scope_pref
         self.logger = _Logger()
 
     _memory_read_user_ids = MemoryEntrypointMixin._memory_read_user_ids
@@ -35,11 +50,14 @@ class _Stub:
     def _memory_scope(self):
         return MemoryScope(tenant="t", project="p", user_id=_ACTOR, bundle_id="b@1")
 
-    def _memory_identity_family_enabled(self) -> bool:
-        return self._enabled
+    def _memory_identity_family_kill_switch_enabled(self) -> bool:
+        return self._kill_switch
 
     def _memory_identity_family_bundle_id(self) -> str:
         return "connection-hub@1-0"
+
+    async def _memory_scope_pref_for(self, scope) -> str:
+        return self._scope_pref
 
 
 @pytest.fixture(autouse=True)
@@ -58,49 +76,69 @@ def _patch_call(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_resolves_family_from_memory_user_ids(_patch_call) -> None:
-    _patch_call["resolve"] = {
-        "ok": True,
-        "linked": True,
-        "memory_user_ids": [_ACTOR, _LINKED],
-    }
-    stub = _Stub(enabled=True, resolve=None)
+async def test_resolves_family_with_canonical_call(_patch_call) -> None:
+    _patch_call["resolve"] = _family_v1([_ACTOR, _LINKED])
+    stub = _Stub(kill_switch=True, scope_pref="family")
     family = await stub._memory_read_user_ids()
     assert family == [_ACTOR, _LINKED]
-    # Resolved for the CURRENT actor, in-process, against Connection Hub.
-    assert _patch_call["called_with"]["operation"] == "identity_family_resolve"
-    assert _patch_call["called_with"]["bundle_id"] == "connection-hub@1-0"
-    assert _patch_call["called_with"]["data"] == {}
+    # Canonical call: connection-hub@1-0 / identity_family_resolve /
+    # route="operations" / data={"input_user_id": <actor>}.
+    call = _patch_call["called_with"]
+    assert call["bundle_id"] == "connection-hub@1-0"
+    assert call["operation"] == "identity_family_resolve"
+    assert call["route"] == "operations"
+    assert call["data"] == {"input_user_id": _ACTOR}
+
+
+@pytest.mark.asyncio
+async def test_channel_preference_skips_resolution(_patch_call) -> None:
+    _patch_call["resolve"] = _family_v1([_ACTOR, _LINKED])
+    stub = _Stub(kill_switch=True, scope_pref="channel")
+    assert await stub._memory_read_user_ids() is None
+    # "Only this channel" never calls the resolver.
+    assert "called_with" not in _patch_call
+
+
+@pytest.mark.asyncio
+async def test_kill_switch_off_skips_resolution(_patch_call) -> None:
+    _patch_call["resolve"] = _family_v1([_ACTOR, _LINKED])
+    stub = _Stub(kill_switch=False, scope_pref="family")
+    assert await stub._memory_read_user_ids() is None
+    assert "called_with" not in _patch_call
 
 
 @pytest.mark.asyncio
 async def test_unlinked_actor_returns_none(_patch_call) -> None:
-    # Resolver returns just the actor (one-item family) -> single-user path.
-    _patch_call["resolve"] = {"ok": True, "linked": False, "memory_user_ids": [_ACTOR]}
-    stub = _Stub(enabled=True, resolve=None)
+    _patch_call["resolve"] = _family_v1([_ACTOR], linked=False)
+    stub = _Stub()
+    assert await stub._memory_read_user_ids() is None
+
+
+@pytest.mark.asyncio
+async def test_ok_false_falls_back_to_single_actor(_patch_call) -> None:
+    # ok:false with a stale family must NOT aggregate.
+    _patch_call["resolve"] = _family_v1([_ACTOR, _LINKED], ok=False)
+    stub = _Stub()
+    assert await stub._memory_read_user_ids() is None
+
+
+@pytest.mark.asyncio
+async def test_empty_family_falls_back_to_single_actor(_patch_call) -> None:
+    _patch_call["resolve"] = _family_v1([])
+    stub = _Stub()
     assert await stub._memory_read_user_ids() is None
 
 
 @pytest.mark.asyncio
 async def test_resolver_failure_falls_back_to_none(_patch_call) -> None:
-    # A resolver error must never error the read; fall back to single-actor.
     _patch_call["resolve"] = RuntimeError("connection hub down")
-    stub = _Stub(enabled=True, resolve=None)
+    stub = _Stub()
     assert await stub._memory_read_user_ids() is None
-
-
-@pytest.mark.asyncio
-async def test_disabled_skips_resolution(_patch_call) -> None:
-    _patch_call["resolve"] = {"memory_user_ids": [_ACTOR, _LINKED]}
-    stub = _Stub(enabled=False, resolve=None)
-    assert await stub._memory_read_user_ids() is None
-    # When disabled, the cross-bundle call is not even attempted.
-    assert "called_with" not in _patch_call
 
 
 @pytest.mark.asyncio
 async def test_family_always_includes_actor(_patch_call) -> None:
     # Even if the resolver omits the actor, it is included for the read scope.
-    _patch_call["resolve"] = {"memory_user_ids": [_LINKED]}
-    stub = _Stub(enabled=True, resolve=None)
+    _patch_call["resolve"] = _family_v1([_LINKED])
+    stub = _Stub()
     assert await stub._memory_read_user_ids() == [_ACTOR, _LINKED]

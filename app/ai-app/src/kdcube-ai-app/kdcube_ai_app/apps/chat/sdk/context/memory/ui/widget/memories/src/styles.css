@@ -255,6 +255,55 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
   height: 14px;
 }
 
+/* "All my memories" / "Only this channel" read-scope segmented control. */
+.memory-scope-toggle {
+  display: inline-flex;
+  align-items: stretch;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  overflow: hidden;
+  background: var(--surface, #fff);
+}
+
+.memory-scope-option {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 5px 9px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.memory-scope-option + .memory-scope-option {
+  border-left: 1px solid var(--line);
+}
+
+.memory-scope-option:hover:not(:disabled):not(.is-active) {
+  background: var(--teal-pale);
+  color: var(--teal-dark);
+}
+
+.memory-scope-option.is-active {
+  background: var(--teal);
+  color: #fff;
+  cursor: default;
+}
+
+.memory-scope-option:disabled:not(.is-active) {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.memory-scope-option:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: -2px;
+}
+
 .compact-memory-toggle {
   display: flex;
   align-items: center;

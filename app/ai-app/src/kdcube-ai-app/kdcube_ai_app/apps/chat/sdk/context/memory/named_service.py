@@ -6,7 +6,7 @@ from __future__ import annotations
 import inspect
 import json
 import logging
-from typing import Any, Awaitable, Callable, Mapping, Sequence
+from typing import Any, Awaitable, Callable, Mapping, Optional, Sequence
 
 from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers import (
     NamedServiceContext,
@@ -582,6 +582,7 @@ class MemoryNamedServiceProvider(NamedServiceProvider):
         search_embedding_factory: EmbeddingFactory | None = None,
         embedding_enabled: bool = True,
         ensure_schema: bool = False,
+        read_user_ids_factory: Any | None = None,
     ) -> None:
         super().__init__(memory_named_service_spec(bundle_id=bundle_id))
         self._store_factory = store_factory
@@ -592,12 +593,38 @@ class MemoryNamedServiceProvider(NamedServiceProvider):
         self._search_embedding_factory = search_embedding_factory
         self._embedding_enabled = bool(embedding_enabled)
         self._ensure_schema = bool(ensure_schema)
+        # Optional resolver of the identity-family READ scope for a ctx actor.
+        # When set and it returns a >1 id list, mem reads aggregate across it
+        # (honoring the user's memory_scope preference); None => single actor.
+        self._read_user_ids_factory = read_user_ids_factory
 
     def _store(self, ctx: NamedServiceContext) -> UserMemoryStore:
         return self._store_factory(ctx)
 
     def _scope(self, ctx: NamedServiceContext) -> MemoryScope:
         return self._scope_factory(ctx).normalized()
+
+    async def _read_user_ids(self, ctx: NamedServiceContext) -> Optional[list[str]]:
+        """Identity-family READ scope for the ctx actor (aggregation only).
+
+        Delegates to the injected factory (which honors the user's memory_scope
+        preference and the Connection Hub resolver). Any failure or absence
+        yields None — a single-actor read. Never used for authority/economics.
+        """
+
+        factory = self._read_user_ids_factory
+        if factory is None:
+            return None
+        try:
+            result = factory(ctx)
+            if inspect.isawaitable(result):
+                result = await result
+        except Exception:
+            return None
+        if not result:
+            return None
+        out = [str(uid or "").strip() for uid in result if str(uid or "").strip()]
+        return out or None
 
     async def _ensure_store_schema(self, store: UserMemoryStore) -> None:
         if not self._ensure_schema:
@@ -783,6 +810,7 @@ class MemoryNamedServiceProvider(NamedServiceProvider):
             (factor_weights or {}).get("semantic_weight", DEFAULT_MEMORY_SCORING.semantic_weight)
         )
         query_embedding = None if effective_semantic_weight <= 0 else await self._search_embedding(query)
+        family_user_ids = await self._read_user_ids(ctx)
         search_request = MemorySearchRequest(
             scope=self._scope(ctx),
             query=query,
@@ -798,6 +826,7 @@ class MemoryNamedServiceProvider(NamedServiceProvider):
             limit=limit + 1,
             offset=offset,
             query_embedding=query_embedding,
+            user_ids=family_user_ids,
             min_relevance_score=_float(
                 thresholds.get("relevance_score", filters.get("min_relevance_score")),
                 DEFAULT_MEMORY_SCORING.min_relevance_score,
@@ -900,6 +929,7 @@ class MemoryNamedServiceProvider(NamedServiceProvider):
             memory_id=memory_id,
             visible_to_user=None,
             scope_filter=self._scope_filter(request, default="all_user_memories"),
+            user_ids=await self._read_user_ids(ctx),
         )
         if record is None:
             return NamedServiceResponse.error_response(
@@ -1262,6 +1292,7 @@ def make_memory_named_service_provider(
     search_embedding_factory: EmbeddingFactory | None = None,
     embedding_enabled: bool = True,
     ensure_schema: bool = False,
+    read_user_ids_factory: Any | None = None,
 ) -> MemoryNamedServiceProvider:
     return MemoryNamedServiceProvider(
         store_factory=store_factory,
@@ -1273,6 +1304,7 @@ def make_memory_named_service_provider(
         search_embedding_factory=search_embedding_factory,
         embedding_enabled=embedding_enabled,
         ensure_schema=ensure_schema,
+        read_user_ids_factory=read_user_ids_factory,
     )
 
 

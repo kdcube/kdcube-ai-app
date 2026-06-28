@@ -5,6 +5,8 @@ interface AppShellProps {
   allowWrite: boolean;
   count: number;
   memoryUseEnabled: boolean;
+  memoryScope: 'family' | 'channel';
+  onSetMemoryScope: (scope: 'family' | 'channel') => void;
   onCreate: () => void;
   onExpand?: () => void;
   onToggleMemoryUse: () => void;
@@ -33,6 +35,8 @@ export function AppShell({
   children,
   count,
   memoryUseEnabled,
+  memoryScope,
+  onSetMemoryScope,
   onCreate,
   onDragLeave,
   onDragOver,
@@ -100,6 +104,33 @@ export function AppShell({
             />
             <span>Use my memory</span>
           </label>
+          {compact ? null : (
+            <div
+              className="memory-scope-toggle"
+              role="group"
+              aria-label="Which memories to show"
+              title="Show memories from all your linked identities, or only this channel"
+            >
+              <button
+                type="button"
+                className={`memory-scope-option ${memoryScope === 'family' ? 'is-active' : ''}`}
+                aria-pressed={memoryScope === 'family'}
+                disabled={saving || memoryScope === 'family'}
+                onClick={() => onSetMemoryScope('family')}
+              >
+                All my memories
+              </button>
+              <button
+                type="button"
+                className={`memory-scope-option ${memoryScope === 'channel' ? 'is-active' : ''}`}
+                aria-pressed={memoryScope === 'channel'}
+                disabled={saving || memoryScope === 'channel'}
+                onClick={() => onSetMemoryScope('channel')}
+              >
+                Only this channel
+              </button>
+            </div>
+          )}
           {allowWrite && !compact ? (
             <button type="button" className="primary-button" onClick={onCreate}>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 6 }}>

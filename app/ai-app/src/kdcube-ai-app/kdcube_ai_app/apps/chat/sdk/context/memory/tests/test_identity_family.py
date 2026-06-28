@@ -13,9 +13,11 @@ from kdcube_ai_app.apps.chat.sdk.context.memory.models import (
 from kdcube_ai_app.apps.chat.sdk.context.memory.store import (
     EVENT_TABLE,
     MEMORY_TABLE,
+    USER_BUNDLE_PROPS_TABLE,
     UserMemoryStore,
     _normalize_user_ids,
     _user_scope_value,
+    normalize_memory_scope_pref,
 )
 
 
@@ -199,3 +201,148 @@ async def test_get_memory_by_id_within_family() -> None:
     # Without the family, the actor cannot see the linked member's record.
     missing = await store.get_memory(scope=_SCOPE, memory_id="mem_b", user_ids=None)
     assert missing is None
+
+
+# ---------------------------------------------------------------------------
+# memory_scope preference (mirrors memory_enabled storage)
+# ---------------------------------------------------------------------------
+
+def test_normalize_memory_scope_pref_defaults_family() -> None:
+    assert normalize_memory_scope_pref(None) == "family"
+    assert normalize_memory_scope_pref("") == "family"
+    assert normalize_memory_scope_pref("nonsense") == "family"
+    assert normalize_memory_scope_pref("FAMILY") == "family"
+    assert normalize_memory_scope_pref("channel") == "channel"
+
+
+class _PrefsCon:
+    """Fake connection for the user_bundle_props preferences row (one row)."""
+
+    def __init__(self) -> None:
+        self.value_json = None
+
+    def acquire(self):
+        con = self
+
+        class _Acq:
+            async def __aenter__(self_inner):
+                return con
+
+            async def __aexit__(self_inner, *exc):
+                return False
+
+        return _Acq()
+
+    async def fetchrow(self, sql: str, *args):
+        s = " ".join(sql.split())
+        now = datetime(2026, 6, 28, tzinfo=timezone.utc)
+        if "INSERT INTO" in s and USER_BUNDLE_PROPS_TABLE in s:
+            self.value_json = args[3]  # value_json jsonb string
+            return {"value_json": self.value_json, "created_at": now, "updated_at": now}
+        if "SELECT value_json" in s and USER_BUNDLE_PROPS_TABLE in s:
+            if self.value_json is None:
+                return None
+            return {"value_json": self.value_json, "created_at": now, "updated_at": now}
+        raise AssertionError(f"unexpected prefs SQL: {s[:100]}")
+
+
+class _PrefsStore(UserMemoryStore):
+    def __init__(self) -> None:
+        self.con = _PrefsCon()
+        self.schema = "kdcube"
+
+    def _require_pool(self):
+        return self.con
+
+
+@pytest.mark.asyncio
+async def test_memory_scope_pref_default_is_family() -> None:
+    store = _PrefsStore()
+    prefs = await store.get_user_preferences(scope=_SCOPE)
+    # Absent row -> default family (aggregate).
+    assert prefs["memory_scope"] == "family"
+    assert prefs["memory_enabled"] is True
+
+
+@pytest.mark.asyncio
+async def test_memory_scope_pref_round_trips_like_memory_enabled() -> None:
+    store = _PrefsStore()
+    # Set scope to channel without touching memory_enabled.
+    saved = await store.set_user_preferences(scope=_SCOPE, memory_scope="channel")
+    assert saved["memory_scope"] == "channel"
+    assert saved["memory_enabled"] is True
+    # Persisted + re-read.
+    reread = await store.get_user_preferences(scope=_SCOPE)
+    assert reread["memory_scope"] == "channel"
+    # Toggling memory_enabled preserves the scope (merge, no clobber).
+    saved2 = await store.set_user_preferences(scope=_SCOPE, memory_enabled=False)
+    assert saved2["memory_enabled"] is False
+    assert saved2["memory_scope"] == "channel"
+
+
+# ---------------------------------------------------------------------------
+# Named-service reads honor the injected family resolver
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_named_service_search_aggregates_with_family_factory() -> None:
+    from kdcube_ai_app.apps.chat.sdk.context.memory.named_service import (
+        make_memory_named_service_provider,
+    )
+    from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers import (
+        NamedServiceContext,
+        NamedServiceRequest,
+    )
+
+    rows = [_mem_row("mem_a", _ACTOR), _mem_row("mem_b", _LINKED), _mem_row("mem_c", "stranger")]
+    store = _ReadStore(rows)
+
+    async def _family(ctx):
+        return [_ACTOR, _LINKED]
+
+    provider = make_memory_named_service_provider(
+        store_factory=lambda ctx: store,
+        scope_factory=lambda ctx: _SCOPE,
+        bundle_id="b@1",
+        embedding_enabled=False,
+        ensure_schema=False,
+        read_user_ids_factory=_family,
+    )
+    ctx = NamedServiceContext(tenant="t", project="p", user_id=_ACTOR)
+    response = await provider.object_search(
+        ctx,
+        NamedServiceRequest(operation="object.search", namespace="mem", filters={"mode": "recent"}, limit=10),
+    )
+    assert response.ok is True
+    # The mem search aggregated across the family, not just the actor.
+    assert "ANY($3" in store.con.last_sql
+    assert set(store.con.last_args[2]) == {_ACTOR, _LINKED}
+
+
+@pytest.mark.asyncio
+async def test_named_service_search_single_actor_without_factory() -> None:
+    from kdcube_ai_app.apps.chat.sdk.context.memory.named_service import (
+        make_memory_named_service_provider,
+    )
+    from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers import (
+        NamedServiceContext,
+        NamedServiceRequest,
+    )
+
+    rows = [_mem_row("mem_a", _ACTOR), _mem_row("mem_b", _LINKED)]
+    store = _ReadStore(rows)
+    provider = make_memory_named_service_provider(
+        store_factory=lambda ctx: store,
+        scope_factory=lambda ctx: _SCOPE,
+        bundle_id="b@1",
+        embedding_enabled=False,
+        ensure_schema=False,
+    )
+    ctx = NamedServiceContext(tenant="t", project="p", user_id=_ACTOR)
+    await provider.object_search(
+        ctx,
+        NamedServiceRequest(operation="object.search", namespace="mem", filters={"mode": "recent"}, limit=10),
+    )
+    # No factory -> single actor (no aggregation).
+    assert "ANY($3" not in store.con.last_sql
+    assert store.con.last_args[2] == _ACTOR

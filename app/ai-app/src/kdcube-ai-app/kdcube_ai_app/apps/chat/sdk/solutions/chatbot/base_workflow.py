@@ -881,6 +881,14 @@ class BaseWorkflow():
         except Exception:
             timeout = 1.5
         runtime_ctx.memory_announce_timeout_seconds = max(0.1, min(timeout, 10.0))
+        # Identity-family READ aggregation for the injected hotset: bundle-level
+        # kill-switch (default ON) + per-user memory_scope preference decide it.
+        widget_cfg = memory_cfg.get("widget") if isinstance(memory_cfg.get("widget"), dict) else {}
+        family_kill = _bool_or_none(widget_cfg.get("identity_family_aggregation"))
+        runtime_ctx.memory_identity_family_aggregation = True if family_kill is None else bool(family_kill)
+        runtime_ctx.memory_identity_family_bundle_id = str(
+            widget_cfg.get("identity_family_bundle_id") or memory_cfg.get("identity_family_bundle_id") or "connection-hub@1-0"
+        ).strip() or "connection-hub@1-0"
         if not runtime_ctx.memory_announce_enabled:
             runtime_ctx.memory_hotset = []
             runtime_ctx.memory_hotset_error = None
@@ -901,6 +909,51 @@ class BaseWorkflow():
 
     async def on_external_event_received(self, *, type: str, event: Any, blocks: List[Dict[str, Any]], **kwargs: Any) -> None:
         return None
+
+    async def _announce_identity_family_user_ids(self, runtime_ctx, scope, memory_scope_pref) -> Optional[List[str]]:
+        """Identity-family READ scope for the injected hotset (aggregation only).
+
+        Returns the family ``memory_user_ids`` (actor always included) when the
+        user's ``memory_scope`` is ``family`` and the bundle kill-switch is on;
+        otherwise ``None`` (single actor). Any resolver failure / unlinked actor
+        falls back to ``None`` — the hotset must never break on resolution, and
+        these ids are read-scope only (never authority/economics/roles).
+        """
+
+        if str(memory_scope_pref or "family").strip().lower() != "family":
+            return None
+        if not bool(getattr(runtime_ctx, "memory_identity_family_aggregation", True)):
+            return None
+        actor_user_id = str(getattr(scope, "user_id", "") or "").strip()
+        try:
+            from kdcube_ai_app.apps.chat.sdk.infra.bundle_operations import call_bundle_operation
+
+            data = {"input_user_id": actor_user_id} if actor_user_id else {}
+            result = await call_bundle_operation(
+                bundle_id=str(getattr(runtime_ctx, "memory_identity_family_bundle_id", "") or "connection-hub@1-0"),
+                operation="identity_family_resolve",
+                data=data,
+                tenant=scope.tenant,
+                project=scope.project,
+                route="operations",
+            )
+        except Exception:
+            return None
+        memory_user_ids = None
+        if isinstance(result, dict) and result.get("ok", True):
+            raw = result.get("memory_user_ids")
+            if isinstance(raw, (list, tuple)):
+                memory_user_ids = [str(uid or "").strip() for uid in raw if str(uid or "").strip()]
+        family: List[str] = []
+        seen: set = set()
+        for uid in ([actor_user_id] + (memory_user_ids or [])):
+            if uid and uid not in seen:
+                seen.add(uid)
+                family.append(uid)
+        # Unlinked / ok:false / empty family -> single actor.
+        if len(family) <= 1:
+            return None
+        return family
 
     async def _refresh_user_memory_hotset_for_announce(self) -> None:
         runtime_ctx = getattr(self, "runtime_ctx", None)
@@ -934,16 +987,25 @@ class BaseWorkflow():
                 tenant=scope.tenant,
                 project=scope.project,
             )
+            memory_scope_pref = "family"
             try:
                 prefs = await store.get_user_preferences(scope=scope)
                 if prefs.get("memory_enabled") is False:
                     runtime_ctx.memory_hotset = []
                     runtime_ctx.memory_hotset_error = "disabled by user"
                     return
+                memory_scope_pref = str(prefs.get("memory_scope") or "family").strip().lower() or "family"
             except Exception:
                 # Preference table may not exist until the memory schema
                 # migration runs; keep legacy behavior in that case.
                 pass
+            # Identity-family READ aggregation for the hotset: when the user's
+            # memory_scope is "family" (default) and the kill-switch is on,
+            # inject memories spanning the linked identities. Single-actor on any
+            # failure; writes are unaffected (this is a read).
+            family_user_ids = await self._announce_identity_family_user_ids(
+                runtime_ctx, scope, memory_scope_pref
+            )
             timeout = float(getattr(runtime_ctx, "memory_announce_timeout_seconds", 1.5) or 1.5)
             rows = await asyncio.wait_for(
                 store.search(
@@ -955,6 +1017,7 @@ class BaseWorkflow():
                         include_private=False,
                         scope_filter=scope_filter,
                         limit=limit,
+                        user_ids=family_user_ids,
                     )
                 ),
                 timeout=max(0.1, timeout),
