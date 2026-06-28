@@ -15,7 +15,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, Optional, Sequence
+from typing import Any, Dict, Mapping, Optional, Sequence
 
 from kdcube_ai_app.apps.chat.sdk.protocol import ExternalEventPayload
 from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint import BaseEntrypoint
@@ -360,6 +360,69 @@ class MemoryEntrypointMixin:
             user_id=override_user_id or getattr(user, "user_id", None) or getattr(self.comm, "user_id", None) or "anonymous",
             bundle_id=getattr(bundle_spec, "id", None) or "",
         ).normalized()
+
+    def _memory_identity_family_bundle_id(self) -> str:
+        cfg = self._memory_config()
+        widget_cfg = cfg.get("widget") if isinstance(cfg.get("widget"), dict) else {}
+        raw = widget_cfg.get("identity_family_bundle_id") or cfg.get("identity_family_bundle_id")
+        return str(raw or "connection-hub@1-0").strip() or "connection-hub@1-0"
+
+    def _memory_identity_family_enabled(self) -> bool:
+        cfg = self._memory_config()
+        widget_cfg = cfg.get("widget") if isinstance(cfg.get("widget"), dict) else {}
+        # Default OFF: aggregation only happens where Connection Hub is wired.
+        return _truthy(widget_cfg.get("aggregate_identity_family"), False)
+
+    async def _memory_read_user_ids(self) -> Optional[list[str]]:
+        """Resolve the identity family (READ aggregation scope) for the actor.
+
+        Calls Connection Hub ``identity_family_resolve`` in-process for the
+        CURRENT authenticated actor and returns ``memory_user_ids`` — the set of
+        memory-owner user_ids belonging to the same linked person. The actor's
+        own user_id is always included. Returns ``None`` (single-user scope) when
+        aggregation is disabled, the actor is unlinked (one-item family), or the
+        resolver fails for any reason — a read must never error on resolution.
+
+        Aggregation scope ONLY. The returned ids must never be used for any
+        authority/economics/role decision; writes stay under the single actor.
+        """
+
+        scope = self._memory_scope()
+        actor_user_id = str(scope.user_id or "").strip()
+        if not self._memory_identity_family_enabled():
+            return None
+        try:
+            from kdcube_ai_app.apps.chat.sdk.infra.bundle_operations import call_bundle_operation
+
+            result = await call_bundle_operation(
+                bundle_id=self._memory_identity_family_bundle_id(),
+                operation="identity_family_resolve",
+                data={},
+                tenant=scope.tenant,
+                project=scope.project,
+                route="operations",
+            )
+        except Exception as exc:  # resolver unavailable / unbound caller / error
+            try:
+                self.logger.log(f"[memory.identity_family] resolve failed, single-actor fallback: {exc}", "WARNING")
+            except Exception:
+                pass
+            return None
+        memory_user_ids = None
+        if isinstance(result, Mapping):
+            raw = result.get("memory_user_ids")
+            if isinstance(raw, (list, tuple)):
+                memory_user_ids = [str(uid or "").strip() for uid in raw if str(uid or "").strip()]
+        family: list[str] = []
+        seen: set[str] = set()
+        for uid in ([actor_user_id] + (memory_user_ids or [])):
+            if uid and uid not in seen:
+                seen.add(uid)
+                family.append(uid)
+        # One-item family (unlinked) -> single-user path (None).
+        if len(family) <= 1:
+            return None
+        return family
 
     def _memory_named_service_scope(self, ctx):
         from kdcube_ai_app.apps.chat.sdk.context.memory import MemoryScope
@@ -2164,6 +2227,9 @@ class MemoryEntrypointMixin:
         store = self._memory_store()
         if _truthy(self._memory_widget_config().get("ensure_schema"), True):
             await store.ensure_schema()
+        # Aggregate reads across the actor's identity family (server-resolved);
+        # writes remain single-actor. None => single-user scope.
+        family_user_ids = await self._memory_read_user_ids()
         preferences = await store.get_user_preferences(scope=scope)
         if memory_ids_list:
             fetched_rows = []
@@ -2173,6 +2239,7 @@ class MemoryEntrypointMixin:
                     memory_id=memory_id,
                     visible_to_user=True,
                     scope_filter=normalized_scope_filter,
+                    user_ids=family_user_ids,
                 )
                 if record is not None:
                     fetched_rows.append(record)
@@ -2189,6 +2256,7 @@ class MemoryEntrypointMixin:
                 visible_to_user=True,
                 include_private=False,
                 scope_filter=normalized_scope_filter,
+                user_ids=family_user_ids,
             )
             rows = await store.search(
                 MemorySearchRequest(
@@ -2207,6 +2275,7 @@ class MemoryEntrypointMixin:
                     candidate_limit=page_offset + search_limit,
                     query_embedding=query_embedding,
                     min_relevance_score=min_relevance_score if normalized_query else 0.0,
+                    user_ids=family_user_ids,
                 )
             )
         page_rows = rows[:page_limit]
@@ -2445,11 +2514,13 @@ class MemoryEntrypointMixin:
         if not self._memory_widget_enabled():
             return self._memory_error("memory_disabled")
         memory_id = _memory_id_from_ref(memory_id)
+        family_user_ids = await self._memory_read_user_ids()
         memory = await self._memory_store().get_memory(
             scope=self._memory_scope(),
             memory_id=memory_id,
             visible_to_user=True,
             scope_filter=self._memory_scope_filter(scope_filter),
+            user_ids=family_user_ids,
         )
         if memory is None:
             return self._memory_error("memory_not_found")
@@ -2470,11 +2541,13 @@ class MemoryEntrypointMixin:
         store = self._memory_store()
         scope = self._memory_scope()
         normalized_scope_filter = self._memory_scope_filter(scope_filter)
+        family_user_ids = await self._memory_read_user_ids()
         memory = await store.get_memory(
             scope=scope,
             memory_id=memory_id,
             visible_to_user=True,
             scope_filter=normalized_scope_filter,
+            user_ids=family_user_ids,
         )
         if memory is None:
             return self._memory_error("memory_not_found")
@@ -2484,6 +2557,7 @@ class MemoryEntrypointMixin:
             visible_to_user=True,
             scope_filter=normalized_scope_filter,
             limit=self._memory_limit(limit),
+            user_ids=family_user_ids,
         )
         return {
             "ok": True,

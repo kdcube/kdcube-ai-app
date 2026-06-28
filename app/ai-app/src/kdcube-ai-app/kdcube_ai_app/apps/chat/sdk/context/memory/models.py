@@ -188,6 +188,10 @@ class MemorySearchRequest:
     min_relevance_score: float = 0.0
     half_life_days: float = 45.0
     factor_weights: Optional[Mapping[str, float]] = None
+    # Identity-family READ scope: when set, reads aggregate across this set of
+    # memory-owner user_ids (WHERE user_id = ANY(...)) instead of the single
+    # scope.user_id. Aggregation scope ONLY — never an authority/economics grant.
+    user_ids: Optional[Sequence[str]] = None
 
 
 @dataclass(frozen=True)

@@ -221,6 +221,41 @@ def _lexical_tsquery(value: str) -> str:
     return " | ".join(f"{term}:*" for term in terms)
 
 
+def _normalize_user_ids(user_ids: Optional[Sequence[str]]) -> Optional[list[str]]:
+    """Normalize an optional identity-family user_id set for read scoping.
+
+    Returns a de-duplicated, order-preserving list of non-empty user_ids, or
+    None when no family is provided (callers then fall back to the single-actor
+    scope). ``user_ids`` is an aggregation scope for READS only; it must never
+    be used for authority/economics/role decisions, and writes always stay
+    under the single current actor user_id.
+    """
+
+    if not user_ids:
+        return None
+    seen: set[str] = set()
+    out: list[str] = []
+    for value in user_ids:
+        uid = str(value or "").strip()
+        if uid and uid not in seen:
+            seen.add(uid)
+            out.append(uid)
+    return out or None
+
+
+def _user_scope_value(scope_user_id: str, user_ids: Optional[Sequence[str]]) -> tuple[Any, bool]:
+    """Pick the value bound at the user-scope placeholder and whether it is a set.
+
+    When an identity family is supplied, reads scope to ``user_id = ANY($n)``
+    over the family; otherwise to the single ``user_id = $n`` of the actor.
+    """
+
+    family = _normalize_user_ids(user_ids)
+    if family:
+        return family, True
+    return str(scope_user_id or ""), False
+
+
 class UserMemoryStore:
     """Postgres-backed cross-conversation user memory store.
 
@@ -658,11 +693,14 @@ class UserMemoryStore:
         memory_id: str,
         visible_to_user: Optional[bool] = None,
         scope_filter: str = "current_bundle",
+        user_ids: Optional[Sequence[str]] = None,
     ) -> Optional[MemoryRecord]:
         pool = self._require_pool()
         scope = scope.normalized()
-        args: list[Any] = [scope.tenant, scope.project, scope.user_id, str(memory_id or "")]
-        where = ["tenant=$1", "project=$2", "user_id=$3", "id=$4", "merged_into_id IS NULL"]
+        user_value, is_family = _user_scope_value(scope.user_id, user_ids)
+        user_pred = "user_id = ANY($3::text[])" if is_family else "user_id=$3"
+        args: list[Any] = [scope.tenant, scope.project, user_value, str(memory_id or "")]
+        where = ["tenant=$1", "project=$2", user_pred, "id=$4", "merged_into_id IS NULL"]
         if visible_to_user is not None:
             args.append(bool(visible_to_user))
             where.append(f"visible_to_user=${len(args)}")
@@ -685,11 +723,14 @@ class UserMemoryStore:
         limit: int = 25,
         visible_to_user: Optional[bool] = None,
         scope_filter: str = "current_bundle",
+        user_ids: Optional[Sequence[str]] = None,
     ) -> list[MemoryEvent]:
         pool = self._require_pool()
         scope = scope.normalized()
-        args: list[Any] = [scope.tenant, scope.project, scope.user_id, str(memory_id or "")]
-        where = ["e.tenant=$1", "e.project=$2", "e.user_id=$3", "e.memory_id=$4"]
+        user_value, is_family = _user_scope_value(scope.user_id, user_ids)
+        user_pred = "e.user_id = ANY($3::text[])" if is_family else "e.user_id=$3"
+        args: list[Any] = [scope.tenant, scope.project, user_value, str(memory_id or "")]
+        where = ["e.tenant=$1", "e.project=$2", user_pred, "e.memory_id=$4"]
         if visible_to_user is not None:
             args.append(bool(visible_to_user))
             where.append(f"m.visible_to_user=${len(args)}")
@@ -815,11 +856,14 @@ class UserMemoryStore:
         visible_to_user: Optional[bool] = None,
         include_private: bool = True,
         scope_filter: str = "current_bundle",
+        user_ids: Optional[Sequence[str]] = None,
     ) -> int:
         pool = self._require_pool()
         scope = scope.normalized()
-        args: list[Any] = [scope.tenant, scope.project, scope.user_id]
-        where = ["tenant=$1", "project=$2", "user_id=$3", "merged_into_id IS NULL"]
+        user_value, is_family = _user_scope_value(scope.user_id, user_ids)
+        user_pred = "user_id = ANY($3::text[])" if is_family else "user_id=$3"
+        args: list[Any] = [scope.tenant, scope.project, user_value]
+        where = ["tenant=$1", "project=$2", user_pred, "merged_into_id IS NULL"]
         normalized_status = normalize_term(status)
         if normalized_status and normalized_status != "any":
             args.append(normalized_status)
@@ -2167,8 +2211,10 @@ class UserMemoryStore:
     async def _fetch_candidates(self, request: MemorySearchRequest) -> list[Dict[str, Any]]:
         pool = self._require_pool()
         scope = request.scope.normalized()
-        args: list[Any] = [scope.tenant, scope.project, scope.user_id]
-        where = ["tenant=$1", "project=$2", "user_id=$3", "merged_into_id IS NULL"]
+        user_value, is_family = _user_scope_value(scope.user_id, request.user_ids)
+        user_pred = "user_id = ANY($3::text[])" if is_family else "user_id=$3"
+        args: list[Any] = [scope.tenant, scope.project, user_value]
+        where = ["tenant=$1", "project=$2", user_pred, "merged_into_id IS NULL"]
         status = normalize_term(request.status)
         if status and status != "any":
             args.append(status)
@@ -2273,8 +2319,10 @@ class UserMemoryStore:
     async def _search_recent_events(self, request: MemorySearchRequest) -> list[MemoryEvent]:
         pool = self._require_pool()
         scope = request.scope.normalized()
-        args: list[Any] = [scope.tenant, scope.project, scope.user_id]
-        where = ["e.tenant=$1", "e.project=$2", "e.user_id=$3"]
+        user_value, is_family = _user_scope_value(scope.user_id, request.user_ids)
+        user_pred = "e.user_id = ANY($3::text[])" if is_family else "e.user_id=$3"
+        args: list[Any] = [scope.tenant, scope.project, user_value]
+        where = ["e.tenant=$1", "e.project=$2", user_pred]
         if request.visible_to_user is not None:
             args.append(bool(request.visible_to_user))
             where.append(f"m.visible_to_user=${len(args)}")
