@@ -423,7 +423,8 @@ Meaning:
 - `auth.authority_id` and `auth.grants` are optional authority checks.
   API/widget requests compare them to the current `UserSession.identity_authority`.
 - MCP uses `auth` only when `mode: managed`; then the delegated-credential guard
-  validates the bearer credential, authority, grants, and selected-tool grant.
+  validates the bearer credential, authority, each called tool's required
+  grants, and selected-tool grant.
 - Non-managed MCP remains bundle-owned. Existing bundle-local header-token
   patterns, such as an `X-Knowledge-MCP-Token` checked inside the MCP app, still
   work and should not be represented as platform-managed authority grants.
@@ -722,16 +723,20 @@ Important:
   validation, or any non-managed MCP auth scheme, that logic must live in the
   bundle MCP app itself
 - bundle-owned header-token pattern:
-  - put the client-facing header name in bundle props such as
-    `self.bundle_prop("mcp.inbound.auth.header_name")`
-  - put the verification material in bundle secrets such as
-    `await get_secret("b:mcp.inbound.auth.shared_token")`
+  - put surface metadata under
+    `surfaces.as_provider.mcp.<alias>.auth.mode: bundle`
+  - put the client-facing header name under
+    `surfaces.as_provider.mcp.<alias>.auth.header_name`
+  - put the verification material in bundle secrets under the same surface path,
+    for example
+    `await get_secret("b:surfaces.as_provider.mcp.<alias>.auth.shared_token")`
   - read `request.headers[...]` in the provider and reject with
     `HTTPException(status_code=401, ...)` before returning the MCP app
 - platform-managed delegated credential pattern:
   - put policy in `surfaces.as_provider.mcp.<alias>.auth`
   - use `mode: managed`
-  - set `authority_id` and `grants` in that same auth block
+  - set `authority_id`
+  - set required grants per tool under `tools.<tool_name>.grants`
   - proc validates the bearer credential and selected-tool grants before
     dispatching into the MCP app
 - full worked example:

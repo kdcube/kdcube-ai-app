@@ -4,7 +4,7 @@
 """
 /oauth/authorize + /oauth/authorize/consent routes.
 
-GET renders the consent screen for an authenticated admin; POST issues an
+GET renders the consent screen for an authenticated user; POST issues an
 authorization code (on approve) or bounces ``access_denied`` (on deny). The
 consent POST re-validates client/redirect/PKCE — it never trusts the rendered
 hidden fields blindly — and restricts granted tools to those valid for the scope.
@@ -12,7 +12,8 @@ hidden fields blindly — and restricts granted tools to those valid for the sco
 from __future__ import annotations
 
 import inspect
-from typing import Optional, Tuple
+from fnmatch import fnmatch
+from typing import Iterable, Mapping, Optional, Tuple
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
@@ -45,7 +46,7 @@ router = APIRouter()
 
 _AUTHORIZE_FORM_KEYS = (
     "client_id", "redirect_uri", "response_type", "scope",
-    "state", "code_challenge", "code_challenge_method",
+    "resource", "state", "code_challenge", "code_challenge_method",
 )
 
 
@@ -70,19 +71,79 @@ def _error_response(err: AuthorizeError, issuer: str) -> Response:
     )
 
 
-async def _require_admin(request: Request) -> Tuple[Optional[dict], Optional[Response]]:
+async def _require_user(request: Request) -> Tuple[Optional[dict], Optional[Response]]:
     token = extract_bearer(request)
     if not token:
         return None, JSONResponse(status_code=401, content={"error": "login_required"})
     user = await get_authenticate(request)(token)
     if not user:
         return None, JSONResponse(status_code=401, content={"error": "login_required"})
-    if not is_admin(user.get("roles")):
-        return None, JSONResponse(
-            status_code=403,
-            content={"error": "forbidden", "error_description": "admin role required"},
-        )
     return user, None
+
+
+def _user_subject(user: Mapping[str, object]) -> str:
+    """Return the platform subject used as the grantor for delegated credentials."""
+    for key in ("user_id", "sub", "id"):
+        value = user.get(key)
+        if value:
+            return str(value)
+    return ""
+
+
+def _as_set(value: Iterable[str] | None) -> set[str]:
+    return {str(item).strip() for item in (value or []) if str(item).strip()}
+
+
+def _matches_any(value: str, patterns: Iterable[str]) -> bool:
+    text = str(value or "").strip()
+    if not text:
+        return False
+    return any(text == pattern or fnmatch(text, pattern) for pattern in patterns)
+
+
+def _has_delegable_permission(user_permissions: set[str], configured: Iterable[str]) -> bool:
+    required = [str(item).strip() for item in (configured or []) if str(item).strip()]
+    if not required:
+        return False
+    for expected in required:
+        if any(permission == expected or fnmatch(permission, expected) or fnmatch(expected, permission) for permission in user_permissions):
+            return True
+    return False
+
+
+def _delegation_denial(user: Mapping[str, object], scopes: Iterable[str], *, request: Request, resource: str | None = None) -> JSONResponse | None:
+    cfg = oauth_mcp_config(request)
+    caps = cfg.capability_map()
+    roles = _as_set(user.get("roles") if isinstance(user, Mapping) else ())
+    permissions = _as_set(user.get("permissions") if isinstance(user, Mapping) else ())
+    if is_admin(roles):
+        return None
+    denied: list[str] = []
+    for scope in scopes or ():
+        cap = caps.get(str(scope))
+        if cap is None:
+            denied.append(str(scope))
+            continue
+        allowed = False
+        if roles.intersection(cap.delegable_roles):
+            allowed = True
+        if not allowed and _has_delegable_permission(permissions, cap.delegable_permissions):
+            allowed = True
+        if not allowed and _matches_any(str(scope), permissions):
+            allowed = True
+        if not allowed:
+            denied.append(str(scope))
+    if not denied:
+        return None
+    return JSONResponse(
+        status_code=403,
+        content={
+            "error": "forbidden",
+            "error_description": "user is not allowed to delegate the requested grant(s)",
+            "grants": denied,
+            "resource": resource or "",
+        },
+    )
 
 
 async def _dyn_client_resolver(request: Request, client_id: Optional[str]):
@@ -140,21 +201,23 @@ async def authorize(request: Request) -> Response:
     issuer = resolve_issuer(request)
     params = dict(request.query_params)
     resolver = await _dyn_client_resolver(request, params.get("client_id"))
+    cfg = oauth_mcp_config(request)
     try:
         req = parse_authorize_request(
             params,
             client_resolver=resolver,
             public_client_resolver=lambda cid: get_client(cid, request),
+            supported_scopes=cfg.supported_scopes(params.get("resource")),
         )
     except AuthorizeError as err:
         return _error_response(err, issuer)
 
-    user, denied = await _require_admin(request)
+    user, denied = await _require_user(request)
     if denied is not None:
         # Browser entry point: on a missing session, send the user to the platform
         # login with a return-to (url-encoded so the multi-param authorize URL
-        # survives) instead of a dead-end JSON 401. 403 (authenticated non-admin)
-        # still returns its JSON.
+        # survives) instead of a dead-end JSON 401. Authenticated denials still
+        # return their JSON payload.
         if getattr(denied, "status_code", None) == 401:
             from urllib.parse import quote
             return_to = request.url.path
@@ -163,8 +226,15 @@ async def authorize(request: Request) -> Response:
             return RedirectResponse(f"/signin?next={quote(return_to, safe='')}", status_code=302)
         return denied
 
-    # Synchronizer CSRF token bound to the consenting admin, embedded in the form.
-    csrf = await get_grant_store(request).create_csrf_token(user["sub"])
+    delegation_denied = _delegation_denial(user or {}, req.scopes, request=request, resource=req.resource)
+    if delegation_denied is not None:
+        return delegation_denied
+
+    # Synchronizer CSRF token bound to the consenting user, embedded in the form.
+    subject = _user_subject(user or {})
+    if not subject:
+        return JSONResponse(status_code=401, content={"error": "login_required"})
+    csrf = await get_grant_store(request).create_csrf_token(subject)
     # trusted = a statically pre-registered client (not a dynamically-registered one),
     # so the consent screen can flag unknown clients for anti-phishing.
     trusted = get_client(req.client_id, request) is not None
@@ -174,8 +244,9 @@ async def authorize(request: Request) -> Response:
             issuer,
             csrf_token=csrf,
             trusted=trusted,
-            brand=oauth_mcp_config(request).brand,
+            brand=cfg.brand,
             form_action=_consent_action(request),
+            config=cfg,
         )
     )
 
@@ -186,25 +257,31 @@ async def authorize_consent(request: Request) -> Response:
     form = await request.form()
     params = {k: form.get(k) for k in _AUTHORIZE_FORM_KEYS}
     resolver = await _dyn_client_resolver(request, params.get("client_id"))
+    cfg = oauth_mcp_config(request)
     try:
         req = parse_authorize_request(
             params,
             client_resolver=resolver,
             public_client_resolver=lambda cid: get_client(cid, request),
+            supported_scopes=cfg.supported_scopes(params.get("resource")),
         )
     except AuthorizeError as err:
         return _error_response(err, issuer)
 
-    user, denied = await _require_admin(request)
+    user, denied = await _require_user(request)
     if denied is not None:
         return denied
 
     store = get_grant_store(request)
 
-    # CSRF: the consent POST must carry the single-use token minted for THIS admin
+    subject = _user_subject(user or {})
+    if not subject:
+        return JSONResponse(status_code=401, content={"error": "login_required"})
+
+    # CSRF: the consent POST must carry the single-use token minted for THIS user
     # at GET /oauth/authorize. Blocks a forged cross-site POST riding the session
     # cookie. Checked before the decision branch so deny is protected too.
-    if not await store.consume_csrf_token(form.get("csrf_token"), user["sub"]):
+    if not await store.consume_csrf_token(form.get("csrf_token"), subject):
         return JSONResponse(
             status_code=403,
             content={"error": "invalid_csrf", "error_description": "CSRF token missing, expired, or invalid"},
@@ -216,15 +293,20 @@ async def authorize_consent(request: Request) -> Response:
         )
         return RedirectResponse(url, status_code=302)
 
-    valid_tools = {name for name, _ in tools_for_scopes(req.scopes)}
+    delegation_denied = _delegation_denial(user or {}, req.scopes, request=request, resource=req.resource)
+    if delegation_denied is not None:
+        return delegation_denied
+
+    valid_tools = {name for name, _, _ in tools_for_scopes(req.scopes, config=cfg, resource=req.resource)}
     selected = [t for t in form.getlist("tools") if t in valid_tools]
     code = await store.create_auth_code(
         client_id=req.client_id,
         redirect_uri=req.redirect_uri,
         code_challenge=req.code_challenge,
-        sub=user["sub"],
+        sub=subject,
         scopes=req.scopes,
         tools=selected,
+        resource=req.resource,
     )
     url = build_redirect(req.redirect_uri, {"code": code, "state": req.state, "iss": issuer})
     return RedirectResponse(url, status_code=302)
@@ -249,7 +331,7 @@ def _minter_accepts_authority_kwargs(minter) -> bool:
     return any(name in params for name in ("client_id", "tools", "credential"))
 
 
-async def _issue_tokens(request, store, *, sub, scopes, client_id, tools, refresh_token=None) -> JSONResponse:
+async def _issue_tokens(request, store, *, sub, scopes, client_id, tools, resource=None, refresh_token=None) -> JSONResponse:
     tenant, project = oauth_tenant_project(request)
     # This is the common credential envelope understood by the Connection Hub
     # authority SDK. The access token remains a real kst1 session token; the
@@ -262,6 +344,7 @@ async def _issue_tokens(request, store, *, sub, scopes, client_id, tools, refres
         tools=tools,
         tenant=tenant,
         project=project,
+        resource=resource,
         expires_in=3600,
     )
     minter = get_access_token_minter(request)
@@ -286,6 +369,7 @@ async def _issue_tokens(request, store, *, sub, scopes, client_id, tools, refres
             tools=tools,
             tenant=tenant,
             project=project,
+            resource=resource,
             expires_in=expires_in,
         )
     # Bind the consented tool allowlist to THIS access token so /mcp tools/call can
@@ -294,6 +378,7 @@ async def _issue_tokens(request, store, *, sub, scopes, client_id, tools, refres
     if refresh_token is None:
         refresh_token = await store.create_refresh_token(
             client_id=client_id, sub=sub, scopes=scopes, tools=tools,
+            resource=resource,
             authority=credential.to_dict(),
         )
     return JSONResponse(
@@ -336,6 +421,7 @@ async def token(request: Request) -> Response:
             request, store,
             sub=payload["sub"], scopes=payload["scopes"], client_id=client_id,
             tools=payload.get("tools") or [],
+            resource=payload.get("resource"),
         )
 
     if grant_type == "refresh_token":
@@ -353,6 +439,7 @@ async def token(request: Request) -> Response:
             request, store,
             sub=rec["sub"], scopes=rec["scopes"], client_id=rec["client_id"],
             tools=rec.get("tools") or [],
+            resource=rec.get("resource"),
             refresh_token=new_rt,
         )
 

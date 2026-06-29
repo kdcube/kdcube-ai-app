@@ -68,3 +68,51 @@ def test_oauth_mcp_brand_from_descriptor_is_reflected():
     app = FastAPI()
     app.state.oauth_mcp_config = {"enabled": True, "brand": "Acme AI"}
     assert oauth_mcp_config(app).brand == "Acme AI"
+
+
+def test_oauth_mcp_parses_resource_capabilities_and_tools():
+    app = FastAPI()
+    app.state.oauth_mcp_config = {
+        "enabled": True,
+        "capabilities": [
+            {
+                "grant": "memories:read",
+                "label": "Read memories",
+                "delegable_roles": ["kdcube:role:chat-user"],
+            },
+            {
+                "grant": "memories:maintain",
+                "label": "Maintain memories",
+                "delegable_roles": ["kdcube:role:privileged"],
+            },
+        ],
+        "resources": [
+            {
+                "resource": "https://runtime.example.test/*/public/mcp/memories",
+                "tools": {
+                    "memory_search": {
+                        "label": "Search memories",
+                        "grants": ["memories:read"],
+                    },
+                    "memory_reconcile": {
+                        "label": "Reconcile memories",
+                        "grants": ["memories:read", "memories:maintain"],
+                    },
+                },
+            },
+        ],
+    }
+    cfg = oauth_mcp_config(app)
+
+    assert cfg.supported_scopes("https://runtime.example.test/x/public/mcp/memories") == (
+        "memories:read",
+        "memories:maintain",
+    )
+    assert [tool.name for tool in cfg.tools_for_scopes(["memories:read"], resource="https://runtime.example.test/x/public/mcp/memories")] == ["memory_search"]
+    assert [
+        tool.name
+        for tool in cfg.tools_for_scopes(
+            ["memories:read", "memories:maintain"],
+            resource="https://runtime.example.test/x/public/mcp/memories",
+        )
+    ] == ["memory_search", "memory_reconcile"]

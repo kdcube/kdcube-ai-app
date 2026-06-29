@@ -18,16 +18,8 @@ from typing import Any, Mapping
 from fastapi import Request
 from fastapi.responses import JSONResponse, Response
 
-from kdcube_ai_app.apps.chat.sdk.solutions.connections.authority_registry import (
-    CredentialEnvelope,
-    OAUTH_MCP_AUTHORITY_ID,
-)
-from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oauth_mcp.grants import (
-    ADMIN_ROLES,
-    FEEDBACK_READER_ROLE,
-    can_call_tool,
-    oauth_tenant_project,
-)
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.authority_registry import CredentialEnvelope
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oauth_mcp.grants import oauth_tenant_project
 from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oauth_mcp.store import (
     GrantStore,
 )
@@ -56,13 +48,36 @@ def mcp_auth_mode(auth: Mapping[str, Any] | None) -> str:
 
 
 @dataclass(frozen=True)
-class ManagedMcpAuthPolicy:
-    authority_id: str = ""
+class ManagedMcpToolPolicy:
     grants: tuple[str, ...] = ()
     roles: tuple[str, ...] = ()
     permissions: tuple[str, ...] = ()
-    tools: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class ManagedMcpAuthPolicy:
+    authority_id: str = ""
+    roles: tuple[str, ...] = ()
+    permissions: tuple[str, ...] = ()
+    tool_policies: Mapping[str, ManagedMcpToolPolicy] | None = None
     selected_tool_grants: bool = True
+
+
+def _parse_tool_policies(value: Any) -> dict[str, ManagedMcpToolPolicy]:
+    if not isinstance(value, Mapping):
+        return {}
+    out: dict[str, ManagedMcpToolPolicy] = {}
+    for raw_name, raw_policy in value.items():
+        name = str(raw_name or "").strip()
+        if not name:
+            continue
+        data = raw_policy if isinstance(raw_policy, Mapping) else {}
+        out[name] = ManagedMcpToolPolicy(
+            grants=_as_list(data.get("grants") or data.get("scopes")),
+            roles=_as_list(data.get("roles")),
+            permissions=_as_list(data.get("permissions")),
+        )
+    return out
 
 
 def managed_mcp_auth_policy(auth: Mapping[str, Any] | None) -> ManagedMcpAuthPolicy | None:
@@ -71,10 +86,9 @@ def managed_mcp_auth_policy(auth: Mapping[str, Any] | None) -> ManagedMcpAuthPol
     data = dict(auth or {})
     return ManagedMcpAuthPolicy(
         authority_id=str(data.get("authority_id") or data.get("authority") or "").strip(),
-        grants=_as_list(data.get("grants") or data.get("scopes")),
         roles=_as_list(data.get("roles")),
         permissions=_as_list(data.get("permissions")),
-        tools=_as_list(data.get("tools") or data.get("allowed_tools")),
+        tool_policies=_parse_tool_policies(data.get("tools") or data.get("tool_policies")),
         selected_tool_grants=bool(data.get("selected_tool_grants", True)),
     )
 
@@ -177,6 +191,22 @@ def _credential_scopes(envelope: CredentialEnvelope) -> set[str]:
     return out
 
 
+def _normalize_resource(value: Any) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    return raw.split("?", 1)[0].rstrip("/")
+
+
+def _request_resource(request: Request) -> str:
+    return _normalize_resource(str(request.url))
+
+
+def _credential_resource(envelope: CredentialEnvelope) -> str:
+    attrs = envelope.attrs or {}
+    return _normalize_resource(attrs.get("resource"))
+
+
 async def _default_grant_store(request: Request) -> GrantStore:
     override = getattr(request.app.state, "oauth_grant_store", None)
     if override is not None:
@@ -254,7 +284,6 @@ async def authorize_delegated_mcp_request(
 
     roles = set(user.get("roles") or [])
     permissions = set(user.get("permissions") or [])
-    is_admin = bool(roles & ADMIN_ROLES)
 
     if policy.roles and not roles.intersection(policy.roles):
         return _json_response(403, "forbidden", "required role is missing")
@@ -264,15 +293,24 @@ async def authorize_delegated_mcp_request(
     grant_store = await _default_grant_store(request)
     grant_record = await grant_store.get_access_grant_record(token)
     envelope = _grant_record_authority(grant_record)
+    try:
+        request.state.delegated_credential = {
+            "user": dict(user or {}),
+            "authority": envelope.to_dict(),
+            "grant_record": dict(grant_record or {}),
+        }
+    except Exception:
+        pass
 
     if policy.authority_id:
         if envelope.issuer_authority_id != policy.authority_id:
             return _json_response(403, "forbidden", "delegated credential authority mismatch")
 
-    if policy.grants:
-        available_grants = _credential_scopes(envelope)
-        if not available_grants.issuperset(policy.grants):
-            return _json_response(403, "forbidden", "required delegated grant is missing")
+    credential_resource = _credential_resource(envelope)
+    if not credential_resource:
+        return _json_response(403, "forbidden", "delegated credential resource is missing")
+    if credential_resource != _request_resource(request):
+        return _json_response(403, "forbidden", "delegated credential resource mismatch")
 
     tool_calls = extract_mcp_tool_calls(body)
     if not tool_calls:
@@ -281,19 +319,23 @@ async def authorize_delegated_mcp_request(
     granted_tools = None
     if isinstance(grant_record, Mapping):
         granted_tools = set(_as_list(grant_record.get("tools")))
-    policy_tools = set(policy.tools)
+    tool_policies = dict(policy.tool_policies or {})
+    available_grants = _credential_scopes(envelope)
 
     for rpc_id, tool_name in tool_calls:
-        if policy_tools and tool_name not in policy_tools:
+        tool_policy = tool_policies.get(tool_name)
+        if tool_policies and tool_policy is None:
             return _rpc_tool_error(rpc_id, f"tool not allowed by endpoint policy: {tool_name}")
 
-        if policy.authority_id in {"", OAUTH_MCP_AUTHORITY_ID}:
-            if not can_call_tool(roles, tool_name):
-                return _rpc_tool_error(rpc_id, f"not authorized for tool: {tool_name}")
-        elif not is_admin and FEEDBACK_READER_ROLE in roles and not can_call_tool(roles, tool_name):
-            return _rpc_tool_error(rpc_id, f"not authorized for tool: {tool_name}")
+        if tool_policy is not None:
+            if tool_policy.roles and not roles.intersection(tool_policy.roles):
+                return _rpc_tool_error(rpc_id, f"required role is missing for tool: {tool_name}")
+            if tool_policy.permissions and not permissions.issuperset(tool_policy.permissions):
+                return _rpc_tool_error(rpc_id, f"required permission is missing for tool: {tool_name}")
+            if tool_policy.grants and not available_grants.issuperset(tool_policy.grants):
+                return _rpc_tool_error(rpc_id, f"required delegated grant is missing for tool: {tool_name}")
 
-        if policy.selected_tool_grants and not is_admin:
+        if policy.selected_tool_grants:
             if granted_tools is None or tool_name not in granted_tools:
                 return _rpc_tool_error(
                     rpc_id,
@@ -306,6 +348,7 @@ async def authorize_delegated_mcp_request(
 __all__ = [
     "MANAGED_MCP_AUTH_MODE",
     "ManagedMcpAuthPolicy",
+    "ManagedMcpToolPolicy",
     "authorize_delegated_mcp_request",
     "extract_mcp_tool_calls",
     "managed_mcp_auth_policy",

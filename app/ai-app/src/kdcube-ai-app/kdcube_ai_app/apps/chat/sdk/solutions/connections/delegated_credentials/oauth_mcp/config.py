@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from fnmatch import fnmatch
 from typing import Any, Mapping, Tuple
 
 DEFAULT_CLAUDE_REDIRECT_URIS: tuple[str, ...] = (
@@ -33,6 +34,32 @@ class OAuthMcpDynamicClientRegistrationConfig:
 
 
 @dataclass(frozen=True)
+class OAuthMcpToolConfig:
+    name: str
+    label: str
+    description: str = ""
+    grants: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class OAuthMcpCapabilityConfig:
+    grant: str
+    label: str
+    description: str = ""
+    tools: tuple[OAuthMcpToolConfig, ...] = ()
+    delegable_roles: tuple[str, ...] = ()
+    delegable_permissions: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class OAuthMcpResourceConfig:
+    resource: str
+    grants: tuple[str, ...]
+    tools: tuple[OAuthMcpToolConfig, ...] = ()
+    label: str = ""
+
+
+@dataclass(frozen=True)
 class OAuthMcpConfig:
     enabled: bool
     issuer: str | None
@@ -42,6 +69,70 @@ class OAuthMcpConfig:
     brand: str
     public_clients: tuple[OAuthMcpPublicClientConfig, ...]
     dynamic_client_registration: OAuthMcpDynamicClientRegistrationConfig
+    capabilities: tuple[OAuthMcpCapabilityConfig, ...]
+    resources: tuple[OAuthMcpResourceConfig, ...]
+
+    def capability_map(self) -> dict[str, OAuthMcpCapabilityConfig]:
+        return {item.grant: item for item in self.capabilities}
+
+    def resource_config(self, resource: str | None) -> OAuthMcpResourceConfig | None:
+        text = str(resource or "").strip().rstrip("/")
+        if not text:
+            return None
+        for item in self.resources:
+            pattern = item.resource.rstrip("/")
+            if pattern == text or fnmatch(text, pattern):
+                return item
+        return None
+
+    def supported_scopes(self, resource: str | None = None) -> tuple[str, ...]:
+        resource_cfg = self.resource_config(resource)
+        if resource_cfg:
+            grants = resource_cfg.grants or _ordered_union(
+                grant for tool in resource_cfg.tools for grant in tool.grants
+            )
+            if grants:
+                return grants
+        return tuple(item.grant for item in self.capabilities)
+
+    def tools_for_resource(self, resource: str | None = None) -> tuple[OAuthMcpToolConfig, ...]:
+        resource_cfg = self.resource_config(resource)
+        if resource_cfg and resource_cfg.tools:
+            return resource_cfg.tools
+        seen: dict[str, OAuthMcpToolConfig] = {}
+        for cap in self.capabilities:
+            for tool in cap.tools:
+                seen.setdefault(
+                    tool.name,
+                    OAuthMcpToolConfig(
+                        name=tool.name,
+                        label=tool.label,
+                        description=tool.description,
+                        grants=tool.grants or (cap.grant,),
+                    ),
+                )
+        return tuple(seen.values())
+
+    def tools_for_scopes(
+        self,
+        scopes: tuple[str, ...] | list[str],
+        *,
+        resource: str | None = None,
+    ) -> tuple[OAuthMcpToolConfig, ...]:
+        allowed_grants = set(str(scope) for scope in (scopes or ()) if str(scope).strip())
+        seen: dict[str, OAuthMcpToolConfig] = {}
+        for tool in self.tools_for_resource(resource):
+            required = set(tool.grants or ())
+            if required and not required.issubset(allowed_grants):
+                continue
+            if not required and allowed_grants:
+                continue
+            seen.setdefault(tool.name, tool)
+        return tuple(seen.values())
+
+    def resource_tool_catalog(self, resource: str | None = None) -> tuple[OAuthMcpToolConfig, ...]:
+        """Tool-centric catalog for protected-resource metadata and consent."""
+        return self.tools_for_resource(resource)
 
 
 def _state_for(source: Any) -> Any | None:
@@ -76,6 +167,141 @@ def _coerce_string_tuple(value: Any) -> tuple[str, ...]:
     if isinstance(value, (list, tuple)):
         return tuple(str(item).strip() for item in value if str(item).strip())
     return ()
+
+
+def _ordered_union(values: Any) -> tuple[str, ...]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for value in values or ():
+        text = str(value or "").strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        out.append(text)
+    return tuple(out)
+
+
+def _default_capabilities() -> tuple[OAuthMcpCapabilityConfig, ...]:
+    return (
+        OAuthMcpCapabilityConfig(
+            grant="conversations:read",
+            label="Read conversations",
+            description="Read conversation transcripts that the grantor is allowed to delegate.",
+            tools=(
+                OAuthMcpToolConfig(
+                    name="conversations_export",
+                    label="Export conversation transcripts",
+                    description="Read-only conversation transcript export.",
+                ),
+            ),
+            delegable_roles=("kdcube:role:super-admin",),
+            delegable_permissions=("kdcube:*:conversations:*;read",),
+        ),
+    )
+
+
+def _parse_tool(item: Any) -> OAuthMcpToolConfig | None:
+    if isinstance(item, str):
+        name = item.strip()
+        return OAuthMcpToolConfig(name=name, label=name) if name else None
+    if not isinstance(item, Mapping):
+        return None
+    name = _coerce_str(item.get("name") or item.get("tool"))
+    if not name:
+        return None
+    return OAuthMcpToolConfig(
+        name=name,
+        label=_coerce_str(item.get("label")) or name,
+        description=_coerce_str(item.get("description")) or "",
+        grants=_coerce_string_tuple(item.get("grants") or item.get("scopes") or item.get("required_grants")),
+    )
+
+
+def _parse_capabilities(raw: Any) -> tuple[OAuthMcpCapabilityConfig, ...]:
+    if raw is None:
+        return _default_capabilities()
+    rows: list[Any]
+    if isinstance(raw, Mapping):
+        rows = [
+            {"grant": grant, **(value if isinstance(value, Mapping) else {"label": value})}
+            for grant, value in raw.items()
+        ]
+    elif isinstance(raw, (list, tuple)):
+        rows = list(raw)
+    else:
+        rows = []
+    out: list[OAuthMcpCapabilityConfig] = []
+    for item in rows:
+        if isinstance(item, str):
+            item = {"grant": item}
+        if not isinstance(item, Mapping):
+            continue
+        grant = _coerce_str(item.get("grant") or item.get("scope") or item.get("name"))
+        if not grant:
+            continue
+        tools = tuple(
+            tool for tool in (_parse_tool(row) for row in (item.get("tools") or item.get("actions") or ()))
+            if tool is not None
+        )
+        out.append(
+            OAuthMcpCapabilityConfig(
+                grant=grant,
+                label=_coerce_str(item.get("label")) or grant,
+                description=_coerce_str(item.get("description")) or "",
+                tools=tools,
+                delegable_roles=_coerce_string_tuple(item.get("delegable_roles") or item.get("roles")),
+                delegable_permissions=_coerce_string_tuple(
+                    item.get("delegable_permissions") or item.get("permissions")
+                ),
+            )
+        )
+    return tuple(out) or _default_capabilities()
+
+
+def _parse_resources(raw: Any) -> tuple[OAuthMcpResourceConfig, ...]:
+    if raw is None:
+        return ()
+    rows: list[Any]
+    if isinstance(raw, Mapping):
+        rows = [
+            {"resource": resource, **(value if isinstance(value, Mapping) else {})}
+            for resource, value in raw.items()
+        ]
+    elif isinstance(raw, (list, tuple)):
+        rows = list(raw)
+    else:
+        rows = []
+    out: list[OAuthMcpResourceConfig] = []
+    for item in rows:
+        if isinstance(item, str):
+            item = {"resource": item}
+        if not isinstance(item, Mapping):
+            continue
+        resource = _coerce_str(item.get("resource") or item.get("url") or item.get("pattern"))
+        if not resource:
+            continue
+        tools_raw = item.get("tools") or item.get("allowed_tools") or item.get("actions")
+        if isinstance(tools_raw, Mapping):
+            tools = tuple(
+                tool
+                for tool in (
+                    _parse_tool({"name": name, **(data if isinstance(data, Mapping) else {})})
+                    for name, data in tools_raw.items()
+                )
+                if tool is not None
+            )
+        else:
+            tools = tuple(tool for tool in (_parse_tool(row) for row in (tools_raw or ())) if tool is not None)
+        explicit_grants = _coerce_string_tuple(item.get("grants") or item.get("scopes"))
+        out.append(
+            OAuthMcpResourceConfig(
+                resource=resource,
+                grants=explicit_grants or _ordered_union(grant for tool in tools for grant in tool.grants),
+                tools=tools,
+                label=_coerce_str(item.get("label")) or "",
+            )
+        )
+    return tuple(out)
 
 
 def _default_public_clients() -> tuple[OAuthMcpPublicClientConfig, ...]:
@@ -132,6 +358,8 @@ def _parse_config(raw: Any, *, settings: Any | None = None) -> OAuthMcpConfig:
         dynamic_client_registration=OAuthMcpDynamicClientRegistrationConfig(
             allowed_redirect_uris=allowed_redirects,
         ),
+        capabilities=_parse_capabilities(node.get("capabilities")),
+        resources=_parse_resources(node.get("resources")),
     )
 
 

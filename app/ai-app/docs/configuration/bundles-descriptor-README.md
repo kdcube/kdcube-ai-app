@@ -137,22 +137,30 @@ bundles:
                 auth:
                   mode: managed
                   authority_id: oauth_mcp
-                  grants: [conversations:read]
+                  tools:
+                    conversations_export:
+                      grants: [conversations:read]
                   selected_tool_grants: true
+              knowledge:
+                auth:
+                  mode: bundle
+                  header_name: X-Knowledge-MCP-Token
 ```
 
 `mode: managed` means the proc MCP bridge verifies the delegated bearer
-credential and the selected MCP tool grant before the request enters the bundle
-MCP app. If `mode` is absent, the auth block is treated as bundle-owned
-metadata. Existing bundle-specific schemes, such as the Knowledge bundle's
-custom token header, remain bundle-owned configuration under the bundle's own
-namespace rather than provider-surface policy:
+credential and each called MCP tool's required grants before the request enters
+the bundle MCP app. If `mode` is absent or set to `bundle`, the auth block is
+treated as bundle-owned metadata; bundle code reads it and enforces its own
+header/JWT/API-key scheme.
 
 ```yaml
-mcp:
-  knowledge:
-    auth:
-      header_name: X-Knowledge-MCP-Token
+surfaces:
+  as_provider:
+    mcp:
+      knowledge:
+        auth:
+          mode: bundle
+          header_name: X-Knowledge-MCP-Token
 ```
 
 Connection Hub delegated credential protocol adapters are configured on the

@@ -1,28 +1,19 @@
 """connection-hub get_token: refresh an expired Google token on demand.
 
-Lives with the connections integration tests but imports the connection-hub
-`provider_impl` by path (the bundle is not on the default import path). Mocks the
-store + the refresh HTTP call — no real network, no real secrets."""
+Lives with the connections integration tests and exercises the SDK-owned
+Connection Hub provider implementation. Mocks the store + the refresh HTTP call
+— no real network, no real secrets."""
 
 from __future__ import annotations
 
-import sys
 import time
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
 # Importing the package registers the built-in providers (slack, google).
 import kdcube_ai_app.apps.chat.sdk.integrations.connections  # noqa: F401
-
-_HUB_ROOT = Path(
-    "/Users/elenaviter/src/kdcube/applications/playground/bundles/connection-hub@1-0"
-)
-if str(_HUB_ROOT) not in sys.path:
-    sys.path.insert(0, str(_HUB_ROOT))
-
-provider_impl = pytest.importorskip("connection_hub.provider_impl")
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.hub import provider_impl
 
 
 class _FakeStore:

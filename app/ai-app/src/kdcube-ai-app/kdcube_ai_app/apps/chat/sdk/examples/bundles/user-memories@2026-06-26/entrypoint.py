@@ -28,10 +28,16 @@ from langgraph.graph import StateGraph, START, END
 
 from kdcube_ai_app.apps.chat.sdk.protocol import ExternalEventPayload, external_events_text
 from kdcube_ai_app.infra.service_hub.inventory import Config, BundleState
-from kdcube_ai_app.infra.plugin.bundle_loader import bundle_entrypoint, bundle_id
+from kdcube_ai_app.infra.plugin.bundle_loader import bundle_entrypoint, bundle_id, mcp
 from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint_with_memory import (
     BaseEntrypointWithEconomicsAndMemory,
 )
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.authority_registry import CredentialEnvelope
+
+try:
+    from . import memory_mcp_tools
+except Exception:  # pragma: no cover - bundle loader may import entrypoint as a loose module
+    import memory_mcp_tools  # type: ignore
 
 BUNDLE_ID = "user-memories@2026-06-26"
 WORKFLOW_NAME = "user_memories"
@@ -79,6 +85,19 @@ class UserMemoriesEntrypoint(BaseEntrypointWithEconomicsAndMemory):
             "surfaces": {
                 "as_provider": {
                     "bundle": {"visibility": {"allowed_roles": []}},
+                    "mcp": {
+                        "memories": {
+                            "auth": {
+                                "mode": "managed",
+                                "authority_id": "oauth_mcp",
+                                "tools": {
+                                    "memory_search": {"grants": ["memories:read"]},
+                                    "memory_get": {"grants": ["memories:read"]},
+                                },
+                                "selected_tool_grants": True,
+                            },
+                        },
+                    },
                     "widget": {
                         "memories": {"visibility": {"user_types": [], "roles": []}},
                     },
@@ -113,6 +132,35 @@ class UserMemoriesEntrypoint(BaseEntrypointWithEconomicsAndMemory):
             },
         }
         return self._deep_merge_props(super().configuration_defaults(), defaults)
+
+    def _memory_mcp_scope(self, request=None):
+        from kdcube_ai_app.apps.chat.sdk.context.memory import MemoryScope
+
+        current = self._memory_scope()
+        user_id = ""
+        delegated = getattr(getattr(request, "state", None), "delegated_credential", None) if request is not None else None
+        if isinstance(delegated, dict):
+            envelope = CredentialEnvelope.coerce(delegated.get("authority"))
+            user_id = str((envelope.attrs or {}).get("grantor_subject") or "").strip()
+        bundle_spec = getattr(getattr(self, "config", None), "ai_bundle_spec", None)
+        return MemoryScope(
+            tenant=current.tenant,
+            project=current.project,
+            user_id=user_id or current.user_id,
+            bundle_id=str(getattr(bundle_spec, "id", None) or current.bundle_id or "").strip(),
+        ).normalized()
+
+    async def _memory_mcp_read_user_ids(self, scope):
+        return await self._memory_read_user_ids(scope=scope)
+
+    @mcp(alias="memories", route="public", transport="streamable-http", auth_config="surfaces.as_provider.mcp.memories.auth")
+    def memories_mcp(self, request=None, **kwargs):
+        return memory_mcp_tools.build_user_memories_mcp_app(
+            name="KDCube user memories",
+            store_factory=self._memory_store,
+            scope_factory=lambda: self._memory_mcp_scope(request=request),
+            read_user_ids_factory=self._memory_mcp_read_user_ids,
+        )
 
     def _build_graph(self) -> StateGraph:
         g = StateGraph(BundleState)

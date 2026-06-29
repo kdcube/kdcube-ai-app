@@ -9,7 +9,7 @@ and advertise themselves with RFC 9728 metadata/challenges.
 """
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any, Dict, Iterable, Mapping
 
 # The single scope this AS issues. Maps to kdcube:role:feedback-reader (read-only).
 CONVERSATIONS_READ_SCOPE = "conversations:read"
@@ -25,6 +25,7 @@ def authorization_server_metadata(
     authorization_endpoint: str | None = None,
     token_endpoint: str | None = None,
     registration_endpoint: str | None = None,
+    scopes_supported: Iterable[str] | None = None,
 ) -> Dict[str, Any]:
     """RFC 8414 authorization-server metadata.
 
@@ -44,20 +45,38 @@ def authorization_server_metadata(
         # Public client, no secret -> 'none'.
         "token_endpoint_auth_methods_supported": ["none"],
         "authorization_response_iss_parameter_supported": True,
-        "scopes_supported": [CONVERSATIONS_READ_SCOPE],
+        "scopes_supported": list(scopes_supported or [CONVERSATIONS_READ_SCOPE]),
         # jwks_uri intentionally omitted: tokens are opaque (kst1).
     }
 
 
-def protected_resource_metadata(issuer: str, *, resource: str | None = None) -> Dict[str, Any]:
+def protected_resource_metadata(
+    issuer: str,
+    *,
+    resource: str | None = None,
+    scopes_supported: Iterable[str] | None = None,
+    capabilities: Iterable[Mapping[str, Any]] | None = None,
+    tools: Iterable[Mapping[str, Any]] | None = None,
+) -> Dict[str, Any]:
     """RFC 9728 protected-resource metadata for a concrete bundle MCP resource."""
     issuer = issuer.rstrip("/")
     resource = (resource or issuer).rstrip("/")
-    return {
+    out = {
         "resource": resource,
         "authorization_servers": [issuer],
-        "scopes_supported": [CONVERSATIONS_READ_SCOPE],
+        "scopes_supported": list(scopes_supported or [CONVERSATIONS_READ_SCOPE]),
     }
+    caps = [dict(item) for item in (capabilities or [])]
+    if caps:
+        # KDCube extension: lets clients/connector UIs discover the concrete
+        # grants and tools/actions offered by this resource before authorization.
+        out["kdcube_capabilities"] = caps
+    tool_rows = [dict(item) for item in (tools or [])]
+    if tool_rows:
+        # KDCube extension: canonical tool-centric policy for this protected
+        # resource. Each tool declares the delegated grants required to call it.
+        out["kdcube_tools"] = tool_rows
+    return out
 
 
 def protected_resource_metadata_url(issuer: str, *, resource: str | None = None) -> str:

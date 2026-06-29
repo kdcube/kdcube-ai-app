@@ -1,0 +1,262 @@
+bundles:
+  version: "1"
+  default_bundle_id: "connection-hub@1-0"
+  items:
+    - id: "connection-hub@1-0"
+      name: "Connection Hub"
+      path: "<LOCAL_HOST_BUNDLE_ROOT>"
+      module: "entrypoint"
+      singleton: false
+      config:
+        surfaces:
+          as_provider:
+            bundle:
+              visibility:
+                allowed_roles: []
+            api:
+              operations:
+                named_service:
+                  visibility: &default_visibility
+                    user_types: []
+                    roles: []
+                connections_catalog:
+                  visibility: *default_visibility
+                connections_start_oauth:
+                  visibility: *default_visibility
+                connections_disconnect:
+                  visibility: *default_visibility
+                identity_links_list:
+                  visibility: *default_visibility
+                identity_link_upsert:
+                  visibility: *default_visibility
+                identity_link_remove:
+                  visibility: *default_visibility
+                identity_link_challenge_create:
+                  visibility: *default_visibility
+                identity_link_challenge_claim:
+                  visibility: *default_visibility
+                identity_link_challenge_status:
+                  visibility: *default_visibility
+                identity_resolve:
+                  visibility: *default_visibility
+                identity_family_resolve:
+                  visibility: *default_visibility
+                email_accounts_status:
+                  visibility: *default_visibility
+                email_connect_app_password:
+                  visibility: *default_visibility
+                email_disconnect_account:
+                  visibility: *default_visibility
+                connections_settings:
+                  visibility: *default_visibility
+            widget:
+              connections_settings:
+                visibility: *default_visibility
+
+        connections:
+          oauth:
+            # Public base for the shared connection_oauth_callback route.
+            # Empty -> derived from the request host at runtime.
+            public_base_url: "https://<PUBLIC_HOST>"
+          delegated_credentials:
+            oauth_mcp:
+              enabled: false
+              brand: "KDCube"
+              issuer: ""
+              public_clients:
+                - client_id: "claude"
+                  redirect_uris:
+                    - "http://localhost/callback"
+                    - "http://127.0.0.1/callback"
+                    - "https://claude.ai/api/mcp/auth_callback"
+              dynamic_client_registration:
+                allowed_redirect_uris:
+                  - "https://claude.ai/api/mcp/auth_callback"
+                  - "http://localhost/callback"
+                  - "http://127.0.0.1/callback"
+              capabilities:
+                - grant: "conversations:read"
+                  label: "Read conversations"
+                  description: "Read conversation transcripts that the grantor is allowed to delegate."
+                  tools:
+                    - name: "conversations_export"
+                      label: "Export conversation transcripts"
+                      description: "Read-only conversation transcript export."
+                  delegable_roles:
+                    - "kdcube:role:super-admin"
+                  delegable_permissions:
+                    - "kdcube:*:conversations:*;read"
+                - grant: "memories:read"
+                  label: "Read memories"
+                  description: "Read memory notes visible to the KDCube user who approves the connection."
+                  delegable_roles:
+                    - "kdcube:role:chat-user"
+                    - "kdcube:role:paid"
+                    - "kdcube:role:privileged"
+                    - "kdcube:role:super-admin"
+                  delegable_permissions:
+                    - "memories:read"
+                - grant: "knowledge:read"
+                  label: "Read KDCube knowledge"
+                  description: "Read KDCube knowledge notes through delegated MCP tools."
+                  delegable_roles:
+                    - "kdcube:role:chat-user"
+                    - "kdcube:role:paid"
+                    - "kdcube:role:privileged"
+                    - "kdcube:role:super-admin"
+                  delegable_permissions:
+                    - "knowledge:read"
+              resources:
+                - resource: "*/api/integrations/bundles/*/*/user-memories@2026-06-26/public/mcp/memories*"
+                  label: "User memories MCP"
+                  tools:
+                    memory_search:
+                      label: "Search memories"
+                      description: "Search the user's memory notes."
+                      grants:
+                        - "memories:read"
+                    memory_get:
+                      label: "Read memory"
+                      description: "Read one memory note by id."
+                      grants:
+                        - "memories:read"
+                - resource: "*/api/integrations/bundles/*/*/knowledge@1-0/public/mcp/knowledge_managed*"
+                  label: "KDCube knowledge MCP"
+                  tools:
+                    get_access_context:
+                      label: "Get access context"
+                      description: "Inspect the current knowledge access context."
+                      grants:
+                        - "knowledge:read"
+                    about:
+                      label: "About KDCube knowledge"
+                      description: "Explain when and how to use the KDCube knowledge server."
+                      grants:
+                        - "knowledge:read"
+                    search:
+                      label: "Search knowledge"
+                      description: "Search KDCube knowledge visible to this delegated connection."
+                      grants:
+                        - "knowledge:read"
+                    read_refs:
+                      label: "Read references"
+                      description: "Read exact knowledge or source references returned by search."
+                      grants:
+                        - "knowledge:read"
+          # Client apps carry credentials, MANY per provider. The middle level of
+          # the provider -> client-app -> account model. Secrets are supplied
+          # separately (see bundles.secrets.template.yaml).
+          providers:
+            slack:
+              apps:
+                - app_id: "<SLACK_APP_ID>"
+                  label: "Workspace Search"
+                  client_id: "<SLACK_OAUTH_CLIENT_ID>"
+                  scopes:
+                    - "search:read"
+                    - "channels:history"
+                    - "groups:history"
+                  enabled: true
+            # Gmail rides the SAME connections mechanism as Slack now (provider key
+            # "google", so connection.get_token("google") resolves). Google access
+            # tokens expire ~1h; the hub asks for offline access and refreshes them
+            # on demand using the stored refresh_token.
+            google:
+              apps:
+                - app_id: "<GOOGLE_APP_ID>"
+                  label: "Gmail"
+                  client_id: "<GOOGLE_OAUTH_CLIENT_ID>"
+                  scopes:
+                    - "openid"
+                    - "email"
+                    - "profile"
+                    - "https://www.googleapis.com/auth/gmail.readonly"
+                    - "https://www.googleapis.com/auth/gmail.send"
+                  enabled: true
+
+        identity:
+          enabled: true
+          authenticator_selector_cache:
+            enabled: true
+            ttl_seconds: 30
+          # Target architecture:
+          #   verified external identity -> Connection Hub identity link
+          #   -> platform principal/role resolver
+          #
+          # This template keeps role_resolver.mode=platform so the hub does NOT
+          # decide entitlements itself. For local demos only, set mode=configured
+          # and add role_bindings below.
+          role_resolver:
+            mode: "platform"
+          role_bindings:
+            # "<PLATFORM_USER_ID>":
+            #   roles:
+            #     - "kdcube:role:admin"
+            #   permissions:
+            #     - "connection-hub:*"
+          # Descriptor-defined request authenticators are immutable deployment
+          # rows. The Connections widget can add more rows into Postgres, but
+          # both shapes carry metadata only. Secret values live in
+          # bundles.secrets.yaml at each row's secret_ref.
+          authenticators:
+            - id: "telegram.kdcube_ref"
+              provider: "telegram"
+              authority_id: "telegram.kdcube_ref"
+              where: "built-in"
+              enabled: true
+              role_providing: false
+              # subject_namespace is optional for provider-native subjects
+              # such as Telegram; it defaults to provider. Use it for generic
+              # providers like OIDC/webhook/api-key when the subject namespace
+              # is not the same as the verifier provider.
+              secret_ref: "identity.authenticators.telegram_kdcube_ref.bot_token"
+              definition:
+                label: "KDCube Ref Telegram bot"
+                bot_name: "kdcube-ref"
+                bot_username: "kdcube_doc_bot"
+                web_app_auth_max_age_seconds: 86400
+          telegram:
+            enabled: true
+            challenge_ttl_seconds: 600
+            web_app_auth_max_age_seconds: 86400
+            # Either provide a full Telegram Mini App URL/deeplink template, or
+            # let the hub derive a public widget URL from the request origin.
+            mini_app_url: ""
+            mini_app_bundle_id: "versatile@2026-03-31-13-36"
+            mini_app_widget_alias: "telegram_miniapp"
+            connection_hub_bundle_id: "connection-hub@1-0"
+            # Optional URL used by Telegram-first flows after Telegram proof is
+            # created. Empty -> derived as public/widgets/connections_settings.
+            # Supported replacement: {challenge_id}.
+            platform_claim_url: ""
+            # Optional Telegram deep-link template, for BotFather web app short
+            # names. Supported replacements: {challenge_id},
+            # {connection_hub_bundle_id}.
+            # deeplink_template: "https://t.me/<BOT_USERNAME>/<WEB_APP_SHORT_NAME>?startapp=link_{challenge_id}&connection_hub_bundle_id={connection_hub_bundle_id}"
+            # Legacy-compatible location also accepted by the app:
+            # authenticators:
+            #   - id: "telegram.kdcube_ref"
+            #     provider: "telegram"
+            #     secret_ref: "identity.authenticators.telegram_kdcube_ref.bot_token"
+            #     enabled: true
+
+        integrations:
+          # iCloud ONLY now. Gmail moved to connections.providers.google above.
+          # iCloud connects with an app-specific password (no OAuth), so it stays on
+          # the email integration. The google.* keys below are retained only for any
+          # legacy/already-connected Gmail accounts and are not used for new connects.
+          email.connection_hub:
+            provider: "email"
+            where: "built-in"
+            enabled: false
+            definition:
+              oauth:
+                public_base_url: "https://<PUBLIC_HOST>"
+                redirect_uri: ""
+
+        ui:
+          widgets:
+            connections_settings:
+              enabled: true
+              src_folder: "ui/widgets/connections"
+              build_command: "npm install --no-package-lock && OUTDIR=<VI_BUILD_DEST_ABSOLUTE_PATH> npm run build"

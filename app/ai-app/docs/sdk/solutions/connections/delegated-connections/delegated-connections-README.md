@@ -82,7 +82,7 @@ The lifecycle has two phases. This is the real boundary to preserve.
 1. Provisioning / consent
 
    grantor proves authority
-     -> user logs in / channel proof is verified / admin consents
+     -> user logs in / channel proof is verified / user or admin consents
      -> Connection Hub writes identity link or delegated grant
      -> credential/capability is issued or stored
 
@@ -102,7 +102,7 @@ Examples:
 | --- | --- |
 | Telegram user starts link, KDCube user claims it, identity link is written. | Telegram `initData` arrives, Telegram authenticator verifies it, identity link projects platform authority. |
 | User connects Gmail, OAuth callback stores provider grant. | Automation asks for Gmail capability, provider adapter resolves token and allowed provider actions. |
-| Admin approves Claude MCP access, OAuth/MCP grant is written. | Claude sends KDCube token, `oauth_mcp` authenticator resolves integration principal and selected tools. |
+| User or admin approves Claude MCP access, OAuth/MCP grant is written according to descriptor delegability. | Claude sends KDCube token, `oauth_mcp` authenticator resolves integration principal and selected tools. |
 
 ## Relationship To Identity Links
 

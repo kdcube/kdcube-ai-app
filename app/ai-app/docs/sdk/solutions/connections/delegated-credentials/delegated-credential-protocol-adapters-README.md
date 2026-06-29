@@ -88,7 +88,7 @@ OAuth/MCP delegated connection:
 ```text
 Provisioning / consent
   grantor proves authority
-    -> user login / channel proof / admin consent
+    -> user login / channel proof / user or admin consent
     -> identity link or delegated grant is written
     -> credential is issued or stored
 

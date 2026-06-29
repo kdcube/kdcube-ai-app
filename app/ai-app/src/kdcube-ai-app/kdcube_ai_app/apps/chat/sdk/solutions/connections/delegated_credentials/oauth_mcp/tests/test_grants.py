@@ -73,10 +73,11 @@ async def test_minter_uses_integration_identity_not_admin():
     assert out["access_token"].startswith("kst1.mock.integration:claude:")
 
     call = authority.calls[0]
-    # Minted for the integration identity, with ONLY the read-only role.
+    # Minted for the integration identity, with the generic delegated-client role
+    # plus the legacy feedback-reader role for conversations:read.
     assert call["sub"] == integration_subject(ADMIN_SUB)
     assert call["sub"] != ADMIN_SUB
-    assert call["roles"] == [FEEDBACK_READER_ROLE]
+    assert call["roles"] == ["kdcube:role:delegated-client", FEEDBACK_READER_ROLE]
 
 
 @pytest.mark.asyncio

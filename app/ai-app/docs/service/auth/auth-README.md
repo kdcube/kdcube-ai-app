@@ -144,7 +144,9 @@ That authority projection is documented in
 - Connection Hub hosts an OAuth2 authorization server for external integration
   clients such as Claude Code. MCP protected resources remain concrete
   bundle/proc MCP endpoints.
-- Existing platform session auth proves the human admin before consent.
+- Existing platform session auth proves the grantor before consent. The grantor
+  can be a regular user when the requested capability is descriptor-delegable by
+  that user's roles/permissions, or an admin for admin-only capabilities.
 - Consent issues a least-privilege integration session and binds the selected
   MCP tool allowlist to the issued grant.
 - Details: [OAuth/MCP Protocol Adapter](../../sdk/solutions/connections/delegated-credentials/oauth-mcp-protocol-adapter-README.md).
@@ -188,7 +190,7 @@ clients for routing/logging, but token claims remain authoritative.
 | Understand how requests choose Cognito/session/Connection Hub authenticators | [Auth Selector](auth-selector-README.md) |
 | Bundle/front shell performs login and browser should become a platform user | [Bundle Session Auth](bundle-session-auth-README.md) |
 | Bundle writes a SimpleIDP token for local/embedded simple auth | [Bundle SimpleIDP Bridge](bundle-simple-idp-bridge-README.md) |
-| External tool should access a narrow MCP integration surface after admin consent | [OAuth/MCP Protocol Adapter](../../sdk/solutions/connections/delegated-credentials/oauth-mcp-protocol-adapter-README.md) |
+| External tool should access a narrow MCP integration surface after descriptor-governed user/admin consent | [OAuth/MCP Protocol Adapter](../../sdk/solutions/connections/delegated-credentials/oauth-mcp-protocol-adapter-README.md) |
 | Public mini app needs Socket.IO Data Bus publish rights | [Bundle Federated Auth](../../sdk/bundle/auth-bundle-federated-README.md) |
 | Bundle endpoint should be public or role-protected | [Bundle Firewall](../../sdk/bundle/bundle-firewall-README.md) |
 

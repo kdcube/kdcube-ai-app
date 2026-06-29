@@ -371,23 +371,28 @@ mcp:
     auth:
       mode: managed
       authority_id: oauth_mcp
-      grants: [conversations:read]
+      tools:
+        conversations_export:
+          grants: [conversations:read]
       selected_tool_grants: true
 ```
 
 Example bundle-owned header-token metadata, used by the knowledge bundle:
 
 ```yaml
-mcp:
-  knowledge:
-    auth:
-      header_name: X-Knowledge-MCP-Token
+surfaces:
+  as_provider:
+    mcp:
+      knowledge:
+        auth:
+          mode: bundle
+          header_name: X-Knowledge-MCP-Token
 ```
 
 In the first example, the proc bridge verifies the delegated bearer credential
-and selected MCP tool grants before dispatching to the bundle MCP app. In the
-second example, there is no `mode`, so the platform treats the block as
-bundle-owned metadata and the bundle MCP app remains responsible for its own
+and each called MCP tool's required grants before dispatching to the bundle MCP
+app. In the second example, `mode: bundle` means the platform treats the block
+as bundle-owned metadata and the bundle MCP app remains responsible for its own
 domain-specific access context.
 
 Use the detailed page for those reserved paths:

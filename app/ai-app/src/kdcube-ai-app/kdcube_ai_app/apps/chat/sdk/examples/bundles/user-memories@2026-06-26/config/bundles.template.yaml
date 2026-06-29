@@ -10,13 +10,29 @@ bundles:
       module: "entrypoint"
       singleton: false
       config:
-        visibility:
-          bundle:
-            allowed_roles: []
-          widget:
-            memories:
-              user_types: []
-              roles: []
+        surfaces:
+          as_provider:
+            bundle:
+              visibility:
+                allowed_roles: []
+            mcp:
+              memories:
+                auth:
+                  mode: "managed"
+                  authority_id: "oauth_mcp"
+                  tools:
+                    memory_search:
+                      grants:
+                        - "memories:read"
+                    memory_get:
+                      grants:
+                        - "memories:read"
+                  selected_tool_grants: true
+            widget:
+              memories:
+                visibility:
+                  user_types: []
+                  roles: []
         # Memory subsystem. Only the widget (and, implicitly, the `mem` named
         # service) are on; announce/tools stay off — this app has no chat agent.
         # The mixin fills in reconciliation/snapshots/schema defaults.

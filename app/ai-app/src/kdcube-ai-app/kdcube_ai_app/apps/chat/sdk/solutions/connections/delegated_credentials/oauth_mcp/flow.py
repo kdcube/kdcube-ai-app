@@ -12,7 +12,7 @@ RFC 6749 §4.1.2.1.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterable, List, Optional
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oauth_mcp.clients import get_client, redirect_uri_allowed
@@ -30,6 +30,7 @@ class AuthorizeRequest:
     state: Optional[str]
     code_challenge: str
     code_challenge_method: str
+    resource: Optional[str] = None
 
 
 class AuthorizeError(Exception):
@@ -55,6 +56,7 @@ def parse_authorize_request(
     *,
     client_resolver=None,
     public_client_resolver=None,
+    supported_scopes: Iterable[str] | None = None,
 ) -> AuthorizeRequest:
     client_id = (params.get("client_id") or "").strip()
     redirect_uri = (params.get("redirect_uri") or "").strip()
@@ -81,8 +83,9 @@ def parse_authorize_request(
 
     raw_scope = (params.get("scope") or CONVERSATIONS_READ_SCOPE).strip()
     scopes = [s for s in raw_scope.split() if s] or [CONVERSATIONS_READ_SCOPE]
+    allowed_scopes = set(supported_scopes or SUPPORTED_SCOPES)
     for s in scopes:
-        if s not in SUPPORTED_SCOPES:
+        if s not in allowed_scopes:
             raise AuthorizeError(
                 "invalid_scope", f"unsupported scope: {s}",
                 redirectable=True, state=state, redirect_uri=redirect_uri,
@@ -109,6 +112,7 @@ def parse_authorize_request(
         state=state,
         code_challenge=code_challenge,
         code_challenge_method=method,
+        resource=(params.get("resource") or None),
     )
 
 

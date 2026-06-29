@@ -393,12 +393,15 @@ bundles:
   items:
     - id: "partner.tools@1-0"
       config:
-        mcp:
-          inbound:
-            auth:
-              header_name: "X-Partner-MCP-Token"
-              scheme: "shared-header-secret"
-              contract_version: "2026-04"
+        surfaces:
+          as_provider:
+            mcp:
+              partner_tools:
+                auth:
+                  mode: "bundle"
+                  header_name: "X-Partner-MCP-Token"
+                  scheme: "shared-header-secret"
+                  contract_version: "2026-04"
 ```
 
 Matching bundle secret in `bundles.secrets.yaml`:
@@ -409,10 +412,12 @@ bundles:
   items:
     - id: "partner.tools@1-0"
       secrets:
-        mcp:
-          inbound:
-            auth:
-              shared_token: "replace-in-real-deployment"
+        surfaces:
+          as_provider:
+            mcp:
+              partner_tools:
+                auth:
+                  shared_token: "replace-in-real-deployment"
 ```
 
 Bundle code:
@@ -431,15 +436,15 @@ from kdcube_ai_app.infra.plugin.bundle_loader import mcp
 )
 async def partner_tools_mcp(self, request: Request, **kwargs):
     header_name = self.bundle_prop(
-        "mcp.inbound.auth.header_name",
+        "surfaces.as_provider.mcp.partner_tools.auth.header_name",
         "X-Partner-MCP-Token",
     )
-    expected_token = await get_secret("b:mcp.inbound.auth.shared_token")
+    expected_token = await get_secret("b:surfaces.as_provider.mcp.partner_tools.auth.shared_token")
     provided_token = request.headers.get(header_name)
 
     if not expected_token:
         raise RuntimeError(
-            "Bundle secret b:mcp.inbound.auth.shared_token is not configured."
+            "Bundle secret b:surfaces.as_provider.mcp.partner_tools.auth.shared_token is not configured."
         )
     if provided_token != expected_token:
         raise HTTPException(
@@ -459,15 +464,16 @@ async def partner_tools_mcp(self, request: Request, **kwargs):
 What this contract means:
 
 - the client must send the header named by
-  `self.bundle_prop("mcp.inbound.auth.header_name")`
+  `self.bundle_prop("surfaces.as_provider.mcp.partner_tools.auth.header_name")`
 - KDCube does not negotiate or verify that header for MCP
 - the bundle can rotate the secret by updating
-  `b:mcp.inbound.auth.shared_token`
+  `b:surfaces.as_provider.mcp.partner_tools.auth.shared_token`
 - the bundle can change the client-facing header name by updating the prop
 
 This pattern is intentionally bundle-owned:
 
-- the prop path is a bundle convention, not a platform-reserved key
+- `mode: bundle` means the path is provider-surface metadata owned by the
+  bundle, not a platform-managed delegated grant policy
 - the secret path is bundle-scoped because it is read as `b:...`
 - the same approach works for other bundle-defined schemes such as:
   - bearer token verification

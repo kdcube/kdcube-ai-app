@@ -59,6 +59,7 @@ class GrantStore:
         sub: str,
         scopes: List[str],
         tools: List[str],
+        resource: Optional[str] = None,
         authority: Optional[Dict[str, Any]] = None,
     ) -> str:
         code = secrets.token_urlsafe(32)
@@ -69,6 +70,7 @@ class GrantStore:
             "sub": sub,
             "scopes": scopes,
             "tools": tools,
+            "resource": resource or "",
             "authority": authority or {},
         }
         await self._r.setex(self._key("code", code), self._auth_code_ttl, json.dumps(payload))
@@ -91,6 +93,7 @@ class GrantStore:
         sub: str,
         scopes: List[str],
         tools: Optional[List[str]] = None,
+        resource: Optional[str] = None,
         authority: Optional[Dict[str, Any]] = None,
     ) -> str:
         rt = secrets.token_urlsafe(40)
@@ -99,6 +102,7 @@ class GrantStore:
             "sub": sub,
             "scopes": scopes,
             "tools": list(tools or []),
+            "resource": resource or "",
             "authority": authority or {},
         }
         await self._r.setex(self._key("refresh", rt), self._refresh_ttl, json.dumps(payload))
@@ -164,6 +168,7 @@ class GrantStore:
         return await self.create_refresh_token(
             client_id=rec["client_id"], sub=rec["sub"], scopes=rec["scopes"],
             tools=rec.get("tools") or [],
+            resource=rec.get("resource") or "",
             authority=rec.get("authority") or {},
         )
 

@@ -14,22 +14,24 @@ from __future__ import annotations
 import html as _html
 from typing import List, Tuple
 
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oauth_mcp.config import (
+    OAuthMcpConfig,
+    oauth_mcp_config,
+)
 from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oauth_mcp.flow import AuthorizeRequest
 
-# scope -> [(tool_name, human description)]. Extensible as more MCP tools land.
-SCOPE_TOOLS = {
-    "conversations:read": [
-        ("conversations_export", "Export conversation transcripts (read-only, all tenants/projects/bundles)"),
-    ],
-}
 
-
-def tools_for_scopes(scopes: List[str]) -> List[Tuple[str, str]]:
-    seen: dict[str, str] = {}
-    for s in scopes:
-        for name, desc in SCOPE_TOOLS.get(s, []):
-            seen.setdefault(name, desc)
-    return list(seen.items())
+def tools_for_scopes(
+    scopes: List[str],
+    *,
+    config: OAuthMcpConfig | None = None,
+    resource: str | None = None,
+) -> List[Tuple[str, str, Tuple[str, ...]]]:
+    cfg = config or oauth_mcp_config()
+    return [
+        (tool.name, tool.description or tool.label, tuple(tool.grants or ()))
+        for tool in cfg.tools_for_scopes(scopes, resource=resource)
+    ]
 
 
 def _brand_monogram(brand: str) -> str:
@@ -46,15 +48,17 @@ def render_consent_html(
     trusted: bool = False,
     brand: str = "KDCube",
     form_action: str = "/oauth/authorize/consent",
+    config: OAuthMcpConfig | None = None,
 ) -> str:
     esc = _html.escape
-    tools = tools_for_scopes(req.scopes)
+    tools = tools_for_scopes(req.scopes, config=config, resource=req.resource)
     monogram = _brand_monogram(brand)
 
     tool_rows = "\n".join(
         f'    <label class="tool"><input type="checkbox" name="tools" value="{esc(name)}" checked> '
-        f'<b>{esc(name)}</b><span class="desc">{esc(desc)}</span></label>'
-        for name, desc in tools
+        f'<b>{esc(name)}</b><span class="desc">{esc(desc)}</span>'
+        f'<span class="grants">Requires: {esc(", ".join(grants) or "none")}</span></label>'
+        for name, desc, grants in tools
     ) or '    <p class="desc">No selectable tools for the requested scope.</p>'
 
     hidden_fields = [
@@ -62,6 +66,7 @@ def render_consent_html(
         ("redirect_uri", req.redirect_uri),
         ("response_type", req.response_type),
         ("scope", " ".join(req.scopes)),
+        ("resource", req.resource or ""),
         ("state", req.state or ""),
         ("code_challenge", req.code_challenge),
         ("code_challenge_method", req.code_challenge_method),
@@ -129,6 +134,7 @@ def render_consent_html(
     .tool input {{ margin-top: .2rem; width: 1.05rem; height: 1.05rem; accent-color: var(--accent); }}
     .tool b {{ font-size: .95rem; }}
     .tool .desc, .desc {{ display: block; color: var(--muted); font-size: .83rem; }}
+    .tool .grants {{ display: block; color: #365f86; font-size: .76rem; margin-top: .16rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }}
     .actions {{ display: flex; gap: .75rem; margin-top: 1.4rem; }}
     button {{ flex: 1; padding: .7rem; border-radius: 10px; border: 0; font-size: 1rem; font-weight: 600; cursor: pointer; transition: filter .15s; }}
     button:hover {{ filter: brightness(.96); }}
@@ -152,8 +158,8 @@ def render_consent_html(
       <div class="row"><span class="k">Scope</span> <span class="scope">{scope_list}</span></div>
     </div>
     <p class="warn-text">Only approve if <strong>you</strong> started this connection and recognize the
-    client and the redirect URL above. Approving grants read-only access to all conversation
-    transcripts across every tenant/project.</p>
+    client and the redirect URL above. The connection can receive only the scopes and capabilities
+    you approve here, and only if your KDCube account is allowed to delegate them.</p>
     <form method="post" action="{esc(form_action)}">
 {hidden}
     <p class="pick">Select which capabilities to authorize for this connection:</p>

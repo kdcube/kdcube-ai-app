@@ -1,15 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Elena Viter
 
-"""
-conversations:read -> feedback-reader grant.
-
-The issued access token is a real ``kst1`` bundle session, but minted for a
-dedicated *integration* identity (``integration:claude:<admin-sub>``) carrying
-only the read-only ``kdcube:role:feedback-reader`` role. This keeps the
-consenting admin's own account untouched while giving Claude Code a least-
-privilege, refreshable, revocable token. Write/delete tools remain admin-only.
-"""
+"""Delegated-client session minting for Connection Hub external credentials."""
 from __future__ import annotations
 
 from typing import Any, Iterable, List, Mapping, Optional
@@ -52,6 +44,22 @@ def can_call_tool(roles: Iterable[str], tool: str) -> bool:
     return any(tool in ROLE_TOOLS.get(r, set()) for r in roles)
 
 
+def _delegated_roles_for_scopes(scopes: Iterable[str]) -> list[str]:
+    scopes_set = {str(item).strip() for item in (scopes or []) if str(item).strip()}
+    roles = ["kdcube:role:delegated-client"]
+    if "conversations:read" in scopes_set:
+        roles.append(FEEDBACK_READER_ROLE)
+    return roles
+
+
+def _delegated_permissions_for_scopes(scopes: Iterable[str]) -> list[str]:
+    scopes_set = {str(item).strip() for item in (scopes or []) if str(item).strip()}
+    permissions = sorted(scopes_set)
+    if "conversations:read" in scopes_set and CONVERSATIONS_READ_PERMISSION not in permissions:
+        permissions.append(CONVERSATIONS_READ_PERMISSION)
+    return permissions
+
+
 async def mint_feedback_reader_access_token(
     sub: str,
     scopes: List[str],
@@ -62,9 +70,9 @@ async def mint_feedback_reader_access_token(
     credential: Mapping[str, Any] | None = None,
     ttl_seconds: int = ACCESS_TOKEN_TTL_SECONDS,
 ) -> dict:
-    """Mint a read-only integration session for the consenting admin's connection.
+    """Mint a least-privilege integration session for the consenting user's connection.
 
-    ``sub`` is the consenting admin's subject; the token is issued to the derived
+    ``sub`` is the consenting user's subject; the token is issued to the derived
     integration identity, never to ``sub`` itself.
     """
     if authority is None:
@@ -77,9 +85,9 @@ async def mint_feedback_reader_access_token(
     grant = await authority.login_or_register(
         sub=isub,
         username="claude-feedback-reader",
-        name="Claude Code (feedback-reader)",
-        roles=[FEEDBACK_READER_ROLE],
-        permissions=[CONVERSATIONS_READ_PERMISSION],
+        name="Claude Code delegated connection",
+        roles=_delegated_roles_for_scopes(scopes),
+        permissions=_delegated_permissions_for_scopes(scopes),
         provider="integration",
         provider_subject=sub,
         metadata={

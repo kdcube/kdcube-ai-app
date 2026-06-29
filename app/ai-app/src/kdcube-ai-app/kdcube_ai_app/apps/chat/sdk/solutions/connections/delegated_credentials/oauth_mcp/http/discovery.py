@@ -43,13 +43,77 @@ def resolve_issuer(request: Request) -> str:
 
 @router.get(WELL_KNOWN_AS_PATH, include_in_schema=False)
 async def well_known_authorization_server(request: Request) -> JSONResponse:
-    return JSONResponse(authorization_server_metadata(resolve_issuer(request)))
+    cfg = oauth_mcp_config(request)
+    return JSONResponse(
+        authorization_server_metadata(
+            resolve_issuer(request),
+            scopes_supported=cfg.supported_scopes(),
+        )
+    )
 
 
 @router.get(WELL_KNOWN_PR_PATH, include_in_schema=False)
 async def well_known_protected_resource(request: Request) -> JSONResponse:
     resource = request.query_params.get("resource")
-    return JSONResponse(protected_resource_metadata(resolve_issuer(request), resource=resource))
+    cfg = oauth_mcp_config(request)
+    scopes = cfg.supported_scopes(resource)
+    capabilities = []
+    caps = cfg.capability_map()
+    tool_catalog = cfg.resource_tool_catalog(resource)
+    for scope in scopes:
+        cap = caps.get(scope)
+        if cap is None:
+            capabilities.append(
+                {
+                    "grant": scope,
+                    "label": scope,
+                    "tools": [
+                        {
+                            "name": tool.name,
+                            "label": tool.label,
+                            "description": tool.description,
+                            "grants": list(tool.grants),
+                        }
+                        for tool in tool_catalog
+                        if scope in tool.grants
+                    ],
+                }
+            )
+            continue
+        capabilities.append(
+            {
+                "grant": cap.grant,
+                "label": cap.label,
+                "description": cap.description,
+                "tools": [
+                    {
+                        "name": tool.name,
+                        "label": tool.label,
+                        "description": tool.description,
+                        "grants": list(tool.grants),
+                    }
+                    for tool in tool_catalog
+                    if cap.grant in tool.grants
+                ],
+            }
+        )
+    return JSONResponse(
+        protected_resource_metadata(
+            resolve_issuer(request),
+            resource=resource,
+            scopes_supported=scopes,
+            capabilities=capabilities,
+            tools=[
+                {
+                    "name": tool.name,
+                    "label": tool.label,
+                    "description": tool.description,
+                    "grants": list(tool.grants),
+                }
+                for tool in tool_catalog
+            ],
+        )
+    )
 
 
 def unauthorized_challenge(issuer: str, *, resource: str | None = None) -> JSONResponse:

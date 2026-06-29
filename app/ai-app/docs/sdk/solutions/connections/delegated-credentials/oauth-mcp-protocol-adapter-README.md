@@ -20,7 +20,7 @@ see_also:
 
 OAuth/MCP is the current protocol adapter for one Connection Hub delegated
 credential shape: an external tool, such as Claude Code, calls a narrow KDCube
-MCP surface after a human platform admin consents. The product concept is
+MCP surface after an authenticated KDCube user consents. The product concept is
 delegated credentials under Connection Hub; OAuth/MCP is only this adapter's
 wire protocol and implementation name.
 
@@ -44,8 +44,8 @@ The key split is:
 
 | Layer | Owner | Result |
 |---|---|---|
-| Human authentication | Existing platform auth/session provider | A browser request proves a platform user, usually an admin. |
-| Integration authorization | KDCube OAuth2 AS | Admin consents to scopes and MCP tools. |
+| Human authentication | Existing platform auth/session provider | A browser request proves a platform user. |
+| Integration authorization | KDCube OAuth2 AS | User consents to descriptor-configured scopes and MCP tools they are allowed to delegate. |
 | Integration execution | KDCube MCP resource server | External client calls allowed tools with a least-privilege token. |
 
 ## Runtime Shape
@@ -89,7 +89,7 @@ Human consent
   | 3. Browser opens Connection Hub /public/oauth/authorize
   |    response_type=code
   |    code_challenge=<PKCE S256>
-  |    scope=conversations:read
+  |    scope=<resource grant, e.g. memories:read>
   |    client_id=<public client>
   |    redirect_uri=<validated callback>
   v
@@ -99,10 +99,10 @@ Connection Hub OAuth adapter
   |    cookie name comes from assembly.yaml auth.auth_token_cookie_name
   |    user and roles come from platform auth/session resolver
   v
-Admin consent page
+User consent page
   |
-  | 5. Admin approves selected scope/tool set
-  |    CSRF token is single-use and bound to admin subject
+  | 5. User approves selected scope/tool set
+  |    CSRF token is single-use and bound to grantor subject
   v
 Authorization code
   |
@@ -146,16 +146,16 @@ Allowed MCP tool result
 
 ## Authorization Model
 
-The consenting admin does not hand their full admin session to the external
+The consenting user does not hand their full platform session to the external
 client. The token endpoint mints a separate integration identity derived from
-the consenting admin, for example:
+the consenting user, for example:
 
 ```text
-integration:claude:<admin-sub>
+integration:claude:<grantor-sub>
 ```
 
 That integration identity receives only the role and permissions required by
-the approved integration, such as:
+the approved integration. For the legacy conversation export grant this includes:
 
 ```text
 kdcube:role:feedback-reader
@@ -163,7 +163,10 @@ kdcube:*:conversations:*;read
 ```
 
 Admin roles remain platform roles resolved by the existing platform session and
-role resolver. OAuth tokens do not invent admin privileges.
+role resolver. OAuth tokens do not invent admin privileges. For ordinary user
+resources, such as `user-memories@2026-06-26/public/mcp/memories`, the token is
+issued with generic delegated-client authority and the concrete approved grant,
+for example `memories:read`.
 
 The access token is a normal `kst1` session token for the integration
 representative, but it carries a nested `kdcube.credential.v1` envelope. The
@@ -176,12 +179,13 @@ rotation keeps the delegated-client authority provenance:
   "credential_kind": "delegated_client_access",
   "issuer_authority_id": "oauth_mcp",
   "issuer_authenticator_id": "oauth_mcp.bearer",
-  "subject": "integration:claude:<admin-sub>",
+  "subject": "integration:claude:<grantor-sub>",
   "audience": "kdcube:mcp",
   "attrs": {
     "client_id": "claude",
-    "scopes": ["conversations:read"],
-    "tools": ["conversations_export"]
+    "resource": "https://runtime.example/api/integrations/bundles/demo/demo/user-memories@2026-06-26/public/mcp/memories",
+    "scopes": ["memories:read"],
+    "tools": ["memory_search", "memory_get"]
   }
 }
 ```
@@ -192,6 +196,23 @@ See [Authority Credential Envelope](../../sdk/solutions/connections/authority-pr
 
 Scopes describe broad integration capability. MCP tools are the concrete
 operations exposed through a concrete bundle MCP endpoint.
+
+Grant capability rows define who may delegate a grant. Resource tool rows define
+what each concrete MCP tool requires. Do not model a multi-grant tool by listing
+the same tool under multiple grant rows; put the complete grant set on the tool:
+
+```yaml
+resources:
+  - resource: "*/knowledge@1-0/public/mcp/knowledge_managed*"
+    label: "KDCube knowledge MCP"
+    tools:
+      search:
+        label: "Search knowledge"
+        grants: ["knowledge:read"]
+      admin_reindex:
+        label: "Rebuild knowledge index"
+        grants: ["knowledge:read", "knowledge:maintain"]
+```
 
 The consent page may show selected tools for the requested scopes. Approval must
 bind that selected tool list into the issued grant:
@@ -205,8 +226,8 @@ consent POST
   -> managed bundle MCP tools/call checks role permission AND selected-tool grant
 ```
 
-This makes the tool-selection UI meaningful. A token with the right role but no
-matching selected-tool grant must fail closed for non-admin integration calls.
+This makes the tool-selection UI meaningful. A token with the right grant but
+no matching selected-tool grant must fail closed.
 
 ## Descriptor Contract
 
@@ -255,6 +276,27 @@ bundles:
                   - "https://claude.ai/api/mcp/auth_callback"
                   - "http://localhost/callback"
                   - "http://127.0.0.1/callback"
+              capabilities:
+                - grant: "memories:read"
+                  label: "Read memories"
+                  description: "Read memory notes visible to the KDCube user who approves the connection."
+                  delegable_roles:
+                    - "kdcube:role:chat-user"
+                    - "kdcube:role:paid"
+                    - "kdcube:role:privileged"
+                    - "kdcube:role:super-admin"
+                  delegable_permissions:
+                    - "memories:read"
+              resources:
+                - resource: "*/api/integrations/bundles/*/*/user-memories@2026-06-26/public/mcp/memories*"
+                  label: "User memories MCP"
+                  tools:
+                    memory_search:
+                      label: "Search memories"
+                      grants: ["memories:read"]
+                    memory_get:
+                      label: "Read memory"
+                      grants: ["memories:read"]
 ```
 
 The bundle surface that consumes this credential is configured in
@@ -263,24 +305,29 @@ The bundle surface that consumes this credential is configured in
 ```yaml
 bundles:
   items:
-    - id: "feedback@1-0"
+    - id: "user-memories@2026-06-26"
       config:
-        enabled:
-          mcp:
-            feedback: true
-        mcp:
-          feedback:
-            auth:
-              mode: managed
-              authority_id: oauth_mcp
-              grants: [conversations:read]
-              selected_tool_grants: true
+        surfaces:
+          as_provider:
+            mcp:
+              memories:
+                auth:
+                  mode: managed
+                  authority_id: oauth_mcp
+                  tools:
+                    memory_search:
+                      grants: [memories:read]
+                    memory_get:
+                      grants: [memories:read]
+                  selected_tool_grants: true
 ```
 
 `mode: managed` means the proc MCP bridge owns the credential and grant check
 before dispatching into the bundle MCP app. If `mode` is absent, the MCP auth
-block is bundle-owned metadata; the knowledge bundle's
-`mcp.knowledge.auth.header_name` is one such bundle-owned scheme.
+block is bundle-owned metadata. The knowledge bundle's shared-token surface uses
+`surfaces.as_provider.mcp.knowledge.auth.mode: bundle` and reads
+`surfaces.as_provider.mcp.knowledge.auth.header_name` before returning its MCP
+app.
 
 There is no platform-level `/mcp`. MCP is exposed by bundles and served by proc.
 The normal product shape is:
@@ -314,7 +361,7 @@ Rules:
 - Redirect URI fields are descriptor lists, not comma-separated strings.
 - Tenant and project come from `assembly.yaml -> context.tenant` and
   `context.project`.
-- Admin session cookie name comes from
+- Platform session cookie name comes from
   `assembly.yaml -> auth.auth_token_cookie_name`.
 - This flow currently uses public clients plus PKCE and does not require a new
   secret in `secrets.yaml`.
@@ -331,10 +378,10 @@ store, normally Redis.
 | Record | Purpose | Lifetime |
 |---|---|---|
 | Dynamic client record | Stores registered public client metadata and redirect URIs. | Until registration expiry or cleanup policy. |
-| CSRF token | Single-use consent POST protection bound to admin subject. | Short TTL. |
-| Authorization code | Stores client, redirect URI, PKCE challenge, admin subject, scopes, and selected tools. | Short TTL, single use. |
+| CSRF token | Single-use consent POST protection bound to grantor subject. | Short TTL. |
+| Authorization code | Stores client, redirect URI, PKCE challenge, grantor subject, resource, scopes, and selected tools. | Short TTL, single use. |
 | Access grant | Binds an access token to selected MCP tools and the `oauth_mcp` credential envelope. | Same TTL as access token. |
-| Refresh token | Stores client, admin subject, scopes, selected tools, authority envelope, and rotation state. | Long-lived, rotating. |
+| Refresh token | Stores client, grantor subject, resource, scopes, selected tools, authority envelope, and rotation state. | Long-lived, rotating. |
 | Bundle session record | The issued access token is a `kst1` session for the integration identity. | Access-token TTL. |
 
 Redis loss is safe but product-visible: missing records fail closed, but
@@ -346,13 +393,13 @@ records disappear. The solution-level durability design note is
 
 | Situation | Expected behavior |
 |---|---|
-| No platform session on Connection Hub `/public/oauth/authorize` | `login_required`; client must start from an authenticated admin browser session. |
-| Authenticated user is not admin | `forbidden`; only configured admin roles may consent. |
+| No platform session on Connection Hub `/public/oauth/authorize` | `login_required`; client must start from an authenticated browser session. |
+| Authenticated user lacks the configured delegable role/permission for a requested grant | `forbidden`; the user can only delegate grants allowed by descriptor policy. |
 | DCR redirect URI is not allowlisted | `invalid_redirect_uri`; client is not registered. |
 | Bad redirect URI on authorize/token | Request fails; codes are not delivered to unvalidated redirects. |
 | Missing or invalid PKCE verifier | Token request fails with `invalid_grant`. |
-| Token has role but no selected-tool grant | Non-admin bundle MCP `tools/call` fails closed. |
-| Tool is not allowed by role | Bundle MCP `tools/call` returns an MCP tool authorization error. |
+| Token has grant but no selected-tool grant | Bundle MCP `tools/call` fails closed. |
+| Tool is not listed by endpoint policy or not selected during consent | Bundle MCP `tools/call` returns an MCP tool authorization error. |
 | Refresh token is invalid or rotated | Token request fails with `invalid_grant`. |
 
 ## What This Is Not
@@ -366,7 +413,7 @@ This mechanism is not:
 - a broad "admin API" token.
 
 It is a descriptor-configured protocol adapter from an already-authenticated
-platform admin consent flow to a least-privilege delegated credential.
+platform consent flow to a least-privilege delegated credential.
 
 ## Relationship To Connection Hub
 
@@ -405,7 +452,7 @@ grantor authority
 connection-hub@1-0/public/oauth/authorize
       |
       v
-consent scopes + selected MCP tools
+descriptor-allowed scopes + selected MCP tools
       |
       v
 auth code + PKCE
@@ -428,13 +475,14 @@ Use focused tests and one live connector test.
    token endpoint, registration endpoint, and concrete protected-resource
    metadata.
 2. DCR accepts only descriptor-allowed redirect URIs.
-3. Authorization requires an authenticated platform admin session.
+3. Authorization requires an authenticated platform session.
 4. Consent POST validates CSRF and re-validates client, redirect URI, and PKCE.
 5. Token issue stores selected tools on both access grant and refresh record.
 6. Refresh rotation preserves selected tools.
-7. Non-admin integration token without a selected-tool grant fails closed at the
-   managed bundle MCP guard.
-8. Admin tokens bypass selected-tool grants only where intentional.
+7. Integration token without a selected-tool grant fails closed at the managed
+   bundle MCP guard.
+8. Users can consent only to grants permitted by the Connection Hub descriptor
+   (`delegable_roles` / `delegable_permissions`).
 9. Bundle MCP `tools/list` and `tools/call` return MCP-shaped responses, not
    unhandled HTTP 500s for authorization failures.
 10. The feature is disabled when

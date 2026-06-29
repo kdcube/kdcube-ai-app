@@ -267,7 +267,7 @@ The same model has two lifecycle phases.
 ```text
 Provisioning / consent
   grantor proves authority
-    -> user login / channel proof / admin consent
+    -> user login / channel proof / user or admin consent
     -> identity link or delegated grant is written
     -> credential/capability is issued or stored
 

@@ -1,0 +1,514 @@
+/* connection-hub connections widget — kdcube design language.
+   Tokens mirror the shared kdcube palette (memories / pinboard widgets):
+   teal accent, pale-green notice, warm-red error, Inter, kdcube surfaces. */
+:root {
+  color-scheme: light;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+
+  --bg:           #FCFDFD;
+  --surface:      #FFFFFF;
+  --surface-2:    #F6F8F8;
+  --surface-3:    #FAFBFB;
+  --ink:          #0D1E2C;
+  --text-2:       #3A5672;
+  --muted:        #7A99B0;
+  --line:         #E2E8E8;
+  --line-soft:    #ECF1F1;
+  --line-strong:  #D8ECEB;
+
+  --teal:         #01BEB2;
+  --teal-dark:    #009C92;
+  --teal-pale:    #C6F3F1;
+  --blue:         #4372C3;
+  --blue-dark:    #2B4B8A;
+
+  --green:        #52B044;
+  --green-dark:   #3A8030;
+  --green-pale:   #E8F7E5;
+
+  --pink:         #F7609A;
+  --pink-dark:    #C03272;
+  --pink-pale:    #FFE0EF;
+
+  --red:          #E04935;
+  --red-dark:     #B5331F;
+  --red-pale:     #FDE3DD;
+
+  --focus:        rgba(1, 190, 178, 0.40);
+
+  --r-sm: 4px;
+  --r-md: 6px;
+  --r-lg: 8px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 13px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+
+.page {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 16px 14px 28px;
+}
+
+.page-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.page-head h1 { margin: 0; }
+
+.tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-bottom: 1px solid var(--line);
+  margin: 0 0 16px;
+}
+
+.tab {
+  appearance: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+  padding: 9px 12px 8px;
+}
+
+.tab:hover {
+  color: var(--ink);
+  background: var(--surface-2);
+}
+
+.tab.active {
+  color: var(--ink);
+  border-bottom-color: var(--teal);
+}
+
+h1 {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0 0 12px;
+  color: var(--ink);
+}
+
+h2 {
+  font-size: 13px;
+  font-weight: 700;
+  margin: 0;
+  color: var(--ink);
+}
+
+/* Notices — pale-green for tips/success, warm-red for system errors.
+   Mirrors the kdcube .notice.success convention. */
+.note {
+  background: rgba(232, 247, 229, 0.55);
+  color: var(--green-dark);
+  border: 1px solid rgba(82, 176, 68, 0.28);
+  border-radius: var(--r-lg);
+  padding: 10px 12px;
+  margin: 0 0 16px;
+}
+
+.error {
+  background: rgba(253, 227, 221, 0.6);
+  color: var(--red-dark);
+  border: 1px solid rgba(224, 73, 53, 0.35);
+  border-radius: var(--r-lg);
+  padding: 10px 12px;
+  margin: 0 0 16px;
+  white-space: pre-wrap;
+}
+
+.notice {
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  color: var(--text-2);
+  padding: 10px 12px;
+  margin: 0 0 16px;
+}
+
+.notice.success {
+  background: rgba(232, 247, 229, 0.55);
+  color: var(--green-dark);
+  border-color: rgba(82, 176, 68, 0.28);
+}
+
+.muted {
+  color: var(--muted);
+  margin: 8px 0 0;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: 12px;
+  margin: 0 0 16px;
+  box-shadow: 0 1px 2px rgba(13, 30, 44, 0.04);
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.accounts {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.account {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: var(--surface-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: 10px 12px;
+}
+
+.account-compact {
+  margin-top: 12px;
+}
+
+.account-title {
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.account-sub {
+  color: var(--muted);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.badge {
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 999px;
+  padding: 2px 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.badge-ok {
+  background: var(--teal-pale);
+  color: var(--teal-dark);
+}
+
+.btn {
+  appearance: none;
+  border: 1px solid transparent;
+  background: var(--blue);   /* primary action = blue (teal stays for accents) */
+  color: #fff;
+  border-radius: var(--r-lg);
+  padding: 6px 11px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  width: auto;
+  align-self: flex-start;    /* never stretch to full width */
+  transition: background 120ms ease, box-shadow 120ms ease;
+}
+
+.btn:hover:not(:disabled) { background: var(--blue-dark); }
+.btn:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--focus); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.button-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0 0;
+}
+
+/* Destructive / disconnect — pink, per kdcube destructive-action token. */
+.btn-ghost {
+  background: transparent;
+  color: var(--pink-dark);
+  border: 1px solid var(--line);
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background: var(--pink-pale);
+  border-color: rgba(192, 50, 114, 0.35);
+}
+
+.btn-link {
+  display: inline-flex;
+  justify-content: center;
+  text-decoration: none;
+  align-self: flex-start;
+}
+
+.form {
+  margin: 16px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-top: 1px solid var(--line-soft);
+  padding-top: 16px;
+}
+
+.form-title {
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.proof-link {
+  margin: 14px 0 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid var(--line-soft);
+  padding-top: 14px;
+}
+
+.flow-steps {
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.flow-steps li {
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  color: var(--text-2);
+  padding: 7px 9px;
+  font-size: 12px;
+}
+
+.flow-steps li.active {
+  border-color: rgba(67, 114, 195, 0.35);
+  background: rgba(221, 234, 254, 0.7);
+  color: var(--blue-dark);
+}
+
+.flow-steps li.done {
+  border-color: rgba(82, 176, 68, 0.28);
+  background: rgba(232, 247, 229, 0.6);
+  color: var(--green-dark);
+}
+
+.flow-steps-numbered li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.telegram-link-page {
+  max-width: 620px;
+}
+
+.telegram-link-page h1 {
+  margin-top: 10px;
+}
+
+.telegram-link-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.challenge {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-lg);
+  background: var(--surface-2);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.challenge-ok {
+  background: rgba(232, 247, 229, 0.55);
+  border-color: rgba(82, 176, 68, 0.28);
+}
+
+.challenge-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--text-2);
+}
+
+.challenge-row.muted-row {
+  color: var(--muted);
+}
+
+.challenge-row code {
+  max-width: 70%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.input {
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: 7px 10px;
+  font-size: 13px;
+  width: 100%;
+  background: var(--surface);
+  color: var(--ink);
+  font-family: inherit;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.input::placeholder { color: var(--muted); }
+.input:focus-visible {
+  outline: none;
+  border-color: var(--teal);
+  box-shadow: 0 0 0 3px var(--focus);
+}
+
+.input-inline { width: auto; }
+
+.inline-fields {
+  display: grid;
+  grid-template-columns: minmax(110px, 150px) minmax(0, 1fr);
+  gap: 8px;
+}
+
+code {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 1px 5px;
+  font-size: 12px;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+
+.oauth-connect {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* per-connect scope selection */
+.scopes { margin: 8px 0 4px; display: flex; flex-direction: column; gap: 6px; }
+.small { font-size: 12px; color: var(--text-2); }
+.scope-list { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+.scope-item { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; color: var(--ink); }
+.scope-item input { accent-color: var(--teal); }
+.scope-item code {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 1px 6px;
+  font-size: 12px;
+}
+
+.auth-grid {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(250px, 0.9fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.auth-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.auth-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  background: var(--surface-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: 10px 12px;
+}
+
+.auth-row > div:first-child {
+  min-width: 0;
+}
+
+.row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.auth-form {
+  margin: 0;
+  border-top: 0;
+  padding-top: 0;
+}
+
+.textarea {
+  min-height: 74px;
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+}
+
+.checkbox-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-2);
+}
+
+.claim-page {
+  max-width: 560px;
+}
+
+.claim-card h1 {
+  margin-top: 10px;
+}
+
+@media (max-width: 760px) {
+  .auth-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .auth-row {
+    flex-direction: column;
+  }
+}

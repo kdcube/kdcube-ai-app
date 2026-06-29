@@ -56,6 +56,7 @@ def build_oauth_mcp_credential(
     tenant: str,
     project: str,
     expires_in: int,
+    resource: str | None = None,
     issued_at: int | None = None,
 ) -> CredentialEnvelope:
     iat = int(issued_at if issued_at is not None else time.time())
@@ -76,6 +77,7 @@ def build_oauth_mcp_credential(
             "client_id": str(client_id or "").strip(),
             "scopes": list(scopes or []),
             "tools": list(tools or []),
+            "resource": str(resource or "").strip(),
         },
     )
 
@@ -112,20 +114,23 @@ class OAuthMcpAuthorityProvider:
         ctx = dict(context or {})
         grant_record = ctx.get("grant_record") if isinstance(ctx.get("grant_record"), Mapping) else {}
         tools = list(grant_record.get("tools") or envelope.attrs.get("tools") or [])
+        scopes = list(envelope.attrs.get("scopes") or [])
         return AuthorityResolution(
             ok=True,
             authority_id=OAUTH_MCP_AUTHORITY_ID,
             authenticator_id=OAUTH_MCP_AUTHENTICATOR_ID,
             subject=envelope.subject,
             actor_user_id=envelope.subject,
-            roles=(FEEDBACK_READER_ROLE,),
-            permissions=(CONVERSATIONS_READ_PERMISSION,),
-            grants=tuple(tools),
+            roles=(FEEDBACK_READER_ROLE,) if "conversations:read" in scopes else ("kdcube:role:delegated-client",),
+            permissions=(CONVERSATIONS_READ_PERMISSION,) if "conversations:read" in scopes else (),
+            grants=tuple(scopes),
             credential=envelope,
             metadata={
                 "client_id": envelope.attrs.get("client_id"),
                 "grantor_subject": envelope.attrs.get("grantor_subject"),
-                "scopes": list(envelope.attrs.get("scopes") or []),
+                "scopes": scopes,
+                "tools": tools,
+                "resource": envelope.attrs.get("resource"),
                 "token_present": bool(token),
             },
         )

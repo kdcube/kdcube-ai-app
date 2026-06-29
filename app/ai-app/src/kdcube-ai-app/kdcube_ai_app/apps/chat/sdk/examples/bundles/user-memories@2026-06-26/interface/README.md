@@ -1,7 +1,7 @@
 # User Memories — Interface
 
 The contract this app exposes: one iframe widget, the memory widget operations
-behind it, the `mem` named service, and the storages + dataflows they use. All
+behind it, the `mem` named service, a delegated MCP endpoint, and the storages + dataflows they use. All
 operations and the provider come from the SDK memories mixin
 (`BaseEntrypointWithEconomicsAndMemory`); this app enables them, it does not
 implement them.
@@ -51,6 +51,44 @@ embedding the module:
 - Object ops: `object.search`, `object.get`, `object.create`, `object.update`,
   `object.delete` (write ops gated by the memory write toggle).
 
+## MCP endpoint — `memories`
+
+Public route, platform-managed by Connection Hub delegated credentials:
+
+```text
+POST /api/integrations/bundles/{tenant}/{project}/user-memories@2026-06-26/public/mcp/memories
+```
+
+Descriptor policy:
+
+```yaml
+surfaces:
+  as_provider:
+    mcp:
+      memories:
+        auth:
+          mode: managed
+          authority_id: oauth_mcp
+          tools:
+            memory_search:
+              grants: [memories:read]
+            memory_get:
+              grants: [memories:read]
+          selected_tool_grants: true
+```
+
+Tools:
+
+| Tool | Purpose |
+|------|---------|
+| `memory_search` | Search the approving user's visible memory notes. Reads aggregate across linked identities through `identity_family_resolve` when that user preference is enabled. |
+| `memory_get` | Read one visible memory note by id from the same identity-family read scope. |
+
+The MCP access token is an integration credential. The bundle reads memories for
+the token's `grantor_subject` from the delegated credential envelope, not for the
+derived `integration:claude:*` token subject. Writes are intentionally not
+exposed over this MCP endpoint.
+
 ## Storages
 
 | Store | Backend | Owner | Contents |
@@ -78,6 +116,12 @@ reconcile_* / snapshot_*
 other app's agent
   └─ named service `mem` (object.search/get/create/update/delete)
         └─ same SDK memory store (no module embedding)
+
+external Claude client
+  └─ Connection Hub OAuth consent for resource=user-memories MCP URL
+        └─ delegated token with memories:read + selected memory_* tools
+        └─ public/mcp/memories
+              └─ SDK memory store for grantor_subject
 ```
 
 Auth: per signed-in user (cookie/idToken). The memory store is keyed by the

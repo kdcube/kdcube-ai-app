@@ -75,4 +75,9 @@ def test_well_known_protected_resource_served(client):
     resource = "https://yey.boats/api/integrations/bundles/demo/prod/app@1/public/mcp/export"
     resp = client.get("/.well-known/oauth-protected-resource", params={"resource": resource})
     assert resp.status_code == 200
-    assert resp.json() == protected_resource_metadata(ISSUER, resource=resource)
+    data = resp.json()
+    assert data["resource"] == resource
+    assert data["authorization_servers"] == [ISSUER]
+    assert data["scopes_supported"] == ["conversations:read"]
+    assert data["kdcube_capabilities"][0]["grant"] == "conversations:read"
+    assert data["kdcube_tools"][0]["grants"] == ["conversations:read"]

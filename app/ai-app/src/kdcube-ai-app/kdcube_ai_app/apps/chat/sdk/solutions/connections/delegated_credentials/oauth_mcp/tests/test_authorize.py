@@ -84,6 +84,15 @@ def test_bad_scope_is_redirectable():
     assert ei.value.redirectable is True
 
 
+def test_parse_resource_specific_scope():
+    req = parse_authorize_request(
+        _params(scope="memories:read", resource="https://runtime.example.test/public/mcp/memories"),
+        supported_scopes=["memories:read"],
+    )
+    assert req.scopes == ["memories:read"]
+    assert req.resource == "https://runtime.example.test/public/mcp/memories"
+
+
 def test_missing_pkce_is_redirectable():
     with pytest.raises(AuthorizeError) as ei:
         parse_authorize_request(_params(code_challenge=""))
@@ -138,7 +147,11 @@ def test_consent_html_uses_configured_brand():
 async def _fake_authenticate(token):
     table = {
         "admin-tok": {"sub": "google:admin@example.test", "roles": ["kdcube:role:super-admin"]},
-        "user-tok": {"sub": "google:user@example.test", "roles": ["kdcube:role:chat-user"]},
+        "user-tok": {
+            "sub": "google:user@example.test",
+            "user_id": "02e53484-0081-70ce-11c1-e96706b1a182",
+            "roles": ["kdcube:role:chat-user"],
+        },
     }
     return table.get(token)
 
@@ -167,9 +180,46 @@ def test_authorize_unauthenticated_redirects_to_signin(client):
     assert "code_challenge=" in up.unquote(nxt)
 
 
-def test_authorize_rejects_non_admin(client):
+def test_authorize_rejects_user_without_delegable_grant(client):
     r = client.get("/oauth/authorize", params=_params(), headers={"Authorization": "Bearer user-tok"})
     assert r.status_code == 403
+
+
+def test_authorize_renders_consent_for_regular_user_when_grant_is_delegable(client):
+    client.app.state.oauth_mcp_config = {
+        "enabled": True,
+        "issuer": ISSUER,
+        "capabilities": [
+            {
+                "grant": "memories:read",
+                "label": "Read memories",
+                "delegable_roles": ["kdcube:role:chat-user"],
+            },
+        ],
+        "resources": [
+            {
+                "resource": "https://runtime.example.test/*/public/mcp/memories",
+                "tools": {
+                    "memory_search": {
+                        "label": "Search memories",
+                        "grants": ["memories:read"],
+                    },
+                },
+            },
+        ],
+    }
+    r = client.get(
+        "/oauth/authorize",
+        params=_params(
+            scope="memories:read",
+            resource="https://runtime.example.test/api/integrations/bundles/demo/demo/user-memories@2026-06-26/public/mcp/memories",
+        ),
+        headers={"Authorization": "Bearer user-tok"},
+    )
+
+    assert r.status_code == 200
+    assert "memory_search" in r.text
+    assert "memories:read" in r.text
 
 
 def test_authorize_renders_consent_for_admin(client):
@@ -188,9 +238,10 @@ def test_authorize_unknown_client_is_400_not_redirect(client):
     assert r.status_code == 400  # must NOT redirect to an unvalidated client
 
 
-def _csrf_token(client) -> str:
+def _csrf_token(client, *, token: str = "admin-tok", params: dict | None = None) -> str:
     import re
-    g = client.get("/oauth/authorize", params=_params(), headers={"Authorization": "Bearer admin-tok"})
+    g = client.get("/oauth/authorize", params=params or _params(), headers={"Authorization": f"Bearer {token}"})
+    assert g.status_code == 200
     return re.search(r'name="csrf_token"\s+value="([^"]+)"', g.text).group(1)
 
 
@@ -214,13 +265,62 @@ def test_consent_approve_issues_code_bound_to_selection(client):
     code = q["code"]
 
     # Inspect the fake Redis directly (sync) to confirm the code is bound to the
-    # consenting admin + the selected tool, without re-entering the event loop.
+    # consenting user + the selected tool, without re-entering the event loop.
     import json
     raw = store._r.values[store._key("code", code)]
     payload = json.loads(raw)
     assert payload["sub"] == "google:admin@example.test"
     assert payload["tools"] == ["conversations_export"]
     assert payload["scopes"] == ["conversations:read"]
+
+
+def test_consent_uses_platform_user_id_as_grantor_when_available(client):
+    client.app.state.oauth_mcp_config = {
+        "enabled": True,
+        "issuer": ISSUER,
+        "capabilities": [
+            {
+                "grant": "memories:read",
+                "label": "Read memories",
+                "delegable_roles": ["kdcube:role:chat-user"],
+            },
+        ],
+        "resources": [
+            {
+                "resource": "https://runtime.example.test/*/public/mcp/memories",
+                "tools": {
+                    "memory_search": {
+                        "label": "Search memories",
+                        "grants": ["memories:read"],
+                    },
+                },
+            },
+        ],
+    }
+    store = client.app.state.oauth_grant_store
+    form = _params(
+        scope="memories:read",
+        resource="https://runtime.example.test/api/integrations/bundles/demo/demo/user-memories@2026-06-26/public/mcp/memories",
+    )
+    form["decision"] = "approve"
+    form["tools"] = ["memory_search"]
+    form["csrf_token"] = _csrf_token(client, token="user-tok", params=form)
+
+    r = client.post(
+        "/oauth/authorize/consent",
+        data=form,
+        headers={"Authorization": "Bearer user-tok"},
+        follow_redirects=False,
+    )
+
+    assert r.status_code == 302
+    code = dict(up.parse_qsl(up.urlsplit(r.headers["location"]).query))["code"]
+    import json
+    raw = store._r.values[store._key("code", code)]
+    payload = json.loads(raw)
+    assert payload["sub"] == "02e53484-0081-70ce-11c1-e96706b1a182"
+    assert payload["tools"] == ["memory_search"]
+    assert payload["scopes"] == ["memories:read"]
 
 
 def test_consent_deny_redirects_with_error(client):
