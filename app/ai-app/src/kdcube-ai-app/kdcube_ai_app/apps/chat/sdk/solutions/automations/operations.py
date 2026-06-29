@@ -200,9 +200,14 @@ async def _automation_econ_subject(entrypoint: Any, *, target_user: str, source:
         )
         role = carried_role
     timezone = str((source or {}).get("timezone") or getattr(comm_user, "timezone", "") or "") or None
+    normalized_role = str(role or "").strip().lower()
     return EconomicsSubject(
         tenant=tenant, project=project, user_id=economics_user_id,
-        user_type=role, timezone=timezone,
+        timezone=timezone,
+        roles=tuple(getattr(comm_user, "roles", None) or ()),
+        permissions=tuple(getattr(comm_user, "permissions", None) or ()),
+        budget_bypass=(normalized_role in {"admin", "privileged"}),
+        is_anonymous=(not economics_user_id or economics_user_id == "anonymous" or normalized_role == "anonymous"),
     )
 
 
@@ -1280,16 +1285,25 @@ async def run_automation_execution(
             "error": {"code": "economics_denied", "message": str(exc)},
         }
     if econ_decision is not None:
+        compatibility_role = (
+            "privileged" if bool(getattr(econ_subject, "budget_bypass", False))
+            else "anonymous" if bool(getattr(econ_subject, "is_anonymous", False))
+            else "registered"
+        )
         logger.info(
-            "[automations.economics] preflight ok: execution_id=%s actor=%s economics_user=%s role=%s lane=%s funding=%s plan=%s",
+            "[automations.economics] preflight ok: execution_id=%s actor=%s economics_user=%s compatibility_role=%s lane=%s funding=%s plan=%s",
             execution["id"], target_user, getattr(econ_subject, "user_id", None),
-            getattr(econ_subject, "user_type", None),
+            compatibility_role,
             econ_decision.lane, econ_decision.funding_source, econ_decision.plan_id,
         )
     # Point (2): propagate the resolved role so the inner ReAct run() applies the
     # correct plan/limits for this user (esp. scheduled automations enqueued in a system
     # context where the carried role may default to "registered").
-    resolved_user_type = getattr(econ_subject, "user_type", None)
+    resolved_user_type = (
+        "privileged" if bool(getattr(econ_subject, "budget_bypass", False))
+        else "anonymous" if bool(getattr(econ_subject, "is_anonymous", False))
+        else None
+    )
     if econ_subject is not None and getattr(econ_subject, "user_id", None):
         economics_user_id = str(econ_subject.user_id)
     authority_context = normalize_execution_authority(

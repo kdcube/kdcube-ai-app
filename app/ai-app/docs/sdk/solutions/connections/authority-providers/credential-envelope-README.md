@@ -9,7 +9,7 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/authority-providers/authority-provider-runtime-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/delegated-connections/delegated-connections-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/auth-bundle-federated-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/delegated-credentials/oauth-mcp-protocol-adapter-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/delegated-credentials/oauth-delegated-credential-protocol-adapter-README.md
 ---
 # Authority Credential Envelope
 
@@ -51,7 +51,7 @@ authenticator can attempt verification.
 | `issuer_authority_id` | Authority that issued or owns verification for this credential. |
 | `issuer_authenticator_id` | Concrete authenticator/verifier inside that authority. |
 | `subject` | Subject in the issuing authority. |
-| `audience` | Surface family the credential targets, for example `kdcube:data_bus`, `kdcube:mcp`, or `bundle:<id>`. |
+| `audience` | Surface family the credential targets, for example `kdcube:data_bus`, `kdcube:delegated_client`, or `bundle:<id>`. |
 | `tenant` / `project` | Runtime namespace for storage and lookup. |
 | `iat` / `exp` | Issuance and expiry hints. Verifiers still enforce their authoritative state. |
 
@@ -110,19 +110,19 @@ Ingress verifies the signed token and active Redis record, then joins the
 stored session. It does not run Telegram, Slack, or bundle-local custom
 authority code.
 
-### OAuth/MCP Delegated Client Access
+### OAuth delegated credential Delegated Client Access
 
-The OAuth/MCP access token is a `kst1` bundle-session token for an integration
+The OAuth delegated credential access token is a `kst1` bundle-session token for an integration
 representative. Its session claim and grant record include:
 
 ```json
 {
   "schema": "kdcube.credential.v1",
   "credential_kind": "delegated_client_access",
-  "issuer_authority_id": "oauth_mcp",
-  "issuer_authenticator_id": "oauth_mcp.bearer",
+  "issuer_authority_id": "delegated_client",
+  "issuer_authenticator_id": "delegated_client.bearer",
   "subject": "integration:claude:<grantor-sub>",
-  "audience": "kdcube:mcp",
+  "audience": "kdcube:delegated_client",
   "attrs": {
     "client_id": "claude",
     "scopes": ["conversations:read"],

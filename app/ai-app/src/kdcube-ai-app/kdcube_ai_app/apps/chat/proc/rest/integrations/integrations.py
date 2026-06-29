@@ -107,7 +107,7 @@ from kdcube_ai_app.infra.plugin.bundle_loader import (
     run_static_bundle_entrypoint_load_once,
     static_bundle_entrypoint_load_key,
 )
-from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oauth_mcp.surface_guard import (
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oauth.surface_guard import (
     authorize_delegated_mcp_request,
     mcp_auth_mode,
 )
@@ -1265,6 +1265,7 @@ async def _load_bundle_props_defaults(
             permissions=session.permissions,
             timezone=session.request_context.user_timezone,
             utc_offset_min=session.request_context.user_utc_offset_min,
+            identity_authority=dict(getattr(session, "identity_authority", None) or {}),
         ),
     )
 
@@ -4236,6 +4237,7 @@ async def _load_bundle_workflow(
             permissions=session.permissions,
             timezone=session.request_context.user_timezone,
             utc_offset_min=session.request_context.user_utc_offset_min,
+            identity_authority=dict(getattr(session, "identity_authority", None) or {}),
         ),
     )
 

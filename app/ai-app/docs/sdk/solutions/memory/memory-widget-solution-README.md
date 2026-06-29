@@ -198,7 +198,8 @@ in the same `config` object:
 {
   "authContext": {
     "headers": {
-      "X-KDCube-Auth-Connection-ID": "telegram.default"
+      "X-KDCube-Auth-Authority-ID": "telegram.default",
+      "X-KDCube-Auth-Authenticator-ID": "telegram.default"
     }
   }
 }

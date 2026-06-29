@@ -370,7 +370,7 @@ mcp:
   feedback:
     auth:
       mode: managed
-      authority_id: oauth_mcp
+      authority_id: delegated_client
       tools:
         conversations_export:
           grants: [conversations:read]

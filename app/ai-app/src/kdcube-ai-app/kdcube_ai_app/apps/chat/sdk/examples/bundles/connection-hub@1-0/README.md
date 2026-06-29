@@ -23,17 +23,17 @@ links:
 
 # Connection Hub App
 
-`connection-hub@1-0` is the user-scoped hub for identity links and delegated
+`connection-hub@1-0` is the user-scoped hub for connection edges and delegated
 account connections.
 
 It answers three related questions:
 
 ```text
 Who is this external identity in KDCube?
-  -> identity link -> platform user id -> platform principal/role resolver
+  -> connection edge -> platform user id -> platform principal/role resolver
 
 Can this incoming request prove one of those external identities?
-  -> request authenticator -> identity link -> UserSession authority
+  -> request authenticator -> connection edge -> UserSession authority
 
 Which user ids belong to the same linked identity family?
   -> Connection Hub resolver -> platform authority + provider identities
@@ -46,13 +46,13 @@ The app exposes request authenticators so ingress and app/channel handlers can
 verify Telegram/webhook/API-key style requests without duplicating proof logic.
 It also exposes the public `connections` named-service provider so any app acting
 for the current user can resolve that user's connection tokens without owning the
-OAuth mechanics itself. It also exposes identity-link operations so a verified
+OAuth mechanics itself. It also exposes connection-edge operations so a verified
 external identity can resolve to a platform principal envelope, and a resolver
 operation so aggregation surfaces can get canonical linked user ids server-side.
 
 The app wires four building blocks:
 
-- identity-link storage and a temporary principal-resolution fixture;
+- connection-edge storage and a temporary principal-resolution fixture;
 - identity-family resolver for linked user-id expansion;
 - request authenticators, currently Telegram Mini App/WebApp `initData`;
 - the reusable `integrations/connections` mechanics (`ConnectionStore`,
@@ -70,7 +70,7 @@ external proof from a channel/provider
   provider="bundle"   subject="some-app:external-user-77"
         |
         v
-Connection Hub identity link
+Connection Hub connection edge
         |
         v
 platform principal/role resolver
@@ -89,7 +89,7 @@ must come from a platform principal/role resolver after identity resolution.
 gateway/app request
   -> request_authenticate(RequestEnvelope)
   -> configured authenticator verifies provider proof
-  -> identity link resolves provider:<subject>
+  -> connection edge resolves provider:<subject>
   -> platform authority is projected into identity_authority
   -> gateway turns result into UserSession
 ```
@@ -107,7 +107,7 @@ is not configured.
 
 `role_providing` marks authenticators that directly prove platform authority.
 Telegram bots normally keep it `false`: Telegram proves the actor, then the
-identity link supplies platform roles.
+connection edge supplies platform roles.
 
 ### Proof-based Telegram linking
 
@@ -118,22 +118,22 @@ browser session and a Telegram-signed Mini App session.
 Platform-first:
   KDCube browser session
   -> connections_settings creates short-lived challenge for platform_user_id
-  -> user opens Versatile Telegram Mini App with link_challenge
-  -> Telegram Mini App sends signed initData to Connection Hub
+  -> user opens the provider proof surface that owns the desired Telegram bot
+  -> that Telegram Mini App sends signed initData to Connection Hub
   -> Connection Hub validates initData and completes:
        telegram:<telegram_user_id> -> platform_user_id
 
 Telegram-first:
-  user opens the Versatile Telegram Mini App from Telegram
-  -> Versatile hosts the Connection Hub widget in an iframe
-  -> Versatile passes opaque authContext.headers through CONFIG_RESPONSE
-  -> Telegram Mini App sends signed initData to Connection Hub
+  user opens a Telegram Mini App from Telegram
+  -> host app embeds the Connection Hub widget in an iframe
+  -> host app passes opaque authContext.headers through CONFIG_RESPONSE
+  -> Connection Hub widget sends signed initData to Connection Hub
   -> Connection Hub creates pending provider proof with no platform_user_id
   -> Connection Hub widget claims a short-lived connection-hub Socket.IO session
   -> user opens returned platform_claim_url
   -> standalone claim page uses /api/cp-frontend-config to sign into KDCube
   -> connections_settings claims the proof for the current platform user
-  -> Connection Hub emits connection_hub.identity.link_changed to the iframe
+  -> Connection Hub emits connection_hub.edge.changed to the iframe
   -> Connection Hub completes:
        telegram:<telegram_user_id> -> platform_user_id
 ```
@@ -145,9 +145,9 @@ in the Telegram-first flow.
 
 The Telegram-first flow is evented, not polled. The embedded Connection Hub
 widget creates its own app-scoped live channel with `federated_data_bus_claim`.
-`telegram_identity_link_start` stores that live session id on the pending
+`telegram_connection_edge_start` stores that live session id on the pending
 challenge. When the browser-side claim completes, Connection Hub emits a
-targeted `connection_hub.identity.link_changed` service event to that session,
+targeted `connection_hub.edge.changed` service event to that session,
 and the iframe refreshes its linked/unlinked state.
 
 ## Three-level connection model
@@ -205,7 +205,7 @@ connection-hub@1-0/
       2026-06-28-explicit-telegram-claim-confirmation.md
       2026-06-27-telegram-claim-platform-auth.md
       2026-06-26-request-authenticators.md
-      2026-06-25-identity-links-and-delegated-connections.md
+      2026-06-25-connection-edges-and-delegated-connections.md
       journal.md
   ui/
     widgets/
@@ -217,7 +217,7 @@ Reusable Connection Hub core lives in the platform SDK:
 ```text
 kdcube_ai_app.apps.chat.sdk.solutions.connections.hub
   provider_impl.py          # ConnectionHubProvider (connections provider)
-  identity_links.py         # identity links, link challenges, principal fixture
+  connection_edges.py         # connection edges, link challenges, principal fixture
   resolver.py               # linked identity-family resolver
   authenticators.py         # request-authenticator modules
   authenticator_store.py    # request-authenticator metadata store

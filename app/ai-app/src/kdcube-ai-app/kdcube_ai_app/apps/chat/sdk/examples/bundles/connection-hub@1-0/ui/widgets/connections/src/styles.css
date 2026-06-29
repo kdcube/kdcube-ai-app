@@ -26,6 +26,10 @@
   --green-dark:   #3A8030;
   --green-pale:   #E8F7E5;
 
+  --gold:         #F0BC2E;
+  --gold-dark:    #9A6D05;
+  --gold-pale:    #FFF8DC;
+
   --pink:         #F7609A;
   --pink-dark:    #C03272;
   --pink-pale:    #FFE0EF;
@@ -147,6 +151,12 @@ h2 {
   background: rgba(232, 247, 229, 0.55);
   color: var(--green-dark);
   border-color: rgba(82, 176, 68, 0.28);
+}
+
+.notice.warning {
+  background: var(--gold-pale);
+  color: var(--gold-dark);
+  border-color: rgba(240, 188, 46, 0.55);
 }
 
 .muted {
@@ -501,6 +511,56 @@ code {
 
 .claim-card h1 {
   margin-top: 10px;
+}
+
+.grant-list {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.grant-option {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  gap: 10px;
+  align-items: start;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.grant-option input {
+  margin-top: 2px;
+}
+
+.grant-option strong,
+.grant-option small,
+.grant-option code {
+  display: block;
+}
+
+.grant-option strong {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.grant-option small {
+  color: var(--text-2);
+  line-height: 1.35;
+  margin-top: 3px;
+}
+
+.grant-option code {
+  width: fit-content;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  margin-top: 6px;
+  padding: 2px 5px;
+  border-radius: 5px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 12px;
 }
 
 @media (max-width: 760px) {

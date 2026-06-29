@@ -106,9 +106,8 @@ authenticator id in the callback URL:
 ## Hints
 
 `authority_id` and `authenticator_id` are non-secret selector hints. They
-narrow which authenticators may be tried. They are not trusted facts. Legacy
-`integration_id`/`connection_id` names are accepted only while older surfaces
-migrate to the authority/authenticator names.
+narrow which authenticators may be tried. They are not trusted facts. They are
+the request-side selector contract for KDCube-controlled surfaces.
 
 ```text
 authenticator_id = telegram.kdcube_ref.init_data
@@ -122,7 +121,7 @@ These hints are not:
 - a bot token;
 - a Telegram bot id;
 - a platform user id;
-- an identity link.
+- a connection edge.
 
 If an explicit authenticator id is present, Connection Hub should try that row
 only and fail closed if it is missing, disabled, or rejects the proof.
@@ -134,7 +133,7 @@ access to:
 
 - Connection Hub authenticator metadata;
 - bundle secret references;
-- identity-link resolution;
+- connection-edge resolution;
 - provider-specific verifier code.
 
 ```text
@@ -169,8 +168,8 @@ A successful Connection Hub authentication surface returns authority material:
     "actor_user_id": "telegram_434804821",
     "platform_user_id": "02e53484-...",
     "economics_user_id": "02e53484-...",
-    "user_type": "privileged",
-    "platform_roles": ["kdcube:role:super-admin"]
+    "platform_roles": ["kdcube:role:super-admin"],
+    "budget_bypass": true
   }
 }
 ```

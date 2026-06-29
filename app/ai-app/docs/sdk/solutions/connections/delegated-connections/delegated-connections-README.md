@@ -10,8 +10,8 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/authority-providers/authority-provider-runtime-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/authority-providers/credential-envelope-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/delegated-accounts/delegated-accounts-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/delegated-credentials/oauth-mcp-protocol-adapter-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/delegated-credentials/oauth-mcp-consent-branding-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/delegated-credentials/oauth-delegated-credential-protocol-adapter-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/delegated-credentials/oauth-delegated-credential-consent-branding-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/delegated-credentials/delegated-credential-protocol-adapters-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/delegated-connections/design/grant-storage-durability-README.md
 ---
@@ -29,7 +29,7 @@ credential / proof / token
       |
       v
 registered authenticator
-  telegram / gmail / slack / icloud / oauth_mcp / future provider
+  telegram / gmail / slack / icloud / delegated_client / future provider
       |
       v
 linker / grant resolver
@@ -52,20 +52,20 @@ connection model:
 | --- | --- | --- |
 | Gmail delegated account | Gmail OAuth credential/account state. | Platform grantor + Gmail capability + allowed provider actions. |
 | iCloud delegated account | App-specific password/account state. | Platform grantor + iCloud capability + allowed provider actions. |
-| Claude OAuth/MCP connection | KDCube-issued access/refresh token through the OAuth/MCP registry. | Integration principal + KDCube resource + selected tools. |
+| Claude OAuth delegated credential connection | KDCube-issued access/refresh token through the OAuth delegated credential registry. | Integration principal + KDCube resource + selected tools. |
 | Telegram-linked request | Telegram initData or webhook proof. | Actor identity + linked platform principal + projected authority. |
 
 Provider-account details are covered by
 [Delegated Accounts](../delegated-accounts/delegated-accounts-README.md).
-OAuth/MCP details are covered by
-[OAuth/MCP Protocol Adapter](../delegated-credentials/oauth-mcp-protocol-adapter-README.md).
+OAuth delegated credential details are covered by
+[OAuth delegated credential Protocol Adapter](../delegated-credentials/oauth-delegated-credential-protocol-adapter-README.md).
 
-OAuth/MCP is the current authenticator/protocol adapter for a delegated
+OAuth delegated credential is the current authenticator/protocol adapter for a delegated
 representative that calls KDCube:
 
 ```text
 KDCube-issued integration token
-  -> oauth_mcp authenticator validates token/grant
+  -> delegated_client authenticator validates token/grant
   -> grant resolver returns integration principal + selected tools
   -> MCP operation runs only if allowed
 ```
@@ -83,7 +83,7 @@ The lifecycle has two phases. This is the real boundary to preserve.
 
    grantor proves authority
      -> user logs in / channel proof is verified / user or admin consents
-     -> Connection Hub writes identity link or delegated grant
+     -> Connection Hub writes a connection edge and any protocol-specific grant state
      -> credential/capability is issued or stored
 
 
@@ -100,28 +100,32 @@ Examples:
 
 | Provisioning / consent | Runtime use |
 | --- | --- |
-| Telegram user starts link, KDCube user claims it, identity link is written. | Telegram `initData` arrives, Telegram authenticator verifies it, identity link projects platform authority. |
+| Telegram user starts link, KDCube user claims it, connection edge is written. | Telegram `initData` arrives, Telegram authenticator verifies it, edge projection provides platform authority. |
 | User connects Gmail, OAuth callback stores provider grant. | Automation asks for Gmail capability, provider adapter resolves token and allowed provider actions. |
-| User or admin approves Claude MCP access, OAuth/MCP grant is written according to descriptor delegability. | Claude sends KDCube token, `oauth_mcp` authenticator resolves integration principal and selected tools. |
+| User or admin approves Claude MCP access, OAuth delegated credential grant is written according to descriptor delegability. | Claude sends KDCube token, `delegated_client` authenticator resolves integration principal and selected tools. |
 
-## Relationship To Identity Links
+## Relationship To Connection Edges
 
-Delegated Connections is separate from identity linking, but they compose:
+Delegated connections and account linking are both connection-edge views. The common
+graph says which identity may represent which other identity and which grants
+are delegated. Protocol adapters may also keep protocol-specific state, such as
+OAuth refresh tokens or selected MCP tools.
 
 ```text
 provider/channel proof
   -> request authenticator
-  -> identity link
+  -> connection edge
   -> platform authority projection
   -> platform user can approve delegated connections
 ```
 
 For example, a user may arrive through Telegram, prove `telegram:<id>`, and be
 projected to platform user `02e...`. That projected authority can then decide
-whether the user may approve a delegated connection. The delegated connection
-itself is still a separate consent/grant record.
+whether the user may approve another delegated connection. Both facts are
+edges; only protocol-specific credential material lives outside the generic edge
+record.
 
-## OAuth/MCP Runtime Map
+## OAuth delegated credential Runtime Map
 
 ```text
 External Client
@@ -177,7 +181,7 @@ KDCube MCP Tool
   conversations_export today; additional tools later
 ```
 
-OAuth/MCP is one authenticator/protocol implementation. The solution concept is
+OAuth delegated credential is one authenticator/protocol implementation. The solution concept is
 wider: any future provider or client protocol should plug in as an
 authenticator/linker over the same credential, principal, resource,
 allowed-action, and revocation boundaries instead of inventing a separate auth
@@ -266,7 +270,7 @@ Connection Hub SDK RequestAuthResolver
         |     signed customer session / customer OIDC / enterprise header
         |
         +-- linked-identity authenticator
-              Telegram / Slack / API key -> identity link -> platform authority
+              Telegram / Slack / API key -> connection edge -> platform authority
 ```
 
 So delegated connection issuance belongs downstream of the authority system. It
@@ -274,7 +278,7 @@ should not learn how Google, Telegram, or a customer directory work.
 
 ## Descriptor Contract
 
-The current OAuth/MCP protocol implementation is configured on the Connection
+The current OAuth delegated credential protocol implementation is configured on the Connection
 Hub bundle in `bundles.yaml`.
 
 ```yaml
@@ -284,7 +288,7 @@ bundles:
       config:
         connections:
           delegated_credentials:
-            oauth_mcp:
+            oauth:
               enabled: true
               brand: "Example KDCube"
               public_clients:
@@ -301,13 +305,13 @@ bundles:
 ```
 
 The service-level descriptor and endpoint contract is documented in
-[OAuth/MCP Protocol Adapter](../delegated-credentials/oauth-mcp-protocol-adapter-README.md).
+[OAuth delegated credential Protocol Adapter](../delegated-credentials/oauth-delegated-credential-protocol-adapter-README.md).
 Consent-page branding is documented in
-[Branding the MCP Authorization Screen](../delegated-credentials/oauth-mcp-consent-branding-README.md).
+[Branding the MCP Authorization Screen](../delegated-credentials/oauth-delegated-credential-consent-branding-README.md).
 
 ## Session Provider Compatibility
 
-Native OAuth/MCP delegated connection access is usable without customer patches when the
+Native OAuth delegated credential delegated connection access is usable without customer patches when the
 platform auth resolver can validate the browser session used at
 Connection Hub `/public/oauth/authorize`.
 
@@ -325,19 +329,19 @@ Requires a matching auth resolver:
   that token. If the platform maps `session` to a different manager, the OAuth
   consent step cannot authenticate that browser cookie.
 
-The OAuth/MCP service itself is not tied to one identity provider. It asks the
+The OAuth delegated credential service itself is not tied to one identity provider. It asks the
 configured platform auth resolver to authenticate the human browser session. If a
 deployment brings a custom role authority, that authority must return normal
 KDCube role strings such as `kdcube:role:super-admin`.
 
 Runtime credentials use the shared `kdcube.credential.v1` envelope, whether the
-credential is a Data Bus derived session, an OAuth/MCP delegated client token,
+credential is a Data Bus derived session, an OAuth delegated credential delegated client token,
 or a future bundle custom authority token. See
 [Authority Credential Envelope](../authority-providers/credential-envelope-README.md).
 
 ## Storage
 
-Current implementation stores OAuth/MCP grant state in Redis through
+Current implementation stores OAuth delegated credential grant state in Redis through
 `GrantStore`. Some records are intentionally short-lived; others are product
 state and need persistence in production.
 
@@ -354,7 +358,7 @@ connectors:
 | Understand authority provider and custom-authority registration | [Authority Provider Runtime](../authority-providers/authority-provider-runtime-README.md) |
 | Understand credential routing fields | [Authority Credential Envelope](../authority-providers/credential-envelope-README.md) |
 | Understand KDCube using external provider accounts | [Delegated Accounts](../delegated-accounts/delegated-accounts-README.md) |
-| Configure current OAuth/MCP protocol endpoints | [OAuth/MCP Protocol Adapter](../delegated-credentials/oauth-mcp-protocol-adapter-README.md) |
-| Brand the consent page | [OAuth/MCP Consent Branding](../delegated-credentials/oauth-mcp-consent-branding-README.md) |
+| Configure current OAuth delegated credential protocol endpoints | [OAuth delegated credential Protocol Adapter](../delegated-credentials/oauth-delegated-credential-protocol-adapter-README.md) |
+| Brand the consent page | [OAuth delegated credential Consent Branding](../delegated-credentials/oauth-delegated-credential-consent-branding-README.md) |
 | Understand delegated credential protocol adapters | [Delegated Credential Protocol Adapters](../delegated-credentials/delegated-credential-protocol-adapters-README.md) |
 | Decide Redis vs durable storage | [Grant Storage Durability](design/grant-storage-durability-README.md) |

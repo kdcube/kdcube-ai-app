@@ -163,10 +163,10 @@ async def test_bundle_session_login_or_register_embeds_credential_claim():
         "schema": "kdcube.credential.v1",
         "credential_id": "cred_test",
         "credential_kind": "delegated_client_access",
-        "issuer_authority_id": "oauth_mcp",
-        "issuer_authenticator_id": "oauth_mcp.bearer",
+        "issuer_authority_id": "delegated_client",
+        "issuer_authenticator_id": "delegated_client.bearer",
         "subject": "integration:claude:google:admin@example.test",
-        "audience": "kdcube:mcp",
+        "audience": "kdcube:delegated_client",
         "attrs": {"client_id": "claude"},
     }
 
@@ -180,7 +180,7 @@ async def test_bundle_session_login_or_register_embeds_credential_claim():
     )
 
     assert grant.claims["credential"]["schema"] == "kdcube.credential.v1"
-    assert grant.claims["credential"]["issuer_authority_id"] == "oauth_mcp"
+    assert grant.claims["credential"]["issuer_authority_id"] == "delegated_client"
     assert grant.claims["credential"]["attrs"] == {"client_id": "claude"}
     verified = await authority.validate_token(grant.token)
     assert verified.claims["credential"]["subject"] == credential["subject"]

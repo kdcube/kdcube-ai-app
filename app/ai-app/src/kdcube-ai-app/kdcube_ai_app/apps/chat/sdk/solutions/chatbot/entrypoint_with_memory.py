@@ -418,8 +418,24 @@ class MemoryEntrypointMixin:
             scope = self._memory_scope()
         actor_user_id = str(scope.user_id or "").strip()
         if not self._memory_identity_family_kill_switch_enabled():
+            logger.info(
+                "[memory.identity_family] disabled actor_user_id=%s tenant=%s project=%s bundle_id=%s",
+                actor_user_id,
+                scope.tenant,
+                scope.project,
+                scope.bundle_id,
+            )
             return None
-        if (await self._memory_scope_pref_for(scope)) != MEMORY_SCOPE_PREF_FAMILY:
+        scope_pref = await self._memory_scope_pref_for(scope)
+        if scope_pref != MEMORY_SCOPE_PREF_FAMILY:
+            logger.info(
+                "[memory.identity_family] skipped actor_user_id=%s tenant=%s project=%s bundle_id=%s scope_pref=%s",
+                actor_user_id,
+                scope.tenant,
+                scope.project,
+                scope.bundle_id,
+                scope_pref,
+            )
             return None
         try:
             from kdcube_ai_app.apps.chat.sdk.infra.bundle_operations import call_bundle_operation
@@ -444,12 +460,30 @@ class MemoryEntrypointMixin:
             raw = result.get("memory_user_ids")
             if isinstance(raw, (list, tuple)):
                 memory_user_ids = [str(uid or "").strip() for uid in raw if str(uid or "").strip()]
+        else:
+            logger.info(
+                "[memory.identity_family] resolver returned no-ok actor_user_id=%s tenant=%s project=%s bundle_id=%s result=%s",
+                actor_user_id,
+                scope.tenant,
+                scope.project,
+                scope.bundle_id,
+                result if isinstance(result, Mapping) else type(result).__name__,
+            )
         family: list[str] = []
         seen: set[str] = set()
         for uid in ([actor_user_id] + (memory_user_ids or [])):
             if uid and uid not in seen:
                 seen.add(uid)
                 family.append(uid)
+        logger.info(
+            "[memory.identity_family] resolved actor_user_id=%s tenant=%s project=%s bundle_id=%s family_user_ids=%s family_size=%s",
+            actor_user_id,
+            scope.tenant,
+            scope.project,
+            scope.bundle_id,
+            family,
+            len(family),
+        )
         # One-item family (unlinked / ok:false / empty) -> single-user path.
         if len(family) <= 1:
             return None
@@ -2327,6 +2361,21 @@ class MemoryEntrypointMixin:
             # only count lexical matches. Keep the visible count truthful at
             # least for the current semantic page.
             total_count = max(total_count, page_offset + len(page_rows) + (1 if len(rows) > page_limit else 0))
+        logger.info(
+            "[memory.widget.fetch] tenant=%s project=%s actor_user_id=%s bundle_id=%s scope_filter=%s family_user_ids=%s status=%s mode=%s query_present=%s memory_ids=%s total_count=%s returned_count=%s",
+            scope.tenant,
+            scope.project,
+            scope.user_id,
+            scope.bundle_id,
+            normalized_scope_filter,
+            family_user_ids or [scope.user_id],
+            status or "active",
+            search_mode,
+            bool(normalized_query),
+            len(memory_ids_list),
+            total_count,
+            len(page_rows),
+        )
         return {
             "ok": True,
             "scope": {
@@ -3677,12 +3726,15 @@ class MemoryEntrypointMixin:
         user = getattr(self.comm_context, "user", None)
         role = self._memory_effective_user_type(
             str(getattr(user, "user_type", None) or "registered")
-        )
+        ).strip().lower()
         return EconomicsSubject(
             tenant=scope.tenant,
             project=scope.project,
             user_id=scope.user_id,
-            user_type=role,
+            roles=tuple(getattr(user, "roles", None) or ()),
+            permissions=tuple(getattr(user, "permissions", None) or ()),
+            budget_bypass=(role in {"admin", "privileged"}),
+            is_anonymous=(not scope.user_id or scope.user_id == "anonymous" or role == "anonymous"),
         )
 
     def _economics_search_subject(self):
@@ -3796,9 +3848,12 @@ class MemoryEntrypointMixin:
                 job.get("job_id"), carried_role, exc,
             )
             role = carried_role
+        normalized_role = str(role or "").strip().lower()
         return EconomicsSubject(
             tenant=tenant, project=project, user_id=user_id,
-            user_type=role, timezone=str(job.get("timezone") or "") or None,
+            timezone=str(job.get("timezone") or "") or None,
+            budget_bypass=(normalized_role in {"admin", "privileged"}),
+            is_anonymous=(not user_id or user_id == "anonymous" or normalized_role == "anonymous"),
         )
 
     async def _memory_reconciliation_make_guard(self, job: Dict[str, Any], job_id: str):

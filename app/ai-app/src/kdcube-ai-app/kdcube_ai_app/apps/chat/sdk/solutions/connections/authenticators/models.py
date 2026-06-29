@@ -227,7 +227,7 @@ class AuthenticatedRequest:
     connection_id: str = ""
     actor_user_id: str = ""
     platform_user_id: str = ""
-    identity_link: dict[str, Any] = field(default_factory=dict)
+    connection_edge: dict[str, Any] = field(default_factory=dict)
     principal: dict[str, Any] = field(default_factory=dict)
     identity_authority: dict[str, Any] = field(default_factory=dict)
     error: str = ""
@@ -248,7 +248,7 @@ class AuthenticatedRequest:
             "connection_id": self.connection_id,
             "actor_user_id": self.actor_user_id,
             "platform_user_id": self.platform_user_id,
-            "identity_link": dict(self.identity_link),
+            "connection_edge": dict(self.connection_edge),
             "principal": dict(self.principal),
             "identity_authority": dict(self.identity_authority),
             "error": self.error,
@@ -288,7 +288,7 @@ class AuthenticatedRequest:
             ),
             actor_user_id=_str(data.get("actor_user_id")),
             platform_user_id=_str(data.get("platform_user_id")),
-            identity_link=dict(data.get("identity_link") or {}) if isinstance(data.get("identity_link"), Mapping) else {},
+            connection_edge=dict(data.get("connection_edge") or {}) if isinstance(data.get("connection_edge"), Mapping) else {},
             principal=dict(data.get("principal") or {}) if isinstance(data.get("principal"), Mapping) else {},
             identity_authority=dict(data.get("identity_authority") or {}) if isinstance(data.get("identity_authority"), Mapping) else {},
             error=_str(data.get("error")),

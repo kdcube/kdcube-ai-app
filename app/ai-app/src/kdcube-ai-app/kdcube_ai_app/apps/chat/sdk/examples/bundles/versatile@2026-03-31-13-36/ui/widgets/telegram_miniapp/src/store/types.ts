@@ -1,4 +1,4 @@
-export type TabId = 'memory' | 'conversations' | 'connections' | 'telegram_admin';
+export type TabId = 'memory' | 'conversations' | 'connections';
 
 export type TelegramWidgetCallOperation = <T>(
   operation: string,
@@ -97,19 +97,6 @@ export interface TelegramUser {
   notes?: string;
 }
 
-export interface TelegramAdminPayload {
-  ok?: boolean;
-  roles?: string[];
-  users?: TelegramUser[];
-  error?: string;
-  current_kdcube_user_id?: string;
-  current_user?: {
-    user_id?: string;
-    username?: string;
-    roles?: string[];
-  };
-}
-
 export interface TelegramProfile {
   ok?: boolean;
   telegram?: {
@@ -123,7 +110,6 @@ export interface TelegramProfile {
   permissions?: {
     can_use_chatbot?: boolean;
     can_use_widget?: boolean;
-    show_admin_component?: boolean;
   };
 }
 
@@ -132,12 +118,6 @@ export interface WebAppPayload {
   active_tab?: string;
   memory?: MemoryPayload;
   conversations?: ConversationsPayload;
-  telegram_admin?: {
-    roles?: string[];
-  };
-  permissions?: {
-    show_admin_component?: boolean;
-  };
   authContext?: {
     headers?: Record<string, unknown>;
   };
@@ -148,8 +128,10 @@ export interface WebAppPayload {
   };
   auth?: {
     provider?: string;
-    integration_id?: string;
-    integrationId?: string;
+    authority_id?: string;
+    authorityId?: string;
+    authenticator_id?: string;
+    authenticatorId?: string;
   };
 }
 

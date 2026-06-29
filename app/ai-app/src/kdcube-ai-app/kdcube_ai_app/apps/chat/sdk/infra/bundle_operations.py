@@ -331,6 +331,11 @@ def _fallback_session_from_comm_context(comm_context: ExternalEventPayload) -> A
         permissions=list(getattr(user, "permissions", None) or []),
         email=getattr(user, "email", None),
         timezone=getattr(user, "timezone", None),
+        identity_authority=(
+            dict(getattr(user, "identity_authority", None))
+            if isinstance(getattr(user, "identity_authority", None), Mapping)
+            else None
+        ),
         request_context=RequestContext(
             client_ip="",
             user_agent="",
@@ -344,7 +349,54 @@ async def _session_for_comm_context(redis: Any, comm_context: ExternalEventPaylo
     routing = getattr(comm_context, "routing", None)
     session_id = str(getattr(routing, "session_id", None) or "").strip()
     stored = await _stored_session_by_id(redis, tenant=tenant, project=project, session_id=session_id)
-    return stored or _fallback_session_from_comm_context(comm_context)
+    if stored is not None:
+        return _apply_request_projection_to_session(stored, comm_context)
+    return _fallback_session_from_comm_context(comm_context)
+
+
+def _apply_request_projection_to_session(session: Any, comm_context: ExternalEventPayload) -> Any:
+    """Preserve request-bound authority projections across local peer calls.
+
+    A persisted session may be older than the current request authentication
+    result. For example, a Telegram Mini App Data Bus session is stored under
+    the Telegram actor, while each request can project a linked platform
+    authority after Connection Hub validates Telegram initData. Local
+    bundle-to-bundle calls must carry that current request projection, or
+    downstream helpers such as ``identity_family_resolve`` silently fall back to
+    the actor-only view.
+    """
+
+    user = getattr(comm_context, "user", None)
+    raw_authority = getattr(user, "identity_authority", None)
+    if not isinstance(raw_authority, Mapping) or not raw_authority:
+        return session
+
+    try:
+        setattr(session, "identity_authority", dict(raw_authority))
+    except Exception:
+        return session
+
+    for attr in ("user_id", "username", "email", "fingerprint", "timezone"):
+        value = getattr(user, attr, None)
+        if value not in (None, ""):
+            try:
+                setattr(session, attr, value)
+            except Exception:
+                pass
+    user_type = str(getattr(user, "user_type", None) or "").strip()
+    if user_type:
+        try:
+            setattr(session, "user_type", user_type)
+        except Exception:
+            pass
+    for attr in ("roles", "permissions"):
+        value = getattr(user, attr, None)
+        if isinstance(value, (list, tuple, set)):
+            try:
+                setattr(session, attr, list(value))
+            except Exception:
+                pass
+    return session
 
 
 def _target_comm_context(
@@ -376,6 +428,7 @@ def _target_comm_context(
             permissions=list(getattr(session, "permissions", None) or []),
             timezone=getattr(session, "timezone", None),
             utc_offset_min=getattr(getattr(session, "request_context", None), "user_utc_offset_min", None),
+            identity_authority=dict(getattr(session, "identity_authority", None) or {}),
         ),
     )
 

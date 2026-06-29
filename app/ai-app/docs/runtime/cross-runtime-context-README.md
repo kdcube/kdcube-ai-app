@@ -133,12 +133,16 @@ host/coordinator identity.
 Some executions start from a surface identity that is not the platform account
 which owns roles or funding. For example, a Telegram-triggered scheduled
 automation can execute as `telegram_434804821` for app storage and audit, while
-the Telegram identity is linked to a platform user that owns the effective
-roles and economics authority.
+the Telegram identity has a Connection Hub edge to a platform user that owns
+the effective roles and economics authority.
 
-The conversion is done once at the execution boundary. After that, role checks
-and economics checks must read the already-carried context; they should not ask
-every surface how to reinterpret the actor.
+Resolution happens at guarded boundaries. The boundary declares the authority
+it requires. If the current actor identity is already in that authority, the
+resolver checks its grants directly. If the boundary requires another authority,
+Connection Hub resolves the required edge and records the resulting projection
+in the request context. After that, downstream role and economics checks read
+the already-carried projection; they should not ask every surface how to
+reinterpret the actor.
 
 The portable shape is:
 
@@ -161,6 +165,15 @@ BUNDLE_CALL_CONTEXT.identity_authority
   identity_provider  = telegram
   identity_provider_subject = 434804821
 
+BUNDLE_CALL_CONTEXT.connection_edges
+  - edge_id           = edge_...
+    from_authority_id = telegram.kdcube_ref
+    from_identity     = telegram.kdcube_ref:434804821
+    to_authority_id   = platform
+    to_identity       = platform:02e53484-...
+    grants            = ["identity:family"]
+    used_for          = ["authority_projection", "economics"]
+
 UserSession.identity_authority
   same authority envelope when the execution starts at the gateway selector
 ```
@@ -169,6 +182,9 @@ UserSession.identity_authority
 bound. `UserSession.identity_authority` preserves the same provenance at the
 gateway/session boundary. `BUNDLE_CALL_CONTEXT.identity_authority` carries it
 across subprocesses, isolated runtimes, and peer app calls.
+`BUNDLE_CALL_CONTEXT.connection_edges` is the JSON-safe audit/provenance stack
+of resolved edges used so far. It is not a directory of all possible identities;
+it grows only when execution crosses a boundary that requires a new authority.
 
 Rules:
 
@@ -178,6 +194,8 @@ Rules:
   from a surface-local role such as a Telegram admin flag;
 - economics may bill/check `economics_user_id` while app storage continues to
   use `actor_user_id`;
+- accounting events should preserve both the actor identity that caused the
+  spend and the economics identity that owns the quota/funding decision;
 - the authority object must be JSON-safe because it travels in
   `bundle_call_context` through `PORTABLE_SPEC_JSON`;
 - detached work must bind this context before invoking ReAct, tools, peer app

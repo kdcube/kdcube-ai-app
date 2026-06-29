@@ -80,7 +80,8 @@ def test_reservation_usd_from_config():
 async def test_subject_preserves_privileged_carried_role():
     ep = _StubMemEP(pg_pool=None)  # no DB -> carried role kept
     subj = await M._memory_reconciliation_econ_subject(ep, _job(role="privileged"))
-    assert subj.user_type == "privileged"
+    assert subj.budget_bypass is True
+    assert subj.is_anonymous is False
     assert (subj.tenant, subj.project, subj.user_id) == ("t", "p", "u1")
     assert subj.timezone == "Europe/Kyiv"
 
@@ -88,7 +89,8 @@ async def test_subject_preserves_privileged_carried_role():
 async def test_subject_uses_carried_role_when_no_pg():
     ep = _StubMemEP(pg_pool=None)
     subj = await M._memory_reconciliation_econ_subject(ep, _job(role="registered"))
-    assert subj.user_type == "registered"
+    assert subj.budget_bypass is False
+    assert subj.is_anonymous is False
 
 
 async def test_make_guard_none_when_economics_disabled():

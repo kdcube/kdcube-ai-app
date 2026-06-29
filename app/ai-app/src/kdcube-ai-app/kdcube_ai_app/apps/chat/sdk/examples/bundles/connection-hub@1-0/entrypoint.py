@@ -35,19 +35,27 @@ from kdcube_ai_app.apps.chat.sdk.solutions.connections.hub.authenticators import
     matching_authenticator_rows,
     supported_authenticator_providers,
 )
-from kdcube_ai_app.apps.chat.sdk.solutions.connections.hub.identity_links import IdentityLinkStore, resolve_principal_roles
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.hub.edges import (
+    ConnectionEdgeStore,
+    edge_actor,
+    edge_target,
+    resolve_principal_roles,
+)
 from kdcube_ai_app.apps.chat.sdk.solutions.connections.hub.provider_impl import ConnectionHubProvider
-from kdcube_ai_app.apps.chat.sdk.solutions.connections.hub.resolver import resolve_identity_family
-from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oauth_mcp.config import (
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.hub.resolver import (
+    resolve_delegated_identity_scope,
+    resolve_identity_family,
+)
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oauth.config import (
     DEFAULT_CLAUDE_REDIRECT_URIS,
     DEFAULT_DCR_REDIRECT_URIS,
-    oauth_mcp_config,
+    oauth_delegated_config,
 )
-from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oauth_mcp.metadata import (
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oauth.metadata import (
     authorization_server_metadata,
     protected_resource_metadata,
 )
-from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oauth_mcp.http.routes import (
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oauth.http.routes import (
     authorize as oauth_authorize,
     authorize_consent as oauth_authorize_consent,
     register_client as oauth_register_client,
@@ -97,6 +105,27 @@ def _bool(value: Any, default: bool = False) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "on", "enabled"}
 
 
+def _safe_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [part for part in (item.strip() for item in value.replace(",", " ").split()) if part]
+    if isinstance(value, (list, tuple, set)):
+        return [part for part in (str(item or "").strip() for item in value) if part]
+    return []
+
+
+def _dedupe(values: list[str]) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        text = str(value or "").strip()
+        if text and text not in seen:
+            seen.add(text)
+            out.append(text)
+    return out
+
+
 AUTHENTICATOR_SECRET_VALUE_KEYS = {
     "secret_value",
     "secret",
@@ -141,6 +170,27 @@ def _target_user_id(
     )
 
 
+def _entrypoint_identity_authority(entrypoint: Any) -> Dict[str, Any]:
+    context_user = getattr(getattr(entrypoint, "comm_context", None), "user", None)
+    raw = getattr(context_user, "identity_authority", None)
+    if isinstance(raw, Mapping):
+        return dict(raw)
+
+    comm = getattr(entrypoint, "comm", None)
+    raw = getattr(comm, "identity_authority", None)
+    if isinstance(raw, Mapping):
+        return dict(raw)
+
+    service = getattr(comm, "service", None)
+    if isinstance(service, Mapping):
+        user_obj = service.get("user_obj")
+        if isinstance(user_obj, Mapping):
+            raw = user_obj.get("identity_authority")
+            if isinstance(raw, Mapping):
+                return dict(raw)
+    return {}
+
+
 def _platform_user_id(
     entrypoint: Any,
     *,
@@ -148,25 +198,121 @@ def _platform_user_id(
 ) -> str:
     """Return a real authenticated platform user id, never an anonymous fingerprint.
 
-    Proc app calls pass `user_id=session.user_id or session.fingerprint` for
-    compatibility with anonymous/user-scoped widgets. Identity-link mutations
-    are different: they bind external identities to a platform principal, so a
-    fingerprint-derived id must not be accepted.
+    External/channel actors keep their actor user id (for example
+    ``telegram_434804821``) even when platform authority is projected onto the
+    session. In those cases the platform id must come from the explicit
+    ``identity_authority.platform_user_id`` edge, not from legacy ``user_type``.
     """
+    authority = _entrypoint_identity_authority(entrypoint)
+    projected_platform_user = str(authority.get("platform_user_id") or "").strip()
+    if projected_platform_user:
+        return projected_platform_user
+
+    actor_user_id = str(authority.get("actor_user_id") or "").strip()
+    authority_id = str(
+        authority.get("authority_id")
+        or authority.get("issuer_authority_id")
+        or authority.get("authority")
+        or ""
+    ).strip()
+    external_authority = bool(authority_id and authority_id != "platform") or bool(actor_user_id)
+    if external_authority:
+        return ""
+
     comm = getattr(entrypoint, "comm", None)
-    raw_user_type = getattr(comm, "user_type", None)
-    user_type = str(getattr(raw_user_type, "value", raw_user_type) or "").strip().lower()
     comm_user_id = str(getattr(comm, "user_id", None) or "").strip()
     explicit_user_id = str(user_id or "").strip()
-    if user_type and user_type != "anonymous":
-        return comm_user_id or explicit_user_id
+    candidate = comm_user_id or explicit_user_id
+    if candidate and candidate != "anonymous" and not candidate.startswith("telegram_"):
+        return candidate
     if comm is not None:
         return ""
-    return explicit_user_id
+    if explicit_user_id and explicit_user_id != "anonymous" and not explicit_user_id.startswith("telegram_"):
+        return explicit_user_id
+    return ""
 
 
-def _identity_store(entrypoint: Any) -> IdentityLinkStore:
-    return IdentityLinkStore(_storage_root_or_error(entrypoint))
+def _entrypoint_user_roles_permissions(entrypoint: Any) -> tuple[list[str], list[str]]:
+    roles: list[str] = []
+    permissions: list[str] = []
+
+    context_user = getattr(getattr(entrypoint, "comm_context", None), "user", None)
+    roles.extend(_safe_list(getattr(context_user, "roles", None)))
+    permissions.extend(_safe_list(getattr(context_user, "permissions", None)))
+
+    comm = getattr(entrypoint, "comm", None)
+    roles.extend(_safe_list(getattr(comm, "roles", None)))
+    permissions.extend(_safe_list(getattr(comm, "permissions", None)))
+
+    service = getattr(comm, "service", None)
+    if isinstance(service, Mapping):
+        user_obj = service.get("user_obj")
+        if isinstance(user_obj, Mapping):
+            roles.extend(_safe_list(user_obj.get("roles")))
+            permissions.extend(_safe_list(user_obj.get("permissions")))
+
+    authority = _entrypoint_identity_authority(entrypoint)
+    roles.extend(_safe_list(authority.get("platform_roles") or authority.get("roles")))
+    permissions.extend(_safe_list(authority.get("platform_permissions") or authority.get("permissions")))
+    return _dedupe(roles), _dedupe(permissions)
+
+
+def _platform_delegation_grant_options(entrypoint: Any, platform_user_id: str) -> list[dict[str, Any]]:
+    roles, permissions = _entrypoint_user_roles_permissions(entrypoint)
+    principal = resolve_principal_roles(
+        platform_user_id=platform_user_id,
+        identity_config=_identity_config(entrypoint),
+    )
+    roles = _dedupe(roles + _safe_list(principal.get("roles")))
+    permissions = _dedupe(permissions + _safe_list(principal.get("permissions")))
+
+    options: list[dict[str, Any]] = [
+        {
+            "grant": "identity:family",
+            "kind": "identity",
+            "label": "Use linked KDCube identities",
+            "description": (
+                "Allow this Telegram account to read product data, such as Memories, "
+                "across identities linked to this KDCube account."
+            ),
+            "default": True,
+        },
+        {
+            "grant": "economics:platform-user",
+            "kind": "economics",
+            "label": "Use this KDCube account for usage limits",
+            "description": (
+                "Allow runtime accounting and paid-service limits to be evaluated "
+                "against this KDCube account while Telegram remains the actor."
+            ),
+            "default": True,
+        },
+    ]
+    for role in roles:
+        options.append(
+            {
+                "grant": role,
+                "kind": "platform_role",
+                "label": role.replace("kdcube:role:", "KDCube role: "),
+                "description": "Allow Telegram to derive this platform role when a boundary requires platform authority.",
+                "default": False,
+            }
+        )
+    for permission in permissions:
+        options.append(
+            {
+                "grant": permission,
+                "kind": "platform_permission",
+                "label": permission,
+                "description": "Allow Telegram to derive this platform permission when a boundary requires platform authority.",
+                "default": False,
+            }
+        )
+    return options
+
+
+def _edge_store(entrypoint: Any) -> ConnectionEdgeStore:
+    return ConnectionEdgeStore(_storage_root_or_error(entrypoint))
 
 
 def _authenticator_store(entrypoint: Any) -> AuthenticatorStore:
@@ -195,11 +341,11 @@ def _connections_config(entrypoint: Any) -> Dict[str, Any]:
     return {}
 
 
-def _oauth_mcp_adapter_config(entrypoint: Any, request: Any) -> Dict[str, Any]:
+def _oauth_adapter_config(entrypoint: Any, request: Any) -> Dict[str, Any]:
     connections = _connections_config(entrypoint)
     delegated = connections.get("delegated_credentials")
     delegated_node = delegated if isinstance(delegated, Mapping) else {}
-    raw = delegated_node.get("oauth_mcp")
+    raw = delegated_node.get("oauth")
     cfg: Dict[str, Any] = dict(raw) if isinstance(raw, Mapping) else {}
     tenant, project = _runtime_tenant_project(entrypoint)
     cfg["tenant"] = tenant
@@ -236,16 +382,16 @@ def _oauth_public_base_url(request: Any) -> str:
     return f"{str(request.base_url).rstrip('/')}{public_path}".rstrip("/")
 
 
-def _bind_oauth_mcp_request_config(entrypoint: Any, request: Any) -> Dict[str, Any]:
-    cfg = _oauth_mcp_adapter_config(entrypoint, request)
+def _bind_delegated_client_request_config(entrypoint: Any, request: Any) -> Dict[str, Any]:
+    cfg = _oauth_adapter_config(entrypoint, request)
     if request is not None:
-        request.state.oauth_mcp_config = cfg
-        request.state.oauth_mcp_issuer = str(cfg.get("issuer") or "").rstrip("/")
+        request.state.oauth_delegated_config = cfg
+        request.state.oauth_delegated_issuer = str(cfg.get("issuer") or "").rstrip("/")
     return cfg
 
 
-def _oauth_mcp_capability_payload(request: Any, *, resource: str | None = None) -> list[dict[str, Any]]:
-    cfg = oauth_mcp_config(request)
+def _delegated_client_capability_payload(request: Any, *, resource: str | None = None) -> list[dict[str, Any]]:
+    cfg = oauth_delegated_config(request)
     caps = cfg.capability_map()
     tool_catalog = cfg.resource_tool_catalog(resource)
     out: list[dict[str, Any]] = []
@@ -290,9 +436,15 @@ def _oauth_mcp_capability_payload(request: Any, *, resource: str | None = None) 
     return out
 
 
-def _identity_telegram_config(entrypoint: Any) -> Dict[str, Any]:
-    raw = _identity_config(entrypoint).get("telegram")
+def _identity_link_flow_config(entrypoint: Any, provider: str) -> Dict[str, Any]:
+    raw_flows = _identity_config(entrypoint).get("link_flows")
+    flows = dict(raw_flows) if isinstance(raw_flows, Mapping) else {}
+    raw = flows.get(provider)
     return dict(raw) if isinstance(raw, Mapping) else {}
+
+
+def _telegram_link_flow_config(entrypoint: Any) -> Dict[str, Any]:
+    return _identity_link_flow_config(entrypoint, "telegram")
 
 
 def _authenticator_selector_cache_config(entrypoint: Any) -> Dict[str, Any]:
@@ -432,37 +584,6 @@ def _entrypoint_bundle_id(entrypoint: Any, default: str = BUNDLE_ID) -> str:
     ).strip()
 
 
-def _telegram_link_url(entrypoint: Any, *, request: Any, challenge_id: str) -> str:
-    cfg = _identity_telegram_config(entrypoint)
-    connection_hub_bundle_id = str(cfg.get("connection_hub_bundle_id") or BUNDLE_ID).strip()
-    template = str(cfg.get("deeplink_template") or "").strip()
-    if template:
-        return template.replace("{challenge_id}", challenge_id).replace(
-            "{connection_hub_bundle_id}", connection_hub_bundle_id
-        )
-
-    mini_app_url = str(cfg.get("mini_app_url") or "").strip()
-    if not mini_app_url:
-        origin = _request_origin(request)
-        mini_app_bundle_id = str(cfg.get("mini_app_bundle_id") or "").strip()
-        widget_alias = str(cfg.get("mini_app_widget_alias") or "telegram_miniapp").strip() or "telegram_miniapp"
-        if origin and mini_app_bundle_id:
-            tenant, project = _runtime_tenant_project(entrypoint)
-            mini_app_url = (
-                f"{origin}/api/integrations/bundles/{tenant}/{project}/"
-                f"{mini_app_bundle_id}/public/widgets/{widget_alias}/link"
-            )
-    if not mini_app_url:
-        return ""
-    return _append_query(
-        mini_app_url,
-        {
-            "link_challenge": challenge_id,
-            "connection_hub_bundle_id": connection_hub_bundle_id,
-        },
-    )
-
-
 def _platform_claim_url(
     entrypoint: Any,
     *,
@@ -470,7 +591,7 @@ def _platform_claim_url(
     challenge_id: str,
     request_origin: str = "",
 ) -> str:
-    cfg = _identity_telegram_config(entrypoint)
+    cfg = _telegram_link_flow_config(entrypoint)
     template = str(cfg.get("platform_claim_url") or "").strip()
     if template:
         return template.replace("{challenge_id}", challenge_id)
@@ -513,15 +634,6 @@ async def _bundle_secret_value(
     return ""
 
 
-async def _telegram_bot_token(entrypoint: Any, *, trace_scope: str = "") -> str:
-    return await _bundle_secret_value(
-        entrypoint,
-        secret_path="identity.telegram.bot_token",
-        trace_scope=trace_scope,
-        warn_missing=True,
-    )
-
-
 async def _authenticator_secret_value(
     entrypoint: Any,
     *,
@@ -533,7 +645,9 @@ async def _authenticator_secret_value(
 ) -> str:
     del provider
     del authenticator_id
-    secret_path = str(secret_ref or "").strip() or "identity.telegram.bot_token"
+    secret_path = str(secret_ref or "").strip()
+    if not secret_path:
+        return ""
     return await _bundle_secret_value(
         entrypoint,
         secret_path=secret_path,
@@ -549,7 +663,9 @@ async def _authenticator_secret_configured(
     authenticator_id: str = "",
     trace_scope: str,
 ) -> bool:
-    secret_path = str(secret_ref or "").strip() or "identity.telegram.bot_token"
+    secret_path = str(secret_ref or "").strip()
+    if not secret_path:
+        return False
     token = await _authenticator_secret_value(
         entrypoint,
         secret_ref=secret_path,
@@ -566,28 +682,24 @@ async def _validate_telegram_init_data_any(
     init_data: str,
     authority_id: str = "",
     authenticator_id: str = "",
-    connection_id: str = "",
     trace_scope: str,
 ) -> tuple[Any, str, str, str, str]:
-    cfg = _identity_telegram_config(entrypoint)
     last_error = ""
     rows = matching_authenticator_rows(
         _identity_config(entrypoint),
         "telegram",
         authority_id=authority_id,
         authenticator_id=authenticator_id,
-        connection_id=connection_id,
-        integration_id=connection_id,
         stored_rows=await _cached_authenticator_rows(entrypoint),
     )
-    if (authority_id or authenticator_id or connection_id) and not rows:
-        selector = authenticator_id or authority_id or connection_id
+    if (authority_id or authenticator_id) and not rows:
+        selector = authenticator_id or authority_id
         return None, "", "", "", f"authenticator_not_configured:{selector}"
     for row in rows:
         auth_id = str(row.get("authenticator_id") or "telegram").strip()
         token = await _authenticator_secret_value(
             entrypoint,
-            secret_ref=str(row.get("secret_ref") or "identity.telegram.bot_token").strip(),
+            secret_ref=str(row.get("secret_ref") or "").strip(),
             authenticator_id=auth_id,
             provider="telegram",
             trace_scope=f"{trace_scope}.{auth_id}",
@@ -606,8 +718,6 @@ async def _validate_telegram_init_data_any(
             )
             if raw_max_age is None:
                 raw_max_age = props.get("web_app_auth_max_age_seconds")
-            if raw_max_age is None:
-                raw_max_age = cfg.get("web_app_auth_max_age_seconds")
             verified = validate_telegram_init_data(
                 init_data,
                 bot_token=token,
@@ -637,21 +747,12 @@ def _auth_selector_hints_from_request_payload(request: Any, payload: Mapping[str
         "authority_id": _direct("auth_authority_id", "authority_id", "authAuthorityId", "authorityId"),
         "authenticator_id": _direct("authenticator_id", "authAuthenticatorId", "authenticatorId"),
         "provider": _direct("auth_provider", "provider", "authProvider"),
-        "integration_id": _direct(
-            "auth_integration_id",
-            "integration_id",
-            "authIntegrationId",
-            "integrationId",
-        ),
-        "connection_id": _direct("auth_connection_id", "connection_id", "authConnectionId", "connectionId"),
     }
     headers = getattr(request, "headers", {}) or {}
     header_keys = {
         "authority_id": ("x-kdcube-auth-authority-id", "x-kdcube-auth-authority"),
         "authenticator_id": ("x-kdcube-auth-authenticator-id",),
         "provider": ("x-kdcube-auth-provider", "x-kdcube-auth-provider-id"),
-        "integration_id": ("x-kdcube-auth-integration-id", "x-kdcube-integration-id"),
-        "connection_id": ("x-kdcube-auth-connection-id",),
     }
     for target, keys in header_keys.items():
         if hints[target]:
@@ -669,8 +770,6 @@ def _auth_selector_hints_from_request_payload(request: Any, payload: Mapping[str
         "authority_id": ("auth_authority_id", "authority_id", "kdcube_auth_authority_id"),
         "authenticator_id": ("authenticator_id", "auth_authenticator_id", "kdcube_auth_authenticator_id"),
         "provider": ("auth_provider", "provider", "kdcube_auth_provider"),
-        "integration_id": ("auth_integration_id", "integration_id", "kdcube_auth_integration_id"),
-        "connection_id": ("auth_connection_id", "connection_id", "kdcube_auth_connection_id"),
     }
     for target, keys in query_keys.items():
         if hints[target]:
@@ -684,11 +783,6 @@ def _auth_selector_hints_from_request_payload(request: Any, payload: Mapping[str
                 hints[target] = str(value).strip()
                 break
     return hints
-
-
-def _auth_integration_id_from_request_payload(request: Any, payload: Mapping[str, Any]) -> str:
-    hints = _auth_selector_hints_from_request_payload(request, payload)
-    return hints.get("integration_id") or hints.get("connection_id") or ""
 
 
 async def _authenticate_request_context(
@@ -710,17 +804,13 @@ async def _authenticate_request_context(
     result = await authenticate_request_with_authenticators(
         entrypoint,
         request_envelope=envelope_data,
-        identity_store=_identity_store(entrypoint),
+        edge_store=_edge_store(entrypoint),
         identity_config=_identity_config(entrypoint),
         stored_authenticators=await _cached_authenticator_rows(entrypoint),
         secret_resolver=lambda **kw: _authenticator_secret_value(
             entrypoint,
             trace_scope=f"{trace_scope}.{kw.get('authenticator_id') or kw.get('provider') or 'authenticator'}",
             **kw,
-        ),
-        telegram_bot_token_resolver=lambda **kw: _telegram_bot_token(
-            entrypoint,
-            trace_scope=f"{trace_scope}.telegram",
         ),
     )
     return dict(result or {})
@@ -734,11 +824,26 @@ def _challenge_live_event(challenge: Mapping[str, Any] | None) -> Dict[str, Any]
     return dict(live_event) if isinstance(live_event, Mapping) else {}
 
 
-async def _emit_identity_link_changed(
+def _edge_provider(edge: Mapping[str, Any] | None, challenge: Mapping[str, Any] | None = None) -> str:
+    source = edge_actor(edge or {})
+    return str(source.get("provider") or (challenge or {}).get("provider") or "").strip()
+
+
+def _edge_subject(edge: Mapping[str, Any] | None, challenge: Mapping[str, Any] | None = None) -> str:
+    source = edge_actor(edge or {})
+    return str(source.get("subject") or (challenge or {}).get("provider_subject") or "").strip()
+
+
+def _edge_platform_user_id(edge: Mapping[str, Any] | None) -> str:
+    target = edge_target(edge or {})
+    return str(target.get("user_id") or "").strip()
+
+
+async def _emit_connection_edge_changed(
     entrypoint: Any,
     *,
     challenge: Mapping[str, Any] | None,
-    link: Mapping[str, Any] | None,
+    edge: Mapping[str, Any] | None,
     action: str,
 ) -> None:
     live_event = _challenge_live_event(challenge)
@@ -752,14 +857,17 @@ async def _emit_identity_link_changed(
         return
     tenant, project = _runtime_tenant_project(entrypoint)
     now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    challenge_id = str((challenge or {}).get("challenge_id") or "")
+    provider = _edge_provider(edge, challenge)
+    provider_subject = _edge_subject(edge, challenge)
     payload = {
-        "type": "connection_hub.identity.link_changed",
+        "type": "connection_hub.edge.changed",
         "timestamp": now,
         "service": {
-            "request_id": f"identity-link-{(challenge or {}).get('challenge_id') if isinstance(challenge, Mapping) else ''}",
+            "request_id": f"connection-edge-{challenge_id}",
             "tenant": tenant,
             "project": project,
-            "user": str((link or {}).get("platform_user_id") or ""),
+            "user": _edge_platform_user_id(edge),
             "bundle_id": BUNDLE_ID,
         },
         "conversation": {
@@ -769,16 +877,17 @@ async def _emit_identity_link_changed(
         },
         "event": {
             "agent": "connection-hub",
-            "title": "Identity Link Changed",
+            "title": "Connection Edge Changed",
             "status": "completed",
-            "step": "identity.link",
+            "step": "connection.edge",
         },
         "data": {
             "action": action,
-            "provider": str((link or {}).get("provider") or (challenge or {}).get("provider") or ""),
-            "provider_subject": str((link or {}).get("provider_subject") or (challenge or {}).get("provider_subject") or ""),
+            "provider": provider,
+            "provider_subject": provider_subject,
             "linked": action != "unlinked",
-            "challenge_id": str((challenge or {}).get("challenge_id") or ""),
+            "challenge_id": challenge_id,
+            "edge": dict(edge or {}),
         },
         "route": "chat_service",
     }
@@ -788,9 +897,9 @@ async def _emit_identity_link_changed(
             "[connection-hub.identity] emitting live notification action=%s session_id=%s challenge_id=%s provider=%s provider_subject=%s",
             action,
             session_id,
-            payload["data"]["challenge_id"],
-            payload["data"]["provider"],
-            payload["data"]["provider_subject"],
+            challenge_id,
+            provider,
+            provider_subject,
         )
         await relay.emit(
             event="chat_service",
@@ -803,14 +912,14 @@ async def _emit_identity_link_changed(
             "[connection-hub.identity] notified live requestor action=%s session_id=%s challenge_id=%s",
             action,
             session_id,
-            payload["data"]["challenge_id"],
+            challenge_id,
         )
     except Exception:
         LOGGER.exception(
             "[connection-hub.identity] failed to notify live requestor action=%s session_id=%s challenge_id=%s",
             action,
             session_id,
-            payload["data"]["challenge_id"],
+            challenge_id,
         )
 
 
@@ -918,13 +1027,14 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
                             "connections_catalog": {"visibility": {"user_types": []}},
                             "connections_start_oauth": {"visibility": {"user_types": []}},
                             "connections_disconnect": {"visibility": {"user_types": []}},
-                            "identity_links_list": {"visibility": {"user_types": []}},
-                            "identity_link_upsert": {"visibility": {"user_types": []}},
-                            "identity_link_remove": {"visibility": {"user_types": []}},
-                            "identity_link_challenge_create": {"visibility": {"user_types": []}},
-                            "identity_link_challenge_claim": {"visibility": {"user_types": []}},
-                            "identity_link_challenge_status": {"visibility": {"user_types": []}},
+                            "connection_edges_list": {"visibility": {"user_types": []}},
+                            "connection_edge_upsert": {"visibility": {"user_types": []}},
+                            "connection_edge_remove": {"visibility": {"user_types": []}},
+                            "connection_edge_challenge_create": {"visibility": {"user_types": []}},
+                            "connection_edge_challenge_claim": {"visibility": {"user_types": []}},
+                            "connection_edge_challenge_status": {"visibility": {"user_types": []}},
                             "identity_family_resolve": {"visibility": {"user_types": []}},
+                            "delegated_identity_scope_resolve": {"visibility": {"user_types": []}},
                             "identity_resolve": {"visibility": {"user_types": []}},
                             "authenticators_list": {"visibility": {"user_types": []}},
                             "authenticators_upsert": {"visibility": {"user_types": []}},
@@ -966,7 +1076,7 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
                     "public_base_url": "",
                 },
                 "delegated_credentials": {
-                    "oauth_mcp": {
+                    "oauth": {
                         "enabled": False,
                         "brand": "KDCube",
                         "issuer": "",
@@ -1071,9 +1181,9 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
             "identity": {
                 "enabled": True,
                 # Development fixture only. The target architecture is:
-                # verified external identity -> Connection Hub identity link
-                # -> platform principal/role resolver. Connection Hub should not
-                # decide final roles itself.
+                # verified external identity -> Connection Hub edge -> platform
+                # principal/role resolver. Connection Hub should not decide
+                # final roles itself.
                 "role_resolver": {
                     "mode": "platform",
                 },
@@ -1092,20 +1202,16 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
                         "enabled": True,
                     }
                 ],
-                "telegram": {
-                    "enabled": True,
-                    "challenge_ttl_seconds": 600,
-                    "web_app_auth_max_age_seconds": 86400,
-                    # Full Telegram Mini App URL or a Telegram deeplink template
-                    # can be supplied by deploy config. If only
-                    # `mini_app_bundle_id` is supplied, the URL is derived from
-                    # the current request origin and tenant/project.
-                    "mini_app_url": "",
-                    "mini_app_bundle_id": "",
-                    "mini_app_widget_alias": "telegram_miniapp",
-                    "connection_hub_bundle_id": BUNDLE_ID,
-                    "deeplink_template": "",
-                    "platform_claim_url": "",
+                "link_flows": {
+                    "telegram": {
+                        "enabled": True,
+                        "challenge_ttl_seconds": 600,
+                        # Optional URL used by Telegram-first flows after
+                        # Telegram proof is created. Empty -> derived as
+                        # public/widgets/connections_settings.
+                        # Supported replacement: {challenge_id}.
+                        "platform_claim_url": "",
+                    },
                 },
             },
             "integrations": {
@@ -1175,7 +1281,7 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
         path_tail: str = "",
         **kwargs: Any,
     ):
-        cfg = _bind_oauth_mcp_request_config(self, request)
+        cfg = _bind_delegated_client_request_config(self, request)
         if not _bool(cfg.get("enabled"), default=False):
             LOGGER.warning("[connection-hub.oauth] rejected disabled GET path=%s", path_tail)
             return JSONResponse(
@@ -1189,7 +1295,7 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
         LOGGER.info("[connection-hub.oauth] GET path=%s issuer=%s", path or ".", issuer)
 
         if path in {"", ".well-known/oauth-authorization-server", "metadata", "authorization-server"}:
-            parsed_cfg = oauth_mcp_config(request)
+            parsed_cfg = oauth_delegated_config(request)
             return JSONResponse(
                 authorization_server_metadata(
                     issuer,
@@ -1205,13 +1311,13 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
                 resource = str(request.query_params.get("resource") or "").strip()
             if not resource:
                 resource = str(kwargs.get("resource") or "").strip()
-            parsed_cfg = oauth_mcp_config(request)
+            parsed_cfg = oauth_delegated_config(request)
             return JSONResponse(
                 protected_resource_metadata(
                     issuer,
                     resource=resource or None,
                     scopes_supported=parsed_cfg.supported_scopes(resource),
-                    capabilities=_oauth_mcp_capability_payload(request, resource=resource or None),
+                    capabilities=_delegated_client_capability_payload(request, resource=resource or None),
                     tools=[
                         {
                             "name": tool.name,
@@ -1236,7 +1342,7 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
         **kwargs: Any,
     ):
         del kwargs
-        cfg = _bind_oauth_mcp_request_config(self, request)
+        cfg = _bind_delegated_client_request_config(self, request)
         if not _bool(cfg.get("enabled"), default=False):
             LOGGER.warning("[connection-hub.oauth] rejected disabled POST path=%s", path_tail)
             return JSONResponse(
@@ -1320,10 +1426,10 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
             fingerprint=fingerprint,
         )
 
-    # ── identity links (external identity -> platform principal) ─────────────
+    # ── connection edges (external identity -> delegated platform principal) ─
 
-    @api(method="GET", alias="identity_links_list", route="operations", **_api_visibility("identity_links_list"))
-    async def identity_links_list(
+    @api(method="GET", alias="connection_edges_list", route="operations", **_api_visibility("connection_edges_list"))
+    async def connection_edges_list(
         self,
         platform_user_id: str = "",
         user_id: Optional[str] = None,
@@ -1333,20 +1439,20 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
         del kwargs
         current_user = _platform_user_id(self, user_id=user_id)
         if not current_user or current_user == "anonymous":
-            return {"ok": False, "error": "identity_links_require_authenticated_user"}
+            return {"ok": False, "error": "connection_edges_require_authenticated_user"}
         requested_user = str(platform_user_id or current_user).strip()
         if not requested_user or requested_user == "anonymous":
-            return {"ok": False, "error": "identity_links_require_authenticated_user"}
+            return {"ok": False, "error": "connection_edges_require_authenticated_user"}
         if requested_user != current_user:
-            return {"ok": False, "error": "identity_links_cross_user_access_denied"}
+            return {"ok": False, "error": "connection_edges_cross_user_access_denied"}
         return {
             "ok": True,
             "platform_user_id": requested_user,
-            "links": _identity_store(self).list_links(platform_user_id=requested_user),
+            "edges": _edge_store(self).list_edges(target_user_id=requested_user),
         }
 
-    @api(method="POST", alias="identity_link_upsert", route="operations", **_api_visibility("identity_link_upsert"))
-    async def identity_link_upsert(
+    @api(method="POST", alias="connection_edge_upsert", route="operations", **_api_visibility("connection_edge_upsert"))
+    async def connection_edge_upsert(
         self,
         data: Optional[Dict[str, Any]] = None,
         provider: str = "",
@@ -1370,31 +1476,32 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
         )
         current_user = _platform_user_id(self, user_id=user_id)
         if not current_user or current_user == "anonymous":
-            return {"ok": False, "error": "identity_link_requires_authenticated_user"}
+            return {"ok": False, "error": "connection_edge_requires_authenticated_user"}
         requested_user = str(payload.get("platform_user_id") or current_user).strip()
         if not requested_user or requested_user == "anonymous":
-            return {"ok": False, "error": "identity_link_requires_authenticated_user"}
+            return {"ok": False, "error": "connection_edge_requires_authenticated_user"}
         if requested_user != current_user:
-            return {"ok": False, "error": "identity_link_requires_admin_or_trusted_context"}
+            return {"ok": False, "error": "connection_edge_requires_admin_or_trusted_context"}
         try:
-            row = _identity_store(self).upsert_link(
-                provider=str(payload.get("provider") or ""),
-                provider_subject=str(payload.get("provider_subject") or payload.get("subject") or ""),
-                platform_user_id=requested_user,
+            row = _edge_store(self).upsert_edge(
+                from_provider=str(payload.get("provider") or ""),
+                from_subject=str(payload.get("provider_subject") or payload.get("subject") or ""),
+                to_user_id=requested_user,
                 label=str(payload.get("label") or ""),
                 created_by=current_user,
+                grants=payload.get("grants") if isinstance(payload.get("grants"), (list, tuple)) else None,
                 metadata=payload.get("metadata") if isinstance(payload.get("metadata"), Mapping) else None,
             )
         except ValueError as exc:
-            return {"ok": False, "error": "invalid_identity_link", "message": str(exc)}
+            return {"ok": False, "error": "invalid_connection_edge", "message": str(exc)}
         principal = resolve_principal_roles(
             platform_user_id=requested_user,
             identity_config=_identity_config(self),
         )
-        return {"ok": True, "link": row, "principal": principal}
+        return {"ok": True, "edge": row, "principal": principal}
 
-    @api(method="POST", alias="identity_link_remove", route="operations", **_api_visibility("identity_link_remove"))
-    async def identity_link_remove(
+    @api(method="POST", alias="connection_edge_remove", route="operations", **_api_visibility("connection_edge_remove"))
+    async def connection_edge_remove(
         self,
         data: Optional[Dict[str, Any]] = None,
         provider: str = "",
@@ -1412,15 +1519,15 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
         )
         current_user = _platform_user_id(self, user_id=user_id)
         if not current_user or current_user == "anonymous":
-            return {"ok": False, "error": "identity_link_requires_authenticated_user"}
-        return _identity_store(self).remove_link(
-            provider=str(payload.get("provider") or ""),
-            provider_subject=str(payload.get("provider_subject") or payload.get("subject") or ""),
-            platform_user_id=current_user,
+            return {"ok": False, "error": "connection_edge_requires_authenticated_user"}
+        return _edge_store(self).remove_edge(
+            from_provider=str(payload.get("provider") or ""),
+            from_subject=str(payload.get("provider_subject") or payload.get("subject") or ""),
+            target_user_id=current_user,
         )
 
-    @api(method="POST", alias="identity_link_challenge_create", route="operations", **_api_visibility("identity_link_challenge_create"))
-    async def identity_link_challenge_create(
+    @api(method="POST", alias="connection_edge_challenge_create", route="operations", **_api_visibility("connection_edge_challenge_create"))
+    async def connection_edge_challenge_create(
         self,
         data: Optional[Dict[str, Any]] = None,
         request: Any = None,
@@ -1438,35 +1545,34 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
                 getattr(comm, "user_type", None),
                 bool(str(user_id or "").strip()),
             )
-            return {"ok": False, "error": "identity_link_challenge_requires_authenticated_user"}
+            return {"ok": False, "error": "connection_edge_challenge_requires_authenticated_user"}
         provider_value = str(payload.get("provider") or "telegram").strip()
         if provider_value != "telegram":
-            return {"ok": False, "error": "identity_link_challenge_provider_not_supported", "provider": provider_value}
-        cfg = _identity_telegram_config(self)
+            return {"ok": False, "error": "connection_edge_challenge_provider_not_supported", "provider": provider_value}
+        cfg = _telegram_link_flow_config(self)
         ttl_seconds = int(cfg.get("challenge_ttl_seconds") or 600)
         try:
-            challenge = _identity_store(self).create_link_challenge(
+            challenge = _edge_store(self).create_edge_challenge(
                 provider=provider_value,
-                platform_user_id=current_user,
+                target_user_id=current_user,
                 created_by=current_user,
                 ttl_seconds=ttl_seconds,
                 metadata={"source": "connection_hub.widget"},
             )
         except ValueError as exc:
-            return {"ok": False, "error": "invalid_identity_link_challenge", "message": str(exc)}
-        link_url = _telegram_link_url(self, request=request, challenge_id=str(challenge.get("challenge_id") or ""))
+            return {"ok": False, "error": "invalid_connection_edge_challenge", "message": str(exc)}
         return {
             "ok": True,
             "challenge": challenge,
-            "telegram_link_url": link_url,
             "message": (
-                "Open the Telegram Mini App link to prove the Telegram account. "
-                "The platform user stays server-side on this challenge."
+                "Challenge created. Open the provider-specific host surface to "
+                "prove the external identity. The platform user stays server-side "
+                "on this challenge."
             ),
         }
 
-    @api(method="POST", alias="identity_link_challenge_claim", route="operations", **_api_visibility("identity_link_challenge_claim"))
-    async def identity_link_challenge_claim(
+    @api(method="POST", alias="connection_edge_challenge_claim", route="operations", **_api_visibility("connection_edge_challenge_claim"))
+    async def connection_edge_challenge_claim(
         self,
         data: Optional[Dict[str, Any]] = None,
         challenge_id: str = "",
@@ -1479,8 +1585,8 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
         if not confirmed:
             return {
                 "ok": False,
-                "error": "identity_link_challenge_confirmation_required",
-                "message": "Confirm the identity link before claiming this challenge.",
+                "error": "connection_edge_challenge_confirmation_required",
+                "message": "Confirm this connection before claiming the challenge.",
             }
         current_user = _platform_user_id(self, user_id=user_id)
         if not current_user or current_user == "anonymous":
@@ -1491,20 +1597,40 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
                 getattr(comm, "user_type", None),
                 bool(str(user_id or "").strip()),
             )
-            return {"ok": False, "error": "identity_link_challenge_claim_requires_authenticated_user"}
+            return {"ok": False, "error": "connection_edge_challenge_claim_requires_authenticated_user"}
+        selected_grants = _dedupe(_safe_list(payload.get("grants")))
+        grant_options = _platform_delegation_grant_options(self, current_user)
+        allowed_grants = {str(item.get("grant") or "").strip() for item in grant_options if str(item.get("grant") or "").strip()}
+        invalid_grants = sorted(set(selected_grants) - allowed_grants)
+        if invalid_grants:
+            return {
+                "ok": False,
+                "error": "connection_edge_challenge_invalid_grants",
+                "message": "Some selected delegation grants are not available to the signed-in KDCube user.",
+                "invalid_grants": invalid_grants,
+                "delegation_options": grant_options,
+            }
+        if not selected_grants:
+            return {
+                "ok": False,
+                "error": "connection_edge_challenge_requires_delegation_grants",
+                "message": "Select at least one delegated capability for this connection.",
+                "delegation_options": grant_options,
+            }
         try:
-            result = _identity_store(self).claim_provider_challenge(
+            result = _edge_store(self).claim_provider_challenge(
                 challenge_id=str(payload.get("challenge_id") or ""),
-                platform_user_id=current_user,
+                target_user_id=current_user,
                 claimed_by=current_user,
+                grants=selected_grants,
             )
         except ValueError as exc:
-            return {"ok": False, "error": "invalid_identity_link_challenge_claim", "message": str(exc)}
+            return {"ok": False, "error": "invalid_connection_edge_challenge_claim", "message": str(exc)}
         if not result.get("ok"):
             return result
-        link = result.get("link") if isinstance(result.get("link"), Mapping) else {}
+        edge = result.get("edge") if isinstance(result.get("edge"), Mapping) else {}
         principal = resolve_principal_roles(
-            platform_user_id=str(link.get("platform_user_id") or current_user),
+            platform_user_id=_edge_platform_user_id(edge) or current_user,
             identity_config=_identity_config(self),
         )
         challenge = result.get("challenge") if isinstance(result.get("challenge"), Mapping) else {}
@@ -1512,27 +1638,28 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
         LOGGER.info(
             "[connection-hub.identity] challenge_claim linked challenge_id=%s provider=%s provider_subject=%s platform_user_id=%s live_event_session=%s",
             challenge.get("challenge_id"),
-            link.get("provider") or challenge.get("provider"),
-            link.get("provider_subject") or challenge.get("provider_subject"),
-            link.get("platform_user_id") or current_user,
+            _edge_provider(edge, challenge),
+            _edge_subject(edge, challenge),
+            _edge_platform_user_id(edge) or current_user,
             live_event.get("session_id") or "",
         )
-        await _emit_identity_link_changed(
+        await _emit_connection_edge_changed(
             self,
             challenge=challenge,
-            link=link,
+            edge=edge,
             action="linked",
         )
         return {
             "ok": True,
             "challenge": result.get("challenge"),
-            "link": link,
+            "edge": edge,
             "principal": principal,
-            "message": "Telegram identity proof linked to the authenticated platform user.",
+            "delegation_options": grant_options,
+            "message": "Telegram identity proof connected to the authenticated platform user.",
         }
 
-    @api(method="POST", alias="identity_link_challenge_status", route="operations", **_api_visibility("identity_link_challenge_status"))
-    async def identity_link_challenge_status(
+    @api(method="POST", alias="connection_edge_challenge_status", route="operations", **_api_visibility("connection_edge_challenge_status"))
+    async def connection_edge_challenge_status(
         self,
         data: Optional[Dict[str, Any]] = None,
         challenge_id: str = "",
@@ -1543,30 +1670,31 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
         payload = _payload(data, challenge_id=challenge_id, **kwargs)
         current_user = _platform_user_id(self, user_id=user_id)
         if not current_user or current_user == "anonymous":
-            return {"ok": False, "error": "identity_link_challenge_requires_authenticated_user"}
-        challenge = _identity_store(self).get_link_challenge(challenge_id=str(payload.get("challenge_id") or ""))
+            return {"ok": False, "error": "connection_edge_challenge_requires_authenticated_user"}
+        challenge = _edge_store(self).get_edge_challenge(challenge_id=str(payload.get("challenge_id") or ""))
         if not challenge:
-            return {"ok": False, "error": "identity_link_challenge_not_found"}
-        challenge_user = str(challenge.get("platform_user_id") or "").strip()
+            return {"ok": False, "error": "connection_edge_challenge_not_found"}
+        challenge_user = str(challenge.get("target_user_id") or "").strip()
         if challenge_user and challenge_user != current_user:
-            return {"ok": False, "error": "identity_link_challenge_cross_user_access_denied"}
+            return {"ok": False, "error": "connection_edge_challenge_cross_user_access_denied"}
         response: Dict[str, Any] = {
             "ok": True,
             "challenge": challenge,
             "platform_user_id": current_user,
+            "delegation_options": _platform_delegation_grant_options(self, current_user),
             "claimable_by_current_user": (
                 not challenge_user
-                and str(challenge.get("status") or "") == "pending_platform_claim"
+                and str(challenge.get("status") or "") == "pending_target_claim"
             ),
         }
         provider_subject = str(challenge.get("provider_subject") or "").strip()
         if provider_subject:
-            link = _identity_store(self).resolve_link(
-                provider=str(challenge.get("provider") or ""),
-                provider_subject=provider_subject,
+            edge = _edge_store(self).resolve_edge(
+                from_provider=str(challenge.get("provider") or ""),
+                from_subject=provider_subject,
             )
-            if link:
-                response["link"] = link
+            if edge:
+                response["edge"] = edge
         return response
 
     @api(method="POST", alias="federated_data_bus_claim", route="public")
@@ -1585,9 +1713,10 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
         )
         if not auth.get("ok") or not auth.get("authenticated"):
             LOGGER.warning(
-                "[connection-hub.data_bus] claim rejected provider=%s integration_id=%s error=%s",
+                "[connection-hub.data_bus] claim rejected provider=%s authority_id=%s authenticator=%s error=%s",
                 auth.get("provider") or "",
-                auth.get("integration_id") or auth.get("connection_id") or "",
+                auth.get("authority_id") or "",
+                auth.get("selected_authenticator") or "",
                 auth.get("error") or "not_authenticated",
             )
             return {
@@ -1630,9 +1759,10 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
             identity_authority=authority,
         )
         LOGGER.info(
-            "[connection-hub.data_bus] claim issued provider=%s integration_id=%s actor_user_id=%s session_id=%s linked=%s",
+            "[connection-hub.data_bus] claim issued provider=%s authority_id=%s authenticator=%s actor_user_id=%s session_id=%s linked=%s",
             provider,
-            auth.get("integration_id") or auth.get("connection_id") or "",
+            auth.get("authority_id") or "",
+            auth.get("selected_authenticator") or "",
             actor_user_id,
             grant.session.session_id,
             bool(auth.get("linked")),
@@ -1646,8 +1776,8 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
             "bundle_id": BUNDLE_ID,
         }
 
-    @api(method="POST", alias="telegram_identity_link_start", route="public")
-    async def telegram_identity_link_start(
+    @api(method="POST", alias="telegram_connection_edge_start", route="public")
+    async def telegram_connection_edge_start(
         self,
         data: Optional[Dict[str, Any]] = None,
         request: Any = None,
@@ -1655,7 +1785,7 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
         **kwargs: Any,
     ) -> Dict[str, Any]:
         payload = _payload(data, telegram_init_data=telegram_init_data, **kwargs)
-        cfg = _identity_telegram_config(self)
+        cfg = _telegram_link_flow_config(self)
         LOGGER.info(
             "[connection-hub.telegram] link_start requested enabled=%s request_present=%s init_data_payload_present=%s",
             cfg.get("enabled") is not False,
@@ -1664,7 +1794,7 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
         )
         if cfg.get("enabled") is False:
             LOGGER.warning("[connection-hub.telegram] link_start rejected: linking disabled")
-            return {"ok": False, "error": "telegram_identity_linking_disabled"}
+            return {"ok": False, "error": "telegram_connection_edges_disabled"}
         init_data = str(payload.get("telegram_init_data") or "").strip() or extract_telegram_init_data_from_request(request)
         if not init_data:
             LOGGER.warning("[connection-hub.telegram] link_start rejected: init data missing")
@@ -1672,14 +1802,12 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
         hints = _auth_selector_hints_from_request_payload(request, payload)
         authority_id = hints.get("authority_id", "")
         authenticator_id = hints.get("authenticator_id", "")
-        connection_id = hints.get("integration_id") or hints.get("connection_id") or ""
         verified, selected_authenticator, selected_connection_id, selected_authority_id, auth_error = await _validate_telegram_init_data_any(
             self,
             init_data=init_data,
             authority_id=authority_id,
             authenticator_id=authenticator_id,
-            connection_id=connection_id,
-            trace_scope="telegram_identity_link_start",
+            trace_scope="telegram_connection_edge_start",
         )
         resolved_authority_id = selected_authority_id or authority_id
         if verified is None:
@@ -1701,23 +1829,23 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
             bool(username),
             bool(live_event_session_id),
         )
-        existing_link = _identity_store(self).resolve_link(
-            provider="telegram",
-            provider_subject=telegram_user_id,
+        existing_edge = _edge_store(self).resolve_edge(
+            from_provider="telegram",
+            from_subject=telegram_user_id,
         )
-        if existing_link:
+        if existing_edge:
             principal = resolve_principal_roles(
-                platform_user_id=str(existing_link.get("platform_user_id") or ""),
+                platform_user_id=_edge_platform_user_id(existing_edge),
                 identity_config=_identity_config(self),
             )
             return {
                 "ok": True,
                 "provider": "telegram",
                 "authority_id": resolved_authority_id,
-                "connection_id": selected_connection_id or connection_id,
+                "connection_id": selected_connection_id,
                 "provider_subject": telegram_user_id,
                 "linked": True,
-                "link": existing_link,
+                "edge": existing_edge,
                 "principal": principal,
                 "message": "This Telegram account is already linked to a KDCube user.",
             }
@@ -1738,16 +1866,16 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
                 "source": "telegram_miniapp",
                 "selected_authenticator": selected_authenticator,
                 "authority_id": resolved_authority_id,
-                "connection_id": selected_connection_id or connection_id,
+                "connection_id": selected_connection_id,
             }
             if live_event_session_id:
                 metadata["live_event"] = {
                     "transport": "socketio.chat_service",
                     "session_id": live_event_session_id,
                     "bundle_id": BUNDLE_ID,
-                    "event_type": "connection_hub.identity.link_changed",
+                    "event_type": "connection_hub.edge.changed",
                 }
-            challenge = _identity_store(self).create_provider_claim_challenge(
+            challenge = _edge_store(self).create_provider_claim_challenge(
                 provider="telegram",
                 provider_subject=telegram_user_id,
                 label=display_name,
@@ -1757,20 +1885,20 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
             )
         except ValueError as exc:
             LOGGER.warning("[connection-hub.telegram] link_start challenge creation failed error=%s", exc)
-            return {"ok": False, "error": "invalid_telegram_identity_link_start", "message": str(exc)}
+            return {"ok": False, "error": "invalid_telegram_connection_edge_start", "message": str(exc)}
         LOGGER.info(
-            "[connection-hub.telegram] link_start created provider claim challenge_id=%s telegram_user_id=%s live_event_session=%s authority_id=%s connection_id=%s",
+            "[connection-hub.telegram] link_start created provider claim challenge_id=%s telegram_user_id=%s live_event_session=%s authority_id=%s authenticator=%s",
             challenge.get("challenge_id"),
             telegram_user_id,
             live_event_session_id,
             resolved_authority_id,
-            selected_connection_id or connection_id,
+            selected_authenticator,
         )
         return {
             "ok": True,
             "provider": "telegram",
             "authority_id": resolved_authority_id,
-            "connection_id": selected_connection_id or connection_id,
+            "connection_id": selected_connection_id,
             "provider_subject": telegram_user_id,
             "challenge": challenge,
             "platform_claim_url": _platform_claim_url(
@@ -1782,8 +1910,8 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
             "message": "Telegram account verified. Open KDCube to claim this identity as a platform user.",
         }
 
-    @api(method="POST", alias="telegram_identity_link_status", route="public")
-    async def telegram_identity_link_status(
+    @api(method="POST", alias="telegram_connection_edge_status", route="public")
+    async def telegram_connection_edge_status(
         self,
         data: Optional[Dict[str, Any]] = None,
         request: Any = None,
@@ -1791,23 +1919,21 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
         **kwargs: Any,
     ) -> Dict[str, Any]:
         payload = _payload(data, telegram_init_data=telegram_init_data, **kwargs)
-        cfg = _identity_telegram_config(self)
+        cfg = _telegram_link_flow_config(self)
         if cfg.get("enabled") is False:
-            return {"ok": False, "error": "telegram_identity_linking_disabled"}
+            return {"ok": False, "error": "telegram_connection_edges_disabled"}
         init_data = str(payload.get("telegram_init_data") or "").strip() or extract_telegram_init_data_from_request(request)
         if not init_data:
             return {"ok": False, "error": "telegram_init_data_required"}
         hints = _auth_selector_hints_from_request_payload(request, payload)
         authority_id = hints.get("authority_id", "")
         authenticator_id = hints.get("authenticator_id", "")
-        connection_id = hints.get("integration_id") or hints.get("connection_id") or ""
         verified, selected_authenticator, selected_connection_id, selected_authority_id, auth_error = await _validate_telegram_init_data_any(
             self,
             init_data=init_data,
             authority_id=authority_id,
             authenticator_id=authenticator_id,
-            connection_id=connection_id,
-            trace_scope="telegram_identity_link_status",
+            trace_scope="telegram_connection_edge_status",
         )
         resolved_authority_id = selected_authority_id or authority_id
         if verified is None:
@@ -1815,29 +1941,29 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
             return {"ok": False, "error": code, "message": auth_error}
         user = verified.user
         telegram_user_id = str(user.get("id") or "").strip()
-        link = _identity_store(self).resolve_link(
-            provider="telegram",
-            provider_subject=telegram_user_id,
+        edge = _edge_store(self).resolve_edge(
+            from_provider="telegram",
+            from_subject=telegram_user_id,
         )
         response: Dict[str, Any] = {
             "ok": True,
             "provider": "telegram",
             "authority_id": resolved_authority_id,
-            "connection_id": selected_connection_id or connection_id,
+            "connection_id": selected_connection_id,
             "provider_subject": telegram_user_id,
-            "linked": bool(link),
+            "linked": bool(edge),
             "selected_authenticator": selected_authenticator,
         }
-        if link:
-            response["link"] = link
+        if edge:
+            response["edge"] = edge
             response["principal"] = resolve_principal_roles(
-                platform_user_id=str(link.get("platform_user_id") or ""),
+                platform_user_id=_edge_platform_user_id(edge),
                 identity_config=_identity_config(self),
             )
         return response
 
-    @api(method="POST", alias="telegram_identity_link_remove", route="public")
-    async def telegram_identity_link_remove(
+    @api(method="POST", alias="telegram_connection_edge_remove", route="public")
+    async def telegram_connection_edge_remove(
         self,
         data: Optional[Dict[str, Any]] = None,
         request: Any = None,
@@ -1845,23 +1971,21 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
         **kwargs: Any,
     ) -> Dict[str, Any]:
         payload = _payload(data, telegram_init_data=telegram_init_data, **kwargs)
-        cfg = _identity_telegram_config(self)
+        cfg = _telegram_link_flow_config(self)
         if cfg.get("enabled") is False:
-            return {"ok": False, "error": "telegram_identity_linking_disabled"}
+            return {"ok": False, "error": "telegram_connection_edges_disabled"}
         init_data = str(payload.get("telegram_init_data") or "").strip() or extract_telegram_init_data_from_request(request)
         if not init_data:
             return {"ok": False, "error": "telegram_init_data_required"}
         hints = _auth_selector_hints_from_request_payload(request, payload)
         authority_id = hints.get("authority_id", "")
         authenticator_id = hints.get("authenticator_id", "")
-        connection_id = hints.get("integration_id") or hints.get("connection_id") or ""
         verified, selected_authenticator, selected_connection_id, selected_authority_id, auth_error = await _validate_telegram_init_data_any(
             self,
             init_data=init_data,
             authority_id=authority_id,
             authenticator_id=authenticator_id,
-            connection_id=connection_id,
-            trace_scope="telegram_identity_link_remove",
+            trace_scope="telegram_connection_edge_remove",
         )
         resolved_authority_id = selected_authority_id or authority_id
         if verified is None:
@@ -1869,27 +1993,31 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
             return {"ok": False, "error": code, "message": auth_error}
         user = verified.user
         telegram_user_id = str(user.get("id") or "").strip()
-        result = _identity_store(self).remove_link(
-            provider="telegram",
-            provider_subject=telegram_user_id,
+        result = _edge_store(self).remove_edge(
+            from_provider="telegram",
+            from_subject=telegram_user_id,
         )
         if not result.get("ok"):
             return result
+        removed_edge = {}
+        removed_edges = result.get("edges") if isinstance(result.get("edges"), list) else []
+        if removed_edges and isinstance(removed_edges[0], Mapping):
+            removed_edge = dict(removed_edges[0])
         return {
             "ok": True,
             "provider": "telegram",
             "authority_id": resolved_authority_id,
-            "connection_id": selected_connection_id or connection_id,
+            "connection_id": selected_connection_id,
             "provider_subject": telegram_user_id,
             "selected_authenticator": selected_authenticator,
             "linked": False,
             "removed": bool(result.get("removed")),
-            "link": result.get("link") if isinstance(result.get("link"), Mapping) else None,
+            "edge": removed_edge or None,
             "message": "Telegram account link removed." if result.get("removed") else "This Telegram account was not linked.",
         }
 
-    @api(method="POST", alias="telegram_identity_link_complete", route="public")
-    async def telegram_identity_link_complete(
+    @api(method="POST", alias="telegram_connection_edge_complete", route="public")
+    async def telegram_connection_edge_complete(
         self,
         data: Optional[Dict[str, Any]] = None,
         request: Any = None,
@@ -1898,7 +2026,7 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
         **kwargs: Any,
     ) -> Dict[str, Any]:
         payload = _payload(data, challenge_id=challenge_id, telegram_init_data=telegram_init_data, **kwargs)
-        cfg = _identity_telegram_config(self)
+        cfg = _telegram_link_flow_config(self)
         LOGGER.info(
             "[connection-hub.telegram] link_complete requested enabled=%s request_present=%s challenge_present=%s init_data_payload_present=%s",
             cfg.get("enabled") is not False,
@@ -1908,7 +2036,7 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
         )
         if cfg.get("enabled") is False:
             LOGGER.warning("[connection-hub.telegram] link_complete rejected: linking disabled")
-            return {"ok": False, "error": "telegram_identity_linking_disabled"}
+            return {"ok": False, "error": "telegram_connection_edges_disabled"}
         init_data = str(payload.get("telegram_init_data") or "").strip() or extract_telegram_init_data_from_request(request)
         if not init_data:
             LOGGER.warning("[connection-hub.telegram] link_complete rejected: init data missing")
@@ -1916,14 +2044,12 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
         hints = _auth_selector_hints_from_request_payload(request, payload)
         authority_id = hints.get("authority_id", "")
         authenticator_id = hints.get("authenticator_id", "")
-        connection_id = hints.get("integration_id") or hints.get("connection_id") or ""
         verified, selected_authenticator, selected_connection_id, selected_authority_id, auth_error = await _validate_telegram_init_data_any(
             self,
             init_data=init_data,
             authority_id=authority_id,
             authenticator_id=authenticator_id,
-            connection_id=connection_id,
-            trace_scope="telegram_identity_link_complete",
+            trace_scope="telegram_connection_edge_complete",
         )
         resolved_authority_id = selected_authority_id or authority_id
         if verified is None:
@@ -1943,7 +2069,7 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
             or " ".join(str(user.get(key) or "").strip() for key in ("first_name", "last_name") if str(user.get(key) or "").strip())
             or telegram_user_id
         )
-        result = _identity_store(self).complete_link_challenge(
+        result = _edge_store(self).complete_edge_challenge(
             challenge_id=str(payload.get("challenge_id") or ""),
             provider="telegram",
             provider_subject=telegram_user_id,
@@ -1959,7 +2085,7 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
                 "source": "telegram_miniapp",
                 "selected_authenticator": selected_authenticator,
                 "authority_id": resolved_authority_id,
-                "connection_id": selected_connection_id or connection_id,
+                "connection_id": selected_connection_id,
             },
         )
         if not result.get("ok"):
@@ -1969,24 +2095,24 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
                 result.get("error"),
             )
             return result
-        link = result.get("link") if isinstance(result.get("link"), Mapping) else {}
+        edge = result.get("edge") if isinstance(result.get("edge"), Mapping) else {}
         principal = resolve_principal_roles(
-            platform_user_id=str(link.get("platform_user_id") or ""),
+            platform_user_id=_edge_platform_user_id(edge),
             identity_config=_identity_config(self),
         )
         LOGGER.info(
             "[connection-hub.telegram] link_complete linked telegram_user_id=%s platform_user_id=%s",
             telegram_user_id,
-            link.get("platform_user_id"),
+            _edge_platform_user_id(edge),
         )
         return {
             "ok": True,
             "provider": "telegram",
             "authority_id": resolved_authority_id,
-            "connection_id": selected_connection_id or connection_id,
+            "connection_id": selected_connection_id,
             "provider_subject": telegram_user_id,
             "challenge": result.get("challenge"),
-            "link": link,
+            "edge": edge,
             "principal": principal,
         }
 
@@ -2009,11 +2135,11 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
         subject_value = str(payload.get("provider_subject") or payload.get("subject") or "").strip()
         if not provider_value or not subject_value:
             return {"ok": False, "error": "identity_resolve_requires_provider_and_subject"}
-        link = _identity_store(self).resolve_link(
-            provider=provider_value,
-            provider_subject=subject_value,
+        edge = _edge_store(self).resolve_edge(
+            from_provider=provider_value,
+            from_subject=subject_value,
         )
-        if not link:
+        if not edge:
             return {
                 "ok": False,
                 "error": "identity_not_linked",
@@ -2021,14 +2147,14 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
                 "provider_subject": subject_value,
             }
         principal = resolve_principal_roles(
-            platform_user_id=str(link.get("platform_user_id") or ""),
+            platform_user_id=_edge_platform_user_id(edge),
             identity_config=_identity_config(self),
         )
         return {
             "ok": True,
             "provider": provider_value,
             "provider_subject": subject_value,
-            "identity_link": link,
+            "connection_edge": edge,
             "principal": principal,
         }
 
@@ -2068,7 +2194,7 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
             return {"ok": False, "error": "identity_family_requires_user_id"}
 
         result = resolve_identity_family(
-            _identity_store(self),
+            _edge_store(self),
             input_user_id=requested_user,
             actor_user_id=current_actor_user,
             platform_user_id=current_platform_user,
@@ -2093,6 +2219,24 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
         }
         return result
 
+    @api(method="POST", alias="delegated_identity_scope_resolve", route="operations", **_api_visibility("delegated_identity_scope_resolve"))
+    async def delegated_identity_scope_resolve(
+        self,
+        data: Optional[Dict[str, Any]] = None,
+        credential: Optional[Dict[str, Any]] = None,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+        payload = _payload(data, credential=credential, **kwargs)
+        raw_credential = payload.get("credential") or {}
+        if not isinstance(raw_credential, Mapping) or not raw_credential:
+            return {"ok": False, "error": "delegated_identity_scope_requires_credential"}
+        grantor_authority = payload.get("grantor_authority")
+        return resolve_delegated_identity_scope(
+            _edge_store(self),
+            credential=raw_credential,
+            grantor_authority=grantor_authority if isinstance(grantor_authority, Mapping) else {},
+        )
+
     @api(method="GET", alias="authenticators_list", route="operations", **_api_visibility("authenticators_list"))
     async def authenticators_list(
         self,
@@ -2113,8 +2257,9 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
         for item in items:
             item.setdefault("source", "config")
             item.setdefault("implemented", str(item.get("provider") or "").strip().lower() == "telegram")
-            item.setdefault("integration_id", str(item.get("connection_id") or item.get("authenticator_id") or "").strip())
-            item.setdefault("authority_id", str(item.get("authority_id") or item.get("integration_id") or item.get("connection_id") or "").strip())
+            item.setdefault("authority_id", str(item.get("authority_id") or item.get("authenticator_id") or "").strip())
+            item.pop("integration_id", None)
+            item.pop("connection_id", None)
             if include_secret_status:
                 item["secret_configured"] = await _authenticator_secret_configured(
                     self,
@@ -2166,13 +2311,7 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
                     or payload.get("authority")
                     or ""
                 ).strip(),
-                connection_id=str(
-                    payload.get("integration_id")
-                    or payload.get("integrationId")
-                    or payload.get("connection_id")
-                    or payload.get("connectionId")
-                    or ""
-                ).strip(),
+                connection_id="",
                 label=str(payload.get("label") or "").strip(),
                 enabled=payload.get("enabled") is not False,
                 role_providing=_bool(
@@ -2227,11 +2366,10 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
         return await authenticate_request_with_authenticators(
             self,
             request_envelope=envelope,
-            identity_store=_identity_store(self),
+            edge_store=_edge_store(self),
             identity_config=_identity_config(self),
             stored_authenticators=await _cached_authenticator_rows(self),
             secret_resolver=lambda **kw: _authenticator_secret_value(self, **kw),
-            telegram_bot_token_resolver=lambda **kw: _telegram_bot_token(self, **kw),
         )
 
     # ── email integration ops (iCloud app-password only; Gmail is a connections

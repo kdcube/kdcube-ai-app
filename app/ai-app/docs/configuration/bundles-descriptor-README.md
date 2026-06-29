@@ -136,7 +136,7 @@ bundles:
               feedback:
                 auth:
                   mode: managed
-                  authority_id: oauth_mcp
+                  authority_id: delegated_client
                   tools:
                     conversations_export:
                       grants: [conversations:read]
@@ -173,7 +173,7 @@ bundles:
       config:
         connections:
           delegated_credentials:
-            oauth_mcp:
+            oauth:
               enabled: true
               brand: "KDCube"
               public_clients:

@@ -46,9 +46,9 @@ role checks and economics use the linked platform principal.
 ```text
 UserSession
   user_id     = telegram_434804821
-  user_type   = privileged
   roles       = ["kdcube:role:super-admin"]
   permissions = [...]
+  budget_bypass = true
   identity_authority
         |
         v
@@ -57,16 +57,26 @@ identity_authority
   storage_user_id     = telegram_434804821
   platform_user_id    = 02e53484-...
   economics_user_id   = 02e53484-...
-  user_type           = privileged
-  economics_user_type = privileged
   platform_roles      = ["kdcube:role:super-admin"]
   platform_permissions = [...]
+  budget_bypass       = true
   identity_provider   = telegram
   identity_provider_subject = 434804821
 ```
 
 After projection, downstream code should see a normal authorized session. It
 should not re-check Telegram or parse provider proof.
+
+`user_type` is not authority. It is a legacy compatibility label that older
+accounting/runtime APIs may derive from explicit facts:
+
+```text
+roles / permissions / budget_bypass / anonymous state
+  -> legacy accounting/runtime lane when an old API still asks for one
+```
+
+New Connection Hub projections should carry explicit facts, not a precomputed
+`user_type`.
 
 ## Role Rule
 
@@ -110,16 +120,16 @@ Telegram user:
 user_id = telegram_434804821
 ```
 
-If no identity link exists, the session stays low authority:
+If no connection edge exists, the session stays low authority:
 
 ```text
-user_type   = registered
 roles       = []
 permissions = []
+budget_bypass = false
 ```
 
-If `telegram:434804821` is linked to a platform user, the next claim keeps the
-same actor id and projects the platform authority into that session. The
+If `telegram:434804821` has an edge to a platform user, the next claim keeps
+the same actor id and projects the platform authority into that session. The
 federated token itself only points at the session; it does not duplicate roles,
 permissions, or provider identity in the signed token body.
 

@@ -1,13 +1,13 @@
 ---
 id: repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/identity-family-resolver/identity-family-resolver-README.md
 title: "Identity Family Resolver"
-summary: "Connection Hub role: resolve the current actor or platform user to the linked identity family that product features can aggregate over."
+summary: "Connection Hub role: resolve the current actor or platform user through connection edges to the identity family that product features can aggregate over."
 status: active
-tags: ["sdk", "solutions", "connections", "connection-hub", "identity-family", "identity-links", "memory"]
-updated_at: 2026-06-28
+tags: ["sdk", "solutions", "connections", "connection-hub", "identity-family", "connection-edges", "memory"]
+updated_at: 2026-06-29
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/connection-hub-solution-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/identity-links/identity-links-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/connection-edges/connection-edges-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/authority-projection/authority-projection-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/storage-model/storage-model-README.md
 ---
@@ -24,7 +24,7 @@ It is SDK-owned code in
 `kdcube_ai_app.apps.chat.sdk.solutions.connections.hub.resolver`. It is not a
 request authenticator. It does not verify Telegram, Slack, OAuth, or webhook
 proof. It runs after the request already has an authenticated actor or a platform
-session and uses Connection Hub identity links to return the safe identity family
+session and uses Connection Hub edges to return the safe identity family
 for that actor.
 
 ## Position
@@ -39,7 +39,7 @@ current actor user_id
         v
 Identity Family Resolver
         |
-        +-- identity-link store
+        +-- connection-edge store
         +-- platform authority identity
         +-- provider/integration identities
         v
@@ -58,8 +58,8 @@ telegram_434804821
 google:person@example.com
 ```
 
-If those identities are linked, the user should be able to see one coherent
-memory set. Every product should not reimplement provider parsing or link-store
+If those identities are connected, the user should be able to see one coherent
+memory set. Every product should not reimplement provider parsing or edge-store
 lookups. The resolver centralizes that logic.
 
 ## Output Shape
@@ -116,9 +116,41 @@ The logical response uses schema `connection_hub.identity_family.v1`:
 directly for backend-side queries without knowing provider-specific runtime user
 id conventions.
 
+## Delegated Identity Scope
+
+Delegated external clients use the same edge vocabulary. A Claude connector is
+a delegate of a grantor, not the same person as the grantor, but the delegation
+edge can still authorize grantor-scoped or grantor-family reads when the user
+consented to that scope.
+
+For delegated credentials, Connection Hub exposes:
+
+```text
+delegated_identity_scope_resolve
+```
+
+Input is a verified `kdcube.credential.v1` envelope. Output uses schema
+`connection_hub.delegated_identity_scope.v1`:
+
+```json
+{
+  "ok": true,
+  "schema": "connection_hub.delegated_identity_scope.v1",
+  "delegate_identity": "integration:claude:02e...",
+  "grantor_user_id": "02e...",
+  "identity_scope": "grantor_identity_family",
+  "memory_user_ids": ["02e...", "telegram_434804821"]
+}
+```
+
+Product surfaces should use this operation instead of parsing
+`grantor_subject` themselves. The delegated credential's descriptor-owned
+`identity_scope` decides whether reads stay on the grantor or expand to connected
+identities.
+
 ## Access Rule
 
-The resolver must not become a directory of other users' links.
+The resolver must not become a directory of other users' edges.
 
 ```text
 platform session present
@@ -131,7 +163,7 @@ cross-user request
   -> deny
 ```
 
-If a Telegram actor is unlinked, the resolver may return a one-item family for
+If a Telegram actor has no edge, the resolver may return a one-item family for
 the actor:
 
 ```text
@@ -140,6 +172,19 @@ telegram_434804821
 
 That is enough for low-authority actor-local features. It does not grant platform
 roles or economics bypass.
+
+If a Telegram actor has an edge but that edge does not include
+`identity:family`, the resolver still returns only the actor-local family:
+
+```text
+telegram_434804821
+```
+
+That is deliberate. A connection edge means “these identities were proven and
+connected”; the `identity:family` grant means “this source identity may use the
+target platform user's identity family for product reads.” Memories and other
+features that aggregate records across identities must require the grant, not
+only the existence of an edge.
 
 ## Memory Integration
 
@@ -162,12 +207,25 @@ memory store query:
 The widget should not merge identities client-side. The backend must decide the
 allowed identity family and then query storage.
 
+For debugging, the memory backend logs the actor and resolved family when it
+fetches data. A healthy Telegram-linked request with `identity:family` should
+show both the Telegram runtime user id and the platform user id:
+
+```text
+[memory.identity_family] ... actor_user_id=telegram_434804821
+  family_user_ids=['02e53484-0081-70ce-11c1-e96706b1a182', 'telegram_434804821']
+```
+
+If `family_user_ids` contains only `telegram_434804821`, inspect the Connection
+Hub edge record. The usual cause is an old or low-authority edge with
+`"grants": []`.
+
 ## Boundary With Authority Projection
 
 Identity Family Resolver returns aggregation scope. Authority Projection returns
 role/economics authority for execution.
 
-They often use the same identity links, but they answer different questions:
+They often use the same connection edges, but they answer different questions:
 
 ```text
 Identity Family Resolver:

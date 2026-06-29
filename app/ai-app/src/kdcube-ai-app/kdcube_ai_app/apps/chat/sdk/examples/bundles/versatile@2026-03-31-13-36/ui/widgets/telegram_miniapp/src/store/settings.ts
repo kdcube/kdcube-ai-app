@@ -31,16 +31,21 @@ interface RuntimeConfigPayload {
   auth?: {
     idTokenHeaderName?: string;
     provider?: string;
-    integration_id?: string;
-    integrationId?: string;
+    authority_id?: string;
+    authorityId?: string;
+    authenticator_id?: string;
+    authenticatorId?: string;
   };
   authContext?: {
     headers?: Record<string, unknown>;
   };
   authProvider?: string;
-  authIntegrationId?: string;
-  integration_id?: string;
-  integrationId?: string;
+  authAuthorityId?: string;
+  authAuthenticatorId?: string;
+  authority_id?: string;
+  authorityId?: string;
+  authenticator_id?: string;
+  authenticatorId?: string;
 }
 
 function isPlaceholder(value: string | null | undefined): boolean {
@@ -100,18 +105,26 @@ function normalizeAuthContextHeaders(input?: Record<string, unknown>): Record<st
   return out;
 }
 
-function legacyAuthContextHeaders(config: RuntimeConfigPayload): Record<string, string> {
+function fallbackAuthContextHeaders(config: RuntimeConfigPayload): Record<string, string> {
   const provider = config.authProvider || config.auth?.provider;
-  const integrationId = (
-    config.authIntegrationId ||
-    config.integration_id ||
-    config.integrationId ||
-    config.auth?.integration_id ||
-    config.auth?.integrationId
+  const authorityId = (
+    config.authAuthorityId ||
+    config.authority_id ||
+    config.authorityId ||
+    config.auth?.authority_id ||
+    config.auth?.authorityId
+  );
+  const authenticatorId = (
+    config.authAuthenticatorId ||
+    config.authenticator_id ||
+    config.authenticatorId ||
+    config.auth?.authenticator_id ||
+    config.auth?.authenticatorId
   );
   const out: Record<string, string> = {};
   if (provider) out['X-KDCube-Auth-Provider'] = String(provider);
-  if (integrationId) out['X-KDCube-Auth-Integration-ID'] = String(integrationId);
+  if (authorityId) out['X-KDCube-Auth-Authority-ID'] = String(authorityId);
+  if (authenticatorId) out['X-KDCube-Auth-Authenticator-ID'] = String(authenticatorId);
   return out;
 }
 
@@ -119,7 +132,6 @@ export function activeTabFromPath(widgetPath: string): TabId {
   const first = String(widgetPath || '').trim().replace(/^\/+/, '').split('/', 1)[0].toLowerCase();
   if (first === 'chat' || first === 'chats' || first === 'conversation' || first === 'conversations') return 'conversations';
   if (first === 'connect' || first === 'connections' || first === 'link') return 'connections';
-  if (first === 'admin' || first === 'telegram' || first === 'telegram-admin' || first === 'telegram_admin') return 'telegram_admin';
   return 'memory';
 }
 
@@ -131,7 +143,7 @@ export function tabPath(tab: TabId): string {
   const before = path.slice(0, index + marker.length);
   const rest = path.slice(index + marker.length);
   const alias = rest.split('/')[0] || ROUTE_CONTEXT.widgetAlias || 'telegram_miniapp';
-  const segment = tab === 'telegram_admin' ? 'telegram-admin' : tab === 'connections' ? 'connections' : tab === 'conversations' ? 'chats' : 'memory';
+  const segment = tab === 'connections' ? 'connections' : tab === 'conversations' ? 'chats' : 'memory';
   return `${before}${alias}/${segment}`;
 }
 
@@ -239,7 +251,7 @@ class SettingsManager {
     const tenant = config.defaultTenant || config.tenant || config.tenant_id;
     const project = config.defaultProject || config.project || config.project_id;
     const authContextHeaders = normalizeAuthContextHeaders(config.authContext?.headers);
-    const legacyHeaders = legacyAuthContextHeaders(config);
+    const legacyHeaders = fallbackAuthContextHeaders(config);
     const nextAuthContextHeaders = Object.keys(authContextHeaders).length > 0
       ? authContextHeaders
       : Object.keys(legacyHeaders).length > 0

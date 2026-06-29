@@ -5,10 +5,11 @@ connectable providers, fetch the user's access token for a provider, and drive
 OAuth. A bundle implements the provider; any bundle consumes it through the
 typed client over the local (in-process) or API (HTTP) transport.
 
-The same package also exposes `IdentityLinksClient`, the app-to-app SDK client
-for asking Connection Hub to resolve/link external identities such as Telegram.
-Browser widgets should not build another app's public URL directly. They should
-call their own app, and that app should call `IdentityLinksClient`.
+The same package also exposes `ConnectionEdgesClient`, the app-to-app SDK
+client for asking Connection Hub to create/resolve connection edges such as the
+Telegram -> platform delegation edge. Browser widgets should not build another
+app's public URL directly. They should call their own app, and that app should
+call `ConnectionEdgesClient`.
 
 The package also owns request-auth composition for Connection Hub:
 `RequestAuthResolver` is the boundary resolver used by ingress/proc middleware,
@@ -35,7 +36,7 @@ the implementing bundle, not a named-service operation.
 ## Consuming it
 
 ```python
-from kdcube_ai_app.apps.chat.sdk.solutions.connections import ConnectionsClient, IdentityLinksClient
+from kdcube_ai_app.apps.chat.sdk.solutions.connections import ConnectionsClient, ConnectionEdgesClient
 
 connections = ConnectionsClient(registry)            # local transport
 # or: ConnectionsClient(registry, transport="api")   # HTTP transport
@@ -51,13 +52,13 @@ start = await connections.start_oauth("slack")       # {"authorize_url": ...}
 await connections.disconnect("slack", account_id)
 ```
 
-For identity links from an app surface:
+For connection edges from an app surface:
 
 ```python
-from kdcube_ai_app.apps.chat.sdk.solutions.connections import IdentityLinksClient, request_origin
+from kdcube_ai_app.apps.chat.sdk.solutions.connections import ConnectionEdgesClient, request_origin
 
-identity_links = IdentityLinksClient(self)
-result = await identity_links.telegram_link_start(
+edges = ConnectionEdgesClient(self)
+result = await edges.telegram_edge_start(
     telegram_init_data=telegram_init_data,
     public_origin=request_origin(request),
 )

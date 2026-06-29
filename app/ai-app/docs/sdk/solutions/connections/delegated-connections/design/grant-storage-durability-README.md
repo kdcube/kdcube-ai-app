@@ -7,17 +7,17 @@ tags: ["sdk", "solutions", "connections", "delegated-connections", "oauth", "mcp
 updated_at: 2026-06-27
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/delegated-connections/delegated-connections-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/delegated-credentials/oauth-mcp-protocol-adapter-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/delegated-credentials/oauth-delegated-credential-protocol-adapter-README.md
 ---
 # Grant Storage Durability
 
-The current OAuth/MCP implementation of delegated client connections uses Redis
+The current OAuth delegated credential implementation of delegated client connections uses Redis
 for grant state. That is safe in the sense that Redis loss fails closed: missing
 grant state prevents token use rather than granting more access. It is not
 always product-friendly, because long-lived external MCP connections can
 disappear after Redis loss.
 
-## Current OAuth/MCP Storage Shape
+## Current OAuth delegated credential Storage Shape
 
 `GrantStore` stores tenant/project scoped keys:
 
@@ -90,4 +90,4 @@ inspection, revocation, and continuity across Redis restarts.
 5. Add an operator view/API later for active MCP connections and revocation.
 
 The security rule remains unchanged: if any required record is missing or
-invalid, the OAuth/MCP path fails closed.
+invalid, the OAuth delegated credential path fails closed.

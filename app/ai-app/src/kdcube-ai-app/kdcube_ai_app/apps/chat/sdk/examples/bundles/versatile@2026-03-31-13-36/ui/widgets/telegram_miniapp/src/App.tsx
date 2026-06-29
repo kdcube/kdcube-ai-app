@@ -3,7 +3,6 @@ import { AppShell } from './components/AppShell';
 import { ConnectionsPage } from './pages/ConnectionsPage';
 import { ConversationsPage } from './pages/ConversationsPage';
 import { MemoryPage } from './pages/MemoryPage';
-import { TelegramAdminPage } from './pages/TelegramAdminPage';
 import { callOperation } from './store/apiClient';
 import { TelegramPendingApproval } from '@kdcube/telegram-widget';
 import {
@@ -26,7 +25,6 @@ function telegramDeniedProfile(): TelegramProfile {
     permissions: {
       can_use_chatbot: false,
       can_use_widget: false,
-      show_admin_component: false,
     },
   };
 }
@@ -38,11 +36,6 @@ export default function App() {
   const [profile, setProfile] = useState<TelegramProfile | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
-
-  const showAdmin = useMemo(() => {
-    if (!isTelegramWebApp()) return Boolean(payload.permissions?.show_admin_component);
-    return Boolean(profile?.permissions?.show_admin_component || profile?.telegram?.is_admin);
-  }, [payload.permissions?.show_admin_component, profile]);
 
   const pendingTelegramApproval = useMemo(() => {
     if (!isTelegramWebApp() || !profile) return false;
@@ -62,11 +55,9 @@ export default function App() {
         setPayload({});
         return;
       }
-      let nextShowAdminFromProfile = false;
       if (isTelegramWebApp()) {
         const nextProfile = await callOperation<TelegramProfile>('telegram_profile', {});
         setProfile(nextProfile);
-        nextShowAdminFromProfile = Boolean(nextProfile.permissions?.show_admin_component || nextProfile.telegram?.is_admin);
         const role = String(nextProfile.telegram?.role || '').toLowerCase();
         const allowed = nextProfile.ok !== false
           && nextProfile.permissions?.can_use_widget !== false
@@ -74,14 +65,13 @@ export default function App() {
           && role !== 'anonymous';
         if (!allowed) {
           setPayload({});
-          if (tab === 'telegram_admin') setTab('memory');
           return;
         }
       } else {
         setProfile(null);
       }
       const data = await callOperation<WebAppPayload>('telegram_miniapp_data', {
-        widget_path: tab === 'conversations' ? 'chats' : tab === 'telegram_admin' ? 'telegram-admin' : 'memory',
+        widget_path: tab === 'conversations' ? 'chats' : 'memory',
         mark_memory_seen: tab === 'memory',
       });
       const settingsUpdate: Partial<AppSettings> = {};
@@ -99,19 +89,11 @@ export default function App() {
         settings.update(settingsUpdate);
       }
       setPayload(data);
-      let nextShowAdmin = Boolean(data.permissions?.show_admin_component);
-      if (isTelegramWebApp()) {
-        nextShowAdmin = nextShowAdminFromProfile;
-      }
-      if (tab === 'telegram_admin' && !nextShowAdmin) {
-        setTab('memory');
-      }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       if (isTelegramWebApp()) {
         setProfile(telegramDeniedProfile());
         setPayload({});
-        if (tab === 'telegram_admin') setTab('memory');
       }
       setError(message);
     } finally {
@@ -132,7 +114,6 @@ export default function App() {
   return (
     <AppShell
       activeTab={tab}
-      showAdmin={showAdmin}
       hideTabs={telegramGateActive}
       loading={loading}
       error={pendingTelegramApproval ? '' : error}
@@ -148,7 +129,6 @@ export default function App() {
       {!loading && !pendingTelegramApproval && tab === 'memory' && <MemoryPage memory={payload.memory} reload={load} />}
       {!loading && !pendingTelegramApproval && tab === 'conversations' && <ConversationsPage conversations={payload.conversations} reload={load} />}
       {!loading && !pendingTelegramApproval && tab === 'connections' && <ConnectionsPage />}
-      {!loading && !pendingTelegramApproval && tab === 'telegram_admin' && showAdmin && <TelegramAdminPage />}
     </AppShell>
   );
 }

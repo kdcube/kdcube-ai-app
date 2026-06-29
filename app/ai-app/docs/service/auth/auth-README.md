@@ -7,7 +7,7 @@ keywords: ["delegated auth", "cookie auth", "JWT", "SSE auth", "Socket.IO"]
 updated_at: 2026-06-28
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/service/auth/auth-selector-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/delegated-credentials/oauth-mcp-protocol-adapter-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/delegated-credentials/oauth-delegated-credential-protocol-adapter-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/connection-hub-solution-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/request-authenticators/request-authenticators-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/service/auth/bundle-session-auth-README.md
@@ -57,7 +57,7 @@ mismatched sessions are rejected (401/403).
 
 Service auth validates platform credentials and produces a `UserSession` for
 platform REST/SSE/Socket.IO/MCP/API requests. It should not contain every
-provider-specific identity-link rule.
+provider-specific connection-edge rule.
 
 When a request starts from another channel, such as Telegram init data, webhook
 signature, API key, or an app-owned proof, KDCube-controlled callers should
@@ -75,9 +75,6 @@ webhooks that cannot add arbitrary selector headers, such as Telegram
 `setWebhook`, should put the same selector in the webhook URL query string:
 `?authenticator_id=<authenticator-id>`. Uncontrolled hooks may lack that hint
 and are handled by provider-specific request-shape matching as a fallback.
-`integration_id` and `connection_id` are accepted only as migration aliases for
-older controlled surfaces; new surfaces should use `authority_id` and
-`authenticator_id`.
 Connection Hub should:
 
 1. select authenticators from request hints and request shape;
@@ -138,8 +135,8 @@ That authority projection is documented in
   a non-masquerade flow where the real auth and identity cookies are already
   present on the request.
 
-6) OAuth/MCP protocol adapter for delegated credentials
-- Implementation: `kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oauth_mcp`,
+6) OAuth delegated credential protocol adapter for delegated credentials
+- Implementation: `kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oauth`,
   mounted by the `connection-hub@1-0` bundle public `oauth` operation.
 - Connection Hub hosts an OAuth2 authorization server for external integration
   clients such as Claude Code. MCP protected resources remain concrete
@@ -149,7 +146,7 @@ That authority projection is documented in
   that user's roles/permissions, or an admin for admin-only capabilities.
 - Consent issues a least-privilege integration session and binds the selected
   MCP tool allowlist to the issued grant.
-- Details: [OAuth/MCP Protocol Adapter](../../sdk/solutions/connections/delegated-credentials/oauth-mcp-protocol-adapter-README.md).
+- Details: [OAuth delegated credential Protocol Adapter](../../sdk/solutions/connections/delegated-credentials/oauth-delegated-credential-protocol-adapter-README.md).
 
 ### Multi-Cognito descriptor shape
 
@@ -190,7 +187,7 @@ clients for routing/logging, but token claims remain authoritative.
 | Understand how requests choose Cognito/session/Connection Hub authenticators | [Auth Selector](auth-selector-README.md) |
 | Bundle/front shell performs login and browser should become a platform user | [Bundle Session Auth](bundle-session-auth-README.md) |
 | Bundle writes a SimpleIDP token for local/embedded simple auth | [Bundle SimpleIDP Bridge](bundle-simple-idp-bridge-README.md) |
-| External tool should access a narrow MCP integration surface after descriptor-governed user/admin consent | [OAuth/MCP Protocol Adapter](../../sdk/solutions/connections/delegated-credentials/oauth-mcp-protocol-adapter-README.md) |
+| External tool should access a narrow MCP integration surface after descriptor-governed user/admin consent | [OAuth delegated credential Protocol Adapter](../../sdk/solutions/connections/delegated-credentials/oauth-delegated-credential-protocol-adapter-README.md) |
 | Public mini app needs Socket.IO Data Bus publish rights | [Bundle Federated Auth](../../sdk/bundle/auth-bundle-federated-README.md) |
 | Bundle endpoint should be public or role-protected | [Bundle Firewall](../../sdk/bundle/bundle-firewall-README.md) |
 

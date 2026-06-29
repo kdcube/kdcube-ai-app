@@ -1,16 +1,16 @@
 ---
 id: repo:kdcube-ai-app/app/ai-app/docs/recipes/connections/link-from-external-channel-README.md
 title: "Link From External Channel"
-summary: "Recipe for linking a user who starts inside an external runtime such as Telegram, Slack, WhatsApp, or another authenticated app surface to their KDCube platform user."
+summary: "Recipe for creating a connection edge when a user starts inside an external runtime such as Telegram, Slack, WhatsApp, or another authenticated app surface."
 status: active
-tags: ["recipes", "connections", "connection-hub", "identity-linking", "external-channel", "telegram", "data-bus", "widgets"]
+tags: ["recipes", "connections", "connection-hub", "connection-edges", "external-channel", "telegram", "data-bus", "widgets"]
 updated_at: 2026-06-28
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/connection-hub-solution-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/link-flows/channel-first-identity-linking-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/link-flows/channel-first-connection-edge-flow-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/widget-auth-context/widget-auth-context-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/request-authenticators/request-authenticators-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/identity-links/identity-links-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/connection-edges/connection-edges-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/identity-family-resolver/identity-family-resolver-README.md
 ---
 # Link From External Channel
@@ -80,7 +80,7 @@ Connection Hub widget or host UI
 
 Connection Hub backend
   Verifies provider proof through configured request authenticators.
-  Stores link challenges and identity links.
+  Stores connection-edge challenges and connection edges.
 
 KDCube platform browser session
   Proves the platform user through normal KDCube login.
@@ -105,7 +105,8 @@ Data Bus
 2. Host app receives runtime config
         |
         | from bundle/app config:
-        |   integration_id = telegram.kdcube_ref
+        |   authority_id = telegram.kdcube_ref
+        |   authenticator_id = telegram.kdcube_ref
         |   provider = telegram
         |   Connection Hub widget URL
         v
@@ -118,7 +119,8 @@ Data Bus
         |
         | CONFIG_RESPONSE.authContext.headers
         |   X-KDCube-Auth-Provider: telegram
-        |   X-KDCube-Auth-Integration-ID: telegram.kdcube_ref
+        |   X-KDCube-Auth-Authority-ID: telegram.kdcube_ref
+        |   X-KDCube-Auth-Authenticator-ID: telegram.kdcube_ref
         |   X-Telegram-Init-Data: <Telegram.WebApp.initData>
         v
 
@@ -141,7 +143,7 @@ Data Bus
 
 5. User presses "Link this account"
         |
-        | POST public/telegram_identity_link_start
+        | POST public/telegram_connection_edge_start
         | or equivalent provider start operation
         | includes:
         |   live_event_session_id = <Data Bus session_id>
@@ -178,17 +180,17 @@ Data Bus
 
 7. User confirms the claim
         |
-        | POST operations/identity_link_challenge_claim
+        | POST operations/connection_edge_challenge_claim
         | authenticated by KDCube browser session
         v
    Connection Hub backend
         |
         | reads platform user from browser session
         | reads provider subject from challenge
-        | writes identity link:
+        | writes connection edge:
         |   telegram:434804821 -> 02e53484-...
         | emits:
-        |   connection_hub.identity.link_changed
+        |   connection_hub.edge.changed
         | to live_event_session_id
         v
 
@@ -227,9 +229,8 @@ OIDC app
 
 ### Host App
 
-The host app must know which configured integration it is using. Use an
-application-level integration id. This is the stable thing the app code can refer
-to.
+The host app must know which configured authenticator it is using. Use stable
+authority and authenticator ids from server-side configuration.
 
 ```yaml
 integrations:
@@ -245,21 +246,19 @@ integrations:
           widget_alias: telegram_miniapp
 ```
 
-The host passes provider proof plus the integration hint to child widgets:
+The host passes provider proof plus the authority/authenticator hints to child
+widgets:
 
 ```text
 X-KDCube-Auth-Provider: telegram
-X-KDCube-Auth-Integration-ID: telegram.kdcube_ref
+X-KDCube-Auth-Authority-ID: telegram.kdcube_ref
+X-KDCube-Auth-Authenticator-ID: telegram.kdcube_ref
 X-Telegram-Init-Data: <Telegram.WebApp.initData>
 ```
 
-If a future host knows a more precise authority or authenticator id, it may also
-pass:
-
-```text
-X-KDCube-Auth-Authority-ID
-X-KDCube-Auth-Authenticator-ID
-```
+These IDs are non-secret selector hints. They do not prove identity; Connection
+Hub still validates the Telegram proof against the configured authenticator
+secret.
 
 But do not make child widgets invent these ids. They come from host/server
 configuration.
@@ -270,8 +269,8 @@ Connection Hub must have a matching request authenticator row:
 
 ```text
 authenticator_id: telegram.kdcube_ref
+authority_id: telegram.kdcube_ref
 provider: telegram
-connection_id / integration_id: telegram.kdcube_ref
 secret_ref: identity.authenticators.telegram_kdcube_ref.bot_token
 enabled: true
 ```
@@ -317,7 +316,7 @@ external UI
 
 browser claim page
   -> completes link
-  -> Connection Hub emits connection_hub.identity.link_changed
+  -> Connection Hub emits connection_hub.edge.changed
      to live_event_session_id
 
 external UI
@@ -381,7 +380,7 @@ During a successful unlinked-to-linked run, expect this sequence.
    live_event_session=<live-session>
 
 6. socketio relay broadcasts
-   type=connection_hub.identity.link_changed
+   type=connection_hub.edge.changed
    session_id=<live-session>
 
 7. new data_bus claim issued
@@ -410,12 +409,14 @@ authenticator.
 
 2. Configure a Connection Hub request authenticator
    provider = slack / whatsapp / oidc / webhook / api-key
-   connection_id = <integration id>
+   authority_id = <authority id>
+   authenticator_id = <verifier id>
    secret_ref = <secret path>
 
 3. Make the host app pass auth context headers
    X-KDCube-Auth-Provider
-   X-KDCube-Auth-Integration-ID
+   X-KDCube-Auth-Authority-ID
+   X-KDCube-Auth-Authenticator-ID
    provider-specific proof headers/body
 
 4. Expose or reuse a link-start operation
@@ -430,7 +431,7 @@ authenticator.
    Connection Hub writes provider:<subject> -> platform_user_id
 
 6. Emit the same event
-   connection_hub.identity.link_changed
+   connection_hub.edge.changed
    to the live_event_session_id
 
 7. Refresh the external UI

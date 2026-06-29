@@ -207,26 +207,25 @@ def _tenant_project(entrypoint: Any) -> tuple[str, str]:
     )
 
 
-def _auth_integration_id(entrypoint: Any, *, integration_id: str = "") -> str:
+def _auth_selector_row(entrypoint: Any, *, integration_id: str = "") -> Dict[str, Any]:
     row = select_integration(entrypoint, provider="telegram", integration_id=integration_id)
-    return str(row.get("id") or "").strip()
+    return row if isinstance(row, dict) else {}
 
 
 def _auth_context_config(entrypoint: Any, *, integration_id: str = "") -> Dict[str, Any]:
-    selected_id = _auth_integration_id(entrypoint, integration_id=integration_id)
+    row = _auth_selector_row(entrypoint, integration_id=integration_id)
+    definition = row.get("definition") if isinstance(row.get("definition"), dict) else {}
+    selected_id = str(row.get("id") or "").strip()
+    authority_id = str(row.get("authority_id") or definition.get("authority_id") or selected_id).strip()
+    authenticator_id = str(
+        row.get("authenticator_id") or definition.get("authenticator_id") or selected_id
+    ).strip()
     return {
         "headers": {
             "X-KDCube-Auth-Provider": "telegram",
-            "X-KDCube-Auth-Integration-ID": selected_id,
+            "X-KDCube-Auth-Authority-ID": authority_id,
+            "X-KDCube-Auth-Authenticator-ID": authenticator_id,
         }
-    }
-
-
-def _legacy_auth_config(entrypoint: Any, *, integration_id: str = "") -> Dict[str, Any]:
-    selected_id = _auth_integration_id(entrypoint, integration_id=integration_id)
-    return {
-        "provider": "telegram",
-        "integration_id": selected_id,
     }
 
 
@@ -377,7 +376,6 @@ async def payload(
             },
         },
         "authContext": _auth_context_config(entrypoint, integration_id=integration_id),
-        "auth": _legacy_auth_config(entrypoint, integration_id=integration_id),
         "active_tab": active_tab,
         "path": str(widget_path or "").strip("/"),
         "tabs": tabs,

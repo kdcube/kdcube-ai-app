@@ -22,8 +22,8 @@ AUTHORITY_DISCOVERY_SCHEMA = "kdcube.authority.discovery.v1"
 
 INGRESS_SESSION_AUTHORITY_ID = "kdcube.ingress_session"
 INGRESS_SESSION_AUTHENTICATOR_ID = "kdcube.signed_active_record"
-OAUTH_MCP_AUTHORITY_ID = "oauth_mcp"
-OAUTH_MCP_AUTHENTICATOR_ID = "oauth_mcp.bearer"
+DELEGATED_CLIENT_AUTHORITY_ID = "delegated_client"
+DELEGATED_CLIENT_AUTHENTICATOR_ID = "delegated_client.bearer"
 
 
 def _str(value: Any) -> str:
@@ -417,8 +417,8 @@ __all__ = [
     "CREDENTIAL_SCHEMA",
     "INGRESS_SESSION_AUTHENTICATOR_ID",
     "INGRESS_SESSION_AUTHORITY_ID",
-    "OAUTH_MCP_AUTHENTICATOR_ID",
-    "OAUTH_MCP_AUTHORITY_ID",
+    "DELEGATED_CLIENT_AUTHENTICATOR_ID",
+    "DELEGATED_CLIENT_AUTHORITY_ID",
     "AuthorityProvider",
     "AuthorityProviderSpec",
     "AuthorityRegistry",

@@ -64,7 +64,9 @@ def economics_search_subject(entrypoint: Any) -> EconomicsSubject:
         tenant=str((ident or {}).get("tenant") or ""),
         project=str((ident or {}).get("project") or ""),
         user_id=user_id,
-        user_type=str(getattr(user, "user_type", None) or "registered"),
+        roles=tuple(getattr(user, "roles", None) or ()),
+        permissions=tuple(getattr(user, "permissions", None) or ()),
+        is_anonymous=(not user_id or user_id == "anonymous"),
     )
 
 

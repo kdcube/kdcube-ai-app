@@ -240,6 +240,7 @@ class ExternalEventUser(_ProtoBase):
     permissions: List[str] = []
     timezone: Optional[str] = None
     utc_offset_min: Optional[int] = None
+    identity_authority: Dict[str, Any] = {}
 
 
 class ExternalEventConfig(_ProtoBase):

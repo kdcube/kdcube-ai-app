@@ -40,7 +40,6 @@ async def test_nested_search_embedding_preserves_parent_turn_and_stamps_flow(mon
             tenant="t",
             project="p",
             user_id="u",
-            user_type="registered",
         ),
         default_flow="memory.search",
     )
@@ -89,7 +88,6 @@ async def test_nested_document_embedding_preserves_parent_turn_and_stamps_flow(m
             tenant="t",
             project="p",
             user_id="u",
-            user_type="registered",
         ),
         default_flow="canvas.pins.search",
     )
@@ -138,7 +136,6 @@ async def test_document_embedding_denial_propagates(monkeypatch):
             tenant="t",
             project="p",
             user_id="u",
-            user_type="registered",
         ),
         default_flow="canvas.pins.search",
     )

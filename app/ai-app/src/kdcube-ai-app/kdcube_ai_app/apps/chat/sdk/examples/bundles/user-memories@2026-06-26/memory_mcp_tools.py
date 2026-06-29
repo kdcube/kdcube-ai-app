@@ -9,14 +9,15 @@ credential, required ``memories:read``, and the selected tool grant. This file
 only turns that accepted principal into memory-store reads.
 
 The scope factory is supplied by the bundle entrypoint. For delegated external
-clients, it resolves to the grantor platform user, not to the integration
-identity. The optional ``read_user_ids_factory`` widens reads to the grantor's
-Connection Hub identity family when that is available and enabled.
+clients, Connection Hub resolves the delegation edge and returns the memory
+owner ids allowed by that credential's identity scope. The optional
+``read_user_ids_factory`` widens reads only when the consented delegation allows
+it.
 """
 
 from __future__ import annotations
 
-from typing import Annotated, Any, Awaitable, Callable, Literal, Optional
+from typing import Annotated, Any, Awaitable, Callable, Literal, Optional, Sequence
 
 from pydantic import Field
 
@@ -32,6 +33,7 @@ from kdcube_ai_app.apps.chat.sdk.context.memory import (
 StoreFactory = Callable[[], UserMemoryStore]
 ScopeFactory = Callable[[], MemoryScope]
 ReadUserIdsFactory = Callable[[MemoryScope], Awaitable[Optional[list[str]]]]
+SearchEmbeddingFactory = Callable[[MemoryScope, str], Awaitable[Optional[Sequence[float]]]]
 MemoryReadStatus = Literal["active", "weakened", "unsupported", "retired", "merged", "any"]
 
 MAX_SEARCH_LIMIT = 50
@@ -100,14 +102,15 @@ def build_user_memories_mcp_app(
     store_factory: StoreFactory,
     scope_factory: ScopeFactory,
     read_user_ids_factory: ReadUserIdsFactory,
+    search_embedding_factory: SearchEmbeddingFactory | None = None,
 ):
     """Build the read-only FastMCP app for user memory access.
 
     Parameters:
     - ``store_factory`` returns the memory store bound to the current runtime.
-    - ``scope_factory`` returns the effective memory scope for this request. In
-      delegated-client calls this is the approving KDCube user from the
-      credential envelope.
+    - ``scope_factory`` returns the effective primary memory scope for this
+      request. In delegated-client calls this is the grantor from the
+      Connection Hub delegation edge.
     - ``read_user_ids_factory`` optionally returns all linked user ids that
       should be included in user-facing reads. If it fails, these tools fall
       back to the single effective user id instead of failing the whole MCP
@@ -124,6 +127,15 @@ def build_user_memories_mcp_app(
         """Resolve the identity-family read set, with safe single-user fallback."""
         try:
             return await read_user_ids_factory(scope)
+        except Exception:
+            return None
+
+    async def _query_embedding(scope: MemoryScope, query: str) -> Optional[Sequence[float]]:
+        normalized = str(query or "").strip()
+        if not normalized or search_embedding_factory is None:
+            return None
+        try:
+            return await search_embedding_factory(scope, normalized)
         except Exception:
             return None
 
@@ -171,16 +183,19 @@ def build_user_memories_mcp_app(
     ) -> dict[str, Any]:
         scope = scope_factory().normalized()
         user_ids = await _read_user_ids(scope)
+        normalized_query = str(query or "").strip()
+        query_embedding = await _query_embedding(scope, normalized_query)
         request = MemorySearchRequest(
             scope=scope,
-            query=str(query or "").strip(),
-            mode="hybrid" if str(query or "").strip() else "recent",
+            query=normalized_query,
+            mode="hybrid" if normalized_query else "recent",
             status=_normalized_status(status),
             visible_to_user=True,
             include_private=True,
             scope_filter="all_user_memories",
             limit=_safe_limit(limit),
             user_ids=user_ids,
+            query_embedding=query_embedding,
         )
         rows = await store_factory().search(request)
         memories: list[dict[str, Any]] = []

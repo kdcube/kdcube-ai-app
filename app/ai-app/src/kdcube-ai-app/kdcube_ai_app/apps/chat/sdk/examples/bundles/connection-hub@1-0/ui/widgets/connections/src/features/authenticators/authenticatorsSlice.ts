@@ -42,7 +42,6 @@ export interface UpsertAuthenticatorArgs {
   authenticatorId: string;
   provider: string;
   authorityId?: string;
-  integrationId?: string;
   label?: string;
   enabled?: boolean;
   roleProviding?: boolean;
@@ -65,7 +64,6 @@ export const upsertAuthenticator = createAsyncThunk<
         authenticator_id: args.authenticatorId,
         provider: args.provider,
         authority_id: args.authorityId || '',
-        integration_id: args.integrationId || '',
         label: args.label || '',
         enabled: args.enabled !== false,
         role_providing: args.roleProviding === true,

@@ -105,7 +105,8 @@ async def test_automation_subject_uses_carried_role_when_no_pg():
     ep = _StubEP(pg_pool=None)
     subj = await ops._automation_econ_subject(ep, target_user="u1", source={"user_type": "privileged"})
     assert (subj.tenant, subj.project, subj.user_id) == ("t", "p", "u1")
-    assert subj.user_type == "privileged"  # privileged preserved without DB re-resolve
+    assert subj.budget_bypass is True  # privileged preserved without DB re-resolve
+    assert subj.is_anonymous is False
 
 
 async def test_automation_subject_can_use_platform_authority_user():
@@ -119,13 +120,15 @@ async def test_automation_subject_can_use_platform_authority_user():
         },
     )
     assert (subj.tenant, subj.project, subj.user_id) == ("t", "p", "platform-user-1")
-    assert subj.user_type == "privileged"
+    assert subj.budget_bypass is True
+    assert subj.is_anonymous is False
 
 
 async def test_automation_subject_falls_back_to_registered():
     ep = _StubEP(pg_pool=None)
     subj = await ops._automation_econ_subject(ep, target_user="u1", source={})
-    assert subj.user_type == "registered"
+    assert subj.budget_bypass is False
+    assert subj.is_anonymous is False
 
 
 # --------------------------------------------------------------------------
@@ -145,7 +148,8 @@ async def test_verify_economics_preflight_ok(monkeypatch):
 
     async def _pf(entrypoint, *, subject, estimate, flow, policy=None):
         seen["flow"] = flow
-        seen["role"] = subject.user_type
+        seen["budget_bypass"] = subject.budget_bypass
+        seen["is_anonymous"] = subject.is_anonymous
         seen["res"] = estimate.reservation_usd
         seen["concurrency"] = policy.enforce_concurrency
         return SimpleNamespace(lane="plan", plan_id="free", funding_source="project", est_turn_usd=0.5, admit=None)
@@ -153,9 +157,16 @@ async def test_verify_economics_preflight_ok(monkeypatch):
     monkeypatch.setattr(enf, "economic_preflight", _pf)
     ep = _StubEP(economics=True, reservation=0.5)
     subj, dec = await ops._automation_verify_economics(ep, target_user="u1", source={"user_type": "paid"})
-    assert subj.user_type == "paid"
+    assert subj.budget_bypass is False
+    assert subj.is_anonymous is False
     assert dec.funding_source == "project"
-    assert seen == {"flow": "automations", "role": "paid", "res": 0.5, "concurrency": False}
+    assert seen == {
+        "flow": "automations",
+        "budget_bypass": False,
+        "is_anonymous": False,
+        "res": 0.5,
+        "concurrency": False,
+    }
 
 
 async def test_verify_economics_denied_raises(monkeypatch):

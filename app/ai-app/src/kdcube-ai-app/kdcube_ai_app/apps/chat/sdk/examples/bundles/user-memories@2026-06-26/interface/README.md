@@ -68,7 +68,7 @@ surfaces:
       memories:
         auth:
           mode: managed
-          authority_id: oauth_mcp
+          authority_id: delegated_client
           tools:
             memory_search:
               grants: [memories:read]
@@ -81,13 +81,15 @@ Tools:
 
 | Tool | Purpose |
 |------|---------|
-| `memory_search` | Search the approving user's visible memory notes. Reads aggregate across linked identities through `identity_family_resolve` when that user preference is enabled. |
-| `memory_get` | Read one visible memory note by id from the same identity-family read scope. |
+| `memory_search` | Search the approving user's visible memory notes. Delegated reads aggregate across linked identities through `delegated_identity_scope_resolve` when the resource consent allows `grantor_identity_family`. |
+| `memory_get` | Read one visible memory note by id from the same delegated identity-scope read set. |
 
 The MCP access token is an integration credential. The bundle reads memories for
-the token's `grantor_subject` from the delegated credential envelope, not for the
-derived `integration:claude:*` token subject. Writes are intentionally not
-exposed over this MCP endpoint.
+the delegated identity scope resolved by Connection Hub, not for the derived
+`integration:claude:*` token subject. With `identity_scope:
+grantor_identity_family`, reads can include memories written under linked
+runtime identities such as Telegram. Writes are intentionally not exposed over
+this MCP endpoint.
 
 ## Storages
 
@@ -121,7 +123,8 @@ external Claude client
   └─ Connection Hub OAuth consent for resource=user-memories MCP URL
         └─ delegated token with memories:read + selected memory_* tools
         └─ public/mcp/memories
-              └─ SDK memory store for grantor_subject
+              └─ Connection Hub delegated_identity_scope_resolve
+              └─ SDK memory store for returned memory_user_ids
 ```
 
 Auth: per signed-in user (cookie/idToken). The memory store is keyed by the

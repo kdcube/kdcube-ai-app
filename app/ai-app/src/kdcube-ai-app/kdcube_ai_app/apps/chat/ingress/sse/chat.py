@@ -519,6 +519,7 @@ def create_sse_router(
             "roles": list(session_obj.roles or []),
             "permissions": list(session_obj.permissions or []),
             "timezone": session_obj.timezone,
+            "identity_authority": dict(getattr(session_obj, "identity_authority", None) or {}),
         }
 
     def _resolve_sse_client(session_id: str, stream_id: str | None) -> Client | None:

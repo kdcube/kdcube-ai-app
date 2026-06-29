@@ -12,13 +12,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Mapping, Sequence, TypeVar
 
-from .models import AuthenticatorRegistration, RequestEnvelope
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.authenticators.models import (
+    AuthenticatorRegistration,
+    RequestEnvelope,
+)
 
 
 HEADER_AUTHORITY_ID = "x-kdcube-auth-authority-id"
 HEADER_AUTHENTICATOR_ID = "x-kdcube-auth-authenticator-id"
-HEADER_INTEGRATION_ID = "x-kdcube-auth-integration-id"
-HEADER_CONNECTION_ID = "x-kdcube-auth-connection-id"
 HEADER_PROVIDER = "x-kdcube-auth-provider"
 
 
@@ -52,8 +53,6 @@ class AuthRequestHints:
 
     authority_id: str = ""
     authenticator_id: str = ""
-    integration_id: str = ""
-    connection_id: str = ""
     provider: str = ""
 
     @classmethod
@@ -82,23 +81,6 @@ class AuthRequestHints:
                 or (body.get("auth_authenticator_id") if isinstance(body, Mapping) else "")
                 or (body.get("authenticatorId") if isinstance(body, Mapping) else "")
             ),
-            integration_id=_str(
-                headers.get(HEADER_INTEGRATION_ID)
-                or headers.get("x-kdcube-integration-id")
-                or query.get("auth_integration_id")
-                or query.get("kdcube_auth_integration_id")
-                or query.get("integration_id")
-                or query.get("integration")
-                or (body.get("auth_integration_id") if isinstance(body, Mapping) else "")
-                or (body.get("integrationId") if isinstance(body, Mapping) else "")
-            ),
-            connection_id=_str(
-                headers.get(HEADER_CONNECTION_ID)
-                or query.get("connection_id")
-                or query.get("connection")
-                or (body.get("connection_id") if isinstance(body, Mapping) else "")
-                or (body.get("connectionId") if isinstance(body, Mapping) else "")
-            ),
             provider=_str(
                 headers.get(HEADER_PROVIDER)
                 or headers.get("x-kdcube-auth-provider-id")
@@ -122,8 +104,6 @@ class AuthRequestHints:
             return cls(
                 authority_id=_str(value.get("authority_id") or value.get("authority")),
                 authenticator_id=_str(value.get("authenticator_id") or value.get("authenticator")),
-                integration_id=_str(value.get("integration_id") or value.get("integration")),
-                connection_id=_str(value.get("connection_id") or value.get("connection")),
                 provider=_str(value.get("provider")),
             )
         return cls()
@@ -132,14 +112,12 @@ class AuthRequestHints:
         return {
             "authority_id": self.authority_id,
             "authenticator_id": self.authenticator_id,
-            "integration_id": self.integration_id,
-            "connection_id": self.connection_id,
             "provider": self.provider,
         }
 
     @property
     def has_explicit_selector(self) -> bool:
-        return bool(self.authenticator_id or self.connection_id or self.integration_id or self.authority_id)
+        return bool(self.authenticator_id or self.authority_id)
 
 
 @dataclass(frozen=True)
@@ -263,19 +241,7 @@ def select_authenticator_candidates(
             if _str(_field(row, "authority_id")) == request_hints.authority_id
         ]
 
-    connection_hint = request_hints.connection_id or request_hints.integration_id
-    if connection_hint:
-        narrowed = [
-            row
-            for row in narrowed
-            if connection_hint
-            in {
-                _str(_field(row, "connection_id")),
-                _str(_field(row, "integration_id")),
-            }
-        ]
-
-    if request_hints.authority_id or connection_hint:
+    if request_hints.authority_id:
         return narrowed
 
     if request_hints.provider:
@@ -293,8 +259,6 @@ __all__ = [
     "AuthorityIdentity",
     "HEADER_AUTHENTICATOR_ID",
     "HEADER_AUTHORITY_ID",
-    "HEADER_CONNECTION_ID",
-    "HEADER_INTEGRATION_ID",
     "HEADER_PROVIDER",
     "SurfaceGuardRequirement",
     "select_authenticator_candidates",

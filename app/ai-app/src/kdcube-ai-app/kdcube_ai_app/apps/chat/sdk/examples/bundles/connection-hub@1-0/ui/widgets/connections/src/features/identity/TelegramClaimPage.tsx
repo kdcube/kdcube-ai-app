@@ -2,11 +2,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAppDispatch, useAppSelector } from '../../app/hooks';
 import {
   claimTelegramLinkChallenge,
-  loadIdentityLinks,
+  loadConnectionEdges,
   loadTelegramLinkChallengeStatus,
 } from './identitySlice';
 import { signOutPlatformSession, startPlatformSignIn } from '../../api/platformAuth';
-import type { IdentityLink } from '../../api/types';
+import type { ConnectionEdge, DelegationGrantOption } from '../../api/types';
 
 interface TelegramClaimPageProps {
   challengeId: string;
@@ -36,11 +36,13 @@ async function startKdcubeSignIn() {
 
 export function TelegramClaimPage({ challengeId }: TelegramClaimPageProps) {
   const dispatch = useAppDispatch();
-  const { telegramChallenge, links, platformUserId, error } = useAppSelector((s) => s.identity);
+  const { telegramChallenge, edges, platformUserId, error } = useAppSelector((s) => s.identity);
   const [status, setStatus] = useState<ClaimStatus>('checking');
   const [localError, setLocalError] = useState('');
   const [attempt, setAttempt] = useState(0);
   const [authBusy, setAuthBusy] = useState(false);
+  const [consentChecked, setConsentChecked] = useState(false);
+  const [selectedGrants, setSelectedGrants] = useState<string[]>([]);
 
   const loadChallengeStatus = useCallback(async (isCancelled: () => boolean) => {
     setStatus('checking');
@@ -48,10 +50,12 @@ export function TelegramClaimPage({ challengeId }: TelegramClaimPageProps) {
     return dispatch(loadTelegramLinkChallengeStatus(challengeId)).unwrap()
       .then(async (result) => {
         if (isCancelled()) return;
-        await dispatch(loadIdentityLinks()).unwrap().catch(() => undefined);
+        await dispatch(loadConnectionEdges()).unwrap().catch(() => undefined);
         if (isCancelled()) return;
         const challengeStatus = String(result.challenge?.status || '');
-        setStatus(challengeStatus === 'completed' && result.link ? 'connected' : 'confirm');
+        const nextStatus = challengeStatus === 'completed' && result.edge ? 'connected' : 'confirm';
+        setStatus(nextStatus);
+        if (nextStatus === 'confirm') setConsentChecked(false);
       })
       .catch((err) => {
         if (isCancelled()) return;
@@ -78,40 +82,72 @@ export function TelegramClaimPage({ challengeId }: TelegramClaimPageProps) {
     return () => window.removeEventListener('kdcube-auth-changed', onAuthChanged);
   }, []);
 
-  const link = useMemo<IdentityLink | null>(() => {
-    const fromChallenge = telegramChallenge?.link;
-    if (fromChallenge?.provider === 'telegram') return fromChallenge;
+  const edge = useMemo<ConnectionEdge | null>(() => {
+    const fromChallenge = telegramChallenge?.edge;
+    if (fromChallenge?.from?.provider === 'telegram') return fromChallenge;
     const subject = telegramChallenge?.challenge?.provider_subject;
     if (subject) {
-      return links.find((item) => item.provider === 'telegram' && item.provider_subject === subject) || null;
+      return edges.find((item) => item.from?.provider === 'telegram' && item.from?.subject === subject) || null;
     }
-    return links.find((item) => item.provider === 'telegram') || null;
-  }, [links, telegramChallenge]);
+    return edges.find((item) => item.from?.provider === 'telegram') || null;
+  }, [edges, telegramChallenge]);
 
-  const displayName = link?.label || link?.provider_subject || telegramChallenge?.challenge?.label || 'Telegram';
-  const telegramUserId = link?.provider_subject || telegramChallenge?.challenge?.provider_subject || '';
+  const source = edge?.from || {};
+  const target = edge?.to || {};
+  const displayName = source.label || source.subject || telegramChallenge?.challenge?.label || 'Telegram';
+  const telegramUserId = source.subject || telegramChallenge?.challenge?.provider_subject || '';
   const kdcubeUserId = (
-    link?.platform_user_id
+    target.user_id
     || platformUserId
     || telegramChallenge?.platform_user_id
-    || telegramChallenge?.challenge?.platform_user_id
+    || telegramChallenge?.target_user_id
+    || telegramChallenge?.challenge?.target_user_id
     || ''
   );
   const message = localError || error;
+  const grantOptions = useMemo<DelegationGrantOption[]>(() => (
+    Array.isArray(telegramChallenge?.delegation_options) ? telegramChallenge.delegation_options : []
+  ), [telegramChallenge]);
+  const defaultGrantSelection = useMemo(() => (
+    grantOptions
+      .filter((option) => option.default !== false)
+      .map((option) => String(option.grant || '').trim())
+      .filter(Boolean)
+  ), [grantOptions]);
+
+  useEffect(() => {
+    if (status !== 'confirm') return;
+    const existing = telegramChallenge?.challenge?.grants;
+    const initial = Array.isArray(existing) && existing.length
+      ? existing.map((grant) => String(grant || '').trim()).filter(Boolean)
+      : defaultGrantSelection;
+    setSelectedGrants(initial);
+  }, [challengeId, defaultGrantSelection, status, telegramChallenge?.challenge?.grants]);
+
+  const toggleGrant = useCallback((grant: string, checked: boolean) => {
+    const normalized = String(grant || '').trim();
+    if (!normalized) return;
+    setSelectedGrants((current) => {
+      const set = new Set(current);
+      if (checked) set.add(normalized);
+      else set.delete(normalized);
+      return Array.from(set);
+    });
+  }, []);
 
   const claimLink = useCallback(async () => {
     setStatus('claiming');
     setLocalError('');
     try {
-      await dispatch(claimTelegramLinkChallenge(challengeId)).unwrap();
-      await dispatch(loadIdentityLinks()).unwrap().catch(() => undefined);
+      await dispatch(claimTelegramLinkChallenge({ challengeId, grants: selectedGrants })).unwrap();
+      await dispatch(loadConnectionEdges()).unwrap().catch(() => undefined);
       setStatus('connected');
     } catch (err) {
       const text = errorText(err);
       setStatus(isSignInRequired(text) ? 'signin_required' : 'failed');
       setLocalError(text);
     }
-  }, [challengeId, dispatch]);
+  }, [challengeId, dispatch, selectedGrants]);
 
   const clearPlatformSession = useCallback(async () => {
     setAuthBusy(true);
@@ -150,8 +186,52 @@ export function TelegramClaimPage({ challengeId }: TelegramClaimPageProps) {
                 {kdcubeUserId ? <div className="account-sub">KDCube user id: {kdcubeUserId}</div> : null}
               </div>
             </div>
+            <div className="notice">
+              After linking, KDCube can recognize the same person when requests
+              arrive from this Telegram account. Select exactly what Telegram
+              may derive from this signed-in KDCube account.
+            </div>
+            {grantOptions.length ? (
+              <div className="grant-list" aria-label="Delegated capabilities">
+                {grantOptions.map((option) => {
+                  const grant = String(option.grant || '').trim();
+                  if (!grant) return null;
+                  return (
+                    <label key={grant} className="grant-option">
+                      <input
+                        type="checkbox"
+                        checked={selectedGrants.includes(grant)}
+                        onChange={(event) => toggleGrant(grant, event.target.checked)}
+                      />
+                      <span>
+                        <strong>{option.label || grant}</strong>
+                        {option.description ? <small>{option.description}</small> : null}
+                        <code>{grant}</code>
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="notice">
+                KDCube did not return any delegable capabilities for this account.
+              </div>
+            )}
+            <label className="checkbox-line">
+              <input
+                type="checkbox"
+                checked={consentChecked}
+                onChange={(event) => setConsentChecked(event.target.checked)}
+              />
+              <span>I confirm this Telegram account may use the selected KDCube capabilities.</span>
+            </label>
             <div className="button-row">
-              <button type="button" className="btn" onClick={() => void claimLink()}>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => void claimLink()}
+                disabled={!consentChecked || selectedGrants.length === 0}
+              >
                 Link this Telegram account
               </button>
               <button
@@ -187,6 +267,9 @@ export function TelegramClaimPage({ challengeId }: TelegramClaimPageProps) {
                   <div className="account-sub">Telegram nickname: {displayName}</div>
                 ) : null}
                 {kdcubeUserId ? <div className="account-sub">KDCube user id: {kdcubeUserId}</div> : null}
+                {edge?.grants?.length ? (
+                  <div className="account-sub">Delegated grants: {edge.grants.join(', ')}</div>
+                ) : null}
               </div>
             </div>
             <div className="button-row">

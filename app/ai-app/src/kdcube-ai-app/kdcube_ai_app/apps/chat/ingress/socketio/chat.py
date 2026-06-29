@@ -502,6 +502,7 @@ class SocketIOChatHandler:
                 roles=user_session_data.get("roles", []),
                 permissions=user_session_data.get("permissions", []),
                 timezone=user_session_data.get("timezone", "unknown"),
+                identity_authority=user_session_data.get("identity_authority") or None,
             )
 
             # rebuild ctx if we stored it on connect; else fallback
@@ -703,6 +704,7 @@ class SocketIOChatHandler:
             roles=user_session.get("roles", []),
             permissions=user_session.get("permissions", []),
             timezone=user_session.get("timezone", "Europe/Berlin"),
+            identity_authority=user_session.get("identity_authority") or None,
         )
 
         conv_id = (data or {}).get("conversation_id") or session.session_id

@@ -51,8 +51,8 @@ authorize / reject
 
 | Term | Meaning |
 | --- | --- |
-| `authority_id` | The identity/grant realm. Examples: `kdcube.platform`, `yey.custom`, `telegram.kdcube_ref`, `oauth_mcp`. |
-| `authenticator_id` | One verifier for one proof shape. Examples: `kdcube.cognito`, `yey.google_oidc`, `telegram.kdcube_ref.init_data`, `oauth_mcp.bearer`. |
+| `authority_id` | The identity/grant realm. Examples: `kdcube.platform`, `yey.custom`, `telegram.kdcube_ref`, `delegated_client`. |
+| `authenticator_id` | One verifier for one proof shape. Examples: `kdcube.cognito`, `yey.google_oidc`, `telegram.kdcube_ref.init_data`, `delegated_client.bearer`. |
 | Authority Provider | Owns an `authority_id`, identity namespace, grant resolver, linkers, and registered authenticators. |
 | Authenticator | Verifies auth material and returns a verified identity under its authority. |
 | Connection Hub Authenticator Selector | Chooses authenticator candidates inside Connection Hub. It does not authorize and it does not trust hints as facts. |
@@ -69,10 +69,9 @@ X-KDCube-Auth-Authority-ID: yey.custom
 X-KDCube-Auth-Authenticator-ID: yey.google_oidc
 ```
 
-During migration, older surfaces may still send
-`X-KDCube-Auth-Integration-ID` or `X-KDCube-Auth-Connection-ID`; the runtime may
-treat those as selector aliases only. New surfaces should use authority and
-authenticator ids.
+These are non-secret selector hints. They narrow candidate authenticators, but
+identity is proven only when the selected authenticator verifies the
+provider-specific proof.
 
 Provider callbacks can carry the same information in query params:
 
@@ -115,7 +114,7 @@ surface_guard:
     authenticator_ids:
       - kdcube.cognito
       - yey.google_oidc
-      - oauth_mcp.bearer
+      - delegated_client.bearer
 ```
 
 Current platform surfaces implicitly require `kdcube.platform`. Custom
@@ -131,12 +130,12 @@ Surface Guard:
 
 Request:
   Authorization: Bearer <token>
-  X-KDCube-Auth-Authenticator-ID: oauth_mcp.bearer
+  X-KDCube-Auth-Authenticator-ID: delegated_client.bearer
 
 Runtime:
-  selector -> oauth_mcp.bearer
-  authenticator -> identity=integration:claude:<grantor>, authority_id=oauth_mcp
-  linker oauth_mcp -> kdcube.platform if needed
+  selector -> delegated_client.bearer
+  authenticator -> identity=integration:claude:<grantor>, authority_id=delegated_client
+  linker delegated_client -> kdcube.platform if needed
   grant resolver for kdcube.platform
   authorize if required grant is present
 ```
@@ -268,7 +267,7 @@ The same model has two lifecycle phases.
 Provisioning / consent
   grantor proves authority
     -> user login / channel proof / user or admin consent
-    -> identity link or delegated grant is written
+    -> connection edge or delegated grant is written
     -> credential/capability is issued or stored
 
 Runtime use
@@ -288,15 +287,15 @@ Current state:
 - Connection Hub Telegram rows are request authenticators;
 - Connection Hub caches authenticator metadata in Redis and still resolves proof,
   links, and grants on each request;
-- OAuth/MCP is a service auth implementation with its own grant store;
+- OAuth delegated credential is a service auth implementation with its own grant store;
 - most surfaces implicitly require `kdcube.platform`.
 
 Target:
 
 - all authenticators declare an `authority_id`;
 - surface guards declare required authority and grants;
-- OAuth/MCP is registered as the `oauth_mcp` authority provider with
-  `oauth_mcp.bearer` authenticator and delegated-client grant resolver;
+- OAuth delegated credential is registered as the `delegated_client` authority provider with
+  `delegated_client.bearer` authenticator and delegated-client grant resolver;
 - custom deployments such as Yey register `yey.custom` as an authority provider;
 - platform APIs require `kdcube.platform` only when they truly require platform
   authority.

@@ -6,7 +6,7 @@
 This module is intentionally middleware-facing. It can run before a platform
 session exists: the gateway passes a raw request envelope to Connection Hub.
 Connection Hub provider modules verify any recognized proof using Connection Hub
-config, secrets, and identity-link data. This surface converts the returned
+config, secrets, and connection-edge data. This surface converts the returned
 authority into a normal ``UserSession`` for the rest of the gateway.
 """
 
@@ -112,7 +112,6 @@ def _external_auth_summary(envelope: RequestEnvelope) -> dict[str, Any]:
         "authority_id": hints.authority_id,
         "authenticator_id": hints.authenticator_id,
         "provider": hints.provider,
-        "integration_id": hints.integration_id or hints.connection_id,
         "has_telegram_init_data": has_telegram_init_data,
         "has_provider_signature": has_provider_signature,
         "has_authorization": bool(headers.get("authorization")),
@@ -125,7 +124,6 @@ def _should_attempt_connection_hub(summary: Mapping[str, Any]) -> bool:
         summary.get("authority_id")
         or summary.get("authenticator_id")
         or summary.get("provider")
-        or summary.get("integration_id")
         or summary.get("has_telegram_init_data")
         or summary.get("has_provider_signature")
     )
@@ -205,7 +203,7 @@ class ConnectionHubAuthenticationSurface:
         trace = _should_trace_auth_attempt(summary)
         if trace:
             logger.info(
-                "[auth.connection_hub.surface] start tenant=%s project=%s bundle=%s operation=%s method=%s path=%s authority_id=%s authenticator_id=%s provider_hint=%s integration_id=%s has_telegram_init_data=%s has_provider_signature=%s has_authorization=%s has_cookie=%s include_body=%s",
+                "[auth.connection_hub.surface] start tenant=%s project=%s bundle=%s operation=%s method=%s path=%s authority_id=%s authenticator_id=%s provider_hint=%s has_telegram_init_data=%s has_provider_signature=%s has_authorization=%s has_cookie=%s include_body=%s",
                 self.tenant,
                 self.project,
                 self.bundle_id,
@@ -215,7 +213,6 @@ class ConnectionHubAuthenticationSurface:
                 summary.get("authority_id") or "",
                 summary.get("authenticator_id") or "",
                 summary.get("provider") or "",
-                summary.get("integration_id") or "",
                 summary.get("has_telegram_init_data"),
                 summary.get("has_provider_signature"),
                 summary.get("has_authorization"),
@@ -227,13 +224,14 @@ class ConnectionHubAuthenticationSurface:
         except Exception as exc:
             if trace:
                 logger.warning(
-                    "[auth.connection_hub.surface] failed tenant=%s project=%s bundle=%s operation=%s provider_hint=%s integration_id=%s error=%s",
+                    "[auth.connection_hub.surface] failed tenant=%s project=%s bundle=%s operation=%s provider_hint=%s authority_id=%s authenticator_id=%s error=%s",
                     self.tenant,
                     self.project,
                     self.bundle_id,
                     self.operation,
                     summary.get("provider") or "",
-                    summary.get("integration_id") or "",
+                    summary.get("authority_id") or "",
+                    summary.get("authenticator_id") or "",
                     exc,
                 )
             raise
@@ -241,11 +239,11 @@ class ConnectionHubAuthenticationSurface:
         if not (authenticated.ok and authenticated.authenticated):
             if trace:
                 logger.info(
-                    "[auth.connection_hub.surface] declined tenant=%s project=%s provider=%s integration_id=%s selected_authenticator=%s ok=%s authenticated=%s error=%s message=%s",
+                    "[auth.connection_hub.surface] declined tenant=%s project=%s provider=%s authority_id=%s selected_authenticator=%s ok=%s authenticated=%s error=%s message=%s",
                     self.tenant,
                     self.project,
                     authenticated.provider or summary.get("provider") or "",
-                    authenticated.integration_id or authenticated.connection_id or summary.get("integration_id") or "",
+                    authenticated.authority_id or summary.get("authority_id") or "",
                     authenticated.selected_authenticator or "",
                     authenticated.ok,
                     authenticated.authenticated,
@@ -291,11 +289,11 @@ class ConnectionHubAuthenticationSurface:
         session.identity_authority = authority
         if trace:
             logger.info(
-                "[auth.connection_hub.surface] accepted tenant=%s project=%s provider=%s integration_id=%s selected_authenticator=%s actor_user_id=%s platform_user_present=%s effective_user_type=%s roles=%s",
+                "[auth.connection_hub.surface] accepted tenant=%s project=%s provider=%s authority_id=%s selected_authenticator=%s actor_user_id=%s platform_user_present=%s effective_user_type=%s roles=%s",
                 self.tenant,
                 self.project,
                 authenticated.provider or summary.get("provider") or "",
-                authenticated.integration_id or authenticated.connection_id or summary.get("integration_id") or "",
+                authenticated.authority_id or summary.get("authority_id") or "",
                 authenticated.selected_authenticator or "",
                 actor_user_id,
                 bool(authenticated.platform_user_id or authority.get("platform_user_id")),
@@ -336,6 +334,7 @@ class ConnectionHubAuthenticationSurface:
                 permissions=[],
                 timezone=None,
                 utc_offset_min=None,
+                identity_authority={},
             ),
         )
         result = await invoke_local_bundle_operation(

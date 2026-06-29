@@ -406,7 +406,7 @@ surfaces:
       knowledge:
         auth:
           mode: managed
-          authority_id: oauth_mcp
+          authority_id: delegated_client
           grants:
             - conversations:read
 ```

@@ -1,7 +1,7 @@
 ---
 id: kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/connection-hub@1-0/docs/README.md
 title: "Connection Hub Design"
-summary: "Design overview of connection-hub@1-0: identity links, delegated account connections, shared OAuth callback, named-service exposure, and the Connections widget."
+summary: "Design overview of connection-hub@1-0: connection edges, delegated account connections, shared OAuth callback, named-service exposure, and the Connections widget."
 status: active
 tags: ["app", "connection-hub", "identity", "connections", "named-services", "oauth", "email", "design"]
 ---
@@ -14,7 +14,7 @@ identities and delegated accounts into KDCube.
 It has two responsibilities that must stay separate:
 
 ```text
-identity links
+connection edges
   external proof -> platform user id
   examples: google:person@example.com, telegram:314062490, bundle:app:user-77
   used by: auth bridges, inbound hooks, cross-channel user routing
@@ -29,7 +29,7 @@ Do not infer platform roles from delegated accounts. The long-term authority is:
 
 ```text
 verified external identity
-  -> Connection Hub identity link
+  -> Connection Hub connection edge
   -> platform principal/role resolver
   -> platform user id + roles/permissions
 ```
@@ -38,8 +38,8 @@ verified external identity
 
 A user-scoped hub that:
 
-- stores external identity links for the current platform user;
-- creates short-lived identity-link challenges for proof flows such as
+- stores external connection edges for the current platform user;
+- creates short-lived connection-edge challenges for proof flows such as
   Telegram Mini App linking;
 - resolves a verified external identity to a platform principal envelope;
 - resolves a current actor/platform user to its linked identity family and
@@ -53,8 +53,8 @@ A user-scoped hub that:
 
 ## Building blocks it wires
 
-- **SDK `connections.hub.identity_links`** — identity-link storage and the temporary
-  principal-resolution fixture, plus one-time identity-link challenges. This
+- **SDK `connections.hub.connection_edges`** — connection-edge storage and the temporary
+  principal-resolution fixture, plus one-time connection-edge challenges. This
   module deliberately returns a
   `role_resolution` envelope that points to the future platform principal/role
   resolver instead of treating the app as the role authority.
@@ -101,15 +101,16 @@ signed by `connections.oauth_state_secret`.
 ## Surfaces
 
 - `named_service` (operations) — the whole `connections` contract.
-- `identity_links_list`, `identity_link_upsert`, `identity_link_remove`,
-  `identity_link_challenge_create`, `identity_link_challenge_status`,
-  `identity_resolve`, `identity_family_resolve` (operations) — identity-link
-  management, proof challenges, principal resolution, and linked-family user-id
-  expansion.
-- `telegram_identity_link_complete` (public) — validates Telegram Mini App
+- `connection_edges_list`, `connection_edge_upsert`, `connection_edge_remove`,
+  `connection_edge_challenge_create`, `connection_edge_challenge_status`,
+  `identity_resolve`, `identity_family_resolve`,
+  `delegated_identity_scope_resolve` (operations) — connection-edge management,
+  proof challenges, principal resolution, linked-family user-id expansion, and
+  delegated credential identity-scope resolution.
+- `telegram_connection_edge_complete` (public) — validates Telegram Mini App
   `initData` and completes a pending Telegram link challenge.
-- `telegram_identity_link_status`, `telegram_identity_link_start`,
-  `telegram_identity_link_remove` (public) — Telegram-first Mini App linking:
+- `telegram_connection_edge_status`, `telegram_connection_edge_start`,
+  `telegram_connection_edge_remove` (public) — Telegram-first Mini App linking:
   read current link, create a provider-proof challenge, and unlink the current
   Telegram subject.
 - `federated_data_bus_claim` (public) — validates the promoted request auth
@@ -156,11 +157,11 @@ For link completion, the child iframe creates a Connection Hub live channel:
 iframe -> federated_data_bus_claim
        -> short-lived Data Bus token backed by an actor UserSession
        -> Socket.IO session scoped to connection-hub@1-0
-       -> telegram_identity_link_start(live_event_session_id)
-browser claim -> identity_link_challenge_status
+       -> telegram_connection_edge_start(live_event_session_id)
+browser claim -> connection_edge_challenge_status
        -> explicit user confirmation
-       -> identity_link_challenge_claim(confirmed=true)
-       -> connection_hub.identity.link_changed to the iframe session
+       -> connection_edge_challenge_claim(confirmed=true)
+       -> connection_hub.edge.changed to the iframe session
        -> iframe reclaims/reconnects and refreshes link status
 ```
 

@@ -1,7 +1,7 @@
 ---
 id: kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/connection-hub@1-0/docs/journal/2026-06-29-delegated-credential-surface-split.md
 title: "2026-06-29 - Delegated Credential Surface Split"
-summary: "Connection Hub work split the OAuth/MCP shortcut into delegated credential authority concerns and actual bundle/proc surface ownership."
+summary: "Connection Hub work split the OAuth delegated credential shortcut into delegated credential authority concerns and actual bundle/proc surface ownership."
 status: active
 tags: ["connection-hub", "delegated-credentials", "custom-authority", "mcp", "yay"]
 ---
@@ -10,7 +10,7 @@ tags: ["connection-hub", "delegated-credentials", "custom-authority", "mcp", "ya
 
 ## Problem
 
-The current OAuth/MCP integration started as a working external-client path for
+The current OAuth delegated credential integration started as a working external-client path for
 Claude-style feedback export. It proved the product need, but it mixed three
 separate responsibilities:
 

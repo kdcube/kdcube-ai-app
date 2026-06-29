@@ -1,9 +1,9 @@
 ---
 id: repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/storage-model/storage-model-README.md
 title: "Connection Hub Storage Model"
-summary: "Storage map for Connection Hub data: descriptors, secrets, request-authenticator metadata, identity links, link challenges, delegated account tokens, and runtime caches."
+summary: "Storage map for Connection Hub data: descriptors, secrets, request-authenticator metadata, connection edges, link challenges, delegated account tokens, and runtime caches."
 status: active
-tags: ["sdk", "connections", "connection-hub", "storage", "postgres", "secrets", "identity-links"]
+tags: ["sdk", "connections", "connection-hub", "storage", "postgres", "secrets", "connection-edges"]
 updated_at: 2026-06-28
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/connection-hub-solution-README.md
@@ -25,8 +25,8 @@ Postgres
   request-authenticator metadata
 
 bundle-local state today
-  identity links
-  identity-link challenges
+  connection edges
+  connection-edge challenges
   delegated account connection state
 
 Redis/cache
@@ -40,9 +40,9 @@ Redis/cache
 | Provider/app config | `bundles.yaml` app props | no | Authority ids, authenticator ids, OAuth app definitions, descriptor authenticators. |
 | Bot token / OAuth client secret | `bundles.secrets.yaml` or secrets service | yes | Read through bundle secret lifecycle using `secret_ref`. |
 | Request-authenticator metadata | Postgres | no | Stores provider, authority id, authenticator id, `secret_ref`, verifier metadata. |
-| Identity link | bundle-local JSON today | no | Maps provider subject to platform user id. |
-| Identity family | derived from identity links | no | Resolver output for product aggregation; not persisted separately. |
-| Identity-link challenge | bundle-local JSON today | no | Short-lived link proof state. |
+| Connection edge | bundle-local JSON today | no | Delegates one authority identity to another authority identity. |
+| Identity family | derived from connection edges | no | Resolver output for product aggregation; not persisted separately. |
+| Connection-edge challenge | bundle-local JSON today | no | Short-lived proof state for writing an edge. |
 | Delegated account token | connections/email stores | yes, user token | OAuth token or app password for automation. |
 | Live link update | Data Bus / event delivery | no | Signals original iframe after browser claim completes. |
 
@@ -67,42 +67,53 @@ connection_hub_request_authenticators
 
 Secret values must not be stored here. Only `secret_ref` is stored.
 
-## Identity Links Today
+## Connection Edges Today
 
-The current playground implementation stores identity links in bundle-local JSON:
+The current example implementation stores connection edges in bundle-local JSON:
 
 ```text
-<bundle_storage_root>/identity/identity-links.json
-<bundle_storage_root>/identity/identity-link-challenges.json
+<bundle_storage_root>/connections/connection-edges.json
+<bundle_storage_root>/connections/connection-edge-challenges.json
 ```
 
-This is why links do not appear in Postgres.
+This is why Telegram/platform edges do not appear in Postgres yet.
 
 For the local demo runtime, the path is:
 
 ```text
-~/.kdcube/kdcube-runtime/<tenant>__<project>/data/bundle-storage/<tenant>/<project>/connection-hub-1-0/identity/
+~/.kdcube/kdcube-runtime/<tenant>__<project>/data/bundle-storage/<tenant>/<project>/connection-hub-1-0/connections/
 ```
 
 ## Target Storage
 
-For production shape, identity links and challenges should move to a durable
+For production shape, connection edges and challenges should move to a durable
 database or platform identity service:
 
 ```text
-connection_hub_identity_links
-  provider
-  provider_subject
-  platform_user_id
-  label
+connection_hub_edges
+  edge_id
+  relationship
+  from_authority_id
+  from_provider
+  from_subject
+  from_user_id
+  to_authority_id
+  to_provider
+  to_subject
+  to_user_id
+  grants
+  constraints
+  proof
   status
   metadata
 
-connection_hub_identity_link_challenges
+connection_hub_edge_challenges
   challenge_id
   provider
   provider_subject
-  platform_user_id
+  target_authority_id
+  target_user_id
+  grants
   live_event_session_id
   status
   expires_at

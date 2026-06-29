@@ -5,9 +5,9 @@ import {
   subscribeConnectionHubEvents,
 } from '../../api/dataBus';
 import { postPublicOp } from '../../api/client';
-import type { IdentityLink, IdentityLinkChallengeResult } from '../../api/types';
+import type { ConnectionEdge, ConnectionEdgeChallengeResult } from '../../api/types';
 
-interface TelegramStatusResult extends IdentityLinkChallengeResult {
+interface TelegramStatusResult extends ConnectionEdgeChallengeResult {
   provider?: string;
   provider_subject?: string;
   connection_id?: string;
@@ -24,17 +24,20 @@ export function TelegramMiniAppLinkPanel() {
   const [error, setError] = useState('');
   const [status, setStatus] = useState<TelegramStatusResult | null>(null);
   const [challenge, setChallenge] = useState<TelegramStatusResult | null>(null);
-  const linked = Boolean(status?.linked || status?.link || challenge?.linked || challenge?.link);
-  const link = (status?.link || challenge?.link || null) as IdentityLink | null;
+  const edge = (status?.edge || challenge?.edge || null) as ConnectionEdge | null;
+  const linked = Boolean(status?.linked || edge || challenge?.linked);
   const platformUrl = challenge?.platform_claim_url || '';
-  const telegramSubject = link?.provider_subject || status?.provider_subject || challenge?.provider_subject || '';
-  const telegramLabel = link?.label || status?.provider_subject || 'Telegram';
+  const source = edge?.from || {};
+  const target = edge?.to || {};
+  const telegramSubject = source.subject || status?.provider_subject || challenge?.provider_subject || '';
+  const telegramLabel = source.label || status?.provider_subject || 'Telegram';
+  const delegatedGrants = edge?.grants || [];
 
   const refresh = useCallback(async () => {
-    const result = await postPublicOp<TelegramStatusResult>('telegram_identity_link_status');
+    const result = await postPublicOp<TelegramStatusResult>('telegram_connection_edge_status');
     if (result.ok === false) throw new Error(result.message || result.error || 'Telegram status failed');
     setStatus(result);
-    if (result.linked || result.link) setChallenge(null);
+    if (result.linked || result.edge) setChallenge(null);
   }, []);
 
   useEffect(() => {
@@ -55,7 +58,7 @@ export function TelegramMiniAppLinkPanel() {
 
   useEffect(() => {
     return subscribeConnectionHubEvents((event) => {
-      if (event.type !== 'connection_hub.identity.link_changed') return;
+      if (event.type !== 'connection_hub.edge.changed') return;
       const data = event.data || {};
       if (data.provider && data.provider !== 'telegram') return;
       void refresh()
@@ -69,12 +72,12 @@ export function TelegramMiniAppLinkPanel() {
     setError('');
     try {
       const liveSessionId = await getConnectionHubLiveSessionId();
-      const result = await postPublicOp<TelegramStatusResult>('telegram_identity_link_start', {
+      const result = await postPublicOp<TelegramStatusResult>('telegram_connection_edge_start', {
         live_event_session_id: liveSessionId,
       });
       if (result.ok === false) throw new Error(result.message || result.error || 'Telegram link failed');
       setChallenge(result);
-      if (result.linked || result.link) {
+      if (result.linked || result.edge) {
         await refresh();
       } else if (result.platform_claim_url) {
         window.open(result.platform_claim_url, '_blank', 'noopener,noreferrer');
@@ -90,7 +93,7 @@ export function TelegramMiniAppLinkPanel() {
     setBusy(true);
     setError('');
     try {
-      const result = await postPublicOp<TelegramStatusResult>('telegram_identity_link_remove');
+      const result = await postPublicOp<TelegramStatusResult>('telegram_connection_edge_remove');
       if (result.ok === false) throw new Error(result.message || result.error || 'Telegram unlink failed');
       setChallenge(null);
       await refresh();
@@ -116,9 +119,16 @@ export function TelegramMiniAppLinkPanel() {
         <h1>Telegram account</h1>
         {linked ? (
           <>
-            <p className="notice success">
-              This Telegram account is linked to your KDCube user.
-            </p>
+            {delegatedGrants.length ? (
+              <p className="notice success">
+                This Telegram account is linked to your KDCube user.
+              </p>
+            ) : (
+              <p className="notice warning">
+                This Telegram account is linked, but no KDCube capabilities are delegated.
+                Unlink and link again to choose what Telegram may use.
+              </p>
+            )}
             <div className="account account-compact">
               <div>
                 <div className="account-title">{telegramLabel}</div>
@@ -127,8 +137,11 @@ export function TelegramMiniAppLinkPanel() {
                   <div className="account-sub">Telegram nickname: {telegramLabel}</div>
                 ) : null}
                 <div className="account-sub">
-                  {link?.platform_user_id ? `KDCube user id: ${link.platform_user_id}` : 'Linked KDCube user'}
+                  {target.user_id ? `KDCube user id: ${target.user_id}` : 'Linked KDCube user'}
                 </div>
+                {delegatedGrants.length ? (
+                  <div className="account-sub">Delegated grants: {delegatedGrants.join(', ')}</div>
+                ) : null}
               </div>
               <button className="btn btn-ghost" type="button" disabled={busy} onClick={unlink}>
                 Unlink

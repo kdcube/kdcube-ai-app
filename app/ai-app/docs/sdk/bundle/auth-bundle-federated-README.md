@@ -16,7 +16,7 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/connection-hub-solution-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/authority-providers/credential-envelope-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/authority-projection/authority-projection-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/link-flows/channel-first-identity-linking-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/link-flows/channel-first-connection-edge-flow-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/service/comm/data-bus-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/service/comm/client-transport-protocols-README.md
 ---
@@ -35,7 +35,7 @@ client with upstream proof
 Connection Hub
   -> selects configured request authenticator
   -> verifies upstream proof
-  -> resolves identity link when present
+  -> resolves connection edge when present
   -> creates/refreshes UserSession for the actor
   -> stores projected authority on session.identity_authority
   -> issues short-lived Data Bus token
@@ -48,7 +48,7 @@ ingress
 
 This is the preferred flow for shared identity providers such as Telegram,
 Slack, Google, or OIDC because Connection Hub owns the request-authenticator
-registry, identity-link lookup, and authority projection.
+registry, connection-edge lookup, and authority projection.
 
 The lower-level primitive is still generic: any proc-side code can call
 `issue_federated_data_bus_token(...)` after it has verified the upstream proof
@@ -217,7 +217,7 @@ and reconnect its Data Bus channel. The existing session may have been created
 before the link existed, so it may not carry the new projected authority.
 
 ```text
-connection_hub.identity.link_changed
+connection_hub.edge.changed
   -> widget calls federated_data_bus_claim again
   -> widget reconnects Socket.IO with the new token/session
   -> widget refreshes link status

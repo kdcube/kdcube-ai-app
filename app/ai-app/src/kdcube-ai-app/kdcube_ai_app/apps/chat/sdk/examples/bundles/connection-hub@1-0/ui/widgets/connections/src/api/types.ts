@@ -55,50 +55,71 @@ export interface StartOAuthResult {
   error?: { message?: string } | null;
 }
 
-export interface IdentityLink {
-  provider: string;
-  provider_subject: string;
-  platform_user_id: string;
+export interface ConnectionEdgeEndpoint {
+  authority_id?: string;
+  provider?: string;
+  subject?: string;
+  user_id?: string;
   label?: string;
+}
+
+export interface ConnectionEdge {
+  edge_id?: string;
+  relationship?: string;
+  from?: ConnectionEdgeEndpoint;
+  to?: ConnectionEdgeEndpoint;
+  grants?: string[];
   status?: string;
   verified_at?: number;
   updated_at?: number;
+  metadata?: Record<string, unknown>;
 }
 
-export interface IdentityLinksResult {
+export interface ConnectionEdgesResult {
   ok?: boolean;
   platform_user_id?: string;
-  links?: IdentityLink[];
+  edges?: ConnectionEdge[];
   error?: string;
 }
 
-export interface IdentityMutationResult {
+export interface ConnectionEdgeMutationResult {
   ok?: boolean;
-  link?: IdentityLink;
+  edge?: ConnectionEdge;
   error?: string;
   message?: string;
 }
 
-export interface IdentityLinkChallenge {
+export interface ConnectionEdgeChallenge {
   challenge_id: string;
   provider: string;
-  platform_user_id: string;
+  target_user_id?: string;
+  target_authority_id?: string;
   status: 'pending' | 'completed' | 'expired' | string;
   created_at?: number;
   expires_at?: number;
   completed_at?: number;
   provider_subject?: string;
   label?: string;
+  grants?: string[];
 }
 
-export interface IdentityLinkChallengeResult {
+export interface DelegationGrantOption {
+  grant: string;
+  kind?: string;
+  label?: string;
+  description?: string;
+  default?: boolean;
+}
+
+export interface ConnectionEdgeChallengeResult {
   ok?: boolean;
-  challenge?: IdentityLinkChallenge;
+  challenge?: ConnectionEdgeChallenge;
   platform_user_id?: string;
+  target_user_id?: string;
   claimable_by_current_user?: boolean;
-  telegram_link_url?: string;
   platform_claim_url?: string;
-  link?: IdentityLink;
+  edge?: ConnectionEdge;
+  delegation_options?: DelegationGrantOption[];
   error?: string;
   message?: string;
 }
@@ -116,8 +137,6 @@ export interface AuthenticatorRow {
   authenticator_id: string;
   provider: string;
   authority_id?: string;
-  integration_id?: string;
-  connection_id?: string;
   label?: string;
   enabled?: boolean;
   role_providing?: boolean;

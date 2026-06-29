@@ -8,8 +8,8 @@ import { ConnectionsList } from './features/connections/ConnectionsList';
 import { clearConnectionsError, loadCatalog } from './features/connections/connectionsSlice';
 import { IcloudPanel } from './features/email/IcloudPanel';
 import { clearEmailError, loadEmailStatus } from './features/email/emailSlice';
-import { IdentityLinksPanel } from './features/identity/IdentityLinksPanel';
-import { clearIdentityError, loadIdentityLinks } from './features/identity/identitySlice';
+import { ConnectionEdgesPanel } from './features/identity/ConnectionEdgesPanel';
+import { clearIdentityError, loadConnectionEdges } from './features/identity/identitySlice';
 import { TelegramClaimPage } from './features/identity/TelegramClaimPage';
 import { TelegramMiniAppLinkPanel } from './features/identity/TelegramMiniAppLinkPanel';
 
@@ -53,7 +53,7 @@ export default function App() {
     void settings.setupParentListener().then(async () => {
       setRuntimeReady(true);
       if (telegramMiniAppMode || claimChallengeId) return;
-      void dispatch(loadIdentityLinks());
+      void dispatch(loadConnectionEdges());
       void dispatch(loadAuthenticators());
       void dispatch(loadCatalog());
       void dispatch(loadEmailStatus());
@@ -77,7 +77,7 @@ export default function App() {
     setRefreshing(true);
     try {
       await Promise.all([
-        dispatch(loadIdentityLinks()).unwrap().catch(() => undefined),
+        dispatch(loadConnectionEdges()).unwrap().catch(() => undefined),
         dispatch(loadAuthenticators()).unwrap().catch(() => undefined),
         dispatch(loadCatalog()).unwrap().catch(() => undefined),
         dispatch(loadEmailStatus()).unwrap().catch(() => undefined),
@@ -139,7 +139,7 @@ export default function App() {
       onTabChange={changeTab}
       telegramConnectStatus={telegramConnectStatus}
     >
-      {activeTab === 'identity' ? <IdentityLinksPanel telegramConnectStatus={telegramConnectStatus} /> : null}
+      {activeTab === 'identity' ? <ConnectionEdgesPanel telegramConnectStatus={telegramConnectStatus} /> : null}
       {activeTab === 'authenticators' ? <AuthenticatorsPanel /> : null}
       {activeTab === 'accounts' ? (
         <>

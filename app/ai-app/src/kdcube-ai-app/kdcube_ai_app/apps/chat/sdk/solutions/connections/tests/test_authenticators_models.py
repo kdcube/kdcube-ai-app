@@ -39,7 +39,7 @@ def test_authenticator_registration_roundtrip():
             "authority_id": "telegram.support",
             "connection_id": "telegram.support",
             "role_providing": False,
-            "secret": "identity.telegram.bot_token_support",
+            "secret": "identity.authenticators.telegram_support.bot_token",
             "selector": {"header": "x-telegram-init-data"},
         }
     )
@@ -47,7 +47,7 @@ def test_authenticator_registration_roundtrip():
     assert row.authenticator_id == "telegram.support"
     assert row.authority_id == "telegram.support"
     assert row.connection_id == "telegram.support"
-    assert row.secret_ref == "identity.telegram.bot_token_support"
+    assert row.secret_ref == "identity.authenticators.telegram_support.bot_token"
     assert row.role_providing is False
     assert row.to_dict()["selector"] == {"header": "x-telegram-init-data"}
 
@@ -95,7 +95,6 @@ def test_request_hints_from_headers_are_selector_hints_not_truth():
             "headers": {
                 "X-KDCube-Auth-Authority-ID": "yey.custom",
                 "X-KDCube-Auth-Authenticator-ID": "yey.google_oidc",
-                "X-KDCube-Auth-Integration-ID": "legacy.integration",
                 "X-KDCube-Auth-Provider": "oidc",
             }
         }
@@ -105,21 +104,19 @@ def test_request_hints_from_headers_are_selector_hints_not_truth():
 
     assert hints.authority_id == "yey.custom"
     assert hints.authenticator_id == "yey.google_oidc"
-    assert hints.integration_id == "legacy.integration"
     assert hints.provider == "oidc"
     assert hints.has_explicit_selector is True
 
 
-def test_request_hints_accept_controlled_aliases_from_query_and_body():
+def test_request_hints_accept_authority_and_authenticator_from_query_and_body():
     envelope = RequestEnvelope.from_dict(
         {
             "query": {
                 "auth_authority_id": "telegram.kdcube_ref",
                 "auth_authenticator_id": "telegram.kdcube_ref",
-                "auth_integration_id": "telegram.kdcube_ref",
                 "auth_provider": "telegram",
             },
-            "body_text": '{"connectionId": "telegram.body"}',
+            "body_text": '{"authorityId": "ignored because query wins"}',
         }
     )
 
@@ -127,8 +124,6 @@ def test_request_hints_accept_controlled_aliases_from_query_and_body():
 
     assert hints.authority_id == "telegram.kdcube_ref"
     assert hints.authenticator_id == "telegram.kdcube_ref"
-    assert hints.integration_id == "telegram.kdcube_ref"
-    assert hints.connection_id == "telegram.body"
     assert hints.provider == "telegram"
 
 

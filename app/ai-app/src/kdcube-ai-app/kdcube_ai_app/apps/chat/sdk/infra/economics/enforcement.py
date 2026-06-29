@@ -103,12 +103,74 @@ def _level_no(level: str) -> int:
 # ----------------------------------------------------------------------------
 @dataclass
 class EconomicsSubject:
-    """Who pays. role is the RESOLVED economics role, never a hardcoded default."""
+    """Who pays.
+
+    ``user_id`` is the billing/quota subject. The subject carries explicit
+    authority facts; it does not carry a compact ``user_type`` lane. That old
+    lane is derived only at legacy accounting/API boundaries from:
+
+    - ``roles`` / ``permissions``: proven authority claims for the subject;
+    - ``budget_bypass``: explicit authority decision for admin/system bypass;
+    - ``is_anonymous`` / missing user_id: anonymous execution;
+    - subscription, wallet and plan rows: paid/project/wallet funding state.
+    """
     tenant: str
     project: str
     user_id: str
-    user_type: str
     timezone: Optional[str] = None
+    roles: tuple[str, ...] = ()
+    permissions: tuple[str, ...] = ()
+    budget_bypass: Optional[bool] = None
+    is_anonymous: Optional[bool] = None
+    provenance: dict[str, Any] = field(default_factory=dict)
+
+
+_PRIVILEGED_ROLE_NAMES = {
+    "kdcube:role:super-admin",
+    "kdcube:role:admin",
+}
+
+
+def _subject_roles(subject: EconomicsSubject) -> set[str]:
+    return {str(role or "").strip() for role in (subject.roles or ()) if str(role or "").strip()}
+
+
+def _subject_is_anonymous(subject: EconomicsSubject) -> bool:
+    if subject.is_anonymous is not None:
+        return bool(subject.is_anonymous)
+    user_id = str(subject.user_id or "").strip()
+    return not user_id or user_id == "anonymous"
+
+
+def _subject_budget_bypass(subject: EconomicsSubject) -> bool:
+    if subject.budget_bypass is not None:
+        return bool(subject.budget_bypass)
+    return bool(_subject_roles(subject) & _PRIVILEGED_ROLE_NAMES)
+
+
+def _subject_plan_role(subject: EconomicsSubject, *, budget_bypass: bool) -> str:
+    if budget_bypass:
+        return "admin"
+    if _subject_is_anonymous(subject):
+        return "anonymous"
+    # Paid/project/wallet funding is resolved from economics state below. The
+    # subject role used for plan lookup only needs to distinguish known users
+    # from anonymous and bypass users.
+    return "registered"
+
+
+def _subject_accounting_user_type(subject: EconomicsSubject) -> str:
+    """Compatibility label for legacy accounting APIs.
+
+    This value is derivative and must not be treated as authority. It preserves
+    the old economics run-accounting contract while the caller-visible subject
+    remains fact-based.
+    """
+    if _subject_budget_bypass(subject):
+        return "privileged"
+    if _subject_is_anonymous(subject):
+        return "anonymous"
+    return "registered"
 
 
 @dataclass
@@ -290,7 +352,7 @@ class EconomicsGuard:
             "tenant": self.subject.tenant,
             "project": self.subject.project,
             "user_id": self.subject.user_id,
-            "user_type": self.subject.user_type,
+            "accounting_user_type": _subject_accounting_user_type(self.subject),
             **(kv or {}),
         }
         try:
@@ -327,7 +389,7 @@ class EconomicsGuard:
             "flow": self.flow,
             "scope_id": self.scope_id,
             "subject_id": self.subj,
-            "user_type": self.subject.user_type,
+            "accounting_user_type": _subject_accounting_user_type(self.subject),
             "user_message": user_message,
             "notification_type": "error",
         }
@@ -384,8 +446,8 @@ class EconomicsGuard:
 
     async def _resolve_plan_and_funding(self) -> dict:
         s = self.subject
-        role = str(s.user_type or "anonymous").strip().lower()
-        budget_bypass = role in ("privileged", "admin")
+        budget_bypass = _subject_budget_bypass(s)
+        role = _subject_plan_role(s, budget_bypass=budget_bypass)
 
         est_turn_tokens = _estimate_tokens(self.estimate, self.usd_per_token)
         if self.estimate.reservation_usd and self.estimate.reservation_usd > 0:
@@ -454,6 +516,8 @@ class EconomicsGuard:
 
         return {
             "role": role,
+            "accounting_user_type": _subject_accounting_user_type(s),
+            "roles": sorted(_subject_roles(s)),
             "budget_bypass": budget_bypass,
             "est_turn_tokens": est_turn_tokens,
             "est_turn_usd": est_turn_usd,
@@ -830,11 +894,20 @@ class EconomicsGuard:
 
     def _bind_accounting(self) -> None:
         s = self.subject
+        metadata = {
+            "flow": self.flow,
+            "scope_id": self.scope_id,
+            "conversation_id": self.scope_id,
+            "turn_id": self.scope_id,
+            "bundle_id": self.bundle_id,
+        }
+        if isinstance(s.provenance, dict) and s.provenance:
+            metadata["provenance"] = dict(s.provenance)
         self._ensure_accounting_storage()
         self._acct_cm = acct.with_accounting(
             self.flow,
             user_id=s.user_id,
-            user_type=s.user_type,
+            user_type=_subject_accounting_user_type(s),
             tenant_id=s.tenant,
             project_id=s.project,
             request_id=self.scope_id,
@@ -842,13 +915,7 @@ class EconomicsGuard:
             timezone=s.timezone,
             conversation_id=self.scope_id,   # synthetic; gives the file fallback an id prefix
             turn_id=self.scope_id,
-            metadata={
-                "flow": self.flow,
-                "scope_id": self.scope_id,
-                "conversation_id": self.scope_id,
-                "turn_id": self.scope_id,
-                "bundle_id": self.bundle_id,
-            },
+            metadata=metadata,
         )
         self._acct_cm.__enter__()
         self._log(
@@ -903,7 +970,7 @@ class EconomicsGuard:
             tenant=self.subject.tenant,
             project=self.subject.project,
             user_id=self.subject.user_id,
-            user_type=self.subject.user_type,
+            user_type=_subject_accounting_user_type(self.subject),
             thread_id=self.scope_id,
             turn_id=self.scope_id,
             usage_from=usage_from,

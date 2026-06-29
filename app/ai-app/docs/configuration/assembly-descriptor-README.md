@@ -10,7 +10,7 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/configuration/bundles-descriptor-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/configuration/secrets-descriptor-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/configuration/gateway-descriptor-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/delegated-credentials/oauth-mcp-protocol-adapter-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/delegated-credentials/oauth-delegated-credential-protocol-adapter-README.md
 ---
 # Platform Assembly Descriptor
 
@@ -197,7 +197,7 @@ the resolver asks the Connection Hub authentication surface. That surface calls
 the Connection Hub operation only when the request carries external auth
 material or selector hints. Provider-specific authenticators, such as Telegram
 Mini App `initData`, are Connection Hub modules with access to Connection Hub
-config, secrets, and identity-link data.
+config, secrets, and connection-edge data.
 See
 [Auth Selector](../service/auth/auth-selector-README.md) and
 [Request Authenticators](../sdk/solutions/connections/request-authenticators/request-authenticators-README.md).
@@ -233,7 +233,7 @@ The server selects a verifier from token claims (`iss` plus `client_id` or
 
 ### Connection Hub Delegated Credential Adapters
 
-Delegated credential adapters, including the current OAuth/MCP adapter, are not
+Delegated credential adapters, including the current OAuth delegated credential adapter, are not
 configured under `assembly.yaml -> auth`. They belong to the `connection-hub@1-0`
 bundle config in `bundles.yaml`:
 
@@ -244,7 +244,7 @@ bundles:
       config:
         connections:
           delegated_credentials:
-            oauth_mcp:
+            oauth:
               enabled: true
               brand: "KDCube"
 ```
@@ -253,7 +253,7 @@ Assembly still owns the underlying platform auth/session settings used by the
 adapter, such as `context.tenant`, `context.project`, and
 `auth.auth_token_cookie_name`. The adapter itself is a Connection Hub concern.
 
-See [OAuth/MCP Protocol Adapter](../sdk/solutions/connections/delegated-credentials/oauth-mcp-protocol-adapter-README.md).
+See [OAuth Delegated Credential Protocol Adapter](../sdk/solutions/connections/delegated-credentials/oauth-delegated-credential-protocol-adapter-README.md).
 
 ### `infra.redis.topology`
 

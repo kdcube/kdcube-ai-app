@@ -1,7 +1,7 @@
 ---
 id: connection-hub@1-0/agents
 title: "Connection Hub Builder-Agent Onboarding"
-summary: "Builder-agent onboarding guide for the platform Connection Hub example bundle: identity links, delegated account connections, shared OAuth callbacks, named-service exposure, and the Connections widget."
+summary: "Builder-agent onboarding guide for the platform Connection Hub example bundle: connection edges, delegated account connections, shared OAuth callbacks, named-service exposure, and the Connections widget."
 status: "active"
 tags: ["agents", "builder", "onboarding", "connection-hub", "identity", "connections", "oauth", "named-services", "react", "redux"]
 see_also:
@@ -9,7 +9,7 @@ see_also:
   - "repo:kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/connection-hub@1-0/docs/README.md"
   - "repo:kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/connection-hub@1-0/docs/storage/README.md"
   - "repo:kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/connection-hub@1-0/docs/journal/README.md"
-  - "repo:kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/connection-hub@1-0/docs/journal/2026-06-25-identity-links-and-delegated-connections.md"
+  - "repo:kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/connection-hub@1-0/docs/journal/2026-06-25-connection-edges-and-delegated-connections.md"
   - "repo:kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/connection-hub@1-0/docs/journal/2026-06-26-request-authenticators.md"
   - "repo:kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/connection-hub@1-0/interface/README.md"
   - "repo:kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/connection-hub@1-0/interface/connection-hub.openapi.yaml"
@@ -28,7 +28,7 @@ The app is the playground for connecting external identities and delegated
 accounts into KDCube. Keep these two concepts separate:
 
 ```text
-identity link
+connection edge
   purpose: prove that an external identity belongs to a platform user
   examples: google:elena@example.com, telegram:314062490, bundle:app:user-77
   used by: auth bridges, inbound webhooks, channel-specific entrypoints
@@ -50,7 +50,7 @@ automation read/send mail, but it does not prove admin rights. The target flow i
 
 ```text
 verified external identity
-  -> Connection Hub identity link
+  -> Connection Hub connection edge
   -> platform principal/role resolver
   -> platform user id + roles/permissions
 ```
@@ -91,7 +91,7 @@ Connection Hub app
   entrypoint.py
     operations API
       - connections_*: delegated account connection helpers
-      - identity_*: identity link and principal-resolution helpers
+      - identity_*: connection edge and principal-resolution helpers
       - request_authenticate: provider-proof verification for request auth
       - email_*: iCloud app-password helper ops
     public OAuth callback
@@ -104,12 +104,12 @@ Connection Hub app
   widget: connections_settings
     source: ui/widgets/connections
     stack: React + Redux Toolkit
-    purpose: one user-facing surface for identity links and connected accounts
+    purpose: one user-facing surface for connection edges and connected accounts
 ```
 
 ## Implementation Rules
 
-- Keep identity links and delegated account connections separate in code,
+- Keep connection edges and delegated account connections separate in code,
   storage, docs, and UI labels.
 - Keep request authenticators separate from connected accounts. A Telegram bot
   token or Slack signing secret proves requests; it is not a delegated user

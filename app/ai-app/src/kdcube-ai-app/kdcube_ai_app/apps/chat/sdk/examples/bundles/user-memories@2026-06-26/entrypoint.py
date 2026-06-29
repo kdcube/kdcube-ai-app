@@ -33,6 +33,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint_with_memory import
     BaseEntrypointWithEconomicsAndMemory,
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.connections.authority_registry import CredentialEnvelope
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.hub import delegated_primary_user_id
 
 try:
     from . import memory_mcp_tools
@@ -89,7 +90,7 @@ class UserMemoriesEntrypoint(BaseEntrypointWithEconomicsAndMemory):
                         "memories": {
                             "auth": {
                                 "mode": "managed",
-                                "authority_id": "oauth_mcp",
+                                "authority_id": "delegated_client",
                                 "tools": {
                                     "memory_search": {"grants": ["memories:read"]},
                                     "memory_get": {"grants": ["memories:read"]},
@@ -138,10 +139,9 @@ class UserMemoriesEntrypoint(BaseEntrypointWithEconomicsAndMemory):
 
         current = self._memory_scope()
         user_id = ""
-        delegated = getattr(getattr(request, "state", None), "delegated_credential", None) if request is not None else None
-        if isinstance(delegated, dict):
-            envelope = CredentialEnvelope.coerce(delegated.get("authority"))
-            user_id = str((envelope.attrs or {}).get("grantor_subject") or "").strip()
+        envelope = self._memory_mcp_credential(request)
+        if envelope is not None:
+            user_id = delegated_primary_user_id(envelope)
         bundle_spec = getattr(getattr(self, "config", None), "ai_bundle_spec", None)
         return MemoryScope(
             tenant=current.tenant,
@@ -150,8 +150,119 @@ class UserMemoriesEntrypoint(BaseEntrypointWithEconomicsAndMemory):
             bundle_id=str(getattr(bundle_spec, "id", None) or current.bundle_id or "").strip(),
         ).normalized()
 
-    async def _memory_mcp_read_user_ids(self, scope):
+    def _memory_mcp_credential(self, request=None):
+        delegated = getattr(getattr(request, "state", None), "delegated_credential", None) if request is not None else None
+        if not isinstance(delegated, dict):
+            return None
+        envelope = CredentialEnvelope.coerce(delegated.get("authority"))
+        return envelope if (envelope.credential_kind or envelope.subject) else None
+
+    def _memory_mcp_grantor_authority(self, request=None) -> Dict[str, Any]:
+        delegated = getattr(getattr(request, "state", None), "delegated_credential", None) if request is not None else None
+        if not isinstance(delegated, dict):
+            return {}
+        grant_record = delegated.get("grant_record")
+        if not isinstance(grant_record, dict):
+            return {}
+        authority = grant_record.get("grantor_authority")
+        return dict(authority) if isinstance(authority, dict) else {}
+
+    async def _memory_mcp_projection(self, scope, request=None) -> Dict[str, Any]:
+        state = getattr(request, "state", None) if request is not None else None
+        cached = getattr(state, "_kdcube_memory_mcp_projection", None) if state is not None else None
+        if isinstance(cached, dict):
+            return cached
+        envelope = self._memory_mcp_credential(request)
+        if envelope is not None:
+            try:
+                from kdcube_ai_app.apps.chat.sdk.infra.bundle_operations import call_bundle_operation
+
+                result = await call_bundle_operation(
+                    bundle_id=self._memory_identity_family_bundle_id(),
+                    operation="delegated_identity_scope_resolve",
+                    data={
+                        "credential": envelope.to_dict(),
+                        "grantor_authority": self._memory_mcp_grantor_authority(request),
+                    },
+                    tenant=scope.tenant,
+                    project=scope.project,
+                    route="operations",
+                )
+                if isinstance(result, dict) and result.get("ok", True):
+                    if state is not None:
+                        try:
+                            setattr(state, "_kdcube_memory_mcp_projection", result)
+                        except Exception:
+                            pass
+                    return result
+            except Exception as exc:
+                try:
+                    self.logger.log(f"[memory.delegated_identity_scope] resolve failed, single-grantor fallback: {exc}", "WARNING")
+                except Exception:
+                    pass
+        return {}
+
+    async def _memory_mcp_read_user_ids(self, scope, request=None):
+        projection = await self._memory_mcp_projection(scope, request=request)
+        raw = projection.get("memory_user_ids") if isinstance(projection, dict) else None
+        if isinstance(raw, (list, tuple)):
+            user_ids = [str(uid or "").strip() for uid in raw if str(uid or "").strip()]
+            if user_ids:
+                return user_ids
         return await self._memory_read_user_ids(scope=scope)
+
+    async def _memory_mcp_economics_subject(self, scope, request=None):
+        from kdcube_ai_app.apps.chat.sdk.infra.economics.enforcement import EconomicsSubject
+
+        projection = await self._memory_mcp_projection(scope, request=request)
+        economics = projection.get("economics") if isinstance(projection, dict) else None
+        if isinstance(economics, dict) and str(economics.get("user_id") or "").strip():
+            return EconomicsSubject(
+                tenant=scope.tenant,
+                project=scope.project,
+                user_id=str(economics.get("user_id") or "").strip(),
+                roles=tuple(economics.get("roles") or ()),
+                permissions=tuple(economics.get("permissions") or ()),
+                budget_bypass=(
+                    bool(economics.get("budget_bypass"))
+                    if isinstance(economics.get("budget_bypass"), bool)
+                    else None
+                ),
+                provenance=dict(economics.get("provenance") or projection.get("provenance") or {}),
+            )
+        return self._memory_search_econ_subject()
+
+    async def _memory_mcp_query_embedding(self, scope, query: str, request=None):
+        normalized = str(query or "").strip()
+        if not normalized or not self._memory_economics_enabled():
+            return None
+        try:
+            from kdcube_ai_app.apps.chat.sdk.infra.economics.policy import EconomicsLimitException
+            from kdcube_ai_app.apps.chat.sdk.solutions.search_service import make_search_model_service
+
+            subject = await self._memory_mcp_economics_subject(scope, request=request)
+            if not (subject.tenant and subject.project and subject.user_id and subject.user_id != "anonymous"):
+                return None
+            model_service = make_search_model_service(self, flow="memory.search", subject=subject)
+            embed_query = getattr(model_service, "embed_search_query", None)
+            if callable(embed_query):
+                return await embed_query(normalized, flow="memory.search")
+        except EconomicsLimitException as exc:
+            try:
+                self.logger.log(
+                    f"[memory.mcp.search] economics limit; lexical fallback: user={scope.user_id} code={getattr(exc, 'code', 'rate_limited')}",
+                    "INFO",
+                )
+            except Exception:
+                pass
+            return None
+        except Exception as exc:
+            try:
+                self.logger.log(f"[memory.mcp.search] metered embed failed; lexical fallback: {exc}", "WARNING")
+            except Exception:
+                pass
+            return None
+        return None
 
     @mcp(alias="memories", route="public", transport="streamable-http", auth_config="surfaces.as_provider.mcp.memories.auth")
     def memories_mcp(self, request=None, **kwargs):
@@ -159,7 +270,8 @@ class UserMemoriesEntrypoint(BaseEntrypointWithEconomicsAndMemory):
             name="KDCube user memories",
             store_factory=self._memory_store,
             scope_factory=lambda: self._memory_mcp_scope(request=request),
-            read_user_ids_factory=self._memory_mcp_read_user_ids,
+            read_user_ids_factory=lambda scope: self._memory_mcp_read_user_ids(scope, request=request),
+            search_embedding_factory=lambda scope, query: self._memory_mcp_query_embedding(scope, query, request=request),
         )
 
     def _build_graph(self) -> StateGraph:

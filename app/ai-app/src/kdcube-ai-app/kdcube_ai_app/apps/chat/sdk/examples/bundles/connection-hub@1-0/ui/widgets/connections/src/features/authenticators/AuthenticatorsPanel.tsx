@@ -39,7 +39,6 @@ export function AuthenticatorsPanel() {
   const [provider, setProvider] = useState(providerOptions[0] || 'telegram');
   const [authenticatorId, setAuthenticatorId] = useState(newAuthenticatorId(providerOptions[0] || 'telegram'));
   const [authorityId, setAuthorityId] = useState('');
-  const [integrationId, setIntegrationId] = useState('');
   const [label, setLabel] = useState('');
   const [enabled, setEnabled] = useState(true);
   const [roleProviding, setRoleProviding] = useState(false);
@@ -54,8 +53,7 @@ export function AuthenticatorsPanel() {
     setEditing(row);
     setProvider(row.provider || 'telegram');
     setAuthenticatorId(row.authenticator_id);
-    setAuthorityId(row.authority_id || row.integration_id || row.connection_id || row.authenticator_id);
-    setIntegrationId(row.integration_id || row.connection_id || row.authenticator_id);
+    setAuthorityId(row.authority_id || row.authenticator_id);
     setLabel(row.label || '');
     setEnabled(row.enabled !== false);
     setRoleProviding(row.role_providing === true);
@@ -73,7 +71,6 @@ export function AuthenticatorsPanel() {
     const nextId = newAuthenticatorId(nextProvider);
     setAuthenticatorId(nextId);
     setAuthorityId(nextId);
-    setIntegrationId(nextId);
     setLabel('');
     setEnabled(true);
     setRoleProviding(false);
@@ -104,7 +101,6 @@ export function AuthenticatorsPanel() {
         authenticatorId: authenticatorId.trim(),
         provider: provider.trim(),
         authorityId: authorityId.trim(),
-        integrationId: integrationId.trim(),
         label: label.trim(),
         enabled,
         roleProviding,
@@ -160,9 +156,7 @@ export function AuthenticatorsPanel() {
                 <div className="account-sub">
                   <code>{row.authenticator_id}</code>
                   {' · '}
-                  authority <code>{row.authority_id || row.integration_id || row.connection_id || row.authenticator_id}</code>
-                  {' · '}
-                  selector alias <code>{row.integration_id || row.connection_id || row.authenticator_id}</code>
+                  authority <code>{row.authority_id || row.authenticator_id}</code>
                   {' · '}
                   {row.source === 'config' ? 'descriptor' : 'postgres'}
                   {' · '}
@@ -193,9 +187,9 @@ export function AuthenticatorsPanel() {
           <div className="form-title">{editing ? 'Edit authenticator metadata' : 'Add authenticator metadata'}</div>
           <p className="muted">
             This form writes metadata only. `authority_id` names the identity/grant
-            realm. `integration_id` remains a selector alias for older app calls.
-            Put secret values in `bundles.secrets.yaml` or the configured secrets
-            provider at the `secret_ref` path.
+            realm, and `authenticator_id` names the verifier row. Put secret values
+            in `bundles.secrets.yaml` or the configured secrets provider at the
+            `secret_ref` path.
           </p>
           <div className="inline-fields">
             <select className="input input-inline" value={provider} onChange={(event) => onProviderChange(event.target.value)}>
@@ -214,7 +208,6 @@ export function AuthenticatorsPanel() {
           </div>
           <input className="input" value={authenticatorId} onChange={(event) => setAuthenticatorId(event.target.value)} placeholder="authenticator id, e.g. telegram.support" />
           <input className="input" value={authorityId} onChange={(event) => setAuthorityId(event.target.value)} placeholder="authority id, e.g. telegram.support" />
-          <input className="input" value={integrationId} onChange={(event) => setIntegrationId(event.target.value)} placeholder="selector alias for older app calls, e.g. telegram.support" />
           <input className="input" value={label} onChange={(event) => setLabel(event.target.value)} placeholder="display label" />
           <input className="input" value={subjectNamespace} onChange={(event) => setSubjectNamespace(event.target.value)} placeholder="subject namespace override (optional)" />
           <input className="input" value={secretRef} onChange={(event) => setSecretRef(event.target.value)} placeholder="secret ref, e.g. identity.authenticators.telegram_support.bot_token" />

@@ -43,7 +43,8 @@ async def test_connection_hub_surface_projects_identity_authority_to_session():
 
     async def _call_connection_hub(envelope):
         assert envelope.headers["x-telegram-init-data"] == "telegram-proof"
-        assert envelope.headers["x-kdcube-auth-connection-id"] == "telegram.support"
+        assert envelope.headers["x-kdcube-auth-authority-id"] == "telegram.support"
+        assert envelope.headers["x-kdcube-auth-authenticator-id"] == "telegram.support"
         return AuthenticatedRequest(
             ok=True,
             authenticated=True,
@@ -80,7 +81,8 @@ async def test_connection_hub_surface_projects_identity_authority_to_session():
     session = await surface(
         _request({
             "X-Telegram-Init-Data": "telegram-proof",
-            "X-KDCube-Auth-Connection-ID": "telegram.support",
+            "X-KDCube-Auth-Authority-ID": "telegram.support",
+            "X-KDCube-Auth-Authenticator-ID": "telegram.support",
         }),
         RequestContext(client_ip="127.0.0.1", user_agent="test"),
         _session_factory,

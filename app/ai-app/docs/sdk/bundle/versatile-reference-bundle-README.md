@@ -246,11 +246,12 @@ Telegram Mini App Connection Hub path:
    `authContext.headers` in the standard widget `CONFIG_RESPONSE`.
 2. The Connection Hub iframe calls Connection Hub
    `federated_data_bus_claim`.
-3. Connection Hub validates the promoted Telegram proof, resolves any identity
-   link, and issues a temporary Data Bus token scoped to `connection-hub@1-0`.
+3. Connection Hub validates the promoted Telegram proof, resolves any
+   connection edge, and issues a temporary Data Bus token scoped to
+   `connection-hub@1-0`.
 4. The iframe opens Socket.IO with `federated_token`.
 5. Connection Hub uses that live channel to deliver
-   `connection_hub.identity.link_changed`.
+   `connection_hub.edge.changed`.
 
 The Versatile bundle does not mint this token and does not validate Telegram
 for Connection Hub. It only supplies the host-side auth context.

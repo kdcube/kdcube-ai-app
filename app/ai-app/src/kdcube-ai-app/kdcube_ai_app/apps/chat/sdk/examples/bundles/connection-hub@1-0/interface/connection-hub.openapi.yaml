@@ -6,7 +6,7 @@ info:
     Interface contract for connection-hub@1-0.
 
     The app exposes:
-    - identity-link operations for resolving verified external identities to
+    - connection-edge operations for resolving verified external identities to
       platform principal envelopes;
     - request-authenticator operation for verifying provider/request proofs
       through Connection Hub authenticator modules and returning linked authority
@@ -31,6 +31,7 @@ servers:
   - url: /api/integrations
 tags:
   - name: Widgets
+  - name: Connection Edges
   - name: Identity
   - name: Authenticators
   - name: Named Services
@@ -80,27 +81,27 @@ paths:
         "200":
           description: Named-service response envelope.
 
-  /bundles/{tenant}/{project}/{bundle_id}/operations/identity_links_list:
+  /bundles/{tenant}/{project}/{bundle_id}/operations/connection_edges_list:
     get:
-      tags: [Identity]
-      summary: List external identities linked to the current platform user.
-      operationId: identity_links_list
-      x-kdcube-result-alias: identity_links_list
+      tags: [Connection Edges]
+      summary: List connection edges for the current platform user.
+      operationId: connection_edges_list
+      x-kdcube-result-alias: connection_edges_list
       parameters:
         - $ref: "#/components/parameters/Tenant"
         - $ref: "#/components/parameters/Project"
         - $ref: "#/components/parameters/BundleId"
       responses:
         "200":
-          description: Identity links for the current platform user.
+          description: Connection edges for the current platform user.
 
-  /bundles/{tenant}/{project}/{bundle_id}/operations/identity_link_upsert:
+  /bundles/{tenant}/{project}/{bundle_id}/operations/connection_edge_upsert:
     post:
-      tags: [Identity]
-      summary: Link a verified external identity to the current platform user.
+      tags: [Connection Edges]
+      summary: Write a verified external-identity edge to the current platform user.
       description: User-facing route. Does not grant roles.
-      operationId: identity_link_upsert
-      x-kdcube-result-alias: identity_link_upsert
+      operationId: connection_edge_upsert
+      x-kdcube-result-alias: connection_edge_upsert
       parameters:
         - $ref: "#/components/parameters/Tenant"
         - $ref: "#/components/parameters/Project"
@@ -109,17 +110,17 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/IdentityLinkRequestEnvelope"
+              $ref: "#/components/schemas/ConnectionEdgeRequestEnvelope"
       responses:
         "200":
-          description: Linked identity and platform principal envelope.
+          description: Connection edge and platform principal envelope.
 
-  /bundles/{tenant}/{project}/{bundle_id}/operations/identity_link_remove:
+  /bundles/{tenant}/{project}/{bundle_id}/operations/connection_edge_remove:
     post:
-      tags: [Identity]
-      summary: Remove an external identity link from the current platform user.
-      operationId: identity_link_remove
-      x-kdcube-result-alias: identity_link_remove
+      tags: [Connection Edges]
+      summary: Remove an external connection edge from the current platform user.
+      operationId: connection_edge_remove
+      x-kdcube-result-alias: connection_edge_remove
       parameters:
         - $ref: "#/components/parameters/Tenant"
         - $ref: "#/components/parameters/Project"
@@ -128,20 +129,20 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/IdentityRefRequestEnvelope"
+              $ref: "#/components/schemas/ConnectionEdgeRefRequestEnvelope"
       responses:
         "200":
           description: Remove result.
 
-  /bundles/{tenant}/{project}/{bundle_id}/operations/identity_link_challenge_create:
+  /bundles/{tenant}/{project}/{bundle_id}/operations/connection_edge_challenge_create:
     post:
-      tags: [Identity]
-      summary: Create a one-time proof challenge for linking an external identity.
+      tags: [Connection Edges]
+      summary: Create a one-time proof challenge for writing a connection edge.
       description: >
         Authenticated route. Stores the current platform user server-side on the
         challenge. The provider proof flow must complete it later.
-      operationId: identity_link_challenge_create
-      x-kdcube-result-alias: identity_link_challenge_create
+      operationId: connection_edge_challenge_create
+      x-kdcube-result-alias: connection_edge_challenge_create
       parameters:
         - $ref: "#/components/parameters/Tenant"
         - $ref: "#/components/parameters/Project"
@@ -150,23 +151,23 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/IdentityChallengeCreateEnvelope"
+              $ref: "#/components/schemas/ConnectionEdgeChallengeCreateEnvelope"
       responses:
         "200":
           description: Pending challenge and optional Telegram Mini App link.
 
-  /bundles/{tenant}/{project}/{bundle_id}/operations/identity_link_challenge_claim:
+  /bundles/{tenant}/{project}/{bundle_id}/operations/connection_edge_challenge_claim:
     post:
-      tags: [Identity]
-      summary: Claim a provider-first identity proof as the current platform user.
+      tags: [Connection Edges]
+      summary: Claim a provider-first proof as the current platform user.
       description: >
         Authenticated route. Used by Telegram-first flows after the Telegram Mini
         App has created a signed pending provider proof and the browser claim
         page has shown an explicit confirmation. The current platform session
-        becomes the platform_user_id on the final identity link. Calls without
+        becomes the platform_user_id on the final connection edge. Calls without
         data.confirmed=true are rejected.
-      operationId: identity_link_challenge_claim
-      x-kdcube-result-alias: identity_link_challenge_claim
+      operationId: connection_edge_challenge_claim
+      x-kdcube-result-alias: connection_edge_challenge_claim
       parameters:
         - $ref: "#/components/parameters/Tenant"
         - $ref: "#/components/parameters/Project"
@@ -175,22 +176,22 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/IdentityChallengeStatusEnvelope"
+              $ref: "#/components/schemas/ConnectionEdgeChallengeStatusEnvelope"
       responses:
         "200":
-          description: Claimed challenge, linked identity, and principal envelope.
+          description: Claimed challenge, connection edge, and principal envelope.
 
-  /bundles/{tenant}/{project}/{bundle_id}/operations/identity_link_challenge_status:
+  /bundles/{tenant}/{project}/{bundle_id}/operations/connection_edge_challenge_status:
     post:
-      tags: [Identity]
+      tags: [Connection Edges]
       summary: Read a one-time proof challenge without claiming it.
       description: >
         Authenticated route. Platform-first challenges are limited to their
         platform user. Provider-first pending challenges have no platform owner
         yet, so the currently signed-in platform user may preview the Telegram
         identity before confirming a claim.
-      operationId: identity_link_challenge_status
-      x-kdcube-result-alias: identity_link_challenge_status
+      operationId: connection_edge_challenge_status
+      x-kdcube-result-alias: connection_edge_challenge_status
       parameters:
         - $ref: "#/components/parameters/Tenant"
         - $ref: "#/components/parameters/Project"
@@ -199,10 +200,10 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/IdentityChallengeStatusEnvelope"
+              $ref: "#/components/schemas/ConnectionEdgeChallengeStatusEnvelope"
       responses:
         "200":
-          description: Challenge status and link if completed.
+          description: Challenge status and connection edge if completed.
 
   /bundles/{tenant}/{project}/{bundle_id}/operations/identity_resolve:
     post:
@@ -222,7 +223,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/IdentityRefRequestEnvelope"
+              $ref: "#/components/schemas/ExternalIdentityRefRequestEnvelope"
       responses:
         "200":
           description: Platform principal envelope or identity_not_linked.
@@ -251,6 +252,29 @@ paths:
       responses:
         "200":
           description: Linked identity family with canonical user ids for aggregation.
+
+  /bundles/{tenant}/{project}/{bundle_id}/operations/delegated_identity_scope_resolve:
+    post:
+      tags: [Identity]
+      summary: Resolve the data-owner scope for a delegated credential.
+      description: >
+        Internal/server-side helper for already verified delegated credentials.
+        Returns the grantor and any linked runtime user ids allowed by the
+        credential's descriptor-owned identity_scope.
+      operationId: delegated_identity_scope_resolve
+      x-kdcube-result-alias: delegated_identity_scope_resolve
+      parameters:
+        - $ref: "#/components/parameters/Tenant"
+        - $ref: "#/components/parameters/Project"
+        - $ref: "#/components/parameters/BundleId"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DelegatedIdentityScopeRequestEnvelope"
+      responses:
+        "200":
+          description: Delegation edge plus canonical user ids for aggregation.
 
   /bundles/{tenant}/{project}/{bundle_id}/operations/authenticators_list:
     get:
@@ -458,16 +482,16 @@ paths:
               schema:
                 type: string
 
-  /bundles/{tenant}/{project}/{bundle_id}/public/telegram_identity_link_start:
+  /bundles/{tenant}/{project}/{bundle_id}/public/telegram_connection_edge_start:
     post:
-      tags: [Identity]
-      summary: Start a Telegram-first identity-link flow.
+      tags: [Connection Edges]
+      summary: Start a Telegram-first connection-edge flow.
       description: >
         Public Telegram Mini App route. The request must include signed Telegram
         initData in `X-Telegram-Init-Data`. It creates a pending provider proof
         and returns a platform_claim_url that the user opens to finish as a
         logged-in KDCube platform user.
-      operationId: telegram_identity_link_start
+      operationId: telegram_connection_edge_start
       security: []
       parameters:
         - $ref: "#/components/parameters/Tenant"
@@ -486,15 +510,15 @@ paths:
         "200":
           description: Pending Telegram proof and platform claim URL.
 
-  /bundles/{tenant}/{project}/{bundle_id}/public/telegram_identity_link_status:
+  /bundles/{tenant}/{project}/{bundle_id}/public/telegram_connection_edge_status:
     post:
-      tags: [Identity]
-      summary: Read Telegram link status for the current Mini App subject.
+      tags: [Connection Edges]
+      summary: Read Telegram edge status for the current Mini App subject.
       description: >
         Public Telegram Mini App route. The request must include signed Telegram
         initData in `X-Telegram-Init-Data`. Returns whether that Telegram
-        subject is linked to a platform user.
-      operationId: telegram_identity_link_status
+        subject has a connection edge to a platform user.
+      operationId: telegram_connection_edge_status
       security: []
       parameters:
         - $ref: "#/components/parameters/Tenant"
@@ -511,17 +535,17 @@ paths:
               $ref: "#/components/schemas/Envelope"
       responses:
         "200":
-          description: Telegram link status and principal envelope when linked.
+          description: Telegram edge status and principal envelope when connected.
 
-  /bundles/{tenant}/{project}/{bundle_id}/public/telegram_identity_link_remove:
+  /bundles/{tenant}/{project}/{bundle_id}/public/telegram_connection_edge_remove:
     post:
-      tags: [Identity]
-      summary: Unlink the current Telegram Mini App subject.
+      tags: [Connection Edges]
+      summary: Remove the current Telegram Mini App subject's connection edge.
       description: >
         Public Telegram Mini App route. The request must include signed Telegram
-        initData in `X-Telegram-Init-Data`. Removes the link for that Telegram
+        initData in `X-Telegram-Init-Data`. Removes the edge for that Telegram
         subject when one exists.
-      operationId: telegram_identity_link_remove
+      operationId: telegram_connection_edge_remove
       security: []
       parameters:
         - $ref: "#/components/parameters/Tenant"
@@ -538,17 +562,17 @@ paths:
               $ref: "#/components/schemas/Envelope"
       responses:
         "200":
-          description: Unlink result.
+          description: Connection-edge removal result.
 
-  /bundles/{tenant}/{project}/{bundle_id}/public/telegram_identity_link_complete:
+  /bundles/{tenant}/{project}/{bundle_id}/public/telegram_connection_edge_complete:
     post:
-      tags: [Identity]
-      summary: Complete a Telegram identity-link challenge.
+      tags: [Connection Edges]
+      summary: Complete a Telegram connection-edge challenge.
       description: >
         Public Telegram Mini App route. The request must include signed Telegram
         initData in `X-Telegram-Init-Data`; the platform user is read from the
         server-side challenge, not from caller input.
-      operationId: telegram_identity_link_complete
+      operationId: telegram_connection_edge_complete
       security: []
       parameters:
         - $ref: "#/components/parameters/Tenant"
@@ -562,10 +586,10 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/IdentityChallengeStatusEnvelope"
+              $ref: "#/components/schemas/ConnectionEdgeChallengeStatusEnvelope"
       responses:
         "200":
-          description: Linked Telegram identity and platform principal envelope.
+          description: Connected Telegram identity and platform principal envelope.
 
   /bundles/{tenant}/{project}/{bundle_id}/public/federated_data_bus_claim:
     post:
@@ -576,7 +600,7 @@ paths:
         authenticated through the same promoted request auth context as other
         public Telegram routes. On success it returns a short-lived federated
         Socket.IO token scoped to connection-hub@1-0 so the widget can receive
-        targeted service events such as connection_hub.identity.link_changed.
+        targeted service events such as connection_hub.edge.changed.
       operationId: federated_data_bus_claim
       security: []
       parameters:
@@ -600,7 +624,7 @@ paths:
         Gateway/app selector route. The caller sends a normalized request
         envelope. Connection Hub selects authenticator candidates from request
         hints and shape, verifies the proof with its configured authenticator rows,
-        resolves the identity link, and returns linked authority material.
+        resolves the connection edge, and returns linked authority material.
       operationId: request_authenticate
       security: []
       parameters:
@@ -738,16 +762,6 @@ components:
         provider:
           type: string
           example: telegram
-        integration_id:
-          type: string
-          deprecated: true
-          description: Legacy selector alias for older controlled callers. New callers should use authority_id plus authenticator_id.
-          example: telegram.support
-        connection_id:
-          type: string
-          deprecated: true
-          description: Storage selector alias. New callers should use authority_id plus authenticator_id.
-          example: telegram.support
         label:
           type: string
         enabled:
@@ -805,13 +819,13 @@ components:
           type: object
           additionalProperties: true
           example: { "provider": "slack" }
-    IdentityRefRequestEnvelope:
+    ExternalIdentityRefRequestEnvelope:
       allOf:
         - $ref: "#/components/schemas/Envelope"
         - type: object
           properties:
             data:
-              $ref: "#/components/schemas/IdentityRefRequest"
+              $ref: "#/components/schemas/ExternalIdentityRefRequest"
     IdentityFamilyRequestEnvelope:
       allOf:
         - $ref: "#/components/schemas/Envelope"
@@ -832,14 +846,34 @@ components:
                 user_id:
                   type: string
                   description: Alias for input_user_id in generic clients.
-    IdentityLinkRequestEnvelope:
+    DelegatedIdentityScopeRequestEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              type: object
+              required: [credential]
+              properties:
+                credential:
+                  type: object
+                  additionalProperties: true
+                  description: Verified kdcube.credential.v1 envelope from the delegated access token grant record.
+    ConnectionEdgeRefRequestEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/ExternalIdentityRefRequest"
+    ConnectionEdgeRequestEnvelope:
       allOf:
         - $ref: "#/components/schemas/Envelope"
         - type: object
           properties:
             data:
               allOf:
-                - $ref: "#/components/schemas/IdentityRefRequest"
+                - $ref: "#/components/schemas/ExternalIdentityRefRequest"
                 - type: object
                   properties:
                     label:
@@ -847,7 +881,7 @@ components:
                     metadata:
                       type: object
                       additionalProperties: true
-    IdentityRefRequest:
+    ExternalIdentityRefRequest:
       type: object
       required: [provider, provider_subject]
       properties:
@@ -860,7 +894,7 @@ components:
         subject:
           type: string
           description: Alias for provider_subject.
-    IdentityChallengeCreateEnvelope:
+    ConnectionEdgeChallengeCreateEnvelope:
       allOf:
         - $ref: "#/components/schemas/Envelope"
         - type: object
@@ -872,7 +906,7 @@ components:
                   type: string
                   enum: [telegram]
                   default: telegram
-    IdentityChallengeStatusEnvelope:
+    ConnectionEdgeChallengeStatusEnvelope:
       allOf:
         - $ref: "#/components/schemas/Envelope"
         - type: object
@@ -885,7 +919,7 @@ components:
                   type: string
                 confirmed:
                   type: boolean
-                  description: Required only by identity_link_challenge_claim.
+                  description: Required only by connection_edge_challenge_claim.
     StartOAuthRequestEnvelope:
       allOf:
         - $ref: "#/components/schemas/Envelope"

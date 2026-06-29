@@ -1,7 +1,7 @@
 ---
 id: kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/connection-hub@1-0/docs/storage/README.md
 title: "Connection Hub Storage Map"
-summary: "Canonical storage map for connection-hub@1-0: descriptors, bundle secrets, Postgres authenticator metadata, identity-link state, delegated account state, and runtime caches."
+summary: "Canonical storage map for connection-hub@1-0: descriptors, bundle secrets, Postgres authenticator metadata, connection-edge state, delegated account state, and runtime caches."
 status: active
 tags: ["connection-hub", "storage", "secrets", "postgres", "identity", "authenticators", "connections"]
 ---
@@ -25,7 +25,7 @@ Postgres
     provider, row id, selector/verifier hints, secret_ref
 
 bundle artifact/local state
-  current playground identity links and link challenges
+  current playground connection edges and link challenges
   current delegated-account connection state and user tokens
 
 Redis/cache
@@ -42,7 +42,7 @@ bundle secret lifecycle with `get_secret("b:<path>")`.
 | --- | --- | --- | ---: | --- |
 | Provider/app config | operator/admin | `bundles.yaml` effective app props | no | `connections.providers.<provider>.apps[]`, `identity.authenticators[]`, visibility config. |
 | OAuth client secret | operator/admin | `bundles.secrets.yaml` or configured bundle secrets provider | yes | `connections.providers.<provider>.apps.<app_id>.client_secret`. |
-| Telegram bot token | operator/admin | `bundles.secrets.yaml` or configured bundle secrets provider | yes | Use stable refs such as `identity.authenticators.telegram_kdcube_ref.bot_token`; `identity.telegram.bot_token` is legacy fallback. |
+| Telegram bot token | operator/admin | `bundles.secrets.yaml` or configured bundle secrets provider | yes | Referenced from `identity.authenticators[].secret_ref`, e.g. `identity.authenticators.telegram_kdcube_ref.bot_token`. |
 | Request-authenticator row | Connection Hub | Postgres | no | `connection_hub_request_authenticators`; stores metadata and `secret_ref` only. |
 | Identity link | Connection Hub | current bundle state | no | Maps `provider + provider_subject -> platform_user_id`. |
 | Identity-link challenge | Connection Hub | current bundle state | no | Short-lived challenge/proof state for link flows. |
@@ -101,9 +101,8 @@ Example row:
 }
 ```
 
-`authority_id` is the identity/grant realm. `connection_id` is retained as a
-selector alias for older app calls. KDCube-controlled surfaces should carry
-`X-KDCube-Auth-Authority-ID` and `X-KDCube-Auth-Authenticator-ID`.
+`authority_id` is the identity/grant realm. KDCube-controlled surfaces should
+carry `X-KDCube-Auth-Authority-ID` and `X-KDCube-Auth-Authenticator-ID`.
 `role_providing` should be
 `false` for linked external providers such as Telegram; platform roles come
 from the linked platform principal, not from the Telegram-local role.
@@ -161,7 +160,7 @@ Runtime rows are the merge of descriptor rows and Postgres rows. When ids
 collide, the Postgres row wins for runtime behavior. The UI marks descriptor
 rows as `source=config` and Postgres rows as `source=postgres`.
 
-## Identity Links And Challenges
+## Connection Edges And Challenges
 
 Identity links are the authority bridge:
 
@@ -174,9 +173,9 @@ platform user id
   02e53484-...
 ```
 
-The current playground implementation keeps identity links and one-time
+The current playground implementation keeps connection edges and one-time
 challenges in bundle-local state through SDK module
-`kdcube_ai_app.apps.chat.sdk.solutions.connections.hub.identity_links`.
+`kdcube_ai_app.apps.chat.sdk.solutions.connections.hub.connection_edges`.
 Those records do not contain platform roles. Role/economics authority is
 resolved after the link points at a platform principal.
 
@@ -186,7 +185,7 @@ logical contract. Do not move secret values with them.
 
 ## Delegated Accounts
 
-Delegated account connections are separate from identity links:
+Delegated account connections are separate from connection edges:
 
 ```text
 platform user id
@@ -204,7 +203,7 @@ also user-scoped state. Deployment OAuth client secrets stay in bundle secrets.
 
 Redis is used by the platform runtime for props cache, named-service discovery,
 events, and other ephemeral coordination. It is not the authority for
-authenticator secrets, identity links, or delegated OAuth tokens.
+authenticator secrets, connection edges, or delegated OAuth tokens.
 
 Connection Hub also uses Redis as a short-lived selector cache for
 request-authenticator metadata:
@@ -216,7 +215,7 @@ identity.authenticator_selector_cache
 ```
 
 The cached payload is only the merged authenticator metadata rows used for
-candidate selection. It does not cache Telegram proof validation, identity-link
+candidate selection. It does not cache Telegram proof validation, connection-edge
 resolution, platform roles, delegated-account tokens, or authorization results.
 `authenticators_upsert`, `authenticators_remove`, and descriptor bootstrap
 invalidate the cache.

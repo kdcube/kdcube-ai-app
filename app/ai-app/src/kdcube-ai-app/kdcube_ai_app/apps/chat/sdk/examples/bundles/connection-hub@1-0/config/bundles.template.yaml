@@ -25,21 +25,23 @@ bundles:
                   visibility: *default_visibility
                 connections_disconnect:
                   visibility: *default_visibility
-                identity_links_list:
+                connection_edges_list:
                   visibility: *default_visibility
-                identity_link_upsert:
+                connection_edge_upsert:
                   visibility: *default_visibility
-                identity_link_remove:
+                connection_edge_remove:
                   visibility: *default_visibility
-                identity_link_challenge_create:
+                connection_edge_challenge_create:
                   visibility: *default_visibility
-                identity_link_challenge_claim:
+                connection_edge_challenge_claim:
                   visibility: *default_visibility
-                identity_link_challenge_status:
+                connection_edge_challenge_status:
                   visibility: *default_visibility
                 identity_resolve:
                   visibility: *default_visibility
                 identity_family_resolve:
+                  visibility: *default_visibility
+                delegated_identity_scope_resolve:
                   visibility: *default_visibility
                 email_accounts_status:
                   visibility: *default_visibility
@@ -59,7 +61,7 @@ bundles:
             # Empty -> derived from the request host at runtime.
             public_base_url: "https://<PUBLIC_HOST>"
           delegated_credentials:
-            oauth_mcp:
+            oauth:
               enabled: false
               brand: "KDCube"
               issuer: ""
@@ -109,6 +111,7 @@ bundles:
               resources:
                 - resource: "*/api/integrations/bundles/*/*/user-memories@2026-06-26/public/mcp/memories*"
                   label: "User memories MCP"
+                  identity_scope: "grantor_identity_family"
                   tools:
                     memory_search:
                       label: "Search memories"
@@ -180,7 +183,7 @@ bundles:
             enabled: true
             ttl_seconds: 30
           # Target architecture:
-          #   verified external identity -> Connection Hub identity link
+          #   verified external identity -> Connection Hub connection edge
           #   -> platform principal/role resolver
           #
           # This template keeps role_resolver.mode=platform so the hub does NOT
@@ -215,30 +218,14 @@ bundles:
                 bot_name: "kdcube-ref"
                 bot_username: "kdcube_doc_bot"
                 web_app_auth_max_age_seconds: 86400
-          telegram:
-            enabled: true
-            challenge_ttl_seconds: 600
-            web_app_auth_max_age_seconds: 86400
-            # Either provide a full Telegram Mini App URL/deeplink template, or
-            # let the hub derive a public widget URL from the request origin.
-            mini_app_url: ""
-            mini_app_bundle_id: "versatile@2026-03-31-13-36"
-            mini_app_widget_alias: "telegram_miniapp"
-            connection_hub_bundle_id: "connection-hub@1-0"
-            # Optional URL used by Telegram-first flows after Telegram proof is
-            # created. Empty -> derived as public/widgets/connections_settings.
-            # Supported replacement: {challenge_id}.
-            platform_claim_url: ""
-            # Optional Telegram deep-link template, for BotFather web app short
-            # names. Supported replacements: {challenge_id},
-            # {connection_hub_bundle_id}.
-            # deeplink_template: "https://t.me/<BOT_USERNAME>/<WEB_APP_SHORT_NAME>?startapp=link_{challenge_id}&connection_hub_bundle_id={connection_hub_bundle_id}"
-            # Legacy-compatible location also accepted by the app:
-            # authenticators:
-            #   - id: "telegram.kdcube_ref"
-            #     provider: "telegram"
-            #     secret_ref: "identity.authenticators.telegram_kdcube_ref.bot_token"
-            #     enabled: true
+          link_flows:
+            telegram:
+              enabled: true
+              challenge_ttl_seconds: 600
+              # Optional URL used by Telegram-first flows after Telegram proof is
+              # created. Empty -> derived as public/widgets/connections_settings.
+              # Supported replacement: {challenge_id}.
+              platform_claim_url: ""
 
         integrations:
           # iCloud ONLY now. Gmail moved to connections.providers.google above.

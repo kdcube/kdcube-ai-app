@@ -37,7 +37,7 @@ points the build at the shared SDK widget source. It ships no UI of its own.
   another app's agent can resolve/search/mutate memory objects without embedding
   the module.
 - **`memories` MCP endpoint** — a public proc-served MCP endpoint guarded by
-  Connection Hub delegated credentials. It requires authority `oauth_mcp`; each
+  Connection Hub delegated credentials. It requires authority `delegated_client`; each
   exposed MCP tool declares its required grant (`memories:read` for
   `memory_search` and `memory_get`) and must also be selected during consent.
   This is the reference target for connecting an external Claude client on

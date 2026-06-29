@@ -1,16 +1,16 @@
 import { createAsyncThunk, createSlice, type PayloadAction } from '@reduxjs/toolkit';
 import { getOp, postOp } from '../../api/client';
 import type {
-  IdentityLink,
-  IdentityLinkChallengeResult,
-  IdentityLinksResult,
-  IdentityMutationResult,
+  ConnectionEdge,
+  ConnectionEdgeChallengeResult,
+  ConnectionEdgesResult,
+  ConnectionEdgeMutationResult,
 } from '../../api/types';
 
 export interface IdentityState {
   platformUserId: string;
-  links: IdentityLink[];
-  telegramChallenge: IdentityLinkChallengeResult | null;
+  edges: ConnectionEdge[];
+  telegramChallenge: ConnectionEdgeChallengeResult | null;
   loading: boolean;
   busy: boolean;
   error: string;
@@ -18,7 +18,7 @@ export interface IdentityState {
 
 const initialState: IdentityState = {
   platformUserId: '',
-  links: [],
+  edges: [],
   telegramChallenge: null,
   loading: true,
   busy: false,
@@ -29,11 +29,11 @@ function message(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
-export const loadIdentityLinks = createAsyncThunk<IdentityLinksResult, void, { rejectValue: string }>(
-  'identity/loadLinks',
+export const loadConnectionEdges = createAsyncThunk<ConnectionEdgesResult, void, { rejectValue: string }>(
+  'identity/loadEdges',
   async (_arg, { rejectWithValue }) => {
     try {
-      return await getOp<IdentityLinksResult>('identity_links_list');
+      return await getOp<ConnectionEdgesResult>('connection_edges_list');
     } catch (e) {
       return rejectWithValue(message(e));
     }
@@ -46,11 +46,11 @@ export interface LinkIdentityArgs {
   label?: string;
 }
 
-export const linkIdentity = createAsyncThunk<IdentityMutationResult, LinkIdentityArgs, { rejectValue: string }>(
-  'identity/link',
+export const upsertConnectionEdge = createAsyncThunk<ConnectionEdgeMutationResult, LinkIdentityArgs, { rejectValue: string }>(
+  'identity/upsertEdge',
   async ({ provider, providerSubject, label }, { rejectWithValue }) => {
     try {
-      const res = await postOp<IdentityMutationResult>('identity_link_upsert', {
+      const res = await postOp<ConnectionEdgeMutationResult>('connection_edge_upsert', {
         provider,
         provider_subject: providerSubject,
         label: label || providerSubject,
@@ -70,11 +70,11 @@ export interface RemoveIdentityArgs {
   providerSubject: string;
 }
 
-export const removeIdentity = createAsyncThunk<IdentityMutationResult, RemoveIdentityArgs, { rejectValue: string }>(
-  'identity/remove',
+export const removeConnectionEdge = createAsyncThunk<ConnectionEdgeMutationResult, RemoveIdentityArgs, { rejectValue: string }>(
+  'identity/removeEdge',
   async ({ provider, providerSubject }, { rejectWithValue }) => {
     try {
-      const res = await postOp<IdentityMutationResult>('identity_link_remove', {
+      const res = await postOp<ConnectionEdgeMutationResult>('connection_edge_remove', {
         provider,
         provider_subject: providerSubject,
       });
@@ -88,11 +88,11 @@ export const removeIdentity = createAsyncThunk<IdentityMutationResult, RemoveIde
   },
 );
 
-export const createTelegramLinkChallenge = createAsyncThunk<IdentityLinkChallengeResult, void, { rejectValue: string }>(
+export const createTelegramLinkChallenge = createAsyncThunk<ConnectionEdgeChallengeResult, void, { rejectValue: string }>(
   'identity/createTelegramChallenge',
   async (_arg, { rejectWithValue }) => {
     try {
-      const res = await postOp<IdentityLinkChallengeResult>('identity_link_challenge_create', { provider: 'telegram' });
+      const res = await postOp<ConnectionEdgeChallengeResult>('connection_edge_challenge_create', { provider: 'telegram' });
       if (res && res.ok === false) {
         return rejectWithValue(res.message || res.error || 'Telegram link challenge failed');
       }
@@ -104,16 +104,17 @@ export const createTelegramLinkChallenge = createAsyncThunk<IdentityLinkChalleng
 );
 
 export const claimTelegramLinkChallenge = createAsyncThunk<
-  IdentityLinkChallengeResult,
-  string,
+  ConnectionEdgeChallengeResult,
+  { challengeId: string; grants: string[] },
   { rejectValue: string }
 >(
   'identity/claimTelegramChallenge',
-  async (challengeId, { rejectWithValue }) => {
+  async ({ challengeId, grants }, { rejectWithValue }) => {
     try {
-      const res = await postOp<IdentityLinkChallengeResult>('identity_link_challenge_claim', {
+      const res = await postOp<ConnectionEdgeChallengeResult>('connection_edge_challenge_claim', {
         challenge_id: challengeId,
         confirmed: true,
+        grants,
       });
       if (res && res.ok === false) {
         return rejectWithValue(res.message || res.error || 'Telegram link claim failed');
@@ -126,14 +127,14 @@ export const claimTelegramLinkChallenge = createAsyncThunk<
 );
 
 export const loadTelegramLinkChallengeStatus = createAsyncThunk<
-  IdentityLinkChallengeResult,
+  ConnectionEdgeChallengeResult,
   string,
   { rejectValue: string }
 >(
   'identity/loadTelegramChallengeStatus',
   async (challengeId, { rejectWithValue }) => {
     try {
-      const res = await postOp<IdentityLinkChallengeResult>('identity_link_challenge_status', {
+      const res = await postOp<ConnectionEdgeChallengeResult>('connection_edge_challenge_status', {
         challenge_id: challengeId,
       });
       if (res && res.ok === false) {
@@ -159,17 +160,17 @@ const identitySlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
-      .addCase(loadIdentityLinks.fulfilled, (state, action: PayloadAction<IdentityLinksResult>) => {
+      .addCase(loadConnectionEdges.fulfilled, (state, action: PayloadAction<ConnectionEdgesResult>) => {
         state.loading = false;
         state.platformUserId = action.payload.platform_user_id || '';
-        state.links = Array.isArray(action.payload.links) ? action.payload.links : [];
+        state.edges = Array.isArray(action.payload.edges) ? action.payload.edges : [];
       })
-      .addCase(loadIdentityLinks.rejected, (state, action) => {
+      .addCase(loadConnectionEdges.rejected, (state, action) => {
         state.loading = false;
-        state.error = action.payload ?? 'Failed to load identity links';
+        state.error = action.payload ?? 'Failed to load connection edges';
       });
 
-    [linkIdentity, removeIdentity].forEach((thunk) => {
+    [upsertConnectionEdge, removeConnectionEdge].forEach((thunk) => {
       builder
         .addCase(thunk.pending, (state) => {
           state.busy = true;
@@ -189,7 +190,7 @@ const identitySlice = createSlice({
         state.busy = true;
         state.error = '';
       })
-      .addCase(createTelegramLinkChallenge.fulfilled, (state, action: PayloadAction<IdentityLinkChallengeResult>) => {
+      .addCase(createTelegramLinkChallenge.fulfilled, (state, action: PayloadAction<ConnectionEdgeChallengeResult>) => {
         state.busy = false;
         state.telegramChallenge = action.payload;
         if (action.payload.platform_user_id) state.platformUserId = action.payload.platform_user_id;
@@ -202,7 +203,7 @@ const identitySlice = createSlice({
         state.busy = true;
         state.error = '';
       })
-      .addCase(claimTelegramLinkChallenge.fulfilled, (state, action: PayloadAction<IdentityLinkChallengeResult>) => {
+      .addCase(claimTelegramLinkChallenge.fulfilled, (state, action: PayloadAction<ConnectionEdgeChallengeResult>) => {
         state.busy = false;
         state.telegramChallenge = action.payload;
         if (action.payload.platform_user_id) state.platformUserId = action.payload.platform_user_id;
@@ -211,11 +212,10 @@ const identitySlice = createSlice({
         state.busy = false;
         state.error = action.payload ?? 'Telegram link claim failed';
       })
-      .addCase(loadTelegramLinkChallengeStatus.fulfilled, (state, action: PayloadAction<IdentityLinkChallengeResult>) => {
+      .addCase(loadTelegramLinkChallengeStatus.fulfilled, (state, action: PayloadAction<ConnectionEdgeChallengeResult>) => {
         state.telegramChallenge = {
           ...(state.telegramChallenge || {}),
           ...action.payload,
-          telegram_link_url: state.telegramChallenge?.telegram_link_url || action.payload.telegram_link_url,
         };
         if (action.payload.platform_user_id) state.platformUserId = action.payload.platform_user_id;
       });

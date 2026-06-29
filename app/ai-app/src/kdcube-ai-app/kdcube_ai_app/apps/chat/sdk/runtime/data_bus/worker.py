@@ -158,6 +158,7 @@ def _make_comm_context(message: DataBusMessage) -> ExternalEventPayload:
             roles=list(actor.get("roles") or []),
             permissions=list(actor.get("permissions") or []),
             timezone=actor.get("timezone"),
+            identity_authority=dict(actor.get("identity_authority") or {}),
         ),
         request=ExternalEventRequest(
             request_id=request_id,

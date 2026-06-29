@@ -190,15 +190,16 @@ provider is Telegram:
       headers: {
         'X-Telegram-Init-Data': '<Telegram.WebApp.initData>',
         'X-KDCube-Auth-Provider': 'telegram',
-        'X-KDCube-Auth-Connection-ID': 'telegram.default'
+        'X-KDCube-Auth-Authority-ID': 'telegram.default',
+        'X-KDCube-Auth-Authenticator-ID': 'telegram.default'
       }
     }
   }
 }
 ```
 
-The `X-KDCube-Auth-Connection-ID` value is a non-secret selector handle, not a
-bot id, and it comes from server config. The host only reads
+The authority/authenticator values are non-secret selector hints, not bot ids,
+and they come from server config. The host only reads
 `window.Telegram.WebApp.initData` and inserts that browser-owned proof into the
 server-authored header map. It never sends a bot token or any server secret. The
 iframe only transports the header map; the gateway and Connection Hub

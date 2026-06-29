@@ -4,7 +4,6 @@ import type { TabId } from '../store/types';
 
 interface AppShellProps {
   activeTab: TabId;
-  showAdmin: boolean;
   hideTabs?: boolean;
   loading: boolean;
   error: string;
@@ -12,7 +11,7 @@ interface AppShellProps {
   children: ReactNode;
 }
 
-export function AppShell({ activeTab, showAdmin, hideTabs = false, loading, error, onTabChange, children }: AppShellProps) {
+export function AppShell({ activeTab, hideTabs = false, loading, error, onTabChange, children }: AppShellProps) {
   return (
     <main className="app-shell">
       <header className="app-nav">
@@ -26,9 +25,6 @@ export function AppShell({ activeTab, showAdmin, hideTabs = false, loading, erro
             <button type="button" className={activeTab === 'conversations' ? 'active' : ''} onClick={() => onTabChange('conversations')}>Chats</button>
             {isTelegramWebApp() && (
               <button type="button" className={activeTab === 'connections' ? 'active' : ''} onClick={() => onTabChange('connections')}>Connect</button>
-            )}
-            {showAdmin && (
-              <button type="button" className={activeTab === 'telegram_admin' ? 'active' : ''} onClick={() => onTabChange('telegram_admin')}>Admin</button>
             )}
           </nav>
         )}

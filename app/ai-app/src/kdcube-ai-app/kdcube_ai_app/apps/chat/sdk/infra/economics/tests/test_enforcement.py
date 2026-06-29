@@ -285,7 +285,16 @@ class _ListLogger:
 
 
 def _subject(role="registered"):
-    return EconomicsSubject(tenant="t", project="p", user_id="u1", user_type=role, timezone="UTC")
+    normalized = str(role or "registered").strip().lower()
+    return EconomicsSubject(
+        tenant="t",
+        project="p",
+        user_id="anonymous" if normalized == "anonymous" else "u1",
+        timezone="UTC",
+        roles=("kdcube:role:super-admin",) if normalized in {"admin", "privileged"} else (),
+        budget_bypass=True if normalized in {"admin", "privileged"} else None,
+        is_anonymous=(normalized == "anonymous"),
+    )
 
 
 def _ep(*, sub=None, wallet=0, allowed=True, reason=None, accounting=(1000, {"cost_total_usd": 0.03})):
