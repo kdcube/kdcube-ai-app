@@ -53,6 +53,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.timeline import (
     extract_assistant_completion_blocks,
     extract_user_attachments_from_blocks,
 )
+from kdcube_ai_app.apps.chat.sdk.event_identity import index_agent_id
 
 # Matches the dotted-name convention used by the sibling named-service modules
 # (e.g. "kdcube.sdk.conversation.named_service", "kdcube.sdk.memory.named_service").
@@ -78,7 +79,11 @@ CATALOG_MODES = frozenset({MODE_TEMPORAL, MODE_ORDINAL, MODE_TIMELINE, MODE_CATA
 # --- Scope ---
 SCOPE_CONVERSATION = "conversation"
 SCOPE_USER = "user"
-ALLOWED_SCOPES = frozenset({SCOPE_CONVERSATION, SCOPE_USER})
+# User-wide recall narrowed to the current owning agent. The search backend only
+# knows conversation/user; agent scope maps to user scope plus an agent_id filter
+# at orchestration (see ConversationSearchParams.backend_scope / run_conversation_search).
+SCOPE_AGENT = "agent"
+ALLOWED_SCOPES = frozenset({SCOPE_CONVERSATION, SCOPE_USER, SCOPE_AGENT})
 
 # --- Order ---
 ORDER_ASC = "asc"
@@ -161,6 +166,11 @@ class ConversationSearchContext:
     conversation_id: str = ""
     turn_id: str = ""
     bundle_id: Optional[str] = None
+    # Owning agent of the current turn. A WHERE filter, applied only under
+    # scope="agent" (see run_conversation_search). Same source/normalization as
+    # the value written to conv_messages.agent_id. Old source:
+    # ctx_browser.runtime_ctx.agent_id.
+    agent_id: Optional[str] = None
     tenant: Optional[str] = None
     project: Optional[str] = None
     schema: Optional[str] = None
@@ -177,6 +187,7 @@ class ConversationSearchContext:
             conversation_id=str(getattr(runtime_ctx, "conversation_id", "") or ""),
             turn_id=str(getattr(runtime_ctx, "turn_id", "") or ""),
             bundle_id=getattr(runtime_ctx, "bundle_id", None),
+            agent_id=index_agent_id(getattr(runtime_ctx, "agent_id", None)),
             tenant=getattr(runtime_ctx, "tenant", None),
             project=getattr(runtime_ctx, "project", None),
         )
@@ -238,6 +249,14 @@ class ConversationSearchParams:
             mode=mode,
             include_recovery_sessions=bool(params.get("include_recovery_sessions")),
         )
+
+    def is_agent_scoped(self) -> bool:
+        return self.scope == SCOPE_AGENT
+
+    def backend_scope(self) -> str:
+        """Scope the backend understands (conversation|user). Agent scope is
+        user-wide; the agent narrowing is applied via agent_id, not scope."""
+        return SCOPE_USER if self.scope == SCOPE_AGENT else self.scope
 
     def has_temporal_bounds(self) -> bool:
         return bool(self.from_ts or self.to_ts)
@@ -380,6 +399,11 @@ async def run_conversation_search(
     conversation_id = context.conversation_id
     targets = list(params.targets)
 
+    # Agent scope: search user-wide but narrow to the current owning agent.
+    # Other scopes pass no agent filter (the spec's "not specified -> not applied").
+    backend_scope = params.backend_scope()
+    agent_filter = context.agent_id if params.is_agent_scoped() else None
+
     effective_mode = params.effective_mode()
     catalog_mode = params.is_catalog()
     ignored_catalog_query = bool(catalog_mode and params.query)
@@ -439,7 +463,8 @@ async def run_conversation_search(
             rows = await search_backend.search_turn_catalog(
                 user=user,
                 conv=conversation_id,
-                scope=params.scope,
+                scope=backend_scope,
+                agent_id=agent_filter,
                 top_k=top_k,
                 days=days,
                 order=params.order,
@@ -524,7 +549,8 @@ async def run_conversation_search(
             targets=search_targets,
             user=user,
             conv=conversation_id,
-            scope=params.scope,
+            scope=backend_scope,
+            agent_id=agent_filter,
             scoring_mode="rrf_hybrid",
             half_life_days=7.0,
             top_k=retriever_top_k,
@@ -750,6 +776,7 @@ __all__ = [
     "ORDER_DESC",
     "SCOPE_CONVERSATION",
     "SCOPE_USER",
+    "SCOPE_AGENT",
     "ConversationSearchBackend",
     "ConversationSearchContext",
     "ConversationSearchParams",

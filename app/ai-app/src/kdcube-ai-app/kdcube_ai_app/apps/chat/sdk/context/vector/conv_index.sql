@@ -10,6 +10,7 @@ CREATE SCHEMA IF NOT EXISTS <SCHEMA>;
 CREATE TABLE IF NOT EXISTS <SCHEMA>.conv_messages (
                                                       id               BIGSERIAL PRIMARY KEY,
                                                       user_id          TEXT NOT NULL,
+                                                      agent_id         TEXT,                           -- owning agent; NULL when no agent_id is provided
                                                       conversation_id  TEXT NOT NULL,
                                                       message_id       TEXT,                           -- ConversationStore id; present for artifacts
                                                       role             TEXT NOT NULL,                  -- 'user' | 'assistant' | 'artifact'

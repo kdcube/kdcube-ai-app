@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import re
+from typing import Optional
 
 
 DEFAULT_REACT_AGENT_ID = "default.react.agent"
@@ -16,6 +17,12 @@ def normalize_agent_id(value: object, *, default: str = DEFAULT_REACT_AGENT_ID) 
     if not text:
         text = str(default or "").strip()
     return text or DEFAULT_REACT_AGENT_ID
+
+
+def index_agent_id(value: object) -> Optional[str]:
+    """Storage value for conv_messages.agent_id: the agent id as-is, or None when absent."""
+
+    return str(value or "").strip() or None
 
 
 def safe_event_lane_part(value: object, *, default: str = "_") -> str:

@@ -70,23 +70,30 @@ def project_schema(tenant: str, project: str) -> str:
     return schema_name
 
 
-# --- TEMPORARY one-time migration -------------------------------------------
+# --- TEMPORARY one-time migrations -------------------------------------------
 # Remove this helper (and its call in deploy_project.py) once every environment
-# has been provisioned with the `plans` schema naming. It applies
-# chatbot/economics-plans-corrections.sql BEFORE provisioning, so an already
-# deployed schema is renamed/extended in place; on a fresh schema every guarded
-# statement is a no-op and the provision creates the new names directly.
+# has been provisioned with the current schema. Each file is applied BEFORE
+# provisioning, so an already-deployed schema is renamed/extended in place; on a
+# fresh schema every guarded statement is a no-op and the provision creates
+# everything directly. Drop a file's entry here once its migration is universal.
+PROJECT_MIGRATION_FILES = [
+    "economics-plans-corrections.sql",   # `plans` rename + new fields
+    "conv-messages-agent-id.sql",        # conv_messages.agent_id column
+]
+
+
 def apply_project_migrations(tenant, project):
     from kdcube_ai_app.infra.relational.psql.psql_base import PostgreSqlDbMgr
 
     schema = project_schema(tenant or "default", project or "default-project")
     substitutions = {"SCHEMA": schema, "SYSTEM_SCHEMA": SYSTEM_SCHEMA}
-    migration_file = os.path.join(sql_location, "chatbot", "economics-plans-corrections.sql")
-    if not os.path.exists(migration_file):
-        return
     mgr = PostgreSqlDbMgr()
-    mgr.execute_sql_file(migration_file, substitutions=substitutions)
-    print(f"Applied economics-plans-corrections migration on schema: {schema}")
+    for name in PROJECT_MIGRATION_FILES:
+        migration_file = os.path.join(sql_location, "chatbot", name)
+        if not os.path.exists(migration_file):
+            continue
+        mgr.execute_sql_file(migration_file, substitutions=substitutions)
+        print(f"Applied {name} migration on schema: {schema}")
 # ---------------------------------------------------------------------------
 
 

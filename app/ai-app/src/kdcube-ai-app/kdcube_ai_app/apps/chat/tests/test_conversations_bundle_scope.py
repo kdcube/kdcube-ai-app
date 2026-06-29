@@ -144,6 +144,7 @@ async def test_list_conversations_uses_default_bundle_from_redis(monkeypatch, _r
         days=365,
         include_titles=True,
         bundle_id=None,
+        agent_id=None,
         session=session,
     )
 
@@ -158,6 +159,7 @@ async def test_list_conversations_uses_default_bundle_from_redis(monkeypatch, _r
                 "days": 365,
                 "include_titles": True,
                 "bundle_id": "bundle.default",
+                "agent_id": None,
             },
         )
     ]
@@ -262,6 +264,7 @@ async def test_fetch_conversation_does_not_resolve_default_bundle_and_preserves_
         conversation_id="conv-1",
         req=req,
         bundle_id=None,
+        agent_id=None,
         session=session,
     )
 
@@ -287,6 +290,7 @@ async def test_fetch_conversation_does_not_resolve_default_bundle_and_preserves_
             "days": 365,
             "bundle_id": None,
             "bundle_ids": ["bundle.from.db", "bundle.other"],
+            "agent_id": None,
         },
     )
 

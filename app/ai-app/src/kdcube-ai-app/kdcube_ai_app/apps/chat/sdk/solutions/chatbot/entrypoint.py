@@ -28,7 +28,7 @@ from kdcube_ai_app.apps.chat.emitters import (
     build_relay_from_env,
 )
 from kdcube_ai_app.apps.chat.sdk.config import get_settings
-from kdcube_ai_app.apps.chat.sdk.event_identity import DEFAULT_REACT_AGENT_ID, normalize_agent_id
+from kdcube_ai_app.apps.chat.sdk.event_identity import DEFAULT_REACT_AGENT_ID, normalize_agent_id, index_agent_id
 from kdcube_ai_app.apps.chat.sdk.infra.economics.policy import EconomicsLimitException
 from kdcube_ai_app.apps.chat.sdk.protocol import ExternalEventPayload
 from kdcube_ai_app.apps.chat.sdk.runtime.exec_runtime_config import normalize_exec_runtime_config
@@ -2347,6 +2347,10 @@ class BaseEntrypoint:
             ]
             if not step_items:
                 return
+            agent_id = index_agent_id(
+                getattr(getattr(self, "runtime_ctx", None), "agent_id", None)
+                or state.get("agent_id")
+            )
             await ctx_client.save_artifact(
                 kind="conv.artifacts.events",
                 tenant=tenant, project=project,
@@ -2354,6 +2358,7 @@ class BaseEntrypoint:
                 user_id=user_id,
                 conversation_id=conversation_id,
                 bundle_id=bundle_id,
+                agent_id=agent_id,
                 user_type=user_type,
                 content={"version": "v1", "items": step_items},
                 extra_tags=["conversation", "events"],

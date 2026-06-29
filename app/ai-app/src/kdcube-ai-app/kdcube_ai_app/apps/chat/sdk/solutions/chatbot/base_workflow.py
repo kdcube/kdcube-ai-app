@@ -24,7 +24,7 @@ from kdcube_ai_app.apps.chat.sdk.events.event_bus import (
     EventLaneWakePublisher,
     RedisEventLaneWakeEnqueuer,
 )
-from kdcube_ai_app.apps.chat.sdk.event_identity import DEFAULT_REACT_AGENT_ID, normalize_agent_id
+from kdcube_ai_app.apps.chat.sdk.event_identity import normalize_agent_id, index_agent_id
 # from kdcube_ai_app.apps.chat.sdk.context.memory.conv_memories import ConvMemoriesStore
 from kdcube_ai_app.apps.chat.sdk.context.retrieval.ctx_rag import ContextRAGClient
 
@@ -1388,6 +1388,7 @@ class BaseWorkflow():
                         "request_id": self._ctx["service"]["request_id"],
                     },
                     bundle_id=self.config.ai_bundle_spec.id,
+                    agent_id=self._index_agent_id(),
                 )
             a["summary_persisted"] = True
 
@@ -1498,6 +1499,7 @@ class BaseWorkflow():
                 user_id=user_id,
                 conversation_id=conversation_id,
                 bundle_id=self.config.ai_bundle_spec.id,
+                agent_id=self._index_agent_id(),
                 user_type=user_type,
                 content={"version": "v1", "items": canvas_full},
                 content_str=json.dumps(canvas_idx),
@@ -1731,6 +1733,10 @@ class BaseWorkflow():
         except Exception:
             self.logger.log(traceback.format_exc(), "ERROR")
 
+    def _index_agent_id(self) -> Optional[str]:
+        """Owning-agent id for conv_messages.agent_id, from the runtime context."""
+        return index_agent_id(getattr(getattr(self, "runtime_ctx", None), "agent_id", None))
+
     async def _persist_user_conversation_entry(
         self,
         *,
@@ -1771,6 +1777,7 @@ class BaseWorkflow():
             user_id=user,
             conversation_id=conversation_id,
             bundle_id=self.config.ai_bundle_spec.id,
+            agent_id=self._index_agent_id(),
             turn_id=turn_id,
             role="user",
             text=text_for_index,
@@ -1857,6 +1864,7 @@ class BaseWorkflow():
                 user_id=user,
                 conversation_id=conversation_id,
                 bundle_id=self.config.ai_bundle_spec.id,
+                agent_id=self._index_agent_id(),
                 turn_id=turn_id,
                 role="assistant",
                 text=text,
@@ -1913,6 +1921,7 @@ class BaseWorkflow():
                 user_id=user,
                 conversation_id=conversation_id,
                 bundle_id=self.config.ai_bundle_spec.id,
+                agent_id=self._index_agent_id(),
                 turn_id=turn_id,
                 role="assistant",
                 text=text,
@@ -1957,6 +1966,7 @@ class BaseWorkflow():
                 user_id=user,
                 conversation_id=conversation_id,
                 bundle_id=self.config.ai_bundle_spec.id,
+                agent_id=self._index_agent_id(),
                 turn_id=turn_id,
                 role="artifact",
                 text=text,
@@ -2832,6 +2842,7 @@ class BaseWorkflow():
                         embedding=embedding,
                         ttl_days=_ttl_for(user_type, 365),
                         bundle_id=self.config.ai_bundle_spec.id,
+                        agent_id=self._index_agent_id(),
                         index_only=True,
                     )
                 except Exception:
@@ -3235,6 +3246,7 @@ class BaseWorkflow():
             conversation_id=conversation_id, user_type=user_type,
             turn_id=turn_id,
             bundle_id=self.config.ai_bundle_spec.id,
+            agent_id=self._index_agent_id(),
             payload=payload,
             extra_tags=[],
         )
