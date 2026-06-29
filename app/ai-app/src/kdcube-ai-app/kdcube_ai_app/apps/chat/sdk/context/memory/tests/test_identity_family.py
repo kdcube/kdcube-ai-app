@@ -155,6 +155,33 @@ def test_user_scope_value_picks_single_or_set() -> None:
     assert _user_scope_value("actor", ["actor", "linked"]) == (["actor", "linked"], True)
 
 
+def test_identity_family_result_payload_accepts_top_level_payload() -> None:
+    from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint_with_memory import (
+        _memory_identity_family_result_payload,
+    )
+
+    payload = {"ok": True, "memory_user_ids": [_ACTOR, _LINKED]}
+    assert _memory_identity_family_result_payload(payload) is payload
+
+
+def test_identity_family_result_payload_unwraps_operation_result() -> None:
+    from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint_with_memory import (
+        _memory_identity_family_result_payload,
+    )
+
+    payload = {"ok": True, "schema": "connection_hub.identity_family.v1", "memory_user_ids": [_ACTOR, _LINKED]}
+    assert _memory_identity_family_result_payload({"ok": True, "result": payload}) == payload
+
+
+def test_identity_family_result_payload_unwraps_json_body() -> None:
+    from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint_with_memory import (
+        _memory_identity_family_result_payload,
+    )
+
+    payload = '{"ok": true, "memory_user_ids": ["02e53484-actor", "telegram_434804821"]}'
+    assert _memory_identity_family_result_payload({"body": payload})["memory_user_ids"] == [_ACTOR, _LINKED]
+
+
 # ---------------------------------------------------------------------------
 # Store reads
 # ---------------------------------------------------------------------------

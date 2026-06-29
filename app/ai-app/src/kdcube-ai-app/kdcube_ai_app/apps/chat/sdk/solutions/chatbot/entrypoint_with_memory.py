@@ -42,6 +42,43 @@ def _truthy(value: Any, default: bool = False) -> bool:
     return default
 
 
+def _memory_identity_family_result_payload(value: Any) -> Mapping[str, Any]:
+    """Return the canonical identity-family payload from operation wrappers."""
+
+    seen: set[int] = set()
+
+    def _walk(candidate: Any) -> Mapping[str, Any]:
+        marker = id(candidate)
+        if marker in seen:
+            return {}
+        seen.add(marker)
+
+        if isinstance(candidate, str):
+            text = candidate.strip()
+            if not text:
+                return {}
+            try:
+                decoded = json.loads(text)
+            except Exception:
+                return {}
+            return _walk(decoded)
+
+        if not isinstance(candidate, Mapping):
+            return {}
+
+        if "memory_user_ids" in candidate or candidate.get("schema") == "connection_hub.identity_family.v1":
+            return candidate
+
+        for key in ("result", "data", "output", "body", "response"):
+            nested = candidate.get(key)
+            found = _walk(nested)
+            if found:
+                return found
+        return candidate
+
+    return _walk(value)
+
+
 def _deep_merge_missing(target: Dict[str, Any], defaults: Dict[str, Any]) -> Dict[str, Any]:
     for key, value in defaults.items():
         if key not in target:
@@ -484,10 +521,21 @@ class MemoryEntrypointMixin:
                 pass
             return None
         memory_user_ids = None
-        if isinstance(result, Mapping) and result.get("ok", True):
-            raw = result.get("memory_user_ids")
+        payload = _memory_identity_family_result_payload(result)
+        if isinstance(payload, Mapping) and payload.get("ok", True):
+            raw = payload.get("memory_user_ids")
             if isinstance(raw, (list, tuple)):
                 memory_user_ids = [str(uid or "").strip() for uid in raw if str(uid or "").strip()]
+            logger.info(
+                "[memory.identity_family] resolver payload actor_user_id=%s tenant=%s project=%s bundle_id=%s result_keys=%s payload_keys=%s memory_user_ids=%s",
+                actor_user_id,
+                scope.tenant,
+                scope.project,
+                scope.bundle_id,
+                sorted(result.keys()) if isinstance(result, Mapping) else type(result).__name__,
+                sorted(payload.keys()) if isinstance(payload, Mapping) else type(payload).__name__,
+                memory_user_ids,
+            )
         else:
             logger.info(
                 "[memory.identity_family] resolver returned no-ok actor_user_id=%s tenant=%s project=%s bundle_id=%s result=%s",
@@ -495,7 +543,7 @@ class MemoryEntrypointMixin:
                 scope.tenant,
                 scope.project,
                 scope.bundle_id,
-                result if isinstance(result, Mapping) else type(result).__name__,
+                payload if isinstance(payload, Mapping) else (result if isinstance(result, Mapping) else type(result).__name__),
             )
         family: list[str] = []
         seen: set[str] = set()
