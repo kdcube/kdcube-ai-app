@@ -31,6 +31,9 @@ from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oau
 from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oauth_mcp.store import (
     GrantStore,
 )
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oauth_mcp.metadata import (
+    protected_resource_metadata_url,
+)
 
 
 MANAGED_MCP_AUTH_MODE = "managed"
@@ -83,11 +86,44 @@ def _extract_bearer(request: Request) -> str:
     return ""
 
 
-def _json_response(status_code: int, error: str, description: str) -> JSONResponse:
+def _json_response(
+    status_code: int,
+    error: str,
+    description: str,
+    *,
+    headers: Mapping[str, str] | None = None,
+) -> JSONResponse:
     return JSONResponse(
         status_code=status_code,
         content={"error": error, "error_description": description},
+        headers=dict(headers or {}),
     )
+
+
+def _oauth_challenge_headers(request: Request, auth: Mapping[str, Any] | None) -> dict[str, str]:
+    auth = auth if isinstance(auth, Mapping) else {}
+    configured_metadata_url = str(auth.get("resource_metadata_url") or "").strip()
+    if configured_metadata_url:
+        return {"WWW-Authenticate": f'Bearer resource_metadata="{configured_metadata_url}"'}
+
+    path_params = getattr(request, "path_params", {}) or {}
+    tenant = str(path_params.get("tenant") or "").strip()
+    project = str(path_params.get("project") or "").strip()
+    connection_hub_bundle_id = str(
+        auth.get("connection_hub_bundle_id")
+        or auth.get("connectionHubBundleId")
+        or "connection-hub@1-0"
+    ).strip()
+    if not tenant or not project or not connection_hub_bundle_id:
+        return {}
+
+    issuer = (
+        f"{str(request.base_url).rstrip('/')}"
+        f"/api/integrations/bundles/{tenant}/{project}/{connection_hub_bundle_id}/public/oauth"
+    )
+    resource = str(request.url).split("?", 1)[0]
+    metadata_url = protected_resource_metadata_url(issuer, resource=resource)
+    return {"WWW-Authenticate": f'Bearer resource_metadata="{metadata_url}"'}
 
 
 def _rpc_tool_error(rpc_id: Any, message: str) -> JSONResponse:
@@ -200,11 +236,21 @@ async def authorize_delegated_mcp_request(
 
     token = _extract_bearer(request)
     if not token:
-        return _json_response(401, "unauthorized", "Bearer access token is required")
+        return _json_response(
+            401,
+            "unauthorized",
+            "Bearer access token is required",
+            headers=_oauth_challenge_headers(request, auth),
+        )
 
     user = await _authenticate_oauth_mcp_access_token(token)
     if user is None:
-        return _json_response(401, "unauthorized", "Bearer access token is invalid")
+        return _json_response(
+            401,
+            "unauthorized",
+            "Bearer access token is invalid",
+            headers=_oauth_challenge_headers(request, auth),
+        )
 
     roles = set(user.get("roles") or [])
     permissions = set(user.get("permissions") or [])

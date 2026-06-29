@@ -22,6 +22,14 @@ const MEMORY_WIDGET_IDENTITY = 'MEMORIES_WIDGET';
 // preview count so the compact tab stays a glanceable summary.
 const COMPACT_LIMIT = '4';
 
+// Iframe heights are driven as INLINE styles (not a bare CSS rule). Mobile
+// Telegram's webview defers layout of a CSS-rule-sized iframe until a reflow
+// (e.g. a tab switch fires visibilitychange), leaving the iframe at its ~16px
+// intrinsic height on first mount. An inline style assignment + a forced reflow
+// makes the webview lay it out immediately, with no tab switch or manual toggle.
+const COMPACT_FRAME_HEIGHT = '320px';
+const EXPANDED_FRAME_HEIGHT = '76vh';
+
 // On-screen layout/handshake readout. Mobile Telegram has no devtools console,
 // so the trace is rendered as a tiny dismissable overlay the maintainer can
 // screenshot. Flip to false to remove it entirely.
@@ -70,6 +78,27 @@ export function MemoryPage(_props: MemoryPageProps) {
     }));
   }, []);
 
+  // Set the iframe height as an INLINE style for the current view and force the
+  // webview to lay it out now (reading offsetHeight flushes a reflow). Without
+  // this, mobile Telegram leaves the bare-CSS-sized iframe un-laid-out (~16px)
+  // until a tab switch. Re-asserted on mount, on view change, on first widget
+  // status, on iframe load, and on visibilitychange.
+  const applyFrameHeight = useCallback((isExpanded: boolean) => {
+    const frame = frameRef.current;
+    if (!frame) return;
+    frame.style.height = isExpanded ? EXPANDED_FRAME_HEIGHT : COMPACT_FRAME_HEIGHT;
+    // Force a synchronous layout pass so the webview commits the height instead
+    // of deferring it; a double rAF re-asserts after the next paint as a belt.
+    void frame.offsetHeight;
+    window.requestAnimationFrame(() => {
+      const f = frameRef.current;
+      if (!f) return;
+      f.style.height = isExpanded ? EXPANDED_FRAME_HEIGHT : COMPACT_FRAME_HEIGHT;
+      void f.offsetHeight;
+    });
+    sampleDebug();
+  }, [sampleDebug]);
+
   const memoryWidgetSrc = useMemo(
     () => settings.widgetUrlForBundle(MEMORY_WIDGET_BUNDLE_ID, MEMORY_WIDGET_ALIAS, {
       view: 'compact',
@@ -104,9 +133,24 @@ export function MemoryPage(_props: MemoryPageProps) {
     }, '*');
   }, []);
 
+  // Apply the inline height (mount + every view change) and tell the widget
+  // which view to render. The height assignment is what forces mobile Telegram
+  // to lay the iframe out without a tab switch.
   useEffect(() => {
+    applyFrameHeight(expanded);
     syncView(expanded ? 'expanded' : 'compact');
-  }, [expanded, syncView]);
+  }, [expanded, applyFrameHeight, syncView]);
+
+  // Re-assert the height when the tab becomes visible. This matches the manual
+  // "switch out and back" recovery the maintainer observed and is a cheap
+  // safety net if the first layout pass was still deferred.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') applyFrameHeight(expandedRef.current);
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, []);
 
   // Keep the on-screen readout live while DEBUG is on.
   useEffect(() => {
@@ -132,6 +176,10 @@ export function MemoryPage(_props: MemoryPageProps) {
         // (fired before hydration), so re-post the current view now.
         if (firstStatus) {
           widgetReadyRef.current = true;
+          // Re-assert the inline height now that the widget content exists, so
+          // the webview lays the iframe out against real content if it deferred
+          // the mount-time pass.
+          applyFrameHeight(expandedRef.current);
           syncView(expandedRef.current ? 'expanded' : 'compact');
         }
         return;
@@ -143,7 +191,7 @@ export function MemoryPage(_props: MemoryPageProps) {
     }
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [syncView, sampleDebug]);
+  }, [syncView, sampleDebug, applyFrameHeight]);
 
   return (
     <section className={`page page-wide memory-embed-page${expanded ? ' memory-expanded' : ''}`}>
@@ -181,6 +229,7 @@ export function MemoryPage(_props: MemoryPageProps) {
           className="memory-widget-iframe"
           onLoad={() => {
             sampleDebug('iframe onLoad');
+            applyFrameHeight(expanded);
             syncView(expanded ? 'expanded' : 'compact');
           }}
         />

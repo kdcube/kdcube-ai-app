@@ -155,6 +155,36 @@ mcp:
       header_name: X-Knowledge-MCP-Token
 ```
 
+Connection Hub delegated credential protocol adapters are configured on the
+Connection Hub bundle itself:
+
+```yaml
+bundles:
+  items:
+    - id: "connection-hub@1-0"
+      config:
+        connections:
+          delegated_credentials:
+            oauth_mcp:
+              enabled: true
+              brand: "KDCube"
+              public_clients:
+                - client_id: "claude"
+                  redirect_uris:
+                    - "https://claude.ai/api/mcp/auth_callback"
+                    - "http://localhost/callback"
+                    - "http://127.0.0.1/callback"
+              dynamic_client_registration:
+                allowed_redirect_uris:
+                  - "https://claude.ai/api/mcp/auth_callback"
+                  - "http://localhost/callback"
+                  - "http://127.0.0.1/callback"
+```
+
+The adapter is served by the `connection-hub@1-0` public `oauth` operation. It
+issues delegated credentials that can be consumed by managed bundle surfaces,
+for example a bundle MCP endpoint with `surfaces.as_provider.mcp.<alias>.auth`.
+
 `config.execution.runtime` controls per-bundle execution runtime routing and
 per-run ISO runtime limits. `config.exec_runtime` is the legacy alias.
 

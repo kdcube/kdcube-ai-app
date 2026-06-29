@@ -139,9 +139,11 @@ That authority projection is documented in
   present on the request.
 
 6) OAuth/MCP protocol adapter for delegated credentials
-- Implementation: `kdcube_ai_app.apps.chat.ingress.oauth_mcp`.
-- KDCube hosts an OAuth2 authorization server and an MCP protected resource for
-  external integration clients such as Claude Code.
+- Implementation: `kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oauth_mcp`,
+  mounted by the `connection-hub@1-0` bundle public `oauth` operation.
+- Connection Hub hosts an OAuth2 authorization server for external integration
+  clients such as Claude Code. MCP protected resources remain concrete
+  bundle/proc MCP endpoints.
 - Existing platform session auth proves the human admin before consent.
 - Consent issues a least-privilege integration session and binds the selected
   MCP tool allowlist to the issued grant.

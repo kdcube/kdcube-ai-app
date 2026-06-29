@@ -103,11 +103,11 @@ Runtime use
 OAuth/MCP follows the same lifecycle:
 
 ```text
-/oauth/authorize + /oauth/token
+connection-hub@1-0/public/oauth/authorize + /public/oauth/token
   -> writes delegated connection grant
   -> issues KDCube credential
 
-/mcp tools/call
+concrete bundle MCP tools/call
   -> oauth_mcp authenticator verifies credential
   -> grant registry resolves representative + actions
   -> tool policy enforces selected tools
@@ -122,10 +122,9 @@ External client
       | discovers protected KDCube resource
       v
 OAuth/MCP protocol adapter
-  /oauth/register
-  /oauth/authorize
-  /oauth/token
-  /mcp
+  connection-hub@1-0/public/oauth/register
+  connection-hub@1-0/public/oauth/authorize
+  connection-hub@1-0/public/oauth/token
       |
       | requires grantor authority
       v
@@ -136,7 +135,7 @@ Platform auth / Connection Hub authority projection
       v
 Delegated connection grant
   representative = integration:claude:<grantor>
-  resource       = kdcube:mcp
+  resource       = concrete bundle MCP resource
   actions        = conversations_export
   credential     = KDCube access/refresh token
       |

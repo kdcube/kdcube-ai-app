@@ -18,11 +18,11 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from kdcube_ai_app.apps.chat.ingress.oauth_mcp import mount_oauth_mcp
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oauth_mcp.tests.helpers import mount_test_oauth_adapter
 from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oauth_mcp.store import GrantStore
 from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oauth_mcp.pkce import make_s256_challenge
-from kdcube_ai_app.apps.chat.ingress.oauth_mcp.tests.test_clients_and_store import FakeRedis
-from kdcube_ai_app.apps.chat.ingress.oauth_mcp.tests.helpers import enable_oauth_mcp
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oauth_mcp.tests.test_clients_and_store import FakeRedis
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oauth_mcp.tests.helpers import enable_oauth_mcp
 
 ISSUER = "https://yey.boats"
 CHALLENGE = make_s256_challenge("verifier-" + "x" * 50)
@@ -64,7 +64,7 @@ def _consent_form(csrf=None, decision="approve", **over):
 def client():
     app = FastAPI()
     enable_oauth_mcp(app, issuer=ISSUER)
-    mount_oauth_mcp(app)
+    mount_test_oauth_adapter(app)
     app.state.oauth_authenticate = _authenticate
     app.state.oauth_grant_store = GrantStore(FakeRedis(), tenant="home", project="demo")
     return TestClient(app)

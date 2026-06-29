@@ -128,11 +128,14 @@ External Client
   Claude Code / Claude connector / customer integration / future client
         |
         | discovers protected resource/protocol
-        | GET /mcp
-        | GET /.well-known/oauth-protected-resource
+        | calls concrete bundle MCP URL without delegated credential
         v
-KDCube Delegated Connection Protocol Adapter
-  served by chat-ingress when auth.connection_hub.delegated_credentials.oauth_mcp.enabled=true
+Proc bundle MCP bridge
+        |
+        | returns RFC 9728 protected-resource challenge
+        v
+Connection Hub Delegated Connection Protocol Adapter
+  served by connection-hub@1-0 public oauth operation
         |
         | returns authorization endpoint, token endpoint,
         | registration endpoint, scopes, and resource metadata
@@ -144,7 +147,7 @@ OAuth Client Registration
         v
 Human Admin Browser
         |
-        | opens /oauth/authorize
+        | opens connection-hub@1-0/public/oauth/authorize
         | carries existing platform session cookie
         v
 Platform Auth Resolver
@@ -159,14 +162,14 @@ Consent Screen
         v
 Authorization Code + PKCE
         |
-        | client exchanges code at /oauth/token
+        | client exchanges code at connection-hub@1-0/public/oauth/token
         v
 Integration Token
         |
         | access token carries least-privilege integration role
         | e.g. kdcube:role:feedback-reader
         v
-/mcp
+Concrete bundle MCP endpoint
         |
         | checks token role + selected tool grant
         v
@@ -271,26 +274,30 @@ should not learn how Google, Telegram, or a customer directory work.
 
 ## Descriptor Contract
 
-The current OAuth/MCP protocol implementation is configured in `assembly.yaml`
-under `auth.connection_hub.delegated_credentials.oauth_mcp`.
+The current OAuth/MCP protocol implementation is configured on the Connection
+Hub bundle in `bundles.yaml`.
 
 ```yaml
-auth:
-  oauth_mcp:
-    enabled: true
-    issuer: "https://example.com"
-    brand: "Example KDCube"
-    public_clients:
-      - client_id: "claude"
-        redirect_uris:
-          - "https://claude.ai/api/mcp/auth_callback"
-          - "http://localhost/callback"
-          - "http://127.0.0.1/callback"
-    dynamic_client_registration:
-      allowed_redirect_uris:
-        - "https://claude.ai/api/mcp/auth_callback"
-        - "http://localhost/callback"
-        - "http://127.0.0.1/callback"
+bundles:
+  items:
+    - id: "connection-hub@1-0"
+      config:
+        connections:
+          delegated_credentials:
+            oauth_mcp:
+              enabled: true
+              brand: "Example KDCube"
+              public_clients:
+                - client_id: "claude"
+                  redirect_uris:
+                    - "https://claude.ai/api/mcp/auth_callback"
+                    - "http://localhost/callback"
+                    - "http://127.0.0.1/callback"
+              dynamic_client_registration:
+                allowed_redirect_uris:
+                  - "https://claude.ai/api/mcp/auth_callback"
+                  - "http://localhost/callback"
+                  - "http://127.0.0.1/callback"
 ```
 
 The service-level descriptor and endpoint contract is documented in
@@ -302,7 +309,7 @@ Consent-page branding is documented in
 
 Native OAuth/MCP delegated connection access is usable without customer patches when the
 platform auth resolver can validate the browser session used at
-`/oauth/authorize`.
+Connection Hub `/public/oauth/authorize`.
 
 Works without extra patching:
 

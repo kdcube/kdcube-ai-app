@@ -2883,133 +2883,6 @@ async def call_bundle_op_public_get(
     )
 
 
-async def _dispatch_reserved_public_surface(
-        *,
-        tenant: str,
-        project: str,
-        bundle_id: str,
-        operation: str,
-        path_tail: str,
-        request: Request,
-) -> Response | None:
-    """Route public reserved sub-surfaces captured by the generic op route.
-
-    FastAPI/Starlette route order is first-match. The generic public operation
-    route intentionally supports trailing paths, but that route can also capture
-    concrete platform-owned public surfaces such as `public/widgets/...` and
-    `public/mcp/...` if it appears earlier in the file. Keep those segments
-    reserved and delegate them explicitly.
-    """
-    reserved = str(operation or "").strip().lower()
-    tail = str(path_tail or "").strip().lstrip("/")
-    if reserved not in {"widgets", "mcp"}:
-        return None
-    if not tail:
-        raise HTTPException(status_code=404, detail=f"Missing public {reserved} alias")
-
-    alias, _, rest = tail.partition("/")
-    if not alias:
-        raise HTTPException(status_code=404, detail=f"Missing public {reserved} alias")
-
-    if reserved == "widgets":
-        if request.method.upper() != "GET":
-            raise HTTPException(status_code=405, detail="Public widgets support GET only")
-        static_response = await _serve_static_widget_app(
-            tenant=tenant,
-            project=project,
-            bundle_id=bundle_id,
-            widget_alias=alias,
-            widget_path=rest or "index.html",
-            request=request,
-            session=_build_public_api_request_session(request),
-            public=True,
-        )
-        if static_response is None:
-            raise HTTPException(status_code=404, detail=f"Bundle widget {alias} does not define a public static app")
-        return static_response
-
-    return await _call_bundle_mcp_limited(
-        tenant=tenant,
-        project=project,
-        bundle_id=bundle_id,
-        request=request,
-        endpoint_alias=alias,
-        route="public",
-        mcp_path=rest,
-    )
-
-
-@router.post("/bundles/{tenant}/{project}/{bundle_id}/public/{operation}/{path_tail:path}")
-async def call_bundle_op_public_with_path(
-        tenant: str,
-        project: str,
-        bundle_id: str,
-        operation: str,
-        path_tail: str,
-        request: Request,
-):
-    """Public bundle op served with a trailing sub-path. The op (declared with
-    ``@api(route="public", ...)``) receives ``path_tail`` if it accepts that
-    kwarg; otherwise the segment is ignored and the op runs as usual."""
-    reserved_response = await _dispatch_reserved_public_surface(
-        tenant=tenant,
-        project=project,
-        bundle_id=bundle_id,
-        operation=operation,
-        path_tail=path_tail,
-        request=request,
-    )
-    if reserved_response is not None:
-        return reserved_response
-    payload, uploaded_files = await _parse_bundle_request_payload(request)
-    return await _call_bundle_op_limited(
-        tenant=tenant,
-        project=project,
-        bundle_id=bundle_id,
-        payload=payload,
-        uploaded_files=uploaded_files,
-        request=request,
-        operation=operation,
-        route="public",
-        session=_build_public_api_request_session(request),
-        path_tail=path_tail,
-    )
-
-
-@router.get("/bundles/{tenant}/{project}/{bundle_id}/public/{operation}/{path_tail:path}")
-async def call_bundle_op_public_get_with_path(
-        tenant: str,
-        project: str,
-        bundle_id: str,
-        operation: str,
-        path_tail: str,
-        request: Request,
-):
-    reserved_response = await _dispatch_reserved_public_surface(
-        tenant=tenant,
-        project=project,
-        bundle_id=bundle_id,
-        operation=operation,
-        path_tail=path_tail,
-        request=request,
-    )
-    if reserved_response is not None:
-        return reserved_response
-    payload = BundleSuggestionsRequest()
-    return await _call_bundle_op_limited(
-        tenant=tenant,
-        project=project,
-        bundle_id=bundle_id,
-        payload=payload,
-        uploaded_files=[],
-        request=request,
-        operation=operation,
-        route="public",
-        session=_build_public_api_request_session(request),
-        path_tail=path_tail,
-    )
-
-
 @router.post("/bundles/{tenant}/{project}/{bundle_id}/operations/{operation}")
 async def call_bundle_op(
         tenant: str,
@@ -4141,6 +4014,59 @@ async def call_bundle_mcp_public(
         endpoint_alias=endpoint_alias,
         route="public",
         mcp_path=mcp_path,
+    )
+
+
+# Generic public op route with a trailing sub-path: an op declared
+# @api(route="public", ...) receives it as `path_tail` if it accepts that kwarg
+# (otherwise the segment is ignored). Registered AFTER the concrete public
+# sub-surfaces (static / widgets / mcp) so first-match keeps those routes;
+# this catch-all only handles whatever they did not claim.
+@router.post("/bundles/{tenant}/{project}/{bundle_id}/public/{operation}/{path_tail:path}")
+async def call_bundle_op_public_with_path(
+        tenant: str,
+        project: str,
+        bundle_id: str,
+        operation: str,
+        path_tail: str,
+        request: Request,
+):
+    payload, uploaded_files = await _parse_bundle_request_payload(request)
+    return await _call_bundle_op_limited(
+        tenant=tenant,
+        project=project,
+        bundle_id=bundle_id,
+        payload=payload,
+        uploaded_files=uploaded_files,
+        request=request,
+        operation=operation,
+        route="public",
+        session=_build_public_api_request_session(request),
+        path_tail=path_tail,
+    )
+
+
+@router.get("/bundles/{tenant}/{project}/{bundle_id}/public/{operation}/{path_tail:path}")
+async def call_bundle_op_public_get_with_path(
+        tenant: str,
+        project: str,
+        bundle_id: str,
+        operation: str,
+        path_tail: str,
+        request: Request,
+):
+    payload = BundleSuggestionsRequest()
+    return await _call_bundle_op_limited(
+        tenant=tenant,
+        project=project,
+        bundle_id=bundle_id,
+        payload=payload,
+        uploaded_files=[],
+        request=request,
+        operation=operation,
+        route="public",
+        session=_build_public_api_request_session(request),
+        path_tail=path_tail,
     )
 
 

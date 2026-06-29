@@ -1,7 +1,7 @@
 ---
 id: repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/delegated-credentials/oauth-mcp-consent-branding-README.md
 title: "Branding the MCP Authorization Screen"
-summary: "How to configure the product name shown on the current OAuth/MCP delegated-credential consent screen through auth.connection_hub.delegated_credentials.oauth_mcp.brand."
+summary: "How to configure the product name shown on the current OAuth/MCP delegated-credential consent screen through the Connection Hub bundle config."
 status: active
 tags: ["service", "auth", "oauth", "mcp", "branding", "descriptor"]
 updated_at: 2026-06-27
@@ -19,7 +19,8 @@ change and no image rebuild.
 
 When an admin connects an MCP client (for example, Claude) to your deployment,
 KDCube acts as a **self-hosted OAuth2 authorization server**. Before the client
-is granted access, the admin is sent to `/oauth/authorize`, which renders a
+is granted access, the admin is sent to Connection Hub
+`/public/oauth/authorize`, which renders a
 **consent screen**: it shows the requesting client, the redirect target, the
 requested scope(s), and a per-capability tool selection, then asks the admin to
 Approve or Deny.
@@ -27,20 +28,25 @@ Approve or Deny.
 By default that page is branded **KDCube**. If your deployment ships under a
 different product name, you can change the brand shown to the admin.
 
-## The one knob: `auth.connection_hub.delegated_credentials.oauth_mcp.brand`
+## The one knob: `connections.delegated_credentials.oauth_mcp.brand`
 
-Set `brand` under `auth.connection_hub.delegated_credentials.oauth_mcp` in your `assembly.yaml` descriptor to your
-product name:
+Set `brand` under `connections.delegated_credentials.oauth_mcp` in the
+`connection-hub@1-0` bundle config to your product name:
 
 ```yaml
-auth:
-  oauth_mcp:
-    enabled: true
-    issuer: "https://mcp.example.com"
-    brand: "Acme AI"
+bundles:
+  items:
+    - id: "connection-hub@1-0"
+      config:
+        connections:
+          delegated_credentials:
+            oauth_mcp:
+              enabled: true
+              brand: "Acme AI"
 ```
 
-That is the only field involved. The other `auth.connection_hub.delegated_credentials.oauth_mcp` settings (`issuer`,
+That is the only field involved. The other
+`connections.delegated_credentials.oauth_mcp` settings (`issuer`,
 `public_clients`, `dynamic_client_registration`, ...) are documented in
 [`oauth-mcp-protocol-adapter-README.md`](./oauth-mcp-protocol-adapter-README.md).
 
@@ -67,6 +73,6 @@ If `brand` is unset or empty, the consent screen uses **KDCube**.
 
 ## No code change or image rebuild needed
 
-`brand` is descriptor configuration, not code. Edit `assembly.yaml`, then let the
-change be picked up on the next config sync / service restart — no rebuild of the
-application image is required.
+`brand` is descriptor configuration, not code. Edit the Connection Hub entry in
+`bundles.yaml`, then let the change be picked up on the next config sync /
+service restart — no rebuild of the application image is required.

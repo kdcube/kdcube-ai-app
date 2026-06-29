@@ -25,7 +25,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oau
 from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oauth_mcp.config import oauth_mcp_config
 from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oauth_mcp.consent import render_consent_html, tools_for_scopes
 from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oauth_mcp.authority import build_oauth_mcp_credential
-from kdcube_ai_app.apps.chat.ingress.oauth_mcp.deps import (
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oauth_mcp.http.deps import (
     extract_bearer,
     get_access_token_minter,
     get_authenticate,
@@ -33,7 +33,7 @@ from kdcube_ai_app.apps.chat.ingress.oauth_mcp.deps import (
     is_admin,
     oauth_tenant_project,
 )
-from kdcube_ai_app.apps.chat.ingress.oauth_mcp.discovery import resolve_issuer
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oauth_mcp.http.discovery import resolve_issuer
 from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oauth_mcp.flow import (
     AuthorizeError,
     build_redirect,
@@ -47,6 +47,13 @@ _AUTHORIZE_FORM_KEYS = (
     "client_id", "redirect_uri", "response_type", "scope",
     "state", "code_challenge", "code_challenge_method",
 )
+
+
+def _consent_action(request: Request) -> str:
+    path = str(request.url.path or "").rstrip("/")
+    if path.endswith("/authorize"):
+        return f"{path}/consent"
+    return "/oauth/authorize/consent"
 
 
 def _error_response(err: AuthorizeError, issuer: str) -> Response:
@@ -163,7 +170,12 @@ async def authorize(request: Request) -> Response:
     trusted = get_client(req.client_id, request) is not None
     return HTMLResponse(
         render_consent_html(
-            req, issuer, csrf_token=csrf, trusted=trusted, brand=oauth_mcp_config(request).brand
+            req,
+            issuer,
+            csrf_token=csrf,
+            trusted=trusted,
+            brand=oauth_mcp_config(request).brand,
+            form_action=_consent_action(request),
         )
     )
 

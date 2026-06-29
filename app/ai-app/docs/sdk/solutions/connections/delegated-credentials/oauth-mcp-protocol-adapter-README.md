@@ -53,18 +53,23 @@ The key split is:
 ```
 Claude Code / external MCP client
   |
-  | 1. Discover MCP resource
-  |    GET /mcp or /.well-known/oauth-protected-resource
+  | 1. Discover protected bundle MCP resource
+  |    GET/POST /api/integrations/bundles/{tenant}/{project}/{bundle}/public/mcp/{alias}
+  |    without a valid delegated credential
   v
-KDCube ingress OAuth/MCP routes
+Proc bundle MCP bridge
+  |
+  | returns RFC 9728 WWW-Authenticate challenge for that concrete resource
+  v
+Connection Hub delegated credential OAuth adapter
   |
   | returns RFC 9728 / RFC 8414 metadata
   v
 Client learns:
-  authorization_endpoint = /oauth/authorize
-  token_endpoint         = /oauth/token
-  registration_endpoint  = /oauth/register
-  resource               = /mcp
+  authorization_endpoint = /api/.../connection-hub@1-0/public/oauth/authorize
+  token_endpoint         = /api/.../connection-hub@1-0/public/oauth/token
+  registration_endpoint  = /api/.../connection-hub@1-0/public/oauth/register
+  resource               = concrete bundle MCP URL
 
 
 Client dynamic registration, when used
@@ -81,14 +86,14 @@ Public OAuth client record
 
 Human consent
   |
-  | 3. Browser opens /oauth/authorize
+  | 3. Browser opens Connection Hub /public/oauth/authorize
   |    response_type=code
   |    code_challenge=<PKCE S256>
   |    scope=conversations:read
   |    client_id=<public client>
   |    redirect_uri=<validated callback>
   v
-KDCube ingress
+Connection Hub OAuth adapter
   |
   | 4. Validate existing platform session cookie
   |    cookie name comes from assembly.yaml auth.auth_token_cookie_name
@@ -108,7 +113,7 @@ External client callback
 
 Token issue
   |
-  | 7. POST /oauth/token
+  | 7. POST Connection Hub /public/oauth/token
   |    grant_type=authorization_code
   |    code=<auth code>
   |    code_verifier=<PKCE verifier>
@@ -126,11 +131,11 @@ External client holds:
 
 MCP execution
   |
-  | 8. POST /mcp
+  | 8. POST concrete bundle MCP URL
   |    Authorization: Bearer <access_token>
   |    JSON-RPC tools/list or tools/call
   v
-KDCube MCP resource server
+Proc bundle MCP bridge
   |
   | authenticates kst1 token
   | checks role permission
@@ -186,7 +191,7 @@ See [Authority Credential Envelope](../../sdk/solutions/connections/authority-pr
 ## Consent And Tool Enforcement
 
 Scopes describe broad integration capability. MCP tools are the concrete
-operations exposed through `/mcp`.
+operations exposed through a concrete bundle MCP endpoint.
 
 The consent page may show selected tools for the requested scopes. Approval must
 bind that selected tool list into the issued grant:
@@ -197,7 +202,7 @@ consent POST
   -> token endpoint binds selected tools to access token
   -> refresh token record stores selected tools
   -> refresh rotation preserves selected tools
-  -> /mcp tools/call checks role permission AND selected-tool grant
+  -> managed bundle MCP tools/call checks role permission AND selected-tool grant
 ```
 
 This makes the tool-selection UI meaningful. A token with the right role but no
@@ -207,33 +212,49 @@ matching selected-tool grant must fail closed for non-admin integration calls.
 
 This is a Connection Hub delegated-credential protocol adapter. OAuth metadata,
 authorization, token, refresh, and dynamic-client-registration routes are served
-by chat-ingress because they are platform auth protocol routes. The delegated
-credential they issue should then guard concrete bundle/proc surfaces such as
-bundle-provided MCP endpoints.
+by the `connection-hub@1-0` bundle public operation:
 
-Its non-secret protocol configuration belongs in
-`assembly.yaml` under `auth.connection_hub.delegated_credentials.oauth_mcp`.
+```text
+/api/integrations/bundles/{tenant}/{project}/connection-hub@1-0/public/oauth
+/api/integrations/bundles/{tenant}/{project}/connection-hub@1-0/public/oauth/.well-known/oauth-authorization-server
+/api/integrations/bundles/{tenant}/{project}/connection-hub@1-0/public/oauth/.well-known/oauth-protected-resource?resource=<bundle-mcp-url>
+/api/integrations/bundles/{tenant}/{project}/connection-hub@1-0/public/oauth/authorize
+/api/integrations/bundles/{tenant}/{project}/connection-hub@1-0/public/oauth/authorize/consent
+/api/integrations/bundles/{tenant}/{project}/connection-hub@1-0/public/oauth/register
+/api/integrations/bundles/{tenant}/{project}/connection-hub@1-0/public/oauth/token
+```
+
+Stable root aliases such as `/.well-known/...` or `/oauth/...` may be added by
+gateway routing later, but those aliases route to Connection Hub. They do not
+make the OAuth adapter an ingress-owned feature.
+
+Its non-secret protocol configuration belongs in `bundles.yaml` under the
+Connection Hub bundle config:
 
 Reference shape:
 
 ```yaml
-auth:
-  connection_hub:
-    delegated_credentials:
-      oauth_mcp:
-        enabled: false
-        issuer: ""
-        public_clients:
-          - client_id: "claude"
-            redirect_uris:
-              - "https://claude.ai/api/mcp/auth_callback"
-              - "http://localhost/callback"
-              - "http://127.0.0.1/callback"
-        dynamic_client_registration:
-          allowed_redirect_uris:
-            - "https://claude.ai/api/mcp/auth_callback"
-            - "http://localhost/callback"
-            - "http://127.0.0.1/callback"
+bundles:
+  items:
+    - id: "connection-hub@1-0"
+      config:
+        connections:
+          delegated_credentials:
+            oauth_mcp:
+              enabled: true
+              brand: "KDCube"
+              issuer: ""
+              public_clients:
+                - client_id: "claude"
+                  redirect_uris:
+                    - "https://claude.ai/api/mcp/auth_callback"
+                    - "http://localhost/callback"
+                    - "http://127.0.0.1/callback"
+              dynamic_client_registration:
+                allowed_redirect_uris:
+                  - "https://claude.ai/api/mcp/auth_callback"
+                  - "http://localhost/callback"
+                  - "http://127.0.0.1/callback"
 ```
 
 The bundle surface that consumes this credential is configured in
@@ -261,12 +282,11 @@ before dispatching into the bundle MCP app. If `mode` is absent, the MCP auth
 block is bundle-owned metadata; the knowledge bundle's
 `mcp.knowledge.auth.header_name` is one such bundle-owned scheme.
 
-Legacy root `/mcp` remains an adapter while this feature is migrated to
-bundle-provided MCP surfaces. It should not be modeled as "platform MCP"; the
-normal product shape is:
+There is no platform-level `/mcp`. MCP is exposed by bundles and served by proc.
+The normal product shape is:
 
 ```text
-OAuth/consent/token routes
+Connection Hub OAuth/consent/token routes
   -> delegated credential
   -> proc bundle @mcp endpoint with mode: managed
   -> bundle MCP app
@@ -276,16 +296,18 @@ Old shape to avoid in new descriptors:
 
 ```yaml
 auth:
-  oauth_mcp:
-    enabled: false
-    issuer: ""
+  oauth_mcp: ...
+  connection_hub:
+    delegated_credentials:
+      oauth_mcp: ...
 ```
 
 Rules:
 
-- `enabled` controls whether the OAuth/MCP routes are mounted.
+- `enabled` controls whether the Connection Hub public OAuth operation accepts
+  requests.
 - `issuer` is the public origin advertised in OAuth metadata. If omitted, local
-  development may derive it from the request origin.
+  development derives it from the mounted Connection Hub public operation URL.
 - `public_clients[*].redirect_uris` configures known public clients.
 - `dynamic_client_registration.allowed_redirect_uris` constrains pre-auth
   dynamic client registration.
@@ -324,13 +346,13 @@ records disappear. The solution-level durability design note is
 
 | Situation | Expected behavior |
 |---|---|
-| No platform session on `/oauth/authorize` | `login_required`; client must start from an authenticated admin browser session. |
+| No platform session on Connection Hub `/public/oauth/authorize` | `login_required`; client must start from an authenticated admin browser session. |
 | Authenticated user is not admin | `forbidden`; only configured admin roles may consent. |
 | DCR redirect URI is not allowlisted | `invalid_redirect_uri`; client is not registered. |
 | Bad redirect URI on authorize/token | Request fails; codes are not delivered to unvalidated redirects. |
 | Missing or invalid PKCE verifier | Token request fails with `invalid_grant`. |
-| Token has role but no selected-tool grant | Non-admin `/mcp tools/call` fails closed. |
-| Tool is not allowed by role | `/mcp tools/call` returns an MCP tool authorization error. |
+| Token has role but no selected-tool grant | Non-admin bundle MCP `tools/call` fails closed. |
+| Tool is not allowed by role | Bundle MCP `tools/call` returns an MCP tool authorization error. |
 | Refresh token is invalid or rotated | Token request fails with `invalid_grant`. |
 
 ## What This Is Not
@@ -349,9 +371,10 @@ platform admin consent flow to a least-privilege delegated credential.
 ## Relationship To Connection Hub
 
 OAuth/MCP is one delegated-connection authenticator/protocol adapter under the
-Connection Hub concept. It is still implemented as service auth endpoints
-because `/oauth/*` and `/mcp` are platform ingress surfaces. The shared diagram
-lives in
+Connection Hub concept. Its HTTP protocol surface is hosted by the Connection
+Hub bundle public `oauth` operation. Concrete MCP resources remain bundle/proc
+surfaces and use the delegated credential produced by Connection Hub. The shared
+diagram lives in
 [Delegated Credential Protocol Adapters](delegated-credential-protocol-adapters-README.md).
 
 At the Connection Hub layer, OAuth/MCP is not conceptually different from other
@@ -366,10 +389,10 @@ KDCube-issued integration token
   -> selected tools / allowed actions
 ```
 
-The feature registers an `oauth_mcp` authority provider in the local Connection
-Hub authority registry when mounted. That makes the implementation visible to
-code using the authority SDK without turning `/oauth/*` into a bundle-local
-surface.
+The feature registers an `oauth_mcp` authority provider in the Connection Hub
+authority registry. That makes the implementation visible to code using the
+authority SDK and keeps the protocol mechanics under the same service that owns
+delegated credentials.
 
 The consent roundtrip is how that credential and grant registry entry are
 created:
@@ -379,7 +402,7 @@ grantor authority
   platform browser session / projected platform principal
       |
       v
-/oauth/authorize
+connection-hub@1-0/public/oauth/authorize
       |
       v
 consent scopes + selected MCP tools
@@ -401,16 +424,18 @@ OAuth/MCP grant registry.
 
 Use focused tests and one live connector test.
 
-1. OAuth metadata routes return issuer, authorization endpoint, token endpoint,
-   registration endpoint, and `/mcp` resource metadata.
+1. Connection Hub OAuth metadata routes return issuer, authorization endpoint,
+   token endpoint, registration endpoint, and concrete protected-resource
+   metadata.
 2. DCR accepts only descriptor-allowed redirect URIs.
 3. Authorization requires an authenticated platform admin session.
 4. Consent POST validates CSRF and re-validates client, redirect URI, and PKCE.
 5. Token issue stores selected tools on both access grant and refresh record.
 6. Refresh rotation preserves selected tools.
-7. Non-admin integration token without a selected-tool grant fails closed.
+7. Non-admin integration token without a selected-tool grant fails closed at the
+   managed bundle MCP guard.
 8. Admin tokens bypass selected-tool grants only where intentional.
-9. `/mcp tools/list` and `/mcp tools/call` return MCP-shaped responses, not
+9. Bundle MCP `tools/list` and `tools/call` return MCP-shaped responses, not
    unhandled HTTP 500s for authorization failures.
 10. The feature is disabled when
-    `auth.connection_hub.delegated_credentials.oauth_mcp.enabled: false`.
+    `connection-hub@1-0.config.connections.delegated_credentials.oauth_mcp.enabled: false`.

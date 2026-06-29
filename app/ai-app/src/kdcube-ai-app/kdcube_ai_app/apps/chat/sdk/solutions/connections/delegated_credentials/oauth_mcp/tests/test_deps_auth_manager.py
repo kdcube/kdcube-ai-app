@@ -4,8 +4,8 @@
 """get_authenticate must accept BOTH oauth_mcp token kinds, bundle authority first.
 
 oauth_mcp authenticates two distinct tokens:
-  - the integration ACCESS token at /mcp — a STATEFUL platform bundle kst1
-    (roles in the Redis user record), and
+  - the integration ACCESS token used at a guarded bundle MCP surface — a
+    STATEFUL platform bundle kst1 (roles in the Redis user record), and
   - the admin's web-login session at /oauth/authorize — validated by the gateway's
     configured manager (a stateless token carrying roles in its claims).
 
@@ -19,7 +19,7 @@ import types
 
 import pytest
 
-from kdcube_ai_app.apps.chat.ingress.oauth_mcp import deps
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oauth_mcp.http import deps
 
 
 def _request_without_override():

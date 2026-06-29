@@ -26,6 +26,7 @@ from .metadata import (
     CONVERSATIONS_READ_SCOPE,
     authorization_server_metadata,
     protected_resource_metadata,
+    protected_resource_metadata_url,
 )
 from .store import GrantStore
 
@@ -49,5 +50,6 @@ __all__ = [
     "oauth_mcp_authority_spec",
     "oauth_mcp_config",
     "protected_resource_metadata",
+    "protected_resource_metadata_url",
     "register_oauth_mcp_authority",
 ]

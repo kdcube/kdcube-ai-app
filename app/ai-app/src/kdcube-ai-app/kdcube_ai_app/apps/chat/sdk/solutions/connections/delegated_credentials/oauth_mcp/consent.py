@@ -45,6 +45,7 @@ def render_consent_html(
     csrf_token: str = "",
     trusted: bool = False,
     brand: str = "KDCube",
+    form_action: str = "/oauth/authorize/consent",
 ) -> str:
     esc = _html.escape
     tools = tools_for_scopes(req.scopes)
@@ -153,7 +154,7 @@ def render_consent_html(
     <p class="warn-text">Only approve if <strong>you</strong> started this connection and recognize the
     client and the redirect URL above. Approving grants read-only access to all conversation
     transcripts across every tenant/project.</p>
-    <form method="post" action="/oauth/authorize/consent">
+    <form method="post" action="{esc(form_action)}">
 {hidden}
     <p class="pick">Select which capabilities to authorize for this connection:</p>
 {tool_rows}

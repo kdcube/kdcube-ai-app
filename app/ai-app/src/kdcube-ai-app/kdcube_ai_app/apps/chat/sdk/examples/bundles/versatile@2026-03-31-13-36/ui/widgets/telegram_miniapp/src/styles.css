@@ -379,10 +379,13 @@ input:focus, select:focus, textarea:focus {
 .memory-widget-iframe {
   display: block;
   width: 100%;
-  /* Compact: a short glanceable list. */
+  /* Initial fallback only — the real height is driven as an INLINE style from
+   * MemoryPage (compact 320px / expanded 76vh). Mobile Telegram defers layout
+   * of a bare-CSS-sized iframe until a reflow, so the inline assignment + a
+   * forced reflow is what makes it lay out on first mount. No `transition`:
+   * animating height would let the first paint run from the un-laid-out state. */
   height: 320px;
   border: 0;
-  transition: height 140ms ease;
 }
 
 .connection-widget-frame {
@@ -428,9 +431,9 @@ input:focus, select:focus, textarea:focus {
   background: var(--bg);
 }
 
-/* Expanded: give the widget the full tab to show the rest + side panel. */
+/* Expanded height is applied inline from MemoryPage (76vh); this keeps a sane
+ * floor for the expanded view. */
 .memory-embed-page.memory-expanded .memory-widget-iframe {
-  height: 76vh;
   min-height: 560px;
 }
 

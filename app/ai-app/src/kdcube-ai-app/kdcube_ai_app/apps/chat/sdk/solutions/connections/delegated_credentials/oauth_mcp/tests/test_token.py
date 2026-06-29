@@ -12,7 +12,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from kdcube_ai_app.apps.chat.ingress.oauth_mcp import mount_oauth_mcp
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oauth_mcp.tests.helpers import mount_test_oauth_adapter
 from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oauth_mcp.authority import (
     OAUTH_MCP_CREDENTIAL_KIND,
 )
@@ -22,8 +22,8 @@ from kdcube_ai_app.apps.chat.sdk.solutions.connections.authority_registry import
     OAUTH_MCP_AUTHORITY_ID,
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oauth_mcp.pkce import make_s256_challenge
-from kdcube_ai_app.apps.chat.ingress.oauth_mcp.tests.test_clients_and_store import FakeRedis
-from kdcube_ai_app.apps.chat.ingress.oauth_mcp.tests.helpers import enable_oauth_mcp
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oauth_mcp.tests.test_clients_and_store import FakeRedis
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oauth_mcp.tests.helpers import enable_oauth_mcp
 
 VERIFIER = "code-verifier-" + "z" * 60
 CHALLENGE = make_s256_challenge(VERIFIER)
@@ -37,7 +37,7 @@ async def _fake_minter(sub, scopes):
 def ctx():
     app = FastAPI()
     enable_oauth_mcp(app)
-    mount_oauth_mcp(app)
+    mount_test_oauth_adapter(app)
     store = GrantStore(FakeRedis(), tenant="home", project="demo")
     app.state.oauth_grant_store = store
     app.state.oauth_mint_access_token = _fake_minter

@@ -2,11 +2,11 @@
 # Copyright (c) 2026 Elena Viter
 
 """
-Tests for the OAuth2 Authorization Server + MCP resource discovery metadata.
+Tests for delegated credential OAuth discovery metadata.
 
 These cover the RFC 9728 (protected-resource) -> RFC 8414 (authorization-server)
 handshake that Claude Code's MCP client uses to discover how to authenticate
-against KDCube's /mcp endpoint. All pure / deterministic; no Redis or DB needed.
+against a concrete bundle MCP endpoint. All pure / deterministic; no Redis or DB needed.
 """
 from __future__ import annotations
 
@@ -14,12 +14,12 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from kdcube_ai_app.apps.chat.ingress.oauth_mcp import (
-    mount_oauth_mcp,
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oauth_mcp import (
     authorization_server_metadata,
     protected_resource_metadata,
 )
-from kdcube_ai_app.apps.chat.ingress.oauth_mcp.tests.helpers import enable_oauth_mcp
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oauth_mcp.tests.helpers import mount_test_oauth_adapter
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oauth_mcp.tests.helpers import enable_oauth_mcp
 
 ISSUER = "https://yey.boats"
 
@@ -47,9 +47,10 @@ def test_authorization_server_metadata_omits_jwks_uri():
 
 
 def test_protected_resource_metadata_points_at_as():
-    md = protected_resource_metadata(ISSUER)
+    resource = "https://yey.boats/api/integrations/bundles/demo/prod/app@1/public/mcp/export"
+    md = protected_resource_metadata(ISSUER, resource=resource)
 
-    assert md["resource"] == f"{ISSUER}/mcp"
+    assert md["resource"] == resource
     assert md["authorization_servers"] == [ISSUER]
     assert md["scopes_supported"] == ["conversations:read"]
 
@@ -60,7 +61,7 @@ def test_protected_resource_metadata_points_at_as():
 def client():
     app = FastAPI()
     enable_oauth_mcp(app, issuer=ISSUER)
-    mount_oauth_mcp(app)
+    mount_test_oauth_adapter(app)
     return TestClient(app)
 
 
@@ -71,17 +72,7 @@ def test_well_known_authorization_server_served(client):
 
 
 def test_well_known_protected_resource_served(client):
-    resp = client.get("/.well-known/oauth-protected-resource")
+    resource = "https://yey.boats/api/integrations/bundles/demo/prod/app@1/public/mcp/export"
+    resp = client.get("/.well-known/oauth-protected-resource", params={"resource": resource})
     assert resp.status_code == 200
-    assert resp.json() == protected_resource_metadata(ISSUER)
-
-
-def test_mcp_unauthenticated_returns_401_with_resource_metadata(client):
-    # RFC 9728 §5.1: an unauthenticated MCP request advertises the
-    # protected-resource metadata URL in WWW-Authenticate so the client can
-    # discover the authorization server.
-    resp = client.get("/mcp")
-    assert resp.status_code == 401
-    www = resp.headers.get("WWW-Authenticate", "")
-    assert www.startswith("Bearer ")
-    assert f'resource_metadata="{ISSUER}/.well-known/oauth-protected-resource"' in www
+    assert resp.json() == protected_resource_metadata(ISSUER, resource=resource)

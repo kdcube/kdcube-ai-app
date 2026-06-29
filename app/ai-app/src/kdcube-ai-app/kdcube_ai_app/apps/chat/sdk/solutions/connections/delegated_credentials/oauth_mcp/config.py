@@ -47,6 +47,9 @@ class OAuthMcpConfig:
 def _state_for(source: Any) -> Any | None:
     if source is None:
         return None
+    request_state = getattr(source, "state", None)
+    if request_state is not None and hasattr(request_state, "oauth_mcp_config"):
+        return request_state
     app = getattr(source, "app", None) or source
     return getattr(app, "state", None)
 
@@ -113,10 +116,10 @@ def _parse_config(raw: Any, *, settings: Any | None = None) -> OAuthMcpConfig:
     dcr_node = dcr if isinstance(dcr, Mapping) else {}
     allowed_redirects = _coerce_string_tuple(dcr_node.get("allowed_redirect_uris")) or DEFAULT_DCR_REDIRECT_URIS
 
-    tenant = _coerce_str(getattr(settings, "TENANT", None)) or "home"
-    project = _coerce_str(getattr(settings, "PROJECT", None)) or "demo"
+    tenant = _coerce_str(node.get("tenant")) or _coerce_str(getattr(settings, "TENANT", None)) or "home"
+    project = _coerce_str(node.get("project")) or _coerce_str(getattr(settings, "PROJECT", None)) or "demo"
     auth = getattr(settings, "AUTH", None)
-    cookie_name = _coerce_str(getattr(auth, "AUTH_TOKEN_COOKIE_NAME", None)) or "__Secure-LATC"
+    cookie_name = _coerce_str(node.get("auth_cookie_name")) or _coerce_str(getattr(auth, "AUTH_TOKEN_COOKIE_NAME", None)) or "__Secure-LATC"
 
     return OAuthMcpConfig(
         enabled=_coerce_bool(node.get("enabled"), False),
@@ -136,9 +139,9 @@ def oauth_mcp_config(source: Any | None = None) -> OAuthMcpConfig:
     """Resolve OAuth/MCP delegated-credential config from app state or assembly.
 
     Tests may set ``app.state.oauth_mcp_config`` to a mapping or ``OAuthMcpConfig``.
-    Production reads
-    ``auth.connection_hub.delegated_credentials.oauth_mcp`` from
-    ``assembly.yaml``;
+    Connection Hub mounts this adapter by setting a request-local config from
+    ``connection-hub@1-0`` bundle props. Without that explicit config, the
+    adapter is disabled.
     tenant/project and cookie name come from the canonical Settings object, which
     already resolves ``context.*`` and ``auth.*`` from descriptors.
     """
@@ -150,8 +153,7 @@ def oauth_mcp_config(source: Any | None = None) -> OAuthMcpConfig:
     if override is not None:
         return _parse_config(override)
 
-    from kdcube_ai_app.apps.chat.sdk.config import get_settings, read_plain
+    from kdcube_ai_app.apps.chat.sdk.config import get_settings
 
     settings = get_settings()
-    raw = read_plain("auth.connection_hub.delegated_credentials.oauth_mcp", default={})
-    return _parse_config(raw, settings=settings)
+    return _parse_config({}, settings=settings)

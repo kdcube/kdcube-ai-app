@@ -499,11 +499,10 @@ async def gateway_middleware(request: Request, call_next):
         "/docs",
         "/openapi.json",
         "/favicon.ico",
-        # OAuth2 AS + MCP resource own their auth (discovery docs are public;
-        # /mcp and /oauth/* validate the kst1 session / PKCE themselves).
+        # Connection Hub delegated-credential OAuth routes own their protocol
+        # checks. Concrete MCP resources are bundle/proc surfaces, not ingress.
         "/.well-known/oauth-",
         "/oauth/",
-        "/mcp",
     )):
         return await call_next(request)
 
@@ -723,10 +722,6 @@ mount_opex_router(app)
 # Mount Control Plane router
 from kdcube_ai_app.apps.chat.ingress.control_plane import mount_control_plane_router
 mount_control_plane_router(app)
-
-# Mount OAuth2 AS + MCP resource server (feedback-triage integration access)
-from kdcube_ai_app.apps.chat.ingress.oauth_mcp import mount_oauth_mcp
-mount_oauth_mcp(app)
 
 # Mount Economics router
 from kdcube_ai_app.apps.chat.ingress.economics import mount_economics_router

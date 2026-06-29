@@ -231,43 +231,27 @@ auth:
 The server selects a verifier from token claims (`iss` plus `client_id` or
 `aud`) and then performs normal JWKS validation for that provider.
 
-### `auth.connection_hub.delegated_credentials.oauth_mcp`
+### Connection Hub Delegated Credential Adapters
 
-`auth.connection_hub.delegated_credentials.oauth_mcp` configures KDCube-hosted OAuth2 authorization for MCP
-integration access. It is a platform auth capability served by chat-ingress.
-Do not configure it under `platform.services.ingress.*`, and do not configure it
-with operator-facing environment variables.
-
-Reference shape:
+Delegated credential adapters, including the current OAuth/MCP adapter, are not
+configured under `assembly.yaml -> auth`. They belong to the `connection-hub@1-0`
+bundle config in `bundles.yaml`:
 
 ```yaml
-auth:
-  oauth_mcp:
-    enabled: false
-    issuer: ""
-    public_clients:
-      - client_id: "claude"
-        redirect_uris:
-          - "https://claude.ai/api/mcp/auth_callback"
-          - "http://localhost/callback"
-          - "http://127.0.0.1/callback"
-    dynamic_client_registration:
-      allowed_redirect_uris:
-        - "https://claude.ai/api/mcp/auth_callback"
-        - "http://localhost/callback"
-        - "http://127.0.0.1/callback"
+bundles:
+  items:
+    - id: "connection-hub@1-0"
+      config:
+        connections:
+          delegated_credentials:
+            oauth_mcp:
+              enabled: true
+              brand: "KDCube"
 ```
 
-Rules:
-
-- `enabled` controls whether the OAuth/MCP integration-access routes are mounted.
-- `issuer` is the public origin advertised in OAuth metadata. Leave it empty in
-  local/dev when deriving the issuer from the request origin is acceptable.
-- `public_clients[*].redirect_uris` configures pre-registered public clients.
-- `dynamic_client_registration.allowed_redirect_uris` constrains pre-auth
-  dynamic client registration.
-- Tenant/project scope comes from `context.tenant` and `context.project`.
-- The browser session cookie used by the flow is `auth.auth_token_cookie_name`.
+Assembly still owns the underlying platform auth/session settings used by the
+adapter, such as `context.tenant`, `context.project`, and
+`auth.auth_token_cookie_name`. The adapter itself is a Connection Hub concern.
 
 See [OAuth/MCP Protocol Adapter](../sdk/solutions/connections/delegated-credentials/oauth-mcp-protocol-adapter-README.md).
 

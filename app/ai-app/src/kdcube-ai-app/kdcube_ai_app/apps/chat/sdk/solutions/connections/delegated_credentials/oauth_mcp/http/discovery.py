@@ -1,12 +1,11 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Elena Viter
 
-"""
-Discovery + unauthenticated-handshake routes for the OAuth2 AS / MCP resource.
+"""Discovery routes for the Connection Hub delegated-credential OAuth adapter.
 
 Serves the RFC 8414 authorization-server and RFC 9728 protected-resource
-documents, and answers an unauthenticated MCP request with a ``401`` carrying a
-``WWW-Authenticate`` challenge that points at the protected-resource metadata.
+documents. Concrete bundle MCP resources may point clients here from their own
+``WWW-Authenticate`` challenges.
 """
 from __future__ import annotations
 
@@ -19,6 +18,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oau
     WELL_KNOWN_PR_PATH,
     authorization_server_metadata,
     protected_resource_metadata,
+    protected_resource_metadata_url,
 )
 
 router = APIRouter()
@@ -27,10 +27,14 @@ router = APIRouter()
 def resolve_issuer(request: Request) -> str:
     """Public origin of this AS.
 
-    Prefers ``auth.oauth_mcp.issuer`` from ``assembly.yaml``
-    (the deployment knows its CloudFront-fronted public host); falls back to the
-    request's own base URL so local/dev runs work without configuration.
+    Prefers the request-local issuer set by the Connection Hub bundle mount.
+    The compatibility router can still use app-level config in tests. If no
+    issuer is configured, local/dev runs derive it from the request origin.
     """
+    request_state = getattr(request, "state", None)
+    request_issuer = getattr(request_state, "oauth_mcp_issuer", None) if request_state is not None else None
+    if request_issuer:
+        return str(request_issuer).rstrip("/")
     configured = oauth_mcp_config(request).issuer
     if configured:
         return configured.rstrip("/")
@@ -44,12 +48,13 @@ async def well_known_authorization_server(request: Request) -> JSONResponse:
 
 @router.get(WELL_KNOWN_PR_PATH, include_in_schema=False)
 async def well_known_protected_resource(request: Request) -> JSONResponse:
-    return JSONResponse(protected_resource_metadata(resolve_issuer(request)))
+    resource = request.query_params.get("resource")
+    return JSONResponse(protected_resource_metadata(resolve_issuer(request), resource=resource))
 
 
-def unauthorized_challenge(issuer: str) -> JSONResponse:
+def unauthorized_challenge(issuer: str, *, resource: str | None = None) -> JSONResponse:
     """RFC 9728 §5.1 challenge advertising where to find the AS."""
-    pr_url = f"{issuer}{WELL_KNOWN_PR_PATH}"
+    pr_url = protected_resource_metadata_url(issuer, resource=resource)
     return JSONResponse(
         status_code=401,
         content={"error": "unauthorized", "error_description": "authorization required"},
