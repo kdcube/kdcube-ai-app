@@ -4,7 +4,7 @@ title: "Link From External Channel"
 summary: "Recipe for creating a connection edge when a user starts inside an external runtime such as Telegram, Slack, WhatsApp, or another authenticated app surface."
 status: active
 tags: ["recipes", "connections", "connection-hub", "connection-edges", "external-channel", "telegram", "data-bus", "widgets"]
-updated_at: 2026-06-28
+updated_at: 2026-06-29
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/connection-hub-solution-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/link-flows/channel-first-connection-edge-flow-README.md
@@ -133,8 +133,8 @@ Data Bus
         |
         | verifies provider proof
         | creates/reuses actor session:
-        |   user_id = telegram_434804821
-        |   user_type = registered before link
+        |   actor_user_id = telegram_434804821
+        |   no projected platform authority before link
         | returns:
         |   federated_token
         |   session_id
@@ -328,17 +328,17 @@ external UI
 Before link:
 
 ```text
-session.user_id = telegram_434804821
-session.user_type = registered
+actor_user_id = telegram_434804821
+projected_platform_user = null
+projected_grants = []
 ```
 
 After link:
 
 ```text
-session.user_id = telegram_434804821
-session.user_type = privileged       # if linked platform user is privileged
-platform_user_id = 02e53484-...
-roles/permissions = platform projection
+actor_user_id = telegram_434804821
+projected_platform_user = 02e53484-...
+projected_grants = selected grants from the connection edge
 ```
 
 The actor remains Telegram. It does not silently become the browser platform
@@ -355,7 +355,7 @@ During a successful unlinked-to-linked run, expect this sequence.
    actor_user_id=telegram_434804821
    platform_user_present=False
    linked=False
-   authority_user_type=registered
+   projected_grants=[]
 
 2. data_bus claim issued
    actor_user_id=telegram_434804821
@@ -364,8 +364,7 @@ During a successful unlinked-to-linked run, expect this sequence.
 
 3. Socket.IO federated connect verified
    session_id=<live-session>
-   user_id=telegram_434804821
-   user_type=registered
+   actor_user_id=telegram_434804821
 
 4. link_start created provider claim
    challenge_id=<challenge>
@@ -386,11 +385,13 @@ During a successful unlinked-to-linked run, expect this sequence.
 7. new data_bus claim issued
    actor_user_id=telegram_434804821
    linked=True
+   projected_platform_user=02e...
+   projected_grants=[identity:family, economics:platform-user, ...]
 
 8. Socket.IO federated connect verified
    session_id=<live-session>
-   user_id=telegram_434804821
-   user_type=privileged
+   actor_user_id=telegram_434804821
+   projected_platform_user=02e...
 ```
 
 If steps 1-6 happen and the UI does not update, the bug is in the widget
