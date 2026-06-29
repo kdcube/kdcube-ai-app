@@ -369,6 +369,7 @@ class ContextRAGClient:
             with_payload: bool = False,
             bundle_id: Optional[str] = None,
             bundle_ids: Optional[Sequence[str]] = None,
+            agent_id: Optional[str] = None,
     ) -> dict:
         """
         Pure-recency fetch (no embeddings). Fast path for "last N in track".
@@ -394,6 +395,7 @@ class ContextRAGClient:
             days=days,
             bundle_id=bundle,
             bundle_ids=bundle_ids,
+            agent_id=agent_id,
         )
         items = []
         for r in rows:
@@ -549,6 +551,7 @@ class ContextRAGClient:
             conversation_id: str, user_type: str,
             turn_id: str,
             bundle_id: str,
+            agent_id: Optional[str] = None,
             payload: Optional[Dict[str, Any]] = None,
             extra_tags: Optional[List[str]] = None
     ) -> Dict[str, Any]:
@@ -575,6 +578,7 @@ class ContextRAGClient:
             user_id=user, conversation_id=conversation_id,
             turn_id=turn_id,
             bundle_id=bundle_id,
+            agent_id=agent_id,
             role="artifact",
             text=index_text, hosted_uri=hosted_uri, ts=log.ts,
             tags=tags,
@@ -1761,6 +1765,7 @@ class ContextRAGClient:
             meta: Optional[Dict[str, Any]] = None,
             extra_tags: Optional[List[str]] = None,
             bundle_id: Optional[str] = None,
+            agent_id: Optional[str] = None,
             index_only: bool = False,
             store_only: bool = False,
             embedding: Optional[List[float]] = None,
@@ -1806,7 +1811,7 @@ class ContextRAGClient:
             ttl_days = int(ttl_days or 365)
             await self.idx.add_message(
                 user_id=user_id, conversation_id=conversation_id, turn_id=turn_id,
-                bundle_id=bundle_id, role="artifact",
+                bundle_id=bundle_id, agent_id=agent_id, role="artifact",
                 text=content_str, hosted_uri=hosted_uri, ts=datetime.datetime.utcnow().isoformat()+"Z",
                 tags=tags,
                 ttl_days=ttl_days, user_type=user_type, embedding=embedding, message_id=message_id
@@ -1928,6 +1933,7 @@ class ContextRAGClient:
             days: int = 365,
             include_titles: bool = True,
             bundle_id: Optional[str] = None,
+            agent_id: Optional[str] = None,
             ctx: Optional[dict] = None,
     ) -> Dict[str, Any]:
         """
@@ -1960,6 +1966,7 @@ class ContextRAGClient:
             days=days,
             limit=fetch_limit,
             bundle_id=bundle_id,
+            agent_id=agent_id,
             ctx=ctx,
         )
 
@@ -2013,6 +2020,7 @@ class ContextRAGClient:
         *,
         bundle_id: Optional[str] = None,
         bundle_ids: Optional[Sequence[str]] = None,
+        agent_id: Optional[str] = None,
         ctx: Optional[dict] = None,
     ):
         """
@@ -2040,6 +2048,7 @@ class ContextRAGClient:
                 with_payload=False,
                 bundle_id=bundle_id,
                 bundle_ids=bundle_ids,
+                agent_id=agent_id,
                 ctx=query_ctx,
             )
             ws_items = list(res_ws.get("items") or [])
@@ -2063,6 +2072,7 @@ class ContextRAGClient:
             conversation_id=conversation_id,
             bundle_id=bundle_id,
             bundle_ids=bundle_ids,
+            agent_id=agent_id,
             ctx=query_ctx,
         )
         # 4) Aggregate to first/last timestamps per turn_id, preserving first-seen order
@@ -2201,6 +2211,7 @@ class ContextRAGClient:
         days: int = 365,
         bundle_id: Optional[str] = None,
         bundle_ids: Optional[Sequence[str]] = None,
+        agent_id: Optional[str] = None,
         ctx: Optional[dict] = None,
     ) -> Dict[str, Any]:
         # For this endpoint, missing external bundle_id means "do not filter by bundle".
@@ -2219,6 +2230,7 @@ class ContextRAGClient:
             days=days,
             bundle_id=bundle_id,
             bundle_ids=bundle_ids,
+            agent_id=agent_id,
             turn_ids=turn_ids or None,
             ctx=query_ctx,
         )
@@ -2237,6 +2249,7 @@ class ContextRAGClient:
                 with_payload=False,
                 bundle_id=bundle_id,
                 bundle_ids=bundle_ids,
+                agent_id=agent_id,
                 ctx=query_ctx,
             )
             ws_items = list(res_ws.get("items") or [])
@@ -2932,6 +2945,7 @@ async def search_context(
         with_payload: bool = False,
         timestamp_filters: Optional[List[Dict[str, Any]]] = None,
         include_recovery_sessions: bool = False,
+        agent_id: Optional[str] = None,
         logger = None,
 ) -> tuple[str | None, list[dict]]:
     """
@@ -2977,6 +2991,7 @@ async def search_context(
                 half_life_days=half_life_days,
                 timestamp_filters=timestamp_filters,
                 include_recovery_sessions=include_recovery_sessions,
+                agent_id=agent_id,
             )
             return res or []
         except Exception as e:
@@ -2999,6 +3014,7 @@ async def search_context(
                 half_life_days=half_life_days,
                 timestamp_filters=timestamp_filters,
                 include_recovery_sessions=include_recovery_sessions,
+                agent_id=agent_id,
             )
             return res or []
         except Exception as e:
@@ -3021,6 +3037,7 @@ async def search_context(
                 half_life_days=half_life_days,
                 timestamp_filters=timestamp_filters,
                 include_recovery_sessions=include_recovery_sessions,
+                agent_id=agent_id,
             )
             return res or []
         except Exception as e:

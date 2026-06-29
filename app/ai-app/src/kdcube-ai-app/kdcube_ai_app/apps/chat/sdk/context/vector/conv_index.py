@@ -312,6 +312,9 @@ class ConvIndex:
         async with self._pool.acquire() as con:
             if row is None:
                 # INSERT
+                # No agent_id: this is a per-conversation singleton (CAS-updated by
+                # every turn regardless of agent), not an agent's output. Owning it to
+                # the first agent would freeze a stale id; the column stays NULL.
                 tags = list(dict.fromkeys(
                     base_tags + [new_state_tag] + ([turn_tag] if turn_tag else [])
                 ))
@@ -378,6 +381,7 @@ class ConvIndex:
             message_id: Optional[str] = None,
             turn_id: Optional[str] = None,
             bundle_id: Optional[str] = None,
+            agent_id: Optional[str] = None,
             anchors_text: str = "",
     ) -> int:
         ts_dt = _coerce_ts(ts)
@@ -385,8 +389,8 @@ class ConvIndex:
             q = f"""
                 INSERT INTO {self.schema}.conv_messages
                   (user_id, conversation_id, message_id, role, text, hosted_uri, ts,
-                   ttl_days, user_type, tags, embedding, turn_id, bundle_id, anchors_text)
-                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::vector,$12,$13,$14)
+                   ttl_days, user_type, tags, embedding, turn_id, bundle_id, agent_id, anchors_text)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::vector,$12,$13,$14,$15)
                 RETURNING id
             """
             rec = await con.fetchrow(
@@ -404,6 +408,7 @@ class ConvIndex:
                 convert_embedding_to_string(embedding) if embedding else None,
                 turn_id,
                 bundle_id,
+                agent_id,
                 (anchors_text or ""),
             )
             return int(rec["id"])
@@ -818,6 +823,7 @@ class ConvIndex:
             limit: int = 30,
             days: int = 30,
             bundle_id: Optional[str] = None,
+            agent_id: Optional[str] = None,
             bundle_ids: Optional[Sequence[str]] = None,
             turn_id: Optional[str] = None,
             ctx: Optional[dict] = None,
@@ -851,6 +857,9 @@ class ConvIndex:
         )
         if bundle_scope:
             where.append(bundle_scope)
+        if agent_id:
+            args.append(agent_id)
+            where.append(f"agent_id = ${len(args)}")
         if any_tags:
             args.append(list(any_tags))
             where.append(f"tags && ${len(args)}::text[]")
@@ -862,7 +871,7 @@ class ConvIndex:
             where.append(f"NOT (tags && ${len(args)}::text[])")
 
         q = f"""
-          SELECT id, message_id, role, text, hosted_uri, ts, tags, turn_id, bundle_id, conversation_id
+          SELECT id, message_id, role, text, hosted_uri, ts, tags, turn_id, bundle_id, agent_id, conversation_id
           FROM {self.schema}.conv_messages
           WHERE {' AND '.join(where)}
           ORDER BY ts DESC
@@ -1142,6 +1151,7 @@ class ConvIndex:
             from_ts: Optional[Union[str, datetime]] = None,
             to_ts: Optional[Union[str, datetime]] = None,
             bundle_id: Optional[str] = None,
+            agent_id: Optional[str] = None,
             ctx: Optional[dict] = None,
     ) -> List[Dict[str, Any]]:
         """
@@ -1174,6 +1184,9 @@ class ConvIndex:
         if bundle_id:
             args.append(bundle_id)
             where.append(f"m.bundle_id = ${len(args)}")
+        if agent_id:
+            args.append(agent_id)
+            where.append(f"m.agent_id = ${len(args)}")
         if from_ts is not None:
             args.append(_coerce_ts(from_ts))
             where.append(f"m.ts >= ${len(args)}::timestamptz")
@@ -1207,6 +1220,7 @@ class ConvIndex:
             m.tags,
             m.turn_id,
             m.bundle_id,
+            m.agent_id,
             m.conversation_id,
             COALESCE(
               m.turn_id,
@@ -1250,6 +1264,7 @@ class ConvIndex:
           o.tags,
           o.turn_key AS turn_id,
           o.bundle_id,
+          o.agent_id,
           o.conversation_id,
           ws.text AS working_summary_text,
           ws.ts AS working_summary_ts,
@@ -1617,6 +1632,7 @@ class ConvIndex:
             conversation_id: Optional[str] = None,
             days: int = 365,
             bundle_id: Optional[str] = None,
+            agent_id: Optional[str] = None,
             bundle_ids: Optional[Sequence[str]] = None,
             turn_ids: Optional[Sequence[str]] = None,
             ctx: Optional[dict] = None,
@@ -1654,6 +1670,10 @@ class ConvIndex:
         if bundle_scope:
             where.append(bundle_scope)
 
+        if agent_id:
+            args.append(agent_id)
+            where.append(f"m.agent_id = ${len(args)}")
+
         turn_ids_cond = "TRUE"
         if turn_ids:
             args.append(list(turn_ids))
@@ -1667,6 +1687,7 @@ class ConvIndex:
                 m.hosted_uri     AS hosted_uri,
                 m.tags       AS tags,
                 m.bundle_id  AS bundle_id,
+                m.agent_id   AS agent_id,
                 t.tag        AS tag,
                 array_position(m.tags, t.tag) AS tag_idx
               FROM {self.schema}.conv_messages m
@@ -1676,7 +1697,7 @@ class ConvIndex:
                 AND {turn_ids_cond}
             )
             SELECT substring(tag FROM '^turn:(.+)$') AS turn_id,
-                   ts, tags, mid, hosted_uri, bundle_id
+                   ts, tags, mid, hosted_uri, bundle_id, agent_id
             FROM exploded
             ORDER BY ts ASC, mid ASC, tag_idx ASC
         """
@@ -1696,6 +1717,7 @@ class ConvIndex:
                 "mid": r.get("mid"),
                 "hosted_uri": r.get("hosted_uri"),
                 "bundle_id": r.get("bundle_id"),
+                "agent_id": r.get("agent_id"),
             })
         return out
 
@@ -1814,6 +1836,7 @@ class ConvIndex:
             days: int = 90,
             scope: str = "conversation",
             bundle_id: Optional[str] = None,
+            agent_id: Optional[str] = None,
             half_life_days: float = 7.0,
             timestamp_filters: Optional[List[Dict[str, Any]]] = None,
             include_recovery_sessions: bool = False,
@@ -1889,6 +1912,10 @@ class ConvIndex:
             args.append(bundle_id)
             where.append(f"m.bundle_id = ${len(args)}")
 
+        if agent_id:
+            args.append(agent_id)
+            where.append(f"m.agent_id = ${len(args)}")
+
         # Optional text filter (ILIKE)
         if query_text:
             args.append(f"%{query_text}%")
@@ -1940,7 +1967,7 @@ class ConvIndex:
         )
         SELECT 
             log.id, log.message_id, log.role, log.text, log.hosted_uri, log.ts, log.tags,
-            log.turn_id, log.conversation_id, log.bundle_id,
+            log.turn_id, log.conversation_id, log.bundle_id, log.agent_id,
             ut.sim,
             ut.rec,
             ut.score,
@@ -1981,6 +2008,7 @@ class ConvIndex:
             days: int = 90,
             scope: str = "conversation",
             bundle_id: Optional[str] = None,
+            agent_id: Optional[str] = None,
             half_life_days: float = 7.0,
             timestamp_filters: Optional[List[Dict[str, Any]]] = None,
             include_recovery_sessions: bool = False,
@@ -2049,6 +2077,10 @@ class ConvIndex:
             args.append(bundle_id)
             where.append(f"m.bundle_id = ${len(args)}")
 
+        if agent_id:
+            args.append(agent_id)
+            where.append(f"m.agent_id = ${len(args)}")
+
         valid_ops = {"<", "<=", "=", ">=", ">", "<>"}
         for tf in (timestamp_filters or []):
             op = str(tf.get("op", "")).strip()
@@ -2097,7 +2129,7 @@ class ConvIndex:
         )
         SELECT
             log.id, log.message_id, log.role, log.text, log.hosted_uri, log.ts, log.tags,
-            log.turn_id, log.conversation_id, log.bundle_id,
+            log.turn_id, log.conversation_id, log.bundle_id, log.agent_id,
             ut.sim,
             ut.rec,
             ut.score,
@@ -2138,6 +2170,7 @@ class ConvIndex:
             days: int = 90,
             scope: str = "conversation",
             bundle_id: Optional[str] = None,
+            agent_id: Optional[str] = None,
             half_life_days: float = 7.0,
             timestamp_filters: Optional[List[Dict[str, Any]]] = None,
             min_word_similarity: float = 0.2,
@@ -2219,6 +2252,10 @@ class ConvIndex:
             args.append(bundle_id)
             where.append(f"m.bundle_id = ${len(args)}")
 
+        if agent_id:
+            args.append(agent_id)
+            where.append(f"m.agent_id = ${len(args)}")
+
         valid_ops = {"<", "<=", "=", ">=", ">", "<>"}
         for tf in (timestamp_filters or []):
             op = str(tf.get("op", "")).strip()
@@ -2274,7 +2311,7 @@ class ConvIndex:
         )
         SELECT
             log.id, log.message_id, log.role, log.text, log.hosted_uri, log.ts, log.tags,
-            log.turn_id, log.conversation_id, log.bundle_id,
+            log.turn_id, log.conversation_id, log.bundle_id, log.agent_id,
             ut.sim,
             ut.rec,
             ut.score,

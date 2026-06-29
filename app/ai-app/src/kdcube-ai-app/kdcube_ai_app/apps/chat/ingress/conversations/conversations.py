@@ -222,6 +222,10 @@ async def list_conversations(
             default=None,
             description="If omitted, the default bundle_id from the active bundle registry is used.",
         ),
+        agent_id: Optional[str] = Query(
+            default=None,
+            description="If omitted, not filtered by owning agent.",
+        ),
         session: UserSession = Depends(require_auth(RequireUser())),
 ):
     if not session.user_id:
@@ -244,6 +248,7 @@ async def list_conversations(
         days=days,
         include_titles=include_titles,
         bundle_id=bundle_id,
+        agent_id=agent_id,
     )
     return data
 
@@ -274,6 +279,10 @@ async def conversation_details(
             default=None,
             description="If omitted, conversation details are not filtered by bundle_id and bundle ids are inferred from stored rows.",
         ),
+        agent_id: Optional[str] = Query(
+            default=None,
+            description="If omitted, not filtered by owning agent.",
+        ),
         session: UserSession = Depends(require_auth(RequireUser())),
 ):
     if not session.user_id:
@@ -291,6 +300,7 @@ async def conversation_details(
         conversation_id=conversation_id,
         bundle_id=bundle_id,
         bundle_ids=allowed_bundle_ids,
+        agent_id=agent_id
     )
     if not (out or {}).get("turns"):
         raise HTTPException(status_code=404, detail="Conversation not found")
@@ -318,6 +328,10 @@ async def fetch_conversation(
             default=None,
             description="If omitted, conversation fetch is not filtered by bundle_id and bundle ids are inferred from stored rows.",
         ),
+        agent_id: Optional[str] = Query(
+            default=None,
+            description="If omitted, not filtered by owning agent.",
+        ),
         session: UserSession = Depends(require_auth(RequireUser())),
 ):
     """
@@ -343,6 +357,7 @@ async def fetch_conversation(
         days=int(req.days),
         bundle_id=bundle_id,
         bundle_ids=allowed_bundle_ids,
+        agent_id=agent_id
     )
     if not (data or {}).get("turns"):
         raise HTTPException(status_code=404, detail="Conversation not found")

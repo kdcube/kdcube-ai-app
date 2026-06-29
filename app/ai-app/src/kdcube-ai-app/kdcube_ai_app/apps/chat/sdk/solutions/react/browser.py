@@ -1893,6 +1893,7 @@ class ContextBrowser:
             with_payload: bool = False,
             timestamp_filters: Optional[List[Dict[str, Any]]] = None,
             include_recovery_sessions: bool = False,
+            agent_id: Optional[str] = None,
             conv_idx: Optional[Any] = None,
             ctx_client: Optional[ContextRAGClient] = None,
             model_service: Optional[Any] = None,
@@ -1923,6 +1924,7 @@ class ContextBrowser:
             with_payload=with_payload,
             timestamp_filters=timestamp_filters,
             include_recovery_sessions=include_recovery_sessions,
+            agent_id=agent_id,
             logger=self.log,
         )
 
@@ -1938,6 +1940,7 @@ class ContextBrowser:
             ordinal: Optional[int] = None,
             from_ts: Optional[Any] = None,
             to_ts: Optional[Any] = None,
+            agent_id: Optional[str] = None,
             conv_idx: Optional[Any] = None,
             ctx_client: Optional[ContextRAGClient] = None,
     ) -> List[Dict[str, Any]]:
@@ -1958,6 +1961,7 @@ class ContextBrowser:
             ordinal=ordinal,
             from_ts=from_ts,
             to_ts=to_ts,
+            agent_id=agent_id,
             ctx={
                 "user_id": user,
                 "conversation_id": conv,
@@ -1979,6 +1983,7 @@ class ContextBrowser:
             meta: Optional[Dict[str, Any]] = None,
             extra_tags: Optional[List[str]] = None,
             bundle_id: Optional[str] = None,
+            agent_id: Optional[str] = None,
             index_only: bool = False,
             store_only: bool = False,
             embedding: Optional[List[float]] = None,
@@ -2002,6 +2007,7 @@ class ContextBrowser:
             meta=meta,
             extra_tags=extra_tags,
             bundle_id=bundle_id,
+            agent_id=agent_id,
             index_only=index_only,
             store_only=store_only,
             embedding=embedding,

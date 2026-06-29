@@ -180,3 +180,70 @@ def test_context_from_runtime_ctx_captures_identity():
     assert ctx.bundle_id == "rb"
     assert ctx.tenant == "rten"
     assert ctx.project == "rproj"
+    assert ctx.agent_id is None  # absent on runtime -> None
+
+
+def test_context_from_runtime_ctx_normalizes_agent_id():
+    class FakeRuntime:
+        user_id = "ru"
+        conversation_id = "rc"
+        turn_id = "rt"
+        agent_id = "  research  "
+
+    ctx = ConversationSearchContext.from_runtime_ctx(FakeRuntime())
+    assert ctx.agent_id == "research"  # index_agent_id strips; value kept as-is
+
+
+@pytest.mark.asyncio
+async def test_agent_scope_maps_to_user_and_forwards_agent_id_hybrid():
+    backend = FakeBackend()
+    backend._turn_logs["turn_prev"] = {"blocks": [], "sources_pool": []}
+    context = ConversationSearchContext(
+        user_id="u1", conversation_id="c1", agent_id="research",
+    )
+    params = ConversationSearchParams(query="PDF", targets=["summary"], scope="agent")
+
+    await run_conversation_search(context=context, params=params, search_backend=backend)
+
+    # agent scope -> backend sees user scope (cross-conversation) + the agent filter
+    assert backend.search_kwargs["scope"] == "user"
+    assert backend.search_kwargs["agent_id"] == "research"
+
+
+@pytest.mark.asyncio
+async def test_agent_scope_forwards_agent_id_catalog():
+    backend = FakeBackend()
+    context = ConversationSearchContext(
+        user_id="u1", conversation_id="c1", agent_id="research",
+    )
+    params = ConversationSearchParams.from_tool_params(
+        {"query": "", "mode": "ordinal", "ordinal": 2, "scope": "agent"}
+    )
+
+    await run_conversation_search(context=context, params=params, search_backend=backend)
+
+    assert backend.catalog_kwargs["scope"] == "user"
+    assert backend.catalog_kwargs["agent_id"] == "research"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scope", ["conversation", "user"])
+async def test_non_agent_scopes_pass_no_agent_filter(scope):
+    backend = FakeBackend()
+    backend._turn_logs["turn_prev"] = {"blocks": [], "sources_pool": []}
+    # agent_id present on context, but must NOT be forwarded unless scope=="agent"
+    context = ConversationSearchContext(
+        user_id="u1", conversation_id="c1", agent_id="research",
+    )
+    params = ConversationSearchParams(query="PDF", targets=["summary"], scope=scope)
+
+    await run_conversation_search(context=context, params=params, search_backend=backend)
+
+    assert backend.search_kwargs["scope"] == scope
+    assert backend.search_kwargs["agent_id"] is None
+
+
+def test_from_tool_params_accepts_agent_scope():
+    assert ConversationSearchParams.from_tool_params({"scope": "agent"}).scope == "agent"
+    # unknown scope still falls back to conversation
+    assert ConversationSearchParams.from_tool_params({"scope": "bogus"}).scope == "conversation"

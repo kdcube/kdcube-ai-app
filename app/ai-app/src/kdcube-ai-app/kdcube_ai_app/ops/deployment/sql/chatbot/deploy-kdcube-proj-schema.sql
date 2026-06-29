@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS <SCHEMA>.conv_messages (
                                                       id               BIGSERIAL PRIMARY KEY,
                                                       user_id          TEXT NOT NULL,
                                                       bundle_id        TEXT,
+                                                      agent_id         TEXT,                           -- owning agent; NULL when no agent_id is provided
                                                       conversation_id  TEXT NOT NULL,
                                                       message_id       TEXT,                           -- ConversationStore id; present for artifacts
                                                       role             TEXT NOT NULL,                  -- 'user' | 'assistant' | 'artifact'
@@ -31,6 +32,8 @@ CREATE TABLE IF NOT EXISTS <SCHEMA>.conv_messages (
     );
 
 -- Idempotent column upgrades for existing deployments
+-- (agent_id retrofit for existing schemas lives in the temporary
+--  conv-messages-agent-id.sql migration, applied before this provision.)
 DO $$
 BEGIN
   IF NOT EXISTS (

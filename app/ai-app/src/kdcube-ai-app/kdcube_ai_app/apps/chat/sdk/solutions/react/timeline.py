@@ -21,6 +21,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.caching import (
     tail_rounds_from_path as cache_tail_rounds_from_path,
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.react.proto import RuntimeCtx
+from kdcube_ai_app.apps.chat.sdk.event_identity import index_agent_id
 
 from kdcube_ai_app.apps.chat.sdk.tools import citations as citations_module
 from kdcube_ai_app.apps.chat.sdk.util import (
@@ -7498,6 +7499,7 @@ class Timeline:
             user_type=self.runtime.user_type or "",
             turn_id=self.runtime.turn_id or "",
             bundle_id=self.runtime.bundle_id,
+            agent_id=index_agent_id(self.runtime.agent_id),
             content=payload,
             content_str=compact_text,
             extra_tags=extra_tags or None,
@@ -7522,6 +7524,7 @@ class Timeline:
                 user_type=self.runtime.user_type or "",
                 turn_id=self.runtime.turn_id or "",
                 bundle_id=self.runtime.bundle_id,
+                agent_id=index_agent_id(self.runtime.agent_id),
                 content=sources_payload,
                 content_str=sources_text,
                 extra_tags=extra_tags or None,
