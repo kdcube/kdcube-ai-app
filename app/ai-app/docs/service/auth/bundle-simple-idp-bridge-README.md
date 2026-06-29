@@ -96,7 +96,7 @@ from kdcube_ai_app.infra.plugin.bundle_loader import api
 from kdcube_ai_app.apps.middleware.simple_idp_registry import register_simple_idp_user
 
 
-@api(method="POST", alias="auth_external", route="public", public_auth="none")
+@api(method="POST", alias="auth_external", route="public")
 async def auth_external(self, request=None, **payload):
     external_user = await validate_external_identity(payload)
     platform_token = mint_stable_platform_token(external_user)

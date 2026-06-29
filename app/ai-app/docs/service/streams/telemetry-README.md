@@ -222,10 +222,9 @@ Shape:
 POST /api/integrations/bundles/{tenant}/{project}/{collector_bundle}/public/ingest
 ```
 
-Auth should be explicit, for example:
-
-- proc-managed `public_auth={"mode":"header_secret", ...}`
-- or `public_auth="bundle"` with bundle-owned signature/JWT validation
+Auth should be explicit in the collector handler or delegated SDK helper, for
+example a shared header secret, signature verification, or JWT validation before
+the telemetry payload is accepted.
 
 This is the recommended transport for cross-Kube telemetry collection when the
 producer cannot share an internal stream with the collector.

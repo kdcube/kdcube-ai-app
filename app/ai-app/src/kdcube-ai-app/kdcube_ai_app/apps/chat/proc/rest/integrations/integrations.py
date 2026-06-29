@@ -6,7 +6,6 @@ import asyncio
 import contextlib
 import copy
 import html
-import hmac
 import inspect
 import json
 import logging
@@ -94,6 +93,7 @@ from kdcube_ai_app.infra.plugin.bundle_loader import (
     apply_widget_overrides,
     cache_key_for_spec,
     canonical_enabled_path,
+    canonical_provider_surface_path,
     discover_bundle_interface_manifest,
     evict_bundle_scope,
     get_cached_manifest,
@@ -101,6 +101,7 @@ from kdcube_ai_app.infra.plugin.bundle_loader import (
     is_static_bundle_entrypoint_path,
     load_bundle_manifest,
     peek_cached_singleton_for_spec,
+    provider_surface_auth,
     resolve_bundle_api_endpoint,
     resolve_bundle_mcp_endpoint,
     run_static_bundle_entrypoint_load_once,
@@ -587,7 +588,8 @@ def _visible_widget_specs(
     out: list[UIWidgetSpec] = []
     for spec in manifest.ui_widgets:
         effective = apply_widget_overrides(spec, props or {})
-        if is_widget_enabled(props, effective) and _endpoint_visible(effective.user_types, effective.roles, session):
+        auth = provider_surface_auth(props, "widget", alias=effective.alias)
+        if is_widget_enabled(props, effective) and _endpoint_visible(effective.user_types, effective.roles, session, auth):
             out.append(effective)
     return out
 
@@ -679,7 +681,14 @@ def _visible_api_specs(
     out: list[APIEndpointSpec] = []
     for spec in manifest.api_endpoints:
         effective = apply_api_overrides(spec, props or {})
-        if is_api_enabled(props, effective) and _endpoint_visible(effective.user_types, effective.roles, session):
+        auth = provider_surface_auth(
+            props,
+            "api",
+            alias=effective.alias,
+            http_method=effective.http_method,
+            route=effective.route,
+        )
+        if is_api_enabled(props, effective) and _endpoint_visible(effective.user_types, effective.roles, session, auth):
             out.append(effective)
     return out
 
@@ -714,12 +723,68 @@ def _raw_roles_visible(required_roles: tuple[str, ...] | list[str] | None, sessi
     return bool(_user_raw_roles(session) & set(roles))
 
 
+def _policy_list(value: Any) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if isinstance(value, str):
+        return tuple(item.strip() for item in value.replace(",", " ").split() if item.strip())
+    if isinstance(value, (list, tuple, set)):
+        return tuple(str(item).strip() for item in value if str(item).strip())
+    return ()
+
+
+def _session_authority(session: UserSession) -> dict[str, Any]:
+    authority = getattr(session, "identity_authority", None)
+    return dict(authority) if isinstance(authority, Mapping) else {}
+
+
+def _authority_grants(authority: Mapping[str, Any]) -> set[str]:
+    grants: set[str] = set()
+    grants.update(_policy_list(authority.get("grants")))
+    grants.update(_policy_list(authority.get("scopes")))
+    credential = authority.get("credential")
+    if isinstance(credential, Mapping):
+        attrs = credential.get("attrs")
+        if isinstance(attrs, Mapping):
+            grants.update(_policy_list(attrs.get("grants")))
+            grants.update(_policy_list(attrs.get("scopes")))
+            grants.update(_policy_list(attrs.get("scope")))
+    return grants
+
+
+def _authority_policy_visible(auth: Mapping[str, Any] | None, session: UserSession) -> bool:
+    if not isinstance(auth, Mapping):
+        return True
+    required_authority = str(auth.get("authority_id") or auth.get("authority") or "").strip()
+    required_grants = set(_policy_list(auth.get("grants") or auth.get("scopes") or auth.get("required_grants")))
+    if not required_authority and not required_grants:
+        return True
+    authority = _session_authority(session)
+    if required_authority:
+        session_authority = str(
+            authority.get("authority_id")
+            or authority.get("issuer_authority_id")
+            or authority.get("authority")
+            or ""
+        ).strip()
+        if session_authority != required_authority:
+            return False
+    if required_grants and not _authority_grants(authority).issuperset(required_grants):
+        return False
+    return True
+
+
 def _endpoint_visible(
         required_user_types: tuple[str, ...] | list[str] | None,
         required_roles: tuple[str, ...] | list[str] | None,
         session: UserSession,
+        auth: Mapping[str, Any] | None = None,
 ) -> bool:
-    return _user_types_visible(required_user_types, session) and _raw_roles_visible(required_roles, session)
+    return (
+        _user_types_visible(required_user_types, session)
+        and _raw_roles_visible(required_roles, session)
+        and _authority_policy_visible(auth, session)
+    )
 
 
 def _bundle_allowed_for_session(
@@ -729,7 +794,7 @@ def _bundle_allowed_for_session(
 ) -> bool:
     """Bundle-level access check based on allowed_roles declared on @bundle_entrypoint.
     No allowed_roles (empty) means the bundle is visible to all authenticated users.
-    When props are provided, allowed_roles_config overrides are applied first."""
+    When props are provided, provider-surface descriptor policy is applied first."""
     if manifest is None:
         return True
     effective = apply_bundle_overrides(manifest, props or {})
@@ -1283,18 +1348,35 @@ async def _get_bundle_manifest(
 
 def _api_spec_descriptor(spec: APIEndpointSpec, props: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     effective = apply_api_overrides(spec, props or {})
+    auth = provider_surface_auth(
+        props,
+        "api",
+        alias=spec.alias,
+        http_method=spec.http_method,
+        route=spec.route,
+    ) or {}
+    policy_path = canonical_provider_surface_path(
+        "api",
+        alias=spec.alias,
+        http_method=spec.http_method,
+        route=spec.route,
+    )
     return {
         "alias": spec.alias,
         "http_method": spec.http_method,
         "route": spec.route,
         "user_types": list(effective.user_types),
         "user_types_default": list(spec.user_types),
-        "user_types_config": spec.user_types_config,
+        "user_types_path": f"{policy_path}.visibility.user_types",
         "user_types_overridden": tuple(effective.user_types) != tuple(spec.user_types),
         "roles": list(effective.roles),
         "roles_default": list(spec.roles),
-        "roles_config": spec.roles_config,
+        "roles_path": f"{policy_path}.visibility.roles",
         "roles_overridden": tuple(effective.roles) != tuple(spec.roles),
+        "auth": auth,
+        "auth_path": f"{policy_path}.auth",
+        "authority_id": str(auth.get("authority_id") or auth.get("authority") or ""),
+        "grants": list(_policy_list(auth.get("grants") or auth.get("scopes") or auth.get("required_grants"))),
         "enabled_path": canonical_enabled_path(
             "api",
             alias=spec.alias,
@@ -1306,23 +1388,31 @@ def _api_spec_descriptor(spec: APIEndpointSpec, props: Optional[Dict[str, Any]])
 
 def _widget_spec_descriptor(spec: UIWidgetSpec, props: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     effective = apply_widget_overrides(spec, props or {})
+    auth = provider_surface_auth(props, "widget", alias=spec.alias) or {}
+    policy_path = canonical_provider_surface_path("widget", alias=spec.alias)
     return {
         "alias": spec.alias,
         "icon": spec.icon,
         "user_types": list(effective.user_types),
         "user_types_default": list(spec.user_types),
-        "user_types_config": spec.user_types_config,
+        "user_types_path": f"{policy_path}.visibility.user_types",
         "user_types_overridden": tuple(effective.user_types) != tuple(spec.user_types),
         "roles": list(effective.roles),
         "roles_default": list(spec.roles),
-        "roles_config": spec.roles_config,
+        "roles_path": f"{policy_path}.visibility.roles",
         "roles_overridden": tuple(effective.roles) != tuple(spec.roles),
+        "auth": auth,
+        "auth_path": f"{policy_path}.auth",
+        "authority_id": str(auth.get("authority_id") or auth.get("authority") or ""),
+        "grants": list(_policy_list(auth.get("grants") or auth.get("scopes") or auth.get("required_grants"))),
         "enabled_path": canonical_enabled_path("widget", alias=spec.alias),
     }
 
 
 def _mcp_spec_descriptor(spec: MCPEndpointSpec, props: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     effective = apply_mcp_overrides(spec, props or {})
+    policy_path = canonical_provider_surface_path("mcp", alias=spec.alias)
+    auth = effective.auth if isinstance(effective.auth, Mapping) else {}
     return {
         "alias": spec.alias,
         "route": spec.route,
@@ -1332,7 +1422,9 @@ def _mcp_spec_descriptor(spec: MCPEndpointSpec, props: Optional[Dict[str, Any]])
         "transport_overridden": effective.transport != spec.transport,
         "auth": effective.auth,
         "auth_default": spec.auth,
-        "auth_config": spec.auth_config or f"mcp.{spec.alias}.auth",
+        "auth_path": f"{policy_path}.auth",
+        "authority_id": str(auth.get("authority_id") or auth.get("authority") or ""),
+        "grants": list(_policy_list(auth.get("grants") or auth.get("scopes") or auth.get("required_grants"))),
         "auth_mode": mcp_auth_mode(effective.auth),
         "auth_overridden": effective.auth != spec.auth,
         "enabled_path": canonical_enabled_path("mcp", alias=spec.alias),
@@ -1395,15 +1487,15 @@ def _manifest_to_descriptor(
 ) -> Dict[str, Any]:
     """Serialise a full (unfiltered) manifest to a plain dict.
 
-    When ``props`` is provided, effective values reflect bundle-props overrides
-    via ``*_config`` paths; otherwise effective == decorator defaults.
+    When ``props`` is provided, effective values reflect descriptor-owned
+    provider-surface policy; otherwise effective == decorator defaults.
     """
     effective = apply_bundle_overrides(manifest, props or {})
     return {
         "enabled_path": canonical_enabled_path("bundle"),
         "allowed_roles": list(effective.allowed_roles),
         "allowed_roles_default": list(manifest.allowed_roles),
-        "allowed_roles_config": manifest.allowed_roles_config,
+        "allowed_roles_path": f"{canonical_provider_surface_path('bundle')}.visibility.allowed_roles",
         "allowed_roles_overridden": tuple(effective.allowed_roles) != tuple(manifest.allowed_roles),
         "apis": [_api_spec_descriptor(s, props) for s in manifest.api_endpoints],
         "mcp_endpoints": [_mcp_spec_descriptor(s, props) for s in manifest.mcp_endpoints],
@@ -1441,34 +1533,36 @@ def _manifest_to_descriptor_filtered(
     bundle-props overrides have been applied).
     """
     effective_manifest = apply_bundle_overrides(manifest, props or {})
+    visible_api_descriptors: list[Dict[str, Any]] = []
+    for spec in manifest.api_endpoints:
+        effective = apply_api_overrides(spec, props or {})
+        auth = provider_surface_auth(
+            props,
+            "api",
+            alias=effective.alias,
+            http_method=effective.http_method,
+            route=effective.route,
+        )
+        if is_api_enabled(props, effective) and _endpoint_visible(effective.user_types, effective.roles, session, auth):
+            visible_api_descriptors.append(_api_spec_descriptor(spec, props))
+
+    visible_widget_descriptors: list[Dict[str, Any]] = []
+    for spec in manifest.ui_widgets:
+        effective = apply_widget_overrides(spec, props or {})
+        auth = provider_surface_auth(props, "widget", alias=effective.alias)
+        if is_widget_enabled(props, effective) and _endpoint_visible(effective.user_types, effective.roles, session, auth):
+            visible_widget_descriptors.append(_widget_spec_descriptor(spec, props))
+
     return {
         "enabled_path": canonical_enabled_path("bundle"),
         "allowed_roles": list(effective_manifest.allowed_roles),
-        "apis": [
-            _api_spec_descriptor(s, props)
-            for s in manifest.api_endpoints
-            if is_api_enabled(props, apply_api_overrides(s, props or {}))
-            and _endpoint_visible(
-                    apply_api_overrides(s, props or {}).user_types,
-                    apply_api_overrides(s, props or {}).roles,
-                    session,
-                )
-        ],
+        "apis": visible_api_descriptors,
         "mcp_endpoints": [
             _mcp_spec_descriptor(s, props)
             for s in manifest.mcp_endpoints
             if is_mcp_enabled(props, apply_mcp_overrides(s, props or {}))
         ],
-        "widgets": [
-            _widget_spec_descriptor(s, props)
-            for s in manifest.ui_widgets
-            if is_widget_enabled(props, apply_widget_overrides(s, props or {}))
-            and _endpoint_visible(
-                    apply_widget_overrides(s, props or {}).user_types,
-                    apply_widget_overrides(s, props or {}).roles,
-                    session,
-                )
-        ],
+        "widgets": visible_widget_descriptors,
         "on_message": manifest.on_message.method_name if manifest.on_message else None,
         "on_job": manifest.on_job.method_name if manifest.on_job else None,
         "scheduled_jobs": [_cron_spec_descriptor(s, props=props) for s in manifest.scheduled_jobs],
@@ -3019,7 +3113,6 @@ async def get_bundle_interface(
                 "route": spec.route,
                 "user_types": list(spec.user_types),
                 "roles": list(spec.roles),
-                "public_auth_mode": (spec.public_auth.mode if spec.public_auth else None),
             }
             for spec in visible_apis
         ],
@@ -3175,7 +3268,8 @@ async def _fetch_bundle_widget_payload(
         raise HTTPException(status_code=404, detail=f"Bundle does not define widget {widget_alias}")
 
     widget_spec = apply_widget_overrides(widget_spec, workflow_props)
-    if not _endpoint_visible(widget_spec.user_types, widget_spec.roles, session):
+    widget_auth = provider_surface_auth(workflow_props, "widget", alias=widget_spec.alias)
+    if not _endpoint_visible(widget_spec.user_types, widget_spec.roles, session, widget_auth):
         raise HTTPException(status_code=403, detail=f"Bundle widget {widget_alias} is not visible to this user")
     if not is_bundle_enabled(workflow_props):
         raise HTTPException(status_code=404, detail=f"Bundle {spec_resolved.id} is disabled")
@@ -3501,7 +3595,8 @@ async def _serve_static_widget_app(
         raise HTTPException(status_code=404, detail=f"Bundle does not define widget {widget_alias}")
 
     widget_spec = apply_widget_overrides(widget_spec, workflow_props)
-    if not _endpoint_visible(widget_spec.user_types, widget_spec.roles, session):
+    widget_auth = provider_surface_auth(workflow_props, "widget", alias=widget_spec.alias)
+    if not _endpoint_visible(widget_spec.user_types, widget_spec.roles, session, widget_auth):
         raise HTTPException(status_code=403, detail=f"Bundle widget {widget_alias} is not visible to this user")
     if not is_bundle_enabled(workflow_props):
         raise HTTPException(status_code=404, detail=f"Bundle {spec_resolved.id} is disabled")
@@ -4152,88 +4247,6 @@ def _get_query_kwargs(request: Request) -> Dict[str, Any]:
     return out
 
 
-def _resolve_bundle_secret_key(*, bundle_id: str, secret_key: str) -> str:
-    key = str(secret_key or "").strip()
-    if not key:
-        raise ValueError("Bundle public endpoint secret key is empty")
-    if key.startswith("bundles."):
-        return key
-    return f"bundles.{bundle_id}.secrets.{key}"
-
-
-async def _enforce_public_api_auth(
-        *,
-        endpoint_spec: APIEndpointSpec,
-        bundle_id: str,
-        operation: str,
-        request: Request,
-) -> None:
-    if endpoint_spec.route != "public":
-        return
-
-    public_auth = endpoint_spec.public_auth
-    if public_auth is None:
-        raise HTTPException(
-            status_code=403,
-            detail=f"Bundle public operation {operation} is not configured for public auth",
-        )
-
-    if public_auth.mode in {"none", "bundle"}:
-        return
-
-    if public_auth.mode != "header_secret":
-        logger.error(
-            "Unsupported public auth mode for bundle %s operation %s: %s",
-            bundle_id,
-            operation,
-            public_auth.mode,
-        )
-        raise HTTPException(status_code=500, detail="Unsupported public auth mode")
-
-    header_name = str(public_auth.header or "").strip()
-    provided_secret = str(request.headers.get(header_name) or "")
-    if not provided_secret:
-        logger.warning(
-            "Bundle public operation %s/%s rejected: missing required header %s",
-            bundle_id,
-            operation,
-            header_name or "<empty>",
-        )
-        raise HTTPException(status_code=401, detail="Unauthorized")
-
-    secret_keys = tuple(
-        key for key in (tuple(getattr(public_auth, "secret_keys", None) or ()) or (str(public_auth.secret_key or ""),))
-        if str(key or "").strip()
-    )
-    configured = []
-    missing = []
-    for secret_key in secret_keys:
-        resolved_secret_key = _resolve_bundle_secret_key(
-            bundle_id=bundle_id,
-            secret_key=str(secret_key or ""),
-        )
-        expected_secret = await get_secret(resolved_secret_key)
-        if expected_secret:
-            configured.append((resolved_secret_key, expected_secret))
-        else:
-            missing.append(resolved_secret_key)
-    if not configured:
-        logger.warning(
-            "Bundle public operation %s requires missing public auth secrets %s",
-            operation,
-            missing,
-        )
-        raise HTTPException(status_code=503, detail="Public endpoint is not configured")
-    if not any(hmac.compare_digest(provided_secret, expected_secret) for _, expected_secret in configured):
-        logger.warning(
-            "Bundle public operation %s/%s rejected: invalid header secret %s",
-            bundle_id,
-            operation,
-            header_name or "<empty>",
-        )
-        raise HTTPException(status_code=401, detail="Unauthorized")
-
-
 async def _load_bundle_workflow(
         *,
         tenant: str,
@@ -4360,20 +4373,20 @@ async def _call_bundle_op_inner(
                 detail=f"Bundle operation {operation} does not support {request_method}. Allowed: {', '.join(allowed_methods)}",
             )
         raise HTTPException(status_code=404, detail=f"Bundle does not support operation {operation}")
-    await _enforce_public_api_auth(
-        endpoint_spec=endpoint_spec,
-        bundle_id=spec_resolved.id,
-        operation=operation,
-        request=request,
-    )
-
     _props = _authoritative_bundle_props(
         tenant=tenant_id,
         project=project_id,
         bundle_id=spec_resolved.id,
     )
     endpoint_spec = apply_api_overrides(endpoint_spec, _props)
-    if not _endpoint_visible(endpoint_spec.user_types, endpoint_spec.roles, session):
+    endpoint_auth = provider_surface_auth(
+        _props,
+        "api",
+        alias=endpoint_spec.alias,
+        http_method=endpoint_spec.http_method,
+        route=endpoint_spec.route,
+    )
+    if not _endpoint_visible(endpoint_spec.user_types, endpoint_spec.roles, session, endpoint_auth):
         raise HTTPException(status_code=403, detail=f"Bundle operation {operation} is not visible to this user")
     _apply_rest_bundle_props_to_workflow(workflow=workflow, props=_props)
     if not is_bundle_enabled(_props):
@@ -4419,14 +4432,13 @@ async def _call_bundle_op_inner(
             )
 
         peer_redis = _get_app_redis(request)
-        peer_pg_pool = _get_app_pg_pool(request)
 
         async def _call_peer_bundle_operation_stream(call: BundleOperationStreamCall) -> BundleOperationStreamResult:
             return await invoke_local_bundle_operation_stream(
                 call,
                 comm_context=comm_context,
                 redis=peer_redis,
-                pg_pool=peer_pg_pool,
+                pg_pool=_get_app_pg_pool(request),
             )
 
         async def _call_peer_bundle_named_service(call: BundleNamedServiceCall) -> BundleNamedServiceResult:
@@ -4434,7 +4446,7 @@ async def _call_bundle_op_inner(
                 call,
                 comm_context=comm_context,
                 redis=peer_redis,
-                pg_pool=peer_pg_pool,
+                pg_pool=_get_app_pg_pool(request),
             )
 
         with (

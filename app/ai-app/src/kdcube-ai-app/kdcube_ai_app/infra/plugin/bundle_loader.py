@@ -95,7 +95,6 @@ class APIEndpointSpec:
     user_types_config: str | None = None
     roles: tuple[str, ...] = ()
     roles_config: str | None = None
-    public_auth: "PublicAPIAuthSpec | None" = None
 
 
 @dataclass(frozen=True)
@@ -107,14 +106,6 @@ class MCPEndpointSpec:
     transport_config: str | None = None
     auth: dict[str, Any] | None = None
     auth_config: str | None = None
-
-
-@dataclass(frozen=True)
-class PublicAPIAuthSpec:
-    mode: str = "none"
-    header: str | None = None
-    secret_key: str | None = None
-    secret_keys: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -252,19 +243,6 @@ def _is_equivalent_decorator_spec(value: Any, cls: type, required_fields: tuple[
     return all(hasattr(value, field) for field in required_fields)
 
 
-def _coerce_public_api_auth_spec(value: Any) -> PublicAPIAuthSpec | None:
-    if value is None:
-        return None
-    if _is_equivalent_decorator_spec(value, PublicAPIAuthSpec, ("mode", "header", "secret_key")):
-        return PublicAPIAuthSpec(
-            mode=str(getattr(value, "mode", "none") or "none"),
-            header=getattr(value, "header", None),
-            secret_key=getattr(value, "secret_key", None),
-            secret_keys=tuple(getattr(value, "secret_keys", None) or ()),
-        )
-    return value
-
-
 def _coerce_mcp_auth_spec(value: Any) -> dict[str, Any] | None:
     if value is None:
         return None
@@ -316,6 +294,121 @@ def canonical_enabled_path(
         norm_route = _normalize_api_route(route or "operations")
         return f"enabled.api.{norm_route}.{norm_alias}.{norm_method}"
     return f"enabled.{norm_kind}.{norm_alias}"
+
+
+def canonical_provider_surface_path(
+        kind: str,
+        *,
+        alias: str | None = None,
+        http_method: str | None = None,
+        route: str | None = None,
+) -> str:
+    """Return the canonical provider-surface descriptor path.
+
+    This path describes surfaces the bundle exposes to the platform. API paths
+    are route/method aware because the same alias can be exposed on both
+    ``operations`` and ``public`` routes.
+    """
+
+    norm_kind = str(kind or "").strip().lower()
+    if norm_kind == "bundle":
+        return "surfaces.as_provider.bundle"
+    norm_alias = str(alias or "").strip()
+    if not norm_alias:
+        raise ValueError(f"alias is required for provider surface kind {norm_kind!r}")
+    if norm_kind == "api":
+        norm_method = str(http_method or "").strip().upper()
+        if not norm_method:
+            raise ValueError("http_method is required for provider surface kind 'api'")
+        norm_route = _normalize_api_route(route or "operations")
+        return f"surfaces.as_provider.api.{norm_route}.{norm_alias}.{norm_method}"
+    if norm_kind in {"widget", "mcp", "cron"}:
+        return f"surfaces.as_provider.{norm_kind}.{norm_alias}"
+    raise ValueError(f"Unsupported provider surface kind: {kind!r}")
+
+
+def _provider_surface_node(
+        props: Mapping[str, Any] | None,
+        kind: str,
+        *,
+        alias: str | None = None,
+        http_method: str | None = None,
+        route: str | None = None,
+) -> Mapping[str, Any] | None:
+    if not isinstance(props, Mapping):
+        return None
+    surfaces = props.get("surfaces")
+    if not isinstance(surfaces, Mapping):
+        return None
+    as_provider = surfaces.get("as_provider")
+    if not isinstance(as_provider, Mapping):
+        return None
+    norm_kind = str(kind or "").strip().lower()
+    if norm_kind == "bundle":
+        node = as_provider.get("bundle")
+        return node if isinstance(node, Mapping) else None
+    section = as_provider.get(norm_kind)
+    if not isinstance(section, Mapping):
+        return None
+    norm_alias = str(alias or "").strip()
+    if not norm_alias:
+        return None
+    if norm_kind == "api":
+        norm_route = _normalize_api_route(route or "operations")
+        norm_method = str(http_method or "").strip().upper()
+        node = section.get(norm_route)
+        if not isinstance(node, Mapping):
+            return None
+        node = node.get(norm_alias)
+        if not isinstance(node, Mapping):
+            return None
+        # Prefer method-specific policy, but allow alias-level policy for
+        # bundles that expose one method per alias or have older decorator
+        # helpers that only know the alias.
+        if "visibility" in node or "auth" in node:
+            return node
+        node = node.get(norm_method)
+        return node if isinstance(node, Mapping) else None
+    node = section.get(norm_alias)
+    return node if isinstance(node, Mapping) else None
+
+
+def provider_surface_visibility(
+        props: Mapping[str, Any] | None,
+        kind: str,
+        *,
+        alias: str | None = None,
+        http_method: str | None = None,
+        route: str | None = None,
+) -> dict[str, Any] | None:
+    node = _provider_surface_node(
+        props,
+        kind,
+        alias=alias,
+        http_method=http_method,
+        route=route,
+    )
+    raw = node.get("visibility") if isinstance(node, Mapping) else None
+    return dict(raw) if isinstance(raw, Mapping) else None
+
+
+def provider_surface_auth(
+        props: Mapping[str, Any] | None,
+        kind: str,
+        *,
+        alias: str | None = None,
+        http_method: str | None = None,
+        route: str | None = None,
+) -> dict[str, Any] | None:
+    node = _provider_surface_node(
+        props,
+        kind,
+        alias=alias,
+        http_method=http_method,
+        route=route,
+    )
+    raw = node.get("auth") if isinstance(node, Mapping) else None
+    return dict(raw) if isinstance(raw, Mapping) else None
 
 
 def _resolve_override_value(config_path: str | None, props: dict[str, Any]) -> Any:
@@ -377,8 +470,19 @@ def _coerce_string_override(value: Any) -> str | None:
 def apply_api_overrides(spec: APIEndpointSpec, props: dict[str, Any]) -> APIEndpointSpec:
     """Return a new APIEndpointSpec with bundle-props overrides applied for any
     fields whose ``*_config`` path resolves to a valid value."""
-    user_types = _coerce_string_list_override(_resolve_override_value(spec.user_types_config, props))
-    roles = _coerce_string_list_override(_resolve_override_value(spec.roles_config, props))
+    visibility = provider_surface_visibility(
+        props,
+        "api",
+        alias=spec.alias,
+        http_method=spec.http_method,
+        route=spec.route,
+    )
+    if visibility is not None:
+        user_types = _coerce_string_list_override(visibility.get("user_types"))
+        roles = _coerce_string_list_override(visibility.get("roles"))
+    else:
+        user_types = _coerce_string_list_override(_resolve_override_value(spec.user_types_config, props))
+        roles = _coerce_string_list_override(_resolve_override_value(spec.roles_config, props))
     if user_types is None and roles is None:
         return spec
     return dataclasses.replace(
@@ -389,8 +493,13 @@ def apply_api_overrides(spec: APIEndpointSpec, props: dict[str, Any]) -> APIEndp
 
 
 def apply_widget_overrides(spec: UIWidgetSpec, props: dict[str, Any]) -> UIWidgetSpec:
-    user_types = _coerce_string_list_override(_resolve_override_value(spec.user_types_config, props))
-    roles = _coerce_string_list_override(_resolve_override_value(spec.roles_config, props))
+    visibility = provider_surface_visibility(props, "widget", alias=spec.alias)
+    if visibility is not None:
+        user_types = _coerce_string_list_override(visibility.get("user_types"))
+        roles = _coerce_string_list_override(visibility.get("roles"))
+    else:
+        user_types = _coerce_string_list_override(_resolve_override_value(spec.user_types_config, props))
+        roles = _coerce_string_list_override(_resolve_override_value(spec.roles_config, props))
     if user_types is None and roles is None:
         return spec
     return dataclasses.replace(
@@ -402,7 +511,11 @@ def apply_widget_overrides(spec: UIWidgetSpec, props: dict[str, Any]) -> UIWidge
 
 def apply_bundle_overrides(manifest: BundleInterfaceManifest, props: dict[str, Any]) -> BundleInterfaceManifest:
     """Return a new BundleInterfaceManifest with allowed_roles overridden from props if configured."""
-    roles = _coerce_string_list_override(_resolve_override_value(manifest.allowed_roles_config, props))
+    visibility = provider_surface_visibility(props, "bundle")
+    if visibility is not None:
+        roles = _coerce_string_list_override(visibility.get("allowed_roles"))
+    else:
+        roles = _coerce_string_list_override(_resolve_override_value(manifest.allowed_roles_config, props))
     if roles is None:
         return manifest
     return dataclasses.replace(manifest, allowed_roles=roles)
@@ -410,10 +523,13 @@ def apply_bundle_overrides(manifest: BundleInterfaceManifest, props: dict[str, A
 
 def apply_mcp_overrides(spec: MCPEndpointSpec, props: dict[str, Any]) -> MCPEndpointSpec:
     raw = _coerce_string_override(_resolve_override_value(spec.transport_config, props))
+    provider_auth = provider_surface_auth(props, "mcp", alias=spec.alias)
     raw_auth = _coerce_mcp_auth_spec(
-        _resolve_override_value(
-            spec.auth_config or f"mcp.{spec.alias}.auth",
-            props,
+        provider_auth
+        if provider_auth is not None
+        else _resolve_override_value(
+                spec.auth_config or f"mcp.{spec.alias}.auth",
+                props,
         )
     )
     replacements: dict[str, Any] = {}
@@ -514,51 +630,6 @@ def _normalize_mcp_transport(value: str | None) -> str:
     if transport not in {"streamable-http"}:
         raise ValueError(f"Unsupported bundle MCP transport: {transport}")
     return transport
-
-
-def _normalize_public_api_auth(route: str, value: Any) -> PublicAPIAuthSpec | None:
-    resolved_route = _normalize_api_route(route)
-    if resolved_route != "public":
-        if value is None:
-            return None
-        raise ValueError("Bundle api public_auth is only supported for route='public'")
-
-    if value is None:
-        return None
-    if isinstance(value, str):
-        mode = str(value).strip().lower()
-        if mode == "none":
-            return PublicAPIAuthSpec(mode="none")
-        if mode == "bundle":
-            return PublicAPIAuthSpec(mode="bundle")
-        raise ValueError(f"Unsupported public bundle api auth mode: {value}")
-    if not isinstance(value, dict):
-        raise ValueError("Bundle api public_auth must be a string or dict")
-
-    mode = str(value.get("mode") or "header_secret").strip().lower()
-    if mode == "none":
-        return PublicAPIAuthSpec(mode="none")
-    if mode == "bundle":
-        return PublicAPIAuthSpec(mode="bundle")
-    if mode != "header_secret":
-        raise ValueError(f"Unsupported public bundle api auth mode: {mode}")
-
-    header = str(value.get("header") or "X-KDCUBE-Public-Secret").strip()
-    if not header:
-        raise ValueError("Bundle api public_auth.header must be a non-empty HTTP header name")
-    raw_secret_keys = value.get("secret_keys")
-    secret_keys: list[str] = []
-    if isinstance(raw_secret_keys, (list, tuple)):
-        secret_keys.extend(str(item or "").strip() for item in raw_secret_keys)
-    elif raw_secret_keys:
-        secret_keys.append(str(raw_secret_keys or "").strip())
-    secret_key = str(value.get("secret_key") or "").strip()
-    if secret_key:
-        secret_keys.insert(0, secret_key)
-    secret_keys = [item for item in dict.fromkeys(secret_keys) if item]
-    if not secret_keys:
-        raise ValueError("Bundle api public_auth.secret_key or secret_keys is required for mode='header_secret'")
-    return PublicAPIAuthSpec(mode="header_secret", header=header, secret_key=secret_keys[0], secret_keys=tuple(secret_keys))
 
 
 def _normalize_icon_spec(value: Any) -> dict[str, str]:
@@ -689,7 +760,6 @@ def api(
         user_types_config: str | None = None,
         roles: List[str] | Tuple[str, ...] | None = None,
         roles_config: str | None = None,
-        public_auth: str | Dict[str, Any] | None = None,
 ):
     """
     ``user_types`` / ``roles`` are decorator defaults — the contract baseline
@@ -701,7 +771,6 @@ def api(
     """
     http_method = _normalize_http_method(method)
     resolved_route = _normalize_api_route(route)
-    resolved_public_auth = _normalize_public_api_auth(resolved_route, public_auth)
     resolved_user_types, resolved_roles = _normalize_visibility_selectors(
         user_types=user_types,
         roles=roles,
@@ -724,7 +793,6 @@ def api(
                 user_types_config=resolved_user_types_config,
                 roles=resolved_roles,
                 roles_config=resolved_roles_config,
-                public_auth=resolved_public_auth,
             ),
         )
         return fn
@@ -784,7 +852,6 @@ def mcp(
         auth_config: str | None = None,
         user_types: List[str] | Tuple[str, ...] | None = None,
         roles: List[str] | Tuple[str, ...] | None = None,
-        public_auth: str | Dict[str, Any] | None = None,
 ):
     """
     ``transport`` is the decorator default. ``transport_config`` is a dot-path
@@ -794,9 +861,9 @@ def mcp(
     """
     resolved_route = _normalize_api_route(route)
     resolved_transport = _normalize_mcp_transport(transport)
-    if user_types or roles or public_auth is not None:
+    if user_types or roles:
         raise ValueError(
-            "@mcp(...) does not support proc-side visibility or public_auth. "
+            "@mcp(...) does not support proc-side visibility. "
             "Use auth/auth_config for MCP endpoint policy; bundle-local MCP apps may still "
             "perform domain-specific authorization after platform policy passes."
         )
@@ -2432,7 +2499,6 @@ def discover_bundle_interface_manifest(target: Any, *, bundle_id: str | None = N
                 user_types_config=getattr(api_spec, "user_types_config", None),
                 roles=tuple(getattr(api_spec, "roles", ()) or ()),
                 roles_config=getattr(api_spec, "roles_config", None),
-                public_auth=_coerce_public_api_auth_spec(getattr(api_spec, "public_auth", None)),
             )
             api_key = (resolved.alias, resolved.http_method, resolved.route)
             if api_key in seen_api:

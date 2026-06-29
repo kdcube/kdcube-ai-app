@@ -12,7 +12,7 @@ One KDCube bundle can combine:
 
 - Python backend entrypoint
 - authenticated APIs via `@api(route="operations")`
-- public APIs via `@api(route="public", public_auth=...)`
+- public APIs via `@api(route="public")`
 - widgets via `@ui_widget(...)`
 - a full custom main UI via `@ui_main`
 - storage

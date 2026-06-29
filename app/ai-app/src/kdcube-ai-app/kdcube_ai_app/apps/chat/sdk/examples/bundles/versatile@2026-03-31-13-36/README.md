@@ -236,7 +236,6 @@ The full decorator surface is:
     alias="my_operation",   # default: function name
     route="operations",     # "operations" | "public", default: "operations"
     user_types=("registered",),  # default: ()
-    public_auth=None,       # only valid for route="public"
 )
 ```
 
@@ -247,17 +246,13 @@ For public endpoints:
     method="GET",
     alias="telegram_profile",
     route="public",
-    public_auth="none",
 )
 ```
 
-If `route="public"` then `public_auth` is mandatory. Today the accepted forms are:
-
-- `"none"`
-- `{ "mode": "header_secret", "header": "X-KDCUBE-Public-Secret", "secret_key": "bundles.<bundle>.secrets...." }`
-- `"bundle"` for bundle-owned hook auth; the method should accept `request: Request`,
-  read the inbound headers/body itself, and raise `HTTPException(401/403/...)`
-  on failure
+If `route="public"`, proc exposes the route without requiring a platform user
+session. If the route is a webhook, callback, or external proof endpoint, the
+method should accept `request: Request`, read the inbound headers/body, delegate
+to the relevant SDK verifier, and raise `HTTPException(401/403/...)` on failure.
 
 This reference bundle includes common shapes such as authenticated widget
 operations, canvas operations, Telegram admin operations, and public Telegram

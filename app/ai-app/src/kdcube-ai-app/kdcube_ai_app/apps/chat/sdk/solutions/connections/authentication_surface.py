@@ -255,6 +255,8 @@ class ConnectionHubAuthenticationSurface:
             return None
 
         authority = dict(authenticated.identity_authority or {})
+        if authenticated.authority_id and not authority.get("authority_id"):
+            authority["authority_id"] = authenticated.authority_id
         if authenticated.connection_id and not authority.get("connection_id"):
             authority["connection_id"] = authenticated.connection_id
         if authenticated.provider and not authority.get("identity_provider"):

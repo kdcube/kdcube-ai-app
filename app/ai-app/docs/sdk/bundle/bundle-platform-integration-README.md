@@ -190,16 +190,17 @@ Use it when the code should declare its own stable bundle identity.
 
 ### 1.3 `@bundle_entrypoint(...)` — bundle-level `allowed_roles`
 
-The `@bundle_entrypoint` decorator accepts optional `allowed_roles` and
-`allowed_roles_config` parameters that restrict which users can see the bundle
-in the bundle listing.
+The `@bundle_entrypoint` decorator accepts optional `allowed_roles` as the code
+default for which users can see the bundle in the bundle listing. Deployment
+configuration belongs in the provider-surface descriptor block:
+`surfaces.as_provider.bundle.visibility.allowed_roles`.
 
 ```python
 @bundle_entrypoint(
     name="Finance Copilot",
     version="1.0.0",
     allowed_roles=("kdcube:role:finance-team", "kdcube:role:super-admin"),
-    allowed_roles_config="visibility.bundle.allowed_roles",
+    allowed_roles_config="surfaces.as_provider.bundle.visibility.allowed_roles",
 )
 @bundle_id("finance.copilot@1.0.0")
 class FinanceCopilot:
@@ -214,13 +215,11 @@ Current fields relevant to access control:
   - do **not** use derived platform types here (`"registered"`, `"privileged"`)
   - empty or omitted means the bundle is visible to all authenticated users
   - OR semantics: user passes if at least one of their raw roles matches
-- `allowed_roles_config`
-  - optional dot-path into bundle props, e.g. `"visibility.bundle.allowed_roles"`
-  - when set and the path resolves to a list of strings, the resolved value
-    overrides the decorator default at listing time (per-request lookup)
+- `surfaces.as_provider.bundle.visibility.allowed_roles`
+  - descriptor-owned override for bundle visibility
   - empty list `[]` is a valid intentional override meaning "visible to all"
-  - invalid types or a missing path fall back silently to the decorator default
-  - when declared, the field becomes editable in the Bundle Admin dashboard
+  - invalid types fall back silently to the decorator default
+  - editable in the Bundle Admin dashboard as a descriptor path
 - bundle-level feature gate: `enabled.bundle` in bundle props
   - boolean (or string equivalent) that controls the whole bundle
   - if the resolved value is falsy, the bundle is treated as disabled:
@@ -235,8 +234,8 @@ Current behavior:
 - `GET /api/integrations/bundles` (non-admin) filters out bundles whose
   effective `allowed_roles` do not intersect with the calling user's raw roles
   (entries in the session that start with `kdcube:role:`).
-  Bundle props are loaded before the check so `allowed_roles_config` overrides
-  are applied at listing time.
+  Bundle props are loaded before the check so provider-surface descriptor policy
+  is applied at listing time.
 - `GET /api/admin/integrations/bundles` is not filtered — admin always
   sees all bundles regardless of `allowed_roles`
 - A bundle with no effective `allowed_roles` is always included for any
@@ -249,12 +248,18 @@ YAML anchors and aliases may be used in descriptor source files such as
 shorthand only:
 
 ```yaml
-visibility:
-  api:
-    public_reader: &public_reader_visibility
-      user_types: []
-      roles: []
-    news_data: *public_reader_visibility
+surfaces:
+  as_provider:
+    api:
+      operations:
+        public_reader:
+          GET:
+            visibility: &public_reader_visibility
+              user_types: []
+              roles: []
+        news_data:
+          GET:
+            visibility: *public_reader_visibility
 ```
 
 The YAML parser resolves the anchor when the descriptor is loaded. After that,
@@ -358,6 +363,73 @@ Enabled values:
 - boolean `True`
 - non-zero integers
 - any string not in the disabled set
+
+### 1.3.3 Canonical `surfaces.as_provider` Policy
+
+Provider-side access policy for surfaces exposed by a bundle lives under
+`surfaces.as_provider`. This is descriptor configuration. `authority_id` and
+`grants` are values inside the canonical `auth` block.
+
+Canonical shape:
+
+```yaml
+surfaces:
+  as_provider:
+    bundle:
+      visibility:
+        allowed_roles: []
+    api:
+      operations:
+        admin_data:
+          POST:
+            visibility:
+              user_types: []
+              roles:
+                - kdcube:role:super-admin
+            auth:
+              authority_id: platform
+              grants:
+                - admin:data
+        bundle_status:
+          visibility:
+            roles:
+              - kdcube:role:super-admin
+    widget:
+      settings:
+        visibility:
+          user_types: []
+          roles: []
+        auth:
+          authority_id: platform
+          grants: []
+    mcp:
+      knowledge:
+        auth:
+          mode: managed
+          authority_id: oauth_mcp
+          grants:
+            - conversations:read
+```
+
+Use method-specific API policy when one alias may be exposed on multiple
+routes or methods. Alias-level API policy,
+`surfaces.as_provider.api.<route>.<alias>.visibility` / `.auth`, is accepted as
+a compact default for bundles where each API alias is unique.
+
+Meaning:
+
+- `visibility.user_types` and `visibility.roles` are session checks for
+  API/widget/bundle listing surfaces.
+- `auth.authority_id` and `auth.grants` are optional authority checks.
+  API/widget requests compare them to the current `UserSession.identity_authority`.
+- MCP uses `auth` only when `mode: managed`; then the delegated-credential guard
+  validates the bearer credential, authority, grants, and selected-tool grant.
+- Non-managed MCP remains bundle-owned. Existing bundle-local header-token
+  patterns, such as an `X-Knowledge-MCP-Token` checked inside the MCP app, still
+  work and should not be represented as platform-managed authority grants.
+
+API policy is route and method aware because the same alias may exist under both
+`operations` and `public`, or under multiple HTTP methods.
 
 Operational rule:
 
@@ -464,7 +536,6 @@ Current signature:
     alias="preferences_exec_report",
     route="operations",
     user_types=("registered",),
-    public_auth=None,
 )
 async def preferences_exec_report(self, **kwargs):
     ...
@@ -495,22 +566,20 @@ Current fields:
   - tuple/list of raw external roles
   - use actual auth role ids such as `kdcube:role:super-admin`
   - empty means no raw-role restriction
-- `user_types_config` / `roles_config`
-  - optional dot-paths into bundle props
-  - when set and the path resolves to a list of strings, the resolved value
-    overrides the decorator default at request time (per-request lookup)
-  - empty list is a valid intentional override; invalid types fall back
-    silently to the decorator default
-  - missing path also falls back to the decorator default
-- `public_auth`
-  - used only with `route="public"`
-  - current built-in modes:
-    - `"none"`: explicitly unauthenticated public endpoint
-    - `{"mode": "header_secret", "header": "<Header-Name>", "secret_key": "<bundle-secret-path>"}`:
-      request must present the expected header value
-    - `"bundle"`: proc forwards the request into the bundle method and the
-      bundle authenticates it itself
-  - default: required for `route="public"`, invalid for `route="operations"`
+- `surfaces.as_provider.api.<route>.<alias>.<METHOD>.visibility`
+  - descriptor-owned `user_types` / `roles` policy for this API surface
+  - empty lists are valid intentional overrides meaning "no restriction"
+  - invalid types fall back silently to the decorator default
+- `surfaces.as_provider.api.<route>.<alias>.visibility`
+  - alias-level fallback used when a bundle has one method per alias
+  - method-specific policy wins when both are present
+- `surfaces.as_provider.api.<route>.<alias>.<METHOD>.auth`
+  - optional descriptor-owned authority/grant policy
+  - `authority_id` must match the current session authority
+  - `grants` must be covered by grants carried by that authority
+- `surfaces.as_provider.api.<route>.<alias>.auth`
+  - alias-level fallback for authority/grant policy
+  - method-specific policy wins when both are present
 - canonical feature gate: `enabled.api["<route>.<alias>.<METHOD>"]` (flat key)
   - boolean (or string equivalent) under `enabled.api` in bundle props
   - if the resolved value is falsy, this endpoint returns 404
@@ -527,16 +596,14 @@ Important current rule:
 - `user_types` are evaluated by minimum required level, not exact equality
 - same-name fallback for undecorated methods is no longer part of the HTTP
   contract
-- `route="public"` must also declare `public_auth`
 - if the bundle method accepts `request=`, proc passes the original FastAPI
   request object into the method
-- `public_auth="bundle"` is for hook-style integrations where the bundle, not
-  proc, verifies the inbound request
-- for `public_auth="bundle"`, keep `user_types` / `roles` empty and implement
-  the auth check inside the bundle method
-- bundle-owned federated Data Bus token claims use `route="public"` with
-  `public_auth="bundle"`; see
-  [Bundle Federated Auth For Data Bus](auth-bundle-federated-README.md)
+- `route="public"` is public at the proc routing layer by default
+- hook-style integrations should validate provider proofs, shared header
+  secrets, Telegram `initData`, OAuth state, or webhook signatures inside the
+  bundle method or a delegated SDK helper
+- platform-managed security boundaries are descriptor-owned under
+  `surfaces.as_provider.<surface>.auth`
 - bundle API methods do not receive a separate communicator argument from proc
   by default
 - if bundle code needs request-bound execution context, use runtime helpers:
@@ -633,8 +700,9 @@ Current rule:
 - proc resolves the bundle endpoint, obtains that MCP app from the bundle
   method, and dispatches the incoming request into it
 - proc forwards the original request headers and body to the MCP subapp
-- proc does **not** authenticate or authorize MCP requests before dispatch
-- bundle code owns MCP request authentication/authorization
+- when `surfaces.as_provider.mcp.<alias>.auth.mode` is `managed`, proc runs the
+  Connection Hub delegated-credential guard before dispatch
+- otherwise bundle code owns MCP request authentication/authorization
 - if the provider method accepts `request=`, proc passes the original FastAPI
   request object so bundle code can inspect headers before returning the MCP app
 
@@ -649,17 +717,23 @@ Route semantics:
 
 Important:
 
-- `@mcp(...)` does not support proc-side `user_types`, `roles`, or `public_auth`
-- if a bundle needs header-based secrets, bearer tokens, API keys, custom JWT
-  validation, or any other MCP auth scheme, that logic must live in the bundle
-  MCP app itself
-- canonical pattern:
+- `@mcp(...)` does not support proc-side `user_types` or `roles`
+- if a bundle needs bundle-owned header secrets, API keys, custom JWT
+  validation, or any non-managed MCP auth scheme, that logic must live in the
+  bundle MCP app itself
+- bundle-owned header-token pattern:
   - put the client-facing header name in bundle props such as
     `self.bundle_prop("mcp.inbound.auth.header_name")`
   - put the verification material in bundle secrets such as
     `await get_secret("b:mcp.inbound.auth.shared_token")`
   - read `request.headers[...]` in the provider and reject with
     `HTTPException(status_code=401, ...)` before returning the MCP app
+- platform-managed delegated credential pattern:
+  - put policy in `surfaces.as_provider.mcp.<alias>.auth`
+  - use `mode: managed`
+  - set `authority_id` and `grants` in that same auth block
+  - proc validates the bearer credential and selected-tool grants before
+    dispatching into the MCP app
 - full worked example:
   [bundle-transports-README.md](bundle-transports-README.md)
 
@@ -704,13 +778,14 @@ Current fields:
 - `roles`
   - raw external roles allowed to see the widget
   - use values such as `kdcube:role:super-admin`
-- `user_types_config` / `roles_config`
-  - optional dot-paths into bundle props
-  - when set and the path resolves to a list of strings, the resolved value
-    overrides the decorator default at request time (per-request lookup)
-  - empty list is a valid intentional override; invalid types fall back
-    silently to the decorator default
-  - missing path also falls back to the decorator default
+- `surfaces.as_provider.widget.<alias>.visibility`
+  - descriptor-owned `user_types` / `roles` policy for this widget surface
+  - empty lists are valid intentional overrides meaning "no restriction"
+  - invalid types fall back silently to the decorator default
+- `surfaces.as_provider.widget.<alias>.auth`
+  - optional descriptor-owned authority/grant policy
+  - `authority_id` must match the current session authority
+  - `grants` must be covered by grants carried by that authority
 - canonical feature gate: `enabled.widget.<alias>`
   - boolean (or string equivalent) nested under `enabled.widget` in bundle props
   - if the resolved value is falsy, the widget fetch returns 404
@@ -1165,12 +1240,11 @@ class BundleInterfaceManifest:
 `allowed_roles` is populated from the `allowed_roles` argument of
 `@bundle_entrypoint`. Empty tuple means no restriction.
 
-`allowed_roles_config` is the dot-path declared via `allowed_roles_config=` on
-`@bundle_entrypoint`. When set, `apply_bundle_overrides(manifest, props)` resolves
-the path against bundle props and returns a new manifest with the effective
-`allowed_roles`. The admin descriptor exposes `allowed_roles_default`,
-`allowed_roles_config`, and `allowed_roles_overridden` alongside the effective
-`allowed_roles`.
+`apply_bundle_overrides(manifest, props)` reads
+`surfaces.as_provider.bundle.visibility.allowed_roles` first and returns a new
+manifest with the effective `allowed_roles`. The admin descriptor exposes
+`allowed_roles_default`, `allowed_roles_path`, and `allowed_roles_overridden`
+alongside the effective `allowed_roles`.
 
 `scheduled_jobs` is populated from all `@cron`-decorated methods on the
 entrypoint class, sorted by `alias`.
@@ -1312,13 +1386,12 @@ Current rules:
 - only `@api(..., route="public")` methods are callable here
 - route matching is strict; an `operations` method is not callable through
   `/public/...`
-- public methods must also declare `public_auth`
-- current built-in public auth modes are:
-  - `public_auth="none"` for intentionally open public endpoints
-  - `public_auth={"mode":"header_secret", ...}` for shared-secret webhook headers
-  - `public_auth="bundle"` for bundle-owned webhook auth
-- with `public_auth="bundle"`, proc still owns dispatch but the bundle method
-  verifies the inbound request itself
+- public methods are public at the proc routing layer by default
+- if the public method is a webhook/callback/proof endpoint, the bundle method
+  or SDK helper must verify the inbound request material
+- descriptor `surfaces.as_provider.api.public.<alias>.<METHOD>.auth` can add a
+  platform-managed authority/grant boundary when that surface should not be
+  anonymous
 
 ### 3.4 Bundle MCP routes
 
@@ -1346,9 +1419,10 @@ Current rules:
 - bundle code returns the MCP app; proc does not synthesize MCP tools from
   ordinary `@api(...)` methods
 - proc forwards original request headers/body to the bundle MCP subapp
-- proc does not authenticate MCP at this route layer
-- bundle code is responsible for MCP request authentication if the endpoint is
-  not intentionally public
+- if `surfaces.as_provider.mcp.<alias>.auth.mode` is `managed`, proc enforces
+  the delegated credential guard before dispatch
+- otherwise bundle code is responsible for MCP request authentication if the
+  endpoint is not intentionally public
 ### 3.5 Legacy no-bundle-id operations route
 
 ```text
@@ -1451,7 +1525,9 @@ but route-level visibility is already enforced from decorator metadata.
 `@mcp(...)` is different:
 
 - proc does not enforce `user_types` / `roles` for MCP
-- MCP authentication/authorization is owned by the bundle MCP app
+- for `auth.mode: managed`, proc enforces delegated credential authority/grant
+  policy before dispatch
+- otherwise MCP authentication/authorization is owned by the bundle MCP app
 
 ## 5) Authoring rules
 
@@ -1523,13 +1599,10 @@ async def preferences_exec_report(self, **kwargs):
 @api(
     alias="telegram_webhook",
     route="public",
-    public_auth={
-        "mode": "header_secret",
-        "header": "X-Telegram-Bot-Api-Secret-Token",
-        "secret_key": "telegram.webhook_secret",
-    },
 )
-async def telegram_webhook(self, **kwargs):
+async def telegram_webhook(self, request: Request, **kwargs):
+    # Validate the Telegram header secret, signature, or other provider proof
+    # here or delegate to an SDK helper before processing the update.
     ...
 ```
 
@@ -1542,7 +1615,6 @@ from kdcube_ai_app.apps.chat.sdk.config import get_secret
 @api(
     alias="telegram_webhook",
     route="public",
-    public_auth="bundle",
 )
 async def telegram_webhook(self, request: Request, **kwargs):
     header_name = self.bundle_prop(

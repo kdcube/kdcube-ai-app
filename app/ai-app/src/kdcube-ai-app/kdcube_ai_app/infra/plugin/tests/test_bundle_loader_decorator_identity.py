@@ -14,7 +14,6 @@ from kdcube_ai_app.infra.plugin.bundle_loader import (
     MCPEndpointSpec as CurrentMCPEndpointSpec,
     ON_JOB_ATTR,
     ON_MESSAGE_ATTR,
-    PublicAPIAuthSpec as CurrentPublicAPIAuthSpec,
     UI_MAIN_ATTR,
     UI_WIDGET_ATTR,
     UIWidgetSpec as CurrentUIWidgetSpec,
@@ -33,7 +32,6 @@ class APIEndpointSpec:
     user_types_config: str | None = None
     roles: tuple[str, ...] = ()
     roles_config: str | None = None
-    public_auth: "PublicAPIAuthSpec | None" = None
 
 
 @dataclass(frozen=True)
@@ -43,13 +41,6 @@ class MCPEndpointSpec:
     route: str = "operations"
     transport: str = "streamable-http"
     transport_config: str | None = None
-
-
-@dataclass(frozen=True)
-class PublicAPIAuthSpec:
-    mode: str = "none"
-    header: str | None = None
-    secret_key: str | None = None
 
 
 @dataclass(frozen=True)
@@ -136,7 +127,6 @@ setattr(
         route="operations",
         user_types=("registered",),
         roles=("admin",),
-        public_auth=PublicAPIAuthSpec(mode="header", header="x-api-key", secret_key="b:api.key"),
     ),
 )
 setattr(
@@ -188,8 +178,6 @@ def test_manifest_discovery_accepts_reloaded_decorator_dataclasses():
     assert manifest.api_endpoints[0].alias == "run_now"
     assert manifest.api_endpoints[0].user_types == ("registered",)
     assert manifest.api_endpoints[0].roles == ("admin",)
-    assert isinstance(manifest.api_endpoints[0].public_auth, CurrentPublicAPIAuthSpec)
-    assert manifest.api_endpoints[0].public_auth.header == "x-api-key"
 
     assert len(manifest.mcp_endpoints) == 1
     assert isinstance(manifest.mcp_endpoints[0], CurrentMCPEndpointSpec)

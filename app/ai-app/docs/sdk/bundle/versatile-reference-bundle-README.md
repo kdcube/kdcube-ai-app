@@ -139,7 +139,7 @@ This bundle currently demonstrates:
 
 - authenticated operations endpoints via `@api(..., route="operations")`
 - widget discovery via `@ui_widget(...)`
-- public Telegram endpoints via `@api(..., route="public", public_auth=TELEGRAM_WEBAPP_PUBLIC_AUTH)`
+- public Telegram endpoints via `@api(..., route="public")`
 - an active scene main UI built from `ui/scene`
 - the reusable SDK chat widget mounted as `versatile_chat`
 - the reusable SDK memory widget mounted as `memories`

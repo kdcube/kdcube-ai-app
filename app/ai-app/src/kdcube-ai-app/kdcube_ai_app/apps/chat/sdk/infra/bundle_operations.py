@@ -191,8 +191,64 @@ def _raw_roles_visible(required_roles: tuple[str, ...] | list[str] | None, sessi
     return bool(session_roles & set(roles))
 
 
-def _endpoint_visible(required_user_types: tuple[str, ...] | list[str] | None, required_roles: tuple[str, ...] | list[str] | None, session: Any) -> bool:
-    return _user_types_visible(required_user_types, session) and _raw_roles_visible(required_roles, session)
+def _policy_list(value: Any) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if isinstance(value, str):
+        return tuple(item.strip() for item in value.replace(",", " ").split() if item.strip())
+    if isinstance(value, (list, tuple, set)):
+        return tuple(str(item).strip() for item in value if str(item).strip())
+    return ()
+
+
+def _authority_grants(authority: Mapping[str, Any]) -> set[str]:
+    grants: set[str] = set()
+    grants.update(_policy_list(authority.get("grants")))
+    grants.update(_policy_list(authority.get("scopes")))
+    credential = authority.get("credential")
+    if isinstance(credential, Mapping):
+        attrs = credential.get("attrs")
+        if isinstance(attrs, Mapping):
+            grants.update(_policy_list(attrs.get("grants")))
+            grants.update(_policy_list(attrs.get("scopes")))
+            grants.update(_policy_list(attrs.get("scope")))
+    return grants
+
+
+def _authority_policy_visible(auth: Mapping[str, Any] | None, session: Any) -> bool:
+    if not isinstance(auth, Mapping):
+        return True
+    required_authority = str(auth.get("authority_id") or auth.get("authority") or "").strip()
+    required_grants = set(_policy_list(auth.get("grants") or auth.get("scopes") or auth.get("required_grants")))
+    if not required_authority and not required_grants:
+        return True
+    raw = getattr(session, "identity_authority", None)
+    authority = dict(raw) if isinstance(raw, Mapping) else {}
+    if required_authority:
+        session_authority = str(
+            authority.get("authority_id")
+            or authority.get("issuer_authority_id")
+            or authority.get("authority")
+            or ""
+        ).strip()
+        if session_authority != required_authority:
+            return False
+    if required_grants and not _authority_grants(authority).issuperset(required_grants):
+        return False
+    return True
+
+
+def _endpoint_visible(
+    required_user_types: tuple[str, ...] | list[str] | None,
+    required_roles: tuple[str, ...] | list[str] | None,
+    session: Any,
+    auth: Mapping[str, Any] | None = None,
+) -> bool:
+    return (
+        _user_types_visible(required_user_types, session)
+        and _raw_roles_visible(required_roles, session)
+        and _authority_policy_visible(auth, session)
+    )
 
 
 def _deep_merge_bundle_props(base: Mapping[str, Any], override: Mapping[str, Any]) -> dict[str, Any]:
@@ -348,6 +404,7 @@ async def _invoke_local_bundle_operation_raw(
         BundleSpec,
         apply_api_overrides,
         get_workflow_instance_async,
+        provider_surface_auth,
         resolve_bundle_api_endpoint,
     )
     from kdcube_ai_app.infra.plugin.bundle_store import get_bundle_props, resolve_bundle_spec_from_store
@@ -421,7 +478,14 @@ async def _invoke_local_bundle_operation_raw(
             )
         raise RuntimeError(f"Bundle does not support operation {operation}")
     endpoint_spec = apply_api_overrides(endpoint_spec, props or {})
-    if not _endpoint_visible(endpoint_spec.user_types, endpoint_spec.roles, session):
+    endpoint_auth = provider_surface_auth(
+        props or {},
+        "api",
+        alias=endpoint_spec.alias,
+        http_method=endpoint_spec.http_method,
+        route=endpoint_spec.route,
+    )
+    if not _endpoint_visible(endpoint_spec.user_types, endpoint_spec.roles, session, endpoint_auth):
         raise RuntimeError(f"Bundle operation {operation} is not visible to this user")
     _apply_bundle_props_to_workflow(workflow=workflow, props=props or {})
     if not _bundle_enabled(props):

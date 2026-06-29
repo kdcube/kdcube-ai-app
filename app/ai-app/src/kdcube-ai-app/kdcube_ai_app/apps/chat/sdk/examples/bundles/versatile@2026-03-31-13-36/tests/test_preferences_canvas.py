@@ -77,7 +77,7 @@ def test_telegram_bot_transport_manifest_and_defaults():
     )
 
     manifest = _discover_bundle_interface_manifest(workflow, bundle_id="versatile@2026-03-31-13-36")
-    assert manifest.allowed_roles_config == "visibility.bundle.allowed_roles"
+    assert manifest.allowed_roles_config == "surfaces.as_provider.bundle.visibility.allowed_roles"
 
     webhook = next(item for item in manifest.api_endpoints if item.alias == "telegram_webhook")
     assert webhook.http_method == "POST"
@@ -88,8 +88,6 @@ def test_telegram_bot_transport_manifest_and_defaults():
         http_method=webhook.http_method,
         route=webhook.route,
     ) == "enabled.api.public.telegram_webhook.POST"
-    assert webhook.public_auth is not None
-    assert webhook.public_auth.mode == "none"
 
     conversation_list_enabled_paths = {
         item.route: bundle_loader.canonical_enabled_path(
@@ -112,8 +110,8 @@ def test_telegram_bot_transport_manifest_and_defaults():
         if item.alias == "telegram_user_admin_data" and item.route == "operations"
     )
     assert admin_data.roles == ("kdcube:role:super-admin",)
-    assert admin_data.roles_config == "visibility.api.telegram_user_admin_data.roles"
-    assert admin_data.user_types_config == "visibility.api.telegram_user_admin_data.user_types"
+    assert admin_data.roles_config == "surfaces.as_provider.api.operations.telegram_user_admin_data.POST.visibility.roles"
+    assert admin_data.user_types_config == "surfaces.as_provider.api.operations.telegram_user_admin_data.POST.visibility.user_types"
 
     defaults = module.VersatileEntrypoint.configuration_defaults(workflow)
     enabled_api = defaults.get("enabled", {}).get("api", {})
@@ -121,14 +119,13 @@ def test_telegram_bot_transport_manifest_and_defaults():
     assert "telegram_webapp_user_admin_data.POST" not in enabled_api
     assert "telegram_user_admin_data.POST" not in enabled_api
     assert "widget" not in defaults.get("enabled", {})
-    assert defaults["visibility"]["bundle"] == {"allowed_roles": []}
-    assert defaults["visibility"]["api"]["telegram_user_admin_data"] == {
+    assert defaults["surfaces"]["as_provider"]["bundle"]["visibility"] == {"allowed_roles": []}
+    assert defaults["surfaces"]["as_provider"]["api"]["operations"]["telegram_user_admin_data"]["POST"]["visibility"] == {
         "user_types": [],
         "roles": ["kdcube:role:super-admin"],
     }
     assert "tools" not in defaults
     assert "named_services" not in defaults
-    assert "surfaces" not in defaults
     assert defaults["telemetry_sink"] == {"endpoint_url": "", "auth_header": ""}
     assert defaults["connections"]["connection_hub"] == {"bundle_id": "connection-hub@1-0"}
     assert defaults["integrations"] == {}

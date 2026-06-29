@@ -557,7 +557,7 @@ curl -X POST \
   -d '{"data":{"operation":"list","payload":{}}}'
 ```
 
-### Public API with `header_secret`
+### Public API with handler-owned shared secret
 
 ```bash
 curl -X POST \
@@ -567,7 +567,7 @@ curl -X POST \
   -d '{"event":"ping"}'
 ```
 
-### Public API with bundle-owned auth
+### Public API with handler-owned auth
 
 ```bash
 curl -X POST \

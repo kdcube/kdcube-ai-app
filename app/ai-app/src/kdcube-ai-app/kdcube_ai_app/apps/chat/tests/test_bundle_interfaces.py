@@ -250,7 +250,7 @@ class _DecoratedWorkflow:
     async def save_preferences(self, **kwargs):
         return kwargs
 
-    @api(method="POST", alias="public_ping", route="public", public_auth="none")
+    @api(method="POST", alias="public_ping", route="public")
     async def public_ping(self, **kwargs):
         return kwargs
 
@@ -307,7 +307,7 @@ def test_discover_bundle_interface_manifest_returns_declarative_specs():
         ("public_ping", "POST", "public"),
     }
     public_ping = next(item for item in manifest.api_endpoints if item.alias == "public_ping")
-    assert public_ping.public_auth and public_ping.public_auth.mode == "none"
+    assert public_ping.route == "public"
     tools_mcp = next(item for item in manifest.mcp_endpoints if item.alias == "tools")
     assert tools_mcp.route == "operations"
     assert tools_mcp.transport == "streamable-http"
@@ -401,7 +401,7 @@ def test_resolve_bundle_api_endpoint_prefers_decorated_alias_and_method():
     )
     assert public_spec and public_spec.method_name == "public_ping"
     assert allowed == ("POST",)
-    assert public_spec.public_auth and public_spec.public_auth.mode == "none"
+    assert public_spec.route == "public"
 
     wrong_route, allowed = resolve_bundle_api_endpoint(
         workflow,
@@ -672,7 +672,7 @@ async def test_get_bundle_interface_and_widgets_use_decorators(monkeypatch):
         ("public_ping", "POST", "public"),
     }
     public_ping = next(item for item in manifest["api_endpoints"] if item["alias"] == "public_ping")
-    assert public_ping["public_auth_mode"] == "none"
+    assert public_ping["route"] == "public"
     prefs_view = next(item for item in manifest["api_endpoints"] if item["alias"] == "prefs_view")
     assert prefs_view["user_types"] == ["registered"]
     assert prefs_view["roles"] == []
@@ -1007,7 +1007,13 @@ async def test_static_widget_subpaths_fall_back_to_index_html(monkeypatch, tmp_p
             project="project-a",
             bundle_id="bundle.demo",
             storage_root=storage_root,
-        )
+        ),
+        integrations.static_bundle_entrypoint_load_key(
+            tenant="tenant-a",
+            project="project-a",
+            bundle_id="bundle.demo::widget-build::preferences",
+            storage_root=storage_root,
+        ),
     ]
 
 
@@ -1538,7 +1544,7 @@ def test_visible_specs_require_intersection_of_user_types_and_raw_roles():
     assert [spec.alias for spec in visible_mcp] == ["admin_mcp"]
 
 
-def test_mcp_rejects_proc_side_visibility_and_public_auth():
+def test_mcp_rejects_proc_side_visibility():
     with pytest.raises(ValueError):
         class _WorkflowWithUserTypes:
             @mcp(alias="bad", user_types=("registered",))
@@ -1550,13 +1556,6 @@ def test_mcp_rejects_proc_side_visibility_and_public_auth():
             @mcp(alias="bad", roles=("kdcube:role:super-admin",))
             def bad(self, **kwargs):
                 return kwargs
-
-    with pytest.raises(ValueError):
-        class _WorkflowWithPublicAuth:
-            @mcp(alias="bad", route="public", public_auth="none")
-            def bad(self, **kwargs):
-                return kwargs
-
 
 def test_user_type_visibility_uses_minimum_threshold_order():
     assert integrations._user_types_visible(("registered",), _session(user_type="registered")) is True
@@ -1819,104 +1818,18 @@ async def test_call_bundle_op_inner_enforces_public_vs_operations_route(monkeypa
     assert exc.value.status_code == 404
 
 
-def test_api_rejects_public_auth_on_operations_route():
-    with pytest.raises(ValueError):
-        class _Workflow:
-            @api(alias="bad", route="operations", public_auth="none")
-            async def bad(self, **kwargs):
-                return kwargs
-
-
-def test_api_accepts_bundle_owned_public_auth_mode():
-    class _Workflow:
-        @api(alias="telegram_webhook", route="public", public_auth="bundle")
-        async def telegram_webhook(self, **kwargs):
-            return kwargs
-
-    manifest = discover_bundle_interface_manifest(_Workflow(), bundle_id="bundle.demo")
-    endpoint = next(item for item in manifest.api_endpoints if item.alias == "telegram_webhook")
-
-    assert endpoint.route == "public"
-    assert endpoint.public_auth and endpoint.public_auth.mode == "bundle"
-
-
 @pytest.mark.asyncio
-async def test_call_bundle_op_inner_rejects_public_endpoint_without_public_auth(monkeypatch):
+async def test_call_bundle_op_inner_allows_public_endpoint(monkeypatch):
     class _Workflow:
         @api(method="POST", alias="public_ping", route="public")
         async def public_ping(self, **kwargs):
-            return kwargs
-
-    async def _load_bundle_workflow(**kwargs):
-        del kwargs
-        return _Workflow(), SimpleNamespace(id="bundle.demo"), "tenant-a", "project-a"
-
-    monkeypatch.setattr(integrations, "_load_bundle_workflow", _load_bundle_workflow)
-
-    with pytest.raises(integrations.HTTPException) as exc:
-        await integrations._call_bundle_op_inner(
-            tenant="tenant-a",
-            project="project-a",
-            bundle_id="bundle.demo",
-            payload=integrations.BundleSuggestionsRequest(),
-            request=_request(
-                method="POST",
-                path="/api/integrations/bundles/tenant-a/project-a/bundle.demo/public/public_ping",
-            ),
-            operation="public_ping",
-            route="public",
-            session=_session(),
-        )
-
-    assert exc.value.status_code == 403
-
-
-@pytest.mark.asyncio
-async def test_call_bundle_op_inner_enforces_public_header_secret(monkeypatch):
-    class _Workflow:
-        @api(
-            method="POST",
-            alias="telegram_webhook",
-            route="public",
-            public_auth={
-                "mode": "header_secret",
-                "header": "X-Telegram-Bot-Api-Secret-Token",
-                "secret_key": "telegram.webhook_secret",
-            },
-        )
-        async def telegram_webhook(self, **kwargs):
             return {"ok": True, "fingerprint": kwargs.get("fingerprint")}
 
     async def _load_bundle_workflow(**kwargs):
         del kwargs
         return _Workflow(), SimpleNamespace(id="bundle.demo"), "tenant-a", "project-a"
 
-    async def _get_secret(key, default=None):
-        return (
-            "telegram-secret"
-            if key == "bundles.bundle.demo.secrets.telegram.webhook_secret"
-            else default
-        )
-
     monkeypatch.setattr(integrations, "_load_bundle_workflow", _load_bundle_workflow)
-    monkeypatch.setattr(integrations, "get_secret", _get_secret)
-
-    with pytest.raises(integrations.HTTPException) as exc:
-        await integrations._call_bundle_op_inner(
-            tenant="tenant-a",
-            project="project-a",
-            bundle_id="bundle.demo",
-            payload=integrations.BundleSuggestionsRequest(),
-            request=_request(
-                method="POST",
-                path="/api/integrations/bundles/tenant-a/project-a/bundle.demo/public/telegram_webhook",
-            ),
-            operation="telegram_webhook",
-            route="public",
-            session=_session(),
-        )
-
-    assert exc.value.status_code == 401
 
     result = await integrations._call_bundle_op_inner(
         tenant="tenant-a",
@@ -1925,21 +1838,20 @@ async def test_call_bundle_op_inner_enforces_public_header_secret(monkeypatch):
         payload=integrations.BundleSuggestionsRequest(),
         request=_request(
             method="POST",
-            path="/api/integrations/bundles/tenant-a/project-a/bundle.demo/public/telegram_webhook",
-            headers=[(b"x-telegram-bot-api-secret-token", b"telegram-secret")],
+            path="/api/integrations/bundles/tenant-a/project-a/bundle.demo/public/public_ping",
         ),
-        operation="telegram_webhook",
+        operation="public_ping",
         route="public",
         session=_session(),
     )
 
-    assert result["telegram_webhook"] == {"ok": True, "fingerprint": "fp-1"}
+    assert result["public_ping"] == {"ok": True, "fingerprint": "fp-1"}
 
 
 @pytest.mark.asyncio
-async def test_call_bundle_op_inner_supports_bundle_owned_public_auth_with_request(monkeypatch):
+async def test_call_bundle_op_inner_supports_public_route_with_request(monkeypatch):
     class _Workflow:
-        @api(method="POST", alias="telegram_webhook", route="public", public_auth="bundle")
+        @api(method="POST", alias="telegram_webhook", route="public")
         async def telegram_webhook(self, request: Request, **kwargs):
             provided = request.headers.get("X-Telegram-Bot-Api-Secret-Token")
             if provided != "telegram-secret":

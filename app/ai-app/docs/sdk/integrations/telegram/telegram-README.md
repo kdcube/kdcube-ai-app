@@ -79,11 +79,6 @@ from kdcube_ai_app.apps.chat.sdk.integrations.telegram import user_admin as tele
 
 BUNDLE_ID = "my.bundle@1-0"
 TELEGRAM_WEBHOOK_SECRET_HEADER = "X-Telegram-Bot-Api-Secret-Token"
-TELEGRAM_WEBHOOK_PUBLIC_AUTH = {
-    "mode": "header_secret",
-    "header": TELEGRAM_WEBHOOK_SECRET_HEADER,
-    "secret_key": "integrations.telegram.webhook_secret",
-}
 
 
 def _telegram_user_admin_storage(entrypoint):
@@ -171,16 +166,16 @@ The webhook handler should delegate to the SDK user-admin subsystem:
     method="POST",
     alias="telegram_webhook",
     route="public",
-    public_auth=TELEGRAM_WEBHOOK_PUBLIC_AUTH,
 )
 async def telegram_webhook(self, **update):
     return await telegram_user_admin.handle_webhook(self, **update)
 ```
 
-The configured `public_auth` checks Telegram's header secret before the handler
-runs. `handle_webhook(...)` owns duplicate update claims, registry lookup,
-conversation binding, chat ingress submission, activity streaming, and final
-Telegram delivery through the configured helpers.
+`route="public"` only exposes the route at the proc layer. The Telegram handler
+or delegated SDK helper must verify the Telegram webhook secret/proof before
+processing the update. `handle_webhook(...)` owns duplicate update claims,
+registry lookup, conversation binding, chat ingress submission, activity
+streaming, and final Telegram delivery through the configured helpers.
 
 ### 5. Expose Mini App Operations Only Through `initData` Verification
 
@@ -188,9 +183,7 @@ Telegram Mini App operation routes are platform-public, but each handler must
 delegate to SDK code that verifies raw Telegram `initData`:
 
 ```python
-TELEGRAM_WEBAPP_PUBLIC_AUTH = "none"
-
-@api(method="GET", alias="telegram_profile", route="public", public_auth=TELEGRAM_WEBAPP_PUBLIC_AUTH)
+@api(method="GET", alias="telegram_profile", route="public")
 async def telegram_profile(self, request=None, telegram_init_data: str = "", **kwargs):
     del kwargs
     return await telegram_widget_ops.profile(

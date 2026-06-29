@@ -49,7 +49,7 @@ WIDGET_BUILD_COMMAND = (
     name=WORKFLOW_NAME,
     version="1.0.0",
     priority=100,
-    allowed_roles_config="visibility.bundle.allowed_roles",
+    allowed_roles_config="surfaces.as_provider.bundle.visibility.allowed_roles",
 )
 @bundle_id(id=BUNDLE_ID)
 class UserMemoriesEntrypoint(BaseEntrypointWithEconomicsAndMemory):
@@ -76,10 +76,12 @@ class UserMemoriesEntrypoint(BaseEntrypointWithEconomicsAndMemory):
 
     def configuration_defaults(self) -> Dict[str, Any]:
         defaults = {
-            "visibility": {
-                "bundle": {"allowed_roles": []},
-                "widget": {
-                    "memories": {"user_types": [], "roles": []},
+            "surfaces": {
+                "as_provider": {
+                    "bundle": {"visibility": {"allowed_roles": []}},
+                    "widget": {
+                        "memories": {"visibility": {"user_types": [], "roles": []}},
+                    },
                 },
             },
             # Enable the memory subsystem. The mixin's memory_configuration_defaults()

@@ -342,7 +342,7 @@ Visibility rule:
 - use `roles=(...)` for raw external auth roles such as `kdcube:role:super-admin`
 - if both `user_types` and `roles` are declared, both checks must pass
 - `@mcp(...)` is different:
-  - proc does not enforce `user_types`, `roles`, or `public_auth` for MCP
+  - proc does not enforce `user_types` or `roles` for MCP
   - the bundle MCP app owns MCP request authentication/authorization
 
 ## Configuration Model

@@ -62,9 +62,9 @@ There are two different auth ownership models:
 - Data Bus publish uses either the existing authenticated Socket.IO connection
   or HTTP `POST /sse/data_bus.publish` with an open SSE peer, then applies
   bundle/subject visibility checks
-- `@api(route="public")` can be either:
-  - **KDCube-authenticated** via built-in `public_auth`
-  - **bundle-authenticated** via `public_auth="bundle"`
+- `@api(route="public")` is public at the proc routing layer; any webhook,
+  provider proof, or callback verification is handler/SDK-owned unless a
+  descriptor `surfaces.as_provider.*.auth` boundary is configured
 - `@mcp(...)` is a **bundle-authenticated** surface, if the bundle wants auth at all
 
 So:
@@ -72,10 +72,7 @@ So:
 - proc owns route dispatch for all surfaces
 - proc owns transport auth for `@api(route="operations")` and browser-facing
   integration routes
-- proc owns built-in `public_auth="none"` / `public_auth={"mode":"header_secret", ...}`
-  for `@api(route="public")`
-- proc does **not** own transport auth for `@api(route="public",
-  public_auth="bundle")`
+- proc does **not** infer public-route authentication from decorator metadata
 - proc does **not** own transport auth for `@mcp(...)`
 - the bundle method authenticates bundle-owned public APIs itself
 - the bundle MCP app authenticates MCP requests itself
@@ -178,13 +175,8 @@ Minimal shape:
 @api(
     alias="incoming_webhook",
     route="public",
-    public_auth={
-        "mode": "header_secret",
-        "header": "X-Webhook-Secret",
-        "secret_key": "incoming_webhook",
-    },
 )
-async def incoming_webhook(self, **kwargs):
+async def incoming_webhook(self, request: Request, **kwargs):
     ...
 ```
 
@@ -194,7 +186,6 @@ Open public route:
 @api(
     alias="public_ping",
     route="public",
-    public_auth="none",
 )
 async def public_ping(self, **kwargs):
     ...
@@ -210,27 +201,12 @@ POST /api/integrations/bundles/{tenant}/{project}/{bundle_id}/public/{alias}
 Auth model:
 
 - proc does not require the normal authenticated user-flow here
-- proc enforces the declared `public_auth` unless the endpoint uses
-  `public_auth="bundle"`
-
-Current built-in public auth modes:
-
-- `public_auth="none"`
-- `public_auth={"mode":"header_secret", ...}`
-- `public_auth="bundle"`
-
-Behavior by mode:
-
-- `public_auth="none"`
-  - open public route
-- `public_auth={"mode":"header_secret", ...}`
-  - proc verifies the configured header secret before invoking the bundle
-- `public_auth="bundle"`
-  - proc forwards the request into the bundle method
-  - if the bundle method accepts `request=`, proc passes the original FastAPI
-    request object
-  - the bundle reads headers/body and decides whether to accept the request
-  - if the bundle rejects it, it should raise `HTTPException(...)`
+- if the bundle method accepts `request=`, proc passes the original FastAPI
+  request object
+- the bundle reads headers/body and decides whether to accept the request
+- if the bundle rejects it, it should raise `HTTPException(...)`
+- descriptor `surfaces.as_provider.api.public.<alias>.<METHOD>.auth` can add a
+  platform-managed authority/grant boundary
 
 Canonical bundle-authenticated public hook:
 
@@ -242,7 +218,6 @@ from kdcube_ai_app.apps.chat.sdk.config import get_secret
 @api(
     alias="telegram_webhook",
     route="public",
-    public_auth="bundle",
 )
 async def telegram_webhook(self, request: Request, **kwargs):
     header_name = self.bundle_prop(
@@ -363,7 +338,6 @@ Current behavior:
 
 - proc does not authenticate MCP requests before dispatch
 - proc does not validate bearer tokens or ID tokens for MCP
-- proc does not enforce `public_auth` on MCP
 - proc forwards the original request headers and body into the MCP subapp
 
 This is the key difference from `@api(...)`.
@@ -508,10 +482,10 @@ The only invariant is that the bundle, not proc, owns the MCP auth decision.
 
 - `user_types`
 - `roles`
-- `public_auth`
 
 Those concepts belong to proc-authenticated bundle HTTP operations, not to
-bundle-authenticated MCP.
+bundle-authenticated MCP. MCP endpoint auth policy is declared through MCP
+`auth` / descriptor `surfaces.as_provider.mcp.<alias>.auth`.
 
 ## 5. Widgets and Static UI
 

@@ -186,7 +186,6 @@ The webhook handler should be thin:
     method="POST",
     alias="telegram_webhook",
     route="public",
-    public_auth=TELEGRAM_WEBHOOK_PUBLIC_AUTH,
 )
 async def telegram_webhook(self, **update):
     return await telegram_user_admin.handle_webhook(self, **update)

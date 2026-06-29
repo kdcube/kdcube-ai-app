@@ -160,7 +160,7 @@ from kdcube_ai_app.auth.bundle import get_bundle_session_authority
 from kdcube_ai_app.infra.plugin.bundle_loader import api
 
 
-@api(method="POST", alias="auth_external", route="public", public_auth="none")
+@api(method="POST", alias="auth_external", route="public")
 async def auth_external(self, request=None, **payload):
     external_user = await validate_external_identity(payload)
 
@@ -345,7 +345,7 @@ Bundle response clears auth cookies
 Example:
 
 ```python
-@api(method="POST", alias="auth_logout", route="public", public_auth="none")
+@api(method="POST", alias="auth_logout", route="public")
 async def auth_logout(self, request=None, **payload):
     auth_cfg = get_settings().AUTH
     token = request.cookies.get(auth_cfg.AUTH_TOKEN_COOKIE_NAME) if request else None

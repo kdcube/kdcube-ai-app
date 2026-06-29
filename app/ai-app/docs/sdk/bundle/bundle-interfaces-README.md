@@ -432,14 +432,15 @@ Current rule:
 - `/public/{op}` resolves only methods decorated with
   `@api(..., route="public")`
 - `route` defaults to `"operations"` when omitted
-- `route="public"` methods must also declare `public_auth`
-  - `public_auth="none"` means explicitly unauthenticated public endpoint
-  - `public_auth={"mode":"header_secret","header":"X-Telegram-Bot-Api-Secret-Token","secret_key":"telegram.webhook_secret"}` verifies the incoming header against the bundle secret
-  - `public_auth="bundle"` means proc forwards the request and the bundle
-    method authenticates it itself
+- `route="public"` is public at the proc routing layer by default
+- public route handlers that require provider proofs, header secrets, Telegram
+  `initData`, OAuth state, or webhook signatures must validate that material in
+  the bundle handler or delegate to the relevant SDK helper
+- descriptor policy under `surfaces.as_provider.<surface>.auth` is the platform
+  security boundary for required authority/grants
 - undecorated same-name methods are not invokable through HTTP
 
-Use `public_auth="bundle"` for a `federated_token_claim` operation when a
+Use the Connection Hub SDK/operations for federated token claims when a
 bundle-validated client needs a short-lived token for Socket.IO Data Bus.
 
 Bundle operations may call helpers marked with `@venv(...)`, but the HTTP contract still belongs to proc:

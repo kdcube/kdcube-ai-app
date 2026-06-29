@@ -46,9 +46,6 @@ BUNDLE_ID = "versatile@2026-03-31-13-36"
 WORKFLOW_NAME = "versatile"
 TELEGRAM_ADMIN_ROLE = "kdcube:role:super-admin"
 TELEGRAM_WEBHOOK_SECRET_HEADER = "X-Telegram-Bot-Api-Secret-Token"
-TELEGRAM_WEBHOOK_PUBLIC_AUTH = "none"
-TELEGRAM_WEBAPP_PUBLIC_AUTH = "none"
-PUBLIC_READ_AUTH = "none"
 TELEMETRY_SINK_TOKEN_SECRET = "b:telemetry_sink.auth.token"
 EVENT_RECORD_MAX = 200
 DATA_BUS_ECHO_SUBJECT = "versatile.echo"
@@ -64,14 +61,17 @@ _log = logging.getLogger("kdcube.bundle.versatile")
 def _api_visibility(
     alias: str,
     *,
+    route: str = "operations",
+    method: str = "POST",
     user_types: tuple[str, ...] = (),
     roles: tuple[str, ...] = (),
 ) -> Dict[str, Any]:
+    base = f"surfaces.as_provider.api.{route}.{alias}.{method.upper()}.visibility"
     return {
         "user_types": user_types,
-        "user_types_config": f"visibility.api.{alias}.user_types",
+        "user_types_config": f"{base}.user_types",
         "roles": roles,
-        "roles_config": f"visibility.api.{alias}.roles",
+        "roles_config": f"{base}.roles",
     }
 
 
@@ -81,11 +81,12 @@ def _widget_visibility(
     user_types: tuple[str, ...] = (),
     roles: tuple[str, ...] = (),
 ) -> Dict[str, Any]:
+    base = f"surfaces.as_provider.widget.{alias}.visibility"
     return {
         "user_types": user_types,
-        "user_types_config": f"visibility.widget.{alias}.user_types",
+        "user_types_config": f"{base}.user_types",
         "roles": roles,
-        "roles_config": f"visibility.widget.{alias}.roles",
+        "roles_config": f"{base}.roles",
     }
 
 
@@ -182,7 +183,7 @@ telegram_widget_ops.configure_telegram_widget_ops(
     name=WORKFLOW_NAME,
     version="1.0.0",
     priority=100,
-    allowed_roles_config="visibility.bundle.allowed_roles",
+    allowed_roles_config="surfaces.as_provider.bundle.visibility.allowed_roles",
 )
 class VersatileEntrypoint(BaseEntrypointWithEconomics):
     """All-features reference bundle for bundle builders."""
@@ -506,7 +507,6 @@ class VersatileEntrypoint(BaseEntrypointWithEconomics):
         method="POST",
         alias="namespace_presentation_config",
         route="public",
-        public_auth=PUBLIC_READ_AUTH,
         **_api_visibility("namespace_presentation_config"),
     )
     async def namespace_presentation_config(self, **kwargs) -> Dict[str, Any]:
@@ -848,12 +848,11 @@ class VersatileEntrypoint(BaseEntrypointWithEconomics):
         method="POST",
         alias="telegram_webhook",
         route="public",
-        public_auth=TELEGRAM_WEBHOOK_PUBLIC_AUTH,
     )
     async def telegram_webhook(self, request: Any = None, **update) -> Dict[str, Any]:
         return await telegram_user_admin.handle_webhook(self, request=request, **update)
 
-    @api(method="GET", alias="telegram_profile", route="public", public_auth=TELEGRAM_WEBAPP_PUBLIC_AUTH)
+    @api(method="GET", alias="telegram_profile", route="public")
     async def telegram_profile(
         self,
         request: Any = None,
@@ -867,7 +866,7 @@ class VersatileEntrypoint(BaseEntrypointWithEconomics):
             telegram_init_data=telegram_init_data,
         )
 
-    @api(method="GET", alias="conversations_list", route="public", public_auth=TELEGRAM_WEBAPP_PUBLIC_AUTH)
+    @api(method="GET", alias="conversations_list", route="public")
     async def telegram_public_conversations_list(
         self,
         request: Any = None,
@@ -881,7 +880,7 @@ class VersatileEntrypoint(BaseEntrypointWithEconomics):
             telegram_init_data=telegram_init_data,
         )
 
-    @api(method="POST", alias="telegram_conversations_create", route="public", public_auth=TELEGRAM_WEBAPP_PUBLIC_AUTH)
+    @api(method="POST", alias="telegram_conversations_create", route="public")
     async def telegram_conversations_create(
         self,
         request: Any = None,
@@ -897,7 +896,7 @@ class VersatileEntrypoint(BaseEntrypointWithEconomics):
             title=title,
         )
 
-    @api(method="POST", alias="telegram_conversations_switch", route="public", public_auth=TELEGRAM_WEBAPP_PUBLIC_AUTH)
+    @api(method="POST", alias="telegram_conversations_switch", route="public")
     async def telegram_conversations_switch(
         self,
         conversation_id: str,
@@ -913,7 +912,7 @@ class VersatileEntrypoint(BaseEntrypointWithEconomics):
             telegram_init_data=telegram_init_data,
         )
 
-    @api(method="POST", alias="telegram_conversations_delete", route="public", public_auth=TELEGRAM_WEBAPP_PUBLIC_AUTH)
+    @api(method="POST", alias="telegram_conversations_delete", route="public")
     async def telegram_conversations_delete(
         self,
         conversation_id: str,
@@ -931,7 +930,7 @@ class VersatileEntrypoint(BaseEntrypointWithEconomics):
             delete_history=delete_history,
         )
 
-    @api(method="POST", alias="telegram_miniapp_data", route="public", public_auth=TELEGRAM_WEBAPP_PUBLIC_AUTH)
+    @api(method="POST", alias="telegram_miniapp_data", route="public")
     async def telegram_miniapp_data_public(
         self,
         request: Any = None,
@@ -951,7 +950,7 @@ class VersatileEntrypoint(BaseEntrypointWithEconomics):
             path=path,
         )
 
-    @api(method="POST", alias="telegram_webapp_user_admin_data", route="public", public_auth=TELEGRAM_WEBAPP_PUBLIC_AUTH)
+    @api(method="POST", alias="telegram_webapp_user_admin_data", route="public")
     async def telegram_user_admin_data_public(
         self,
         request: Any = None,
@@ -965,7 +964,7 @@ class VersatileEntrypoint(BaseEntrypointWithEconomics):
             telegram_init_data=telegram_init_data,
         )
 
-    @api(method="POST", alias="telegram_webapp_user_admin_upsert", route="public", public_auth=TELEGRAM_WEBAPP_PUBLIC_AUTH)
+    @api(method="POST", alias="telegram_webapp_user_admin_upsert", route="public")
     async def telegram_user_admin_upsert_public(
         self,
         telegram_user_id: str,
@@ -993,7 +992,7 @@ class VersatileEntrypoint(BaseEntrypointWithEconomics):
             notes=notes,
         )
 
-    @api(method="POST", alias="telegram_webapp_user_admin_delete", route="public", public_auth=TELEGRAM_WEBAPP_PUBLIC_AUTH)
+    @api(method="POST", alias="telegram_webapp_user_admin_delete", route="public")
     async def telegram_user_admin_delete_public(
         self,
         telegram_user_id: str,
@@ -1011,29 +1010,47 @@ class VersatileEntrypoint(BaseEntrypointWithEconomics):
 
     def configuration_defaults(self) -> Dict[str, Any]:
         versatile_defaults = {
-            "visibility": {
-                "bundle": {
-                    "allowed_roles": [],
-                },
-                "api": {
-                    "telegram_user_admin_data": {
-                        "user_types": [],
-                        "roles": [TELEGRAM_ADMIN_ROLE],
+            "surfaces": {
+                "as_provider": {
+                    "bundle": {
+                        "visibility": {
+                            "allowed_roles": [],
+                        },
                     },
-                    "telegram_user_admin_upsert": {
-                        "user_types": [],
-                        "roles": [TELEGRAM_ADMIN_ROLE],
+                    "api": {
+                        "operations": {
+                            "telegram_user_admin_data": {
+                                "POST": {
+                                    "visibility": {
+                                        "user_types": [],
+                                        "roles": [TELEGRAM_ADMIN_ROLE],
+                                    },
+                                },
+                            },
+                            "telegram_user_admin_upsert": {
+                                "POST": {
+                                    "visibility": {
+                                        "user_types": [],
+                                        "roles": [TELEGRAM_ADMIN_ROLE],
+                                    },
+                                },
+                            },
+                            "telegram_user_admin_delete": {
+                                "POST": {
+                                    "visibility": {
+                                        "user_types": [],
+                                        "roles": [TELEGRAM_ADMIN_ROLE],
+                                    },
+                                },
+                            },
+                        },
                     },
-                    "telegram_user_admin_delete": {
-                        "user_types": [],
-                        "roles": [TELEGRAM_ADMIN_ROLE],
+                    "widget": {
+                        "pinboard": {"visibility": {"user_types": [], "roles": []}},
+                        "telegram_miniapp": {"visibility": {"user_types": [], "roles": []}},
+                        "usage_card": {"visibility": {"user_types": [], "roles": []}},
+                        "versatile_chat": {"visibility": {"user_types": [], "roles": []}},
                     },
-                },
-                "widget": {
-                    "pinboard": {"user_types": [], "roles": []},
-                    "telegram_miniapp": {"user_types": [], "roles": []},
-                    "usage_card": {"user_types": [], "roles": []},
-                    "versatile_chat": {"user_types": [], "roles": []},
                 },
             },
             "connections": {

@@ -35,12 +35,16 @@ interface BundleAPIEndpoint {
     route: string;
     user_types: string[];
     user_types_default?: string[];
-    user_types_config?: string | null;
+    user_types_path?: string | null;
     user_types_overridden?: boolean;
     roles: string[];
     roles_default?: string[];
-    roles_config?: string | null;
+    roles_path?: string | null;
     roles_overridden?: boolean;
+    auth?: Record<string, any> | null;
+    auth_path?: string | null;
+    authority_id?: string | null;
+    grants?: string[] | null;
     enabled_path?: string | null;
 }
 
@@ -51,6 +55,10 @@ interface BundleMCPEndpoint {
     transport_default?: string;
     transport_config?: string | null;
     transport_overridden?: boolean;
+    auth?: Record<string, any> | null;
+    auth_path?: string | null;
+    authority_id?: string | null;
+    grants?: string[] | null;
     enabled_path?: string | null;
 }
 
@@ -59,12 +67,16 @@ interface BundleWidget {
     icon?: Record<string, string> | null;
     user_types: string[];
     user_types_default?: string[];
-    user_types_config?: string | null;
+    user_types_path?: string | null;
     user_types_overridden?: boolean;
     roles: string[];
     roles_default?: string[];
-    roles_config?: string | null;
+    roles_path?: string | null;
     roles_overridden?: boolean;
+    auth?: Record<string, any> | null;
+    auth_path?: string | null;
+    authority_id?: string | null;
+    grants?: string[] | null;
     enabled_path?: string | null;
 }
 
@@ -104,7 +116,7 @@ interface BundleEntry {
     enabled_path?: string | null;
     allowed_roles?: string[] | null;
     allowed_roles_default?: string[] | null;
-    allowed_roles_config?: string | null;
+    allowed_roles_path?: string | null;
     allowed_roles_overridden?: boolean;
 }
 
@@ -648,6 +660,73 @@ function buildEnabledKindPatch(kind: 'mcp' | 'widget' | 'cron' | 'bundle', alias
     return { enabled: { [kind]: { [alias as string]: value } } };
 }
 
+function buildProviderAuthPatch(
+    kind: 'api' | 'widget' | 'mcp',
+    spec: { route?: string | null; alias: string; http_method?: string | null },
+    value: unknown,
+): Record<string, any> {
+    return buildProviderSurfaceSectionPatch(kind, spec, 'auth', value);
+}
+
+function buildProviderVisibilityFieldPatch(
+    kind: 'api' | 'widget',
+    spec: { route?: string | null; alias: string; http_method?: string | null },
+    field: 'user_types' | 'roles',
+    value: unknown,
+): Record<string, any> {
+    return buildProviderSurfaceSectionPatch(kind, spec, 'visibility', { [field]: value });
+}
+
+function buildBundleAllowedRolesPatch(value: unknown): Record<string, any> {
+    return {
+        surfaces: {
+            as_provider: {
+                bundle: {
+                    visibility: {
+                        allowed_roles: value,
+                    },
+                },
+            },
+        },
+    };
+}
+
+function buildProviderSurfaceSectionPatch(
+    kind: 'api' | 'widget' | 'mcp',
+    spec: { route?: string | null; alias: string; http_method?: string | null },
+    section: 'auth' | 'visibility',
+    value: unknown,
+): Record<string, any> {
+    if (kind === 'api') {
+        return {
+            surfaces: {
+                as_provider: {
+                    api: {
+                        [spec.route || 'operations']: {
+                            [spec.alias]: {
+                                [spec.http_method || 'POST']: {
+                                    [section]: value,
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+        };
+    }
+    return {
+        surfaces: {
+            as_provider: {
+                [kind]: {
+                    [spec.alias]: {
+                        [section]: value,
+                    },
+                },
+            },
+        },
+    };
+}
+
 // Deep-merge two record trees (used to combine multiple per-field patches into one Save call).
 function deepMergeMaps(a: Record<string, any>, b: Record<string, any>): Record<string, any> {
     const out: Record<string, any> = { ...a };
@@ -670,7 +749,7 @@ const KNOWN_USER_TYPES: ReadonlyArray<string> = ['anonymous', 'registered', 'pai
 const KNOWN_TRANSPORTS: ReadonlyArray<string> = ['streamable-http'];
 
 // Pill that renders next to a field name to flag whether the field is currently
-// overridden, configurable but not overridden, or hard-coded (no *_config).
+// overridden, descriptor-configurable but not overridden, or hard-coded.
 const FieldStatePill: React.FC<{ overridden?: boolean; configurable: boolean }> = ({ overridden, configurable }) => {
     if (overridden) {
         return <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-[10px] font-semibold uppercase tracking-wide">overridden</span>;
@@ -1029,6 +1108,8 @@ const ResourceEditorCard: React.FC<ResourceEditorCardProps> = ({
     const [formEnabled, setFormEnabled] = useState<boolean>(true);
     const [formUserTypes, setFormUserTypes] = useState<string[]>([]);
     const [formRoles, setFormRoles] = useState<string>('');
+    const [formAuthorityId, setFormAuthorityId] = useState<string>('');
+    const [formGrants, setFormGrants] = useState<string>('');
     const [formTransport, setFormTransport] = useState<string>('streamable-http');
     const [formCron, setFormCron] = useState<string>('');
     const [formTimezone, setFormTimezone] = useState<string>('');
@@ -1041,6 +1122,18 @@ const ResourceEditorCard: React.FC<ResourceEditorCardProps> = ({
         if (kind === 'api' || kind === 'widget') {
             setFormUserTypes(Array.isArray(selectedSpec.user_types) ? [...selectedSpec.user_types] : []);
             setFormRoles(Array.isArray(selectedSpec.roles) ? selectedSpec.roles.join(', ') : '');
+        }
+        if (kind === 'api' || kind === 'widget' || kind === 'mcp') {
+            const auth = (selectedSpec as any).auth || {};
+            setFormAuthorityId(String(auth.authority_id || auth.authority || ''));
+            const grants = Array.isArray(auth.grants)
+                ? auth.grants
+                : Array.isArray(auth.scopes)
+                    ? auth.scopes
+                    : Array.isArray(auth.required_grants)
+                        ? auth.required_grants
+                        : [];
+            setFormGrants(grants.join(', '));
         }
         if (kind === 'mcp') {
             setFormTransport(selectedSpec.transport || 'streamable-http');
@@ -1090,13 +1183,51 @@ const ResourceEditorCard: React.FC<ResourceEditorCardProps> = ({
                     patch = deepMergeMaps(patch, buildEnabledKindPatch(kind, selectedSpec.alias, enabledValue));
                 }
             }
-            // kind-specific overrides via *_config (only if path declared)
+            // Provider-surface overrides are descriptor paths when the surface is configurable.
             if (kind === 'api' || kind === 'widget') {
-                if (selectedSpec.user_types_config) {
-                    patch = deepMergeMaps(patch, nestedDotPathPatch(selectedSpec.user_types_config, formUserTypes));
+                if (selectedSpec.user_types_path) {
+                    patch = deepMergeMaps(
+                        patch,
+                        buildProviderVisibilityFieldPatch(kind, selectedSpec, 'user_types', formUserTypes),
+                    );
                 }
-                if (selectedSpec.roles_config) {
-                    patch = deepMergeMaps(patch, nestedDotPathPatch(selectedSpec.roles_config, parseChips(formRoles)));
+                if (selectedSpec.roles_path) {
+                    patch = deepMergeMaps(
+                        patch,
+                        buildProviderVisibilityFieldPatch(kind, selectedSpec, 'roles', parseChips(formRoles)),
+                    );
+                }
+            }
+            if (kind === 'api' || kind === 'widget' || kind === 'mcp') {
+                const currentAuth = { ...((selectedSpec as any).auth || {}) };
+                const currentAuthority = String(currentAuth.authority_id || currentAuth.authority || '');
+                const currentGrants = Array.isArray(currentAuth.grants)
+                    ? currentAuth.grants
+                    : Array.isArray(currentAuth.scopes)
+                        ? currentAuth.scopes
+                        : Array.isArray(currentAuth.required_grants)
+                            ? currentAuth.required_grants
+                            : [];
+                const nextAuthority = formAuthorityId.trim();
+                const nextGrants = parseChips(formGrants);
+                const grantsChanged = nextGrants.join('\n') !== currentGrants.map(String).join('\n');
+                if (nextAuthority !== currentAuthority || grantsChanged) {
+                    const nextAuth: Record<string, any> = { ...currentAuth };
+                    delete nextAuth.authority;
+                    delete nextAuth.scopes;
+                    delete nextAuth.required_grants;
+                    if (nextAuthority) {
+                        nextAuth.authority_id = nextAuthority;
+                    } else {
+                        delete nextAuth.authority_id;
+                    }
+                    if (nextGrants.length) {
+                        nextAuth.grants = nextGrants;
+                    } else {
+                        delete nextAuth.grants;
+                    }
+                    const authValue = Object.keys(nextAuth).length ? nextAuth : null;
+                    patch = deepMergeMaps(patch, buildProviderAuthPatch(kind, selectedSpec, authValue));
                 }
             }
             if (kind === 'mcp' && selectedSpec.transport_config) {
@@ -1126,6 +1257,21 @@ const ResourceEditorCard: React.FC<ResourceEditorCardProps> = ({
         try {
             setSaving(true);
             await onSave(nestedDotPathPatch(configPath, value));
+            setFlash('Reset ✓');
+            window.setTimeout(() => setFlash(null), 1800);
+        } catch (e: any) {
+            setError(e?.message || 'Reset failed');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const resetProviderVisibilityField = async (field: 'user_types' | 'roles') => {
+        if (!(kind === 'api' || kind === 'widget') || !selectedSpec) return;
+        setError(null);
+        try {
+            setSaving(true);
+            await onSave(buildProviderVisibilityFieldPatch(kind, selectedSpec, field, null));
             setFlash('Reset ✓');
             window.setTimeout(() => setFlash(null), 1800);
         } catch (e: any) {
@@ -1218,42 +1364,78 @@ const ResourceEditorCard: React.FC<ResourceEditorCardProps> = ({
                                 <FieldRow
                                     label="User types"
                                     overridden={selectedSpec.user_types_overridden}
-                                    configurable={Boolean(selectedSpec.user_types_config)}
-                                    onResetToDefault={selectedSpec.user_types_config && selectedSpec.user_types_overridden ? () => resetField(selectedSpec.user_types_config, null) : undefined}
+                                    configurable={Boolean(selectedSpec.user_types_path)}
+                                    onResetToDefault={selectedSpec.user_types_path && selectedSpec.user_types_overridden ? () => resetProviderVisibilityField('user_types') : undefined}
                                 >
                                     <UserTypesEditor
                                         value={formUserTypes}
                                         onChange={setFormUserTypes}
-                                        disabled={!selectedSpec.user_types_config}
+                                        disabled={!selectedSpec.user_types_path}
                                     />
                                     <FieldHint>
-                                        {selectedSpec.user_types_config
-                                            ? <>Override path: <code>{selectedSpec.user_types_config}</code>. Check selected user types to restrict access. No selection means all user types are allowed.</>
+                                        {selectedSpec.user_types_path
+                                            ? <>Descriptor path: <code>{selectedSpec.user_types_path}</code>. Check selected user types to restrict access. No selection means all user types are allowed.</>
                                             : formUserTypes.length === 0
-                                                ? <>No <code>user_types_config</code> declared in the decorator — hard-coded empty list, so all user types are allowed.</>
-                                                : <>No <code>user_types_config</code> declared in the decorator — value is hard-coded.</>}
+                                                ? <>No descriptor path is available — hard-coded empty list, so all user types are allowed.</>
+                                                : <>No descriptor path is available — value is hard-coded.</>}
                                     </FieldHint>
                                 </FieldRow>
 
                                 <FieldRow
                                     label="Roles"
                                     overridden={selectedSpec.roles_overridden}
-                                    configurable={Boolean(selectedSpec.roles_config)}
-                                    onResetToDefault={selectedSpec.roles_config && selectedSpec.roles_overridden ? () => resetField(selectedSpec.roles_config, null) : undefined}
+                                    configurable={Boolean(selectedSpec.roles_path)}
+                                    onResetToDefault={selectedSpec.roles_path && selectedSpec.roles_overridden ? () => resetProviderVisibilityField('roles') : undefined}
                                 >
                                     <input
                                         value={formRoles}
                                         onChange={e => setFormRoles(e.target.value)}
-                                        disabled={!selectedSpec.roles_config}
-                                        placeholder={!selectedSpec.roles_config && !formRoles ? 'all roles allowed' : 'kdcube:role:editor, kdcube:role:viewer'}
+                                        disabled={!selectedSpec.roles_path}
+                                        placeholder={!selectedSpec.roles_path && !formRoles ? 'all roles allowed' : 'kdcube:role:editor, kdcube:role:viewer'}
                                         className="w-full px-3 py-2 border border-gray-200/80 rounded-xl bg-white text-sm font-mono disabled:bg-gray-50 disabled:text-gray-400"
                                     />
                                     <FieldHint>
-                                        {selectedSpec.roles_config
-                                            ? <>Override path: <code>{selectedSpec.roles_config}</code>. Comma-separated. Empty saves an explicit empty list (all roles allowed).</>
+                                        {selectedSpec.roles_path
+                                            ? <>Descriptor path: <code>{selectedSpec.roles_path}</code>. Comma-separated. Empty saves an explicit empty list (all roles allowed).</>
                                             : parseChips(formRoles).length === 0
-                                                ? <>No <code>roles_config</code> declared in the decorator — hard-coded empty list, so all roles are allowed.</>
-                                                : <>No <code>roles_config</code> declared in the decorator — value is hard-coded.</>}
+                                                ? <>No descriptor path is available — hard-coded empty list, so all roles are allowed.</>
+                                                : <>No descriptor path is available — value is hard-coded.</>}
+                                    </FieldHint>
+                                </FieldRow>
+                            </>
+                        )}
+
+                        {(kind === 'api' || kind === 'widget' || kind === 'mcp') && (
+                            <>
+                                <FieldRow
+                                    label="Authority ID"
+                                    overridden={Boolean(formAuthorityId)}
+                                    configurable
+                                >
+                                    <input
+                                        value={formAuthorityId}
+                                        onChange={e => setFormAuthorityId(e.target.value)}
+                                        placeholder="kdcube.platform, oauth_mcp, yay.identity"
+                                        className="w-full px-3 py-2 border border-gray-200/80 rounded-xl bg-white text-sm font-mono"
+                                    />
+                                    <FieldHint>
+                                        Descriptor path: <code>{(selectedSpec as any).auth_path || 'surfaces.as_provider'}</code>. Empty means no authority-id restriction.
+                                    </FieldHint>
+                                </FieldRow>
+
+                                <FieldRow
+                                    label="Grants"
+                                    overridden={parseChips(formGrants).length > 0}
+                                    configurable
+                                >
+                                    <input
+                                        value={formGrants}
+                                        onChange={e => setFormGrants(e.target.value)}
+                                        placeholder="conversations:read, feedback:write"
+                                        className="w-full px-3 py-2 border border-gray-200/80 rounded-xl bg-white text-sm font-mono"
+                                    />
+                                    <FieldHint>
+                                        Comma-separated delegated authority grants required by this provider surface. Empty means no grant restriction.
                                     </FieldHint>
                                 </FieldRow>
                             </>
@@ -2441,12 +2623,12 @@ const AIBundleDashboard: React.FC = () => {
                                     <FieldRow
                                         label="Allowed roles"
                                         overridden={b.allowed_roles_overridden}
-                                        configurable={Boolean(b.allowed_roles_config)}
-                                        onResetToDefault={b.allowed_roles_config && b.allowed_roles_overridden ? async () => {
+                                        configurable={Boolean(b.allowed_roles_path)}
+                                        onResetToDefault={b.allowed_roles_path && b.allowed_roles_overridden ? async () => {
                                             setBundleRolesError(null);
                                             try {
                                                 setBundleRolesSaving(true);
-                                                await saveOverrideAndRefresh(nestedDotPathPatch(b.allowed_roles_config!, null));
+                                                await saveOverrideAndRefresh(buildBundleAllowedRolesPatch(null));
                                                 setBundleRolesFlash('Reset ✓');
                                                 window.setTimeout(() => setBundleRolesFlash(null), 1800);
                                             } catch (e: any) {
@@ -2455,19 +2637,19 @@ const AIBundleDashboard: React.FC = () => {
                                                 setBundleRolesSaving(false);
                                             }
                                         } : undefined}
-                                        hint={b.allowed_roles_config
-                                            ? <>Override path: <code>{b.allowed_roles_config}</code>. Comma-separated. Empty saves an explicit empty list (visible to all).</>
-                                            : <>No <code>allowed_roles_config</code> declared in the decorator — value is hard-coded.</>}
+                                        hint={b.allowed_roles_path
+                                            ? <>Descriptor path: <code>{b.allowed_roles_path}</code>. Comma-separated. Empty saves an explicit empty list (visible to all).</>
+                                            : <>No descriptor path is available — value is hard-coded.</>}
                                     >
                                         <div className="flex items-center gap-2">
                                             <input
                                                 value={formBundleRoles}
                                                 onChange={e => setFormBundleRoles(e.target.value)}
-                                                disabled={!b.allowed_roles_config || bundleRolesSaving || editorPropsLoading}
+                                                disabled={!b.allowed_roles_path || bundleRolesSaving || editorPropsLoading}
                                                 placeholder="kdcube:role:editor, kdcube:role:viewer"
                                                 className="flex-1 px-3 py-2 border border-gray-200/80 rounded-xl bg-white text-sm font-mono disabled:bg-gray-50 disabled:text-gray-400"
                                             />
-                                            {b.allowed_roles_config && (
+                                            {b.allowed_roles_path && (
                                                 <Button
                                                     variant="primary"
                                                     disabled={bundleRolesSaving || editorPropsLoading}
@@ -2475,7 +2657,7 @@ const AIBundleDashboard: React.FC = () => {
                                                         setBundleRolesError(null);
                                                         try {
                                                             setBundleRolesSaving(true);
-                                                            await saveOverrideAndRefresh(nestedDotPathPatch(b.allowed_roles_config!, parseChips(formBundleRoles)));
+                                                            await saveOverrideAndRefresh(buildBundleAllowedRolesPatch(parseChips(formBundleRoles)));
                                                             setBundleRolesFlash('Saved ✓');
                                                             window.setTimeout(() => setBundleRolesFlash(null), 1800);
                                                         } catch (e: any) {
@@ -2650,7 +2832,7 @@ const AIBundleDashboard: React.FC = () => {
                                                                         overridden={ep.user_types_overridden}
                                                                     />
                                                                 </td>
-                                                                <td className="px-3 py-2 font-mono text-gray-500">{ep.user_types_config || '—'}</td>
+                                                                <td className="px-3 py-2 font-mono text-gray-500">{ep.user_types_path || '—'}</td>
                                                                 <td className="px-3 py-2 text-gray-600">
                                                                     <OverridableValue
                                                                         value={ep.roles}
@@ -2658,7 +2840,7 @@ const AIBundleDashboard: React.FC = () => {
                                                                         overridden={ep.roles_overridden}
                                                                     />
                                                                 </td>
-                                                                <td className="px-3 py-2 font-mono text-gray-500">{ep.roles_config || '—'}</td>
+                                                                <td className="px-3 py-2 font-mono text-gray-500">{ep.roles_path || '—'}</td>
                                                                 <td className="px-3 py-2 font-mono text-gray-500">{ep.enabled_path || '—'}</td>
                                                             </tr>
                                                         ))}
@@ -2703,7 +2885,7 @@ const AIBundleDashboard: React.FC = () => {
                                                                             overridden={w.user_types_overridden}
                                                                         />
                                                                     </td>
-                                                                    <td className="px-3 py-2 font-mono text-gray-500">{w.user_types_config || '—'}</td>
+                                                                    <td className="px-3 py-2 font-mono text-gray-500">{w.user_types_path || '—'}</td>
                                                                     <td className="px-3 py-2 text-gray-600">
                                                                         <OverridableValue
                                                                             value={w.roles}
@@ -2711,7 +2893,7 @@ const AIBundleDashboard: React.FC = () => {
                                                                             overridden={w.roles_overridden}
                                                                         />
                                                                     </td>
-                                                                    <td className="px-3 py-2 font-mono text-gray-500">{w.roles_config || '—'}</td>
+                                                                    <td className="px-3 py-2 font-mono text-gray-500">{w.roles_path || '—'}</td>
                                                                     <td className="px-3 py-2 font-mono text-gray-500">{w.enabled_path || '—'}</td>
                                                                 </tr>
                                                             );

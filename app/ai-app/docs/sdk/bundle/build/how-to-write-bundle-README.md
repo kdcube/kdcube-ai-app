@@ -1277,29 +1277,32 @@ async def task_list(self, **kwargs):
 Reference:
 - [bundle-platform-integration-README.md](../bundle-platform-integration-README.md)
 
-### Public API with explicit platform auth
+### Public API with handler-owned shared secret
 
 ```python
 @api(
     alias="incoming_webhook",
     route="public",
     method="POST",
-    public_auth={"mode": "header_secret", "header": "X-Webhook-Secret", "secret_key": "incoming.secret"},
 )
-async def incoming_webhook(self, **kwargs):
+async def incoming_webhook(self, request: Request, **kwargs):
+    header_name = self.bundle_prop("integrations.vendor.webhook_header", "X-Webhook-Secret")
+    expected_token = await get_secret("b:integrations.vendor.webhook_secret")
+    if request.headers.get(header_name) != expected_token:
+        raise HTTPException(status_code=401, detail="Unauthorized")
     return {"ok": True}
 ```
 
 Reference:
 - [bundle-platform-integration-README.md](../bundle-platform-integration-README.md)
 
-### Public API with bundle-owned auth
+### Public API with handler-owned auth
 
 ```python
 from fastapi import HTTPException, Request
 from kdcube_ai_app.apps.chat.sdk.config import get_secret
 
-@api(alias="incoming_webhook", route="public", method="POST", public_auth="bundle")
+@api(alias="incoming_webhook", route="public", method="POST")
 async def incoming_webhook(self, request: Request, **kwargs):
     header_name = self.bundle_prop("integrations.vendor.webhook_header", "X-Webhook-Secret")
     expected_token = await get_secret("b:integrations.vendor.webhook_secret")
@@ -1320,17 +1323,10 @@ For Telegram, prefer the SDK-owned webhook flow instead of a custom generic
 webhook handler:
 
 ```python
-TELEGRAM_WEBHOOK_PUBLIC_AUTH = {
-    "mode": "header_secret",
-    "header": "X-Telegram-Bot-Api-Secret-Token",
-    "secret_key": "integrations.telegram.webhook_secret",
-}
-
 @api(
     alias="telegram_webhook",
     route="public",
     method="POST",
-    public_auth=TELEGRAM_WEBHOOK_PUBLIC_AUTH,
 )
 async def telegram_webhook(self, **update):
     return await telegram_user_admin.handle_webhook(self, **update)
