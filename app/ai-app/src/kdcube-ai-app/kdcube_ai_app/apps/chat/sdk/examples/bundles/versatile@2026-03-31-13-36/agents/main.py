@@ -58,21 +58,48 @@ UI topology for this chat (Telegram):
 """
 
 
+def _context_path(value: Any, *parts: str) -> Any:
+    cur = value
+    for part in parts:
+        if cur is None:
+            return None
+        if isinstance(cur, dict):
+            cur = cur.get(part)
+        else:
+            cur = getattr(cur, part, None)
+    return cur
+
+
 def _resolve_react_ui_instructions(comm_context: ExternalEventPayload) -> str:
     """
     Return the UI-topology block that matches the inbound channel for this turn.
 
-    The ingress layer sets `event.source` to `ingress.<transport>` (e.g.,
-    `ingress.telegram`, `ingress.web`). When the source is unknown we default
-    to the web-chat instructions, since that's the canonical interface for
-    the bundle.
+    Telegram can reach Versatile through the platform ingress submitter or the
+    direct webhook runner. Depending on that path, the channel can be visible on
+    the event source, the request payload, or ingress metadata.
     """
-    source = ""
-    event = getattr(comm_context, "event", None) if comm_context is not None else None
-    if event is not None:
-        source = str(getattr(event, "source", "") or "").strip().lower()
-    if source.endswith(".telegram") or source == "ingress.telegram":
-        return _TELEGRAM_REACT_INSTRUCTIONS
+    signals = [
+        _context_path(comm_context, "event", "source"),
+        _context_path(comm_context, "event", "event_source_id"),
+        _context_path(comm_context, "meta", "instance_id"),
+        _context_path(comm_context, "request", "payload", "source"),
+        _context_path(comm_context, "request", "payload", "transport"),
+        _context_path(comm_context, "request", "payload", "ingress", "transport"),
+        _context_path(comm_context, "request", "payload", "ingress", "component"),
+        _context_path(comm_context, "request", "payload", "ingress", "metadata", "source"),
+        _context_path(comm_context, "request", "payload", "ingress", "metadata", "entrypoint"),
+    ]
+    payload = _context_path(comm_context, "request", "payload")
+    if isinstance(payload, dict) and isinstance(payload.get("telegram"), dict):
+        signals.append("telegram.payload")
+    for item in signals:
+        if "telegram" in str(item or "").strip().lower():
+            return _TELEGRAM_REACT_INSTRUCTIONS
+    external_events = _context_path(comm_context, "request", "external_events")
+    if isinstance(external_events, list):
+        for event in external_events:
+            if isinstance(event, dict) and "telegram" in str(event.get("event_source_id") or "").lower():
+                return _TELEGRAM_REACT_INSTRUCTIONS
     return _WEB_CHAT_REACT_INSTRUCTIONS
 
 

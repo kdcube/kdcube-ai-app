@@ -939,6 +939,23 @@ async def run_react_turn(entrypoint: Any, *, summary: Dict[str, Any]) -> Dict[st
     scoped_ctx.user.roles = list(identity_authority.get("platform_roles") or [])
     scoped_ctx.user.permissions = list(identity_authority.get("platform_permissions") or [])
     scoped_ctx.user.identity_authority = identity_authority
+    scoped_payload = getattr(scoped_ctx.request, "payload", None)
+    scoped_payload = dict(scoped_payload) if isinstance(scoped_payload, dict) else {}
+    scoped_telegram = scoped_payload.get("telegram")
+    scoped_telegram = dict(scoped_telegram) if isinstance(scoped_telegram, dict) else {}
+    scoped_telegram.update(_telegram_payload_summary(summary))
+    scoped_telegram.update(
+        {
+            "kdcube_user_id": kdcube_user_id,
+            "role": role,
+            "conversation_id": conversation_id,
+            "turn_id": turn_id,
+            "integration_id": integration_id,
+        }
+    )
+    scoped_payload["source"] = "telegram"
+    scoped_payload["telegram"] = scoped_telegram
+    scoped_ctx.request.payload = scoped_payload
 
     async def _run_scoped_telegram_turn() -> Dict[str, Any]:
         nonlocal attachments

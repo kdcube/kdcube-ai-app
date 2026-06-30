@@ -320,6 +320,9 @@ async def test_telegram_inline_run_react_turn_derives_external_event_type(tmp_pa
     assert events[0]["event_source_id"] == "telegram.user.followup"
     assert events[0]["payload"]["event"]["text"] == "and then?"
     assert entrypoint.initial_payload["message_kind"] == "followup"
+    assert entrypoint.bound_context.request.payload["source"] == "telegram"
+    assert entrypoint.bound_context.request.payload["telegram"]["chat_id"] == "1001"
+    assert entrypoint.bound_context.request.payload["telegram"]["conversation_id"] == "conv-main"
     assert streamer_kwargs[0]["show_progress"] is False
 
 
