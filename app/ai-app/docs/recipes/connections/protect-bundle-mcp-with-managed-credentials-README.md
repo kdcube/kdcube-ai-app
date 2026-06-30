@@ -48,13 +48,34 @@ authenticator_id = delegated_client.bearer
 Expose the MCP endpoint normally from the bundle:
 
 ```python
-@mcp(alias="memories", route="public")
+@mcp(
+    alias="memories",
+    route="public",
+    transport="streamable-http",
+    auth_config="surfaces.as_provider.mcp.memories.auth",
+)
 async def memories_mcp(self, request: Request, **kwargs):
     return build_memory_mcp_app(...)
 ```
 
 The handler should not parse OAuth tokens itself. Managed auth is applied by the
 bundle integration bridge and delegated credential guard.
+
+For proc-served bundle MCP, build the FastMCP app as stateless:
+
+```python
+from mcp.server.fastmcp import FastMCP
+
+mcp = FastMCP("KDCube Memories", stateless_http=True)
+```
+
+KDCube's current bundle MCP route is dispatched request-by-request through proc.
+FastMCP's stateful streamable HTTP session manager stores `mcp-session-id`
+transports in local Python memory, not in Redis/Postgres. That is not stable for
+fresh app instances, multiple proc workers, container restarts, or calls routed
+to a different machine. Keep durable state in KDCube stores, Connection Hub
+credential records, and product storage, not in bundle-local FastMCP session
+memory.
 
 ## Descriptor Surface
 
@@ -175,6 +196,27 @@ Managed guard checks:
   tool grants are present
 ```
 
+## MCP Transport State
+
+Managed credentials do not require a stateful MCP transport. The delegated
+credential, consent record, resource match, selected tools, selected grants, and
+identity scope are stored by Connection Hub and are checked on every request.
+That makes `tools/list` and `tools/call` work even when proc dispatches through
+fresh FastMCP app instances.
+
+Stateful MCP would need a different platform component:
+
+```text
+external MCP client
+  -> KDCube MCP ingress/broker owns mcp-session-id
+  -> broker stores/routes protocol session state
+  -> proc dispatches stateless tool calls to bundles
+```
+
+That broker is not the current bundle MCP route. Until such an ingress-owned MCP
+session layer exists, proc-served bundle MCP surfaces should use
+`stateless_http=True`.
+
 ## What The Bundle Receives
 
 The bundle should receive a request whose delegated credential has already been
@@ -228,5 +270,7 @@ credentials and user consent.
 - Do not call this mechanism by old branch names; OAuth is only the protocol
   adapter.
 - Do not hardcode tool grants in the MCP handler.
+- Do not rely on bundle-local stateful FastMCP sessions for proc-served bundle
+  MCP. Use `stateless_http=True`.
 - Do not let a token with a broad grant call tools the user did not select.
 - Do not use `mode: managed` for a bundle-owned shared-secret endpoint.
