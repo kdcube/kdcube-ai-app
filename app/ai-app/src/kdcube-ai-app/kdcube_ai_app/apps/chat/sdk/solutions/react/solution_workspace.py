@@ -1490,8 +1490,17 @@ class ApplicationHostingService:
                 payload["logical_path"] = logical_path
                 payload["object_ref"] = logical_path
                 payload["ref"] = logical_path
+            # Web client resolves blobs only via POST /api/cb/resources/by-rn,
+            # which needs the structured rn. The strip below removes `rn` (it would
+            # change Telegram's delivery key). Re-surface it under a field outside
+            # Telegram's key set (_file_item_from_meta/_file_delivery_key never read
+            # `web_resource_rn`) so the browser can fetch the image inline without
+            # affecting Telegram delivery.
+            _web_rn = str(payload.get("rn") or item.get("rn") or "").strip()
             for transport_key in ("hosted_uri", "rn", "key"):
                 payload.pop(transport_key, None)
+            if _web_rn:
+                payload["web_resource_rn"] = _web_rn
             payload.setdefault("timestamp", event_ts_ms)
             payload.setdefault("timestamp_iso", event_ts_iso)
             payload.setdefault("ts", event_ts_ms)
