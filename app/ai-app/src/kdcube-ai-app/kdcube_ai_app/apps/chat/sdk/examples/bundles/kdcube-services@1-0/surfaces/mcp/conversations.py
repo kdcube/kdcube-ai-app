@@ -22,7 +22,7 @@ def build_conversations_mcp_app(
     except Exception as exc:  # pragma: no cover - runtime dependency
         raise ImportError("mcp server SDK is not installed") from exc
 
-    mcp = FastMCP(name)
+    mcp = FastMCP(name, stateless_http=True)
 
     @mcp.tool(
         name="conversations_export",

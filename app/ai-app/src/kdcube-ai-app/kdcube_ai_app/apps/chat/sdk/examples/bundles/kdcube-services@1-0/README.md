@@ -98,6 +98,9 @@ Bearer token
 The tool does not check roles itself. By the time it runs, the surface guard has
 validated the delegated credential and selected tool grant.
 
+The FastMCP surface uses stateless streamable HTTP because the proc bridge
+dispatches each bundle MCP request independently.
+
 ## Extension Rule
 
 Add future KDCube service families as separate modules and separate MCP aliases.

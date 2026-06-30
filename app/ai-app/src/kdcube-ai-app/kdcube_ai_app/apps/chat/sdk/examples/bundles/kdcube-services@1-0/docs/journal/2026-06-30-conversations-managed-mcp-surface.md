@@ -69,6 +69,7 @@ entrypoint.py
 
 surfaces/mcp/conversations.py
   FastMCP tool registration and tool argument schema
+  stateless streamable HTTP because the proc bridge dispatches per request
 
 services/conversations/export.py
   reusable conversation export product logic
