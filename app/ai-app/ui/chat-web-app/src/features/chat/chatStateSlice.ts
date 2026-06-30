@@ -8,7 +8,8 @@ import {
     ChatStepEnvelope,
     CitationsStepEnvelope,
     ConvStatusEnvelope,
-    FilesStepEnvelope
+    FilesStepEnvelope,
+    resolveResourceRn
 } from "../chatController/chatBase.ts";
 import {v4 as uuidv4} from "uuid";
 import {
@@ -676,7 +677,9 @@ const chatStateSlice = createSlice({
                         const filesEnv = env as FilesStepEnvelope
                         if (filesEnv.data?.items && filesEnv.data?.items?.length > 0) {
                             filesEnv.data.items.forEach(item => {
-                                const i = turn.artifacts.findIndex(f => f.artifactType === "file" && (f as FileArtifact).content.rn === item.rn)
+                                const key = resolveResourceRn(item);
+                                const i = turn.artifacts.findIndex(f => f.artifactType === "file" &&
+                                    resolveResourceRn((f as FileArtifact).content) === key && key !== "");
                                 const timestamp = itemTimestamp(item, eventTimestamp)
                                 if (i > -1) {
                                     turn.artifacts.splice(i, 1, {content: item, artifactType: "file", timestamp})

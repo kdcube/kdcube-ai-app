@@ -62,9 +62,13 @@ export interface ChatCompactionEnvelope extends BaseEnvelope {
 export interface RNFile extends Timestamped {
     filename: string,
     rn: string,
+    web_resource_rn?: string | null,
     mime?: string | null,
     description?: string | null,
 }
+
+export const resolveResourceRn = (f: RNFile): string =>
+    (f.rn && f.rn.trim()) || (f.web_resource_rn && f.web_resource_rn.trim()) || "";
 
 export interface FilesStepEnvelope extends BaseEnvelope {
     type: "chat.step";
