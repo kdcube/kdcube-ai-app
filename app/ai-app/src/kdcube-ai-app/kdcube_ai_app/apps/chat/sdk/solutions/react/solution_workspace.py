@@ -1490,8 +1490,6 @@ class ApplicationHostingService:
                 payload["logical_path"] = logical_path
                 payload["object_ref"] = logical_path
                 payload["ref"] = logical_path
-            for transport_key in ("hosted_uri", "rn", "key"):
-                payload.pop(transport_key, None)
             payload.setdefault("timestamp", event_ts_ms)
             payload.setdefault("timestamp_iso", event_ts_iso)
             payload.setdefault("ts", event_ts_ms)
