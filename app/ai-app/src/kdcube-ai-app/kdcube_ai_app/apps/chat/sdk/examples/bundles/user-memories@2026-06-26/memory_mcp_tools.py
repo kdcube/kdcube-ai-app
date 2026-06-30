@@ -121,7 +121,9 @@ def build_user_memories_mcp_app(
     except Exception as exc:  # pragma: no cover - runtime dependency
         raise ImportError("mcp server SDK is not installed") from exc
 
-    mcp = FastMCP(name)
+    # The proc MCP bridge dispatches requests independently; stateless HTTP
+    # keeps initialize/tools/list/tool calls valid across fresh app instances.
+    mcp = FastMCP(name, stateless_http=True)
 
     async def _read_user_ids(scope: MemoryScope) -> Optional[list[str]]:
         """Resolve the identity-family read set, with safe single-user fallback."""

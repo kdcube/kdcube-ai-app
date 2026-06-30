@@ -41,7 +41,10 @@ points the build at the shared SDK widget source. It ships no UI of its own.
   exposed MCP tool declares its required grant (`memories:read` for
   `memory_search` and `memory_get`) and must also be selected during consent.
   This is the reference target for connecting an external Claude client on
-  behalf of a regular KDCube user.
+  behalf of a regular KDCube user. The FastMCP app is served with
+  `stateless_http=True`, because the proc bridge can dispatch MCP requests
+  through fresh app instances and external clients must still be able to list
+  tools after initialization.
 
 Memory writes are economics-guarded (reconciliation reserves budget) via the
 economics half of the mixin.
