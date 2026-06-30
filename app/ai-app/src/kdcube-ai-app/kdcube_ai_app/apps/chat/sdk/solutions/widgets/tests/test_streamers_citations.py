@@ -173,6 +173,44 @@ async def test_timeline_streamer_streams_notes_on_tool_call():
 
 
 @pytest.mark.asyncio
+async def test_timeline_streamer_respects_action_xpath_for_named_service_params():
+    identities = []
+
+    async def on_action_identity(action, tool_id):
+        identities.append((action, tool_id))
+
+    payload = {
+        "action": "call_tool",
+        "notes": "Previewing the task attachment.",
+        "tool_call": {
+            "tool_id": "named_services.object_action",
+            "params": {
+                "namespace": "task",
+                "object_ref": "task:issue:attachment:abc",
+                "action": "preview",
+            },
+        },
+    }
+
+    collector = _Collector()
+    streamer = TimelineStreamer(
+        emit_delta=collector.emit,
+        agent="test.agent",
+        sources_list=[],
+        on_action_identity=on_action_identity,
+    )
+
+    for chunk in _chunk_text(_json_stream_payload(payload), size=7):
+        await streamer.feed(chunk)
+    await streamer.finish()
+
+    assert identities
+    assert identities[0][0] == "call_tool"
+    assert identities[0][1] == "named_services.object_action"
+    assert all(identity[0] != "preview" for identity in identities)
+
+
+@pytest.mark.asyncio
 async def test_timeline_streamer_emits_new_plan_to_timeline_text():
     payload = {
         "action": "call_tool",

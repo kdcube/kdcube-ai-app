@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import datetime
 import json
-import re
 from typing import Awaitable, Callable, Dict, List, Optional, Any
 
 from kdcube_ai_app.apps.chat.sdk.solutions.react.tools.common import infer_format_from_path
@@ -189,14 +188,12 @@ class ToolContentStreamerBase:
 
     def _path_has(self, keys: List[str]) -> bool:
         stack = [k for k in self.path_stack if k]
-        if len(stack) < len(keys):
-            return False
-        return stack[-len(keys):] == list(keys)
+        return stack == list(keys)
 
     def _matches_stream_path(self) -> bool:
         if not self.stream_key or self.last_key != self.stream_key:
             return False
-        if self.stream_parent and not self._path_has(self.stream_parent):
+        if not self._path_has(self.stream_parent):
             return False
         if not self._tool_allows_stream():
             return False
@@ -210,42 +207,42 @@ class ToolContentStreamerBase:
     def _matches_path_path(self) -> bool:
         if not self.path_key or self.last_key != self.path_key:
             return False
-        if self.path_parent and not self._path_has(self.path_parent):
+        if not self._path_has(self.path_parent):
             return False
         return True
 
     def _matches_channel_path(self) -> bool:
         if not self.channel_key or self.last_key != self.channel_key:
             return False
-        if self.channel_parent and not self._path_has(self.channel_parent):
+        if not self._path_has(self.channel_parent):
             return False
         return True
 
     def _matches_kind_path(self) -> bool:
         if not self.kind_key or self.last_key != self.kind_key:
             return False
-        if self.kind_parent and not self._path_has(self.kind_parent):
+        if not self._path_has(self.kind_parent):
             return False
         return True
 
     def _matches_format_path(self) -> bool:
         if not self.format_key or self.last_key != self.format_key:
             return False
-        if self.format_parent and not self._path_has(self.format_parent):
+        if not self._path_has(self.format_parent):
             return False
         return True
 
     def _matches_tool_id_path(self) -> bool:
         if not self.tool_id_key or self.last_key != self.tool_id_key:
             return False
-        if self.tool_id_parent and not self._path_has(self.tool_id_parent):
+        if not self._path_has(self.tool_id_parent):
             return False
         return True
 
     def _matches_action_path(self) -> bool:
         if not self.action_key or self.last_key != self.action_key:
             return False
-        if self.action_parent and not self._path_has(self.action_parent):
+        if not self._path_has(self.action_parent):
             return False
         return True
 
@@ -743,53 +740,11 @@ class TimelineStreamer:
         tool_id = (self.tool_id_value or "").strip()
         if action == "call_tool" and not tool_id:
             return
-        tool_params = self._current_tool_params()
-        if action == "call_tool" and self._is_named_service_tool_id(tool_id) and not tool_params.get("namespace"):
-            return
         self.action_identity_reported = True
         try:
-            await self.on_action_identity(action, tool_id, tool_params)
+            await self.on_action_identity(action, tool_id)
         except TypeError:
             await self.on_action_identity(action, tool_id)
-
-    @staticmethod
-    def _is_named_service_tool_id(tool_id: str) -> bool:
-        tid = str(tool_id or "").strip()
-        if not tid.startswith("named_services."):
-            return False
-        tool_name = tid.rsplit(".", 1)[-1]
-        return tool_name in {
-            "provider_about",
-            "list_objects",
-            "search_objects",
-            "get_object",
-            "host_file",
-            "object_schema",
-            "object_action",
-            "upsert_object",
-            "delete_object",
-        }
-
-    def _current_tool_params(self) -> Dict[str, Any]:
-        raw = (self.raw_json_buffer or "").strip()
-        if raw:
-            try:
-                parsed = json.loads(raw)
-            except Exception:
-                parsed = None
-            if isinstance(parsed, dict):
-                tool_call = parsed.get("tool_call") if isinstance(parsed.get("tool_call"), dict) else {}
-                params = tool_call.get("params") if isinstance(tool_call.get("params"), dict) else {}
-                if isinstance(params, dict):
-                    return dict(params)
-            match = re.search(r'"namespace"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"', raw)
-            if match:
-                try:
-                    namespace = json.loads(f'"{match.group(1)}"')
-                except Exception:
-                    namespace = match.group(1)
-                return {"namespace": namespace}
-        return {}
 
     def _sources_signature(self, sources_list: List[Dict[str, object]]) -> tuple[int, int, int]:
         if not sources_list:
@@ -909,23 +864,29 @@ class TimelineStreamer:
 
     def _path_has(self, keys: List[str]) -> bool:
         stack = [k for k in self.path_stack if k]
-        if len(stack) < len(keys):
-            return False
-        return stack[-len(keys):] == list(keys)
+        return stack == list(keys)
 
     def _matches_action_path(self) -> bool:
         if not self.action_key or self.last_key != self.action_key:
             return False
-        if self.action_parent and not self._path_has(self.action_parent):
+        if not self._path_has(self.action_parent):
             return False
         return True
 
     def _matches_tool_id_path(self) -> bool:
         if not self.tool_id_key or self.last_key != self.tool_id_key:
             return False
-        if self.tool_id_parent and not self._path_has(self.tool_id_parent):
+        if not self._path_has(self.tool_id_parent):
             return False
         return True
+
+    async def _capture_protocol_string_value(self) -> None:
+        if self._matches_action_path():
+            self.action_value = self.active_value_buf.strip()
+            await self._maybe_report_action_identity()
+        if self._matches_tool_id_path():
+            self.tool_id_value = self.active_value_buf.strip()
+            await self._maybe_report_action_identity()
 
     def _allow_target(self, target: Dict[str, Any]) -> Optional[bool]:
         name = target.get("name")
@@ -952,7 +913,7 @@ class TimelineStreamer:
             if not t.get("key") or self.last_key != t.get("key"):
                 continue
             parent = t.get("parent") or []
-            if parent and not self._path_has(parent):
+            if not self._path_has(parent):
                 continue
             return t
         return None
@@ -1122,12 +1083,7 @@ class TimelineStreamer:
                         self.in_string = False
                         self.pending_string_quote = False
                         self.pending_string_quote_ws = ""
-                        if self._matches_action_path():
-                            self.action_value = self.active_value_buf.strip()
-                            await self._maybe_report_action_identity()
-                        if self._matches_tool_id_path():
-                            self.tool_id_value = self.active_value_buf.strip()
-                            await self._maybe_report_action_identity()
+                        await self._capture_protocol_string_value()
                         if self.streaming_target and self.active_value_buf:
                             await self._emit_chunk(self.active_value_buf)
                         self.active_value_buf = ""
@@ -1199,12 +1155,7 @@ class TimelineStreamer:
                             self.pending_string_quote_ws = ""
                             continue
                         self.in_string = False
-                        if self._matches_action_path():
-                            self.action_value = self.active_value_buf.strip()
-                            await self._maybe_report_action_identity()
-                        if self._matches_tool_id_path():
-                            self.tool_id_value = self.active_value_buf.strip()
-                            await self._maybe_report_action_identity()
+                        await self._capture_protocol_string_value()
                         if self.streaming_target and self.active_value_buf:
                             await self._emit_chunk(self.active_value_buf)
                         self.active_value_buf = ""
@@ -1281,12 +1232,7 @@ class TimelineStreamer:
             self.in_string = False
             self.pending_string_quote = False
             self.pending_string_quote_ws = ""
-            if self._matches_action_path():
-                self.action_value = self.active_value_buf.strip()
-                await self._maybe_report_action_identity()
-            if self._matches_tool_id_path():
-                self.tool_id_value = self.active_value_buf.strip()
-                await self._maybe_report_action_identity()
+            await self._capture_protocol_string_value()
             if self.streaming_target and self.active_value_buf:
                 await self._emit_chunk(self.active_value_buf)
             self.active_value_buf = ""
