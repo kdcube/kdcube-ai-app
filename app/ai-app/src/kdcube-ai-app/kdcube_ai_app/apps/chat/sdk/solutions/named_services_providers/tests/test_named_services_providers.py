@@ -2839,3 +2839,48 @@ def test_intros_from_entries_maps_intro_to_every_owned_namespace():
     assert out["me"]["intro"].startswith("Durable user memory")
     assert out["mem"]["intro"].startswith("Durable user memory")
     assert out["mem"]["label"] == "User memories"
+
+
+class _BatchGetProvider(NamedServiceProvider):
+    """Minimal provider implementing only single object.get."""
+
+    async def object_get(self, ctx, request):
+        cid = request.object_ref or request.object_id or ""
+        if cid == "ns:missing":
+            return NamedServiceResponse.error_response(
+                code="not_found", message="nope", status=404,
+                provider=self.provider_identity(), namespace=request.namespace,
+            )
+        return NamedServiceResponse.ok_response(
+            provider=self.provider_identity(), namespace=request.namespace,
+            object={"ref": cid, "body": {"id": cid}},
+        )
+
+
+@pytest.mark.asyncio
+async def test_object_get_batch_fans_out_to_single_get():
+    # A single object.get carrying filters.refs fans out to the provider's single
+    # object.get and returns objects as items — uniform, no per-provider code.
+    prov = _BatchGetProvider()
+    req = NamedServiceRequest.from_dict({
+        "operation": "object.get",
+        "namespace": "ns",
+        "filters": {"refs": ["ns:a", "ns:b", "ns:missing", "ns:a"]},  # dupe + a miss
+    })
+    resp = await prov.dispatch(NamedServiceContext(), req)
+    assert resp.ok
+    assert [item["ref"] for item in resp.items] == ["ns:a", "ns:b"]  # deduped, miss dropped
+    assert resp.extra["count"] == 2
+    assert resp.extra["requested"] == 3
+    assert resp.extra["missing"] == ["ns:missing"]
+
+
+@pytest.mark.asyncio
+async def test_object_get_single_is_unaffected_by_batch_path():
+    # No filters.refs -> ordinary single get returning ret.object (not items).
+    prov = _BatchGetProvider()
+    req = NamedServiceRequest.from_dict({"operation": "object.get", "namespace": "ns", "object_ref": "ns:a"})
+    resp = await prov.dispatch(NamedServiceContext(), req)
+    assert resp.ok
+    assert resp.object["ref"] == "ns:a"
+    assert not resp.items

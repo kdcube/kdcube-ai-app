@@ -465,7 +465,7 @@ is not the public agent interface.
 | --- | --- |
 | `object.list` | Browse objects in a collection with pagination. |
 | `object.search` | Search objects; default mode is hybrid when the provider supports it. Providers may accept the configured base namespace or provider-declared scoped namespaces. |
-| `object.get` | Fetch one object by `object_ref` or owner-local id. With `response_mode: stream`, fetch the object's byte representation while still returning structured response metadata. |
+| `object.get` | Fetch one object by `object_ref` or owner-local id. Batch form: `filters.refs` (a list of refs) fans out to the provider's single `object.get` and returns the objects as `ret.items` — handled once in the base dispatch, so every provider that implements single `object.get` supports batch identically (no per-provider code). With `response_mode: stream`, fetch the object's byte representation while still returning structured response metadata. |
 | `object.schema` | Return provider-defined object schemas, search/filter contracts, and tool payload guidance for one object kind or ref. |
 | `object.host_file` | Host a caller-owned runtime file/ref into provider-owned storage and return the provider-owned file object/ref. |
 | `object.upsert` | Create or update one object with idempotency and revision checks. |
@@ -723,7 +723,7 @@ same input snapshot and the central adapter merges the accepted patches.
 
 | Operation | Provider receives | Provider returns | Consumer caller | Trace markers |
 | --- | --- | --- | --- | --- |
-| `object.get` | `request.object_ref`, optional `object_id`, `response_mode` | `NamedServiceResponse` for JSON mode; `NamedServiceStreamResult` for stream mode | tools, resolvers, `react.pull` namespace rehoster | `Named-service artifact rehost start/complete`, provider dispatch logs |
+| `object.get` | `request.object_ref`, optional `object_id`, `response_mode` (batch `filters.refs` is fanned out by the base dispatch, so the provider still receives one ref per call) | `NamedServiceResponse` for JSON mode; `NamedServiceStreamResult` for stream mode | tools, resolvers, `react.pull` namespace rehoster, batch get callers | `Named-service artifact rehost start/complete`, `Named-service batch get`, provider dispatch logs |
 | `event.resolve` | `request.object_ref` | `ret.extra.event_source_id`, canonical `object_ref`, object kind, cheap routing metadata | ReAct owner event-source resolver, scene/canvas resolvers | `react.read.owner_projection status=namespace_event_source/...` |
 | `block.produce` | `request.object_ref`, `payload.target` with read artifact metadata | `ret.extra.blocks[]` with provider-authored model-visible blocks | `react.read` owner projection | `memory.named_service.block_produce`, provider-specific logs, `react.read.owner_projection status=produced` |
 | `block.render` timeline mode | `payload.blocks[]` with stable `index` values plus `render_context` | `ret.extra.patches[]`, or `ret.extra.blocks[]` with `index` fields | `Timeline.render()` named-service render adapter | `named_services.block_render status=called/rendered/empty/not_declared/merged` |
