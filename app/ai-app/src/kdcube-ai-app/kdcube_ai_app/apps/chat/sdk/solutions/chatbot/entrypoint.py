@@ -371,7 +371,64 @@ class BaseEntrypoint:
                 reason="bundle.on_load",
             )
         await self._ensure_ui_build()
+        await self._publish_named_services_discovery()
         return None
+
+    # -- named services (platform capability) --------------------------------
+    # Any bundle can publish named-service providers by overriding
+    # `_named_service_providers()` (mixins call super() and append). The base
+    # composes them into the registry and registers them for discovery on load;
+    # bundles do not re-implement the registry/discovery/on_load plumbing.
+
+    def _named_service_providers(self) -> list:
+        """Named-service provider instances this bundle publishes. Default: none.
+
+        Override and call `super()._named_service_providers()` to contribute."""
+        return []
+
+    def _named_services_bundle_id(self) -> str:
+        bundle_spec = getattr(getattr(self, "config", None), "ai_bundle_spec", None)
+        return str(getattr(bundle_spec, "id", None) or "").strip()
+
+    def named_services(self):
+        from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers.registry import (
+            NamedServiceRegistry,
+        )
+
+        registry = NamedServiceRegistry()
+        for provider in self._named_service_providers():
+            if provider is not None:
+                registry.register(provider)
+        return registry
+
+    async def _publish_named_services_discovery(self) -> None:
+        redis = getattr(self, "redis", None)
+        if redis is None:
+            return
+        # Use the actual registry so this works whether the bundle contributes via
+        # `_named_service_providers()` or overrides `named_services()` directly.
+        registry = self.named_services()
+        if not registry.providers():
+            return
+        actor = getattr(getattr(self, "comm_context", None), "actor", None)
+        settings = getattr(self, "settings", None)
+        tenant = str(getattr(actor, "tenant_id", None) or getattr(settings, "TENANT", "") or "").strip()
+        project = str(getattr(actor, "project_id", None) or getattr(settings, "PROJECT", "") or "").strip()
+        bundle_id = self._named_services_bundle_id()
+        if not tenant or not project or not bundle_id:
+            return
+        from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers.discovery import (
+            RedisNamedServiceDiscovery,
+        )
+
+        entries = await RedisNamedServiceDiscovery(redis, tenant=tenant, project=project).register_registry(
+            registry,
+            bundle_id=bundle_id,
+        )
+        try:
+            self.logger.log(f"[named_services.discovery] registered providers={len(entries)} bundle={bundle_id}", "INFO")
+        except Exception:
+            pass
 
     async def on_props_changed(
         self,

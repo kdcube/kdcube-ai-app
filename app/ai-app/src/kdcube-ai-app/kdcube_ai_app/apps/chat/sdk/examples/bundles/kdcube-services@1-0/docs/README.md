@@ -123,6 +123,56 @@ clients may not automatically restart consent from a tool result. For reliable
 Claude flows, advertise the grants the resource will likely need during initial
 Connection Hub consent.
 
+### Conversation named service (`conv`)
+
+This bundle registers the SDK-owned conversation provider
+(`sdk/solutions/conversation/named_service.py`) in its `named_services()`
+registry and publishes it through Redis discovery on `on_bundle_load`, so `conv`
+is reachable through the `named_services` MCP surface. The provider is
+SDK-owned; the bundle only wires a read/export service bound per request to the
+caller's tenant/project.
+
+```text
+public/mcp/named_services
+  -> conv namespace
+  -> ConversationSearchNamedServiceProvider (SDK)
+  -> ConversationReadService (SDK read/export facade)
+```
+
+Operations and scope:
+
+- `object.list` — conversation summaries; `object.get` — one full conversation
+  (`conv:conversation:<id>`); `object.export` — the `conversations_export`
+  record family, user-scoped. `object.search` is advertised but returns
+  `conversation_search_not_configured` until a search backend is wired.
+- Default scope is the caller's own conversations. A selected-user scope
+  (`filters.scope = {mode: "user", user_id}`) is the admin path.
+
+Boundary policy (grant vocabulary) — enforced by Connection Hub / the managed
+boundary, not by provider code. Suggested `named_services` namespace block for
+the delegated credential grant record:
+
+```yaml
+named_services:
+  namespaces:
+    conv:
+      label: Conversations
+      authority_id: delegated_client
+      tools:
+        named_services_list:   {grants: [conversations:read]}
+        named_services_get:    {grants: [conversations:read]}
+        named_services_search: {grants: [conversations:read]}
+        named_services_call:                       # object.export rides the generic caller
+          operations:
+            object.export:     {grants: [conversations:export]}
+      # Selected-user (admin) scope additionally requires:
+      #   conversations:read:any_user / conversations:export:any_user
+```
+
+Full tenant/project all-user bulk export is deliberately not a `conv.object.*`
+operation; it stays a separate admin operation. The direct `conversations_export`
+MCP tool remains available as the immediate migration path while `conv` matures.
+
 ## Why Not Root `/mcp`
 
 KDCube MCP endpoints are bundle surfaces served by chat-proc. A root platform

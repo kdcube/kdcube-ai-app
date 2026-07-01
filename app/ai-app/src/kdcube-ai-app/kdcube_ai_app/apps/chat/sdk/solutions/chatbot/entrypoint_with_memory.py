@@ -621,48 +621,13 @@ class MemoryEntrypointMixin:
             read_user_ids_factory=self._memory_named_service_read_user_ids,
         )
 
-    def named_services(self):
-        from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers.registry import NamedServiceRegistry
-
-        super_factory = getattr(super(), "named_services", None)
-        registry = super_factory() if callable(super_factory) else None
-        if registry is None:
-            registry = NamedServiceRegistry()
-        if not isinstance(registry, NamedServiceRegistry):
-            raise RuntimeError(f"named_services() returned {type(registry).__name__}, expected NamedServiceRegistry")
+    def _named_service_providers(self) -> list:
+        # Contribute the memory provider; the base entrypoint owns the registry,
+        # discovery, and on_bundle_load plumbing.
+        providers = list(super()._named_service_providers())
         if self._memory_named_service_enabled():
-            registry.register(self._memory_named_service_provider())
-        return registry
-
-    async def _register_memory_named_service_discovery(self) -> None:
-        if not self._memory_named_service_enabled() or self.redis is None:
-            return
-        actor = getattr(self.comm_context, "actor", None)
-        tenant = str(getattr(actor, "tenant_id", None) or getattr(self.settings, "TENANT", "") or "").strip()
-        project = str(getattr(actor, "project_id", None) or getattr(self.settings, "PROJECT", "") or "").strip()
-        bundle_spec = getattr(getattr(self, "config", None), "ai_bundle_spec", None)
-        bundle_id = str(getattr(bundle_spec, "id", None) or "").strip()
-        if not tenant or not project or not bundle_id:
-            return
-        from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers.discovery import RedisNamedServiceDiscovery
-
-        registry = self.named_services()
-        entries = await RedisNamedServiceDiscovery(self.redis, tenant=tenant, project=project).register_registry(
-            registry,
-            bundle_id=bundle_id,
-        )
-        try:
-            self.logger.log(
-                f"[memory.named_services.discovery] registered providers={len(entries)} bundle={bundle_id}",
-                "INFO",
-            )
-        except Exception:
-            logger.info("[memory.named_services.discovery] registered providers=%s bundle=%s", len(entries), bundle_id)
-
-    async def on_bundle_load(self, **kwargs) -> None:
-        await super().on_bundle_load(**kwargs)
-        await self._register_memory_named_service_discovery()
-        return None
+            providers.append(self._memory_named_service_provider())
+        return providers
 
     async def _memory_user_preferences(self) -> Dict[str, Any]:
         store = self._memory_store()
