@@ -4,7 +4,7 @@ title: "Connection Hub Solution"
 summary: "Canonical map of Connection Hub roles: connection edges, identity-family resolution, request authenticators, authority projection, delegated connections, link flows, and widget auth-context transport."
 status: active
 tags: ["sdk", "solutions", "connections", "connection-hub", "identity", "auth", "authority", "delegated-connections"]
-updated_at: 2026-06-30
+updated_at: 2026-07-01
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/connection-edges/connection-edges-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/identity-family-resolver/identity-family-resolver-README.md
@@ -57,6 +57,153 @@ Connection Hub
   +-- Widget/Auth Context Transport
         host iframe/server config -> promoted auth headers
 ```
+
+## Descriptor Shape
+
+Connection Hub has two related but different descriptor branches:
+
+```yaml
+config:
+  identity:
+    # Current request-identity mechanics.
+    # This branch is intentionally narrow today.
+    authenticator_selector_cache: ...
+    authenticators: ...
+    role_resolver: ...
+    link_flows: ...
+
+  authority_registry:
+    # Canonical registry of authority realms.
+    authorities:
+      kdcube.platform:
+        label: KDCube platform authority
+        platform: true
+        providers: ...
+```
+
+`identity` is the existing operational branch for request authenticators,
+selector cache, role-resolution hooks, and link-flow UX. It is not the full
+authority registry.
+
+`authority_registry.authorities` is the canonical place for declaring authority
+realms and provider instances. A platform authority is not a separate
+descriptor kind. It is an authority with `platform: true`.
+
+This lets one deployment register multiple platform-capable authorities without
+creating one-off config keys:
+
+```yaml
+authority_registry:
+  authorities:
+    kdcube.platform:
+      platform: true
+      label: KDCube platform authority
+      providers:
+        cognito:
+          type: cognito
+          enabled: true
+          authenticator:
+            type: cognito_id_token
+
+        versatile_telegram_session:
+          type: bundle_session_login
+          enabled: true
+          label: Versatile Telegram platform session
+          host:
+            bundle_id: versatile@2026-03-31-13-36
+            route: public
+            operation: auth_telegram_session
+          input:
+            authenticator_ref:
+              authority_id: telegram.kdcube_ref
+              provider_id: telegram_bot_init_data
+              integration_id: telegram.kdcube_ref
+          issuer:
+            type: kdcube_session_token
+            ttl_seconds: 43200
+            cookie:
+              secure: true
+              same_site: lax
+          grants:
+            roles:
+              - kdcube:role:chat-user
+            permissions:
+              - kdcube:*:chat:*;read;write
+
+    telegram.kdcube_ref:
+      platform: false
+      label: KDCube Ref Telegram identity
+      providers:
+        telegram_bot_init_data:
+          type: telegram_init_data
+          enabled: true
+          authenticator:
+            secret_ref: identity.authenticators.telegram_kdcube_ref.bot_token
+```
+
+In this shape:
+
+```text
+authority -> provider instance
+```
+
+`providers.<id>` is a configured provider instance. `providers.<id>.type` is the
+implementation type/enum. The id and type may match for the normal single
+instance case, such as `providers.cognito.type: cognito`. They diverge only
+when a deployment registers multiple instances of the same provider type, for
+example `cognito_admin` and `cognito_customer`. A provider instance may have:
+
+- `authenticator`: verifies incoming auth material;
+- `issuer`: mints auth material;
+- `input.authenticator_ref`: points to another authenticator used as input;
+- `host`: names the bundle/API operation that executes the flow;
+- `grants`: grants/roles/permissions this provider may produce.
+
+For example, `versatile_telegram_session` is one provider instance. It consumes
+Telegram initData through the Telegram authenticator and issues a KDCube bundle
+session token for the platform authority.
+
+The hosting bundle does not need a local platform-session config branch. It is
+registered by its host operation:
+
+```yaml
+host:
+  bundle_id: versatile@2026-03-31-13-36
+  route: public
+  operation: auth_telegram_session
+```
+
+If the same bundle later hosts a Google login flow, it adds another provider
+instance:
+
+```yaml
+authority_registry:
+  authorities:
+    kdcube.platform:
+      providers:
+        versatile_google_session:
+          type: bundle_session_login
+          host:
+            bundle_id: versatile@2026-03-31-13-36
+            route: public
+            operation: auth_google_session
+          input:
+            authenticator_ref:
+              authority_id: google.accounts
+              provider_id: google_oidc
+          issuer:
+            type: kdcube_session_token
+            ttl_seconds: 43200
+          grants: ...
+```
+
+Legacy or intermediate descriptors may still keep request authenticators under
+`identity.authenticators` until that branch is migrated into
+`authority_registry.authorities.*.providers.*.authenticator`.
+
+The bundle remains the execution engine. Connection Hub remains the registry
+owner for authority ids, platform-ness, provider instances, allowed grants,
+TTL, and host metadata.
 
 ## One Mental Model
 

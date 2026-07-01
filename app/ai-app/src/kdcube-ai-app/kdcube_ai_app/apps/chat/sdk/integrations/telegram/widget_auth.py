@@ -145,13 +145,14 @@ async def resolve_identity(
     *,
     request: Any = None,
     telegram_init_data: str = "",
+    integration_id: str = "",
     allowed_roles: Iterable[str] | None = ("registered", "admin"),
     create_if_missing: bool = False,
 ) -> TelegramWidgetIdentity:
     init_data = str(telegram_init_data or "").strip() or extract_telegram_init_data_from_request(request)
     if not init_data:
         raise HTTPException(status_code=401, detail="Telegram initData is required")
-    integration_id = _auth_integration_id(request)
+    integration_id = str(integration_id or "").strip() or _auth_integration_id(request)
 
     max_age = int(
         integration_definition_value(

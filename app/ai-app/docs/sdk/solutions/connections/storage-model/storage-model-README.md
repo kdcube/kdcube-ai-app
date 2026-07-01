@@ -4,7 +4,7 @@ title: "Connection Hub Storage Model"
 summary: "Storage map for Connection Hub data: descriptors, secrets, request-authenticator metadata, connection edges, link challenges, delegated account tokens, and runtime caches."
 status: active
 tags: ["sdk", "connections", "connection-hub", "storage", "postgres", "secrets", "connection-edges"]
-updated_at: 2026-06-28
+updated_at: 2026-07-01
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/connection-hub-solution-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-properties-and-secrets-lifecycle-README.md
@@ -38,6 +38,7 @@ Redis/cache
 | Object | Current storage | Contains secrets? | Notes |
 | --- | --- | ---: | --- |
 | Provider/app config | `bundles.yaml` app props | no | Authority ids, authenticator ids, OAuth app definitions, descriptor authenticators. |
+| Authority registry metadata | `connection-hub@1-0.config.authority_registry` | no | Authority ids, `platform: true`, provider instances, provider types, host operations, allowed grants, TTL metadata. |
 | Bot token / OAuth client secret | `bundles.secrets.yaml` or secrets service | yes | Read through bundle secret lifecycle using `secret_ref`. |
 | Request-authenticator metadata | Postgres | no | Stores provider, authority id, authenticator id, `secret_ref`, verifier metadata. |
 | Connection edge | bundle-local JSON today | no | Delegates one authority identity to another authority identity. |
@@ -66,6 +67,46 @@ connection_hub_request_authenticators
 ```
 
 Secret values must not be stored here. Only `secret_ref` is stored.
+
+## Authority Registry Metadata
+
+Authority registry metadata is descriptor-backed. It is configuration, not
+proof and not a secret store:
+
+```yaml
+connection-hub@1-0:
+  config:
+    authority_registry:
+      authorities:
+        kdcube.platform:
+          platform: true
+          providers:
+            versatile_telegram_session:
+              type: bundle_session_login
+              host:
+                bundle_id: versatile@2026-03-31-13-36
+                route: public
+                operation: auth_telegram_session
+              input:
+                authenticator_ref:
+                  authority_id: telegram.kdcube_ref
+                  provider_id: telegram_bot_init_data
+                  integration_id: telegram.kdcube_ref
+              issuer:
+                type: kdcube_session_token
+                ttl_seconds: 43200
+              grants:
+                roles: [kdcube:role:chat-user]
+                permissions: [kdcube:*:chat:*;read;write]
+```
+
+The provider instance may reference a bundle-hosted operation, but roles,
+permissions, TTL, authority id, and `platform` flag belong to Connection Hub.
+The hosting bundle does not keep a separate platform-session policy branch; it
+is resolved by `host.bundle_id`, `host.route`, and `host.operation`.
+
+Verifier secrets still stay outside this registry and are reached by
+`secret_ref` through the secrets lifecycle.
 
 ## Delegated Credential Grant State Today
 

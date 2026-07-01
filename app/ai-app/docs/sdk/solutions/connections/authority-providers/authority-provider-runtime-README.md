@@ -4,7 +4,7 @@ title: "Authority Provider Runtime"
 summary: "Canonical Connection Hub runtime contract for authenticator selection, authority-scoped identities, linkers, grant resolvers, and surface guards."
 status: design
 tags: ["sdk", "solutions", "connections", "connection-hub", "authority-provider", "authenticator-selector", "surface-guard", "grants"]
-updated_at: 2026-06-28
+updated_at: 2026-07-01
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/connection-hub-solution-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/authority-providers/credential-envelope-README.md
@@ -59,6 +59,85 @@ authorize / reject
 | Authority Linker | Maps an identity from one authority to another, or returns null. |
 | Grant Resolver | Loads roles, permissions, scopes, tools, or operation grants for an identity under one authority. |
 | Surface Guard | Declares required authority/grants and asks the runtime to authorize the request. |
+
+## Authority Registry Descriptor
+
+Connection Hub keeps the authority registry separate from the older
+`identity.*` request-authenticator branch.
+
+```yaml
+authority_registry:
+  authorities:
+    kdcube.platform:
+      label: KDCube platform authority
+      platform: true
+      providers:
+        cognito:
+          type: cognito
+          enabled: true
+          authenticator: ...
+        versatile_telegram_session:
+          type: bundle_session_login
+          enabled: true
+          input: ...
+          issuer: ...
+          grants: ...
+
+    telegram.kdcube_ref:
+      label: KDCube Ref Telegram bot identity
+      platform: false
+      providers:
+        telegram_bot_init_data:
+          type: telegram_init_data
+          authenticator: ...
+```
+
+`platform: true` means identities from that authority can be used as the
+platform subject for platform surfaces, economics, and ownership projection.
+There can be more than one platform-capable authority in a deployment. For
+example, a deployment may use Cognito and a bundle-session issuer during a
+custom-authority migration.
+
+Provider instances live under the authority they operate for. `providers.<id>`
+is a configured provider instance; `providers.<id>.type` is the implementation
+type/enum. The id and type may match for the normal single-instance case, such
+as `providers.cognito.type: cognito`. They diverge only when there are multiple
+instances of the same provider type. A provider instance can have one optional
+authenticator, one optional issuer, one optional input authenticator reference,
+and one host operation.
+
+For a bundle-hosted platform session login provider, Connection Hub owns the
+provider metadata:
+
+```yaml
+authority_registry:
+  authorities:
+    kdcube.platform:
+      platform: true
+      providers:
+        versatile_telegram_session:
+          type: bundle_session_login
+          host:
+            bundle_id: versatile@2026-03-31-13-36
+            route: public
+            operation: auth_telegram_session
+          input:
+            authenticator_ref:
+              authority_id: telegram.kdcube_ref
+              provider_id: telegram_bot_init_data
+              integration_id: telegram.kdcube_ref
+          issuer:
+            type: kdcube_session_token
+            ttl_seconds: 43200
+          grants:
+            roles: [kdcube:role:chat-user]
+            permissions: [kdcube:*:chat:*;read;write]
+```
+
+This keeps authority semantics registered once in Connection Hub while allowing
+provider engines to live in bundles, SDK modules, or platform auth managers.
+The hosting bundle is resolved by its `host` operation and does not carry a
+local platform-session policy branch.
 
 ## Request Hints Are Not Truth
 

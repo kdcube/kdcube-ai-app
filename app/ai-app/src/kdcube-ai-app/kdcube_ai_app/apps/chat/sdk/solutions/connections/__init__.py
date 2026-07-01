@@ -37,6 +37,12 @@ from .connection_edges import (
     connection_hub_bundle_id_from_entrypoint,
     request_origin,
 )
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.authority_registry_client import AuthorityRegistryClient
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.authority_registry_config import (
+    authority_provider_instances,
+    authority_registry_config,
+    resolve_authority_provider_instance,
+)
 from .authenticators import (
     AuthRequestHints,
     AuthenticatedRequest,
@@ -122,6 +128,10 @@ __all__ = [
     "connection_hub_bundle_id",
     "connection_hub_bundle_id_from_entrypoint",
     "request_origin",
+    "AuthorityRegistryClient",
+    "authority_provider_instances",
+    "authority_registry_config",
+    "resolve_authority_provider_instance",
     "AuthRequestHints",
     "AuthenticatedRequest",
     "AuthenticatorRegistration",

@@ -14,6 +14,7 @@ configuration.
 
 ## Entries
 
+- [2026-07-01 - Authority registry descriptor](2026-07-01-authority-registry-descriptor.md)
 - [2026-06-29 - Delegated credential surface split](2026-06-29-delegated-credential-surface-split.md)
 - [2026-06-28 - Identity family resolver](2026-06-28-identity-family-resolver.md)
 - [2026-06-28 - Explicit Telegram claim confirmation](2026-06-28-explicit-telegram-claim-confirmation.md)

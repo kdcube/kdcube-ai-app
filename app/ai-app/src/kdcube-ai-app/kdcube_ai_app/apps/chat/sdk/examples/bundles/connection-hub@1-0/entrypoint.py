@@ -18,6 +18,10 @@ from kdcube_ai_app.apps.chat.sdk.integrations.telegram import (
 )
 from kdcube_ai_app.apps.chat.sdk.config import get_secret
 from kdcube_ai_app.apps.chat.sdk.solutions.connections.authenticators.models import RequestEnvelope
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.authority_registry_config import (
+    authority_registry_config,
+    resolve_authority_provider_instance,
+)
 from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint_with_memory import BaseEntrypointWithMemory
 from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers import (
     NamedServiceRegistry,
@@ -344,6 +348,11 @@ def _connections_config(entrypoint: Any) -> Dict[str, Any]:
         raw = props.get("connections")
         return dict(raw) if isinstance(raw, Mapping) else {}
     return {}
+
+
+def _authority_registry_config(entrypoint: Any) -> Dict[str, Any]:
+    props = getattr(entrypoint, "bundle_props", None)
+    return authority_registry_config(props if isinstance(props, Mapping) else {})
 
 
 def _oauth_adapter_config(entrypoint: Any, request: Any) -> Dict[str, Any]:
@@ -1063,6 +1072,7 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
                             "connection_edge_challenge_create": {"visibility": {"user_types": []}},
                             "connection_edge_challenge_claim": {"visibility": {"user_types": []}},
                             "connection_edge_challenge_status": {"visibility": {"user_types": []}},
+                            "authority_provider_resolve": {"visibility": {"user_types": []}},
                             "identity_family_resolve": {"visibility": {"user_types": []}},
                             "delegated_identity_scope_resolve": {"visibility": {"user_types": []}},
                             "identity_resolve": {"visibility": {"user_types": []}},
@@ -1490,6 +1500,50 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
             user_id=user_id,
             fingerprint=fingerprint,
         )
+
+    # ── authority registry (descriptor-backed authority/provider metadata) ────
+
+    @api(method="POST", alias="authority_provider_resolve", route="operations", **_api_visibility("authority_provider_resolve"))
+    async def authority_provider_resolve(
+        self,
+        data: Optional[Dict[str, Any]] = None,
+        authority_id: str = "",
+        provider_id: str = "",
+        provider_type: str = "",
+        host_bundle_id: str = "",
+        host_route: str = "",
+        host_operation: str = "",
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+        payload = _payload(
+            data,
+            authority_id=authority_id,
+            provider_id=provider_id,
+            provider_type=provider_type,
+            host_bundle_id=host_bundle_id,
+            host_route=host_route,
+            host_operation=host_operation,
+            **kwargs,
+        )
+        result = resolve_authority_provider_instance(
+            _authority_registry_config(self),
+            authority_id=str(payload.get("authority_id") or "").strip(),
+            provider_id=str(payload.get("provider_id") or "").strip(),
+            provider_type=str(payload.get("provider_type") or "").strip(),
+            host_bundle_id=str(payload.get("host_bundle_id") or "").strip(),
+            host_route=str(payload.get("host_route") or "").strip(),
+            host_operation=str(payload.get("host_operation") or "").strip(),
+        )
+        if result.get("ok"):
+            LOGGER.info(
+                "[connection-hub.authority_provider_resolve] authority=%s provider=%s type=%s host=%s/%s",
+                result.get("authority_id"),
+                result.get("provider_id"),
+                result.get("provider_type"),
+                str((result.get("provider") or {}).get("host") or {}),
+                str(payload.get("host_operation") or "").strip(),
+            )
+        return result
 
     # ── connection edges (external identity -> delegated platform principal) ─
 
