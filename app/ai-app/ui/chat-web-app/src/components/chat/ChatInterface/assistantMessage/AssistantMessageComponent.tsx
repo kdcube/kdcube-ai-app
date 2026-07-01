@@ -1,4 +1,5 @@
 import {RNFile, TurnStep} from "../../../../features/chatController/chatBase.ts";
+import {InlineImageItemsPanel} from "./InlineImageItemsPanel.tsx";
 import {useAppSelector} from "../../../../app/store.ts";
 import {selectCurrentTurn} from "../../../../features/chat/chatStateSlice.ts";
 import React, {ReactNode, useCallback, useMemo, useRef, useState} from "react";
@@ -199,8 +200,18 @@ export const AssistantMessageComponent = ({
         )
     }, [streamedText])
 
+    const isImageFile = (f: RNFile): boolean =>
+        !!(f.mime && f.mime.toLowerCase().startsWith("image/"));
+
     const filesMemo = useMemo(() => {
-        return (<DownloadItemsPanel items={files.map(it => it.content)}/>)
+        const fileContents = files.map(it => it.content);
+        const imageItems = fileContents.filter(isImageFile);
+        return (
+            <>
+                <InlineImageItemsPanel items={imageItems}/>
+                <DownloadItemsPanel items={fileContents}/>
+            </>
+        );
     }, [files])
 
     const messageMemo = useMemo(() => {
