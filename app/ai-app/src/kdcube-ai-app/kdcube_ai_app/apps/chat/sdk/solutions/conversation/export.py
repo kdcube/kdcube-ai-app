@@ -1,7 +1,15 @@
-"""Conversation export service.
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Elena Viter
 
-This module is product logic, not platform auth. It assumes the calling surface
-has already authorized `conversations:read` for the current delegated credential.
+"""Conversation export as a first-class SDK capability.
+
+Owns the export operation (request shape, validation, limiting) so publishing
+surfaces — the `kdcube-services` MCP tool `conversations_export`, and later the
+`conv` named-service `object.export` — call SDK code rather than carrying
+conversation domain logic themselves.
+
+This is product logic, not platform auth: it assumes the calling surface has
+already authorized `conversations:read` for the current delegated credential.
 """
 
 from __future__ import annotations
@@ -80,3 +88,11 @@ class ConversationExportService:
             "limited": len(records) > max_records,
             "conversations": records[:max_records],
         }
+
+
+__all__ = [
+    "DEFAULT_EXPORT_LIMIT",
+    "MAX_EXPORT_LIMIT",
+    "ConversationExportRequest",
+    "ConversationExportService",
+]

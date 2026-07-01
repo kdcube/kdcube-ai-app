@@ -16,12 +16,38 @@ explicitly. `named_service.py` exposes the same capability as a search
 named-service provider; `instructions.py` carries the realm-trait intro.
 """
 
-from .instructions import (
+from kdcube_ai_app.apps.chat.sdk.solutions.conversation.export import (
+    DEFAULT_EXPORT_LIMIT,
+    MAX_EXPORT_LIMIT,
+    ConversationExportRequest,
+    ConversationExportService,
+)
+from kdcube_ai_app.apps.chat.sdk.solutions.conversation.instructions import (
     CONVERSATION_NAMED_SERVICE_NAMESPACE,
     CONVERSATION_NAMESPACE_INTRO,
+)
+from kdcube_ai_app.apps.chat.sdk.solutions.conversation.read import (
+    ConversationExportScope,
+    ConversationGetRequest,
+    ConversationListRequest,
+    ConversationReadScope,
+    ConversationReadService,
+    ConversationScopeError,
+    make_control_plane_read_service,
 )
 
 __all__ = [
     "CONVERSATION_NAMED_SERVICE_NAMESPACE",
     "CONVERSATION_NAMESPACE_INTRO",
+    "DEFAULT_EXPORT_LIMIT",
+    "MAX_EXPORT_LIMIT",
+    "ConversationExportRequest",
+    "ConversationExportScope",
+    "ConversationExportService",
+    "ConversationGetRequest",
+    "ConversationListRequest",
+    "ConversationReadScope",
+    "ConversationReadService",
+    "ConversationScopeError",
+    "make_control_plane_read_service",
 ]

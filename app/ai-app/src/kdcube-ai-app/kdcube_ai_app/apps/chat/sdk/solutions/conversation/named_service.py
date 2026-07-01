@@ -32,6 +32,7 @@ from typing import Any, Awaitable, Callable
 
 from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers import (
     NamedServiceContext,
+    NamedServiceOperationSpec,
     NamedServiceProvider,
     NamedServiceProviderSpec,
     NamedServiceRequest,
@@ -43,7 +44,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers import (
     named_service_provider,
 )
 
-from .api import (
+from kdcube_ai_app.apps.chat.sdk.solutions.conversation.api import (
     ALLOWED_SCOPES,
     DEFAULT_TARGETS,
     SCOPE_CONVERSATION,
@@ -53,9 +54,20 @@ from .api import (
     ConversationSearchParams,
     run_conversation_search,
 )
-from .instructions import (
+from kdcube_ai_app.apps.chat.sdk.solutions.conversation.export import DEFAULT_EXPORT_LIMIT
+from kdcube_ai_app.apps.chat.sdk.solutions.conversation.instructions import (
     CONVERSATION_NAMED_SERVICE_NAMESPACE,
     CONVERSATION_NAMESPACE_INTRO,
+)
+from kdcube_ai_app.apps.chat.sdk.solutions.conversation.read import (
+    SCOPE_SELF as READ_SCOPE_SELF,
+    SCOPE_USER as READ_SCOPE_USER,
+    ConversationExportScope,
+    ConversationGetRequest,
+    ConversationListRequest,
+    ConversationReadScope,
+    ConversationReadService,
+    ConversationScopeError,
 )
 
 
@@ -66,6 +78,59 @@ TURN_MIME = "application/vnd.kdcube.conversation.turn+json;version=1"
 NAMED_SERVICE_OBJECT_SCHEMA = "kdcube.named_service.object.v1"
 LOGGER = logging.getLogger("kdcube.sdk.conversation.named_service")
 
+# Conversation-object (whole-conversation) surface, alongside the turn search.
+CONVERSATION_OBJECT_KIND = "conversation"
+CONVERSATION_MIME = "application/vnd.kdcube.conversation+json;version=1"
+OBJECT_EXPORT = "object.export"
+
+_CONVERSATION_TRANSPORTS = (TRANSPORT_LOCAL, TRANSPORT_API)
+
+
+def _conversation_operations() -> dict:
+    # Default read ops (list/search/get/schema/action/...) plus the custom
+    # object.export, which is not in the standard operation vocabulary.
+    ops = build_default_operations(_CONVERSATION_TRANSPORTS, include_mutations=False)
+    ops[OBJECT_EXPORT] = NamedServiceOperationSpec(OBJECT_EXPORT, _CONVERSATION_TRANSPORTS)
+    return ops
+
+
+_CONVERSATION_OBJECT_KINDS = (OBJECT_KIND, CONVERSATION_OBJECT_KIND)
+
+# Advisory grant hints for the managed boundary (Connection Hub). NOT enforced
+# here: the provider makes no platform-role decisions — boundary policy owns
+# consent/enforcement. Selected-user access is expected to require `:any_user`.
+_CONVERSATION_GRANT_HINTS = {
+    "object.list": ["conversations:read"],
+    "object.search": ["conversations:read"],
+    "object.get": ["conversations:read"],
+    "object.export": ["conversations:export"],
+    "selected_user": ["conversations:read:any_user", "conversations:export:any_user"],
+}
+_CONVERSATION_METADATA = {
+    "viewer_surface": "sdk.conversation.viewer",
+    "canonical_ref": "conv:conversation:<conversation_id>",
+    "grant_hints": _CONVERSATION_GRANT_HINTS,
+}
+_CONVERSATION_DESCRIPTION = (
+    "SDK conversation namespace provider: search what was said, and list/get/export "
+    "the user's conversations (selected-user access is admin-scoped)."
+)
+
+
+def conversation_ref(conversation_id: str) -> str:
+    return f"conv:conversation:{conversation_id}" if conversation_id else ""
+
+
+def _conversation_id_from_ref(value: Any) -> str:
+    text = str(value or "").strip()
+    if text.startswith("conv:conversation:"):
+        return text[len("conv:conversation:"):].split("/", 1)[0].split("?", 1)[0]
+    if text.startswith("conv:") and text.count(":") == 1:  # bare conv:<id>
+        return text[len("conv:"):].split("/", 1)[0].split("?", 1)[0]
+    if ":" not in text:  # plain id
+        return text
+    return ""
+
 # A backend exposing search/search_turn_catalog/get_turn_log, bound to the
 # caller's tenant/project schema. Built per request from the named-service ctx.
 ConversationBackendFactory = Callable[[NamedServiceContext], ConversationSearchBackend]
@@ -73,6 +138,11 @@ ConversationBackendFactory = Callable[[NamedServiceContext], ConversationSearchB
 # conversation search context. This is the seam where a public/site API sets the
 # context explicitly.
 ConversationContextFactory = Callable[[NamedServiceContext], ConversationSearchContext]
+# Builds an SDK-owned user-scoped read/export service bound to the caller's
+# tenant/project. This is the seam for list/get/export (the provider never
+# touches control-plane internals). Optional: when absent, list/get/export
+# report the read service is not configured and search still works.
+ConversationReadServiceFactory = Callable[[NamedServiceContext], ConversationReadService]
 
 
 CONVERSATION_SEARCH_FILTERS: dict[str, Any] = {
@@ -145,14 +215,14 @@ def conversation_search_named_service_spec(*, bundle_id: str | None = None) -> N
         bundle_id=bundle_id,
         namespace=NAMESPACE,
         refs=("conv:*",),
-        object_kinds=(OBJECT_KIND,),
+        object_kinds=_CONVERSATION_OBJECT_KINDS,
         search_scopes=CONVERSATION_SEARCH_SCOPES,
-        # Search realm: read operations only (no upsert/delete/host_file).
-        operations=build_default_operations((TRANSPORT_LOCAL, TRANSPORT_API), include_mutations=False),
+        # Read realm: search + list/get/export (no upsert/delete/host_file).
+        operations=_conversation_operations(),
         label="Conversations",
-        description="SDK conversation namespace provider for searching what was said across the user's conversations.",
+        description=_CONVERSATION_DESCRIPTION,
         intro=CONVERSATION_NAMESPACE_INTRO,
-        metadata={"viewer_surface": "sdk.conversation.viewer"},
+        metadata=dict(_CONVERSATION_METADATA),
     )
 
 
@@ -236,13 +306,13 @@ def _conversation_turn_to_named_service_object(hit: dict[str, Any], *, namespace
     provider_id=PROVIDER_ID,
     namespace=NAMESPACE,
     refs=("conv:*",),
-    object_kinds=(OBJECT_KIND,),
+    object_kinds=_CONVERSATION_OBJECT_KINDS,
     search_scopes=CONVERSATION_SEARCH_SCOPES,
-    operations=build_default_operations((TRANSPORT_LOCAL, TRANSPORT_API), include_mutations=False),
+    operations=_conversation_operations(),
     label="Conversations",
-    description="SDK conversation namespace provider for searching what was said across the user's conversations.",
+    description=_CONVERSATION_DESCRIPTION,
     intro=CONVERSATION_NAMESPACE_INTRO,
-    metadata={"viewer_surface": "sdk.conversation.viewer"},
+    metadata=dict(_CONVERSATION_METADATA),
 )
 class ConversationSearchNamedServiceProvider(NamedServiceProvider):
     """Read-only named-service provider over the conversation memory realm.
@@ -260,11 +330,49 @@ class ConversationSearchNamedServiceProvider(NamedServiceProvider):
         *,
         context_factory: ConversationContextFactory,
         search_backend_factory: ConversationBackendFactory,
+        read_service_factory: ConversationReadServiceFactory | None = None,
         bundle_id: str | None = None,
     ) -> None:
         super().__init__(conversation_search_named_service_spec(bundle_id=bundle_id))
         self._context_factory = context_factory
         self._search_backend_factory = search_backend_factory
+        self._read_service_factory = read_service_factory
+
+    # -- read/export scope + guards -----------------------------------------
+
+    def _read_scope(self, ctx: NamedServiceContext, request: NamedServiceRequest) -> ConversationReadScope:
+        """Map the request onto a read scope. Default is the caller's own
+        conversations; an explicit `scope.mode="user"` + `user_id` selects a user
+        (an admin path the managed boundary is expected to have granted)."""
+        raw = request.filters.get("scope") or request.payload.get("scope") or {}
+        if not isinstance(raw, dict):
+            raw = {}
+        mode = _text(raw.get("mode")).lower()
+        selected = _text(raw.get("user_id"))
+        use_selected = mode == READ_SCOPE_USER and bool(selected)
+        return ConversationReadScope(
+            mode=READ_SCOPE_USER if use_selected else READ_SCOPE_SELF,
+            current_user_id=_text(ctx.user_id),
+            user_id=selected,
+        )
+
+    def _read_not_configured(self, request: NamedServiceRequest) -> NamedServiceResponse:
+        return NamedServiceResponse.error_response(
+            code="conversation_read_not_configured",
+            message="This conversation provider was registered without a read/export service.",
+            status=501,
+            provider=self.provider_identity(),
+            namespace=request.namespace or NAMESPACE,
+        )
+
+    def _scope_error(self, request: NamedServiceRequest, exc: ConversationScopeError) -> NamedServiceResponse:
+        return NamedServiceResponse.error_response(
+            code="conversation_scope_invalid",
+            message=str(exc),
+            status=400,
+            provider=self.provider_identity(),
+            namespace=request.namespace or NAMESPACE,
+        )
 
     async def provider_about(self, ctx: NamedServiceContext, request: NamedServiceRequest) -> NamedServiceResponse:
         del ctx, request
@@ -283,15 +391,44 @@ class ConversationSearchNamedServiceProvider(NamedServiceProvider):
 
     async def provider_capabilities(self, ctx: NamedServiceContext, request: NamedServiceRequest) -> NamedServiceResponse:
         del ctx
+        read_enabled = self._read_service_factory is not None
         return NamedServiceResponse.ok_response(
             provider=self.provider_identity(),
             namespace=request.namespace or NAMESPACE,
             capabilities={
                 "search": True,
-                "get": False,
+                "list": read_enabled,
+                "get": read_enabled,
+                "export": read_enabled,
                 "upsert": False,
                 "delete": False,
                 "actions": ["preview", "describe", "capabilities"],
+                "scopes": [READ_SCOPE_SELF, READ_SCOPE_USER],
+                "grant_hints": _CONVERSATION_GRANT_HINTS,
+            },
+        )
+
+    async def provider_schema(self, ctx: NamedServiceContext, request: NamedServiceRequest) -> NamedServiceResponse:
+        del ctx
+        return NamedServiceResponse.ok_response(
+            provider=self.provider_identity(),
+            namespace=request.namespace or NAMESPACE,
+            extra={
+                "object_kinds": {
+                    CONVERSATION_OBJECT_KIND: {
+                        "mime": CONVERSATION_MIME,
+                        "canonical_ref": "conv:conversation:<conversation_id>",
+                        "summary_fields": ["conversation_id", "user_id", "title", "started_at", "last_at", "turn_count"],
+                        "full_fields": ["conversation_id", "tenant", "project", "user_id", "source", "started_at", "title", "turns"],
+                        "turn_fields": ["turn_id", "ts", "user", "assistant", "attachments", "citations"],
+                    },
+                    OBJECT_KIND: {"mime": TURN_MIME, "note": "conversation turn search hit (object.search)"},
+                },
+                "scope": {
+                    "mode": {"enum": [READ_SCOPE_SELF, READ_SCOPE_USER], "default": READ_SCOPE_SELF},
+                    "user_id": "selected platform user id (required for mode=user; admin, :any_user grants)",
+                },
+                "grant_hints": _CONVERSATION_GRANT_HINTS,
             },
         )
 
@@ -366,7 +503,137 @@ class ConversationSearchNamedServiceProvider(NamedServiceProvider):
         )
 
     async def object_list(self, ctx: NamedServiceContext, request: NamedServiceRequest) -> NamedServiceResponse:
-        return await self.object_search(ctx, request)
+        # Conversation summaries for the resolved user. Without a read service the
+        # provider is search-only, so fall back to the turn search for back-compat.
+        if self._read_service_factory is None:
+            return await self.object_search(ctx, request)
+        try:
+            scope = self._read_scope(ctx, request)
+        except ConversationScopeError as exc:
+            return self._scope_error(request, exc)
+        filters = dict(request.filters or {})
+        service = self._read_service_factory(ctx)
+        list_request = ConversationListRequest(
+            scope=scope,
+            since=_text(filters.get("since") or filters.get("from")),
+            days=_int_or_none(filters.get("days")) or 3650,
+            last_n=_int_or_none(filters.get("last_n") or request.limit),
+        )
+        summaries = await service.list_user_conversations(list_request)
+        items = [_conversation_summary_to_object(summary) for summary in summaries]
+        return NamedServiceResponse.ok_response(
+            provider=self.provider_identity(),
+            namespace=request.namespace or NAMESPACE,
+            items=items,
+            extra={"scope": scope.normalized_mode, "count": len(items)},
+        )
+
+    async def object_get(self, ctx: NamedServiceContext, request: NamedServiceRequest) -> NamedServiceResponse:
+        if self._read_service_factory is None:
+            return self._read_not_configured(request)
+        conversation_id = _conversation_id_from_ref(request.object_ref) or _text(request.object_id)
+        if not conversation_id:
+            return NamedServiceResponse.error_response(
+                code="conversation_id_required",
+                message="object_ref (conv:conversation:<id>) or object_id is required.",
+                status=400,
+                provider=self.provider_identity(),
+                namespace=request.namespace or NAMESPACE,
+            )
+        try:
+            scope = self._read_scope(ctx, request)
+        except ConversationScopeError as exc:
+            return self._scope_error(request, exc)
+        service = self._read_service_factory(ctx)
+        record = await service.get_conversation(
+            ConversationGetRequest(scope=scope, conversation_id=conversation_id)
+        )
+        if record is None:
+            return NamedServiceResponse.error_response(
+                code="conversation_not_found",
+                message=f"Conversation was not found: {conversation_id}",
+                status=404,
+                provider=self.provider_identity(),
+                namespace=request.namespace or NAMESPACE,
+                object_ref=conversation_ref(conversation_id),
+            )
+        return NamedServiceResponse.ok_response(
+            provider=self.provider_identity(),
+            namespace=request.namespace or NAMESPACE,
+            object_ref=conversation_ref(conversation_id),
+            object=_conversation_to_object(record),
+        )
+
+    async def object_export(self, ctx: NamedServiceContext, request: NamedServiceRequest) -> NamedServiceResponse:
+        # User-scoped export (self by default; selected-user is admin). NOT the
+        # all-user tenant/project bulk export — that stays a separate operation.
+        if self._read_service_factory is None:
+            return self._read_not_configured(request)
+        try:
+            scope = self._read_scope(ctx, request)
+        except ConversationScopeError as exc:
+            return self._scope_error(request, exc)
+        filters = dict(request.filters or {})
+        service = self._read_service_factory(ctx)
+        export_request = ConversationExportScope(
+            scope=scope,
+            since=_text(filters.get("since") or filters.get("from")),
+            limit=_int_or_none(filters.get("limit") or request.limit) or DEFAULT_EXPORT_LIMIT,
+        )
+        result = await service.export_conversations(export_request)
+        return NamedServiceResponse.ok_response(
+            provider=self.provider_identity(),
+            namespace=request.namespace or NAMESPACE,
+            extra={**result, "scope": scope.normalized_mode},
+        )
+
+
+def _conversation_summary_to_object(summary: dict[str, Any]) -> dict[str, Any]:
+    conversation_id = _text(summary.get("conversation_id"))
+    ref = conversation_ref(conversation_id)
+    obj = {
+        "schema": NAMED_SERVICE_OBJECT_SCHEMA,
+        "ref": ref,
+        "namespace": NAMESPACE,
+        "object_kind": CONVERSATION_OBJECT_KIND,
+        "label": _text(summary.get("title")) or conversation_id,
+        "title": _text(summary.get("title")) or conversation_id,
+        "mime": CONVERSATION_MIME,
+        "identity": {
+            "object_ref": ref,
+            "object_id": conversation_id,
+            "object_kind": CONVERSATION_OBJECT_KIND,
+            "namespace": NAMESPACE,
+        },
+        "body": {
+            key: summary.get(key)
+            for key in ("conversation_id", "user_id", "tenant", "project", "started_at", "last_at", "turn_count")
+            if summary.get(key) not in (None, "")
+        },
+    }
+    return {key: value for key, value in obj.items() if value not in (None, "", [])}
+
+
+def _conversation_to_object(record: dict[str, Any]) -> dict[str, Any]:
+    conversation_id = _text(record.get("conversation_id"))
+    ref = conversation_ref(conversation_id)
+    obj = {
+        "schema": NAMED_SERVICE_OBJECT_SCHEMA,
+        "ref": ref,
+        "namespace": NAMESPACE,
+        "object_kind": CONVERSATION_OBJECT_KIND,
+        "label": _text(record.get("title")) or conversation_id,
+        "title": _text(record.get("title")) or conversation_id,
+        "mime": CONVERSATION_MIME,
+        "identity": {
+            "object_ref": ref,
+            "object_id": conversation_id,
+            "object_kind": CONVERSATION_OBJECT_KIND,
+            "namespace": NAMESPACE,
+        },
+        "body": record,
+    }
+    return {key: value for key, value in obj.items() if value not in (None, "", [])}
 
 
 def _int_or_none(value: Any) -> int | None:
@@ -382,22 +649,27 @@ def make_conversation_search_named_service_provider(
     *,
     context_factory: ConversationContextFactory,
     search_backend_factory: ConversationBackendFactory,
+    read_service_factory: ConversationReadServiceFactory | None = None,
     bundle_id: str | None = None,
 ) -> ConversationSearchNamedServiceProvider:
     return ConversationSearchNamedServiceProvider(
         context_factory=context_factory,
         search_backend_factory=search_backend_factory,
+        read_service_factory=read_service_factory,
         bundle_id=bundle_id,
     )
 
 
 __all__ = [
+    "CONVERSATION_OBJECT_KIND",
     "CONVERSATION_SEARCH_FILTERS",
     "CONVERSATION_SEARCH_SCOPES",
+    "ConversationReadServiceFactory",
     "ConversationSearchNamedServiceProvider",
     "NAMESPACE",
     "OBJECT_KIND",
     "PROVIDER_ID",
+    "conversation_ref",
     "conversation_search_named_service_spec",
     "make_conversation_search_named_service_provider",
 ]

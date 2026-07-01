@@ -42,7 +42,15 @@ see_also:
 ## Validate
 
 ```bash
-python -m py_compile entrypoint.py surfaces/mcp/conversations.py services/conversations/export.py
+python -m py_compile entrypoint.py surfaces/mcp/conversations.py services/conversations/__init__.py
+```
+
+Export domain logic lives in the conversation SDK
+(`sdk.solutions.conversation.export`); this bundle only re-exports and publishes
+it. To compile-check the SDK owner from the source root:
+
+```bash
+python -m py_compile kdcube_ai_app/apps/chat/sdk/solutions/conversation/export.py
 ```
 
 Then reload the bundle and test the real public MCP URL through Connection Hub

@@ -73,11 +73,21 @@ The first service families are `conversations` and `named_services`.
 
 ```text
 public/mcp/conversations
-  -> conversations_export
-  -> ConversationExportService
+  -> conversations_export                         (bundle: MCP tool schema only)
+  -> ConversationExportService                    (SDK: sdk/solutions/conversation/export.py)
   -> ControlPlaneDataSource
   -> conversation browser/store
 ```
+
+Conversation domain logic is **SDK-owned**. `ConversationExportRequest` and
+`ConversationExportService` live in
+`sdk/solutions/conversation/export.py`; `kdcube-services@1-0` is a thin publisher
+— `services/conversations/__init__.py` re-exports the SDK classes, and
+`surfaces/mcp/conversations.py` wraps them as the `conversations_export` tool.
+This bundle owns the tool schema and delegability policy, not the export
+implementation. The `conv` named-service will grow to own list/search/get/export
+in the same SDK solution; direct conversations MCP stays as the Yay parity path
+while that matures.
 
 The default descriptor makes `conversations:read` delegable only by
 `kdcube:role:super-admin`. That is policy, not bundle identity. Future user
