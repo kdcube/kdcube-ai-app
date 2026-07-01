@@ -24,13 +24,15 @@ from kdcube_ai_app.apps.chat.sdk.solutions.conversation.named_service import (
 
 
 class FakeReadService:
-    def __init__(self, *, summaries=None, record=None, export=None):
+    def __init__(self, *, summaries=None, record=None, export=None, fetched=None):
         self._summaries = summaries or []
         self._record = record
+        self._fetched = fetched
         self._export = export or {"ok": True, "count": 0, "total_available": 0, "limited": False, "conversations": []}
         self.list_scope = None
         self.get_scope = None
         self.get_conversation_id = None
+        self.fetch_scope = None
         self.export_scope = None
 
     async def list_user_conversations(self, request):
@@ -41,6 +43,12 @@ class FakeReadService:
         self.get_scope = request.scope
         self.get_conversation_id = request.conversation_id
         return self._record
+
+    async def fetch_conversation(self, request):
+        # Rich per-turn artifacts (object.get conv:conversation distills these).
+        self.fetch_scope = request.scope
+        self.get_conversation_id = request.conversation_id
+        return dict(self._fetched or {})
 
     async def export_conversations(self, request):
         self.export_scope = request.scope
@@ -95,20 +103,41 @@ async def test_object_list_returns_summaries_with_self_scope():
 
 
 @pytest.mark.asyncio
-async def test_object_get_returns_object():
-    record = {"conversation_id": "c1", "tenant": "t", "project": "p", "user_id": "u", "title": "First", "turns": []}
-    provider = _provider(FakeReadService(record=record))
+async def test_object_get_returns_interleaved_timeline():
+    # Rich per-turn artifacts -> lightweight chronological timeline. The produced
+    # file surfaces as an assistant.file event with a conv:fi: ref.
+    fetched = {
+        "conversation_id": "c1", "user_id": "u", "conversation_title": "News",
+        "turns": [{
+            "turn_id": "t1",
+            "artifacts": [
+                {"type": "chat:user", "ts": "2026-07-01T22:00:00Z", "data": {"text": "make a chart"}},
+                {"type": "artifact:assistant.file", "ts": "2026-07-01T22:02:00Z",
+                 "data": {"payload": {"filename": "chart.png", "mime": "image/png",
+                                       "artifact_path": "fi:turn_t1.outputs/chart.png"}}},
+                {"type": "chat:assistant", "ts": "2026-07-01T22:03:00Z", "data": {"text": "here it is"}},
+            ],
+        }],
+    }
+    provider = _provider(FakeReadService(fetched=fetched))
     resp = await provider.object_get(NamedServiceContext(user_id="u"), _req("object.get", object_ref="conv:conversation:c1"))
     assert resp.ok
     obj = resp.ret["object"]
     assert obj["object_kind"] == "conversation"
     assert obj["ref"] == "conv:conversation:c1"
-    assert obj["body"] == record
+    turns = obj["body"]["turns"]
+    assert [t["turn_id"] for t in turns] == ["t1"]
+    events = turns[0]["events"]
+    assert [e["type"] for e in events] == ["user.message", "assistant.file", "assistant.message"]
+    file_event = events[1]
+    assert file_event["ref"] == "conv:fi:turn_t1.outputs/chart.png"
+    assert file_event["filename"] == "chart.png"
+    assert obj["body"]["turn_count"] == 1
 
 
 @pytest.mark.asyncio
 async def test_object_get_missing_returns_404():
-    provider = _provider(FakeReadService(record=None))
+    provider = _provider(FakeReadService(fetched={}))  # no turns -> not found
     resp = await provider.object_get(NamedServiceContext(user_id="u"), _req("object.get", object_ref="conv:conversation:nope"))
     assert not resp.ok
     assert resp.error.code == "conversation_not_found"

@@ -67,6 +67,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.conversation.read import (
     ConversationReadService,
     ConversationScopeError,
 )
+from kdcube_ai_app.apps.chat.sdk.solutions.conversation.view import build_conversation_timeline
 from kdcube_ai_app.apps.chat.sdk.solutions.conversation.presentation import (
     CONVERSATION_OBJECT_KIND,
     NAMESPACE,
@@ -481,10 +482,15 @@ class ConversationSearchNamedServiceProvider(NamedServiceProvider):
         except ConversationScopeError as exc:
             return self._scope_error(request, exc)
         service = self._read_service_factory(ctx)
-        record = await service.get_conversation(
+        # Fetch the RICH per-turn artifacts, then distill to a lightweight,
+        # time-ordered timeline. This surfaces assistant-produced files and user
+        # attachments as conv:fi: refs (which object.get conv:fi: can materialize),
+        # plus thinking, responses, produced artifacts, and sources — unlike the
+        # thin normalized record which drops all of those.
+        raw = await service.fetch_conversation(
             ConversationGetRequest(scope=scope, conversation_id=conversation_id)
         )
-        if record is None:
+        if not (raw or {}).get("turns"):
             return NamedServiceResponse.error_response(
                 code="conversation_not_found",
                 message=f"Conversation was not found: {conversation_id}",
@@ -493,11 +499,12 @@ class ConversationSearchNamedServiceProvider(NamedServiceProvider):
                 namespace=request.namespace or NAMESPACE,
                 object_ref=conversation_ref(conversation_id),
             )
+        view = build_conversation_timeline(raw)
         return NamedServiceResponse.ok_response(
             provider=self.provider_identity(),
             namespace=request.namespace or NAMESPACE,
             object_ref=conversation_ref(conversation_id),
-            object=conversation_to_object(record),
+            object=conversation_to_object(view),
         )
 
     async def _object_get_file(self, ctx: NamedServiceContext, request: NamedServiceRequest):
