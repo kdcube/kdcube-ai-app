@@ -1,10 +1,10 @@
 openapi: 3.0.3
 info:
-  title: KDCube Admin Bundle Storage Interface
+  title: KDCube Admin Storage API Interface
   version: 0.1.0
   description: >
-    Privileged storage browser, export, deletion, and bundle-registry
-    inspection contract for the built-in kdcube.admin bundle.
+    Privileged storage browser, export, deletion, and app-registry
+    inspection contract consumed by the kdcube-services bundle_storage widget.
 paths:
   /api/admin/control-plane/storage/roots:
     get:

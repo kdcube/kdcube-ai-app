@@ -1,12 +1,41 @@
 ---
 id: kdcube-services@1-0/interface
 title: "KDCube Services Interface"
-summary: "Public contract for KDCube-owned managed service MCP surfaces."
+summary: "Public contract for KDCube-owned managed service widgets and MCP surfaces."
 status: active
-tags: ["interface", "mcp", "delegated-credentials", "connection-hub"]
+tags: ["interface", "widget", "mcp", "storage", "delegated-credentials", "connection-hub"]
 ---
 
 # KDCube Services — Interface
+
+## Widget: `bundle_storage`
+
+```text
+GET /api/integrations/bundles/{tenant}/{project}/kdcube-services@1-0/widgets/bundle_storage
+```
+
+Visibility: privileged platform users.
+
+Static source:
+
+```text
+sdk://solutions/storage/ui.widget.storage
+```
+
+Backend APIs:
+
+| API | Runtime | Purpose |
+| --- | --- | --- |
+| `/api/admin/control-plane/storage/roots` | ingress | Discover browsable storage roots and availability. |
+| `/api/admin/control-plane/storage/tenants-projects` | ingress | Discover tenant/project folders for scoped roots. |
+| `/api/admin/control-plane/storage/list` | ingress | Browse selected local filesystem path. |
+| `/api/admin/control-plane/storage/export` | ingress | Export selected files/directories. |
+| `/api/admin/control-plane/storage/delete` | ingress | Delete selected files/directories. |
+| `/admin/integrations/bundles/storage-registry` | proc | Read active app registry storage references. |
+
+Ingress must have the same local storage roots mounted that the widget is
+allowed to browse. In ECS that means `/kdcube-storage`, `/bundle-storage`, and
+`/bundles` are mounted into `chat-ingress`.
 
 ## MCP Endpoint: Conversations
 
@@ -250,7 +279,13 @@ Claude / external MCP client
   -> access token is issued with selected tool + conversations:read
   -> MCP tools/list / tools/call
   -> proc managed MCP guard validates token/resource/tool/grant
-  -> kdcube-services FastMCP tool
-  -> ConversationExportService
+  -> kdcube-services FastMCP tool                 (bundle: tool schema/wrapper)
+  -> ConversationExportService                    (SDK: sdk/solutions/conversation/export.py)
   -> control-plane conversation store
 ```
+
+The export implementation is SDK-owned: `ConversationExportRequest` and
+`ConversationExportService` live in `sdk/solutions/conversation/export.py`. This
+bundle only publishes them — `services/conversations/__init__.py` re-exports the
+SDK classes and `surfaces/mcp/conversations.py` wraps them as the
+`conversations_export` tool. The tool contract above is unchanged by that split.

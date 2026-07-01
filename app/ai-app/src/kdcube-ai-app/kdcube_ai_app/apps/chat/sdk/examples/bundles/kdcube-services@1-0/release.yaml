@@ -6,6 +6,8 @@ bundle:
 
     Highlights
 
+    - Serves the privileged `bundle_storage` operational storage browser,
+      built from `sdk://solutions/storage/ui.widget.storage`.
     - Adds managed MCP surface public/mcp/conversations.
     - Adds conversations_export as the platform-native replacement for the old
       root /mcp conversation export shortcut.

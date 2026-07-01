@@ -1,5 +1,6 @@
 import asyncio
 import json
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -110,23 +111,23 @@ def test_singleton_workflow_rebinds_request_context(monkeypatch):
     clear_bundle_loader_caches()
 
 
-def test_admin_bundle_storage_widget_source_resolves(monkeypatch):
+def test_kdcube_services_storage_widget_source_resolves(monkeypatch):
     clear_bundle_loader_caches()
     monkeypatch.setattr(entrypoint_mod, "get_settings", lambda: SimpleNamespace(TENANT="demo", PROJECT="demo-project"))
     monkeypatch.setattr(entrypoint_mod, "create_kv_cache_from_env", lambda: None)
 
-    admin = _admin_bundle_entry()
+    bundle_root = Path(__file__).resolve().parents[1] / "sdk" / "examples" / "bundles" / "kdcube-services@1-0"
     spec = BundleSpec(
-        path=admin.path,
-        module=admin.module,
-        singleton=bool(admin.singleton),
+        path=str(bundle_root),
+        module="entrypoint",
+        singleton=False,
     )
-    cfg = _DummyConfig(bundle_id="kdcube.admin")
+    cfg = _DummyConfig(bundle_id="kdcube-services@1-0")
     cfg.ai_bundle_spec = SimpleNamespace(
-        id="kdcube.admin",
-        path=admin.path,
-        module=admin.module,
-        singleton=bool(admin.singleton),
+        id="kdcube-services@1-0",
+        path=str(bundle_root),
+        module="entrypoint",
+        singleton=False,
     )
 
     workflow, _ = get_workflow_instance(spec, cfg, comm_context=_ctx(user_type="privileged"))
@@ -134,7 +135,7 @@ def test_admin_bundle_storage_widget_source_resolves(monkeypatch):
     src_folder = defaults["ui"]["widgets"]["bundle_storage"]["src_folder"]
     src_path = workflow._resolve_ui_src_path(src_folder=src_folder, bundle_root=workflow._bundle_root())
 
-    assert src_folder == "ui/storage"
+    assert src_folder == "sdk://solutions/storage/ui.widget.storage"
     assert src_path.exists()
     assert (src_path / "package.json").exists()
 

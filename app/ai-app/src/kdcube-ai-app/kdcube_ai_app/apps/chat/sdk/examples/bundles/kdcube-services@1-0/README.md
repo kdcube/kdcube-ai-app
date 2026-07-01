@@ -3,10 +3,11 @@ id: kdcube-services@1-0
 title: "KDCube Services App"
 summary: "Built-in KDCube service surfaces for delegated external clients. It exposes managed MCP tools for KDCube conversations and configured named-service namespaces."
 status: active
-tags: ["app", "bundle", "mcp", "connection-hub", "delegated-credentials", "conversations"]
+tags: ["app", "bundle", "mcp", "storage", "connection-hub", "delegated-credentials", "conversations"]
 module: entrypoint
 singleton: false
 primary_surfaces:
+  - "Widget `bundle_storage` — privileged operational storage browser"
   - "MCP endpoint `conversations` — delegated access to conversations_export"
   - "MCP endpoint `named_services` — delegated access to configured named-service namespaces"
 links:
@@ -25,6 +26,34 @@ are admin-only because their descriptor grants are delegable only by admins.
 Other future tools can be regular user services.
 
 ## Current Services
+
+### Storage Browser
+
+Widget:
+
+```text
+/api/integrations/bundles/{tenant}/{project}/kdcube-services@1-0/widgets/bundle_storage
+```
+
+`bundle_storage` is the privileged operational storage browser. It is built from
+the shared SDK source:
+
+```text
+sdk://solutions/storage/ui.widget.storage
+```
+
+The widget consumes the platform admin storage APIs:
+
+| API | Purpose |
+| --- | --- |
+| `/api/admin/control-plane/storage/roots` | Discover bundle storage, managed app folders, and shared storage roots. |
+| `/api/admin/control-plane/storage/list` | Browse a selected local filesystem root. |
+| `/api/admin/control-plane/storage/export` | Export selected files/directories as a zip. |
+| `/api/admin/control-plane/storage/delete` | Delete selected files/directories after confirmation. |
+| `/admin/integrations/bundles/storage-registry` | Compare managed app folders with the active registry. |
+
+Cloud deployments must mount the browsed filesystem roots into `chat-ingress`,
+because the storage APIs are served by ingress.
 
 ### Conversations
 

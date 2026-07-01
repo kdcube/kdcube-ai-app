@@ -6,7 +6,7 @@ from langgraph.graph import END, START, StateGraph
 
 from kdcube_ai_app.apps.chat.sdk.protocol import ExternalEventPayload
 from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint import BaseEntrypoint
-from kdcube_ai_app.infra.plugin.bundle_loader import bundle_entrypoint, bundle_id, mcp
+from kdcube_ai_app.infra.plugin.bundle_loader import api, bundle_entrypoint, bundle_id, mcp, ui_widget
 from kdcube_ai_app.infra.service_hub.inventory import BundleState, Config
 
 try:
@@ -23,6 +23,10 @@ except Exception:  # pragma: no cover - bundle loader may import as loose module
 
 BUNDLE_ID = "kdcube-services@1-0"
 WORKFLOW_NAME = "kdcube_services"
+STORAGE_WIDGET_SRC = "sdk://solutions/storage/ui.widget.storage"
+WIDGET_BUILD_COMMAND = (
+    "npm install --no-package-lock && OUTDIR=<VI_BUILD_DEST_ABSOLUTE_PATH> npm run build"
+)
 
 
 @bundle_entrypoint(
@@ -118,7 +122,37 @@ class KDCubeServicesEntrypoint(BaseEntrypoint):
                     },
                 },
             },
+            "ui": {
+                "widgets": {
+                    "bundle_storage": {
+                        "enabled": True,
+                        "src_folder": STORAGE_WIDGET_SRC,
+                        "build_command": WIDGET_BUILD_COMMAND,
+                    },
+                },
+            },
         }
+
+    @api(
+        alias="bundle_storage_widget",
+        route="operations",
+        user_types=("privileged",),
+    )
+    @ui_widget(
+        icon={
+            "tailwind": "heroicons-outline:archive-box",
+            "lucide": "Archive",
+        },
+        alias="bundle_storage",
+        user_types=("privileged",),
+    )
+    def bundle_storage_widget(self, **kwargs):
+        del kwargs
+        return [
+            "<div style=\"font-family:system-ui,sans-serif;padding:16px\">"
+            "Bundle storage is served from sdk://solutions/storage/ui.widget.storage after build."
+            "</div>"
+        ]
 
     @mcp(
         alias="conversations",

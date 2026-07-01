@@ -19,7 +19,7 @@ export function App() {
   }, [dispatch]);
 
   if (!ready) {
-    return <div className="boot-state">Loading storage admin...</div>;
+    return <div className="boot-state">Loading storage browser...</div>;
   }
 
   return <StorageDashboard />;
