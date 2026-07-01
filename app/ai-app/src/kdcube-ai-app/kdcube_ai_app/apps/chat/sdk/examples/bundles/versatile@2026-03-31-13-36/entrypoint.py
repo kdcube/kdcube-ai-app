@@ -26,7 +26,6 @@ from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint_with_economic impo
 from kdcube_ai_app.apps.chat.sdk.solutions.canvas import api as canvas_api
 from kdcube_ai_app.apps.chat.sdk.solutions.canvas.events.defaults import default_canvas_event_source_specs
 from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers import (
-    NamedServiceRegistry,
     named_service_agent_event_source_namespaces,
     named_service_agent_pull_namespaces,
     register_configured_named_service_artifact_rehosters,
@@ -41,6 +40,7 @@ from .event_filter import BundleEventFilter
 from .agents.main import VersatileWorkflow
 from .services import telemetry as telemetry_service
 from .services.canvas import CanvasRuntimeConfig, VersatileCanvasService, payload_from_call
+from .services import platform_session_issuer
 
 BUNDLE_ID = "versatile@2026-03-31-13-36"
 WORKFLOW_NAME = "versatile"
@@ -403,16 +403,12 @@ class VersatileEntrypoint(BaseEntrypointWithEconomics):
     async def _apply_canvas_patch_payload(self, payload: Mapping[str, Any]) -> Dict[str, Any]:
         return await self._canvas_service().apply_patch_payload(payload)
 
-    def named_services(self):
-        super_factory = getattr(super(), "named_services", None)
-        registry = super_factory() if callable(super_factory) else None
-        if registry is None:
-            registry = NamedServiceRegistry()
-        if not isinstance(registry, NamedServiceRegistry):
-            raise RuntimeError(f"named_services() returned {type(registry).__name__}, expected NamedServiceRegistry")
-        if registry.get("sdk.canvas.pins") is None:
-            registry.register(self._canvas_service().named_service_provider())
-        return registry
+    def _named_service_providers(self) -> list:
+        # Contribute the canvas pins provider; BaseEntrypoint owns the registry,
+        # discovery, and on_bundle_load publishing.
+        providers = list(super()._named_service_providers())
+        providers.append(self._canvas_service().named_service_provider())
+        return providers
 
     def _namespace_styles(self) -> Mapping[str, Any]:
         namespace_styles = self.bundle_prop("namespace_styles", {}) or {}
@@ -850,6 +846,22 @@ class VersatileEntrypoint(BaseEntrypointWithEconomics):
     )
     async def telegram_webhook(self, request: Any = None, **update) -> Dict[str, Any]:
         return await telegram_user_admin.handle_webhook(self, request=request, **update)
+
+    # Config contract: docs/integrations/platform-session-issuer.md
+    @api(method="POST", alias="auth_telegram_session", route="public")
+    async def auth_telegram_session(
+        self,
+        request: Any = None,
+        telegram_init_data: str = "",
+        **kwargs,
+    ):
+        return await platform_session_issuer.issue_telegram_session(
+            self,
+            request=request,
+            telegram_init_data=telegram_init_data,
+            payload=kwargs,
+            bundle_id=BUNDLE_ID,
+        )
 
     @api(method="GET", alias="telegram_profile", route="public")
     async def telegram_profile(

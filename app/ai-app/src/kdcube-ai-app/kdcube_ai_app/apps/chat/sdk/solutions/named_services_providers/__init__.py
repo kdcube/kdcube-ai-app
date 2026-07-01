@@ -62,6 +62,7 @@ from .discovery import (
     bind_named_service_discovery,
     fetch_namespace_intros,
     get_current_named_service_discovery,
+    publish_registry_discovery,
 )
 from .client import NamedServiceClient
 from .instructions import NAMED_SERVICES_REACT_ADDITIONAL_INSTRUCTIONS
@@ -181,6 +182,7 @@ __all__ = [
     "register_configured_named_service_artifact_rehosters",
     "register_configured_named_service_event_sources",
     "RedisNamedServiceDiscovery",
+    "publish_registry_discovery",
     "bind_named_service_discovery",
     "get_current_named_service_discovery",
 ]

@@ -21,7 +21,6 @@ from kdcube_ai_app.apps.chat.sdk.solutions.connections.authenticators.models imp
 from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint_with_memory import BaseEntrypointWithMemory
 from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers import (
     NamedServiceRegistry,
-    RedisNamedServiceDiscovery,
     dispatch_named_service_api_request,
 )
 from kdcube_ai_app.infra.plugin.bundle_loader import api, bundle_entrypoint, bundle_id, ui_widget
@@ -1007,20 +1006,31 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
     ) -> None:
         super().__init__(config=config, pg_pool=pg_pool, redis=redis, comm_context=comm_context)
         self._named_service_registry: Optional[NamedServiceRegistry] = None
+        self._connection_hub_ns: Optional[ConnectionHubProvider] = None
 
     # ── named-service registry ───────────────────────────────────────────────
 
+    def _connection_hub_provider(self) -> ConnectionHubProvider:
+        if self._connection_hub_ns is None:
+            self._connection_hub_ns = ConnectionHubProvider(entrypoint=self, bundle_id=BUNDLE_ID)
+        return self._connection_hub_ns
+
+    def _named_service_providers(self) -> list:
+        # Contribute the connection-hub provider; BaseEntrypoint owns the registry,
+        # discovery, and on_bundle_load publishing.
+        return list(super()._named_service_providers()) + [self._connection_hub_provider()]
+
     def _named_services(self) -> NamedServiceRegistry:
+        # Local registry for the bundle's own named-service API dispatch.
         if self._named_service_registry is None:
             registry = NamedServiceRegistry()
-            registry.register(ConnectionHubProvider(entrypoint=self, bundle_id=BUNDLE_ID))
+            registry.register(self._connection_hub_provider())
             self._named_service_registry = registry
         return self._named_service_registry
 
-    def named_services(self) -> NamedServiceRegistry:
-        return self._named_services()
-
     async def on_bundle_load(self, **kwargs: Any) -> None:
+        # BaseEntrypoint.on_bundle_load (via super) publishes named-service
+        # discovery from _named_service_providers().
         await super().on_bundle_load(**kwargs)
         pg_pool = self.pg_pool or kwargs.get("pg_pool")
         if pg_pool is not None:
@@ -1036,31 +1046,6 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
                 LOGGER.exception("[connection-hub] on_bundle_load: failed to ensure/bootstrap authenticator schema")
         else:
             LOGGER.warning("[connection-hub] on_bundle_load: no pg_pool; request authenticator metadata store unavailable")
-        redis = self.redis or kwargs.get("redis")
-        if redis is None:
-            LOGGER.info("[connection-hub] on_bundle_load: no redis; skipping discovery registration")
-            return
-        ident = self.runtime_identity()
-        try:
-            discovery = RedisNamedServiceDiscovery(
-                redis,
-                tenant=ident.get("tenant") or "default",
-                project=ident.get("project") or "default",
-            )
-            entries = await discovery.register_registry(
-                self._named_services(),
-                bundle_id=BUNDLE_ID,
-                transport="bundle_registry",
-                registry_method="named_services",
-            )
-            LOGGER.info(
-                "[connection-hub] registered named-service providers tenant=%s project=%s providers=%s",
-                ident.get("tenant"),
-                ident.get("project"),
-                [entry.spec.provider_id for entry in entries],
-            )
-        except Exception:
-            LOGGER.exception("[connection-hub] on_bundle_load: failed to register named-service providers")
 
     def configuration_defaults(self) -> Dict[str, Any]:
         return {

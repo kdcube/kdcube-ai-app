@@ -402,33 +402,31 @@ class BaseEntrypoint:
         return registry
 
     async def _publish_named_services_discovery(self) -> None:
-        redis = getattr(self, "redis", None)
-        if redis is None:
-            return
-        # Use the actual registry so this works whether the bundle contributes via
-        # `_named_service_providers()` or overrides `named_services()` directly.
-        registry = self.named_services()
-        if not registry.providers():
-            return
-        actor = getattr(getattr(self, "comm_context", None), "actor", None)
-        settings = getattr(self, "settings", None)
-        tenant = str(getattr(actor, "tenant_id", None) or getattr(settings, "TENANT", "") or "").strip()
-        project = str(getattr(actor, "project_id", None) or getattr(settings, "PROJECT", "") or "").strip()
-        bundle_id = self._named_services_bundle_id()
-        if not tenant or not project or not bundle_id:
-            return
+        # Discovery orchestration lives in the SDK named-services module; the base
+        # only resolves identity and delegates. Uses the resolved registry so it
+        # works whether the bundle contributes via `_named_service_providers()` or
+        # overrides `named_services()` directly.
         from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers.discovery import (
-            RedisNamedServiceDiscovery,
+            publish_registry_discovery,
         )
 
-        entries = await RedisNamedServiceDiscovery(redis, tenant=tenant, project=project).register_registry(
-            registry,
-            bundle_id=bundle_id,
-        )
+        # Canonical request-bound identity, with actor/settings as a fallback.
         try:
-            self.logger.log(f"[named_services.discovery] registered providers={len(entries)} bundle={bundle_id}", "INFO")
+            ident = self.runtime_identity() or {}
         except Exception:
-            pass
+            ident = {}
+        actor = getattr(getattr(self, "comm_context", None), "actor", None)
+        settings = getattr(self, "settings", None)
+        tenant = str(ident.get("tenant") or getattr(actor, "tenant_id", None) or getattr(settings, "TENANT", "") or "").strip()
+        project = str(ident.get("project") or getattr(actor, "project_id", None) or getattr(settings, "PROJECT", "") or "").strip()
+        await publish_registry_discovery(
+            self.named_services(),
+            redis=getattr(self, "redis", None),
+            tenant=tenant,
+            project=project,
+            bundle_id=self._named_services_bundle_id(),
+            logger=getattr(self, "logger", None),
+        )
 
     async def on_props_changed(
         self,

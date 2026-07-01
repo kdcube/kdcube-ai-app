@@ -625,6 +625,37 @@ async def fetch_namespace_intros(
         return {}
 
 
+async def publish_registry_discovery(
+    registry: Any,
+    *,
+    redis: Any,
+    tenant: str,
+    project: str,
+    bundle_id: str,
+    logger: Any = None,
+) -> list:
+    """Register every provider in ``registry`` for cross-bundle discovery.
+
+    The single place bundle entrypoints (via ``BaseEntrypoint``) and other callers
+    publish a named-service registry. No-ops when redis is missing, the registry
+    is empty, or tenant/project/bundle_id are incomplete.
+    """
+    if redis is None or not tenant or not project or not bundle_id:
+        return []
+    if not registry.providers():
+        return []
+    entries = await RedisNamedServiceDiscovery(redis, tenant=tenant, project=project).register_registry(
+        registry,
+        bundle_id=bundle_id,
+    )
+    if logger is not None:
+        try:
+            logger.log(f"[named_services.discovery] registered providers={len(entries)} bundle={bundle_id}", "INFO")
+        except Exception:
+            pass
+    return entries
+
+
 __all__ = [
     "DEFAULT_DISCOVERY_TTL_SECONDS",
     "NAMED_SERVICE_DISCOVERY_SCHEMA",
@@ -635,4 +666,5 @@ __all__ = [
     "fetch_namespace_intros",
     "get_current_named_service_discovery",
     "intros_from_entries",
+    "publish_registry_discovery",
 ]
