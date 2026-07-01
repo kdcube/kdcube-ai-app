@@ -92,6 +92,14 @@ class _PooledSearchBackend:
     async def get_turn_log(self, *, turn_id: str, conversation_id: Optional[str] = None) -> Dict[str, Any]:
         return await self._ensure_browser().get_turn_log(turn_id=turn_id, conversation_id=conversation_id)
 
+    async def materialize_file(self, *, fi_ref: str, conversation_id: str = "") -> Dict[str, Any]:
+        """Materialize a `fi:` artifact to bytes via the browser's runtime (user-scoped)."""
+        from kdcube_ai_app.apps.chat.sdk.solutions.conversation.files import materialize_fi_artifact
+
+        return await materialize_fi_artifact(
+            browser=self._ensure_browser(), fi_ref=fi_ref, conversation_id=conversation_id,
+        )
+
 
 def make_conversation_search_backend(
     *,

@@ -20,9 +20,14 @@ NAMESPACE = CONVERSATION_NAMED_SERVICE_NAMESPACE  # "conv"
 
 TURN_OBJECT_KIND = "conversation.turn"
 CONVERSATION_OBJECT_KIND = "conversation"
+CONVERSATION_FILE_OBJECT_KIND = "conversation.file"
 TURN_MIME = "application/vnd.kdcube.conversation.turn+json;version=1"
 CONVERSATION_MIME = "application/vnd.kdcube.conversation+json;version=1"
 NAMED_SERVICE_OBJECT_SCHEMA = "kdcube.named_service.object.v1"
+
+# A file artifact referenced by a turn, addressed through the conv namespace as
+# `conv:fi:<fi-body>` — a conv-namespaced view of a `fi:` logical path.
+CONV_FILE_REF_PREFIX = "conv:fi:"
 
 
 def _text(value: Any) -> str:
@@ -37,6 +42,8 @@ def conversation_id_from_ref(value: Any) -> str:
     text = _text(value)
     if text.startswith("conv:conversation:"):
         return text[len("conv:conversation:"):].split("/", 1)[0].split("?", 1)[0]
+    if text.startswith(CONV_FILE_REF_PREFIX):  # conv:fi: is a file ref, not a conversation
+        return ""
     if text.startswith("conv:") and text.count(":") == 1:  # bare conv:<id>
         return text[len("conv:"):].split("/", 1)[0].split("?", 1)[0]
     if ":" not in text:  # plain id
@@ -44,8 +51,49 @@ def conversation_id_from_ref(value: Any) -> str:
     return ""
 
 
+def conv_file_ref(fi_path: Any) -> str:
+    """Round-trippable conv-namespaced handle for a `fi:` artifact path.
+
+    `fi:<body>` -> `conv:fi:<body>`. An already-`conv:fi:` ref or a non-`fi:`
+    value (e.g. an `ar:`/`tc:` recovery handle) is returned unchanged.
+    """
+    raw = _text(fi_path)
+    if raw.startswith(CONV_FILE_REF_PREFIX):
+        return raw
+    if raw.startswith("fi:"):
+        return f"{CONV_FILE_REF_PREFIX}{raw[len('fi:'):]}"
+    return raw
+
+
+def is_conv_file_ref(value: Any) -> bool:
+    return _text(value).startswith(CONV_FILE_REF_PREFIX)
+
+
+def fi_path_from_conv_ref(value: Any) -> str:
+    """`conv:fi:<body>` -> `fi:<body>`. Tolerates a bare `fi:` ref; returns "" otherwise."""
+    raw = _text(value)
+    if raw.startswith(CONV_FILE_REF_PREFIX):
+        return f"fi:{raw[len(CONV_FILE_REF_PREFIX):]}"
+    if raw.startswith("fi:"):
+        return raw
+    return ""
+
+
 def _compact(obj: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in obj.items() if value not in (None, "", [])}
+
+
+def _present_snippet(sn: dict[str, Any]) -> dict[str, Any]:
+    """Lean snippet for a turn hit. The `path` handle is presented as a
+    round-trippable `conv:fi:<...>` ref when it is a file artifact, so the client
+    can pass it straight to object.get; non-file handles pass through unchanged."""
+    out: dict[str, Any] = {}
+    for key in ("role", "path", "text", "ts"):
+        value = sn.get(key)
+        if value in (None, ""):
+            continue
+        out[key] = conv_file_ref(value) if key == "path" else value
+    return out
 
 
 def turn_hit_to_object(hit: dict[str, Any], *, namespace: str = NAMESPACE) -> dict[str, Any]:
@@ -69,10 +117,7 @@ def turn_hit_to_object(hit: dict[str, Any], *, namespace: str = NAMESPACE) -> di
         "conversation_id": conversation_id,
         "turn_id": turn_id,
         "turn_index_path": hit.get("turn_index_path"),
-        "snippets": [
-            {key: sn.get(key) for key in ("role", "path", "text", "ts") if sn.get(key) not in (None, "")}
-            for sn in snippets
-        ],
+        "snippets": [_present_snippet(sn) for sn in snippets],
         "ordinal": hit.get("ordinal"),
         "total_turns": hit.get("total_turns"),
     })
@@ -141,6 +186,45 @@ def conversation_to_object(record: dict[str, Any]) -> dict[str, Any]:
     return _compact(obj)
 
 
+def conversation_file_to_object(
+    *,
+    ref: str,
+    filename: str,
+    mime: str,
+    size: int,
+    encoding: str = "text",
+    content: Any = None,
+    note: str = "",
+) -> dict[str, Any]:
+    """Shape a materialized `conv:fi:` file into a single named-service object.
+
+    `encoding` is "text" (content is the decoded text), "base64" (content is a
+    base64 string), or "none" (metadata only — too large / unreadable).
+    """
+    obj = {
+        "schema": NAMED_SERVICE_OBJECT_SCHEMA,
+        "ref": ref,
+        "namespace": NAMESPACE,
+        "object_kind": CONVERSATION_FILE_OBJECT_KIND,
+        "title": filename or ref,
+        "mime": mime,
+        "identity": {
+            "object_ref": ref,
+            "object_kind": CONVERSATION_FILE_OBJECT_KIND,
+            "namespace": NAMESPACE,
+        },
+        "body": _compact({
+            "filename": filename,
+            "mime": mime,
+            "size": size,
+            "encoding": encoding,
+            "content": content,
+            "note": note,
+        }),
+    }
+    return _compact(obj)
+
+
 def conversation_schema_payload(
     *, grant_hints: dict[str, Any], scopes: list[str], search_filters: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -154,10 +238,32 @@ def conversation_schema_payload(
                 "turn_fields": ["turn_id", "ts", "user", "assistant", "attachments", "citations"],
             },
             TURN_OBJECT_KIND: {"mime": TURN_MIME, "note": "conversation turn search hit (object.search)"},
+            CONVERSATION_FILE_OBJECT_KIND: {
+                "canonical_ref": "conv:fi:<path>",
+                "note": (
+                    "A file artifact referenced by a turn — an uploaded attachment, a produced "
+                    "output (e.g. a summary.md), a snapshot, or a pulled external attachment."
+                ),
+            },
         },
         "scope": {
             "mode": {"enum": list(scopes), "default": scopes[0] if scopes else "self"},
             "user_id": "selected platform user id (required for mode=user; admin, :any_user grants)",
+        },
+        "files": {
+            "operation": "object.get",
+            "ref": "conv:fi:<path>",
+            "purpose": (
+                "Turns reference files — uploaded attachments, produced outputs, snapshots, pulled "
+                "external attachments. Search results present these as conv:fi:<path> handles, and "
+                "fi:<path> refs also appear inside turn text (e.g. working summaries). To read a "
+                "referenced file, call object.get with its conv:fi:<path> ref (an fi: path seen in "
+                "text is the same artifact — address it as conv:fi:<that-path>)."
+            ),
+            "returns": (
+                "the file: {ref, filename, mime, size, encoding, content} — text inline for text "
+                "files; base64 for small binaries; metadata only when too large."
+            ),
         },
         "search": {
             "operation": "object.search",
@@ -194,14 +300,20 @@ def conversation_schema_payload(
 __all__ = [
     "CONVERSATION_MIME",
     "CONVERSATION_OBJECT_KIND",
+    "CONVERSATION_FILE_OBJECT_KIND",
+    "CONV_FILE_REF_PREFIX",
     "NAMED_SERVICE_OBJECT_SCHEMA",
     "NAMESPACE",
     "TURN_MIME",
     "TURN_OBJECT_KIND",
+    "conv_file_ref",
+    "conversation_file_to_object",
     "conversation_id_from_ref",
     "conversation_ref",
     "conversation_schema_payload",
     "conversation_summary_to_object",
     "conversation_to_object",
+    "fi_path_from_conv_ref",
+    "is_conv_file_ref",
     "turn_hit_to_object",
 ]

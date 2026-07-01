@@ -27,8 +27,9 @@ wired into any bundle.
 
 from __future__ import annotations
 
+import base64
 import logging
-from typing import Any, Awaitable, Callable
+from typing import Any, AsyncIterator, Awaitable, Callable, Mapping
 
 from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers import (
     NamedServiceContext,
@@ -37,6 +38,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers import (
     NamedServiceRequest,
     NamedServiceResponse,
     NamedServiceSearchScope,
+    NamedServiceStreamResult,
     TRANSPORT_API,
     TRANSPORT_LOCAL,
     build_default_operations,
@@ -69,11 +71,14 @@ from kdcube_ai_app.apps.chat.sdk.solutions.conversation.presentation import (
     CONVERSATION_OBJECT_KIND,
     NAMESPACE,
     TURN_OBJECT_KIND as OBJECT_KIND,
+    conversation_file_to_object,
     conversation_id_from_ref,
     conversation_ref,
     conversation_schema_payload,
     conversation_summary_to_object,
     conversation_to_object,
+    fi_path_from_conv_ref,
+    is_conv_file_ref,
     turn_hit_to_object,
 )
 
@@ -456,7 +461,10 @@ class ConversationSearchNamedServiceProvider(NamedServiceProvider):
             extra={"scope": scope.normalized_mode, "count": len(items)},
         )
 
-    async def object_get(self, ctx: NamedServiceContext, request: NamedServiceRequest) -> NamedServiceResponse:
+    async def object_get(self, ctx: NamedServiceContext, request: NamedServiceRequest):
+        # conv:fi:<path> -> a file artifact referenced by a turn.
+        if is_conv_file_ref(request.object_ref):
+            return await self._object_get_file(ctx, request)
         if self._read_service_factory is None:
             return self._read_not_configured(request)
         conversation_id = conversation_id_from_ref(request.object_ref) or _text(request.object_id)
@@ -492,6 +500,95 @@ class ConversationSearchNamedServiceProvider(NamedServiceProvider):
             object=conversation_to_object(record),
         )
 
+    async def _object_get_file(self, ctx: NamedServiceContext, request: NamedServiceRequest):
+        """Materialize a conv:fi:<path> file artifact.
+
+        A materialization request (response_mode=stream / react.pull) streams the
+        bytes; a plain MCP object.get returns a JSON object with the content inline
+        (text) or bounded base64 (binary).
+        """
+        from kdcube_ai_app.apps.chat.sdk.solutions.conversation.files import is_text_mime
+        from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import logical_artifact_conversation_id
+
+        ref = _text(request.object_ref)
+        if self._search_backend_factory is None:
+            return NamedServiceResponse.error_response(
+                code="conversation_file_not_configured",
+                message="This conversation provider has no materialization backend; conv:fi: retrieval is unavailable.",
+                status=501, provider=self.provider_identity(), namespace=request.namespace or NAMESPACE,
+            )
+        fi_ref = fi_path_from_conv_ref(ref)
+        if not fi_ref:
+            return NamedServiceResponse.error_response(
+                code="conversation_file_ref_invalid",
+                message="Expected a conv:fi:<path> file ref.",
+                status=400, provider=self.provider_identity(), namespace=request.namespace or NAMESPACE,
+            )
+        backend = self._search_backend_factory(ctx)
+        materialize = getattr(backend, "materialize_file", None)
+        if materialize is None:
+            return NamedServiceResponse.error_response(
+                code="conversation_file_not_supported",
+                message="The configured search backend does not support file materialization.",
+                status=501, provider=self.provider_identity(), namespace=request.namespace or NAMESPACE,
+            )
+        conv_id = logical_artifact_conversation_id(fi_ref) or _text(ctx.conversation_id)
+        LOGGER.info(
+            "[conversation.named_service.file] ref=%s fi=%s conversation_id=%s user_id=%s",
+            ref, fi_ref, conv_id, ctx.user_id,
+        )
+        result = await materialize(fi_ref=fi_ref, conversation_id=conv_id)
+        if not result.get("ok"):
+            reason = _text(result.get("reason")) or "error"
+            if reason == "too_large":
+                detail = result.get("detail") or {}
+                obj = conversation_file_to_object(
+                    ref=ref, filename=_text(detail.get("filename")), mime=_text(detail.get("mime")),
+                    size=int(detail.get("size") or 0), encoding="none",
+                    note="File too large to inline; retrieve it in-app via react.pull.",
+                )
+                return NamedServiceResponse.ok_response(
+                    provider=self.provider_identity(), namespace=request.namespace or NAMESPACE,
+                    object_ref=ref, object=obj,
+                )
+            status = 404 if reason in ("not_found", "unresolvable_ref") else 500
+            return NamedServiceResponse.error_response(
+                code=f"conversation_file_{reason}",
+                message=f"Could not materialize the file: {reason}.",
+                status=status, provider=self.provider_identity(), namespace=request.namespace or NAMESPACE,
+                object_ref=ref,
+            )
+
+        data = result.get("data") or b""
+        filename = _text(result.get("filename"))
+        mime = _text(result.get("mime")) or "application/octet-stream"
+        size = int(result.get("size") or len(data))
+
+        if _is_materialization_request(request):
+            meta = conversation_file_to_object(ref=ref, filename=filename, mime=mime, size=size, encoding="none")
+            response = NamedServiceResponse.ok_response(
+                provider=self.provider_identity(), namespace=request.namespace or NAMESPACE,
+                object_ref=ref, object=meta,
+            )
+            return NamedServiceStreamResult(
+                response=response, chunks=_single_chunk(data), filename=filename or "file.bin", media_type=mime,
+            )
+
+        if is_text_mime(mime):
+            try:
+                content, encoding = data.decode("utf-8"), "text"
+            except Exception:
+                content, encoding = base64.b64encode(data).decode("ascii"), "base64"
+        else:
+            content, encoding = base64.b64encode(data).decode("ascii"), "base64"
+        obj = conversation_file_to_object(
+            ref=ref, filename=filename, mime=mime, size=size, encoding=encoding, content=content,
+        )
+        return NamedServiceResponse.ok_response(
+            provider=self.provider_identity(), namespace=request.namespace or NAMESPACE,
+            object_ref=ref, object=obj,
+        )
+
 
 def _int_or_none(value: Any) -> int | None:
     if value in (None, ""):
@@ -500,6 +597,23 @@ def _int_or_none(value: Any) -> int | None:
         return int(value)
     except Exception:
         return None
+
+
+async def _single_chunk(data: bytes) -> AsyncIterator[bytes]:
+    yield data
+
+
+def _is_materialization_request(request: NamedServiceRequest) -> bool:
+    """True when the caller wants raw bytes (byte stream) rather than a JSON object —
+    react.pull and the named-service artifact rehoster signal this."""
+    context = request.context if isinstance(request.context, Mapping) else {}
+    payload = request.payload if isinstance(request.payload, Mapping) else {}
+    if _text(request.response_mode).lower() == "stream":
+        return True
+    if context.get("materialize") or payload.get("materialize"):
+        return True
+    source = _text(context.get("source") or payload.get("source"))
+    return source == "react.pull"
 
 
 def make_conversation_search_named_service_provider(

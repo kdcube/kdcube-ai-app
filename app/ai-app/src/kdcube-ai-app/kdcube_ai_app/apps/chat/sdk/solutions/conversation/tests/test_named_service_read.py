@@ -170,3 +170,89 @@ async def test_capabilities_search_false_without_backend():
     assert caps["search"] is False
     assert caps["list"] is True and caps["get"] is True
     assert "export" not in caps
+
+
+class _FileBackend:
+    """Search backend that only materializes files (conv:fi: object.get path)."""
+
+    def __init__(self, result):
+        self._result = result
+        self.calls = []
+
+    async def materialize_file(self, *, fi_ref, conversation_id=""):
+        self.calls.append((fi_ref, conversation_id))
+        return dict(self._result)
+
+
+def _file_provider(backend):
+    return make_conversation_search_named_service_provider(
+        context_factory=lambda c: ConversationSearchContext(user_id=c.user_id or "", conversation_id=c.conversation_id or ""),
+        search_backend_factory=lambda c: backend,
+        read_service_factory=lambda c: FakeReadService(),
+        bundle_id="b",
+    )
+
+
+@pytest.mark.asyncio
+async def test_object_get_conv_fi_returns_text_inline():
+    backend = _FileBackend({"ok": True, "filename": "summary.md", "mime": "text/markdown", "size": 5, "data": b"hello"})
+    provider = _file_provider(backend)
+    resp = await provider.object_get(
+        NamedServiceContext(user_id="u", conversation_id="c1"),
+        _req("object.get", object_ref="conv:fi:turn_1.outputs/summary.md"),
+    )
+    assert resp.ok
+    obj = resp.ret["object"]
+    assert obj["object_kind"] == "conversation.file"
+    assert obj["ref"] == "conv:fi:turn_1.outputs/summary.md"
+    assert obj["body"]["encoding"] == "text"
+    assert obj["body"]["content"] == "hello"
+    assert obj["body"]["filename"] == "summary.md"
+    # fi ref carries no conv_ prefix -> conversation_id falls back to the caller's ctx.
+    assert backend.calls == [("fi:turn_1.outputs/summary.md", "c1")]
+
+
+@pytest.mark.asyncio
+async def test_object_get_conv_fi_binary_base64():
+    import base64 as _b64
+    backend = _FileBackend({"ok": True, "filename": "a.png", "mime": "image/png", "size": 3, "data": b"\x89PN"})
+    provider = _file_provider(backend)
+    resp = await provider.object_get(
+        NamedServiceContext(user_id="u", conversation_id="c1"),
+        _req("object.get", object_ref="conv:fi:turn_1.files/a.png"),
+    )
+    assert resp.ok
+    obj = resp.ret["object"]
+    assert obj["body"]["encoding"] == "base64"
+    assert _b64.b64decode(obj["body"]["content"]) == b"\x89PN"
+
+
+@pytest.mark.asyncio
+async def test_object_get_conv_fi_not_found():
+    backend = _FileBackend({"ok": False, "reason": "not_found"})
+    provider = _file_provider(backend)
+    resp = await provider.object_get(
+        NamedServiceContext(user_id="u", conversation_id="c1"),
+        _req("object.get", object_ref="conv:fi:turn_1.files/missing.md"),
+    )
+    assert not resp.ok
+    assert resp.status == 404
+    assert resp.error.code == "conversation_file_not_found"
+
+
+@pytest.mark.asyncio
+async def test_object_get_conv_fi_too_large_returns_metadata_only():
+    backend = _FileBackend({
+        "ok": False, "reason": "too_large",
+        "detail": {"filename": "big.bin", "mime": "application/octet-stream", "size": 999999999},
+    })
+    provider = _file_provider(backend)
+    resp = await provider.object_get(
+        NamedServiceContext(user_id="u", conversation_id="c1"),
+        _req("object.get", object_ref="conv:fi:turn_1.files/big.bin"),
+    )
+    assert resp.ok
+    obj = resp.ret["object"]
+    assert obj["body"]["encoding"] == "none"
+    assert obj["body"]["size"] == 999999999
+    assert "content" not in obj["body"]

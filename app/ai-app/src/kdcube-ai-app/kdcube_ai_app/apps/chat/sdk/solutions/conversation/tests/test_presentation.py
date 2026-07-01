@@ -8,12 +8,40 @@ from __future__ import annotations
 from kdcube_ai_app.apps.chat.sdk.solutions.conversation.presentation import (
     CONVERSATION_OBJECT_KIND,
     TURN_OBJECT_KIND,
+    conv_file_ref,
     conversation_id_from_ref,
     conversation_ref,
     conversation_summary_to_object,
     conversation_to_object,
+    fi_path_from_conv_ref,
+    is_conv_file_ref,
     turn_hit_to_object,
 )
+
+
+def test_conv_file_ref_grammar_roundtrips():
+    # fi: path -> conv:fi: handle (round-trippable), idempotent, non-fi passthrough.
+    assert conv_file_ref("fi:turn_1.outputs/summary.md") == "conv:fi:turn_1.outputs/summary.md"
+    assert conv_file_ref("conv:fi:turn_1.files/x") == "conv:fi:turn_1.files/x"
+    assert conv_file_ref("ar:turn_1.react.turn.index") == "ar:turn_1.react.turn.index"
+    assert is_conv_file_ref("conv:fi:turn_1.outputs/summary.md")
+    assert not is_conv_file_ref("conv:conversation:c1")
+    # conv:fi: -> fi:, tolerating a bare fi: ref; anything else -> "".
+    assert fi_path_from_conv_ref("conv:fi:turn_1.outputs/summary.md") == "fi:turn_1.outputs/summary.md"
+    assert fi_path_from_conv_ref("fi:turn_1.files/x") == "fi:turn_1.files/x"
+    assert fi_path_from_conv_ref("conv:conversation:c1") == ""
+    # conversation_id_from_ref must NOT mistake a conv:fi: file ref for a conversation.
+    assert conversation_id_from_ref("conv:fi:turn_1.outputs/summary.md") == ""
+
+
+def test_turn_hit_snippet_path_presented_as_conv_fi():
+    hit = {
+        "turn_id": "t1", "conversation_id": "c1", "score": 0.3,
+        "snippets": [{"role": "attachment", "path": "fi:turn_t1.user.attachments/summary.md", "text": "hello"}],
+    }
+    obj = turn_hit_to_object(hit)
+    assert obj["body"]["snippets"][0]["path"] == "conv:fi:turn_t1.user.attachments/summary.md"
+    assert obj["body"]["snippets"][0]["text"] == "hello"
 
 
 def test_conversation_ref_roundtrip():
