@@ -50,7 +50,7 @@ from kdcube_ai_app.apps.chat.sdk.infra.economics.plan_resolution import (
     resolve_plan_id,
     subscription_is_active,
 )
-from kdcube_ai_app.infra.accounting.usage import llm_output_price_usd_per_token
+from kdcube_ai_app.infra.accounting.usage import llm_output_price_usd_per_token, llm_reference_service
 from kdcube_ai_app.ops.deployment.sql.db_deployment import project_schema as _project_schema
 from kdcube_ai_app.infra.namespaces import REDIS, ns_key
 from kdcube_ai_app.infra.redis.client import get_async_redis_client
@@ -782,6 +782,8 @@ async def _main(args) -> int:
 
         reference_provider = args.reference_provider
         reference_model = args.reference_model
+        if not reference_provider or not reference_model:
+            reference_provider, reference_model = llm_reference_service()
         usd_per_token = float(llm_output_price_usd_per_token(reference_provider, reference_model))
 
         usage_bundle_ids = args.usage_bundle_ids or ["*"]
@@ -990,13 +992,13 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--reference-provider",
-        default="anthropic",
-        help="Reference provider for USD/token conversion.",
+        default=None,
+        help="Reference provider for USD/token conversion. Defaults to the live economics descriptor reference.",
     )
     parser.add_argument(
         "--reference-model",
-        default="claude-sonnet-4-5-20250929",
-        help="Reference model for USD/token conversion.",
+        default=None,
+        help="Reference model for USD/token conversion. Defaults to the live economics descriptor reference.",
     )
     parser.add_argument(
         "--limit",

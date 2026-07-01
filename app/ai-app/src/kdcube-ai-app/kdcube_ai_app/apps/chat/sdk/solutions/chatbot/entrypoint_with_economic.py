@@ -324,7 +324,7 @@ class BaseEntrypointWithEconomics(BaseEntrypoint):
             PlanWalletSettlementInput,
             allocate_plan_wallet_settlement,
         )
-        from kdcube_ai_app.infra.accounting.usage import llm_output_price_usd_per_token, anthropic, sonnet_45
+        from kdcube_ai_app.infra.accounting.usage import usd_per_reference_token
         from kdcube_ai_app.apps.chat.sdk.util import safe_frac, token_count
         from kdcube_ai_app.infra import accounting as acct
 
@@ -686,7 +686,7 @@ class BaseEntrypointWithEconomics(BaseEntrypoint):
             _log("budget.bypass", "Budget bypass enabled from projected authority", user_type=role)
 
         input_text = ""
-        usd_per_token = float(llm_output_price_usd_per_token(ref_provider=anthropic, ref_model=sonnet_45))
+        usd_per_token = float(usd_per_reference_token())
         try:
             input_tokens_est = int(token_count(input_text))
         except Exception:

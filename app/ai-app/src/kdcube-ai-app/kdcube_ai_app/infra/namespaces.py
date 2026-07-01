@@ -112,3 +112,6 @@ class CONFIG:
         NAMESPACE = "kdcube:config:gateway"
         UPDATE_CHANNEL = "kdcube:config:gateway:update"
         CURRENT_KEY = "current"
+
+    class ECONOMICS:
+        SYNC_CHANNEL = "kdcube:config:economics:sync:{tenant}:{project}"

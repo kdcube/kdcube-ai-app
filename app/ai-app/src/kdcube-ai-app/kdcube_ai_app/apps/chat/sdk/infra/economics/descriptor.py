@@ -16,10 +16,11 @@ Two distinct purposes:
   - quota / budget / subscription: Postgres is the live runtime authority. The
     descriptor is only a persistence snapshot so the next deploy-time
     `seed_economics` does not regress runtime/admin changes.
-  - reservation / price_tables: the descriptor file IS the live runtime source
-    (read per turn via config_scopes, mtime-cached). These are never stored in the
-    DB, so write-backs preserve them verbatim from the existing file. Writing here
-    lets runtime pick up changes in real time across replicas over the shared mount.
+  - reservation / price_tables / llm_reference_service: the descriptor file IS the
+    live runtime source (read per turn via config_scopes, mtime-cached). These are
+    never stored in the DB, so write-backs preserve them verbatim from the existing
+    file. Writing here lets runtime pick up changes in real time across replicas
+    over the shared mount.
 
 This is best-effort: callers must not fail the admin mutation if the descriptor
 write fails.
@@ -152,6 +153,9 @@ async def build_economics_descriptor(
     price_tables = existing.get("price_tables")
     if isinstance(price_tables, dict):
         payload["price_tables"] = price_tables
+    llm_reference_service = existing.get("llm_reference_service")
+    if isinstance(llm_reference_service, dict):
+        payload["llm_reference_service"] = llm_reference_service
     return payload
 
 

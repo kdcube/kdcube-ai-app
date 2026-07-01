@@ -56,10 +56,25 @@ class _StubMemEP:
         return await M._memory_reconciliation_econ_subject(self, job)
 
 
+def _authority_for_role(role, user_id="u1"):
+    """Projected Connection Hub authority for a carried role. The reconciliation
+    subject resolves is_anonymous/roles/budget_bypass from this envelope (not the
+    legacy user_type field), so the job must carry it."""
+    if str(role or "").lower() == "anonymous":
+        return {}
+    return {
+        "economics_projection": "platform_user",
+        "platform_user_id": user_id,
+        "platform_roles": [role],
+        "economics_budget_bypass": str(role or "").lower() in ("privileged", "admin"),
+    }
+
+
 def _job(role="registered"):
     return {
         "job_id": "memrec_20260604_abc",
         "user_type": role,
+        "identity_authority": _authority_for_role(role),
         "timezone": "Europe/Kyiv",
         "scope": {"tenant": "t", "project": "p", "user_id": "u1", "bundle_id": "b@1"},
     }

@@ -425,17 +425,44 @@ DEFAULT_PRICE_TABLE = {
         ]
     }
 
-# Reference model — the currency of the token economy (USD<->tokens for
-# reservation, credits, Stripe, balance). It MUST resolve in the effective table
-# (_ref_out_price_1m raises otherwise). A descriptor price_tables section that
-# omits it is treated as invalid and the baseline is used instead.
-REF_PROVIDER = anthropic
-REF_MODEL = sonnet_45
+# Reference service — the currency of the token economy (USD<->tokens for
+# reservation, credits, Stripe, balance). Resolved from the economics descriptor
+# `llm_reference_service` section, else the in-code default. It MUST resolve in
+# the effective price table (_ref_out_price_1m raises otherwise); a descriptor
+# price_tables section that omits it is treated as invalid and the baseline is
+# used instead.
+DEFAULT_LLM_REFERENCE_PROVIDER = anthropic
+DEFAULT_LLM_REFERENCE_SERVICE = sonnet_45
+
+# Back-compat aliases for the default reference. Prefer llm_reference_service(),
+# which also honours the descriptor override.
+REF_PROVIDER = DEFAULT_LLM_REFERENCE_PROVIDER
+REF_MODEL = DEFAULT_LLM_REFERENCE_SERVICE
+
+
+def llm_reference_service() -> tuple:
+    """`(provider, service_name)` of the token-economy reference, read from the
+    economics descriptor `llm_reference_service` section (mtime-cached), falling
+    back to the in-code default. Single source for the USD<->token unit — both the
+    economics runtime and bundles read from here. Does not consult `price_table()`
+    (which itself selects on this reference), so there is no resolution cycle."""
+    try:
+        from kdcube_ai_app.apps.chat.sdk.config_scopes import economics_llm_reference_service
+        ref = economics_llm_reference_service()
+    except Exception:
+        ref = None
+    if isinstance(ref, dict):
+        provider = str(ref.get("provider") or "").strip()
+        service = str(ref.get("service_name") or "").strip()
+        if provider and service:
+            return provider, service
+    return DEFAULT_LLM_REFERENCE_PROVIDER, DEFAULT_LLM_REFERENCE_SERVICE
 
 
 def _has_ref_model(table: Dict[str, Any]) -> bool:
+    ref_provider, ref_service = llm_reference_service()
     return any(
-        isinstance(e, dict) and e.get("provider") == REF_PROVIDER and e.get("model") == REF_MODEL
+        isinstance(e, dict) and e.get("provider") == ref_provider and e.get("model") == ref_service
         for e in (table.get("llm") or [])
     )
 
@@ -987,6 +1014,13 @@ def llm_output_price_usd_per_token(ref_provider: str, ref_model: str) -> float:
     """
     out_1m = _ref_out_price_1m(ref_provider, ref_model)  # USD per 1M output tokens
     return float(out_1m) / 1_000_000.0
+
+
+def usd_per_reference_token() -> float:
+    """USD per one reference-service output token, resolving the reference from
+    the descriptor. Zero-arg single-source entry point for the USD<->token unit;
+    equivalent to llm_output_price_usd_per_token(*llm_reference_service())."""
+    return llm_output_price_usd_per_token(*llm_reference_service())
 
 
 def quote_tokens_for_usd(

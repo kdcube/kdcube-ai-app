@@ -104,7 +104,10 @@ def test_execution_authority_roles_project_budget_bypass_not_user_type():
 
 async def test_automation_subject_does_not_treat_carried_user_type_as_authority():
     ep = _StubEP(pg_pool=None)
-    subj = await ops._automation_econ_subject(ep, target_user="u1", source={"user_type": "privileged"})
+    subj = await ops._automation_econ_subject(
+        ep, target_user="u1",
+        source={"user_type": "privileged", "economics_projection": "platform_user", "platform_user_id": "u1"},
+    )
     assert (subj.tenant, subj.project, subj.user_id) == ("t", "p", "u1")
     assert subj.budget_bypass is None
     assert subj.is_anonymous is False
@@ -117,6 +120,7 @@ async def test_automation_subject_can_use_platform_authority_user():
         target_user="telegram_42",
         source={
             "economics_user_id": "platform-user-1",
+            "platform_user_id": "platform-user-1",
             "platform_roles": ["kdcube:role:super-admin"],
         },
     )
@@ -127,7 +131,10 @@ async def test_automation_subject_can_use_platform_authority_user():
 
 async def test_automation_subject_falls_back_to_registered():
     ep = _StubEP(pg_pool=None)
-    subj = await ops._automation_econ_subject(ep, target_user="u1", source={})
+    subj = await ops._automation_econ_subject(
+        ep, target_user="u1",
+        source={"economics_projection": "platform_user", "platform_user_id": "u1"},
+    )
     assert subj.budget_bypass is None
     assert subj.is_anonymous is False
 
@@ -157,7 +164,10 @@ async def test_verify_economics_preflight_ok(monkeypatch):
 
     monkeypatch.setattr(enf, "economic_preflight", _pf)
     ep = _StubEP(economics=True, reservation=0.5)
-    subj, dec = await ops._automation_verify_economics(ep, target_user="u1", source={"user_type": "paid"})
+    subj, dec = await ops._automation_verify_economics(
+        ep, target_user="u1",
+        source={"user_type": "paid", "economics_projection": "platform_user", "platform_user_id": "u1"},
+    )
     assert subj.budget_bypass is None
     assert subj.is_anonymous is False
     assert dec.funding_source == "project"

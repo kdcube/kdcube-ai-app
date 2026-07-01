@@ -274,6 +274,20 @@ class _Config:
 # --------------------------------------------------------------------------
 # Entrypoint harness
 # --------------------------------------------------------------------------
+def _authority_for_role(role, user_id="u1"):
+    """Projected Connection Hub authority for a runtime role. Economics resolves
+    is_anonymous/roles/budget_bypass from this envelope, not the legacy user_type
+    field, so the harness must supply it for a non-anonymous subject."""
+    if str(role or "").lower() == "anonymous":
+        return {}
+    return {
+        "economics_projection": "platform_user",
+        "platform_user_id": user_id,
+        "platform_roles": [role],
+        "economics_budget_bypass": str(role or "").lower() in ("privileged", "admin"),
+    }
+
+
 def _make_ep(
     *,
     role: str = "registered",
@@ -310,6 +324,9 @@ def _make_ep(
     ep._turn_id = "turn_char_1"
     ep._app_state = {
         "user": "u1", "tenant": "t", "project": "p", "user_type": role,
+        # Economics authority is projected from identity_authority, not the legacy
+        # user_type field (Connection Hub authority-projection contract).
+        "identity_authority": _authority_for_role(role),
         "conversation_id": "conv1", "session_id": "sess1",
     }
 

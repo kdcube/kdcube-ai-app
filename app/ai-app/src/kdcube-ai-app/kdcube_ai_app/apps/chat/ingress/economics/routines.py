@@ -108,9 +108,8 @@ async def run_stripe_reconcile_sweep_once(*, actor: str = "scheduler") -> dict:
         last_ts = int(time.time()) - 24 * 3600
 
     try:
-        from kdcube_ai_app.infra.accounting.usage import anthropic, sonnet_45
-        REF_PROVIDER = anthropic
-        REF_MODEL = sonnet_45
+        from kdcube_ai_app.infra.accounting.usage import llm_reference_service
+        REF_PROVIDER, REF_MODEL = llm_reference_service()
 
         subscription_mgr = SubscriptionManager(pg_pool=pg_pool)
         user_credits_mgr = UserCreditsManager(pg_pool=pg_pool)

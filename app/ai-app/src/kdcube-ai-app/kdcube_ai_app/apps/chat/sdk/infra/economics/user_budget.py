@@ -1154,8 +1154,8 @@ class UserBudgetBreakdownService:
             include_expired_override: bool = True,
             reservations_limit: int = 50,
             bundle_ids: Optional[list[str]] = None,
-            reference_provider: str = "anthropic",
-            reference_model: str = "claude-sonnet-4-5-20250929",
+            reference_provider: Optional[str] = None,
+            reference_model: Optional[str] = None,
     ) -> dict:
         from kdcube_ai_app.apps.chat.sdk.infra.economics.limiter import (
             UserEconomicsRateLimiter,
@@ -1163,10 +1163,17 @@ class UserBudgetBreakdownService:
             _k,
             subject_id_of,
         )
-        from kdcube_ai_app.infra.accounting.usage import llm_output_price_usd_per_token, quote_tokens_for_usd
+        from kdcube_ai_app.infra.accounting.usage import (
+            llm_output_price_usd_per_token,
+            quote_tokens_for_usd,
+            llm_reference_service,
+        )
 
         bundle_ids = bundle_ids or ["*"]
         now = datetime.utcnow().replace(tzinfo=timezone.utc)
+
+        if not reference_provider or not reference_model:
+            reference_provider, reference_model = llm_reference_service()
 
         # -------- plan override snapshots (for display + for effective merge) --------
         plan_full = await self._plan_snapshot.get_user_plan_balance(

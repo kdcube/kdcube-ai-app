@@ -34,8 +34,8 @@ from kdcube_ai_app.infra.accounting.usage import (
     llm_output_price_usd_per_token,
     quote_tokens_for_usd,
     quote_usd_for_tokens,
-    anthropic,
-    sonnet_45,
+    llm_reference_service,
+    usd_per_reference_token,
 )
 
 
@@ -44,8 +44,9 @@ logger = logging.getLogger(__name__)
 # Create router
 router = APIRouter()
 
-REF_PROVIDER = anthropic
-REF_MODEL = sonnet_45
+def _reference_model_label() -> str:
+    p, m = llm_reference_service()
+    return f"{p}/{m}"
 DEFAULT_PLAN_FREE = "free"
 DEFAULT_PLAN_PAYG = "wallet"
 DEFAULT_PLAN_ADMIN = "admin"
@@ -54,22 +55,24 @@ DEFAULT_PLAN_ANON = "anonymous"
 def _tokens_from_usd(usd_amount: Optional[float]) -> Optional[int]:
     if usd_amount is None:
         return None
+    ref_provider, ref_model = llm_reference_service()
     tokens, _ = quote_tokens_for_usd(
         usd_amount=float(usd_amount),
-        ref_provider=REF_PROVIDER,
-        ref_model=REF_MODEL,
+        ref_provider=ref_provider,
+        ref_model=ref_model,
     )
     return int(tokens)
 
 def _usd_from_tokens(tokens: Optional[int]) -> Optional[float]:
     if tokens is None:
         return None
+    ref_provider, ref_model = llm_reference_service()
     return round(
         float(
             quote_usd_for_tokens(
                 tokens=int(tokens),
-                ref_provider=REF_PROVIDER,
-                ref_model=REF_MODEL,
+                ref_provider=ref_provider,
+                ref_model=ref_model,
             )
         ),
         2,
@@ -264,8 +267,8 @@ class AddLifetimeCreditsRequest(BaseModel):
     """
     user_id: str = Field(..., description="User ID")
     usd_amount: float = Field(..., gt=0, description="Amount in USD")
-    ref_provider: str = Field(default="anthropic", description="Reference model provider")
-    ref_model: str = Field(default="claude-sonnet-4-5-20250929", description="Reference model")
+    ref_provider: Optional[str] = Field(default=None, description="Reference model provider; defaults to the live economics descriptor reference")
+    ref_model: Optional[str] = Field(default=None, description="Reference model; defaults to the live economics descriptor reference")
     purchase_id: Optional[str] = Field(None, description="Payment/transaction ID")
     notes: Optional[str] = Field(None, description="Purchase notes")
 
@@ -340,17 +343,51 @@ def _get_control_plane_manager(ctx):
     return mgr
 
 
-async def _sync_economics_descriptor_best_effort(mgr, settings) -> None:
+async def _publish_economics_sync(mgr, settings, *, reservation_overrides=None, reservation_deletes=None) -> None:
+    """
+    Signal proc to write economics.yaml back from live DB state.
+    """
+    try:
+        redis = getattr(mgr, "_redis", None)
+        if redis is None:
+            return
+        import json
+        from kdcube_ai_app.infra import namespaces
+        payload = {}
+        if reservation_overrides:
+            payload["reservation_overrides"] = reservation_overrides
+        if reservation_deletes:
+            payload["reservation_deletes"] = list(reservation_deletes)
+        await redis.publish(
+            namespaces.CONFIG.ECONOMICS.SYNC_CHANNEL.format(tenant=settings.TENANT, project=settings.PROJECT),
+            json.dumps(payload),
+        )
+    except Exception as e:
+        logger.warning(f"[economics.descriptor] sync signal skipped: {e}")
+
+
+async def _sync_economics_descriptor_best_effort(mgr, settings, *, reservation_overrides=None, reservation_deletes=None) -> None:
     """
     Mirror live economics (DB) into economics.yaml after an admin mutation, so a
-    later deploy-time re-seed does not regress runtime changes. Best-effort: the
-    descriptor sync never fails the admin request.
+    later deploy-time re-seed does not regress runtime changes. The local write
+    succeeds where ingress mounts /config writable; a proc sync signal is always
+    published so the write-back also runs where ingress /config is read-only.
+    Best-effort: never fails the admin request.
     """
     try:
         from kdcube_ai_app.apps.chat.sdk.infra.economics.descriptor import sync_economics_descriptor
-        await sync_economics_descriptor(mgr, tenant=settings.TENANT, project=settings.PROJECT)
+        await sync_economics_descriptor(
+            mgr, tenant=settings.TENANT, project=settings.PROJECT,
+            reservation_overrides=reservation_overrides,
+            reservation_deletes=reservation_deletes,
+        )
     except Exception as e:
         logger.warning(f"[economics.descriptor] write-back skipped: {e}")
+    await _publish_economics_sync(
+        mgr, settings,
+        reservation_overrides=reservation_overrides,
+        reservation_deletes=reservation_deletes,
+    )
 
 
 # ============================================================================
@@ -416,7 +453,7 @@ async def grant_trial_bonus(
                 "tokens_per_hour_usd": _usd_from_tokens(plan_override_balance.tokens_per_hour),
                 "tokens_per_day_usd": _usd_from_tokens(plan_override_balance.tokens_per_day),
                 "tokens_per_month_usd": _usd_from_tokens(plan_override_balance.tokens_per_month),
-                "reference_model": f"{REF_PROVIDER}/{REF_MODEL}",
+                "reference_model": _reference_model_label(),
                 "expires_at": plan_override_balance.expires_at.isoformat() if plan_override_balance.expires_at else None,
             }
         }
@@ -488,7 +525,7 @@ async def update_plan_override(
                 "tokens_per_hour_usd": _usd_from_tokens(plan_override_balance.tokens_per_hour),
                 "tokens_per_day_usd": _usd_from_tokens(plan_override_balance.tokens_per_day),
                 "tokens_per_month_usd": _usd_from_tokens(plan_override_balance.tokens_per_month),
-                "reference_model": f"{REF_PROVIDER}/{REF_MODEL}",
+                "reference_model": _reference_model_label(),
                 "expires_at": plan_override_balance.expires_at.isoformat() if plan_override_balance.expires_at else None,
             }
         }
@@ -550,7 +587,7 @@ async def get_user_plan_override_balance(
 
             reserved = max(gross_remaining - available, 0)
 
-            usd_per_token = llm_output_price_usd_per_token(REF_PROVIDER, REF_MODEL)
+            usd_per_token = usd_per_reference_token()
             available_usd = round(available * usd_per_token, 2)
 
             lifetime_payload = {
@@ -563,7 +600,7 @@ async def get_user_plan_override_balance(
                 # last purchase snapshot (credits purchase)
                 "purchase_amount_usd": float(plan_override_balance.last_purchase_amount_usd)
                 if plan_override_balance.last_purchase_amount_usd else None,
-                "reference_model": f"{REF_PROVIDER}/{REF_MODEL}",
+                "reference_model": _reference_model_label(),
             }
 
         return {
@@ -585,7 +622,7 @@ async def get_user_plan_override_balance(
                 # override notes are grant_notes now
                 "notes": plan_override_balance.grant_notes,
                 "is_expired": override_expired,
-                "reference_model": f"{REF_PROVIDER}/{REF_MODEL}",
+                "reference_model": _reference_model_label(),
             } if (override_active or include_expired) else None,
             "lifetime_budget": lifetime_payload,
         }
@@ -649,10 +686,15 @@ async def add_lifetime_credits(
         mgr = _get_control_plane_manager(router)
         settings = get_settings()
 
+        ref_provider = payload.ref_provider
+        ref_model = payload.ref_model
+        if not ref_provider or not ref_model:
+            ref_provider, ref_model = llm_reference_service()
+
         tokens_added, usd_per_token = quote_tokens_for_usd(
             usd_amount=payload.usd_amount,
-            ref_provider=payload.ref_provider,
-            ref_model=payload.ref_model,
+            ref_provider=ref_provider,
+            ref_model=ref_model,
         )
 
         await mgr.add_user_credits_usd(
@@ -660,8 +702,8 @@ async def add_lifetime_credits(
             project=settings.PROJECT,
             user_id=payload.user_id,
             usd_amount=payload.usd_amount,
-            ref_provider=payload.ref_provider,
-            ref_model=payload.ref_model,
+            ref_provider=ref_provider,
+            ref_model=ref_model,
             purchase_id=payload.purchase_id,
             notes=payload.notes,
         )
@@ -682,7 +724,7 @@ async def add_lifetime_credits(
             "tokens_added": tokens_added,
             "new_balance_tokens": balance_tokens,
             "new_balance_usd": balance_usd,
-            "reference_model": f"{payload.ref_provider}/{payload.ref_model}",
+            "reference_model": f"{ref_provider}/{ref_model}",
         }
 
     except Exception as e:
@@ -720,11 +762,7 @@ async def get_lifetime_balance(
             }
 
         # Convert to USD
-        balance_usd = quote_usd_for_tokens(
-            tokens=int(balance_tokens or 0),
-            ref_provider=REF_PROVIDER,
-            ref_model=REF_MODEL,
-        )
+        balance_usd = _usd_from_tokens(int(balance_tokens or 0))
 
         return {
             "user_id": user_id,
@@ -777,7 +815,7 @@ async def get_subscription(user_id: str, session: UserSession = Depends(auth_wit
         subscription_balance["balance_tokens"] = _tokens_from_usd(bal.get("balance_usd"))
         subscription_balance["reserved_tokens"] = _tokens_from_usd(bal.get("reserved_usd"))
         subscription_balance["available_tokens"] = _tokens_from_usd(bal.get("available_usd"))
-        subscription_balance["reference_model"] = f"{REF_PROVIDER}/{REF_MODEL}"
+        subscription_balance["reference_model"] = _reference_model_label()
 
     return {
         "status": "ok",
@@ -1334,7 +1372,7 @@ async def list_quota_policies(
                 "usd_per_hour": _usd_from_tokens(p.tokens_per_hour),
                 "usd_per_day": _usd_from_tokens(p.tokens_per_day),
                 "usd_per_month": _usd_from_tokens(p.tokens_per_month),
-                "reference_model": f"{REF_PROVIDER}/{REF_MODEL}",
+                "reference_model": _reference_model_label(),
                 "notes": p.notes,
             })
 
@@ -1396,7 +1434,7 @@ async def set_quota_policy(
                 "requests_per_day": policy.requests_per_day,
                 "tokens_per_day": policy.tokens_per_day,
                 "tokens_per_day_usd": _usd_from_tokens(policy.tokens_per_day),
-                "reference_model": f"{REF_PROVIDER}/{REF_MODEL}",
+                "reference_model": _reference_model_label(),
             }
         }
     except Exception as e:
@@ -1521,23 +1559,23 @@ async def set_reservation_surface(
     so bundles pick it up live (and a re-seed does not regress it).
     """
     try:
-        from kdcube_ai_app.apps.chat.sdk.infra.economics.descriptor import (
-            sync_economics_descriptor, read_reservation,
-        )
+        from kdcube_ai_app.apps.chat.sdk.infra.economics.descriptor import read_reservation
         mgr = _get_control_plane_manager(router)
         settings = get_settings()
         floor = (payload.floor or "chat").strip() or "chat"
-        ok = await sync_economics_descriptor(
-            mgr, tenant=settings.TENANT, project=settings.PROJECT,
-            reservation_overrides={floor: float(payload.amount)},
+        amount = float(payload.amount)
+        await _sync_economics_descriptor_best_effort(
+            mgr, settings, reservation_overrides={floor: amount},
         )
-        if not ok:
-            raise HTTPException(status_code=500, detail="Failed to write economics descriptor")
         logger.info(
             f"[set_reservation] {settings.TENANT}/{settings.PROJECT} {floor}={payload.amount} "
             f"by {session.username or session.user_id}"
         )
-        return {"status": "ok", "reservation": read_reservation()}
+        # Echo the intended state: proc performs the authoritative file write
+        # asynchronously, so the on-disk value read here may still be catching up.
+        reservation = read_reservation()
+        reservation[floor] = amount
+        return {"status": "ok", "reservation": reservation}
     except HTTPException:
         raise
     except Exception as e:
@@ -1555,25 +1593,23 @@ async def delete_reservation_surface(
     surface then inherits the platform/bundle default (instead of being pinned).
     """
     try:
-        from kdcube_ai_app.apps.chat.sdk.infra.economics.descriptor import (
-            sync_economics_descriptor, read_reservation,
-        )
+        from kdcube_ai_app.apps.chat.sdk.infra.economics.descriptor import read_reservation
         mgr = _get_control_plane_manager(router)
         settings = get_settings()
         floor = (floor or "").strip()
         if not floor:
             raise HTTPException(status_code=400, detail="Reservation floor is required")
-        ok = await sync_economics_descriptor(
-            mgr, tenant=settings.TENANT, project=settings.PROJECT,
-            reservation_deletes=[floor],
+        await _sync_economics_descriptor_best_effort(
+            mgr, settings, reservation_deletes=[floor],
         )
-        if not ok:
-            raise HTTPException(status_code=500, detail="Failed to write economics descriptor")
         logger.info(
             f"[delete_reservation] {settings.TENANT}/{settings.PROJECT} {floor} "
             f"by {session.username or session.user_id}"
         )
-        return {"status": "ok", "reservation": read_reservation()}
+        # Echo the intended state (proc performs the authoritative file write async).
+        reservation = read_reservation()
+        reservation.pop(floor, None)
+        return {"status": "ok", "reservation": reservation}
     except HTTPException:
         raise
     except Exception as e:
@@ -2098,11 +2134,12 @@ async def get_economics_reference(
 ):
     """Return USD/token reference for admin UI conversions."""
     try:
-        usd_per_token = llm_output_price_usd_per_token(REF_PROVIDER, REF_MODEL)
+        reference_provider, reference_model = llm_reference_service()
+        usd_per_token = usd_per_reference_token()
         return {
             "status": "ok",
-            "reference_provider": REF_PROVIDER,
-            "reference_model": REF_MODEL,
+            "reference_provider": reference_provider,
+            "reference_model": reference_model,
             "usd_per_token": float(usd_per_token),
         }
     except Exception as e:

@@ -18,7 +18,8 @@ from kdcube_ai_app.apps.chat.sdk.infra.economics.stripe import (
 )
 from kdcube_ai_app.apps.chat.sdk.infra.economics.subscription import PlanChangeNotAllowed
 
-from .stripe_router import router, _get_control_plane_manager, _usd_from_cents, REF_PROVIDER, REF_MODEL
+from .stripe_router import router, _get_control_plane_manager, _usd_from_cents
+from kdcube_ai_app.infra.accounting.usage import llm_reference_service
 from kdcube_ai_app.ops.deployment.sql.db_deployment import project_schema as _project_schema
 
 logger = logging.getLogger(__name__)
@@ -150,12 +151,13 @@ async def refund_wallet(
         raise HTTPException(status_code=503, detail="Dependencies not initialized")
 
     mgr = _get_control_plane_manager(router)
+    ref_provider, ref_model = llm_reference_service()
     svc = StripeEconomicsAdminService(
         pg_pool=pg_pool,
         user_credits_mgr=mgr.user_credits_mgr,
         subscription_mgr=mgr.subscription_mgr,
-        ref_provider=REF_PROVIDER,
-        ref_model=REF_MODEL,
+        ref_provider=ref_provider,
+        ref_model=ref_model,
     )
 
     try:
@@ -207,12 +209,13 @@ async def cancel_subscription(
                 """, settings.TENANT, settings.PROJECT, payload.user_id)
             return {"status": "ok", "action": "applied", "message": "Internal subscription canceled"}
 
+    ref_provider, ref_model = llm_reference_service()
     svc = StripeEconomicsAdminService(
         pg_pool=pg_pool,
         user_credits_mgr=mgr.user_credits_mgr,
         subscription_mgr=mgr.subscription_mgr,
-        ref_provider=REF_PROVIDER,
-        ref_model=REF_MODEL,
+        ref_provider=ref_provider,
+        ref_model=ref_model,
     )
 
     try:
@@ -244,12 +247,13 @@ async def reconcile_stripe_requests(
         raise HTTPException(status_code=503, detail="Dependencies not initialized")
 
     mgr = _get_control_plane_manager(router)
+    ref_provider, ref_model = llm_reference_service()
     svc = StripeEconomicsAdminService(
         pg_pool=pg_pool,
         user_credits_mgr=mgr.user_credits_mgr,
         subscription_mgr=mgr.subscription_mgr,
-        ref_provider=REF_PROVIDER,
-        ref_model=REF_MODEL,
+        ref_provider=ref_provider,
+        ref_model=ref_model,
     )
 
     try:

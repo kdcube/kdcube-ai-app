@@ -729,8 +729,6 @@ class EconomicsAPI {
                 body: JSON.stringify({
                     user_id: userId,
                     usd_amount: usdAmount,
-                    ref_provider: 'anthropic',
-                    ref_model: 'claude-sonnet-4-5-20250929',
                     notes
                 })
             }
@@ -3104,7 +3102,7 @@ const EconomicsAdmin: React.FC = () => {
                                                                 </div>
 
                                                                 <div className="pt-3 border-t border-gray-200/70 text-xs text-gray-600">
-                                                                    Reference: {planBalance.lifetime_budget.reference_model || 'anthropic/claude-sonnet-4-5-20250929'}
+                                                                    Reference: {planBalance.lifetime_budget.reference_model || (economicsRef ? `${economicsRef.reference_provider}/${economicsRef.reference_model}` : '')}
                                                                 </div>
                                                             </div>
                                                         </div>
@@ -3437,7 +3435,7 @@ const EconomicsAdmin: React.FC = () => {
                                                     </div>
 
                                                     <div className="pt-2 text-xs text-gray-600">
-                                                        Reference: {quotaBreakdown.subscription_balance.reference_model || 'anthropic/claude-sonnet-4-5-20250929'}
+                                                        Reference: {quotaBreakdown.subscription_balance.reference_model || (economicsRef ? `${economicsRef.reference_provider}/${economicsRef.reference_model}` : '')}
                                                     </div>
                                                 </div>
                                             )}
@@ -3966,7 +3964,7 @@ const EconomicsAdmin: React.FC = () => {
                                                 Check Balance
                                             </Button>
                                             <div className="text-sm text-gray-500 flex items-center">
-                                                Reference model: <span className="ml-1 font-semibold text-gray-800">anthropic/claude-sonnet-4-5-20250929</span>
+                                                Reference model: <span className="ml-1 font-semibold text-gray-800">{economicsRef ? `${economicsRef.reference_provider}/${economicsRef.reference_model}` : '…'}</span>
                                             </div>
                                         </div>
                                     </form>
@@ -4752,7 +4750,7 @@ Shortfall ledger notes:
                                                 <div className="pt-4 border-t border-gray-200/70 space-y-2">
                                                     <div className="text-sm font-semibold text-gray-900">Subscription balance</div>
                                                     <div className="text-xs text-gray-600">
-                                                        Reference: {subscriptionBalance.reference_model || 'anthropic/claude-sonnet-4-5-20250929'}
+                                                        Reference: {subscriptionBalance.reference_model || (economicsRef ? `${economicsRef.reference_provider}/${economicsRef.reference_model}` : '')}
                                                     </div>
                                                     {subscriptionBalance.period_start && subscriptionBalance.period_end && (
                                                         <div className="text-xs text-gray-600">

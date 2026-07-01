@@ -303,12 +303,8 @@ class RoleResolver:
 # Engine
 # ----------------------------------------------------------------------------
 def _usd_per_token() -> float:
-    from kdcube_ai_app.infra.accounting.usage import (
-        llm_output_price_usd_per_token,
-        anthropic,
-        sonnet_45,
-    )
-    return float(llm_output_price_usd_per_token(ref_provider=anthropic, ref_model=sonnet_45))
+    from kdcube_ai_app.infra.accounting.usage import usd_per_reference_token
+    return float(usd_per_reference_token())
 
 
 def _estimate_tokens(estimate: EconomicsEstimate, usd_per_token: float) -> int:
