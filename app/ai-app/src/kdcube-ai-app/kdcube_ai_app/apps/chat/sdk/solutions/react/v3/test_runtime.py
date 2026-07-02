@@ -30,6 +30,7 @@ def _solver_stub() -> ReactSolverV2:
     solver._latest_steer_seq_seen = 0
     solver._last_handled_steer_seq = 0
     solver._latest_followup_seq_seen = 0
+    solver._finalize_superseded_followup_seq = 0
     solver._latest_steer_text = ""
     solver._active_phase_task = None
     solver._active_phase_name = ""
@@ -857,6 +858,47 @@ async def test_on_external_event_followup_awards_iteration_credit_for_current_tu
     # The followup's sequence is tracked so a later decision round can tell it superseded
     # an earlier steer's finalize (which must then be cleared so this followup runs fresh).
     assert solver._latest_followup_seq_seen == 15
+
+
+def test_clear_finalize_for_queued_followup_supersedes_regardless_of_order():
+    solver = _solver_stub()
+
+    # Bare steer, no followup seen: finalize stays for its bounded "stopped" wrap-up.
+    state = {
+        "steer_finalize_mode": True,
+        "steer_finalize_rounds_remaining": 2,
+        "steer_finalize_seq": 5,
+        "exit_reason": "",
+    }
+    assert solver._clear_finalize_for_queued_followup(state) is False
+    assert state["steer_finalize_mode"] is True
+
+    # A queued followup that arrived BEFORE the steer (seq 4 < steer seq 5) still supersedes
+    # it: a steer only stops the current work, the followup is valid work to continue with.
+    solver._latest_followup_seq_seen = 4
+    assert solver._clear_finalize_for_queued_followup(state) is True
+    assert state["steer_finalize_mode"] is False
+    assert "steer_finalize_rounds_remaining" not in state
+    assert solver._finalize_superseded_followup_seq == 4
+
+    # A subsequent bare steer with no NEW followup gets its wrap-up: the watermark blocks a
+    # spurious re-clear from the already-honored followup, and exit_reason="steer" is kept.
+    state2 = {
+        "steer_finalize_mode": True,
+        "steer_finalize_rounds_remaining": 2,
+        "steer_finalize_seq": 7,
+        "exit_reason": "steer",
+    }
+    assert solver._clear_finalize_for_queued_followup(state2) is False
+    assert state2["steer_finalize_mode"] is True
+    assert state2["exit_reason"] == "steer"
+
+    # But a genuinely NEW followup (seq 9 > watermark 4) re-opens the turn again.
+    solver._latest_followup_seq_seen = 9
+    assert solver._clear_finalize_for_queued_followup(state2) is True
+    assert state2["steer_finalize_mode"] is False
+    assert state2["exit_reason"] == ""
+    assert solver._finalize_superseded_followup_seq == 9
 
 
 @pytest.mark.asyncio

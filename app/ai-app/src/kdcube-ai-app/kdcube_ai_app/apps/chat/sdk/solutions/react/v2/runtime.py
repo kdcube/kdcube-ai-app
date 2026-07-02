@@ -142,6 +142,7 @@ class ReactSolverV2:
         self._latest_steer_seq_seen = 0
         self._last_handled_steer_seq = 0
         self._latest_followup_seq_seen = 0
+        self._finalize_superseded_followup_seq = 0
         self._latest_steer_text = ""
         self._active_phase_task: Optional[asyncio.Task] = None
         self._active_phase_name: str = ""
@@ -1614,6 +1615,7 @@ class ReactSolverV2:
         self._latest_steer_seq_seen = 0
         self._last_handled_steer_seq = 0
         self._latest_followup_seq_seen = 0
+        self._finalize_superseded_followup_seq = 0
         self._latest_steer_text = ""
         self._reactive_iteration_credit_total = 0
         self._reactive_iteration_credit_cap = int(getattr(state, "reactive_iteration_credit_cap", 0) or 0)
@@ -1770,24 +1772,37 @@ class ReactSolverV2:
             pass
         return "exit"
 
+    def _clear_finalize_for_queued_followup(self, state: Dict[str, Any]) -> bool:
+        """A steer only stops the CURRENT work; a followup is a valid way to continue the turn
+        after a steer. So ANY queued followup supersedes the steer's finalize, regardless of
+        whether it arrived before or after the steer: leave finalize mode so the followup's
+        generation runs with a full budget instead of being force-completed under the earlier
+        steer's wrap-up. The watermark advances on each clear so only a genuinely NEW
+        (not-yet-honored) followup re-opens the turn — a bare steer with no fresh followup still
+        gets its bounded wrap-up. Returns True when it cleared finalize."""
+        if not bool(state.get("steer_finalize_mode")):
+            return False
+        followup_seq = int(self._latest_followup_seq_seen or 0)
+        if followup_seq <= int(self._finalize_superseded_followup_seq or 0):
+            return False
+        state["steer_finalize_mode"] = False
+        state.pop("steer_finalize_rounds_remaining", None)
+        if str(state.get("exit_reason") or "") == "steer":
+            state["exit_reason"] = ""
+        self._finalize_superseded_followup_seq = followup_seq
+        try:
+            self.log.log(
+                f"[react] steer finalize cleared by queued followup seq={followup_seq} "
+                f"turn_id={self.scratchpad.turn_id}",
+                level="INFO",
+            )
+        except Exception:
+            pass
+        return True
+
     async def _decision_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
         self._sync_reactive_iteration_budget(state)
-        # A followup that arrived AFTER a steer's finalize supersedes it: the user gave new
-        # work, so LEAVE finalize mode and let the followup's generation run with a full
-        # budget, instead of being force-completed under the earlier steer's wrap-up.
-        if bool(state.get("steer_finalize_mode")) and int(self._latest_followup_seq_seen or 0) > int(state.get("steer_finalize_seq") or 0):
-            state["steer_finalize_mode"] = False
-            state.pop("steer_finalize_rounds_remaining", None)
-            if str(state.get("exit_reason") or "") == "steer":
-                state["exit_reason"] = ""
-            try:
-                self.log.log(
-                    f"[react] steer finalize cleared by newer followup seq={int(self._latest_followup_seq_seen or 0)} "
-                    f"turn_id={self.scratchpad.turn_id}",
-                    level="INFO",
-                )
-            except Exception:
-                pass
+        self._clear_finalize_for_queued_followup(state)
         if await self._apply_steer_interrupt_if_requested(state, checkpoint="decision.start"):
             return state
         if state.get("exit_reason"):

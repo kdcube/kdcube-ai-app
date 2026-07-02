@@ -62,10 +62,13 @@ This page explains the followup/steer behavior after those fields exist.
   uses the same `_latest_steer_seq_seen` vs `_last_handled_steer_seq` fence.)
 - React then re-enters with the steer already on the current turn timeline and gets a short bounded finalize window
 - steer finalize is bounded (`steer_finalize_mode` reduces the decision token budget and force-completes after a
-  few rounds), so a NEWER followup must clear it: if a followup arrives with a sequence greater than the finalize's
-  steer sequence, the decision node leaves `steer_finalize_mode` and the followup's generation runs with a full
-  budget. Without this, finalize (set once and never otherwise cleared) would truncate every later generation in
-  the same turn — e.g. one a followup started.
+  few rounds). A steer only stops the CURRENT work, and a followup is a valid way to continue the turn after a
+  steer — so ANY queued followup supersedes the finalize, regardless of whether it arrived before or after the
+  steer. The decision node (`_clear_finalize_for_queued_followup`) leaves `steer_finalize_mode` and lets the
+  followup's generation run with a full budget. A per-turn watermark (`_finalize_superseded_followup_seq`, the last
+  followup that cleared finalize) advances on each clear, so a bare steer with no fresh followup still gets its
+  bounded wrap-up. Without this, finalize (set once and never otherwise cleared) would truncate every later
+  generation in the same turn — e.g. one a followup started.
 - if no live owner consumes the event, processor promotes it from that same retained source into a normal scheduled turn
 
 Current boundary:
