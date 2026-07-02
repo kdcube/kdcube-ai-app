@@ -320,7 +320,7 @@ class RequireKBRead(RequirementBase):
             "kdcube:role:super-admin",
             "kdcube:role:kb-admin",
             "kdcube:role:kb-read",
-            "kdcube:role:chat-user",  # Chat users can read KB
+            "kdcube:role:registered",
             "admin",
             "user"  # Simple roles for testing
         ]

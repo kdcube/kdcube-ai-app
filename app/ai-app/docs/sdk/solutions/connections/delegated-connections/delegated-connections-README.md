@@ -250,9 +250,9 @@ the target surface requires `kdcube.platform`, the authority linker must map the
 customer identity to a platform identity and then the platform grant resolver
 loads platform roles.
 
-This is the desired shape for deployments such as YEY Boats: Google proves the
-human, the local role store resolves grants under the customer authority, and
-surface guards decide whether that authority is sufficient or must be linked to
+This is the desired shape for custom-host deployments: Google proves the human,
+the local role store resolves grants under the customer authority, and surface
+guards decide whether that authority is sufficient or must be linked to
 `kdcube.platform`. The delegated connection flow consumes the resolved
 authority; it does not own Google verification or local role storage.
 

@@ -161,8 +161,8 @@ setattr(
         authority_id="custom.identity",
         authenticator_id="custom.identity.oauth",
         credential_kinds=("authority_access",),
-        audiences=("bundle:navigator-tg-bot@1-0",),
-        label="Yay Identity",
+        audiences=("bundle:custom-app@1-0",),
+        label="Custom Identity",
     ),
 )
 

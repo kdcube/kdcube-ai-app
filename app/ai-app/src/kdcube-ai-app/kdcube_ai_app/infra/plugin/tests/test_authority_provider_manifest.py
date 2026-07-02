@@ -14,13 +14,13 @@ def test_authority_provider_is_discovered_in_bundle_manifest():
             authority_id="custom.identity",
             authenticator_id="custom.identity.oauth",
             credential_kinds=["authority_access"],
-            audiences=["bundle:navigator-tg-bot@1-0"],
-            label="Yay Identity",
+            audiences=["bundle:custom-app@1-0"],
+            label="Custom Identity",
         )
         async def custom_identity_provider(self):
             return None
 
-    manifest = discover_bundle_interface_manifest(AuthorityBundle, bundle_id="navigator-tg-bot@1-0")
+    manifest = discover_bundle_interface_manifest(AuthorityBundle, bundle_id="custom-app@1-0")
 
     assert len(manifest.authority_providers) == 1
     spec = manifest.authority_providers[0]
@@ -28,6 +28,6 @@ def test_authority_provider_is_discovered_in_bundle_manifest():
     assert spec.authority_id == "custom.identity"
     assert spec.authenticator_id == "custom.identity.oauth"
     assert spec.credential_kinds == ("authority_access",)
-    assert spec.audiences == ("bundle:navigator-tg-bot@1-0",)
-    assert spec.label == "Yay Identity"
+    assert spec.audiences == ("bundle:custom-app@1-0",)
+    assert spec.label == "Custom Identity"
     assert spec.transports == ("local",)

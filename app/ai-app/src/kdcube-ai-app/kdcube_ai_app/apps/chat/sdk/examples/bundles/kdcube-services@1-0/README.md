@@ -69,10 +69,10 @@ Tool:
 | --- | --- | --- |
 | `conversations_export` | `conversations:read` | `kdcube:role:super-admin` |
 
-This is the platform-native replacement for the old root `/mcp`
-conversation-export shortcut used by the Yay/Claude experiment. The OAuth
-protocol and consent screen remain Connection Hub responsibilities; this bundle
-only owns the protected product surface.
+This is the platform-native replacement for older root `/mcp`
+conversation-export shortcuts. The OAuth protocol and consent screen remain
+Connection Hub responsibilities; this bundle only owns the protected product
+surface.
 
 ### Named Services
 

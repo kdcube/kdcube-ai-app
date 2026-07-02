@@ -115,10 +115,10 @@ delegate.
 
 ```text
 descriptor says:
-  memories:read can be delegated by chat-user, paid, privileged, super-admin
+  memories:read can be delegated by registered, paid, privileged, super-admin
 
 signed-in user has:
-  kdcube:role:chat-user
+  kdcube:role:registered
 
 consent can show:
   memories:read

@@ -225,7 +225,7 @@ async def test_accounting_http_dependency_does_not_reuse_default_auth_state_for_
         session_id="session-jwt",
         user_type=UserType.REGISTERED,
         fingerprint="fp-jwt",
-        roles=["kdcube:role:chat-user"],
+        roles=["kdcube:role:registered"],
         permissions=[],
     )
 

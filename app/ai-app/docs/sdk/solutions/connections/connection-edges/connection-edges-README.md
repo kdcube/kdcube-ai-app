@@ -61,7 +61,7 @@ Boundary authorization:
   "grants": [
     "identity:family",
     "economics:platform-user",
-    "kdcube:role:chat-user"
+    "kdcube:role:registered"
   ],
   "constraints": {},
   "proof": {

@@ -75,7 +75,7 @@ code, access-grant record, and refresh-token record store a server-side
     "identity_ref": "platform:02e53484-0081-70ce-11c1-e96706b1a182",
     "user_id": "02e53484-0081-70ce-11c1-e96706b1a182",
     "grants": ["memories:read"],
-    "roles": ["kdcube:role:chat-user"],
+    "roles": ["kdcube:role:registered"],
     "permissions": ["memories:read"],
     "economics_budget_bypass": false
   }

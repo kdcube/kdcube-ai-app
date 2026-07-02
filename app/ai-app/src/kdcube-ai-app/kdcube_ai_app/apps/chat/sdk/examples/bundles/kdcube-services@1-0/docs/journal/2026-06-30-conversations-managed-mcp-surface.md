@@ -46,9 +46,9 @@ user. The default policy makes it super-admin-only.
 
 ## Why This Exists
 
-The previous Yay/Claude experiment used a root `/mcp` endpoint that combined
-OAuth, consent, token storage, and tool execution in one place. KDCube's
-product model is different:
+Older experiments used a root `/mcp` endpoint that combined OAuth, consent,
+token storage, and tool execution in one place. KDCube's product model is
+different:
 
 ```text
 Connection Hub OAuth / consent

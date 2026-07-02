@@ -112,7 +112,7 @@ def test_economics_run_authority_reads_cross_runtime_context_authority():
                 "platform_user_id": "platform-user-1",
                 "economics_user_id": "platform-user-1",
                 "budget_bypass": False,
-                "roles": ["kdcube:role:chat-user"],
+                "roles": ["kdcube:role:registered"],
             },
             roles=(),
             permissions=(),
@@ -130,7 +130,7 @@ def test_economics_run_authority_reads_cross_runtime_context_authority():
 
     assert projection.actor_user_id == "delegated_client:claude"
     assert projection.economics_user_id == "platform-user-1"
-    assert projection.roles == ("kdcube:role:chat-user",)
+    assert projection.roles == ("kdcube:role:registered",)
     assert projection.budget_bypass is False
 
 

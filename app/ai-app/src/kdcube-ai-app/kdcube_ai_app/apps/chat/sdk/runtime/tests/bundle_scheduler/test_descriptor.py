@@ -108,7 +108,7 @@ def test_descriptor_filtered_includes_scheduled_jobs_regardless_of_role():
     assert desc["scheduled_jobs"][0]["alias"] == "hb"
 
     # Session with arbitrary roles
-    desc2 = _manifest_to_descriptor_filtered(manifest, _make_session(roles=["kdcube:role:chat-user"]))
+    desc2 = _manifest_to_descriptor_filtered(manifest, _make_session(roles=["kdcube:role:registered"]))
     assert len(desc2["scheduled_jobs"]) == 1
 
 

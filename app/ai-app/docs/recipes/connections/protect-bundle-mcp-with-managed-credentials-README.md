@@ -134,7 +134,7 @@ connections:
           label: Read KDCube memories
           description: Read memory notes through delegated MCP tools.
           delegable_roles:
-            - kdcube:role:chat-user
+            - kdcube:role:registered
             - kdcube:role:paid
             - kdcube:role:privileged
             - kdcube:role:super-admin

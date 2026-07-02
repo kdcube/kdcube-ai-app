@@ -86,8 +86,8 @@ Conversation domain logic is **SDK-owned**. `ConversationExportRequest` and
 `surfaces/mcp/conversations.py` wraps them as the `conversations_export` tool.
 This bundle owns the tool schema and delegability policy, not the export
 implementation. The `conv` named-service will grow to own list/search/get/export
-in the same SDK solution; direct conversations MCP stays as the Yay parity path
-while that matures.
+in the same SDK solution; direct conversations MCP stays as the compatibility
+path while that matures.
 
 The default descriptor makes `conversations:read` delegable only by
 `kdcube:role:super-admin`. That is policy, not bundle identity. Future user
