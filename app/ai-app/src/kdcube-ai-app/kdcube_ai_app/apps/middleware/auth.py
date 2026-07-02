@@ -31,6 +31,15 @@ def _auth_debug_enabled() -> bool:
     return os.getenv("AUTH_DEBUG", "").lower() in {"1", "true", "yes", "on"}
 
 
+def user_type_from_roles(roles) -> UserType:
+    role_set = set(roles or [])
+    if PRIVILEGED_ROLES & role_set:
+        return UserType.PRIVILEGED
+    if not role_set:
+        return UserType.EXTERNAL
+    return UserType.REGISTERED
+
+
 class UserSessionError(HTTPException):
     def __init__(self) -> None:
         super().__init__(status_code=HTTP_400_BAD_REQUEST, detail="No user session id provided")
@@ -149,7 +158,7 @@ class FastAPIAuthAdapter:
                     *requirements,
                     require_all=require_all
                 )
-                user_type = UserType.PRIVILEGED if PRIVILEGED_ROLES & set(user.roles or []) else UserType.REGISTERED
+                user_type = user_type_from_roles(user.roles)
                 user_data = {
                     "user_id": getattr(user, 'sub', None) or user.username,
                     "username": user.username,

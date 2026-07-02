@@ -49,6 +49,7 @@ const authSlice = createSlice({
             state.loading = true;
         },
         finishLoading(state, action: PayloadAction<string | null | undefined>) {
+            state.loading = false;
             if (action.payload !== undefined) {
                 state.navigateTo = action.payload;
             }

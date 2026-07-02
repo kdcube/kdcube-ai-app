@@ -287,6 +287,11 @@ bundles:
             oauth:
               enabled: true
               brand: "KDCube"
+              consent_ui:
+                authority_ref:
+                  authority_id: "kdcube.platform"
+                  provider_id: "versatile_google_session"
+                  entrypoint: "consent"
               issuer: ""
               public_clients:
                 - client_id: "claude"
@@ -304,7 +309,7 @@ bundles:
                   label: "Read memories"
                   description: "Read memory notes visible to the KDCube user who approves the connection."
                   delegable_roles:
-                    - "kdcube:role:chat-user"
+                    - "kdcube:role:registered"
                     - "kdcube:role:paid"
                     - "kdcube:role:privileged"
                     - "kdcube:role:super-admin"
@@ -314,7 +319,7 @@ bundles:
                   label: "Write memories"
                   description: "Create or update memory notes visible to the KDCube user who approves the connection."
                   delegable_roles:
-                    - "kdcube:role:chat-user"
+                    - "kdcube:role:registered"
                     - "kdcube:role:paid"
                     - "kdcube:role:privileged"
                     - "kdcube:role:super-admin"

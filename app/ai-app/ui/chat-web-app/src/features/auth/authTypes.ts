@@ -10,6 +10,14 @@ export interface NoAuthConfig extends AuthConfig {
 
 export interface BundleSessionAuthConfig extends AuthConfig {
     authType: "bundle";
+    loginUrl?: string;
+    connectionHub?: {
+        bundleId?: string;
+        authorityId?: string;
+        providerId?: string;
+        providerType?: string;
+        entrypoint?: string;
+    };
 }
 
 export interface SimpleAuthConfig extends AuthConfig {

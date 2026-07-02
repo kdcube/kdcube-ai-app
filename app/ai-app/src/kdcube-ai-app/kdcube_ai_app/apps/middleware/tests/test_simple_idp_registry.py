@@ -18,7 +18,7 @@ def _user(username: str) -> dict:
         "username": username,
         "email": f"{username}@example.test",
         "name": username.title(),
-        "roles": ["kdcube:role:chat-user"],
+        "roles": ["kdcube:role:registered"],
         "permissions": ["kdcube:*:chat:*;read"],
     }
 
@@ -41,7 +41,7 @@ async def test_running_simple_idp_sees_registered_user_without_recreation(tmp_pa
     user = await idp.authenticate("bridge-token")
     assert user.username == "bridge"
     assert user.email == "bridge@example.test"
-    assert user.roles == ["kdcube:role:chat-user"]
+    assert user.roles == ["kdcube:role:registered"]
 
 
 @pytest.mark.asyncio

@@ -170,7 +170,7 @@ async def auth_external(self, request=None, **payload):
         username=external_user.username,
         email=external_user.email,
         name=external_user.name,
-        roles=["kdcube:role:chat-user"],
+        roles=["kdcube:role:registered"],
         permissions=["kdcube:*:chat:*;read;write"],
         provider=external_user.provider,
         provider_subject=external_user.subject,
@@ -210,7 +210,7 @@ user = await authority.register_user(
     sub="google:123",
     username="Alice",
     email="alice@example.test",
-    roles=["kdcube:role:chat-user"],
+    roles=["kdcube:role:registered"],
     permissions=["kdcube:*:chat:*;read;write"],
     provider="google",
     provider_subject="123",
@@ -264,7 +264,7 @@ can carry the same token for this provider.
 grant = await authority.login_or_register(
     sub="telegram:42",
     username="Alice",
-    roles=["kdcube:role:chat-user"],
+    roles=["kdcube:role:registered"],
     provider="telegram",
     provider_subject="42",
 )

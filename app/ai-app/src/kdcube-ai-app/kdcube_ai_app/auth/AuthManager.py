@@ -15,7 +15,7 @@ HTTP_403_FORBIDDEN = 403
 
 PRIVILEGED_ROLES = {"kdcube:role:super-admin", "kdcube:role:admin"}
 PAID_ROLES = {"kdcube:role:paid"}
-REGISTERED_ROLE = "kdcube:role:chat-user"
+REGISTERED_ROLE = "kdcube:role:registered"
 # Read-only integration role granted through Connection Hub delegated
 # credentials; never grants write/admin access.
 FEEDBACK_READER_ROLE = "kdcube:role:feedback-reader"
@@ -31,6 +31,34 @@ class User(BaseModel):
     @property
     def id(self):
         return self.username
+
+
+def _clean_roles(roles: Optional[list]) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for role in roles or []:
+        text = str(role or "").strip()
+        if text and text not in seen:
+            out.append(text)
+            seen.add(text)
+    return out
+
+
+def ensure_platform_registered_role(user: Optional[User]) -> Optional[User]:
+    """Attach the baseline platform role to an authenticated platform user.
+
+    This is deliberately platform-auth scoped. Channel/request authenticators
+    that only prove an external actor, such as a raw Telegram Mini App proof,
+    must not call this helper unless they have resolved a platform authority.
+    """
+
+    if user is None:
+        return None
+    roles = _clean_roles(getattr(user, "roles", None))
+    if not roles:
+        roles = [REGISTERED_ROLE]
+    user.roles = roles
+    return user
 
 class AuthenticationError(Exception):
     """Raised when authentication fails"""
@@ -240,7 +268,7 @@ class AuthManager(metaclass=ABCMeta):
             AuthenticationError: If authentication fails
             AuthorizationError: If authorization fails
         """
-        user = await self.authenticate(token)
+        user = ensure_platform_registered_role(await self.authenticate(token))
         self.validate_requirements(user, *requirements, require_all=require_all)
         return user
 
@@ -258,6 +286,6 @@ class AuthManager(metaclass=ABCMeta):
             *requirements: RequirementBase,
             require_all: bool = True
     ) -> User:
-        user = await self.authenticate_with_both(access_token, id_token)
+        user = ensure_platform_registered_role(await self.authenticate_with_both(access_token, id_token))
         self.validate_requirements(user, *requirements, require_all=require_all)
         return user

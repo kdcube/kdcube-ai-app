@@ -70,6 +70,23 @@ class OAuthDelegatedResourceConfig:
 
 
 @dataclass(frozen=True)
+class OAuthDelegatedConsentUIConfig:
+    """Where the delegated credential consent screen is rendered.
+
+    `connection_hub` uses the built-in renderer. `authority_provider` means the
+    OAuth adapter should use the named authority provider's `entrypoints.consent`
+    as the renderer while keeping the approve/deny POST and token issuance in
+    Connection Hub.
+    """
+
+    mode: str = "connection_hub"
+    authority_id: str = ""
+    provider_id: str = ""
+    entrypoint: str = "consent"
+    host: Mapping[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class OAuthDelegatedClientConfig:
     enabled: bool
     issuer: str | None
@@ -77,6 +94,7 @@ class OAuthDelegatedClientConfig:
     project: str
     auth_cookie_name: str
     brand: str
+    consent_ui: OAuthDelegatedConsentUIConfig
     public_clients: tuple[OAuthDelegatedPublicClientConfig, ...]
     dynamic_client_registration: OAuthDelegatedDynamicClientRegistrationConfig
     capabilities: tuple[OAuthDelegatedCapabilityConfig, ...]
@@ -369,6 +387,37 @@ def _parse_public_clients(raw: Any) -> tuple[OAuthDelegatedPublicClientConfig, .
     return tuple(clients)
 
 
+def _parse_consent_ui(raw: Any) -> OAuthDelegatedConsentUIConfig:
+    node = raw if isinstance(raw, Mapping) else {}
+    ref = node.get("authority_ref")
+    ref_node = ref if isinstance(ref, Mapping) else {}
+    host = node.get("host")
+    host_node = host if isinstance(host, Mapping) else {}
+    mode = _coerce_str(node.get("mode")) or "connection_hub"
+    authority_id = _coerce_str(
+        node.get("authority_id")
+        or ref_node.get("authority_id")
+        or ref_node.get("authority")
+    ) or ""
+    provider_id = _coerce_str(
+        node.get("provider_id")
+        or ref_node.get("provider_id")
+        or ref_node.get("provider")
+    ) or ""
+    entrypoint = _coerce_str(node.get("entrypoint") or ref_node.get("entrypoint")) or "consent"
+    if authority_id and provider_id and mode == "connection_hub":
+        mode = "authority_provider"
+    if host_node and mode == "connection_hub":
+        mode = "bundle_hosted"
+    return OAuthDelegatedConsentUIConfig(
+        mode=mode,
+        authority_id=authority_id,
+        provider_id=provider_id,
+        entrypoint=entrypoint,
+        host=host_node,
+    )
+
+
 def _parse_config(raw: Any, *, settings: Any | None = None) -> OAuthDelegatedClientConfig:
     node = raw if isinstance(raw, Mapping) else {}
     dcr = node.get("dynamic_client_registration")
@@ -387,6 +436,7 @@ def _parse_config(raw: Any, *, settings: Any | None = None) -> OAuthDelegatedCli
         project=project,
         auth_cookie_name=cookie_name,
         brand=_coerce_str(node.get("brand")) or "KDCube",
+        consent_ui=_parse_consent_ui(node.get("consent_ui")),
         public_clients=_parse_public_clients(node.get("public_clients")),
         dynamic_client_registration=OAuthDelegatedDynamicClientRegistrationConfig(
             allowed_redirect_uris=allowed_redirects,

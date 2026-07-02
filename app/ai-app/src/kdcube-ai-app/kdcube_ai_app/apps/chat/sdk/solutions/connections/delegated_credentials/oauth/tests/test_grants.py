@@ -37,8 +37,8 @@ def test_feedback_reader_can_call_export():
     assert can_call_tool([FEEDBACK_READER_ROLE], "conversations_export")
 
 
-def test_chat_user_cannot_call_export():
-    assert not can_call_tool(["kdcube:role:chat-user"], "conversations_export")
+def test_registered_user_cannot_call_export_without_delegated_grant():
+    assert not can_call_tool(["kdcube:role:registered"], "conversations_export")
 
 
 def test_feedback_reader_cannot_call_unlisted_write_tool():

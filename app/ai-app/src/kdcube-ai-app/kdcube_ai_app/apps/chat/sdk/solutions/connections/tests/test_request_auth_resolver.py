@@ -26,6 +26,22 @@ class _AuthManager:
         )
 
 
+class _NoRoleAuthManager:
+    def __init__(self):
+        self.called = False
+
+    async def authenticate_with_both(self, access_token, id_token):
+        self.called = True
+        assert access_token == "token-1"
+        assert id_token == "id-1"
+        return User(
+            username="platform-user",
+            email="u@example.com",
+            roles=[],
+            permissions=[],
+        )
+
+
 async def test_request_auth_resolver_standard_auth_creates_session():
     created = {}
 
@@ -57,6 +73,40 @@ async def test_request_auth_resolver_standard_auth_creates_session():
     assert session.user_id == "platform-user"
     assert session.user_type == UserType.PRIVILEGED
     assert created["user_data"]["roles"] == ["kdcube:role:super-admin"]
+
+
+async def test_request_auth_resolver_adds_platform_registered_role():
+    created = {}
+
+    async def _factory(context, user_type, user_data):
+        created["user_type"] = user_type
+        created["user_data"] = user_data
+        return UserSession(
+            session_id="s1",
+            user_type=user_type,
+            user_id=user_data["user_id"],
+            username=user_data["username"],
+            roles=user_data["roles"],
+            permissions=user_data["permissions"],
+            request_context=context,
+        )
+
+    auth = _NoRoleAuthManager()
+    resolver = RequestAuthResolver(auth_manager=auth, session_factory=_factory)
+    context = RequestContext(
+        client_ip="127.0.0.1",
+        user_agent="test",
+        authorization_header="Bearer token-1",
+        id_token="id-1",
+    )
+
+    session = await resolver.resolve_session(SimpleNamespace(), context)
+
+    assert auth.called is True
+    assert session.user_id == "platform-user"
+    assert session.user_type == UserType.REGISTERED
+    assert session.roles == ["kdcube:role:registered"]
+    assert created["user_data"]["roles"] == ["kdcube:role:registered"]
 
 
 async def test_request_auth_resolver_connection_hub_surface_wins():

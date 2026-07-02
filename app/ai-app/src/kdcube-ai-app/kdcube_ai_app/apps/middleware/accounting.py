@@ -8,8 +8,8 @@ from fastapi.security import HTTPBearer
 
 from kdcube_ai_app.auth.sessions import UserSession, UserType, RequestContext
 from kdcube_ai_app.infra.accounting import AccountingSystem
-from kdcube_ai_app.apps.middleware.auth import FastAPIAuthAdapter
-from kdcube_ai_app.auth.AuthManager import RequirementBase, User, AuthenticationError, PRIVILEGED_ROLES
+from kdcube_ai_app.apps.middleware.auth import FastAPIAuthAdapter, user_type_from_roles
+from kdcube_ai_app.auth.AuthManager import RequirementBase, User, AuthenticationError, ensure_platform_registered_role
 from kdcube_ai_app.auth.AuthManager import User as AuthUser, AuthorizationError
 from kdcube_ai_app.apps.middleware.token_extract import resolve_socket_auth_tokens
 
@@ -98,7 +98,9 @@ class MiddlewareAuthWithAccounting:
         # user = await self.base_auth.auth_manager.authenticate_and_authorize_with_both(
         #     bearer_token, id_token, *requirements, require_all=require_all
         # )
-        user = await self.base_auth.auth_manager.authenticate_with_both(bearer_token, id_token)
+        user = ensure_platform_registered_role(
+            await self.base_auth.auth_manager.authenticate_with_both(bearer_token, id_token)
+        )
         roles = set(getattr(user, "roles", []) or [])
         service_user = self.base_auth.service_role_name in roles
         if not service_user and requirements:
@@ -123,7 +125,7 @@ class MiddlewareAuthWithAccounting:
                     if not session:
                         raise AuthenticationError("Unknown user_session_id")
                 else:
-                    user_type = UserType.PRIVILEGED if (roles & PRIVILEGED_ROLES) else UserType.REGISTERED
+                    user_type = user_type_from_roles(roles)
                     ctx = RequestContext(
                         client_ip=environ.get("REMOTE_ADDR", environ.get("HTTP_X_FORWARDED_FOR", "unknown")),
                         user_agent=environ.get("HTTP_USER_AGENT", ""),

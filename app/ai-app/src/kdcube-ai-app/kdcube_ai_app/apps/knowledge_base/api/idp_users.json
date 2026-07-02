@@ -16,7 +16,7 @@
     "username": "chatuser",
     "email": "chat@test.com",
     "roles": [
-      "kdcube:role:chat-user"
+      "kdcube:role:registered"
     ],
     "permissions": [
       "kdcube:*:knowledge:_base:*;read"

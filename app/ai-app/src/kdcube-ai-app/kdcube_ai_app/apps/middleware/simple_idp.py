@@ -182,7 +182,7 @@ def generate_test_tokens():
             "sub": "chat-user-1",
             "username": "chatuser",
             "email": "chat@test.com",
-            "roles": ["kdcube:role:chat-user"],
+            "roles": ["kdcube:role:registered"],
             "permissions": [
                 "kdcube:*:knowledge:_base:*;read"
             ]

@@ -70,6 +70,27 @@ def test_delegated_client_brand_from_descriptor_is_reflected():
     assert oauth_delegated_config(app).brand == "Acme AI"
 
 
+def test_delegated_client_consent_ui_can_reference_authority_provider():
+    app = FastAPI()
+    app.state.oauth_delegated_config = {
+        "enabled": True,
+        "consent_ui": {
+            "authority_ref": {
+                "authority_id": "kdcube.platform",
+                "provider_id": "yay_google_session",
+                "entrypoint": "consent",
+            },
+        },
+    }
+
+    cfg = oauth_delegated_config(app)
+
+    assert cfg.consent_ui.mode == "authority_provider"
+    assert cfg.consent_ui.authority_id == "kdcube.platform"
+    assert cfg.consent_ui.provider_id == "yay_google_session"
+    assert cfg.consent_ui.entrypoint == "consent"
+
+
 def test_delegated_client_parses_resource_capabilities_and_tools():
     app = FastAPI()
     app.state.oauth_delegated_config = {
@@ -78,7 +99,7 @@ def test_delegated_client_parses_resource_capabilities_and_tools():
             {
                 "grant": "memories:read",
                 "label": "Read memories",
-                "delegable_roles": ["kdcube:role:chat-user"],
+                "delegable_roles": ["kdcube:role:registered"],
             },
             {
                 "grant": "memories:maintain",

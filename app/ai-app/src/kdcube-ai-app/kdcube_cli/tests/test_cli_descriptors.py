@@ -485,6 +485,7 @@ def test_write_frontend_config_derives_bundle_auth_type(tmp_path: Path):
             "auth": {
                 "type": "bundle",
                 "idp": "session",
+                "login_url": "/api/integrations/bundles/tenant-one/project-one/versatile@2026-03-31-13-36/public/platform_login",
                 "auth_token_cookie_name": "__Secure-APP",
                 "id_token_cookie_name": "__Secure-ID",
             },
@@ -493,8 +494,44 @@ def test_write_frontend_config_derives_bundle_auth_type(tmp_path: Path):
 
     config = json.loads(target.read_text())
     assert config["auth"]["authType"] == "bundle"
+    assert config["auth"]["loginUrl"] == "/api/integrations/bundles/tenant-one/project-one/versatile@2026-03-31-13-36/public/platform_login"
     assert config["auth"]["authTokenCookieName"] == "__Secure-APP"
     assert config["auth"]["idTokenCookieName"] == "__Secure-ID"
+    assert "token" not in config["auth"]
+
+
+def test_write_frontend_config_derives_bundle_auth_connection_hub_reference(tmp_path: Path):
+    template = tmp_path / "template.json"
+    template.write_text(json.dumps({"auth": {"authType": "none"}}), encoding="utf-8")
+    target = tmp_path / "frontend.config.json"
+
+    write_frontend_config(
+        target,
+        "tenant-one",
+        "project-one",
+        template_path=template,
+        assembly={
+            "auth": {
+                "type": "bundle",
+                "connection_hub": {
+                    "bundle_id": "connection-hub@1-0",
+                    "authority_id": "kdcube.platform",
+                    "provider_id": "versatile_google_session",
+                    "entrypoint": "login",
+                },
+            },
+        },
+    )
+
+    config = json.loads(target.read_text())
+    assert config["auth"]["authType"] == "bundle"
+    assert config["auth"]["connectionHub"] == {
+        "bundleId": "connection-hub@1-0",
+        "authorityId": "kdcube.platform",
+        "providerId": "versatile_google_session",
+        "entrypoint": "login",
+    }
+    assert "loginUrl" not in config["auth"]
     assert "token" not in config["auth"]
 
 

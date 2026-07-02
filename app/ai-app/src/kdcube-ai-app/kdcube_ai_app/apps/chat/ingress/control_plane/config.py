@@ -58,6 +58,7 @@ def _assembly_from_settings(settings: Any) -> dict[str, Any]:
         "auth": {
             "type": settings.plain("auth.type"),
             "idp": platform_authenticator_provider(settings),
+            "login_url": settings.plain("auth.login_url"),
             "id_token_header_name": _text(getattr(auth_cfg, "ID_TOKEN_HEADER_NAME", "")),
             "turnstile_development_token": settings.plain("auth.turnstile_development_token"),
             "cognito": {

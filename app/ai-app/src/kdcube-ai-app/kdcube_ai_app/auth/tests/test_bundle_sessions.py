@@ -73,7 +73,7 @@ async def test_bundle_session_register_login_validate_logout():
         sub="google:123",
         username="alice",
         email="alice@example.test",
-        roles=["kdcube:role:chat-user"],
+        roles=["kdcube:role:registered"],
         permissions=["kdcube:*:chat:*;read;write"],
         provider="google",
         provider_subject="123",
@@ -83,7 +83,7 @@ async def test_bundle_session_register_login_validate_logout():
     verified = await authority.validate_token(grant.token)
     assert verified.session_id == grant.session_id
     assert verified.user.sub == "google:123"
-    assert verified.user.roles == ["kdcube:role:chat-user"]
+    assert verified.user.roles == ["kdcube:role:registered"]
 
     assert await authority.logout(token=grant.token) is True
     with pytest.raises(BundleSessionInvalid):
@@ -99,7 +99,7 @@ async def test_bundle_session_delete_user_invalidates_existing_session():
         secret="session-secret",
     )
 
-    await authority.register_user(sub="telegram:42", username="bob", roles=["kdcube:role:chat-user"])
+    await authority.register_user(sub="telegram:42", username="bob", roles=["kdcube:role:registered"])
     grant = await authority.login(sub="telegram:42")
 
     assert await authority.delete_user("telegram:42") is True
@@ -116,7 +116,7 @@ async def test_bundle_session_invalidate_user_bumps_version():
         secret="session-secret",
     )
 
-    await authority.register_user(sub="oidc:abc", username="carol", roles=["kdcube:role:chat-user"])
+    await authority.register_user(sub="oidc:abc", username="carol", roles=["kdcube:role:registered"])
     grant = await authority.login(sub="oidc:abc")
 
     await authority.invalidate_user("oidc:abc")

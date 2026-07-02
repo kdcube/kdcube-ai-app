@@ -863,6 +863,50 @@ class VersatileEntrypoint(BaseEntrypointWithEconomics):
             bundle_id=BUNDLE_ID,
         )
 
+    # Config contract: docs/integrations/platform-session-issuer.md
+    @api(method="GET", alias="platform_login", route="public")
+    async def platform_login(
+        self,
+        request: Any = None,
+        **kwargs,
+    ):
+        del kwargs
+        return await platform_session_issuer.google_login_page(
+            self,
+            request=request,
+            bundle_id=BUNDLE_ID,
+        )
+
+    # Config contract: docs/integrations/platform-session-issuer.md
+    @api(method="POST", alias="auth_google_session", route="public")
+    async def auth_google_session(
+        self,
+        request: Any = None,
+        credential: str = "",
+        id_token: str = "",
+        **kwargs,
+    ):
+        return await platform_session_issuer.issue_google_session(
+            self,
+            request=request,
+            credential=credential,
+            id_token=id_token,
+            payload=kwargs,
+            bundle_id=BUNDLE_ID,
+        )
+
+    # Config contract: Connection Hub authority_registry entrypoints.consent.
+    @api(method="POST", alias="delegated_consent", route="public")
+    async def delegated_consent(
+        self,
+        data: Optional[Mapping[str, Any]] = None,
+        **kwargs,
+    ):
+        return platform_session_issuer.delegated_consent_page(
+            self,
+            payload=_payload(data, **kwargs),
+        )
+
     @api(method="GET", alias="telegram_profile", route="public")
     async def telegram_profile(
         self,

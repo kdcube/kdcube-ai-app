@@ -12,7 +12,7 @@ import logging
 import os
 
 from kdcube_ai_app.auth.AuthManager import AuthManager, AuthenticationError, RequirementBase, PRIVILEGED_ROLES, \
-    PAID_ROLES, REGISTERED_ROLE
+    PAID_ROLES, ensure_platform_registered_role
 from kdcube_ai_app.infra.gateway.backpressure import BackpressureError, BackpressureManager, \
     create_atomic_backpressure_manager
 from kdcube_ai_app.infra.gateway.circuit_breaker import CircuitBreakerError, CircuitState, \
@@ -309,9 +309,9 @@ class RequestGateway:
                     bool(token),
                     bool(id_token),
                 )
-            user = await self.auth_manager.authenticate_with_both(token, id_token)
-            if user and not user.roles:
-                user.roles = [REGISTERED_ROLE]
+            user = ensure_platform_registered_role(
+                await self.auth_manager.authenticate_with_both(token, id_token)
+            )
             if PRIVILEGED_ROLES & set(user.roles):
                 user_type = UserType.PRIVILEGED
             elif PAID_ROLES & set(user.roles):

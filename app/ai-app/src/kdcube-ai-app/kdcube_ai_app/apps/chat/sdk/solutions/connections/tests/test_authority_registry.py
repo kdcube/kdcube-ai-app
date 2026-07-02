@@ -76,15 +76,15 @@ def test_authority_provider_spec_from_bundle_declaration():
             "authority_id": "custom.identity",
             "authenticator_id": "custom.identity.oauth",
             "credential_kinds": ["authority_access"],
-            "audiences": ["bundle:navigator-tg-bot@1-0"],
-            "label": "Yay Identity",
+            "audiences": ["bundle:custom-app@1-0"],
+            "label": "Custom Identity",
             "transports": ["local"],
         },
-        bundle_id="navigator-tg-bot@1-0",
+        bundle_id="custom-app@1-0",
     )
 
     assert spec.authority_id == "custom.identity"
     assert spec.authenticators == ("custom.identity.oauth",)
     assert spec.credential_kinds == ("authority_access",)
-    assert spec.bundle_id == "navigator-tg-bot@1-0"
+    assert spec.bundle_id == "custom-app@1-0"
     assert spec.metadata["source"] == "bundle_manifest"

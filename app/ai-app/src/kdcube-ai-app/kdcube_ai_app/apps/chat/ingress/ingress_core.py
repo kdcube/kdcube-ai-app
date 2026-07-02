@@ -45,7 +45,7 @@ from kdcube_ai_app.apps.chat.ids import new_turn_id
 from kdcube_ai_app.apps.chat.ingress.resolvers import get_auth_manager
 from kdcube_ai_app.infra.plugin.bundle_registry import load_persisted_registry_from_runtime_ctx
 
-from kdcube_ai_app.auth.AuthManager import AuthenticationError, PRIVILEGED_ROLES
+from kdcube_ai_app.auth.AuthManager import AuthenticationError, PRIVILEGED_ROLES, ensure_platform_registered_role
 
 logger = logging.getLogger(__name__)
 
@@ -2162,9 +2162,11 @@ async def upgrade_session_from_tokens(
     auth_manager = get_auth_manager()
 
     try:
-        user = await auth_manager.authenticate_with_both(
-            access_token=bearer_token or "",
-            id_token=id_token,
+        user = ensure_platform_registered_role(
+            await auth_manager.authenticate_with_both(
+                access_token=bearer_token or "",
+                id_token=id_token,
+            )
         )
     except AuthenticationError as e:
         svc = ServiceCtx(request_id=str(uuid.uuid4()), user=session.user_id or session.fingerprint)

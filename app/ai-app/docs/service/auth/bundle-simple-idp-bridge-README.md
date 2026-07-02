@@ -108,7 +108,7 @@ async def auth_external(self, request=None, **payload):
             "username": external_user.username,
             "email": external_user.email,
             "name": external_user.name,
-            "roles": ["kdcube:role:chat-user"],
+            "roles": ["kdcube:role:registered"],
             "permissions": ["kdcube:*:chat:*;read;write"],
         },
     )
@@ -122,7 +122,7 @@ async def auth_external(self, request=None, **payload):
 Use the descriptor-configured cookie names in production code instead of hard
 coded names. Admin users are represented by platform roles such as
 `kdcube:role:super-admin`; regular authenticated users normally carry
-`kdcube:role:chat-user`.
+`kdcube:role:registered`.
 
 ## Registry Utility
 
@@ -199,7 +199,7 @@ profile and role set:
     "username": "User Name",
     "email": "user@example.test",
     "name": "User Name",
-    "roles": ["kdcube:role:chat-user"],
+    "roles": ["kdcube:role:registered"],
     "permissions": ["kdcube:*:chat:*;read;write"]
   }
 }

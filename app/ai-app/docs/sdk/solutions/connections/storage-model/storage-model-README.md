@@ -38,7 +38,7 @@ Redis/cache
 | Object | Current storage | Contains secrets? | Notes |
 | --- | --- | ---: | --- |
 | Provider/app config | `bundles.yaml` app props | no | Authority ids, authenticator ids, OAuth app definitions, descriptor authenticators. |
-| Authority registry metadata | `connection-hub@1-0.config.authority_registry` | no | Authority ids, `platform: true`, provider instances, provider types, host operations, allowed grants, TTL metadata. |
+| Authority registry metadata | `connection-hub@1-0.config.authority_registry` | no | Authority ids, `platform: true`, provider instances, provider types, entrypoints, allowed grants, TTL metadata. |
 | Bot token / OAuth client secret | `bundles.secrets.yaml` or secrets service | yes | Read through bundle secret lifecycle using `secret_ref`. |
 | Request-authenticator metadata | Postgres | no | Stores provider, authority id, authenticator id, `secret_ref`, verifier metadata. |
 | Connection edge | bundle-local JSON today | no | Delegates one authority identity to another authority identity. |
@@ -80,24 +80,57 @@ connection-hub@1-0:
       authorities:
         kdcube.platform:
           platform: true
+          grants:
+            subjects:
+              google:<verified_sub>:
+                roles: [kdcube:role:super-admin]
+                permissions: [kdcube:*:*:*]
+            bootstrap_rules:
+              - id: bootstrap_admin_by_google_email
+                when:
+                  provider: google
+                  claims:
+                    email: owner@example.com
+                    email_verified: true
+                roles: [kdcube:role:super-admin]
+                permissions: [kdcube:*:*:*]
           providers:
-            versatile_telegram_session:
+            versatile_google_session:
               type: bundle_session_login
-              host:
-                bundle_id: versatile@2026-03-31-13-36
-                route: public
-                operation: auth_telegram_session
+              entrypoints:
+                login:
+                  bundle_id: versatile@2026-03-31-13-36
+                  route: public
+                  operation: platform_login
+                session_issue:
+                  bundle_id: versatile@2026-03-31-13-36
+                  route: public
+                  operation: auth_google_session
+                consent:
+                  bundle_id: versatile@2026-03-31-13-36
+                  route: public
+                  operation: delegated_consent
               input:
                 authenticator_ref:
-                  authority_id: telegram.kdcube_ref
-                  provider_id: telegram_bot_init_data
-                  integration_id: telegram.kdcube_ref
+                  authority_id: google.accounts
+                  provider_id: google_oidc
               issuer:
                 type: kdcube_session_token
                 ttl_seconds: 43200
               grants:
-                roles: [kdcube:role:chat-user]
-                permissions: [kdcube:*:chat:*;read;write]
+                default:
+                  roles: [kdcube:role:registered]
+                  permissions: []
+                assignable:
+                  roles: [kdcube:role:registered, kdcube:role:super-admin]
+                  permissions: [kdcube:*:chat:*;read;write, kdcube:*:*:*]
+        google.accounts:
+          platform: false
+          providers:
+            google_oidc:
+              type: google_id_token
+              authenticator:
+                client_id: 960111679915-825b0cenujpavcmognp450l7ius4suje.apps.googleusercontent.com
 ```
 
 The provider instance may reference a bundle-hosted operation, but roles,
@@ -107,6 +140,22 @@ is resolved by `host.bundle_id`, `host.route`, and `host.operation`.
 
 Verifier secrets still stay outside this registry and are reached by
 `secret_ref` through the secrets lifecycle.
+
+Descriptor-backed authority grants are a bootstrap/demo policy for
+bundle-session platform subjects. They do not make a raw Telegram or Google
+proof a platform user by themselves; they are applied only inside a registered
+platform login provider flow that issues a platform session.
+
+The canonical assignment key is the stable authority subject, for example
+`google:<verified_sub>`. `grants.bootstrap_rules` may help bootstrap an
+assignment from verified upstream claims, such as `email + email_verified`, but
+email is not stored as the identity key.
+
+The runtime that applies this descriptor shape lives in the Connection Hub SDK:
+
+```text
+kdcube_ai_app.apps.chat.sdk.solutions.connections.authority_providers.bundle_session_login
+```
 
 ## Delegated Credential Grant State Today
 

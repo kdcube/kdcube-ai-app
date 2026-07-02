@@ -143,7 +143,7 @@ async def test_connection_hub_surface_marks_verified_unlinked_actor_external():
             provider_subject="434804821",
             actor_user_id="telegram_434804821",
             connection_id="telegram.support",
-            principal={"roles": ["kdcube:role:chat-user"]},
+            principal={"roles": []},
             identity_authority={
                 "actor_user_id": "telegram_434804821",
                 "storage_user_id": "telegram_434804821",

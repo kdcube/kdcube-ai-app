@@ -250,6 +250,36 @@ def build_frontend_config(
         auth.setdefault("apiBase", "/auth/")
     elif auth_type == "bundle":
         auth.pop("token", None)
+        connection_hub_ref = (
+            auth.get("connectionHub")
+            if isinstance(auth.get("connectionHub"), Mapping)
+            else get_nested(assembly or {}, "auth", "connection_hub")
+            or get_nested(assembly or {}, "auth", "connectionHub")
+            or get_nested(assembly or {}, "auth", "bundle_session", "connection_hub")
+        )
+        if isinstance(connection_hub_ref, Mapping):
+            raw_ref = copy.deepcopy(dict(connection_hub_ref))
+            normalized_ref: dict[str, Any] = {}
+            for source, target in (
+                ("bundle_id", "bundleId"),
+                ("authority_id", "authorityId"),
+                ("provider_id", "providerId"),
+                ("provider_type", "providerType"),
+                ("entrypoint", "entrypoint"),
+            ):
+                value = raw_ref.get(source, raw_ref.get(target))
+                if value not in (None, ""):
+                    normalized_ref[target] = value
+            if normalized_ref:
+                auth["connectionHub"] = normalized_ref
+        login_url = (
+            as_text(auth.get("loginUrl"))
+            or as_text(get_nested(assembly or {}, "auth", "login_url"))
+            or as_text(get_nested(assembly or {}, "auth", "login", "url"))
+            or as_text(get_nested(assembly or {}, "auth", "bundle_session", "login_url"))
+        )
+        if login_url:
+            auth["loginUrl"] = login_url
 
     turnstile_token = (
         as_text(turnstile_development_token)

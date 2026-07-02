@@ -43,7 +43,7 @@ async def test_multi_cognito_selects_provider_from_access_and_id_claims(monkeypa
         return CognitoUser(
             sub="user-1",
             username="user@example.com",
-            roles=["kdcube:role:chat-user"],
+            roles=["kdcube:role:registered"],
             identity_provider=self.provider_alias,
             issuer=self.oauth_config.OAUTH2_ISSUER,
         )

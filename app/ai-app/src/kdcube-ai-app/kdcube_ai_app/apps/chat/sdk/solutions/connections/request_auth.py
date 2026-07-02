@@ -26,7 +26,7 @@ from kdcube_ai_app.auth.AuthManager import (
     AuthManager,
     AuthenticationError,
     PAID_ROLES,
-    REGISTERED_ROLE,
+    ensure_platform_registered_role,
 )
 from kdcube_ai_app.auth.sessions import RequestContext, UserSession, UserType
 from kdcube_ai_app.apps.chat.sdk.solutions.connections.authority_projection import (
@@ -49,6 +49,8 @@ def _roles_user_type(roles: list[str] | None) -> UserType:
         return UserType.PRIVILEGED
     if PAID_ROLES & role_set:
         return UserType.PAID
+    if not role_set:
+        return UserType.EXTERNAL
     return UserType.REGISTERED
 
 
@@ -168,9 +170,9 @@ class PlatformTokenAuthenticator:
                 return None
 
             token = parts[1]
-            user = await self.auth_manager.authenticate_with_both(token, context.id_token)
-            if user and not user.roles:
-                user.roles = [REGISTERED_ROLE]
+            user = ensure_platform_registered_role(
+                await self.auth_manager.authenticate_with_both(token, context.id_token)
+            )
             roles = list(getattr(user, "roles", None) or [])
             permissions = list(getattr(user, "permissions", None) or [])
             user_type = _roles_user_type(roles)

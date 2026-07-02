@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import inspect
 import logging
-from typing import Iterable, Mapping, Optional, Tuple
+from typing import Any, Iterable, Mapping, Optional, Tuple
 from urllib.parse import quote
 
 from fastapi import APIRouter, Request
@@ -29,7 +29,11 @@ from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oau
     OAuthDelegatedClientConfig,
     oauth_delegated_config,
 )
-from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oauth.consent import render_consent_html, tools_for_scopes
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oauth.consent import (
+    platform_edge_grants_for_scopes,
+    render_consent_html,
+    tools_for_scopes,
+)
 from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oauth.authority import build_delegated_client_credential
 from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oauth.http.deps import (
     extract_bearer,
@@ -47,6 +51,10 @@ from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oau
     parse_authorize_request,
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oauth.pkce import verify_s256
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.authority_registry_config import (
+    resolve_authority_provider_instance,
+)
+from kdcube_ai_app.apps.chat.sdk.infra.bundle_operations import call_bundle_operation
 from kdcube_ai_app.apps.chat.sdk.solutions.connections.authority_inventory import (
     AuthorityGrantInventory,
     PlatformAuthorityInventoryProvider,
@@ -72,6 +80,181 @@ def _consent_action(request: Request) -> str:
     if path.endswith("/authorize"):
         return f"{path}/consent"
     return "/oauth/authorize/consent"
+
+
+def _consent_payload(
+    *,
+    req: AuthorizeRequest,
+    issuer: str,
+    csrf_token: str,
+    trusted: bool,
+    cfg: OAuthDelegatedClientConfig,
+    form_action: str,
+    grantor_subject: str,
+    grantor_label: str,
+    signout_action: str,
+    return_to: str,
+) -> dict[str, Any]:
+    return {
+        "request": {
+            "client_id": req.client_id,
+            "redirect_uri": req.redirect_uri,
+            "response_type": req.response_type,
+            "scopes": list(req.scopes),
+            "scope": " ".join(req.scopes),
+            "resource": req.resource or "",
+            "state": req.state or "",
+            "code_challenge": req.code_challenge,
+            "code_challenge_method": req.code_challenge_method,
+        },
+        "issuer": issuer,
+        "csrf_token": csrf_token,
+        "trusted": bool(trusted),
+        "brand": cfg.brand,
+        "form_action": form_action,
+        "grantor_subject": grantor_subject,
+        "grantor_label": grantor_label,
+        "signout_action": signout_action,
+        "return_to": return_to,
+        "platform_grants": [
+            {"grant": grant, "label": label, "description": description}
+            for grant, label, description in platform_edge_grants_for_scopes(req.scopes, config=cfg)
+        ],
+        "tools": [
+            {
+                "name": tool.name,
+                "label": tool.label,
+                "description": tool.description,
+                "grants": list(tool.grants),
+            }
+            for tool in cfg.tools_for_scopes(req.scopes, resource=req.resource)
+        ],
+    }
+
+
+def _extract_custom_consent_html(result: Any, *, operation: str) -> str:
+    if isinstance(result, str):
+        return result
+    if not isinstance(result, Mapping):
+        return ""
+    candidates = [
+        result.get("html"),
+        result.get("body"),
+        result.get(operation),
+        result.get("result"),
+        result.get("data"),
+    ]
+    for candidate in candidates:
+        if isinstance(candidate, str):
+            return candidate
+        if isinstance(candidate, Mapping):
+            nested = candidate.get("html") or candidate.get("body")
+            if isinstance(nested, str):
+                return nested
+    return ""
+
+
+def _authority_registry_for_request(request: Request) -> Mapping[str, Any]:
+    state = getattr(request, "state", None)
+    raw = getattr(state, "connection_hub_authority_registry", None) if state is not None else None
+    return raw if isinstance(raw, Mapping) else {}
+
+
+def _custom_consent_endpoint(request: Request, cfg: OAuthDelegatedClientConfig) -> Mapping[str, Any]:
+    ui = cfg.consent_ui
+    if ui.mode == "connection_hub":
+        return {}
+    if ui.mode == "bundle_hosted" and isinstance(ui.host, Mapping) and ui.host:
+        return ui.host
+    if ui.mode == "authority_provider" and ui.authority_id and ui.provider_id:
+        resolved = resolve_authority_provider_instance(
+            _authority_registry_for_request(request),
+            authority_id=ui.authority_id,
+            provider_id=ui.provider_id,
+        )
+        if not resolved.get("ok"):
+            return {"error": resolved.get("error") or "authority_provider_not_found"}
+        entrypoints = resolved.get("entrypoints") if isinstance(resolved.get("entrypoints"), Mapping) else {}
+        endpoint = entrypoints.get(ui.entrypoint or "consent")
+        return endpoint if isinstance(endpoint, Mapping) else {"error": "consent_entrypoint_not_found"}
+    return {}
+
+
+async def _render_custom_consent_if_configured(
+    request: Request,
+    *,
+    req: AuthorizeRequest,
+    issuer: str,
+    csrf_token: str,
+    trusted: bool,
+    cfg: OAuthDelegatedClientConfig,
+    grantor_subject: str,
+    grantor_label: str,
+) -> Response | None:
+    endpoint = _custom_consent_endpoint(request, cfg)
+    if not endpoint:
+        return None
+    if endpoint.get("error"):
+        LOGGER.warning(
+            "[connection-hub.oauth] consent_ui unresolved mode=%s authority=%s provider=%s entrypoint=%s error=%s",
+            cfg.consent_ui.mode,
+            cfg.consent_ui.authority_id,
+            cfg.consent_ui.provider_id,
+            cfg.consent_ui.entrypoint,
+            endpoint.get("error"),
+        )
+        return JSONResponse(
+            status_code=500,
+            content={"error": "consent_ui_unavailable", "error_description": str(endpoint.get("error") or "")},
+        )
+
+    bundle_id = str(endpoint.get("bundle_id") or endpoint.get("app_id") or "").strip()
+    operation = str(endpoint.get("operation") or endpoint.get("alias") or "").strip()
+    route = str(endpoint.get("route") or "public").strip() or "public"
+    if not bundle_id or not operation:
+        return JSONResponse(
+            status_code=500,
+            content={"error": "consent_ui_unavailable", "error_description": "bundle_id and operation are required"},
+        )
+
+    payload = _consent_payload(
+        req=req,
+        issuer=issuer,
+        csrf_token=csrf_token,
+        trusted=trusted,
+        cfg=cfg,
+        form_action=_consent_action(request),
+        grantor_subject=grantor_subject,
+        grantor_label=grantor_label,
+        signout_action=_logout_action(request),
+        return_to=_return_to(request),
+    )
+    try:
+        result = await call_bundle_operation(
+            bundle_id=bundle_id,
+            operation=operation,
+            route=route,
+            http_method="POST",
+            data=payload,
+        )
+    except Exception as exc:
+        LOGGER.exception(
+            "[connection-hub.oauth] consent_ui render failed bundle=%s route=%s operation=%s",
+            bundle_id,
+            route,
+            operation,
+        )
+        return JSONResponse(
+            status_code=500,
+            content={"error": "consent_ui_render_failed", "error_description": str(exc)},
+        )
+    html = _extract_custom_consent_html(result, operation=operation)
+    if not html:
+        return JSONResponse(
+            status_code=500,
+            content={"error": "consent_ui_render_failed", "error_description": "renderer did not return html"},
+        )
+    return HTMLResponse(html)
 
 
 def _logout_action(request: Request) -> str:
@@ -356,6 +539,18 @@ async def authorize(request: Request) -> Response:
     # trusted = a statically pre-registered client (not a dynamically-registered one),
     # so the consent screen can flag unknown clients for anti-phishing.
     trusted = get_client(req.client_id, request) is not None
+    custom = await _render_custom_consent_if_configured(
+        request,
+        req=render_req,
+        issuer=issuer,
+        csrf_token=csrf,
+        trusted=trusted,
+        cfg=cfg,
+        grantor_subject=_user_subject(user or {}),
+        grantor_label=_user_label(user or {}),
+    )
+    if custom is not None:
+        return custom
     return HTMLResponse(
         render_consent_html(
             render_req,

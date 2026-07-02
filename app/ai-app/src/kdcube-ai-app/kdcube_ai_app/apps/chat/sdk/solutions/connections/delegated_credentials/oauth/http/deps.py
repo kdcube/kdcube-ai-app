@@ -26,6 +26,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.connections.authority_projection impo
     authority_has_platform_privilege,
 )
 from kdcube_ai_app.apps.middleware.token_extract import resolve_auth_from_headers_and_cookies
+from kdcube_ai_app.auth.AuthManager import ensure_platform_registered_role
 
 AuthenticateFn = Callable[[str], Awaitable[Optional[dict]]]
 
@@ -112,7 +113,7 @@ def get_authenticate(request: Request) -> AuthenticateFn:
         )
         for manager in managers:
             try:
-                user = await manager.authenticate_with_both(token, id_token)
+                user = ensure_platform_registered_role(await manager.authenticate_with_both(token, id_token))
             except Exception:
                 continue
             if user is None:

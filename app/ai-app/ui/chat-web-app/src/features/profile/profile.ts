@@ -72,7 +72,12 @@ export const fetchUserProfile = createAppAsyncThunk('userProfile/fetch', async (
     const response = await fetch(`${chatAPIBasePath}/profile`, {
         method: "GET",
         headers: appendDefaultHeaders({"Content-Type":"application/json"}),
+        credentials: "include",
     })
+    if (!response.ok) {
+        const body = await response.text().catch(() => "");
+        throw new Error(body || `Profile request failed: ${response.status}`);
+    }
 
     return response.json()
 }, {

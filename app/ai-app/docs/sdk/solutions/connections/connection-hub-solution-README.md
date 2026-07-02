@@ -105,30 +105,42 @@ authority_registry:
           authenticator:
             type: cognito_id_token
 
-        versatile_telegram_session:
+        versatile_google_session:
           type: bundle_session_login
           enabled: true
-          label: Versatile Telegram platform session
-          host:
-            bundle_id: versatile@2026-03-31-13-36
-            route: public
-            operation: auth_telegram_session
+          label: Versatile Google platform session
+          entrypoints:
+            login:
+              bundle_id: versatile@2026-03-31-13-36
+              route: public
+              operation: platform_login
+            session_issue:
+              bundle_id: versatile@2026-03-31-13-36
+              route: public
+              operation: auth_google_session
+            consent:
+              bundle_id: versatile@2026-03-31-13-36
+              route: public
+              operation: delegated_consent
           input:
             authenticator_ref:
-              authority_id: telegram.kdcube_ref
-              provider_id: telegram_bot_init_data
-              integration_id: telegram.kdcube_ref
+              authority_id: google.accounts
+              provider_id: google_oidc
           issuer:
             type: kdcube_session_token
             ttl_seconds: 43200
-            cookie:
-              secure: true
-              same_site: lax
           grants:
-            roles:
-              - kdcube:role:chat-user
-            permissions:
-              - kdcube:*:chat:*;read;write
+            default:
+              roles:
+                - kdcube:role:registered
+              permissions: []
+            assignable:
+              roles:
+                - kdcube:role:registered
+                - kdcube:role:super-admin
+              permissions:
+                - kdcube:*:chat:*;read;write
+                - kdcube:*:*:*
 
     telegram.kdcube_ref:
       platform: false
@@ -139,6 +151,44 @@ authority_registry:
           enabled: true
           authenticator:
             secret_ref: identity.authenticators.telegram_kdcube_ref.bot_token
+
+    google.accounts:
+      platform: false
+      label: Google Accounts
+      providers:
+        google_oidc:
+          type: google_id_token
+          enabled: true
+          authenticator:
+            client_id: 960111679915-825b0cenujpavcmognp450l7ius4suje.apps.googleusercontent.com
+```
+
+`entrypoints.login`
+: Browser page for signing in through this provider. The hosting bundle can own
+  this UI and styling.
+
+`entrypoints.session_issue`
+: Action/callback that validates the upstream proof and asks the Connection Hub
+  SDK to issue the configured KDCube session credential.
+
+`entrypoints.consent`
+: Optional bundle-hosted delegated credential consent renderer for this
+  authority provider. Connection Hub still owns CSRF validation, grant
+  narrowing, authorization-code creation, and token issuance.
+
+The delegated credential adapter references the provider instead of repeating
+bundle URLs:
+
+```yaml
+connections:
+  delegated_credentials:
+    oauth:
+      enabled: true
+      consent_ui:
+        authority_ref:
+          authority_id: kdcube.platform
+          provider_id: versatile_google_session
+          entrypoint: consent
 ```
 
 In this shape:
@@ -156,25 +206,60 @@ example `cognito_admin` and `cognito_customer`. A provider instance may have:
 - `authenticator`: verifies incoming auth material;
 - `issuer`: mints auth material;
 - `input.authenticator_ref`: points to another authenticator used as input;
-- `host`: names the bundle/API operation that executes the flow;
-- `grants`: grants/roles/permissions this provider may produce.
+- `entrypoints`: names browser/runtime bundle operations for login, session
+  issuance, and optional consent rendering;
+- `grants.default`: roles/permissions issued to every successful session from
+  this provider.
+- `grants.assignable`: the maximum roles/permissions this provider may assign
+  through authority-level subject grants.
 
-For example, `versatile_telegram_session` is one provider instance. It consumes
-Telegram initData through the Telegram authenticator and issues a KDCube bundle
-session token for the platform authority.
+For example, `versatile_google_session` consumes a Google ID token verified by
+`google.accounts.providers.google_oidc`, then issues a KDCube bundle-session
+token for subject `google:<sub>`. The hosted UI may live in Versatile, but
+authority ids, grants, TTL, and subject assignments remain in Connection Hub.
+
+Telegram Mini App `initData` remains a channel/request authenticator in this
+model. It is linked to the Google-backed platform identity through a Connection
+Hub connection edge; it is not configured as a `kdcube.platform` session
+provider.
 
 The hosting bundle does not need a local platform-session config branch. It is
-registered by its host operation:
+registered by provider entrypoints:
 
 ```yaml
-host:
-  bundle_id: versatile@2026-03-31-13-36
-  route: public
-  operation: auth_telegram_session
+entrypoints:
+  login:
+    bundle_id: versatile@2026-03-31-13-36
+    route: public
+    operation: platform_login
+  session_issue:
+    bundle_id: versatile@2026-03-31-13-36
+    route: public
+    operation: auth_google_session
+  consent:
+    bundle_id: versatile@2026-03-31-13-36
+    route: public
+    operation: delegated_consent
 ```
 
-If the same bundle later hosts a Google login flow, it adds another provider
-instance:
+Frontend platform login uses the same registry instead of a materialized URL in
+the assembly descriptor:
+
+```yaml
+auth:
+  type: bundle
+  connection_hub:
+    bundle_id: connection-hub@1-0
+    authority_id: kdcube.platform
+    provider_id: versatile_google_session
+    entrypoint: login
+```
+
+The web app asks Connection Hub to resolve that provider entrypoint. Connection
+Hub returns the concrete bundle public URL for the current tenant/project.
+
+If the same deployment later adds another platform login flow, it adds another
+provider instance:
 
 ```yaml
 authority_registry:
@@ -183,10 +268,19 @@ authority_registry:
       providers:
         versatile_google_session:
           type: bundle_session_login
-          host:
-            bundle_id: versatile@2026-03-31-13-36
-            route: public
-            operation: auth_google_session
+          entrypoints:
+            login:
+              bundle_id: versatile@2026-03-31-13-36
+              route: public
+              operation: platform_login
+            session_issue:
+              bundle_id: versatile@2026-03-31-13-36
+              route: public
+              operation: auth_google_session
+            consent:
+              bundle_id: versatile@2026-03-31-13-36
+              route: public
+              operation: delegated_consent
           input:
             authenticator_ref:
               authority_id: google.accounts
@@ -194,16 +288,67 @@ authority_registry:
           issuer:
             type: kdcube_session_token
             ttl_seconds: 43200
-          grants: ...
+          grants:
+            default:
+              roles:
+                - kdcube:role:registered
+              permissions: []
+            assignable:
+              roles:
+                - kdcube:role:registered
+                - kdcube:role:super-admin
+              permissions:
+                - kdcube:*:chat:*;read;write
+                - kdcube:*:*:*
 ```
+
+The role policy for bundle-session subjects stays in the platform authority:
+
+```yaml
+kdcube.platform:
+  platform: true
+  grants:
+    subjects:
+      google:<verified_sub>:
+        roles: [kdcube:role:super-admin]
+        permissions: [kdcube:*:*:*]
+    bootstrap_rules:
+      - id: bootstrap_admin_by_google_email
+        when:
+          provider: google
+          claims:
+            email: owner@example.com
+            email_verified: true
+        roles: [kdcube:role:super-admin]
+        permissions: [kdcube:*:*:*]
+```
+
+For Cognito-backed platform login, this provider `grants.default` branch is not
+used. Cognito roles are read from the verified ID token claims. A Cognito user
+without any platform role/group claim is authenticated but not authorized for
+`RequireUser` surfaces.
+
+Provider `grants.assignable` bounds what authority-level subject grants may
+issue through that hosted provider.
+
+Subject grants use stable authority subjects. Email can be used only in
+`grants.bootstrap_rules` as a verified bootstrap claim; it is not the identity
+key. For Google, a rule matching email must require/prove
+`email_verified: true`.
 
 Legacy or intermediate descriptors may still keep request authenticators under
 `identity.authenticators` until that branch is migrated into
 `authority_registry.authorities.*.providers.*.authenticator`.
 
-The bundle remains the execution engine. Connection Hub remains the registry
-owner for authority ids, platform-ness, provider instances, allowed grants,
-TTL, and host metadata.
+The bundle remains the hosted UI/API surface. The reusable provider runtime is
+SDK-owned:
+
+```text
+kdcube_ai_app.apps.chat.sdk.solutions.connections.authority_providers.bundle_session_login
+```
+
+Connection Hub remains the registry owner for authority ids, platform-ness,
+provider instances, grants, TTL, and host metadata.
 
 ## One Mental Model
 

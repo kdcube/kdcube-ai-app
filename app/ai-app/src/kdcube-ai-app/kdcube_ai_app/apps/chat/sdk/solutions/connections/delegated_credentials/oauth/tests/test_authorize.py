@@ -28,6 +28,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oau
 from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oauth.pkce import make_s256_challenge
 from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oauth.tests.test_clients_and_store import FakeRedis
 from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oauth.tests.helpers import enable_delegated_client
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oauth.http import routes as oauth_routes
 
 ISSUER = "https://connector.example.test"
 CHALLENGE = make_s256_challenge("verifier-" + "x" * 50)
@@ -225,7 +226,7 @@ async def _fake_authenticate(token):
         "user-tok": {
             "sub": "google:user@example.test",
             "user_id": "02e53484-0081-70ce-11c1-e96706b1a182",
-            "roles": ["kdcube:role:chat-user"],
+            "roles": ["kdcube:role:registered"],
         },
     }
     return table.get(token)
@@ -260,6 +261,46 @@ def test_authorize_rejects_user_without_delegable_grant(client):
     assert r.status_code == 403
 
 
+def test_authorize_can_render_bundle_hosted_consent(client, monkeypatch):
+    captured = {}
+    client.app.state.oauth_delegated_config = {
+        "enabled": True,
+        "issuer": ISSUER,
+        "consent_ui": {
+            "host": {
+                "bundle_id": "product@1-0",
+                "route": "public",
+                "operation": "delegated_consent",
+            },
+        },
+    }
+
+    async def fake_call_bundle_operation(**kwargs):
+        captured.update(kwargs)
+        assert kwargs["bundle_id"] == "product@1-0"
+        assert kwargs["operation"] == "delegated_consent"
+        assert kwargs["route"] == "public"
+        data = kwargs["data"]
+        assert data["csrf_token"]
+        assert data["form_action"] == "/oauth/authorize/consent"
+        assert data["request"]["client_id"] == "claude"
+        assert data["platform_grants"][0]["grant"] == "conversations:read"
+        assert data["tools"][0]["name"] == "conversations_export"
+        return {"delegated_consent": {"html": "<html><body>Custom consent</body></html>"}}
+
+    monkeypatch.setattr(oauth_routes, "call_bundle_operation", fake_call_bundle_operation)
+
+    response = client.get(
+        "/oauth/authorize",
+        params=_params(),
+        headers={"Authorization": "Bearer admin-tok"},
+    )
+
+    assert response.status_code == 200
+    assert "Custom consent" in response.text
+    assert captured["http_method"] == "POST"
+
+
 def test_authorize_renders_consent_for_regular_user_when_grant_is_delegable(client):
     client.app.state.oauth_delegated_config = {
         "enabled": True,
@@ -268,7 +309,7 @@ def test_authorize_renders_consent_for_regular_user_when_grant_is_delegable(clie
             {
                 "grant": "memories:read",
                 "label": "Read memories",
-                "delegable_roles": ["kdcube:role:chat-user"],
+                "delegable_roles": ["kdcube:role:registered"],
             },
         ],
         "resources": [
@@ -389,7 +430,7 @@ def test_consent_uses_platform_user_id_as_grantor_when_available(client):
             {
                 "grant": "memories:read",
                 "label": "Read memories",
-                "delegable_roles": ["kdcube:role:chat-user"],
+                "delegable_roles": ["kdcube:role:registered"],
             },
         ],
         "resources": [

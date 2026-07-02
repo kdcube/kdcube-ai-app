@@ -14,23 +14,46 @@ def _registry():
         "authorities": {
             "kdcube.platform": {
                 "platform": True,
+                "role_bindings": {
+                    "emails": {
+                        "owner@example.com": {"roles": ["kdcube:role:super-admin"]}
+                    }
+                },
                 "providers": {
                     "cognito": {
                         "type": "cognito",
                         "authenticator": {"type": "cognito_id_token"},
                     },
-                    "versatile_telegram_session": {
+                    "versatile_google_session": {
                         "type": "bundle_session_login",
-                        "host": {
-                            "bundle_id": "versatile@2026-03-31-13-36",
-                            "route": "public",
-                            "operation": "auth_telegram_session",
+                        "entrypoints": {
+                            "login": {
+                                "bundle_id": "versatile@2026-03-31-13-36",
+                                "route": "public",
+                                "operation": "platform_login",
+                            },
+                            "session_issue": {
+                                "bundle_id": "versatile@2026-03-31-13-36",
+                                "route": "public",
+                                "operation": "auth_google_session",
+                            },
+                            "consent": {
+                                "bundle_id": "versatile@2026-03-31-13-36",
+                                "route": "public",
+                                "operation": "delegated_consent",
+                            },
+                        },
+                        "input": {
+                            "authenticator_ref": {
+                                "authority_id": "google.accounts",
+                                "provider_id": "google_oidc",
+                            }
                         },
                         "issuer": {
                             "type": "kdcube_session_token",
                             "ttl_seconds": 43200,
                         },
-                        "grants": {"roles": ["kdcube:role:chat-user"]},
+                        "grants": {"roles": ["kdcube:role:registered"]},
                     },
                     "disabled_provider": {
                         "type": "bundle_session_login",
@@ -47,6 +70,14 @@ def _registry():
                     },
                 },
             },
+            "google.accounts": {
+                "providers": {
+                    "google_oidc": {
+                        "type": "google_id_token",
+                        "authenticator": {"client_id": "client.apps.googleusercontent.com"},
+                    },
+                },
+            },
         },
     }
 
@@ -59,8 +90,9 @@ def test_authority_provider_instances_flatten_configured_instances():
         for row in rows
     ] == [
         ("kdcube.platform", "cognito", "cognito", True),
-        ("kdcube.platform", "versatile_telegram_session", "bundle_session_login", True),
+        ("kdcube.platform", "versatile_google_session", "bundle_session_login", True),
         ("telegram.kdcube_ref", "telegram_bot_init_data", "telegram_init_data", False),
+        ("google.accounts", "google_oidc", "google_id_token", False),
     ]
 
 
@@ -70,13 +102,42 @@ def test_resolve_authority_provider_instance_by_host_operation():
         provider_type="bundle_session_login",
         host_bundle_id="versatile@2026-03-31-13-36",
         host_route="public",
-        host_operation="auth_telegram_session",
+        host_operation="auth_google_session",
     )
 
     assert result["ok"] is True
     assert result["authority_id"] == "kdcube.platform"
-    assert result["provider_id"] == "versatile_telegram_session"
+    assert result["provider_id"] == "versatile_google_session"
+    assert result["entrypoints"]["login"]["operation"] == "platform_login"
+    assert result["entrypoints"]["consent"]["operation"] == "delegated_consent"
     assert result["provider"]["issuer"]["ttl_seconds"] == 43200
+    assert result["authority"]["role_bindings"]["emails"]["owner@example.com"]["roles"] == ["kdcube:role:super-admin"]
+
+
+def test_resolve_authority_provider_instance_by_consent_entrypoint():
+    result = resolve_authority_provider_instance(
+        _registry(),
+        provider_type="bundle_session_login",
+        host_bundle_id="versatile@2026-03-31-13-36",
+        host_route="public",
+        host_operation="delegated_consent",
+    )
+
+    assert result["ok"] is True
+    assert result["authority_id"] == "kdcube.platform"
+    assert result["provider_id"] == "versatile_google_session"
+
+
+def test_resolve_authority_provider_instance_by_authority_and_provider_id():
+    result = resolve_authority_provider_instance(
+        _registry(),
+        authority_id="google.accounts",
+        provider_id="google_oidc",
+    )
+
+    assert result["ok"] is True
+    assert result["provider_type"] == "google_id_token"
+    assert result["provider"]["authenticator"]["client_id"] == "client.apps.googleusercontent.com"
 
 
 def test_resolve_authority_provider_instance_fails_closed_when_missing():

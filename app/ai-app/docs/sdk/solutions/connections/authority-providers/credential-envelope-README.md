@@ -159,13 +159,13 @@ A bundle can declare a custom authority provider in its entrypoint:
 ```python
 from kdcube_ai_app.infra.plugin.bundle_loader import authority_provider
 
-class NavigatorBundle:
+class CustomAuthorityBundle:
     @authority_provider(
         authority_id="custom.identity",
         authenticator_id="custom.identity.oauth",
         credential_kinds=["authority_access"],
-        audiences=["bundle:navigator-tg-bot@1-0"],
-        label="Yay Identity",
+        audiences=["bundle:custom-app@1-0"],
+        label="Custom Identity",
     )
     async def custom_identity_provider(self):
         return self.custom_authority_provider

@@ -5,7 +5,7 @@
     "email": "admin@test.com",
     "roles": [
       "kdcube:role:super-admin",
-      "kdcube:role:chat-user"
+      "kdcube:role:registered"
     ],
     "permissions": [
       "kdcube:*:knowledge_base:*;read;write;delete",
@@ -17,7 +17,7 @@
     "username": "chatuser",
     "email": "chat@test.com",
     "roles": [
-      "kdcube:role:chat-user"
+      "kdcube:role:registered"
     ],
     "permissions": [
       "kdcube:*:chat:*;read"

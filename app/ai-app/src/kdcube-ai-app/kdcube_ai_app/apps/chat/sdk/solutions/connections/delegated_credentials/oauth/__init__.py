@@ -13,6 +13,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oau
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oauth.config import (
     OAuthDelegatedClientConfig,
+    OAuthDelegatedConsentUIConfig,
     oauth_delegated_config,
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oauth.grants import (
@@ -41,6 +42,7 @@ __all__ = [
     "DELEGATED_CLIENT_CREDENTIAL_KIND",
     "OAuthDelegatedClientAuthorityProvider",
     "OAuthDelegatedClientConfig",
+    "OAuthDelegatedConsentUIConfig",
     "ROLE_TOOLS",
     "GrantStore",
     "authorization_server_metadata",

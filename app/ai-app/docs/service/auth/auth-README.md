@@ -41,11 +41,12 @@ User type is derived from roles:
 - **Privileged**: any role in `PRIVILEGED_ROLES` (`kdcube:role:super-admin`, `kdcube:role:admin`)
 - **Paid**: any role in `PAID_ROLES` (`kdcube:role:paid`)
 - **Registered**: authenticated user with any other role
+- **External**: authenticated/proven identity with no platform roles
 - **Anonymous**: no valid token
 
 4) **Requirements enforcement**  
 `RequireUser()` now means:
-- user is **non‑anonymous**
+- user is **non‑anonymous** and not merely an unprivileged external actor
 - user has **at least one role**
 
 5) **Session ownership enforcement**  
@@ -272,10 +273,20 @@ Common role names in this codebase (non‑exhaustive):
 - `kdcube:role:super-admin` → privileged
 - `kdcube:role:admin` → privileged
 - `kdcube:role:paid` → paid
-- `kdcube:role:chat-user` → registered
+- `kdcube:role:registered` → baseline platform user
 - `kdcube:role:service` → service accounts (registered unless explicitly privileged)
 
 Role sets are defined in `kdcube_ai_app/auth/AuthManager.py`.
+
+Central platform-auth rule:
+
+- if a configured platform authority successfully authenticates a user and
+  returns no roles, platform auth normalizes that user to
+  `kdcube:role:registered`;
+- this applies to platform authorities such as Cognito, SimpleIDP, and
+  configured bundle-session platform providers;
+- this does not apply to raw external channel proofs such as Telegram initData
+  until they resolve/project to a platform authority.
 
 ## References
 - Gateway/auth adapters:

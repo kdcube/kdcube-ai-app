@@ -76,7 +76,7 @@ authority_registry:
           type: cognito
           enabled: true
           authenticator: ...
-        versatile_telegram_session:
+        versatile_google_session:
           type: bundle_session_login
           enabled: true
           input: ...
@@ -104,7 +104,7 @@ type/enum. The id and type may match for the normal single-instance case, such
 as `providers.cognito.type: cognito`. They diverge only when there are multiple
 instances of the same provider type. A provider instance can have one optional
 authenticator, one optional issuer, one optional input authenticator reference,
-and one host operation.
+and browser/runtime entrypoints.
 
 For a bundle-hosted platform session login provider, Connection Hub owns the
 provider metadata:
@@ -115,29 +115,143 @@ authority_registry:
     kdcube.platform:
       platform: true
       providers:
-        versatile_telegram_session:
+        versatile_google_session:
           type: bundle_session_login
-          host:
-            bundle_id: versatile@2026-03-31-13-36
-            route: public
-            operation: auth_telegram_session
+          entrypoints:
+            login:
+              bundle_id: versatile@2026-03-31-13-36
+              route: public
+              operation: platform_login
+            session_issue:
+              bundle_id: versatile@2026-03-31-13-36
+              route: public
+              operation: auth_google_session
+            consent:
+              bundle_id: versatile@2026-03-31-13-36
+              route: public
+              operation: delegated_consent
           input:
             authenticator_ref:
-              authority_id: telegram.kdcube_ref
-              provider_id: telegram_bot_init_data
-              integration_id: telegram.kdcube_ref
+              authority_id: google.accounts
+              provider_id: google_oidc
           issuer:
             type: kdcube_session_token
             ttl_seconds: 43200
           grants:
-            roles: [kdcube:role:chat-user]
-            permissions: [kdcube:*:chat:*;read;write]
+            default:
+              roles: [kdcube:role:registered]
+              permissions: []
+            assignable:
+              roles: [kdcube:role:registered]
+              permissions: [kdcube:*:chat:*;read;write]
+
+        versatile_google_session:
+          type: bundle_session_login
+          entrypoints:
+            login:
+              bundle_id: versatile@2026-03-31-13-36
+              route: public
+              operation: platform_login
+            session_issue:
+              bundle_id: versatile@2026-03-31-13-36
+              route: public
+              operation: auth_google_session
+            consent:
+              bundle_id: versatile@2026-03-31-13-36
+              route: public
+              operation: delegated_consent
+          input:
+            authenticator_ref:
+              authority_id: google.accounts
+              provider_id: google_oidc
+          issuer:
+            type: kdcube_session_token
+            ttl_seconds: 43200
+          grants:
+            default:
+              roles:
+                - kdcube:role:registered
+              permissions: []
+            assignable:
+              roles:
+                - kdcube:role:registered
+                - kdcube:role:super-admin
+              permissions:
+                - kdcube:*:chat:*;read;write
+                - kdcube:*:*:*
+
+    google.accounts:
+      platform: false
+      providers:
+        google_oidc:
+          type: google_id_token
+          authenticator:
+            client_id: 960111679915-825b0cenujpavcmognp450l7ius4suje.apps.googleusercontent.com
 ```
 
 This keeps authority semantics registered once in Connection Hub while allowing
 provider engines to live in bundles, SDK modules, or platform auth managers.
-The hosting bundle is resolved by its `host` operation and does not carry a
-local platform-session policy branch.
+The hosting bundle is resolved by its provider `entrypoints` and does not carry
+a local platform-session policy branch.
+
+Google in this model is an upstream authority/provider, not the platform
+authority. The platform subject is created under `kdcube.platform` by the
+registered hosted provider, typically as `google:<sub>` for bundle-session auth.
+
+For platform login, a successfully authenticated platform subject is always a
+platform user. If the authority/provider returns no roles, the platform auth
+boundary normalizes the subject to `kdcube:role:registered`. Provider
+`grants.default.roles` may still grant a more specific default role set, and
+subject assignments/bootstrap rules may grant admin or app-specific roles.
+Telegram channel proof should normally keep an empty default role set; raw
+Telegram proof is channel authentication, not platform login.
+
+Cognito is already a platform authenticator. Its roles come from token claims
+such as `cognito:groups`, `custom:roles`, or `roles`. If those claims are
+absent, the same platform-auth rule applies and the user receives
+`kdcube:role:registered` at the platform boundary.
+
+For descriptor-backed bundle-session demos, role policy can be attached to the
+platform authority:
+
+```yaml
+kdcube.platform:
+  grants:
+    subjects:
+      google:123:
+        roles: [kdcube:role:super-admin]
+        permissions: [kdcube:*:*:*]
+    bootstrap_rules:
+      - id: bootstrap_admin_by_google_email
+        when:
+          provider: google
+          claims:
+            email: owner@example.com
+            email_verified: true
+        roles: [kdcube:role:super-admin]
+        permissions: [kdcube:*:*:*]
+```
+
+Assignments are bounded by the provider's `grants.assignable` block. If
+a subject assignment or bootstrap rule asks for something outside that
+assignable set, the hosted provider must fail closed.
+
+`grants.subjects` is the canonical long-lived assignment surface. The
+key is the authority subject, for example `google:<verified_sub>`, not email.
+`grants.bootstrap_rules` is only a bootstrap mechanism for cases where an admin
+knows a verified upstream claim before they know the stable subject. For Google,
+an email rule must also require/prove `email_verified: true`; after login the
+issued platform subject remains `google:<sub>`.
+
+The hosted bundle does not implement this policy. The reusable runtime lives in:
+
+```text
+kdcube_ai_app.apps.chat.sdk.solutions.connections.authority_providers.bundle_session_login
+```
+
+The bundle route/UI calls that runtime. The runtime resolves the provider
+instance from Connection Hub, verifies the upstream proof, resolves grants, and
+issues the bundle-session token.
 
 ## Request Hints Are Not Truth
 
@@ -271,7 +385,7 @@ class MyBundle:
         authority_id="custom.identity",
         authenticator_id="custom.identity.oauth",
         credential_kinds=["authority_access"],
-        audiences=["bundle:navigator-tg-bot@1-0"],
+        audiences=["bundle:custom-app@1-0"],
     )
     async def custom_identity_provider(self):
         return self.custom_authority_provider

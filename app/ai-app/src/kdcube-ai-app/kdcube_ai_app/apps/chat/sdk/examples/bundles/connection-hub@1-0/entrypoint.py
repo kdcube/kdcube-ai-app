@@ -4,7 +4,7 @@ import logging
 import json
 from datetime import datetime, timezone
 from typing import Any, Dict, Mapping, Optional
-from urllib.parse import urlencode, urlsplit, urlunsplit
+from urllib.parse import quote, urlencode, urlsplit, urlunsplit
 
 from fastapi.responses import JSONResponse
 
@@ -613,6 +613,32 @@ def _request_origin(request: Any) -> str:
         return ""
 
 
+def _bundle_operation_public_url(
+    entrypoint: Any,
+    *,
+    request: Any,
+    endpoint: Mapping[str, Any],
+) -> str:
+    bundle_id = str(
+        endpoint.get("bundle_id")
+        or endpoint.get("bundle")
+        or endpoint.get("app_id")
+        or ""
+    ).strip()
+    route = str(endpoint.get("route") or "public").strip()
+    operation = str(endpoint.get("operation") or endpoint.get("alias") or "").strip()
+    if not bundle_id or not route or not operation:
+        return ""
+    tenant, project = _runtime_tenant_project(entrypoint)
+    path = (
+        "/api/integrations/bundles/"
+        f"{quote(tenant, safe='')}/{quote(project, safe='')}/"
+        f"{quote(bundle_id, safe='')}/{quote(route, safe='')}/{quote(operation, safe='')}"
+    )
+    origin = _request_origin(request)
+    return f"{origin}{path}" if origin else path
+
+
 def _append_query(url: str, params: Mapping[str, str]) -> str:
     parts = urlsplit(url)
     existing = parts.query
@@ -1074,6 +1100,7 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
                             "connection_edge_challenge_claim": {"visibility": {"user_types": []}},
                             "connection_edge_challenge_status": {"visibility": {"user_types": []}},
                             "authority_provider_resolve": {"visibility": {"user_types": []}},
+                            "authority_provider_entrypoint_resolve": {"visibility": {"user_types": []}},
                             "identity_family_resolve": {"visibility": {"user_types": []}},
                             "delegated_identity_scope_resolve": {"visibility": {"user_types": []}},
                             "identity_resolve": {"visibility": {"user_types": []}},
@@ -1539,6 +1566,65 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
                 str(payload.get("host_operation") or "").strip(),
             )
         return result
+
+    @api(method="POST", alias="authority_provider_entrypoint_resolve", route="public", **_api_visibility("authority_provider_entrypoint_resolve"))
+    async def authority_provider_entrypoint_resolve(
+        self,
+        request: Any = None,
+        data: Optional[Dict[str, Any]] = None,
+        authority_id: str = "",
+        provider_id: str = "",
+        provider_type: str = "",
+        entrypoint: str = "login",
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+        payload = _payload(
+            data,
+            authority_id=authority_id,
+            provider_id=provider_id,
+            provider_type=provider_type,
+            entrypoint=entrypoint,
+            **kwargs,
+        )
+        entrypoint_name = str(payload.get("entrypoint") or "login").strip() or "login"
+        result = resolve_authority_provider_instance(
+            _authority_registry_config(self),
+            authority_id=str(payload.get("authority_id") or "").strip(),
+            provider_id=str(payload.get("provider_id") or "").strip(),
+            provider_type=str(payload.get("provider_type") or "").strip(),
+        )
+        if not result.get("ok"):
+            return result
+        entrypoints = result.get("entrypoints") if isinstance(result.get("entrypoints"), Mapping) else {}
+        endpoint = dict(entrypoints.get(entrypoint_name) or {}) if isinstance(entrypoints, Mapping) else {}
+        if not endpoint:
+            return {
+                "ok": False,
+                "error": "authority_provider_entrypoint_not_found",
+                "authority_id": result.get("authority_id"),
+                "provider_id": result.get("provider_id"),
+                "entrypoint": entrypoint_name,
+            }
+        url = _bundle_operation_public_url(self, request=request, endpoint=endpoint)
+        if not url:
+            return {
+                "ok": False,
+                "error": "authority_provider_entrypoint_url_unavailable",
+                "authority_id": result.get("authority_id"),
+                "provider_id": result.get("provider_id"),
+                "entrypoint": entrypoint_name,
+                "endpoint": endpoint,
+            }
+        return {
+            "ok": True,
+            "authority_id": result.get("authority_id"),
+            "provider_id": result.get("provider_id"),
+            "provider_type": result.get("provider_type"),
+            "platform": bool(result.get("platform")),
+            "entrypoint": entrypoint_name,
+            "endpoint": endpoint,
+            "url": url,
+        }
 
     # ── connection edges (external identity -> delegated platform principal) ─
 

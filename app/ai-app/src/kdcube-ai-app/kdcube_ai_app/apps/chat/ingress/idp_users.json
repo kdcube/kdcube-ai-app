@@ -75,7 +75,7 @@
     "email": "chat@test.com",
     "name": "Chat User",
     "roles": [
-      "kdcube:role:chat-user"
+      "kdcube:role:registered"
     ],
     "permissions": [
       "kdcube:*:chat:*;read"
@@ -87,7 +87,7 @@
     "email": "chat001@test.com",
     "name": "Chat User 001",
     "roles": [
-      "kdcube:role:chat-user"
+      "kdcube:role:registered"
     ],
     "permissions": [
       "kdcube:*:chat:*;read"
@@ -99,7 +99,7 @@
     "email": "chat002@test.com",
     "name": "Chat User 002",
     "roles": [
-      "kdcube:role:chat-user"
+      "kdcube:role:registered"
     ],
     "permissions": [
       "kdcube:*:chat:*;read"
@@ -111,7 +111,7 @@
     "email": "chat003@test.com",
     "name": "Chat User 003",
     "roles": [
-      "kdcube:role:chat-user"
+      "kdcube:role:registered"
     ],
     "permissions": [
       "kdcube:*:chat:*;read"
@@ -123,7 +123,7 @@
     "email": "chat004@test.com",
     "name": "Chat User 004",
     "roles": [
-      "kdcube:role:chat-user"
+      "kdcube:role:registered"
     ],
     "permissions": [
       "kdcube:*:chat:*;read"
@@ -135,7 +135,7 @@
     "email": "chat005@test.com",
     "name": "Chat User 005",
     "roles": [
-      "kdcube:role:chat-user"
+      "kdcube:role:registered"
     ],
     "permissions": [
       "kdcube:*:chat:*;read"
@@ -147,7 +147,7 @@
     "email": "chat006@test.com",
     "name": "Chat User 006",
     "roles": [
-      "kdcube:role:chat-user"
+      "kdcube:role:registered"
     ],
     "permissions": [
       "kdcube:*:chat:*;read"
@@ -159,7 +159,7 @@
     "email": "chat007@test.com",
     "name": "Chat User 007",
     "roles": [
-      "kdcube:role:chat-user"
+      "kdcube:role:registered"
     ],
     "permissions": [
       "kdcube:*:chat:*;read"
@@ -171,7 +171,7 @@
     "email": "chat008@test.com",
     "name": "Chat User 008",
     "roles": [
-      "kdcube:role:chat-user"
+      "kdcube:role:registered"
     ],
     "permissions": [
       "kdcube:*:chat:*;read"
@@ -183,7 +183,7 @@
     "email": "chat009@test.com",
     "name": "Chat User 009",
     "roles": [
-      "kdcube:role:chat-user"
+      "kdcube:role:registered"
     ],
     "permissions": [
       "kdcube:*:chat:*;read"
@@ -195,7 +195,7 @@
     "email": "chat010@test.com",
     "name": "Chat User 010",
     "roles": [
-      "kdcube:role:chat-user"
+      "kdcube:role:registered"
     ],
     "permissions": [
       "kdcube:*:chat:*;read"
@@ -207,7 +207,7 @@
     "email": "chat011@test.com",
     "name": "Chat User 011",
     "roles": [
-      "kdcube:role:chat-user"
+      "kdcube:role:registered"
     ],
     "permissions": [
       "kdcube:*:chat:*;read"
@@ -219,7 +219,7 @@
     "email": "chat012@test.com",
     "name": "Chat User 012",
     "roles": [
-      "kdcube:role:chat-user"
+      "kdcube:role:registered"
     ],
     "permissions": [
       "kdcube:*:chat:*;read"
@@ -231,7 +231,7 @@
     "email": "chat013@test.com",
     "name": "Chat User 013",
     "roles": [
-      "kdcube:role:chat-user"
+      "kdcube:role:registered"
     ],
     "permissions": [
       "kdcube:*:chat:*;read"
@@ -243,7 +243,7 @@
     "email": "chat014@test.com",
     "name": "Chat User 014",
     "roles": [
-      "kdcube:role:chat-user"
+      "kdcube:role:registered"
     ],
     "permissions": [
       "kdcube:*:chat:*;read"
@@ -255,7 +255,7 @@
     "email": "chat015@test.com",
     "name": "Chat User 015",
     "roles": [
-      "kdcube:role:chat-user"
+      "kdcube:role:registered"
     ],
     "permissions": [
       "kdcube:*:chat:*;read"

@@ -41,6 +41,30 @@ def authority_registry_config(props: Mapping[str, Any] | None) -> dict[str, Any]
     return _dict(raw)
 
 
+def _provider_entrypoints(provider: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
+    """Return browser/runtime entrypoints declared by one provider instance.
+
+    Canonical descriptor shape:
+
+        providers.<provider_id>.entrypoints.login
+        providers.<provider_id>.entrypoints.session_issue
+        providers.<provider_id>.entrypoints.consent
+
+    Provider operations are declared only through `entrypoints`; this keeps the
+    descriptor shape explicit and avoids overloading one `host` field for
+    browser pages, callbacks, and consent renderers.
+    """
+
+    out: dict[str, dict[str, Any]] = {}
+    raw = _dict(provider.get("entrypoints"))
+    for name, value in raw.items():
+        endpoint = _dict(value)
+        if endpoint:
+            out[_str(name)] = endpoint
+
+    return out
+
+
 def authority_provider_instances(registry: Mapping[str, Any] | None) -> list[dict[str, Any]]:
     """Flatten configured authority provider instances.
 
@@ -63,6 +87,7 @@ def authority_provider_instances(registry: Mapping[str, Any] | None) -> list[dic
                     "provider_id": _str(provider_id),
                     "provider_type": _str(provider.get("type")),
                     "platform": _bool(authority.get("platform"), False),
+                    "entrypoints": _provider_entrypoints(provider),
                     "authority": {
                         key: value
                         for key, value in authority.items()
@@ -98,6 +123,15 @@ def resolve_authority_provider_instance(
     wanted_route = _str(host_route)
     wanted_operation = _str(host_operation)
 
+    def _endpoint_matches(endpoint: Mapping[str, Any]) -> bool:
+        if wanted_bundle and _str(endpoint.get("bundle_id") or endpoint.get("app_id")) != wanted_bundle:
+            return False
+        if wanted_route and _str(endpoint.get("route")) != wanted_route:
+            return False
+        if wanted_operation and _str(endpoint.get("operation") or endpoint.get("alias")) != wanted_operation:
+            return False
+        return True
+
     matches: list[dict[str, Any]] = []
     for row in authority_provider_instances(registry):
         if wanted_authority and row["authority_id"] != wanted_authority:
@@ -108,12 +142,12 @@ def resolve_authority_provider_instance(
             continue
 
         provider = _dict(row.get("provider"))
-        host = _dict(provider.get("host"))
-        if wanted_bundle and _str(host.get("bundle_id") or host.get("app_id")) != wanted_bundle:
-            continue
-        if wanted_route and _str(host.get("route")) != wanted_route:
-            continue
-        if wanted_operation and _str(host.get("operation") or host.get("alias")) != wanted_operation:
+        entrypoints = _dict(row.get("entrypoints"))
+        if (wanted_bundle or wanted_route or wanted_operation) and not any(
+            _endpoint_matches(endpoint)
+            for endpoint in entrypoints.values()
+            if isinstance(endpoint, Mapping)
+        ):
             continue
         matches.append(row)
 

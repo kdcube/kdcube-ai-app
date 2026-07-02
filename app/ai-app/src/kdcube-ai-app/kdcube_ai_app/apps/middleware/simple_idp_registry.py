@@ -43,7 +43,7 @@ DEFAULT_SIMPLE_IDP_USERS: Dict[str, Dict[str, Any]] = {
         "username": "chatuser",
         "email": "chat@test.com",
         "name": "Chat User",
-        "roles": ["kdcube:role:chat-user"],
+        "roles": ["kdcube:role:registered"],
         "permissions": [
             "kdcube:*:chat:*;read",
         ],

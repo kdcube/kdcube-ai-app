@@ -73,5 +73,30 @@ class AuthorityRegistryClient:
         )
         return _unwrap_operation_result(operation, result)
 
+    async def resolve_provider_entrypoint(
+        self,
+        *,
+        authority_id: str = "",
+        provider_id: str = "",
+        provider_type: str = "",
+        entrypoint: str = "login",
+    ) -> dict[str, Any]:
+        operation = "authority_provider_entrypoint_resolve"
+        result = await call_bundle_operation(
+            bundle_id=self.bundle_id,
+            operation=operation,
+            data={
+                "authority_id": _str(authority_id),
+                "provider_id": _str(provider_id),
+                "provider_type": _str(provider_type),
+                "entrypoint": _str(entrypoint) or "login",
+            },
+            tenant=self.tenant,
+            project=self.project,
+            route="public",
+            http_method="POST",
+        )
+        return _unwrap_operation_result(operation, result)
+
 
 __all__ = ["AuthorityRegistryClient"]

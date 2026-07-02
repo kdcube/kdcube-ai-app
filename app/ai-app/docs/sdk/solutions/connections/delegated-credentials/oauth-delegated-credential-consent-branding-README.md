@@ -28,7 +28,7 @@ Approve or Deny.
 By default that page is branded **KDCube**. If your deployment ships under a
 different product name, you can change the brand shown to the admin.
 
-## The one knob: `connections.delegated_credentials.oauth.brand`
+## Built-In Consent Branding
 
 Set `brand` under `connections.delegated_credentials.oauth` in the
 `connection-hub@1-0` bundle config to your product name:
@@ -45,10 +45,94 @@ bundles:
               brand: "Acme AI"
 ```
 
-That is the only field involved. The other
-`connections.delegated_credentials.oauth` settings (`issuer`,
-`public_clients`, `dynamic_client_registration`, ...) are documented in
+The other `connections.delegated_credentials.oauth` settings (`issuer`,
+`public_clients`, `dynamic_client_registration`, `consent_ui`, ...) are documented in
 [`oauth-delegated-credential-protocol-adapter-README.md`](./oauth-delegated-credential-protocol-adapter-README.md).
+
+## Bundle-Hosted Custom Consent
+
+If a product needs a fully custom consent layout, configure the platform
+authority provider with a consent entrypoint and point the OAuth adapter at it:
+
+```yaml
+bundles:
+  items:
+    - id: "connection-hub@1-0"
+      config:
+        authority_registry:
+          authorities:
+            kdcube.platform:
+              platform: true
+              providers:
+                product_google_session:
+                  type: bundle_session_login
+                  entrypoints:
+                    login:
+                      bundle_id: product@1-0
+                      route: public
+                      operation: platform_login
+                    session_issue:
+                      bundle_id: product@1-0
+                      route: public
+                      operation: auth_google_session
+                    consent:
+                      bundle_id: product@1-0
+                      route: public
+                      operation: delegated_consent
+
+        connections:
+          delegated_credentials:
+            oauth:
+              enabled: true
+              brand: "Acme AI"
+              consent_ui:
+                authority_ref:
+                  authority_id: kdcube.platform
+                  provider_id: product_google_session
+                  entrypoint: consent
+```
+
+The custom consent operation renders the page. Connection Hub remains the
+security boundary: approve/deny still posts to the Connection Hub consent
+endpoint, where CSRF, selected grants/tools, authorization-code creation, and
+token issuance are enforced.
+
+The custom consent operation receives a POST payload like:
+
+```json
+{
+  "request": {
+    "client_id": "claude",
+    "redirect_uri": "https://claude.ai/api/mcp/auth_callback",
+    "response_type": "code",
+    "scope": "conversations:read",
+    "scopes": ["conversations:read"],
+    "resource": "https://runtime.example.test/.../public/mcp/conversations",
+    "state": "...",
+    "code_challenge": "...",
+    "code_challenge_method": "S256"
+  },
+  "issuer": "https://runtime.example.test/api/integrations/bundles/.../connection-hub@1-0/public/oauth",
+  "csrf_token": "...",
+  "trusted": true,
+  "brand": "Acme AI",
+  "form_action": "/api/integrations/bundles/.../connection-hub@1-0/public/oauth/authorize/consent",
+  "grantor_subject": "google:...",
+  "grantor_label": "owner@example.com",
+  "signout_action": "/api/integrations/bundles/.../connection-hub@1-0/public/oauth/logout",
+  "return_to": "/api/integrations/bundles/.../connection-hub@1-0/public/oauth/authorize?...",
+  "platform_grants": [
+    {"grant": "conversations:read", "label": "Read conversations", "description": "..."}
+  ],
+  "tools": [
+    {"name": "conversations_export", "label": "Export conversations", "description": "...", "grants": ["conversations:read"]}
+  ]
+}
+```
+
+It should return either an HTML string or a mapping with `html`. Its form must
+POST to `form_action` and include the same OAuth hidden fields, `csrf_token`,
+selected `platform_grants`, selected `tools`, and `decision=approve|deny`.
 
 ## What it changes
 
@@ -66,6 +150,8 @@ Setting `brand` updates the operator-visible branding on the consent page:
   your deployment brand.
 - It does not affect any security behavior: the client id, redirect URL, scopes,
   pre-registered/newly-registered badges, and tool selection are unchanged.
+- A bundle-hosted custom consent layout may change the presentation, but not the
+  final authorization decision contract.
 
 ## Default behavior
 

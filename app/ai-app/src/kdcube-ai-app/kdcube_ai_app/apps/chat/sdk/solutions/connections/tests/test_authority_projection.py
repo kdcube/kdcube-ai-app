@@ -27,20 +27,19 @@ def test_project_execution_authority_charges_projected_platform_user():
     assert projection.budget_bypass is True
 
 
-def test_project_execution_authority_keeps_unlinked_actor_local():
+def test_project_execution_authority_keeps_unlinked_actor_local_and_roleless():
     projection = project_execution_authority(
         {},
         actor_user_id="telegram_434804821",
         fallback_user_id="telegram_434804821",
-        fallback_roles=["kdcube:role:chat-user"],
     )
 
     assert projection.actor_user_id == "telegram_434804821"
     assert projection.economics_user_id == "telegram_434804821"
-    assert projection.roles == ("kdcube:role:chat-user",)
+    assert projection.roles == ()
     assert projection.budget_bypass is None
 
 
 def test_authority_has_platform_privilege_uses_central_platform_role_set():
     assert authority_has_platform_privilege(["kdcube:role:admin"])
-    assert not authority_has_platform_privilege(["kdcube:role:chat-user"])
+    assert not authority_has_platform_privilege(["kdcube:role:registered"])

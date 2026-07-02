@@ -13,7 +13,7 @@ See docs/sdk/integrations/connections-README.md for the design.
 
 from __future__ import annotations
 
-from .contract import (
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.contract import (
     NAMESPACE,
     CONNECTION_CATALOG,
     CONNECTION_STATUS,
@@ -28,9 +28,9 @@ from .contract import (
     ClientApp,
     AmbiguousConnectionAccount,
 )
-from .provider import ConnectionsProviderBase
-from .client import ConnectionsClient, ConnectionsError
-from .connection_edges import (
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.provider import ConnectionsProviderBase
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.client import ConnectionsClient, ConnectionsError
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.connection_edges import (
     DEFAULT_CONNECTION_HUB_BUNDLE_ID,
     ConnectionEdgesClient,
     connection_hub_bundle_id,
@@ -43,7 +43,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.connections.authority_registry_config
     authority_registry_config,
     resolve_authority_provider_instance,
 )
-from .authenticators import (
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.authenticators import (
     AuthRequestHints,
     AuthenticatedRequest,
     AuthenticatorRegistration,
@@ -54,7 +54,7 @@ from .authenticators import (
     SurfaceGuardRequirement,
     select_authenticator_candidates,
 )
-from .authority_registry import (
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.authority_registry import (
     AUTHORITY_DISCOVERY_SCHEMA,
     CREDENTIAL_SCHEMA,
     INGRESS_SESSION_AUTHENTICATOR_ID,
@@ -94,13 +94,13 @@ from kdcube_ai_app.apps.chat.sdk.solutions.connections.authority_projection impo
     normalize_authority_values,
     project_execution_authority,
 )
-from .request_auth import (
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.request_auth import (
     PlatformTokenAuthenticator,
     RequestAuthenticationSurface,
     RequestAuthResolver,
     SessionFactory,
 )
-from .authentication_surface import (
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.authentication_surface import (
     ConnectionHubAuthenticationSurface,
     connection_hub_auth_enabled,
     maybe_install_connection_hub_authentication_surface,
