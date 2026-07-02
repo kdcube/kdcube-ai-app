@@ -88,9 +88,9 @@ The diagrams below use short labels. They are not new abstractions:
 | State table `T` | Shared event-lane coordination state: open handler owner, consumer status/freshness, and processed cursors. Today this is Redis-backed state. |
 | Handler | The turn that currently owns the lane for folding events into a ReAct turn. It is logical ownership, not a process. |
 | Consumer | The runtime loop that reads lane events and folds/materializes them. In the current ReAct runtime this is the `ContextBrowser` event reader. |
-| `consumer_status_at` | The consumer heartbeat or scheduling timestamp. With `consumer_status=active`, it proves the lane reader has recently acknowledged that it is alive. With `consumer_status=scheduled`, it is only a short-lived start reservation. Diagrams may write this as `T.consumer.status_at`. |
+| `consumer_status_at` | The consumer heartbeat or scheduling timestamp. With `consumer_status=active`, it proves the lane reader has recently acknowledged that it is alive. With `consumer_status=scheduled`, it is only a short-lived start reservation. Diagrams write this as `T.consumer_status_at`. |
 | Fresh active consumer | An active consumer whose `consumer_status_at` is inside the configured freshness window. A fresh active consumer means another turn must not reclaim the same open handler. |
-| Scheduled start reservation | `T.consumer.status=scheduled` with a fresh timestamp. This suppresses duplicate proc wake starts while an app is loading or entering the turn, but it is not handler liveness. |
+| Scheduled start reservation | `T.consumer_status=scheduled` with a fresh timestamp. This suppresses duplicate proc wake starts while an app is loading or entering the turn, but it is not handler liveness. |
 | Stale wake | A wake whose referenced reactive event is already covered by `T.last_processed_reactive_event_timestamp`. The wake is obsolete and can be ignored. |
 | Defer | Do not start an additional processor turn because a fresh active consumer or fresh scheduled start reservation already covers this wake. The accepted event remains in `L`. |
 | Reclaim | Take ownership from an open handler whose consumer is missing or stale. The older turn must later detect supersession and discard its output. |
@@ -174,7 +174,7 @@ with event_id + sequence           batch has reactive work
         |                         chat-proc process
         |                         load/resolve the bundle instance
         |                         then invoke its on-message turn entrypoint
-        |                         (for ReAct bundles: @on_message / workflow run)
+        |                         (for ReAct bundles: @on_reactive_event / workflow run)
         |                               |
         v                               v
 chat-proc process
@@ -279,7 +279,7 @@ in-process bundle loading to a remote bundle runner.
 | Ingress admission | `chat-ingress` process | Lane `L`, queue `Q` | Auth/session/conversation are validated; event identity, lane identity, and stored `task_payload` are normalized; the accepted event is appended to `L`; reactive work may enqueue a wake in `Q`. |
 | Wake scheduling | Shared queue plus `chat-proc` processor worker | Queue `Q`, state table `T` | The wake is converted from "there is work" into "this worker may start or defer a turn". The event body is still read from `L`, not from `Q`. |
 | Lane ownership decision | `chat-proc` processor worker | State table `T` | Proc checks processed cursors and wake-start reservations. It ignores obsolete wakes, defers to a fresh active consumer or fresh scheduled start, or marks `T.consumer = scheduled` before loading the app. |
-| Bundle load / turn entrypoint | `chat-proc` process today; future remote bundle runner would own the same contract | Bundle registry/cache, request context, state table `T` | KDCube resolves/loads the bundle instance and invokes the bundle reactive/message turn entrypoint. For ReAct chat bundles this enters the on-message workflow run path (`@on_message` / workflow run); a lane wake can arrive through the resolved reactive-event wrapper before that on-message path starts. Non-singleton bundles can spend real time here. |
+| Bundle load / turn entrypoint | `chat-proc` process today; future remote bundle runner would own the same contract | Bundle registry/cache, request context, state table `T` | KDCube resolves/loads the bundle instance and invokes the bundle reactive/message turn entrypoint. For ReAct chat bundles this enters the reactive-event workflow run path (`@on_reactive_event` / workflow run — the manifest metadata field for this handler is still named `on_message`/`OnMessageSpec`); a lane wake can arrive through the resolved reactive-event wrapper before that handler path starts. Non-singleton bundles can spend real time here. |
 | Handler open | ReAct runtime inside the bundle turn | State table `T` | The turn declares itself the lane handler. If the state table names a different handler, this turn is superseded and must abort. From this point, another turn must not fold the same lane unless this handler's consumer becomes stale and is reclaimed. |
 | Consumer acknowledgement | ReAct `ContextBrowser` event reader | State table `T` | The lane reader refreshes `consumer_status_at` only while it still matches the current handler. A fresh active acknowledgement is the liveness signal used to decide whether `open_handler` should defer or reclaim. |
 | Lane read and block production | ReAct `ContextBrowser` plus event-source/block-production policies | Lane `L`, timeline `TL`, state table `T` | Accepted events are read in lane order, wrapped by `accept_events_for_open_handler(...)`, and materialized into zero or more ReAct timeline blocks only for the current owner. Event-source policy decides visibility; the bus event and timeline block are separate concepts. |
@@ -340,20 +340,20 @@ The Redis lane stream stores the accepted event records. A separate event-lane
 state table coordinates which turn currently owns the lane:
 
 ```text
-T.handler.turn_id
-T.handler.status                 open | closed
-T.handler.status_at
+T.handler_turn_id
+T.handler_status                 open | closed
+T.handler_status_at
 
-T.consumer.status                active | scheduled | none
-T.consumer.status_at
+T.consumer_status                active | scheduled | none
+T.consumer_status_at
 
 T.last_processed_event_timestamp
 T.last_processed_reactive_event_timestamp
 ```
 
-`T.handler.status_at` is not a liveness signal. It only says when handler
+`T.handler_status_at` is not a liveness signal. It only says when handler
 state was last written. The handler-liveness signal is a fresh
-`T.consumer.status_at` written by an active reader/consumer as an
+`T.consumer_status_at` written by an active reader/consumer as an
 acknowledgement that it is still consuming this lane.
 
 ```text
