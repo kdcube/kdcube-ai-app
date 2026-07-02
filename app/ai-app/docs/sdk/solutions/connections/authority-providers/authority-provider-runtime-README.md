@@ -106,8 +106,46 @@ instances of the same provider type. A provider instance can have one optional
 authenticator, one optional issuer, one optional input authenticator reference,
 and browser/runtime entrypoints.
 
+For Cognito-backed platform login, Connection Hub owns the Cognito provider
+metadata:
+
+```yaml
+authority_registry:
+  authorities:
+    kdcube.platform:
+      platform: true
+      providers:
+        cognito:
+          type: multi_cognito
+          enabled: true
+          label: KDCube Cognito platform session
+          authenticator:
+            type: cognito_id_token
+            id_token_header_name: X-ID-Token
+            region: eu-west-1
+            user_pool_id: eu-west-1_PRIMARY
+            app_client_id: primary-client
+            service_client_id: primary-client
+            jwks_cache_ttl_seconds: 86400
+            cookie:
+              auth_token_cookie_name: __Secure-LATC
+              id_token_cookie_name: __Secure-LITC
+              masqueraded_token_cookie_name: __Secure-LMTC
+            trusted_providers:
+              - alias: primary
+                kind: cognito
+                region: eu-west-1
+                user_pool_id: eu-west-1_PRIMARY
+                app_client_id: primary-client
+              - alias: peer
+                kind: cognito
+                region: eu-west-1
+                user_pool_id: eu-west-1_PEER
+                app_client_id: peer-client
+```
+
 For a bundle-hosted platform session login provider, Connection Hub owns the
-provider metadata:
+provider metadata and the hosting bundle owns only the UI/operation:
 
 ```yaml
 authority_registry:
@@ -145,54 +183,54 @@ authority_registry:
               roles: [kdcube:role:registered]
               permissions: [kdcube:*:chat:*;read;write]
 
-        versatile_google_session:
-          type: bundle_session_login
-          entrypoints:
-            login:
-              bundle_id: versatile@2026-03-31-13-36
-              route: public
-              operation: platform_login
-            session_issue:
-              bundle_id: versatile@2026-03-31-13-36
-              route: public
-              operation: auth_google_session
-            consent:
-              bundle_id: versatile@2026-03-31-13-36
-              route: public
-              operation: delegated_consent
-          input:
-            authenticator_ref:
-              authority_id: google.accounts
-              provider_id: google_oidc
-          issuer:
-            type: kdcube_session_token
-            ttl_seconds: 43200
-          grants:
-            default:
-              roles:
-                - kdcube:role:registered
-              permissions: []
-            assignable:
-              roles:
-                - kdcube:role:registered
-                - kdcube:role:super-admin
-              permissions:
-                - kdcube:*:chat:*;read;write
-                - kdcube:*:*:*
-
     google.accounts:
       platform: false
       providers:
         google_oidc:
           type: google_id_token
           authenticator:
-            client_id: 960111679915-825b0cenujpavcmognp450l7ius4suje.apps.googleusercontent.com
+            client_id: <google-client-id>.apps.googleusercontent.com
 ```
+
+`entrypoints.consent` is not an authorization hook. It is a UI hook. The bundle
+receives a Connection Hub payload and renders the product-specific consent
+screen, then posts back to the supplied `form_action`. Connection Hub remains
+the protocol owner: it validates CSRF, dynamic/public client registration,
+redirect URI, requested scopes, selected grants, selected tools, and only then
+creates the authorization code or delegated credential.
+
+Bundle renderers should preserve the payload's OAuth request fields as hidden
+form inputs. Connection Hub also has a defensive fallback that can recover
+missing non-secret authorize fields from a same-origin authorize referrer, but
+that is protocol hardening, not the renderer contract.
 
 This keeps authority semantics registered once in Connection Hub while allowing
 provider engines to live in bundles, SDK modules, or platform auth managers.
 The hosting bundle is resolved by its provider `entrypoints` and does not carry
 a local platform-session policy branch.
+
+## Browser Auth Contract
+
+Browser clients should consume the platform auth contract returned by
+`/api/cp-frontend-config`; they should not branch on whether the selected
+provider is Cognito, bundle-session, or another platform authority.
+
+| Frontend field | Source | Purpose |
+| --- | --- | --- |
+| `auth.loginUrl` | Connection Hub provider `entrypoints.login`, when the provider hosts browser login. | Where the browser navigates to create a platform session. |
+| `auth.profileUrl` | Platform default `/profile` unless overridden. | Server-side current-session probe. This is the canonical "logged in?" check. |
+| `auth.logoutUrl` | Platform default `/api/platform/logout` unless overridden. | Generic platform logout. It clears platform cookies and invalidates bundle-session storage when applicable. |
+
+OIDC metadata, when present, is a browser login driver. It is not the source of
+truth for whether the platform sees the request as authenticated. The browser
+asks `auth.profileUrl`; the platform gateway resolves the active authority and
+session.
+
+`/api/platform/logout` is intentionally provider-neutral. For bundle-session
+providers it reads the configured platform auth cookie, calls the
+bundle-session authority logout primitive, and clears the platform cookies. A
+provider may still define a branded sign-out page or upstream-provider cleanup
+flow, but the KDCube platform session is ended by the platform logout contract.
 
 Google in this model is an upstream authority/provider, not the platform
 authority. The platform subject is created under `kdcube.platform` by the

@@ -14,7 +14,7 @@ from __future__ import annotations
 import inspect
 import logging
 from typing import Any, Iterable, Mapping, Optional, Tuple
-from urllib.parse import quote
+from urllib.parse import parse_qs, quote, urlsplit
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
@@ -75,6 +75,61 @@ _AUTHORIZE_FORM_KEYS = (
 )
 
 
+def _same_origin_authorize_referrer_params(request: Request) -> dict[str, str]:
+    referrer = str(request.headers.get("referer") or request.headers.get("referrer") or "").strip()
+    if not referrer:
+        return {}
+    try:
+        current = urlsplit(str(request.url))
+        got = urlsplit(referrer)
+    except Exception:
+        return {}
+    if not got.scheme or not got.netloc:
+        return {}
+    forwarded_proto = str(request.headers.get("x-forwarded-proto") or "").split(",", 1)[0].strip()
+    forwarded_host = str(request.headers.get("x-forwarded-host") or "").split(",", 1)[0].strip()
+    current_scheme = forwarded_proto or current.scheme
+    current_host = forwarded_host or str(request.headers.get("host") or "").strip() or current.netloc
+    if (got.scheme, got.netloc) != (current_scheme, current_host):
+        return {}
+    if not got.path.rstrip("/").endswith("/oauth/authorize"):
+        return {}
+    parsed = parse_qs(got.query, keep_blank_values=True)
+    out: dict[str, str] = {}
+    for key in _AUTHORIZE_FORM_KEYS:
+        values = parsed.get(key)
+        if values:
+            out[key] = str(values[-1] or "")
+    return out
+
+
+def _consent_authorize_params(request: Request, form: Any) -> dict[str, Any]:
+    params = {k: form.get(k) for k in _AUTHORIZE_FORM_KEYS}
+    missing = [key for key, value in params.items() if not str(value or "").strip()]
+    if not missing:
+        return params
+    ref_params = _same_origin_authorize_referrer_params(request)
+    filled: list[str] = []
+    for key in missing:
+        value = ref_params.get(key)
+        if value is None:
+            continue
+        params[key] = value
+        filled.append(key)
+    if filled:
+        tenant, project = oauth_tenant_project(request)
+        LOGGER.info(
+            "[connection-hub.oauth] consent params recovered from authorize referrer "
+            "tenant=%s project=%s client_id=%s filled=%s form_keys=%s",
+            tenant,
+            project,
+            str(params.get("client_id") or ""),
+            filled,
+            sorted(str(key) for key in form.keys()),
+        )
+    return params
+
+
 def _consent_action(request: Request) -> str:
     path = str(request.url.path or "").rstrip("/")
     if path.endswith("/authorize"):
@@ -95,18 +150,22 @@ def _consent_payload(
     signout_action: str,
     return_to: str,
 ) -> dict[str, Any]:
+    authorize_request = {
+        "client_id": req.client_id,
+        "redirect_uri": req.redirect_uri,
+        "response_type": req.response_type,
+        "scopes": list(req.scopes),
+        "scope": " ".join(req.scopes),
+        "resource": req.resource or "",
+        "state": req.state or "",
+        "code_challenge": req.code_challenge,
+        "code_challenge_method": req.code_challenge_method,
+    }
     return {
-        "request": {
-            "client_id": req.client_id,
-            "redirect_uri": req.redirect_uri,
-            "response_type": req.response_type,
-            "scopes": list(req.scopes),
-            "scope": " ".join(req.scopes),
-            "resource": req.resource or "",
-            "state": req.state or "",
-            "code_challenge": req.code_challenge,
-            "code_challenge_method": req.code_challenge_method,
-        },
+        # `request` is kept for existing renderers. `oauth_request` avoids a
+        # common bundle-operation kwarg collision with the framework request.
+        "request": authorize_request,
+        "oauth_request": authorize_request,
         "issuer": issuer,
         "csrf_token": csrf_token,
         "trusted": bool(trusted),
@@ -423,6 +482,13 @@ async def _dyn_client_resolver(request: Request, client_id: Optional[str]):
         return None
     record = await get_grant_store(request).get_client_record(client_id)
     if record is None:
+        tenant, project = oauth_tenant_project(request)
+        LOGGER.warning(
+            "[connection-hub.oauth] dynamic_client_missing tenant=%s project=%s client_id=%s",
+            tenant,
+            project,
+            client_id,
+        )
         return None
     client = client_from_record(record)
     return lambda cid: client if cid == client_id else None
@@ -572,7 +638,7 @@ async def authorize(request: Request) -> Response:
 async def authorize_consent(request: Request) -> Response:
     issuer = resolve_issuer(request)
     form = await request.form()
-    params = {k: form.get(k) for k in _AUTHORIZE_FORM_KEYS}
+    params = _consent_authorize_params(request, form)
     resolver = await _dyn_client_resolver(request, params.get("client_id"))
     cfg = oauth_delegated_config(request)
     try:
@@ -583,6 +649,17 @@ async def authorize_consent(request: Request) -> Response:
             supported_scopes=cfg.supported_scopes(params.get("resource")),
         )
     except AuthorizeError as err:
+        tenant, project = oauth_tenant_project(request)
+        LOGGER.warning(
+            "[connection-hub.oauth] authorize_consent rejected tenant=%s project=%s "
+            "error=%s description=%s client_id=%s form_keys=%s",
+            tenant,
+            project,
+            err.error,
+            err.error_description,
+            str(params.get("client_id") or ""),
+            sorted(str(key) for key in form.keys()),
+        )
         return _error_response(err, issuer)
 
     user, denied = await _require_user(request)

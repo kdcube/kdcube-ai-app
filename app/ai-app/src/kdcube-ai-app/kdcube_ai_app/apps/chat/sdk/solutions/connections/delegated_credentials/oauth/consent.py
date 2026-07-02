@@ -12,7 +12,7 @@ carried into the authorization code and ultimately the issued grant.
 from __future__ import annotations
 
 import html as _html
-from typing import Iterable, List, Mapping, Tuple
+from typing import Any, Iterable, List, Mapping, Tuple
 
 from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oauth.config import (
     OAuthDelegatedClientConfig,
@@ -22,6 +22,79 @@ from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oau
 from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers.boundary_policy import (
     NamedServiceBoundaryCatalog,
 )
+
+CONSENT_AUTHORIZE_FIELD_NAMES: tuple[str, ...] = (
+    "client_id",
+    "redirect_uri",
+    "response_type",
+    "scope",
+    "resource",
+    "state",
+    "code_challenge",
+    "code_challenge_method",
+)
+
+
+def _text(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def _first_text(*values: Any) -> str:
+    for value in values:
+        text = _text(value)
+        if text:
+            return text
+    return ""
+
+
+def _mapping(value: Any) -> Mapping[str, Any]:
+    return value if isinstance(value, Mapping) else {}
+
+
+def consent_authorize_fields(payload: Mapping[str, Any] | None) -> dict[str, str]:
+    """Normalize the OAuth authorize fields passed to a custom consent renderer.
+
+    Connection Hub sends these under ``payload["request"]``. The flat fallbacks
+    keep product renderers tolerant while preserving the same protocol field
+    names that must be posted back to ``form_action``.
+    """
+
+    data = _mapping(payload)
+    request_data = _mapping(
+        data.get("request")
+        or data.get("authorization_request")
+        or data.get("oauth_request")
+    )
+    scope = _first_text(request_data.get("scope"), data.get("scope"))
+    if not scope:
+        scope = " ".join(_text(item) for item in (request_data.get("scopes") or data.get("scopes") or ()))
+    return {
+        "client_id": _first_text(request_data.get("client_id"), data.get("client_id")),
+        "redirect_uri": _first_text(request_data.get("redirect_uri"), data.get("redirect_uri")),
+        "response_type": _first_text(request_data.get("response_type"), data.get("response_type")) or "code",
+        "scope": scope,
+        "resource": _first_text(request_data.get("resource"), data.get("resource")),
+        "state": _first_text(request_data.get("state"), data.get("state")),
+        "code_challenge": _first_text(request_data.get("code_challenge"), data.get("code_challenge")),
+        "code_challenge_method": _first_text(
+            request_data.get("code_challenge_method"),
+            data.get("code_challenge_method"),
+        ),
+    }
+
+
+def render_consent_authorize_hidden_inputs(
+    fields: Mapping[str, Any],
+    *,
+    include: Iterable[str] = CONSENT_AUTHORIZE_FIELD_NAMES,
+) -> str:
+    """Render hidden authorize fields for a custom consent form."""
+
+    return "\n".join(
+        f'<input type="hidden" name="{_html.escape(name)}" '
+        f'value="{_html.escape(_text(fields.get(name)))}">'
+        for name in include
+    )
 
 
 def tools_for_scopes(

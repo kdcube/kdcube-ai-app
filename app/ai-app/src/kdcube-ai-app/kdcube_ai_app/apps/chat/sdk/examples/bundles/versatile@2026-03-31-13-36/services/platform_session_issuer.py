@@ -7,6 +7,10 @@ from typing import Any, Mapping
 from fastapi.responses import HTMLResponse
 
 import kdcube_ai_app.apps.chat.sdk.solutions.connections.authority_providers.bundle_session_login as bundle_session_login
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oauth.consent import (
+    consent_authorize_fields,
+    render_consent_authorize_hidden_inputs,
+)
 
 
 def _dict(value: Any) -> dict[str, Any]:
@@ -106,12 +110,12 @@ def delegated_consent_page(
 ) -> dict[str, str]:
     del entrypoint
     data = _dict(payload)
-    request_data = _dict(data.get("request"))
     brand = _str(data.get("brand")) or "KDCube"
-    client_id = _str(request_data.get("client_id"))
-    redirect_uri = _str(request_data.get("redirect_uri"))
-    resource = _str(request_data.get("resource"))
-    scope = _str(request_data.get("scope")) or " ".join(request_data.get("scopes") or [])
+    oauth_fields = consent_authorize_fields(data)
+    client_id = oauth_fields["client_id"]
+    redirect_uri = oauth_fields["redirect_uri"]
+    resource = oauth_fields["resource"]
+    scope = oauth_fields["scope"]
     form_action = _str(data.get("form_action")) or "/oauth/authorize/consent"
     csrf_token = _str(data.get("csrf_token"))
     grantor_label = _str(data.get("grantor_label") or data.get("grantor_subject"))
@@ -119,19 +123,7 @@ def delegated_consent_page(
     signout_action = _str(data.get("signout_action")) or "/oauth/logout"
     return_to = _str(data.get("return_to"))
 
-    hidden = "\n".join(
-        _hidden_input(name, request_data.get(name, ""))
-        for name in (
-            "client_id",
-            "redirect_uri",
-            "response_type",
-            "scope",
-            "resource",
-            "state",
-            "code_challenge",
-            "code_challenge_method",
-        )
-    )
+    hidden = render_consent_authorize_hidden_inputs(oauth_fields)
     hidden += "\n" + _hidden_input("csrf_token", csrf_token)
 
     grants = data.get("platform_grants") if isinstance(data.get("platform_grants"), list) else []
@@ -288,10 +280,10 @@ async def google_login_page(
     client_id = _str(login_cfg.get("client_id"))
     next_url = _request_query_value(request, "next")
     auth_url = _same_bundle_operation_url(request, bundle_session_login.DEFAULT_GOOGLE_OPERATION)
-    title = _str(provider_cfg.get("login_label") or provider_cfg.get("label") or "Sign in to KDCube")
+    title = _str(provider_cfg.get("login_label") or "Sign in to KDCube")
     subtitle = _str(
         provider_cfg.get("login_description")
-        or "Sign in with Google to create a KDCube platform session for this runtime."
+        or "Use your Google account to continue."
     )
     html_body = f"""<!doctype html>
 <html lang="en">

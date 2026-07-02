@@ -4,7 +4,7 @@ title: "Host A Platform Authority Flow In A Bundle"
 summary: "Recipe for deployments that do not want Cognito as the only platform login path: Connection Hub owns authority registration and policy, while a bundle hosts the login UI/operation and issues standard KDCube bundle-session credentials."
 status: draft
 tags: ["recipes", "connections", "connection-hub", "authority-registry", "bundle-session", "platform-auth", "custom-authority"]
-updated_at: 2026-07-01
+updated_at: 2026-07-02
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/connection-hub-solution-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/authority-providers/authority-provider-runtime-README.md
@@ -102,16 +102,18 @@ proof is consumed by a configured platform login provider.
 ## Assembly Descriptor
 
 Configure the platform to use bundle-session auth. The canonical login endpoint
-is declared on the authority provider as `entrypoints.login`; `auth.login_url`
-is the frontend-facing pointer to that same endpoint.
+is declared on the authority provider as `entrypoints.login`. `assembly.yaml`
+only selects the Connection Hub provider that owns that entrypoint.
 
 ```yaml
 auth:
   type: bundle
   idp: session
-  auth_token_cookie_name: "__Secure-LATC"
-  id_token_cookie_name: "__Secure-LITC"
-  login_url: "/api/integrations/bundles/<tenant>/<project>/versatile@2026-03-31-13-36/public/platform_login"
+  connection_hub:
+    bundle_id: connection-hub@1-0
+    authority_id: kdcube.platform
+    provider_id: versatile_google_session
+    entrypoint: login
   authenticators:
     platform:
       id: kdcube.bundle-session
@@ -123,9 +125,29 @@ auth:
       operation: request_authenticate
 ```
 
-`login_url` is exported into frontend runtime config as `auth.loginUrl`. The
-browser app uses it when it needs a platform session. It should match the
-provider's `entrypoints.login` URL.
+The browser app asks the Connection Hub SDK client to resolve
+`entrypoints.login` into the tenant/project-specific bundle URL when it needs a
+platform session. Descriptors should not materialize `auth.login_url`.
+
+The browser app should not know whether this provider is bundle-session,
+Cognito, or another platform authority. It should use the auth URLs returned by
+`/api/cp-frontend-config`:
+
+```json
+{
+  "auth": {
+    "loginUrl": "/api/integrations/bundles/.../public/platform_login",
+    "profileUrl": "/profile",
+    "logoutUrl": "/api/platform/logout"
+  }
+}
+```
+
+`profileUrl` is the canonical "am I logged in?" check. `logoutUrl` is the
+canonical browser logout endpoint. For bundle-session providers,
+`/api/platform/logout` invalidates the active bundle-session record and clears
+the platform cookies. The hosting bundle does not need a logout operation for
+the normal browser shell.
 
 ## Platform Secret
 
@@ -173,7 +195,9 @@ items:
               versatile_google_session:
                 type: bundle_session_login
                 enabled: true
-                label: Versatile Google platform session
+                label: Google sign-in for KDCube
+                login_label: Sign in to KDCube
+                login_description: Use your Google account to continue.
                 entrypoints:
                   login:
                     bundle_id: versatile@2026-03-31-13-36
@@ -244,6 +268,29 @@ items:
   still targets Connection Hub so CSRF, grant narrowing, authorization-code
   creation, and token issuance remain central.
 
+The consent renderer is a page renderer, not a policy engine. Connection Hub
+passes it a payload with:
+
+- `form_action`
+- `csrf_token`
+- `request.client_id`
+- `request.redirect_uri`
+- `request.response_type`
+- `request.scope` / `request.scopes`
+- `request.resource`
+- `request.state`
+- `request.code_challenge`
+- `request.code_challenge_method`
+- `platform_grants`
+- `tools`
+
+The page should submit approve/deny to `form_action`, include the request fields
+as hidden inputs, and send selected `platform_grants` and `tools`. Connection
+Hub re-validates all of that before issuing the authorization code. It also has
+a defensive fallback that can recover missing non-secret request fields from the
+same-origin `/oauth/authorize?...` referrer, but correct renderers should not
+depend on that fallback.
+
 `input.authenticator_ref`
 : The upstream proof verifier. In the example, Google ID token verification
   lives under `google.accounts.providers.google_oidc`.
@@ -285,8 +332,9 @@ items:
 ## Frontend Auth Descriptor
 
 The platform frontend should not hardcode the bundle login URL. It should name
-the Connection Hub authority provider and ask Connection Hub to resolve the
-provider's `login` entrypoint.
+the Connection Hub authority provider. The control-plane frontend-config
+endpoint resolves the provider's `login` entrypoint through the Connection Hub
+SDK client and returns the concrete `auth.loginUrl` to the browser.
 
 ```yaml
 auth:
@@ -298,21 +346,22 @@ auth:
     entrypoint: login
 ```
 
-At runtime the web app calls Connection Hub:
+For clients that cannot use the in-process SDK client, Connection Hub also
+exposes a thin public resolver facade:
 
 ```text
 POST /api/integrations/bundles/{tenant}/{project}/connection-hub@1-0/public/authority_provider_entrypoint_resolve
 ```
 
-Connection Hub returns the concrete URL for the configured provider entrypoint,
-for example:
+The SDK resolver/facade returns the concrete URL for the configured provider
+entrypoint, for example:
 
 ```text
 /api/integrations/bundles/{tenant}/{project}/versatile@2026-03-31-13-36/public/platform_login
 ```
 
-This keeps route construction under Connection Hub and keeps descriptors focused
-on the authority/provider contract.
+This keeps route construction under the Connection Hub SDK boundary and keeps
+descriptors focused on the authority/provider contract.
 
 For Telegram-hosted login flows, the bundle also needs the Telegram integration
 secret refs. Those secrets verify the upstream Telegram proof; they do not
@@ -366,6 +415,79 @@ The bundle must not hardcode:
 
 Those belong to descriptors and Connection Hub registry.
 
+## Google OAuth Client Setup
+
+For a Google-backed provider, the descriptor `google.accounts.providers.google_oidc.authenticator.client_id`
+must point to a Google OAuth client that allows the runtime origin where the
+login page is opened.
+
+In Google Cloud Console:
+
+1. Open **APIs & Services** -> **Credentials**.
+2. Open the OAuth 2.0 client used by `google_oidc.authenticator.client_id`.
+3. Make sure the client type is **Web application**.
+4. Add the exact browser origin under **Authorized JavaScript origins**.
+
+Examples:
+
+```text
+https://demo.kdcube.tech
+https://kdcube.tech
+https://broodier-maxie-uninferrably.ngrok-free.dev
+http://localhost:5173
+```
+
+Use only the origin: scheme, host, and optional port. Do not include a path.
+
+Correct:
+
+```text
+https://broodier-maxie-uninferrably.ngrok-free.dev
+```
+
+Wrong:
+
+```text
+https://broodier-maxie-uninferrably.ngrok-free.dev/platform/chat
+https://broodier-maxie-uninferrably.ngrok-free.dev/api/integrations/bundles/...
+```
+
+If Google shows:
+
+```text
+Error 400: origin_mismatch
+You can't sign in to this app because it doesn't comply with Google's OAuth 2.0 policy.
+```
+
+then the page origin is not registered on that Google OAuth client. Add the
+origin shown in the browser address bar, wait for Google configuration to
+propagate, and retry. Temporary tunnel URLs such as ngrok domains must be added
+every time the public hostname changes, unless the deployment uses a stable
+reserved domain.
+
+## Delegated Consent Troubleshooting
+
+If an external connector reaches the consent page but approve returns:
+
+```json
+{"error":"invalid_client","error_description":"unknown client_id"}
+```
+
+then inspect the proc logs for:
+
+```text
+[connection-hub.oauth] authorize_consent rejected ...
+[connection-hub.oauth] dynamic_client_missing ...
+[connection-hub.oauth] consent params recovered from authorize referrer ...
+```
+
+`dynamic_client_missing` means the submitted `client_id` was not found in the
+tenant/project OAuth store. `authorize_consent rejected ... form_keys=...` shows
+which form fields reached Connection Hub. If the custom consent page dropped
+hidden OAuth fields, Connection Hub may recover them from the same-origin
+authorize referrer, but the renderer should still preserve the payload request
+fields.
+
 ## Login Page
 
 The login page is bundle-owned UI and is registered at
@@ -384,8 +506,8 @@ Connection Hub.
 
 2. Open the normal platform frontend route.
 
-3. If there is no valid platform session, the frontend should redirect to
-   `auth.login_url`.
+3. If there is no valid platform session, the frontend should ask Connection
+   Hub for the selected provider `entrypoints.login` URL and redirect there.
 
 4. Complete the hosted login flow.
 
@@ -395,10 +517,14 @@ Connection Hub.
 
 7. Confirm a normal platform user can open registered-user surfaces.
 
-8. Confirm an admin bootstrap rule grants admin only when the verified upstream
+8. Call `POST /api/platform/logout`, or press the shell logout button if the
+   host uses the generated `auth.logoutUrl`. Confirm `/profile` returns
+   anonymous and registered-user surfaces are hidden.
+
+9. Confirm an admin bootstrap rule grants admin only when the verified upstream
    claim matches.
 
-9. Confirm raw Telegram Mini App auth without a platform login/link remains
+10. Confirm raw Telegram Mini App auth without a platform login/link remains
    external and does not receive `kdcube:role:registered`.
 
 ## Failure Rules

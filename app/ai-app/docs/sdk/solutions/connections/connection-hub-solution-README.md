@@ -100,10 +100,30 @@ authority_registry:
       label: KDCube platform authority
       providers:
         cognito:
-          type: cognito
+          type: multi_cognito
           enabled: true
           authenticator:
             type: cognito_id_token
+            id_token_header_name: X-ID-Token
+            region: eu-west-1
+            user_pool_id: eu-west-1_PRIMARY
+            app_client_id: primary-client
+            service_client_id: primary-client
+            cookie:
+              auth_token_cookie_name: __Secure-LATC
+              id_token_cookie_name: __Secure-LITC
+              masqueraded_token_cookie_name: __Secure-LMTC
+            trusted_providers:
+              - alias: primary
+                kind: cognito
+                region: eu-west-1
+                user_pool_id: eu-west-1_PRIMARY
+                app_client_id: primary-client
+              - alias: peer
+                kind: cognito
+                region: eu-west-1
+                user_pool_id: eu-west-1_PEER
+                app_client_id: peer-client
 
         versatile_google_session:
           type: bundle_session_login
@@ -160,7 +180,7 @@ authority_registry:
           type: google_id_token
           enabled: true
           authenticator:
-            client_id: 960111679915-825b0cenujpavcmognp450l7ius4suje.apps.googleusercontent.com
+            client_id: <google-client-id>.apps.googleusercontent.com
 ```
 
 `entrypoints.login`
@@ -175,6 +195,22 @@ authority_registry:
 : Optional bundle-hosted delegated credential consent renderer for this
   authority provider. Connection Hub still owns CSRF validation, grant
   narrowing, authorization-code creation, and token issuance.
+
+The consent renderer is presentation only. Connection Hub calls the configured
+bundle operation with a payload that includes `form_action`, `csrf_token`,
+`request.client_id`, `request.redirect_uri`, `request.scope`, `request.resource`,
+PKCE fields, selectable grants, and selectable tools. The rendered page should
+POST approve/deny to `form_action` and include those request fields as hidden
+inputs. Connection Hub re-validates the client, redirect, scopes, CSRF, selected
+grants, and selected tools before issuing anything.
+
+For resilience across custom renderers and browser/proxy behavior, Connection
+Hub can recover missing non-secret authorize parameters from the same-origin
+`/oauth/authorize?...` referrer on consent POST. That recovery does not relax
+client/redirect validation or CSRF. If consent fails, look for
+`[connection-hub.oauth] authorize_consent rejected`,
+`dynamic_client_missing`, or `consent params recovered from authorize referrer`
+in the proc logs.
 
 The delegated credential adapter references the provider instead of repeating
 bundle URLs:
@@ -325,8 +361,9 @@ kdcube.platform:
 
 For Cognito-backed platform login, this provider `grants.default` branch is not
 used. Cognito roles are read from the verified ID token claims. A Cognito user
-without any platform role/group claim is authenticated but not authorized for
-`RequireUser` surfaces.
+without any platform role/group claim is still a platform-authenticated user and
+receives the baseline `kdcube:role:registered` role at the platform auth
+boundary.
 
 Provider `grants.assignable` bounds what authority-level subject grants may
 issue through that hosted provider.

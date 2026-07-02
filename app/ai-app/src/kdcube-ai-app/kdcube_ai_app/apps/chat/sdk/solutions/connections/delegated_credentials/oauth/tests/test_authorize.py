@@ -284,6 +284,7 @@ def test_authorize_can_render_bundle_hosted_consent(client, monkeypatch):
         assert data["csrf_token"]
         assert data["form_action"] == "/oauth/authorize/consent"
         assert data["request"]["client_id"] == "claude"
+        assert data["oauth_request"]["client_id"] == "claude"
         assert data["platform_grants"][0]["grant"] == "conversations:read"
         assert data["tools"][0]["name"] == "conversations_export"
         return {"delegated_consent": {"html": "<html><body>Custom consent</body></html>"}}
@@ -420,6 +421,54 @@ def test_consent_approve_issues_code_bound_to_selection(client):
     assert payload["scopes"] == ["conversations:read"]
     assert payload["delegation_edges"][0]["authority_id"] == "platform"
     assert payload["delegation_edges"][0]["grants"] == ["conversations:read"]
+
+
+def test_consent_recovers_missing_authorize_fields_from_same_origin_referrer(client):
+    form = _params()
+    csrf = _csrf_token(client, params=form)
+    referer = "http://testserver/oauth/authorize?" + up.urlencode(form)
+    form.pop("client_id")
+    form["decision"] = "approve"
+    form["platform_grants"] = ["conversations:read"]
+    form["tools"] = ["conversations_export"]
+    form["csrf_token"] = csrf
+
+    r = client.post(
+        "/oauth/authorize/consent",
+        data=form,
+        headers={"Authorization": "Bearer admin-tok", "Referer": referer},
+        follow_redirects=False,
+    )
+
+    assert r.status_code == 302
+    q = dict(up.parse_qsl(up.urlsplit(r.headers["location"]).query))
+    assert q["state"] == "st-123"
+    assert q["iss"] == ISSUER
+    assert q["code"]
+
+
+def test_consent_recovers_blank_authorize_fields_from_same_origin_referrer(client):
+    form = _params()
+    csrf = _csrf_token(client, params=form)
+    referer = "http://testserver/oauth/authorize?" + up.urlencode(form)
+    form["client_id"] = ""
+    form["decision"] = "approve"
+    form["platform_grants"] = ["conversations:read"]
+    form["tools"] = ["conversations_export"]
+    form["csrf_token"] = csrf
+
+    r = client.post(
+        "/oauth/authorize/consent",
+        data=form,
+        headers={"Authorization": "Bearer admin-tok", "Referer": referer},
+        follow_redirects=False,
+    )
+
+    assert r.status_code == 302
+    q = dict(up.parse_qsl(up.urlsplit(r.headers["location"]).query))
+    assert q["state"] == "st-123"
+    assert q["iss"] == ISSUER
+    assert q["code"]
 
 
 def test_consent_uses_platform_user_id_as_grantor_when_available(client):
