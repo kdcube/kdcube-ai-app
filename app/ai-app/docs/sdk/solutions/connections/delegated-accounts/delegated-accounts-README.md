@@ -55,7 +55,7 @@ proof and they are not platform roles.
 
 ```text
 Identity link:
-  telegram:434804821 -> platform_user_id
+  telegram:100200300 -> platform_user_id
 
 Delegated account:
   platform_user_id -> Gmail OAuth token

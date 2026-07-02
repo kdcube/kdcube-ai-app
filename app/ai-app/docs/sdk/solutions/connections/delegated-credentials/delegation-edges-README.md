@@ -36,7 +36,7 @@ in what the edge permits, not in where the relationship is modeled.
 
 ```text
 Channel/account edge:
-  telegram:434804821 == platform:02e...
+  telegram:100200300 == platform:02e...
   "these identities are the same person"
 
 Delegation edge:
@@ -72,8 +72,8 @@ code, access-grant record, and refresh-token record store a server-side
   {
     "schema": "connection_hub.delegation_edge.v1",
     "authority_id": "platform",
-    "identity_ref": "platform:02e53484-0081-70ce-11c1-e96706b1a182",
-    "user_id": "02e53484-0081-70ce-11c1-e96706b1a182",
+    "identity_ref": "platform:a1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
+    "user_id": "a1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
     "grants": ["memories:read"],
     "roles": ["kdcube:role:registered"],
     "permissions": ["memories:read"],
@@ -118,10 +118,10 @@ identity scope are envelope attributes:
   "credential_kind": "delegated_client_access",
   "issuer_authority_id": "delegated_client",
   "issuer_authenticator_id": "delegated_client.bearer",
-  "subject": "integration:claude:02e53484-0081-70ce-11c1-e96706b1a182",
+  "subject": "integration:claude:a1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
   "audience": "kdcube:delegated_client",
   "attrs": {
-    "grantor_subject": "02e53484-0081-70ce-11c1-e96706b1a182",
+    "grantor_subject": "a1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
     "client_id": "claude",
     "resource": "https://runtime/api/integrations/bundles/demo/demo/user-memories@2026-06-26/public/mcp/memories",
     "scopes": ["memories:read"],
@@ -156,16 +156,16 @@ subject:
   "economics": {
     "schema": "connection_hub.economics_projection.v1",
     "authority_id": "platform",
-    "user_id": "02e53484-0081-70ce-11c1-e96706b1a182",
+    "user_id": "a1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
     "charge_to": "grantor",
-    "actor_identity": "integration:claude:02e53484-0081-70ce-11c1-e96706b1a182",
+    "actor_identity": "integration:claude:a1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
     "roles": ["kdcube:role:super-admin"],
     "permissions": ["memories:read"],
     "budget_bypass": true,
     "provenance": {
       "schema": "connection_hub.delegated_actor_provenance.v1",
-      "delegate_identity": "integration:claude:02e53484-0081-70ce-11c1-e96706b1a182",
-      "grantor_user_id": "02e53484-0081-70ce-11c1-e96706b1a182",
+      "delegate_identity": "integration:claude:a1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
+      "grantor_user_id": "a1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
       "client_id": "claude",
       "resource": "https://runtime/api/integrations/bundles/demo/demo/user-memories@2026-06-26/public/mcp/memories",
       "grants": ["memories:read"],

@@ -41,8 +41,8 @@ class _EdgeStore:
 
 def _telegram_edge(
     *,
-    telegram_id: str = "434804821",
-    platform_user_id: str = "02e53484",
+    telegram_id: str = "100200300",
+    platform_user_id: str = "a1b2c3d4",
     grants: list[str] | None = None,
 ) -> dict[str, Any]:
     return {
@@ -74,12 +74,12 @@ def _telegram_edge(
 def test_resolve_identity_family_expands_linked_telegram_actor_to_platform_family():
     store = _EdgeStore([_telegram_edge()])
 
-    result = resolve_identity_family(store, input_user_id="telegram_434804821")
+    result = resolve_identity_family(store, input_user_id="telegram_100200300")
 
     assert result["ok"] is True
     assert result["linked"] is True
-    assert result["platform_user_id"] == "02e53484"
-    assert result["memory_user_ids"] == ["02e53484", "telegram_434804821"]
+    assert result["platform_user_id"] == "a1b2c3d4"
+    assert result["memory_user_ids"] == ["a1b2c3d4", "telegram_100200300"]
     assert result["authority"]["authority_id"] == "platform"
     assert result["identities"][1]["integration_id"] == "telegram.kdcube_ref"
 
@@ -87,32 +87,32 @@ def test_resolve_identity_family_expands_linked_telegram_actor_to_platform_famil
 def test_resolve_identity_family_requires_family_grant_for_channel_actor():
     store = _EdgeStore([_telegram_edge(grants=[])])
 
-    result = resolve_identity_family(store, input_user_id="telegram_434804821")
+    result = resolve_identity_family(store, input_user_id="telegram_100200300")
 
     assert result["ok"] is True
     assert result["linked"] is False
     assert result["platform_user_id"] == ""
-    assert result["memory_user_ids"] == ["telegram_434804821"]
-    assert result["requested_connection_edge"]["edge_id"] == "edge_telegram_434804821"
+    assert result["memory_user_ids"] == ["telegram_100200300"]
+    assert result["requested_connection_edge"]["edge_id"] == "edge_telegram_100200300"
 
 
 def test_resolve_identity_family_keeps_unlinked_actor_local():
-    result = resolve_identity_family(_EdgeStore([]), input_user_id="telegram_434804821")
+    result = resolve_identity_family(_EdgeStore([]), input_user_id="telegram_100200300")
 
     assert result["ok"] is True
     assert result["linked"] is False
     assert result["platform_user_id"] == ""
-    assert result["memory_user_ids"] == ["telegram_434804821"]
+    assert result["memory_user_ids"] == ["telegram_100200300"]
     assert result["identities"][0]["status"] == "unlinked"
 
 
 def test_actor_user_id_helpers_preserve_registered_provider_conventions():
-    assert parse_actor_user_id("telegram_434804821") == {
+    assert parse_actor_user_id("telegram_100200300") == {
         "provider": "telegram",
-        "provider_subject": "434804821",
-        "identity_ref": "telegram:434804821",
+        "provider_subject": "100200300",
+        "identity_ref": "telegram:100200300",
     }
-    assert actor_user_id_for_identity("telegram", "434804821") == "telegram_434804821"
+    assert actor_user_id_for_identity("telegram", "100200300") == "telegram_100200300"
     assert actor_user_id_for_identity(
         "custom",
         "subject-1",
@@ -120,7 +120,7 @@ def test_actor_user_id_helpers_preserve_registered_provider_conventions():
     ) == "custom_actor_subject_1"
 
 
-def _delegated_credential(*, grantor="02e53484", identity_scope="grantor_identity_family"):
+def _delegated_credential(*, grantor="a1b2c3d4", identity_scope="grantor_identity_family"):
     return {
         "schema": "kdcube.credential.v1",
         "credential_kind": "delegated_client_access",
@@ -153,12 +153,12 @@ def test_delegated_identity_scope_grantor_family_expands_linked_identities():
     )
 
     assert result["ok"] is True
-    assert result["delegate_identity"] == "integration:claude:02e53484"
-    assert result["grantor_user_id"] == "02e53484"
+    assert result["delegate_identity"] == "integration:claude:a1b2c3d4"
+    assert result["grantor_user_id"] == "a1b2c3d4"
     assert result["identity_scope"] == "grantor_identity_family"
-    assert result["memory_user_ids"] == ["02e53484", "telegram_434804821"]
+    assert result["memory_user_ids"] == ["a1b2c3d4", "telegram_100200300"]
     assert result["delegation"]["client_id"] == "claude"
-    assert result["economics"]["user_id"] == "02e53484"
+    assert result["economics"]["user_id"] == "a1b2c3d4"
     assert result["economics"]["charge_to"] == "grantor"
     assert result["economics"]["roles"] == ["kdcube:role:super-admin"]
     assert result["economics"]["permissions"] == ["memories:read"]
@@ -176,4 +176,4 @@ def test_delegated_identity_scope_grantor_only_does_not_expand_family():
 
     assert result["ok"] is True
     assert result["identity_scope"] == "grantor"
-    assert result["memory_user_ids"] == ["02e53484"]
+    assert result["memory_user_ids"] == ["a1b2c3d4"]

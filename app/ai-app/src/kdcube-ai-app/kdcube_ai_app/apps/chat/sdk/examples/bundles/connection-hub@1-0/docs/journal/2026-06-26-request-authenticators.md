@@ -74,13 +74,13 @@ Output is an `AuthenticatedRequest`:
   "ok": true,
   "authenticated": true,
   "provider": "telegram",
-  "provider_subject": "434804821",
-  "actor_user_id": "telegram_434804821",
-  "platform_user_id": "02e53484-...",
+  "provider_subject": "100200300",
+  "actor_user_id": "telegram_100200300",
+  "platform_user_id": "a1b2c3d4-...",
   "identity_authority": {
-    "actor_user_id": "telegram_434804821",
-    "platform_user_id": "02e53484-...",
-    "economics_user_id": "02e53484-...",
+    "actor_user_id": "telegram_100200300",
+    "platform_user_id": "a1b2c3d4-...",
+    "economics_user_id": "a1b2c3d4-...",
     "user_type": "privileged",
     "platform_roles": ["kdcube:role:super-admin"]
   }

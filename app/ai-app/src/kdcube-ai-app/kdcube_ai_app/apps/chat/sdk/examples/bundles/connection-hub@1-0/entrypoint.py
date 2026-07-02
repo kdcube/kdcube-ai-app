@@ -208,7 +208,7 @@ def _platform_user_id(
     """Return a real authenticated platform user id, never an anonymous fingerprint.
 
     External/channel actors keep their actor user id (for example
-    ``telegram_434804821``) even when platform authority is projected onto the
+    ``telegram_100200300``) even when platform authority is projected onto the
     session. In those cases the platform id must come from the explicit
     ``identity_authority.platform_user_id`` edge, not from legacy ``user_type``.
     """

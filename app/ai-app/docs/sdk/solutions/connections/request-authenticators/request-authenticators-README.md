@@ -186,16 +186,16 @@ A successful Connection Hub authentication surface returns authority material:
   "ok": true,
   "authenticated": true,
   "authority_id": "telegram.kdcube_ref",
-  "identity_subject": "434804821",
+  "identity_subject": "100200300",
   "provider": "telegram",
-  "provider_subject": "434804821",
+  "provider_subject": "100200300",
   "selected_authenticator": "telegram.kdcube_ref.init_data",
-  "actor_user_id": "telegram_434804821",
-  "platform_user_id": "02e53484-...",
+  "actor_user_id": "telegram_100200300",
+  "platform_user_id": "a1b2c3d4-...",
   "identity_authority": {
-    "actor_user_id": "telegram_434804821",
-    "platform_user_id": "02e53484-...",
-    "economics_user_id": "02e53484-...",
+    "actor_user_id": "telegram_100200300",
+    "platform_user_id": "a1b2c3d4-...",
+    "economics_user_id": "a1b2c3d4-...",
     "platform_roles": ["kdcube:role:super-admin"],
     "budget_bypass": true
   }

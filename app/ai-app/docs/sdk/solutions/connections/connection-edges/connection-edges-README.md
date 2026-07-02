@@ -45,17 +45,17 @@ Boundary authorization:
   "from": {
     "authority_id": "telegram.kdcube_ref",
     "provider": "telegram",
-    "subject": "434804821",
-    "identity_ref": "telegram.kdcube_ref:434804821",
-    "user_id": "telegram_434804821",
+    "subject": "100200300",
+    "identity_ref": "telegram.kdcube_ref:100200300",
+    "user_id": "telegram_100200300",
     "label": "elena_viter"
   },
   "to": {
     "authority_id": "platform",
     "provider": "platform",
-    "subject": "02e53484-0081-70ce-11c1-e96706b1a182",
-    "identity_ref": "platform:02e53484-0081-70ce-11c1-e96706b1a182",
-    "user_id": "02e53484-0081-70ce-11c1-e96706b1a182",
+    "subject": "a1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
+    "identity_ref": "platform:a1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
+    "user_id": "a1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
     "label": "KDCube platform user"
   },
   "grants": [
@@ -93,9 +93,9 @@ For platform edges, common grants are:
 Telegram-first linking writes an edge:
 
 ```text
-telegram.kdcube_ref:434804821
+telegram.kdcube_ref:100200300
   -- selected grants -->
-platform:02e53484-0081-70ce-11c1-e96706b1a182
+platform:a1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d
 ```
 
 That means:
@@ -129,14 +129,14 @@ boundary.
 ```text
 incoming actor:
   authority = telegram.kdcube_ref
-  identity  = telegram.kdcube_ref:434804821
+  identity  = telegram.kdcube_ref:100200300
 
 boundary:
   authority = platform
   grants    = economics:charge
 
 Connection Hub:
-  find edge telegram.kdcube_ref:434804821 -> platform:02e...
+  find edge telegram.kdcube_ref:100200300 -> platform:02e...
   resolve platform roles/permissions/economics for 02e...
   carry projection in cross-runtime context
 ```
@@ -199,7 +199,7 @@ from:
 
 to:
   authority_id = platform
-  identity     = 02e53484-...
+  identity     = a1b2c3d4-...
 
 resource:
   kdcube-services@1-0/public/mcp/named_services

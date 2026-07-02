@@ -33,8 +33,8 @@ authenticator can attempt verification.
   "verified_authority": {
     "authority_id": "telegram.kdcube_ref",
     "authenticator_id": "telegram.kdcube_ref.init_data",
-    "identity": "telegram:434804821",
-    "actor_user_id": "telegram_434804821"
+    "identity": "telegram:100200300",
+    "actor_user_id": "telegram_100200300"
   },
   "attrs": {},
   "iat": 1780000000,

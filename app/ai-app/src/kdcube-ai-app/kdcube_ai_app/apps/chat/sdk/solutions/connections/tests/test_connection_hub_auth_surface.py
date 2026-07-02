@@ -50,13 +50,13 @@ async def test_connection_hub_surface_projects_identity_authority_to_session():
             authenticated=True,
             linked=True,
             provider="telegram",
-            provider_subject="434804821",
-            actor_user_id="telegram_434804821",
+            provider_subject="100200300",
+            actor_user_id="telegram_100200300",
             connection_id="telegram.support",
             platform_user_id="platform-user-1",
             principal={"roles": ["kdcube:role:registered"]},
             identity_authority={
-                "actor_user_id": "telegram_434804821",
+                "actor_user_id": "telegram_100200300",
                 "platform_user_id": "platform-user-1",
                 "platform_roles": ["kdcube:role:super-admin"],
                 "platform_permissions": ["demo:*"],
@@ -89,7 +89,7 @@ async def test_connection_hub_surface_projects_identity_authority_to_session():
     )
 
     assert session is not None
-    assert session.user_id == "telegram_434804821"
+    assert session.user_id == "telegram_100200300"
     assert session.user_type == UserType.PRIVILEGED
     assert session.roles == ["kdcube:role:super-admin"]
     assert session.permissions == ["demo:*"]
@@ -140,16 +140,16 @@ async def test_connection_hub_surface_marks_verified_unlinked_actor_external():
             authenticated=True,
             linked=False,
             provider="telegram",
-            provider_subject="434804821",
-            actor_user_id="telegram_434804821",
+            provider_subject="100200300",
+            actor_user_id="telegram_100200300",
             connection_id="telegram.support",
             principal={"roles": []},
             identity_authority={
-                "actor_user_id": "telegram_434804821",
-                "storage_user_id": "telegram_434804821",
-                "economics_user_id": "telegram_434804821",
+                "actor_user_id": "telegram_100200300",
+                "storage_user_id": "telegram_100200300",
+                "economics_user_id": "telegram_100200300",
                 "identity_provider": "telegram",
-                "identity_provider_subject": "434804821",
+                "identity_provider_subject": "100200300",
                 "platform_authority_resolved": False,
                 "platform_authority_error": "platform_user_not_linked",
             },
@@ -177,7 +177,7 @@ async def test_connection_hub_surface_marks_verified_unlinked_actor_external():
 
     assert session is not None
     assert session.user_type == UserType.EXTERNAL
-    assert session.user_id == "telegram_434804821"
+    assert session.user_id == "telegram_100200300"
     assert session.roles == []
     assert session.identity_authority["platform_authority_resolved"] is False
 

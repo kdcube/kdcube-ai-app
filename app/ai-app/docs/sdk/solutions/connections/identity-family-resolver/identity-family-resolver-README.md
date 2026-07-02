@@ -34,7 +34,7 @@ request/session/proof already authenticated
         |
         v
 current actor user_id
-  telegram_434804821 / platform uuid / provider:subject
+  telegram_100200300 / platform uuid / provider:subject
         |
         v
 Identity Family Resolver
@@ -53,8 +53,8 @@ Product features often store records under the runtime actor that produced
 them. For example, memories may exist under:
 
 ```text
-02e53484-0081-70ce-11c1-e96706b1a182
-telegram_434804821
+a1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d
+telegram_100200300
 google:person@example.com
 ```
 
@@ -77,37 +77,37 @@ The logical response uses schema `connection_hub.identity_family.v1`:
   "ok": true,
   "schema": "connection_hub.identity_family.v1",
   "linked": true,
-  "platform_user_id": "02e53484-0081-70ce-11c1-e96706b1a182",
+  "platform_user_id": "a1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
   "authority": {
     "kind": "authority",
     "authority_id": "platform",
     "provider": "platform",
-    "user_id": "02e53484-0081-70ce-11c1-e96706b1a182"
+    "user_id": "a1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d"
   },
   "identities": [
     {
       "kind": "authority",
       "authority_id": "platform",
       "provider": "platform",
-      "user_id": "02e53484-0081-70ce-11c1-e96706b1a182"
+      "user_id": "a1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d"
     },
     {
       "kind": "integration",
       "provider": "telegram",
-      "provider_subject": "434804821",
-      "identity_ref": "telegram:434804821",
-      "user_id": "telegram_434804821",
+      "provider_subject": "100200300",
+      "identity_ref": "telegram:100200300",
+      "user_id": "telegram_100200300",
       "integration_id": "telegram.kdcube_ref",
       "authenticator_id": "telegram.kdcube_ref"
     }
   ],
   "user_ids": [
-    "02e53484-0081-70ce-11c1-e96706b1a182",
-    "telegram_434804821"
+    "a1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
+    "telegram_100200300"
   ],
   "memory_user_ids": [
-    "02e53484-0081-70ce-11c1-e96706b1a182",
-    "telegram_434804821"
+    "a1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
+    "telegram_100200300"
   ]
 }
 ```
@@ -139,7 +139,7 @@ Input is a verified `kdcube.credential.v1` envelope. Output uses schema
   "delegate_identity": "integration:claude:02e...",
   "grantor_user_id": "02e...",
   "identity_scope": "grantor_identity_family",
-  "memory_user_ids": ["02e...", "telegram_434804821"]
+  "memory_user_ids": ["02e...", "telegram_100200300"]
 }
 ```
 
@@ -167,7 +167,7 @@ If a Telegram actor has no edge, the resolver may return a one-item family for
 the actor:
 
 ```text
-telegram_434804821
+telegram_100200300
 ```
 
 That is enough for low-authority actor-local features. It does not grant platform
@@ -177,7 +177,7 @@ If a Telegram actor has an edge but that edge does not include
 `identity:family`, the resolver still returns only the actor-local family:
 
 ```text
-telegram_434804821
+telegram_100200300
 ```
 
 That is deliberate. A connection edge means “these identities were proven and
@@ -212,11 +212,11 @@ fetches data. A healthy Telegram-linked request with `identity:family` should
 show both the Telegram runtime user id and the platform user id:
 
 ```text
-[memory.identity_family] ... actor_user_id=telegram_434804821
-  family_user_ids=['02e53484-0081-70ce-11c1-e96706b1a182', 'telegram_434804821']
+[memory.identity_family] ... actor_user_id=telegram_100200300
+  family_user_ids=['a1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d', 'telegram_100200300']
 ```
 
-If `family_user_ids` contains only `telegram_434804821`, inspect the Connection
+If `family_user_ids` contains only `telegram_100200300`, inspect the Connection
 Hub edge record. The usual cause is an old or low-authority edge with
 `"grants": []`.
 

@@ -27,7 +27,7 @@ def _authority(
     scopes=None,
     *,
     resource=GUARD_RESOURCE,
-    grantor_subject="02e53484-0081-70ce-11c1-e96706b1a182",
+    grantor_subject="a1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
     identity_scope="grantor",
     subject="",
 ):
@@ -174,7 +174,7 @@ def test_managed_guard_allows_configured_non_feedback_tool(monkeypatch):
             "selected_tool_grants": True,
         },
         user={
-            "sub": "integration:claude:02e53484-0081-70ce-11c1-e96706b1a182",
+            "sub": "integration:claude:a1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
             "roles": ["kdcube:role:delegated-client"],
             "permissions": ["memories:read"],
         },
@@ -209,7 +209,7 @@ def test_managed_guard_exposes_runtime_projection_for_proc_bridge(monkeypatch):
             "selected_tool_grants": True,
         },
         user={
-            "sub": "integration:claude:02e53484-0081-70ce-11c1-e96706b1a182",
+            "sub": "integration:claude:a1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
             "roles": ["kdcube:role:delegated-client"],
             "permissions": ["memories:read"],
         },
@@ -217,7 +217,7 @@ def test_managed_guard_exposes_runtime_projection_for_proc_bridge(monkeypatch):
             "tools": ["memory_search"],
             "credential": _authority(
                 scopes=["memories:read"],
-                grantor_subject="02e53484-0081-70ce-11c1-e96706b1a182",
+                grantor_subject="a1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
                 identity_scope="grantor_identity_family",
             ),
             "grantor_authority": {
@@ -237,15 +237,15 @@ def test_managed_guard_exposes_runtime_projection_for_proc_bridge(monkeypatch):
     assert response.status_code == 200
     projection = response.json()["projection"]
     authority = projection["identity_authority"]
-    assert projection["user_id"] == "02e53484-0081-70ce-11c1-e96706b1a182"
+    assert projection["user_id"] == "a1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d"
     assert projection["user_type"] == "external"
-    assert projection["delegate_identity"] == "integration:claude:02e53484-0081-70ce-11c1-e96706b1a182"
-    assert projection["grantor_user_id"] == "02e53484-0081-70ce-11c1-e96706b1a182"
+    assert projection["delegate_identity"] == "integration:claude:a1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d"
+    assert projection["grantor_user_id"] == "a1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d"
     assert projection["identity_scope"] == "grantor_identity_family"
     assert "memories:read" in projection["grants"]
-    assert authority["economics_user_id"] == "02e53484-0081-70ce-11c1-e96706b1a182"
+    assert authority["economics_user_id"] == "a1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d"
     assert authority["budget_bypass"] is True
-    assert authority["actor_identity"] == "integration:claude:02e53484-0081-70ce-11c1-e96706b1a182"
+    assert authority["actor_identity"] == "integration:claude:a1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d"
 
 
 def test_managed_guard_enforces_grants_per_called_tool(monkeypatch):

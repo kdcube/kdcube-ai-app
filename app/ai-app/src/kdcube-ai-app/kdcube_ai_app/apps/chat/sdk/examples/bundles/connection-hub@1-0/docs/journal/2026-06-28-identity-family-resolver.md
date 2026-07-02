@@ -56,12 +56,12 @@ For a linked Telegram actor, the resolver returns:
     {
       "kind": "integration",
       "provider": "telegram",
-      "provider_subject": "434804821",
-      "user_id": "telegram_434804821",
+      "provider_subject": "100200300",
+      "user_id": "telegram_100200300",
       "integration_id": "telegram.kdcube_ref"
     }
   ],
-  "memory_user_ids": ["02e...", "telegram_434804821"]
+  "memory_user_ids": ["02e...", "telegram_100200300"]
 }
 ```
 

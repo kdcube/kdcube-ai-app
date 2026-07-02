@@ -149,7 +149,7 @@ def test_consent_html_shows_platform_account_and_logout():
     html = render_consent_html(
         req,
         issuer=ISSUER,
-        grantor_subject="02e53484-0081-70ce-11c1-e96706b1a182",
+        grantor_subject="a1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
         grantor_label="elena@example.test",
         signout_action="/api/integrations/bundles/demo/demo/connection-hub@1-0/public/oauth/logout",
         return_to="/api/integrations/bundles/demo/demo/connection-hub@1-0/public/oauth/authorize?client_id=claude",
@@ -157,7 +157,7 @@ def test_consent_html_shows_platform_account_and_logout():
 
     assert "KDCube account" in html
     assert "elena@example.test" in html
-    assert "02e53484-0081-70ce-11c1-e96706b1a182" in html
+    assert "a1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d" in html
     assert "Sign out of KDCube" in html
     assert "/public/oauth/logout" in html
 
@@ -225,7 +225,7 @@ async def _fake_authenticate(token):
         "admin-tok": {"sub": "google:admin@example.test", "roles": ["kdcube:role:super-admin"]},
         "user-tok": {
             "sub": "google:user@example.test",
-            "user_id": "02e53484-0081-70ce-11c1-e96706b1a182",
+            "user_id": "a1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
             "roles": ["kdcube:role:registered"],
         },
     }
@@ -516,10 +516,10 @@ def test_consent_uses_platform_user_id_as_grantor_when_available(client):
     import json
     raw = store._r.values[store._key("code", code)]
     payload = json.loads(raw)
-    assert payload["sub"] == "02e53484-0081-70ce-11c1-e96706b1a182"
+    assert payload["sub"] == "a1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d"
     assert payload["tools"] == ["memory_search"]
     assert payload["scopes"] == ["memories:read"]
-    assert payload["delegation_edges"][0]["identity_ref"] == "platform:02e53484-0081-70ce-11c1-e96706b1a182"
+    assert payload["delegation_edges"][0]["identity_ref"] == "platform:a1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d"
 
 
 def test_consent_deny_redirects_with_error(client):

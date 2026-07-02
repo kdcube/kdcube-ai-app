@@ -166,11 +166,11 @@ Identity links are the authority bridge:
 
 ```text
 verified provider subject
-  telegram:434804821
+  telegram:100200300
       |
       v
 platform user id
-  02e53484-...
+  a1b2c3d4-...
 ```
 
 The current playground implementation keeps connection edges and one-time

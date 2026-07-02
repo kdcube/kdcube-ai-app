@@ -17,10 +17,10 @@ runtime authority.
 
 ```text
 actor identity
-  telegram_434804821
+  telegram_100200300
         +
 linked platform principal
-  02e53484-...
+  a1b2c3d4-...
         |
         v
 UserSession + identity_authority
@@ -32,10 +32,10 @@ The actor and the authority source can be different.
 
 ```text
 actor/storage identity:
-  telegram_434804821
+  telegram_100200300
 
 platform authority identity:
-  02e53484-0081-70ce-11c1-e96706b1a182
+  a1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d
 ```
 
 This lets an app keep Telegram-scoped storage or product behavior while platform
@@ -45,7 +45,7 @@ role checks and economics use the linked platform principal.
 
 ```text
 UserSession
-  user_id     = telegram_434804821
+  user_id     = telegram_100200300
   roles       = ["kdcube:role:super-admin"]
   permissions = [...]
   budget_bypass = true
@@ -53,15 +53,15 @@ UserSession
         |
         v
 identity_authority
-  actor_user_id       = telegram_434804821
-  storage_user_id     = telegram_434804821
-  platform_user_id    = 02e53484-...
-  economics_user_id   = 02e53484-...
+  actor_user_id       = telegram_100200300
+  storage_user_id     = telegram_100200300
+  platform_user_id    = a1b2c3d4-...
+  economics_user_id   = a1b2c3d4-...
   platform_roles      = ["kdcube:role:super-admin"]
   platform_permissions = [...]
   budget_bypass       = true
   identity_provider   = telegram
-  identity_provider_subject = 434804821
+  identity_provider_subject = 100200300
 ```
 
 After projection, downstream code should see a normal authorized session. It
@@ -117,7 +117,7 @@ headers. Connection Hub creates a Data Bus `UserSession` whose actor remains the
 Telegram user:
 
 ```text
-user_id = telegram_434804821
+user_id = telegram_100200300
 ```
 
 If no connection edge exists, the session stays low authority:
@@ -128,7 +128,7 @@ permissions = []
 budget_bypass = false
 ```
 
-If `telegram:434804821` has an edge to a platform user, the next claim keeps
+If `telegram:100200300` has an edge to a platform user, the next claim keeps
 the same actor id and projects the platform authority into that session. The
 federated token itself only points at the session; it does not duplicate roles,
 permissions, or provider identity in the signed token body.

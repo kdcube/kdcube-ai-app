@@ -461,7 +461,7 @@ The linker never invents grants. It only maps identity across authorities:
 
 ```text
 linker("custom.identity:user:123", to="kdcube.platform")
-  -> "kdcube.platform:02e53484-..."
+  -> "kdcube.platform:a1b2c3d4-..."
   -> or null
 ```
 

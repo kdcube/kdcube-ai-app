@@ -171,7 +171,7 @@ Mini App iframe that initiated the provider-proof challenge.
 
 The Data Bus claim is owned by Connection Hub, not the host app. For unlinked
 Telegram users it creates a low-authority actor session such as
-`telegram_434804821`. After a link exists, the next claim keeps that actor id
+`telegram_100200300`. After a link exists, the next claim keeps that actor id
 and projects the linked platform authority into `session.identity_authority`.
 
 The standalone browser claim page performs its own KDCube platform sign-in using
