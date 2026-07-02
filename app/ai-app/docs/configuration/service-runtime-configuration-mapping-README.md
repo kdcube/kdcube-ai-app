@@ -33,6 +33,7 @@ The canonical contract tables now live in the per-descriptor pages:
 - [bundles-secrets-descriptor-README.md](bundles-secrets-descriptor-README.md)
 - [secrets-descriptor-README.md](secrets-descriptor-README.md)
 - [gateway-descriptor-README.md](gateway-descriptor-README.md)
+- [economics-descriptor-README.md](economics-descriptor-README.md)
 
 ## Three runtime modes
 
@@ -57,6 +58,12 @@ per-descriptor pages. This section keeps only the cross-descriptor overview.
 | `HOST_BUNDLES_DESCRIPTOR_PATH` | `bundles.yaml` | CLI local compose | Host file mounted into `/config/bundles.yaml`. |
 | `HOST_SECRETS_YAML_DESCRIPTOR_PATH` | `secrets.yaml` | CLI local compose, `secrets-file` only | Host file mounted into `/config/secrets.yaml`. |
 | `HOST_BUNDLES_SECRETS_YAML_DESCRIPTOR_PATH` | `bundles.secrets.yaml` | CLI local compose, `secrets-file` only | Host file mounted into `/config/bundles.secrets.yaml`. |
+| `ECONOMICS_YAML_DESCRIPTOR_PATH` | `economics.yaml` | direct local run | Explicit path for the runtime reader and the deploy-time seeder; supports `file://`. |
+
+`economics.yaml` has no dedicated single-file env var. In CLI local compose it is
+staged into the descriptor directory by the installer and reached through
+`PLATFORM_DESCRIPTORS_DIR/economics.yaml` — see
+[Economics config source](#economics-config-source).
 
 ### Identity, auth, and ports
 
@@ -129,6 +136,43 @@ Gateway runtime policy itself is descriptor-owned by `gateway.yaml`.
 
 There is no separate env-var surface for individual Data Bus publish limits.
 Change them in `gateway.yaml` or through the gateway admin config path.
+
+### Economics config source
+
+`economics.yaml` is descriptor-owned per tenant/project and has two runtime
+roles: some sections are **seeded into the economics tables at deploy time**
+(Postgres is then the live authority); two sections are **read live from the
+file** and never stored. See
+[economics-descriptor-README.md](economics-descriptor-README.md).
+
+| Env var | Descriptor file | Modes | Meaning |
+|---|---|---|---|
+| `ECONOMICS_YAML_DESCRIPTOR_PATH` | `economics.yaml` | direct local run | Explicit path; supports `file://`; consumed by both the runtime reader and the deploy-time seeder |
+| `PLATFORM_DESCRIPTORS_DIR` | `economics.yaml` | CLI local compose, AWS deployment | Descriptor directory fallback; runtime reads `PLATFORM_DESCRIPTORS_DIR/economics.yaml`, default `/config/economics.yaml` |
+
+Path resolution (both reader and seeder): `ECONOMICS_YAML_DESCRIPTOR_PATH` →
+`PLATFORM_DESCRIPTORS_DIR/economics.yaml` → `/config/economics.yaml`.
+
+| Descriptor path | Runtime owner | Purpose |
+|---|---|---|
+| `economics.reservation.<surface>` | live file read (`economics_reservation_default`) | per-surface reservation floor (USD); runtime-read, never seeded |
+| `economics.price_tables` | live file read (`price_table`) | provider/model price table; runtime-read, never seeded; whole-table replacement of the in-code baseline |
+| `economics.quota_policies.<plan_id>` | `plan_quota_policies` table | seeded at deploy; DB is the live authority |
+| `economics.budget_policies.<provider>` | `application_budget_policies` table | seeded at deploy; DB is the live authority |
+| `economics.plans.<plan_id>` | `plans` table | seeded at deploy; DB is the live authority |
+| `economics.project_budget.overdraft_limit_usd` | `tenant_project_budget` table | seeded at deploy (overdraft only; balance never written) |
+
+Notes:
+
+- `economics.yaml` is staged into the descriptor directory by the installer and
+  read through the `PLATFORM_DESCRIPTORS_DIR` (`/config`) directory mount; there
+  is no dedicated single-file env var for it
+- the file must be **writable** at runtime: admin economics mutations write the
+  seeded sections back to `economics.yaml` so the next deploy-time seed does not
+  regress them, while `reservation`/`price_tables` are preserved verbatim
+- editing the staged `/config/economics.yaml` changes the reservation floor and
+  price table live (mtime-cached), without a restart; the seeded sections change
+  only on the next deploy-time seed or via an admin mutation
 
 ### Redis runtime
 
@@ -369,3 +413,4 @@ For deployment-scoped bundle props in cloud:
   - [bundles-secrets-descriptor-README.md](bundles-secrets-descriptor-README.md)
   - [secrets-descriptor-README.md](secrets-descriptor-README.md)
   - [gateway-descriptor-README.md](gateway-descriptor-README.md)
+  - [economics-descriptor-README.md](economics-descriptor-README.md)

@@ -2192,8 +2192,8 @@ class BaseEntrypoint:
             f"conversation_id={thread_id};turn_id={turn_id};usage_from={usage_from};"
             f"date_to={date_to};bundle_id={bundle_id};"
         )
-        ref_provider = "anthropic"
-        ref_model = "claude-sonnet-4-5-20250929"
+        from kdcube_ai_app.infra.accounting.usage import llm_reference_service
+        ref_provider, ref_model = llm_reference_service()
 
         result = await calc.calculate_turn_costs(
             tenant_id=tenant,

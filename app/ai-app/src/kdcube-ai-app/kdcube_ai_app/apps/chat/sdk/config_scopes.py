@@ -180,6 +180,15 @@ def economics_price_tables() -> dict | None:
     return node if isinstance(node, dict) else None
 
 
+def economics_llm_reference_service() -> dict | None:
+    """`llm_reference_service:` section from economics.yaml — the single
+    provider/service that anchors the token economy's USD<->token unit. Returns
+    the mapping (e.g. {"provider": ..., "service_name": ...}), or None when the
+    section/file is absent. Runtime-read, mtime-cached; never seeded."""
+    node = _load_economics_plain("llm_reference_service")
+    return node if isinstance(node, dict) else None
+
+
 def _load_global_secret_plain(dotted_path: str) -> Any:
     data = _load_plain_yaml(
         _descriptor_path(

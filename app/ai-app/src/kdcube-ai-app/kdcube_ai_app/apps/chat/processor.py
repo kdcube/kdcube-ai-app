@@ -1939,6 +1939,7 @@ class EnhancedChatRequestProcessor:
         cleanup_channel = namespaces.CONFIG.BUNDLES.CLEANUP_CHANNEL.format(tenant=tenant, project=project)
         props_update_channel = namespaces.CONFIG.BUNDLES.PROPS_UPDATE_CHANNEL.format(tenant=tenant, project=project)
         secrets_update_channel = namespaces.CONFIG.BUNDLES.SECRETS_UPDATE_CHANNEL.format(tenant=tenant, project=project)
+        economics_sync_channel = namespaces.CONFIG.ECONOMICS.SYNC_CHANNEL.format(tenant=tenant, project=project)
 
         def _invalidate_config_secret_cache(
                 *,
@@ -2114,10 +2115,11 @@ class EnhancedChatRequestProcessor:
                     cleanup_channel,
                     props_update_channel,
                     secrets_update_channel,
+                    economics_sync_channel,
                 )
                 logger.info(
-                    "Subscribed to bundles channels: "
-                    f"{update_channel}, {cleanup_channel}, {props_update_channel}, {secrets_update_channel}"
+                    "Subscribed to config channels: "
+                    f"{update_channel}, {cleanup_channel}, {props_update_channel}, {secrets_update_channel}, {economics_sync_channel}"
                 )
                 try:
                     await _catch_up_runtime_snapshot("config-listener.subscribe")
@@ -2374,6 +2376,42 @@ class EnhancedChatRequestProcessor:
                         continue
 
                     if message.get("channel") in (
+                        economics_sync_channel,
+                        economics_sync_channel.encode(),
+                    ):
+                        # Ingress can mount /config read-only; proc mounts it
+                        # writable, so it performs the economics.yaml write-back
+                        # from live DB state (preserving/applying reservation +
+                        # price_tables) on ingress's behalf.
+                        if not self.pg_pool:
+                            # Without a DB pool the descriptor would rebuild from
+                            # empty reads and clobber the DB-derived sections; skip
+                            # and let a replica that has one handle it.
+                            logger.warning(
+                                "economics.descriptor sync skipped: no pg_pool on this proc (pid=%s)",
+                                os.getpid(),
+                            )
+                            continue
+                        try:
+                            from kdcube_ai_app.apps.chat.sdk.infra.control_plane.manager import ControlPlaneManager
+                            from kdcube_ai_app.apps.chat.sdk.infra.economics.descriptor import sync_economics_descriptor
+                            reservation_overrides = evt.get("reservation_overrides") or None
+                            reservation_deletes = evt.get("reservation_deletes") or None
+                            cp_mgr = ControlPlaneManager(pg_pool=self.pg_pool, redis=self.redis)
+                            ok = await sync_economics_descriptor(
+                                cp_mgr, tenant=tenant, project=project,
+                                reservation_overrides=reservation_overrides,
+                                reservation_deletes=reservation_deletes,
+                            )
+                            logger.info(
+                                "Applied economics.descriptor sync: tenant=%s project=%s pid=%s ok=%s overrides=%s deletes=%s",
+                                tenant, project, os.getpid(), ok, reservation_overrides, reservation_deletes,
+                            )
+                        except Exception:
+                            logger.warning("economics.descriptor sync failed", exc_info=True)
+                        continue
+
+                    if message.get("channel") in (
                         props_update_channel,
                         props_update_channel.encode(),
                     ):
@@ -2448,7 +2486,7 @@ class EnhancedChatRequestProcessor:
             finally:
                 if pubsub:
                     try:
-                        await pubsub.unsubscribe(update_channel, cleanup_channel, props_update_channel, secrets_update_channel)
+                        await pubsub.unsubscribe(update_channel, cleanup_channel, props_update_channel, secrets_update_channel, economics_sync_channel)
                         await pubsub.close()
                     except Exception:
                         pass

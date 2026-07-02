@@ -14,7 +14,8 @@ from kdcube_ai_app.apps.chat.sdk.config import get_settings, get_secret
 from kdcube_ai_app.apps.chat.sdk.infra.economics.limiter import GLOBAL_BUNDLE_ID
 from kdcube_ai_app.apps.chat.sdk.infra.economics.stripe import StripeEconomicsAdminService
 
-from .stripe_router import router, _get_stripe, _get_control_plane_manager, REF_PROVIDER, REF_MODEL
+from .stripe_router import router, _get_stripe, _get_control_plane_manager
+from kdcube_ai_app.infra.accounting.usage import llm_reference_service
 
 logger = logging.getLogger(__name__)
 
@@ -161,12 +162,13 @@ async def cancel_my_subscription(
             """, settings.TENANT, settings.PROJECT, user_id)
         return {"status": "ok", "action": "applied", "message": "Subscription canceled"}
 
+    ref_provider, ref_model = llm_reference_service()
     svc = StripeEconomicsAdminService(
         pg_pool=pg_pool,
         user_credits_mgr=mgr.user_credits_mgr,
         subscription_mgr=mgr.subscription_mgr,
-        ref_provider=REF_PROVIDER,
-        ref_model=REF_MODEL,
+        ref_provider=ref_provider,
+        ref_model=ref_model,
     )
     try:
         res = await svc.request_subscription_cancel(

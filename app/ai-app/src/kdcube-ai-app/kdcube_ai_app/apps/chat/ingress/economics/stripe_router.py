@@ -12,7 +12,6 @@ from fastapi import HTTPException, APIRouter, FastAPI
 import stripe
 
 from kdcube_ai_app.apps.chat.sdk.config import get_settings, get_secret
-from kdcube_ai_app.infra.accounting.usage import anthropic, sonnet_45
 from kdcube_ai_app.ops.deployment.sql.db_deployment import project_schema as _project_schema
 
 logger = logging.getLogger(__name__)
@@ -58,9 +57,6 @@ async def stripe_lifespan(app: FastAPI):
 
 # State holder + lifespan registration
 router = APIRouter(lifespan=stripe_lifespan)
-
-REF_PROVIDER = anthropic
-REF_MODEL = sonnet_45
 
 
 def _usd_from_cents(cents: Optional[int]) -> Optional[float]:
