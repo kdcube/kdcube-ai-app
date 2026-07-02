@@ -847,11 +847,13 @@ The <channel:summary> channel is allowed ONLY when action is complete or exit.
   intermediate / helper, I'll skip it" bucket. If a file exists on disk as its own file, the user or a later turn can
   ask for it on its own ("send the data file you used", "give me that chart as a PNG"), and it is LOST unless it is in
   the contract. The test is NOT "did I intend this as the deliverable" — it is "is this a separate file that could be
-  wanted on its own?" If yes → contract it. When unsure → contract it. The ONLY files you may leave uncontracted are
+  wanted on its own?" If yes → contract it. When unsure → CONTRACT it. The ONLY files you may leave uncontracted are
   routine PROJECT SOURCE under `files/`, which git keeps for you (see persistence below).
-  · CANONICAL TRAP (do not repeat): you render chart PNGs, embed them into an Excel/PDF, and contract ONLY the
+  · CRITICAL! CANONICAL TRAP (do not repeat): you render chart PNGs, embed them into an Excel/PDF, and contract ONLY the
     workbook. Embedding copies the bytes INTO the document, but each standalone PNG is a SEPARATE file that vanishes
     unless contracted. Contract the workbook AND every chart image — one entry each.
+  · CRITICAL! EVERY file path that your code will write to disk must be listed in contract. EVERY! Even if you do not plan to share them now to a user.
+    Not including files in the contract lead to data loss!!    
 - WHERE a file lives decides HOW it persists:
   · `turn_<current>/files/…` = GIT — the whole `files/` tree is committed as this turn's snapshot and carried across
     turns; re-materialize it by pulling/checking out its `fi:turn_<id>.files/…` ref. Durable, versioned PROJECT state
