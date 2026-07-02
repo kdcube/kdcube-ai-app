@@ -435,7 +435,7 @@ def _normalize_artifacts_spec(artifacts: Any) -> Tuple[Optional[List[Dict[str, A
         normalized.append(
             {
                 "name": name,
-                "filename": safe_filename,
+                "filepath": safe_filename,
                 "mime": mime,
                 "description": description,
                 "visibility": visibility or "external",
@@ -946,7 +946,7 @@ def build_exec_output_contract(
     for a in normalized or []:
         contract[a["name"]] = {
             "type": "file",
-            "filename": a["filename"],
+            "filepath": a["filepath"],
             "mime": a["mime"],
             "description": a["description"],
             "visibility": a.get("visibility") or "external",
@@ -1035,7 +1035,7 @@ def _build_exec_error_payload(
         }
 
     desc = "; ".join(
-        f"{e.get('filename') or e.get('artifact_id') or 'unknown'}: {e.get('message') or e.get('code') or 'error'}"
+        f"{e.get('filepath') or e.get('artifact_id') or 'unknown'}: {e.get('message') or e.get('code') or 'error'}"
         for e in errors
     ).strip() or "Artifact validation failed"
     return {
@@ -1467,13 +1467,13 @@ async def run_exec_tool(
         preview_max_symbols = EXEC_TEXT_PREVIEW_MAX_SYMBOLS
     preview_max_symbols = max(0, preview_max_symbols)
     for a in contract or []:
-        rel = a["filename"]
+        rel = a["filepath"]
         p = resolve_artifact_path(outdir, rel)
         if not p.exists() or p.stat().st_size <= 0:
             missing.append(rel)
             errors.append({
                 "artifact_id": a["name"],
-                "filename": rel,
+                "filepath": rel,
                 "code": "missing_file" if not p.exists() else "empty_file",
                 "message": "file not produced" if not p.exists() else "file is empty",
             })
@@ -1492,7 +1492,7 @@ async def run_exec_tool(
         if egress_error:
             errors.append({
                 "artifact_id": a["name"],
-                "filename": rel,
+                "filepath": rel,
                 **egress_error,
             })
             continue
@@ -1511,7 +1511,7 @@ async def run_exec_tool(
         if write_error:
             errors.append({
                 "artifact_id": a["name"],
-                "filename": rel,
+                "filepath": rel,
                 "code": "artifact_invalid",
                 "message": write_error,
             })
@@ -1519,7 +1519,7 @@ async def run_exec_tool(
         if (stats or {}).get("write_warning") == "file_unusually_small":
             errors.append({
                 "artifact_id": a["name"],
-                "filename": rel,
+                "filepath": rel,
                 "code": "file_unusually_small",
                 "message": "file unusually small",
             })
@@ -1611,7 +1611,7 @@ async def run_exec_tool(
         }
         succeeded.append({
             "artifact_id": a["name"],
-            "filename": rel,
+            "filepath": rel,
         })
 
     infra_tail = ""
@@ -1725,7 +1725,7 @@ async def run_exec_tool(
     if errors:
         lines.append("File errors:")
         for e in errors:
-            fname = e.get("filename") or e.get("artifact_id") or "unknown"
+            fname = e.get("filepath") or e.get("artifact_id") or "unknown"
             try:
                 fname = pathlib.Path(fname).name
             except Exception:
@@ -1743,7 +1743,7 @@ async def run_exec_tool(
     if succeeded:
         lines.append("Succeeded:")
         for s in succeeded:
-            fname = s.get("filename") or s.get("artifact_id") or "unknown"
+            fname = s.get("filepath") or s.get("artifact_id") or "unknown"
             try:
                 fname = pathlib.Path(fname).name
             except Exception:

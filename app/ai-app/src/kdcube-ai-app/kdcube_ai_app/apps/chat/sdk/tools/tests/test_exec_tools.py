@@ -336,6 +336,32 @@ def test_normalize_artifacts_spec_marks_markdown_as_text():
     assert artifacts[0]["mime"] == "text/markdown"
 
 
+def test_exec_contract_normalization_is_idempotent():
+    # Regression: the react exec pipeline normalizes the contract (external.py),
+    # writes the normalized form back into params, then normalizes it AGAIN in the
+    # execution handler (build_exec_output_contract). Re-normalizing an
+    # already-normalized contract must succeed — a `filepath` -> `filename` key
+    # drift between the input read and the emitted key silently broke exec with
+    # "invalid_artifact_spec: Each artifact requires filepath ...".
+    raw = [{"filepath": "outputs/ai/report.xlsx", "description": "Report."}]
+
+    normalized, _rewrites, err = normalize_exec_contract_for_turn(raw, turn_id="turn_1")
+    assert err is None
+    assert normalized and normalized[0]["filepath"] == "turn_1/outputs/ai/report.xlsx"
+
+    # Second pass over the ALREADY-normalized contract (what the pipeline does).
+    contract, renormalized, err2 = build_exec_output_contract(normalized)
+    assert err2 is None
+    assert contract is not None
+    assert renormalized[0]["filepath"] == "turn_1/outputs/ai/report.xlsx"
+    assert contract["report"]["filepath"] == "turn_1/outputs/ai/report.xlsx"
+
+    # And _normalize_artifacts_spec is idempotent on its own output too.
+    twice, err3 = _normalize_artifacts_spec(renormalized)
+    assert err3 is None
+    assert twice[0]["filepath"] == "turn_1/outputs/ai/report.xlsx"
+
+
 def test_build_exec_output_contract_preserves_visibility_and_defaults_external():
     contract, normalized, err = build_exec_output_contract([
         {
@@ -356,14 +382,14 @@ def test_build_exec_output_contract_preserves_visibility_and_defaults_external()
     assert contract == {
         "public": {
             "type": "file",
-            "filename": "turn_1/files/public.md",
+            "filepath": "turn_1/files/public.md",
             "mime": "text/markdown",
             "description": "User-visible report.",
             "visibility": "external",
         },
         "internal": {
             "type": "file",
-            "filename": "turn_1/files/internal.json",
+            "filepath": "turn_1/files/internal.json",
             "mime": "application/json",
             "description": "Agent-only scratch output.",
             "visibility": "internal",
@@ -381,11 +407,11 @@ def test_build_exec_output_contract_accepts_outputs_namespace():
 
     assert err is None
     assert normalized is not None
-    assert normalized[0]["filename"] == "turn_1/outputs/test_results.txt"
+    assert normalized[0]["filepath"] == "turn_1/outputs/test_results.txt"
     assert contract == {
         "test_results": {
             "type": "file",
-            "filename": "turn_1/outputs/test_results.txt",
+            "filepath": "turn_1/outputs/test_results.txt",
             "mime": "text/plain",
             "description": "Non-workspace test results.",
             "visibility": "external",
@@ -403,9 +429,9 @@ def test_build_exec_output_contract_accepts_telegram_turn_id():
 
     assert err is None
     assert normalized is not None
-    assert normalized[0]["filename"] == "telegram_turn_13083631/outputs/tech_news_emails.xlsx"
+    assert normalized[0]["filepath"] == "telegram_turn_13083631/outputs/tech_news_emails.xlsx"
     assert contract is not None
-    assert contract["tech_news_emails"]["filename"] == "telegram_turn_13083631/outputs/tech_news_emails.xlsx"
+    assert contract["tech_news_emails"]["filepath"] == "telegram_turn_13083631/outputs/tech_news_emails.xlsx"
 
 
 def test_normalize_exec_contract_rewrites_outputs_for_telegram_turn_id():
@@ -427,7 +453,7 @@ def test_normalize_exec_contract_rewrites_outputs_for_telegram_turn_id():
         }
     ]
     assert normalized is not None
-    assert normalized[0]["filename"] == "telegram_turn_13083631/outputs/tech_news_emails.xlsx"
+    assert normalized[0]["filepath"] == "telegram_turn_13083631/outputs/tech_news_emails.xlsx"
 
 
 def test_normalize_exec_contract_rewrites_unqualified_filename_to_outputs():
@@ -449,7 +475,7 @@ def test_normalize_exec_contract_rewrites_unqualified_filename_to_outputs():
         }
     ]
     assert normalized is not None
-    assert normalized[0]["filename"] == "turn_1/outputs/reports/summary.md"
+    assert normalized[0]["filepath"] == "turn_1/outputs/reports/summary.md"
 
 
 def test_normalize_exec_contract_preserves_current_telegram_turn_id():
@@ -466,7 +492,7 @@ def test_normalize_exec_contract_preserves_current_telegram_turn_id():
     assert err is None
     assert rewrites == []
     assert normalized is not None
-    assert normalized[0]["filename"] == "telegram_turn_13083631/outputs/tech_news_emails.xlsx"
+    assert normalized[0]["filepath"] == "telegram_turn_13083631/outputs/tech_news_emails.xlsx"
 
 
 def test_normalize_exec_contract_rejects_different_telegram_turn_id():
@@ -726,7 +752,7 @@ async def test_run_exec_tool_reports_runtime_quota_error_but_keeps_succeeded_art
         code="print('ok')",
         contract=[{
             "name": "report",
-            "filename": "turn_1/outputs/stats/report.txt",
+            "filepath": "turn_1/outputs/stats/report.txt",
             "mime": "text/plain",
             "description": "Report text",
             "visibility": "external",
@@ -738,7 +764,7 @@ async def test_run_exec_tool_reports_runtime_quota_error_but_keeps_succeeded_art
 
     assert result["ok"] is False
     assert result["error"]["code"] == "workspace_size_limit"
-    assert result["succeeded"] == [{"artifact_id": "report", "filename": "turn_1/outputs/stats/report.txt"}]
+    assert result["succeeded"] == [{"artifact_id": "report", "filepath": "turn_1/outputs/stats/report.txt"}]
     assert len(result["items"]) == 1
     assert result["items"][0]["output"]["path"] == "turn_1/outputs/stats/report.txt"
     assert "Status: error" in result["report_text"]
@@ -889,7 +915,7 @@ async def test_run_exec_tool_uses_configured_text_preview_symbols(tmp_path, monk
         code="print('ok')",
         contract=[{
             "name": "report",
-            "filename": "turn_1/outputs/report.txt",
+            "filepath": "turn_1/outputs/report.txt",
             "mime": "text/plain",
             "description": "Report text",
             "visibility": "external",

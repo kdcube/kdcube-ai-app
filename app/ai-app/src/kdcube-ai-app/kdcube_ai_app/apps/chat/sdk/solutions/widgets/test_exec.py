@@ -24,7 +24,7 @@ async def test_exec_widget_treats_unqualified_outputs_contract_as_complete():
             "params": {
                 "contract": [
                     {
-                        "filename": "outputs/report.xlsx",
+                        "filepath": "outputs/report.xlsx",
                         "description": "Excel report",
                         "visibility": "external",
                     }
@@ -40,7 +40,7 @@ async def test_exec_widget_treats_unqualified_outputs_contract_as_complete():
     assert widget.has_contract()
     assert widget.is_complete()
     assert widget.get_code() == "print('ok')\n"
-    assert widget.pending_contract["report"]["filename"].endswith("outputs/report.xlsx")
+    assert widget.pending_contract["report"]["filepath"].endswith("outputs/report.xlsx")
 
 
 @pytest.mark.asyncio

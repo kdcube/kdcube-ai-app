@@ -326,7 +326,7 @@ class WithIsoRuntimeWorkflow(BaseWorkflow):
                     # ── Step 9: Format the final answer ──
                     ok = bool(envelope.get("ok"))
                     if ok:
-                        produced = [item.get("filename") for item in (envelope.get("succeeded") or []) if item]
+                        produced = [item.get("filepath") for item in (envelope.get("succeeded") or []) if item]
                         produced = [p for p in produced if isinstance(p, str) and p]
                         produced_text = ", ".join(produced) if produced else "no files"
                         answer_text = f"{scenario.label}: completed. Produced: {produced_text}."

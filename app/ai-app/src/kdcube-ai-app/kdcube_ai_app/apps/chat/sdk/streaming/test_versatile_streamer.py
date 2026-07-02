@@ -251,7 +251,7 @@ async def test_stream_with_channels_captures_realistic_exec_code_payload():
                 "prog_name": "monthly_priorities",
                 "contract": [
                     {
-                        "filename": output_file,
+                        "filepath": output_file,
                         "description": "Excel workbook output.",
                         "visibility": "external",
                     }
@@ -326,7 +326,7 @@ async def test_stream_with_channels_code_channel_survives_trailing_repeated_thin
             "tool_id": "exec_tools.execute_code_python",
             "params": {
                 "prog_name": "html_writer",
-                "contract": [{"filename": "outputs/page.html", "description": "HTML output"}],
+                "contract": [{"filepath": "outputs/page.html", "description": "HTML output"}],
             },
         },
     }

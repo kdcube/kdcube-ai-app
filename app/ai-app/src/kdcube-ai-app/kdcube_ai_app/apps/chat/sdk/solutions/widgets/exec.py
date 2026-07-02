@@ -166,11 +166,11 @@ class CodegenChanneledStreamingWidget:
         for idx, item in enumerate(artifacts):
             if not isinstance(item, dict):
                 continue
-            filename = (item.get("filename") or "").strip()
+            filepath = (item.get("filepath") or "").strip()
             description = (item.get("description") or "").strip()
-            if not filename or not description:
+            if not filepath or not description:
                 continue
-            leaf = pathlib.Path(filename).name
+            leaf = pathlib.Path(filepath).name
             name = pathlib.Path(leaf).stem or leaf or f"artifact_{idx + 1}"
             if name in seen:
                 seen[name] += 1
@@ -179,7 +179,7 @@ class CodegenChanneledStreamingWidget:
                 seen[name] = 1
             contract[name] = {
                 "type": "file",
-                "filename": filename,
+                "filepath": filepath,
                 "mime": mimetypes.guess_type(leaf)[0] or "",
                 "description": description,
                 "visibility": item.get("visibility") or "external",
@@ -587,8 +587,8 @@ class CodegenChanneledStreamingWidget:
         for name, spec in (contract or {}).items():
             if not isinstance(spec, dict):
                 continue
-            raw_filename = spec.get("filename") or ""
-            leaf = pathlib.Path(raw_filename).name if isinstance(raw_filename, str) else ""
+            raw_filepath = spec.get("filepath") or ""
+            leaf = pathlib.Path(raw_filepath).name if isinstance(raw_filepath, str) else ""
             display_name = pathlib.Path(leaf).stem if leaf else str(name)
             if not display_name:
                 display_name = str(name)
