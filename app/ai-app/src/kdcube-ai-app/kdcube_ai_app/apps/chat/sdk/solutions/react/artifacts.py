@@ -569,6 +569,24 @@ def build_artifact_binary_block(
     }
 
 
+def error_block_details(err: Any) -> Optional[Dict[str, Any]]:
+    """Extract the `details` payload for a tool-result error block from an error
+    envelope, WITHOUT duplicating the fields already carried at the top level
+    (`code`/`message`). If the envelope has a real nested `details` (e.g. a code
+    exit with `stderr_tail`), that is used verbatim; otherwise the remaining
+    non-redundant keys (`where`, `description`, `retryable`, …) are returned."""
+    if not isinstance(err, dict):
+        return None
+    nested = err.get("details")
+    if isinstance(nested, dict) and nested:
+        return nested
+    extras = {
+        k: v for k, v in err.items()
+        if k not in ("code", "message", "error", "managed", "details")
+    }
+    return extras or None
+
+
 def build_tool_result_error_block(
     *,
     turn_id: str,

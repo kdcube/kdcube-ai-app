@@ -14,6 +14,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import (
     build_artifact_binary_block,
     build_artifact_view,
     build_tool_result_error_block,
+    error_block_details,
     normalize_physical_path,
     physical_path_to_logical_path,
     detect_edit,
@@ -711,6 +712,42 @@ def _extract_exec_code_from_state(state: Dict[str, Any]) -> str:
     return ""
 
 
+def _emit_nonexec_tool_error_block(
+    *,
+    ctx_browser: Any,
+    tool_id: str,
+    tool_call_id: str,
+    tool_err: Any,
+    call_error: Any,
+    items: Any,
+) -> None:
+    """Surface a NON-exec tool failure as a structured error result block, so
+    every tool failure reads the same way in the timeline (``status:"error"``),
+    not just exec. Exec has its own path (report_text / the exec block policy),
+    so it is skipped here. Fires only when the tool failed at the tool/call level
+    AND produced no successful output — a tool that returned real artifacts is
+    left to its normal rendering."""
+    if tools_insights.is_exec_tool(tool_id):
+        return
+    err = tool_err or call_error
+    if not err:
+        return
+    produced_output = any(
+        isinstance(it, dict) and it.get("output") not in (None, "", [], {})
+        for it in (items or [])
+    )
+    if produced_output:
+        return
+    err = err if isinstance(err, dict) else {"message": str(err)}
+    add_block(ctx_browser, build_tool_result_error_block(
+        turn_id=ctx_browser.runtime_ctx.turn_id or "",
+        tool_call_id=tool_call_id,
+        code=str(err.get("code") or "tool_error"),
+        message=str(err.get("message") or err.get("description") or "Tool execution failed."),
+        details=error_block_details(err),
+    ))
+
+
 async def handle_external_tool(*,
                                react: Any,
                                ctx_browser: Any,
@@ -937,6 +974,17 @@ async def _handle_external_tool_policy_pipeline(*,
         declared_file_items=declared_file_items,
         remapped_source_sids=remapped_source_sids,
         notice_rows_produced=_production_flag(production_target, "notice_rows_produced"),
+    )
+    # Exec failures (including infra/harness errors with no report_text) are
+    # surfaced by exec_result_block_production_policy as a structured error block.
+    # For every OTHER tool, surface a tool-level failure the same way.
+    _emit_nonexec_tool_error_block(
+        ctx_browser=ctx_browser,
+        tool_id=tool_id,
+        tool_call_id=tool_call_id,
+        tool_err=tool_err,
+        call_error=call_error,
+        items=items,
     )
     state["last_tool_result"] = items
     state["last_tool_id"] = tool_id
@@ -1355,6 +1403,21 @@ async def _handle_external_tool_legacy(*,
                 "tool_call_id": tool_call_id,
             },
         })
+    elif is_exec and (tool_err or call_error):
+        # Infra-level exec failure with no report_text (e.g. the runtime failed
+        # to spawn the sandbox). Previously the exec result block was gated on
+        # report_text, so this produced NO tool-result block and the agent could
+        # not see the failure. Surface the same structured error block used for
+        # validation errors, carrying the full {code, message, details}.
+        err = tool_err or call_error
+        err = err if isinstance(err, dict) else {"message": str(err)}
+        add_block(ctx_browser, build_tool_result_error_block(
+            turn_id=ctx_browser.runtime_ctx.turn_id or "",
+            tool_call_id=tool_call_id,
+            code=str(err.get("code") or "execution_error"),
+            message=str(err.get("message") or err.get("description") or "Execution failed."),
+            details=error_block_details(err),
+        ))
     declared_file_items: List[Dict[str, Any]] = []
     if not is_exec:
         declared_file_items = _declared_files_to_tool_items(
@@ -1967,6 +2030,16 @@ async def _handle_external_tool_legacy(*,
 
     if declared_file_items:
         items = list(items or []) + declared_file_items
+    # Surface a tool-level failure (no successful output) as a structured error
+    # result block, uniformly with the pipeline path. Exec keeps its own path.
+    _emit_nonexec_tool_error_block(
+        ctx_browser=ctx_browser,
+        tool_id=tool_id,
+        tool_call_id=tool_call_id,
+        tool_err=tool_err,
+        call_error=call_error,
+        items=items,
+    )
     state["last_tool_result"] = items
     state["last_tool_id"] = tool_id
     return state

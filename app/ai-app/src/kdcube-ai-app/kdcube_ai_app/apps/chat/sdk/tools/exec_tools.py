@@ -43,6 +43,7 @@ from kdcube_ai_app.apps.chat.sdk.config import get_settings
 from kdcube_ai_app.apps.chat.sdk.events import event_source
 from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import (
     build_tool_result_error_block,
+    error_block_details,
     physical_path_to_logical_path,
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.react.events import (
@@ -1104,6 +1105,24 @@ def exec_result_block_production_policy(
             "text": report_text,
             "meta": {"tool_call_id": tool_call_id},
         })
+    elif isinstance(target.get("blocks"), list):
+        # No human-readable report_text — the sandbox failed to produce one
+        # (typically an infra/harness failure before the code ran). Emit a
+        # STRUCTURED error result block (application/json with an `error` field)
+        # so the timeline registers it as an error, not a plain result, and the
+        # agent sees the failure instead of assuming success.
+        err = target.get("tool_error") or target.get("error") or target.get("call_error")
+        err = err if isinstance(err, dict) else ({"message": str(err)} if err else None)
+        if err:
+            turn_id = str(target.get("turn_id") or "").strip()
+            tool_call_id = str(target.get("tool_call_id") or target.get("event_id") or "").strip()
+            target["blocks"].append(build_tool_result_error_block(
+                turn_id=turn_id,
+                tool_call_id=tool_call_id,
+                code=str(err.get("code") or "sandbox_execution_failed"),
+                message=str(err.get("message") or err.get("description") or "Execution failed."),
+                details=error_block_details(err),
+            ))
 
     raw_items = raw.get("items")
     if isinstance(raw_items, list) and isinstance(target.get("artifact_rows"), list):
@@ -1382,17 +1401,26 @@ async def run_exec_tool(
                 pass
             touch_current_task_activity(f"exec_tool.runtime.finished:{activity_exec_id}")
     except Exception as e:
+        # An exception here comes from the sandbox HARNESS (launching the docker
+        # runtime, subprocess/IPC, result handling) — never from the user's code,
+        # which runs inside the sandbox and reports its own errors as a result.
+        # Say so explicitly so the agent does not mistake it for a code defect.
         log.log(f"[exec.tool] runtime.execute_py_code failed: {type(e).__name__}: {e}", level="ERROR")
         log.log(traceback.format_exc(), level="ERROR")
         return {
             "ok": False,
             "error": {
-                "where": "exec.tool",
-                "code": "execution_error",
-                "message": str(e),
-                "error": "execution_error",
+                "where": "exec.tool.harness",
+                "code": "sandbox_execution_failed",
+                "message": (
+                    "The code execution sandbox failed to run — this is a platform/harness error, NOT a defect in "
+                    f"your code. Underlying error: {type(e).__name__}: {e}. This is usually a transient "
+                    "infrastructure issue; retrying the same code typically succeeds."
+                ),
+                "error": "sandbox_execution_failed",
                 "description": str(e),
                 "managed": True,
+                "retryable": True,
             },
         }
 
