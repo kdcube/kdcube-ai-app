@@ -1172,7 +1172,13 @@ class BaseEntrypoint:
             return
 
         active_widget_aliases = self._active_ui_widget_aliases(widget_cfgs)
-        self._cleanup_stale_ui_widget_storage(storage_root=storage_root, active_aliases=active_widget_aliases)
+        # Synchronous iterdir/rmtree over (EFS) storage; offload so it never blocks
+        # the event loop (same hazard as the build materialization).
+        await asyncio.to_thread(
+            self._cleanup_stale_ui_widget_storage,
+            storage_root=storage_root,
+            active_aliases=active_widget_aliases,
+        )
 
         if not main_view and not widget_cfgs:
             return
