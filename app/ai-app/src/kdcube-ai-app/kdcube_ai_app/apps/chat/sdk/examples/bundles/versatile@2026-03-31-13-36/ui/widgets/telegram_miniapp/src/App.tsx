@@ -46,13 +46,25 @@ function applyRuntimeSettings(data: Pick<WebAppPayload, 'authContext' | 'connect
   }
 }
 
+// Which telegram_miniapp_data slice a tab needs. The connections tab renders
+// its own page and needs no data fetch.
+function dataKeyFor(t: TabId): string | null {
+  if (t === 'conversations') return 'chats';
+  if (t === 'memory') return 'memory';
+  return null;
+}
+
 export default function App() {
   const [tab, setTab] = useState<TabId>(activeTabFromPath(ROUTE_CONTEXT.widgetPath));
-  const [payload, setPayload] = useState<WebAppPayload>({});
+  const [payloadByTab, setPayloadByTab] = useState<Record<string, WebAppPayload>>({});
   const [profile, setProfile] = useState<TelegramProfile | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const connectionLinkedRef = useRef<boolean | null>(null);
+  const profileLoadedRef = useRef(false);
+  const didMountRef = useRef(false);
+
+  const payload: WebAppPayload = payloadByTab[dataKeyFor(tab) ?? ''] ?? {};
 
   const connectionRequired = useMemo(() => {
     if (!isTelegramWebApp() || !profile) return false;
@@ -73,33 +85,51 @@ export default function App() {
     connectionLinkedRef.current = profile?.connection?.linked ?? null;
   }, [profile?.connection?.linked]);
 
-  async function load() {
-    setLoading(true);
+  // Load the current view.
+  // - The Telegram profile is fetched ONCE and reused across tab switches; only
+  //   `force` (initial load, connection change, manual reload) re-fetches it.
+  // - Per-tab data is cached by slice key: returning to a visited tab shows the
+  //   cached data immediately and revalidates in the background (no blank), and
+  //   the connections tab triggers no data fetch at all.
+  async function load(opts?: { force?: boolean }) {
+    const force = opts?.force ?? false;
     setError('');
     try {
       if (isTelegramWebApp()) {
-        const nextProfile = await callOperation<TelegramProfile>('telegram_profile', {});
-        setProfile(nextProfile);
-        applyRuntimeSettings(nextProfile);
-        if (nextProfile.connection?.linked === false || nextProfile.connection?.required === true) {
-          if (tab !== 'connections') setTab('connections');
-          setPayload({});
-          return;
+        if (force || !profileLoadedRef.current) {
+          setLoading(true);
+          const nextProfile = await callOperation<TelegramProfile>('telegram_profile', {});
+          profileLoadedRef.current = true;
+          setProfile(nextProfile);
+          applyRuntimeSettings(nextProfile);
+          if (nextProfile.connection?.linked === false || nextProfile.connection?.required === true) {
+            if (tab !== 'connections') setTab('connections');
+            setLoading(false);
+            return;
+          }
         }
       } else {
         setProfile(null);
       }
+      const key = dataKeyFor(tab);
+      if (key === null) {
+        setLoading(false);
+        return;
+      }
+      const cached = payloadByTab[key] !== undefined;
+      // Only blank the view when there is nothing cached to show; a revisit
+      // keeps its cached content visible while it revalidates.
+      if (!cached) setLoading(true);
       const data = await callOperation<WebAppPayload>('telegram_miniapp_data', {
-        widget_path: tab === 'conversations' ? 'chats' : 'memory',
+        widget_path: key,
         mark_memory_seen: tab === 'memory',
       });
       applyRuntimeSettings(data);
-      setPayload(data);
+      setPayloadByTab((prev) => ({ ...prev, [key]: data }));
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      if (isTelegramWebApp()) {
+      if (isTelegramWebApp() && !profileLoadedRef.current) {
         setProfile(telegramDeniedProfile());
-        setPayload({});
       }
       setError(message);
     } finally {
@@ -109,11 +139,17 @@ export default function App() {
 
   useEffect(() => {
     prepareTelegramWebApp();
-    void settings.setupParentListener().then(() => load());
+    void settings.setupParentListener().then(() => load({ force: true }));
   }, []);
 
   useEffect(() => {
     setBrowserTabPath(tab);
+    // The initial load is driven by the mount effect above; skip the first run
+    // here so a fresh mount does not fetch twice.
+    if (!didMountRef.current) {
+      didMountRef.current = true;
+      return;
+    }
     void load();
   }, [tab]);
 
@@ -126,7 +162,7 @@ export default function App() {
       const linked = Boolean((data as Record<string, unknown>).linked);
       if (connectionLinkedRef.current === linked) return;
       connectionLinkedRef.current = linked;
-      void load();
+      void load({ force: true });
     }
     window.addEventListener('message', onConnectionStatusChanged);
     return () => window.removeEventListener('message', onConnectionStatusChanged);
@@ -149,8 +185,8 @@ export default function App() {
         />
       )}
       {!pendingTelegramApproval && connectionRequired && <ConnectionsPage />}
-      {!loading && !pendingTelegramApproval && !connectionRequired && tab === 'memory' && <MemoryPage memory={payload.memory} reload={load} />}
-      {!loading && !pendingTelegramApproval && !connectionRequired && tab === 'conversations' && <ConversationsPage conversations={payload.conversations} reload={load} />}
+      {!loading && !pendingTelegramApproval && !connectionRequired && tab === 'memory' && <MemoryPage memory={payload.memory} reload={() => load({ force: true })} />}
+      {!loading && !pendingTelegramApproval && !connectionRequired && tab === 'conversations' && <ConversationsPage conversations={payload.conversations} reload={() => load({ force: true })} />}
       {!loading && !pendingTelegramApproval && !connectionRequired && tab === 'connections' && <ConnectionsPage />}
     </AppShell>
   );

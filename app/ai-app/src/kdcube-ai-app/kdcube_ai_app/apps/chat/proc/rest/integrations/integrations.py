@@ -2746,6 +2746,19 @@ async def admin_cleanup_bundles(
     return result
 
 
+def _index_html_response(content: str, request: Request) -> Response:
+    """Serve a (base-href-injected) index.html with an ETag so the browser can
+    revalidate cheaply (a 304 with no body) instead of re-downloading the entry
+    document on every reload. The hashed asset files it references are already
+    immutable-cached; only this small entry needs revalidation, and its ETag
+    changes when the build changes (the referenced asset hashes change with it)."""
+    import hashlib
+    etag = '"' + hashlib.sha256(content.encode("utf-8")).hexdigest()[:32] + '"'
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers={"ETag": etag, "Cache-Control": "no-cache"})
+    return HTMLResponse(content=content, headers={"Cache-Control": "no-cache", "ETag": etag})
+
+
 async def serve_static_asset(
         tenant: str,
         project: str,
@@ -2908,7 +2921,7 @@ async def serve_static_asset(
         resolved_base = base_href or f"/api/integrations/static/{tenant}/{project}/{bundle_id}/"
         content = target.read_text(encoding="utf-8")
         content = _inject_kdcube_resize_reporter(content, base_href=resolved_base)
-        return HTMLResponse(content=content, headers={"Cache-Control": "no-cache"})
+        return _index_html_response(content, request)
 
     rel_parts = target.relative_to(ui_root).parts
     headers = {"Cache-Control": "public, max-age=3600"}
@@ -3767,7 +3780,7 @@ async def _serve_static_widget_app(
         base_href = f"/api/integrations/bundles/{tenant}/{project}/{bundle_id}/{base_route}/{widget_spec.alias}/"
         content = target.read_text(encoding="utf-8")
         content = _inject_kdcube_resize_reporter(content, base_href=base_href)
-        return HTMLResponse(content=content, headers={"Cache-Control": "no-cache"})
+        return _index_html_response(content, request)
 
     rel_parts = target.relative_to(ui_root).parts
     headers = {"Cache-Control": "public, max-age=3600"}
