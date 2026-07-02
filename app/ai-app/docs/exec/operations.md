@@ -403,6 +403,10 @@ BUNDLES_ROOT=/bundles                              # Container path
 PY_CODE_EXEC_IMAGE=py-code-exec:latest
 PY_CODE_EXEC_TIMEOUT=600
 PY_CODE_EXEC_NETWORK_MODE=host       # Supervisor needs Redis/Postgres access
+# Split-Docker: if the supervisor's RUNTIME_GLOBALS_JSON exceeds this many bytes
+# it is streamed over the container's stdin instead of a -e arg (avoids the OS
+# MAX_ARG_STRLEN limit / "Argument list too long"). Default 98304 (96 KiB).
+KDCUBE_EXEC_RUNTIME_GLOBALS_INLINE_MAX_BYTES=98304
 
 # === Production EC2 Settings (uncomment for prod) ===
 # AWS_EC2_METADATA_DISABLED=false

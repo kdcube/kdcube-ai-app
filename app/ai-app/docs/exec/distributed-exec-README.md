@@ -542,6 +542,15 @@ secrets provider on the supervisor side. Generated code receives only the
 filtered executor env and does not inherit descriptor payloads or descriptor
 path env vars.
 
+For **local Docker** the launch payload is not stored in Secrets Manager. Env
+vars travel inline as `-e`; for the split-container supervisor, any oversized var
+(the `RUNTIME_GLOBALS_JSON` envelope or a base64 descriptor payload such as
+`KDCUBE_RUNTIME_BUNDLES_YAML_B64`) is streamed over the container's stdin instead
+— see "Supervisor env delivery: inline env vs stdin" in
+[runtime-README.md](runtime-README.md). Note that Secrets Manager caps
+`SecretString` at ~64 KiB, so a very large Fargate launch payload would need a
+larger-capacity store (e.g. S3).
+
 ---
 
 ## Env vars the exec task receives (full list)

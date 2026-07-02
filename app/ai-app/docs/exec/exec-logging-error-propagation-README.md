@@ -186,6 +186,25 @@ The report is built to answer three questions:
 2. did the user program fail?
 3. did the execution fail to produce the contracted outputs?
 
+### Runtime/harness failures surface as a structured error result
+
+A failure of the sandbox itself — anything that raises **before the user
+program runs**, for example the container failing to launch (`OSError: [Errno 7]
+Argument list too long`), a docker/IPC error, or result handling — is caught by
+`run_exec_tool` and returned as `{ok: False, error: {...}}` with
+`code = "sandbox_execution_failed"` and a message that states plainly this is a
+**platform/harness error, not a defect in the user's code**, and is usually
+transient/retryable.
+
+The ReAct handler emits that as a structured `react.tool.result` block
+(`mime: application/json`) whose payload is
+`{ "status": "error", "error": { code, message, details } }`, written at the
+tool call's result path. This closes a gap where a harness failure produced no
+tool-result block at all — the agent saw nothing for that call and could assume
+success. The failure is now always visible, so the agent can react (e.g. retry).
+Non-exec tool failures that produce no successful output are surfaced the same
+way, so every tool failure reads uniformly as `status:"error"`.
+
 ### Public tool contract vs internal helpers
 
 Current public React-facing tool:

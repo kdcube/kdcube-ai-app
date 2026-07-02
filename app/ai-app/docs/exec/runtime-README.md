@@ -107,6 +107,28 @@ Important:
   `bundle_call_context.role_models` overlay; this does not mutate
   `Config.role_models` or bundle props
 
+## Supervisor env delivery: inline env vs stdin
+
+Supervisor env vars are normally passed as `-e`. The large ones — the full
+`RUNTIME_GLOBALS_JSON` envelope (which carries the bundle config through
+`PORTABLE_SPEC_JSON`) and the base64 descriptor payloads (e.g.
+`KDCUBE_RUNTIME_BUNDLES_YAML_B64`) — only go to the trusted **supervisor**; the
+network-isolated executor receives the stripped `build_executor_runtime_globals`
+subset and is never widened.
+
+A single environment string is bounded by the OS per-argument limit
+(`MAX_ARG_STRLEN`, ~128 KiB on Linux), so one oversized value — a big
+`RUNTIME_GLOBALS_JSON`, or a base64 descriptor of a large `bundles.yaml` — makes
+`docker run` fail with `OSError: [Errno 7] Argument list too long`. To avoid
+that, **every** supervisor env value larger than
+`KDCUBE_EXEC_RUNTIME_GLOBALS_INLINE_MAX_BYTES` (default 96 KiB) is moved off `-e`
+and **streamed over the supervisor container's stdin** as a JSON env map: the
+launcher drops those vars from the env, sets `KDCUBE_EXEC_PAYLOAD_STDIN=env_json`,
+writes the map to stdin, and the entrypoint hydrates them into `os.environ`
+in-process before anything reads them (including before descriptor
+materialization). Nothing is written to disk, a shared path, or a networked
+store; small control vars stay inline; the executor path is untouched.
+
 ## **Diagram 1: Detailed Execution Flow (Docker Mode)**
 
 Docker mode supports two container strategies:
