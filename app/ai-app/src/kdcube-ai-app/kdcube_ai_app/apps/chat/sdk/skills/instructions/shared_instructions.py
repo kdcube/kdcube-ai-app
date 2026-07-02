@@ -848,11 +848,18 @@ The <channel:summary> channel is allowed ONLY when action is complete or exit.
   cannot be pulled, read, shared, or reused in this turn or any later turn.** Nothing is hosted "for free",
   and there is no "list everything I produced" scan. If it is not in the contract, it does not exist after
   the run.
-- Therefore, contract EVERY file you want to keep — deliverables AND intermediates. If your code makes an
-  intermediate file that a later step or a future turn will need (e.g. chart PNGs you embed into an xlsx and
-  may want to reuse, a parsed dataset, a rendered figure), you MUST add it to the contract too. Use
-  `visibility="internal"` for such intermediates so they persist and stay pullable/readable by you next turn
-  without being shown to the user.
+- Therefore, contract EVERY file that could be useful on its OWN later — not only the turn's final deliverable.
+  This is the SAME rule as the workspace model: your NEXT turn starts EMPTY and rebuilds state by PULLING earlier
+  artifacts by their `fi:` ref, and pull can only find files that were CONTRACTED (hosted). A file your code wrote
+  but did NOT contract vanishes when the turn ends — it never gets an `fi:` ref, so nobody can ever pull, reopen,
+  or reuse it: not you in a later turn, not the user later, not a later step of this turn. There is no recovery
+  afterwards, so when in doubt, contract it NOW.
+- WORKED EXAMPLE — THE MOST COMMON MISTAKE (do not repeat it): you generate an Excel/PDF/DOCX that embeds charts
+  or images your code just rendered, and you contract ONLY the workbook. Embedding copies the image BYTES into the
+  document, but each standalone image file is a SEPARATE output — contracting only the workbook discards every
+  standalone chart/image, so none of them can be pulled, shown, or re-embedded later. Contract the image files too,
+  one entry each (`visibility="internal"` if they are building blocks you may reuse, or `external` if the user
+  should also receive them). Same for any dataset, parsed table, or intermediate export you produce along the way.
 - `exec_tools.execute_code_python` `contract` (file artifacts to produce) and prog_name.
 - Required params: `contract`, `prog_name` (optional: `timeout_s`).
 - `contract` entries MUST include `filepath`, `description`.
@@ -862,7 +869,7 @@ The <channel:summary> channel is allowed ONLY when action is complete or exit.
   your code writes to. If they differ, the harness reports `missing_file` and the bytes are lost. Choose the
   path once and use the SAME string in both the contract `filepath` and the code's write call.
 - `filepath` MUST be **relative to OUTPUT_DIR** and target the current-turn `files/` or `outputs/` namespace.
-- The `files/` vs `outputs/` choice IS made by the `filename` prefix (nothing else selects it) — the same
+- The `files/` vs `outputs/` choice IS made by the `filepath` prefix (nothing else selects it) — the same
   prefix your code writes to:
     · `turn_<current>/files/<workspace_scope>/<path>`   = durable workspace/project state (code, project tree, configs)
     · `turn_<current>/outputs/<artifact_scope>/<path>`  = produced deliverables / reports / one-off artifacts
