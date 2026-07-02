@@ -456,6 +456,44 @@ def test_split_supervisor_argv_uses_writable_home_and_playwright_path(tmp_path):
     assert any(item == "PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright" for item in argv)
 
 
+def test_split_supervisor_large_runtime_globals_move_to_stdin(tmp_path):
+    workdir = tmp_path / "work"
+    outdir = tmp_path / "out"
+    artifact_outdir = outdir / "workdir"
+    workdir.mkdir()
+    outdir.mkdir()
+
+    supervisor_env = {
+        "RUNTIME_GLOBALS_JSON": json.dumps({"large": "x" * 256}),
+        "HOME": "/tmp/kdcube-supervisor/home",
+    }
+    payload = docker_runtime._prepare_supervisor_runtime_globals_stdin(
+        supervisor_env,
+        inline_max_bytes=64,
+    )
+
+    assert payload is not None
+    assert "RUNTIME_GLOBALS_JSON" not in supervisor_env
+    assert supervisor_env["KDCUBE_EXEC_PAYLOAD_STDIN"] == "runtime_globals_json"
+    assert int(supervisor_env["KDCUBE_EXEC_PAYLOAD_STDIN_BYTES"]) == len(payload)
+
+    argv = docker_runtime._build_split_supervisor_argv(
+        image="py-code-exec:latest",
+        name="supervisor-test",
+        socket_volume="socket-volume",
+        host_workdir=workdir,
+        host_outdir=outdir,
+        host_runtime_outdir=outdir,
+        host_artifact_outdir=artifact_outdir,
+        extra_env=supervisor_env,
+        interactive_stdin=payload is not None,
+    )
+
+    assert "-i" in argv
+    assert all(not item.startswith("RUNTIME_GLOBALS_JSON=") for item in argv)
+    assert any(item == "KDCUBE_EXEC_PAYLOAD_STDIN=runtime_globals_json" for item in argv)
+
+
 def test_split_runtime_logs_are_merged_for_requestor_feedback(tmp_path):
     log_dir = tmp_path / "out" / "logs"
     executor_log_dir = log_dir / "executor"

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import base64
 import asyncio
+import io
 import json
 import os
 import types
@@ -20,6 +21,7 @@ from kdcube_ai_app.apps.chat.sdk.runtime.isolated.py_code_exec_entry import (
     _build_executor_runtime_globals,
     _ensure_dynamic_package_chain,
     _hydrate_runtime_payload_from_secret,
+    _hydrate_runtime_payload_from_stdin,
     _materialize_runtime_descriptor_payloads,
     _prepare_runtime_environment,
     _restore_bundle_if_present,
@@ -135,6 +137,22 @@ def test_hydrate_runtime_payload_from_secret_skips_when_inline_payload_present(m
 
     assert any("hydrate start" in msg for _, msg in logger.messages)
     assert any("skipping secret hydration" in msg for _, msg in logger.messages)
+
+
+def test_hydrate_runtime_payload_from_stdin_restores_runtime_globals(monkeypatch):
+    payload = json.dumps({"PORTABLE_SPEC_JSON": "{\"ok\":true}"})
+    monkeypatch.delenv("RUNTIME_GLOBALS_JSON", raising=False)
+    monkeypatch.setenv("KDCUBE_EXEC_PAYLOAD_STDIN", "runtime_globals_json")
+    monkeypatch.setenv("KDCUBE_EXEC_PAYLOAD_STDIN_BYTES", str(len(payload.encode("utf-8"))))
+    monkeypatch.setattr(sys, "stdin", io.StringIO(payload))
+    logger = _CaptureLogger()
+
+    _hydrate_runtime_payload_from_stdin(logger)
+
+    assert json.loads(os.environ["RUNTIME_GLOBALS_JSON"])["PORTABLE_SPEC_JSON"] == "{\"ok\":true}"
+    assert "KDCUBE_EXEC_PAYLOAD_STDIN" not in os.environ
+    assert "KDCUBE_EXEC_PAYLOAD_STDIN_BYTES" not in os.environ
+    assert any("Restored runtime globals from stdin" in msg for _, msg in logger.messages)
 
 
 def test_materialize_runtime_descriptor_payloads_restores_root_only_descriptor_files(monkeypatch):

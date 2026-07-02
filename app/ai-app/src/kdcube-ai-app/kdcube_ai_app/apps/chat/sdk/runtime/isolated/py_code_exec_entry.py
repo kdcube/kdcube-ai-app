@@ -87,6 +87,9 @@ from kdcube_ai_app.apps.chat.sdk.runtime.dynamic_module_loader import (
 from kdcube_ai_app.apps.chat.sdk.runtime.isolated.executor_payload import build_executor_runtime_globals
 
 _RUNTIME_ENV_PREPARED_MARKER = "KDCUBE_RUNTIME_ENV_PREPARED"
+_RUNTIME_GLOBALS_STDIN_ENV = "KDCUBE_EXEC_PAYLOAD_STDIN"
+_RUNTIME_GLOBALS_STDIN_VALUE = "runtime_globals_json"
+_RUNTIME_GLOBALS_STDIN_BYTES_ENV = "KDCUBE_EXEC_PAYLOAD_STDIN_BYTES"
 
 
 def _append_errors_log(message: str) -> None:
@@ -210,6 +213,37 @@ def _hydrate_runtime_payload_from_secret(logger: AgentLogger) -> None:
     )
 
 
+def _hydrate_runtime_payload_from_stdin(logger: AgentLogger) -> None:
+    mode = (os.environ.get(_RUNTIME_GLOBALS_STDIN_ENV) or "").strip()
+    if not mode:
+        return
+    if mode != _RUNTIME_GLOBALS_STDIN_VALUE:
+        logger.log(f"[exec.payload] Unsupported stdin payload mode: {mode}", "ERROR")
+        return
+    if os.environ.get("RUNTIME_GLOBALS_JSON"):
+        logger.log("[exec.payload] Inline runtime globals already present; skipping stdin hydration", "INFO")
+        os.environ.pop(_RUNTIME_GLOBALS_STDIN_ENV, None)
+        os.environ.pop(_RUNTIME_GLOBALS_STDIN_BYTES_ENV, None)
+        return
+
+    expected_bytes = (os.environ.get(_RUNTIME_GLOBALS_STDIN_BYTES_ENV) or "").strip()
+    payload = sys.stdin.read()
+    if not payload:
+        logger.log("[exec.payload] Stdin runtime globals payload was empty", "ERROR")
+        return
+    os.environ["RUNTIME_GLOBALS_JSON"] = payload
+    os.environ.pop(_RUNTIME_GLOBALS_STDIN_ENV, None)
+    os.environ.pop(_RUNTIME_GLOBALS_STDIN_BYTES_ENV, None)
+    actual_bytes = len(payload.encode("utf-8"))
+    if expected_bytes:
+        logger.log(
+            f"[exec.payload] Restored runtime globals from stdin bytes={actual_bytes}/{expected_bytes}",
+            "INFO",
+        )
+    else:
+        logger.log(f"[exec.payload] Restored runtime globals from stdin bytes={actual_bytes}", "INFO")
+
+
 def _materialize_runtime_descriptor_payloads(logger: AgentLogger) -> pathlib.Path | None:
     descriptor_specs = (
         ("KDCUBE_RUNTIME_ASSEMBLY_YAML_B64", "assembly.yaml", "ASSEMBLY_YAML_DESCRIPTOR_PATH"),
@@ -271,6 +305,7 @@ def _prepare_runtime_environment(logger: AgentLogger) -> None:
     if os.environ.get(_RUNTIME_ENV_PREPARED_MARKER) == "1":
         return
 
+    _hydrate_runtime_payload_from_stdin(logger)
     _hydrate_runtime_payload_from_secret(logger)
     _materialize_runtime_descriptor_payloads(logger)
 

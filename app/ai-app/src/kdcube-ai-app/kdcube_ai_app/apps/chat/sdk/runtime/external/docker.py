@@ -48,6 +48,10 @@ _SUPERVISOR_PRIVATE_ROOT = pathlib.Path("/tmp/kdcube-supervisor")
 _SUPERVISOR_PRIVATE_BUNDLES_ROOT = _SUPERVISOR_PRIVATE_ROOT / "bundles"
 _SUPERVISOR_PRIVATE_BUNDLE_STORAGE_ROOT = _SUPERVISOR_PRIVATE_ROOT / "bundle-storage"
 _SUPERVISOR_PRIVATE_KDCUBE_STORAGE_ROOT = _SUPERVISOR_PRIVATE_ROOT / "kdcube-storage"
+_SUPERVISOR_RUNTIME_GLOBALS_STDIN_ENV = "KDCUBE_EXEC_PAYLOAD_STDIN"
+_SUPERVISOR_RUNTIME_GLOBALS_STDIN_VALUE = "runtime_globals_json"
+_SUPERVISOR_RUNTIME_GLOBALS_STDIN_BYTES_ENV = "KDCUBE_EXEC_PAYLOAD_STDIN_BYTES"
+_SUPERVISOR_RUNTIME_GLOBALS_INLINE_MAX_BYTES_DEFAULT = 96 * 1024
 
 _PROC_VISIBLE_ROOTS = (
     "/exec-workspace",
@@ -193,6 +197,38 @@ def _error_summary_from_text(text: str) -> str:
 def _is_split_container_strategy(value: str | None) -> bool:
     normalized = str(value or "").strip().lower().replace("-", "_")
     return normalized in {"split", "split_container", "two_container", "two_containers"}
+
+
+def _supervisor_runtime_globals_inline_max_bytes() -> int:
+    raw = os.environ.get("KDCUBE_EXEC_RUNTIME_GLOBALS_INLINE_MAX_BYTES")
+    if raw is None:
+        return _SUPERVISOR_RUNTIME_GLOBALS_INLINE_MAX_BYTES_DEFAULT
+    try:
+        return max(0, int(str(raw).strip()))
+    except Exception:
+        return _SUPERVISOR_RUNTIME_GLOBALS_INLINE_MAX_BYTES_DEFAULT
+
+
+def _prepare_supervisor_runtime_globals_stdin(
+        supervisor_env: Dict[str, str],
+        *,
+        inline_max_bytes: int | None = None,
+) -> bytes | None:
+    raw = supervisor_env.get("RUNTIME_GLOBALS_JSON")
+    if not raw:
+        return None
+    payload = str(raw).encode("utf-8")
+    limit = (
+        _supervisor_runtime_globals_inline_max_bytes()
+        if inline_max_bytes is None
+        else max(0, int(inline_max_bytes))
+    )
+    if len(payload) <= limit:
+        return None
+    supervisor_env.pop("RUNTIME_GLOBALS_JSON", None)
+    supervisor_env[_SUPERVISOR_RUNTIME_GLOBALS_STDIN_ENV] = _SUPERVISOR_RUNTIME_GLOBALS_STDIN_VALUE
+    supervisor_env[_SUPERVISOR_RUNTIME_GLOBALS_STDIN_BYTES_ENV] = str(len(payload))
+    return payload
 
 
 def _safe_docker_token(value: str, *, fallback: str) -> str:
@@ -608,11 +644,16 @@ def _build_split_supervisor_argv(
         readonly_mounts: list[tuple[pathlib.Path, str]] | None = None,
         rw_mounts: list[tuple[pathlib.Path, str]] | None = None,
         network_mode: str | None = None,
+        interactive_stdin: bool = False,
 ) -> list[str]:
     runtime_mount = host_runtime_outdir or host_outdir
     artifact_mount = host_artifact_outdir or host_outdir
     argv: list[str] = [
         "docker", "run", "--rm",
+    ]
+    if interactive_stdin:
+        argv.append("-i")
+    argv += [
         "--name", name,
         "--network", network_mode or "host",
         "--read-only",
@@ -805,6 +846,13 @@ async def _run_py_in_split_docker_prepared(
     supervisor_env[ARTIFACT_OUTPUT_ENV] = _ARTIFACT_OUT_CONTAINER
     supervisor_env[RUNTIME_OUTPUT_ENV] = _RUNTIME_OUT_CONTAINER
     supervisor_env["PLAYWRIGHT_BROWSERS_PATH"] = "/opt/ms-playwright"
+    supervisor_stdin_payload = _prepare_supervisor_runtime_globals_stdin(supervisor_env)
+    if supervisor_stdin_payload is not None:
+        log.log(
+            "[docker.exec.split] Supervisor runtime globals exceed inline env limit; "
+            f"passing via stdin bytes={len(supervisor_stdin_payload)}",
+            level="INFO",
+        )
 
     exec_runtime_globals = build_executor_runtime_globals(runtime_globals)
     executor_env_keys = {
@@ -859,6 +907,7 @@ async def _run_py_in_split_docker_prepared(
         readonly_mounts=readonly_mounts,
         rw_mounts=rw_mounts,
         network_mode=network_mode or "host",
+        interactive_stdin=supervisor_stdin_payload is not None,
     )
     executor_argv = _build_split_executor_argv(
         image=img,
@@ -887,14 +936,34 @@ async def _run_py_in_split_docker_prepared(
     async def _stop_container(name: str) -> None:
         await _docker_control(["docker", "stop", "-t", "2", name], timeout_s=8)
 
+    async def _write_supervisor_stdin_payload(proc: asyncio.subprocess.Process, payload: bytes) -> None:
+        if proc.stdin is None:
+            raise RuntimeError("split supervisor stdin pipe was not created")
+        proc.stdin.write(payload)
+        await proc.stdin.drain()
+        proc.stdin.close()
+        await proc.stdin.wait_closed()
+
     try:
         supervisor_proc = await asyncio.create_subprocess_exec(
             *supervisor_argv,
+            stdin=asyncio.subprocess.PIPE if supervisor_stdin_payload is not None else None,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
+        if supervisor_stdin_payload is not None:
+            try:
+                await asyncio.wait_for(
+                    _write_supervisor_stdin_payload(supervisor_proc, supervisor_stdin_payload),
+                    timeout=10,
+                )
+            except Exception as exc:
+                supervisor_start_failed = True
+                supervisor_start_summary = f"failed to write supervisor runtime payload to stdin: {exc}"
         await asyncio.sleep(0.25)
-        if supervisor_proc.returncode is not None:
+        if supervisor_start_failed:
+            supervisor_start_rc = supervisor_proc.returncode if supervisor_proc.returncode is not None else 1
+        elif supervisor_proc.returncode is not None:
             supervisor_out, supervisor_err = await supervisor_proc.communicate()
             supervisor_collected = True
             supervisor_start_failed = True
