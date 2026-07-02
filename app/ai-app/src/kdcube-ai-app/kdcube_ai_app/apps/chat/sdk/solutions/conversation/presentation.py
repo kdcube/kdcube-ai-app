@@ -213,11 +213,15 @@ def conversation_file_to_object(
     encoding: str = "text",
     content: Any = None,
     note: str = "",
+    url: str = "",
+    expires_at: int = 0,
 ) -> dict[str, Any]:
     """Shape a materialized `conv:fi:` file into a single named-service object.
 
     `encoding` is "text" (content is the decoded text), "base64" (content is a
-    base64 string), or "none" (metadata only — too large / unreadable).
+    base64 string), "url" (bytes are fetched out-of-band over HTTP from `url` — the
+    default for binaries so they never enter the model's context), or "none"
+    (metadata only — too large / unreadable).
     """
     obj = {
         "schema": NAMED_SERVICE_OBJECT_SCHEMA,
@@ -237,6 +241,8 @@ def conversation_file_to_object(
             "size": size,
             "encoding": encoding,
             "content": content,
+            "url": url,
+            "expires_at": expires_at or None,
             "note": note,
         }),
     }

@@ -30,6 +30,7 @@ def build_conversation_named_service_provider(
     model_service_factory: Callable[[], Any],
     storage_path: str,
     bundle_id: str,
+    file_url_factory: Callable[[Any, Any], Any] | None = None,
 ):
     """Build the conv provider with search + read/export bound per request to the
     caller's tenant/project.
@@ -37,13 +38,16 @@ def build_conversation_named_service_provider(
     Every resource is supplied from above: ``pool_factory`` yields the worker's
     pooled pg pool, ``model_service_factory`` the shared model service, and
     ``storage_path`` the conversation store root. The provider constructs no
-    resources from router/app state.
+    resources from router/app state. ``file_url_factory`` (optional) mints an
+    out-of-band download URL for binary ``conv:fi:`` artifacts so their bytes never
+    enter the model's context.
     """
     def _store() -> ConversationStore:
         return ConversationStore(storage_path)
 
     return make_conversation_search_named_service_provider(
         context_factory=conversation_search_context_from_ns,
+        file_url_factory=file_url_factory,
         search_backend_factory=lambda ns_ctx: make_conversation_search_backend(
             pg_pool=pool_factory(),
             tenant=ns_ctx.tenant or "",

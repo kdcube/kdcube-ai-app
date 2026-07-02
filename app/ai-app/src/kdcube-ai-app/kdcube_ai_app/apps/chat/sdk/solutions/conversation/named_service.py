@@ -130,6 +130,21 @@ ConversationContextFactory = Callable[[NamedServiceContext], ConversationSearchC
 # touches control-plane internals). Optional: when absent, list/get/export
 # report the read service is not configured and search still works.
 ConversationReadServiceFactory = Callable[[NamedServiceContext], ConversationReadService]
+# Mints a short-lived out-of-band download URL for a binary conv:fi: artifact so
+# its bytes never enter the model's context. Given the request context and file
+# descriptor, returns {"url", "expires_at"} or None (fall back to inline base64).
+# Async: the registering bundle resolves its signing secret from the descriptor
+# (an async secret-store read). Optional: when absent, binaries fall back to
+# bounded inline base64.
+ConversationFileUrlFactory = Callable[
+    [NamedServiceContext, Mapping[str, Any]], Awaitable["dict[str, Any] | None"]
+]
+
+# Bytes above this ride out-of-band via a download URL when a URL factory is wired;
+# without a factory a binary this large is reported as metadata only (never a
+# context-blowing base64 blob). Small binaries still inline as base64 so trivial
+# cases work with no download round-trip.
+MAX_INLINE_BINARY_BYTES = 32 * 1024
 
 
 CONVERSATION_SEARCH_FILTERS: dict[str, Any] = {
@@ -266,12 +281,14 @@ class ConversationSearchNamedServiceProvider(NamedServiceProvider):
         context_factory: ConversationContextFactory | None = None,
         search_backend_factory: ConversationBackendFactory | None = None,
         read_service_factory: ConversationReadServiceFactory | None = None,
+        file_url_factory: ConversationFileUrlFactory | None = None,
         bundle_id: str | None = None,
     ) -> None:
         super().__init__(conversation_search_named_service_spec(bundle_id=bundle_id))
         self._context_factory = context_factory
         self._search_backend_factory = search_backend_factory
         self._read_service_factory = read_service_factory
+        self._file_url_factory = file_url_factory
 
     @property
     def _search_enabled(self) -> bool:
@@ -597,20 +614,68 @@ class ConversationSearchNamedServiceProvider(NamedServiceProvider):
                 response=response, chunks=_single_chunk(data), filename=filename or "file.bin", media_type=mime,
             )
 
+        # Text inlines directly (small, context-safe). Binaries prefer an
+        # out-of-band download URL so their bytes never enter the model's context;
+        # small binaries fall back to inline base64, large ones to metadata only.
         if is_text_mime(mime):
             try:
                 content, encoding = data.decode("utf-8"), "text"
             except Exception:
                 content, encoding = base64.b64encode(data).decode("ascii"), "base64"
-        else:
-            content, encoding = base64.b64encode(data).decode("ascii"), "base64"
-        obj = conversation_file_to_object(
-            ref=ref, filename=filename, mime=mime, size=size, encoding=encoding, content=content,
+            obj = conversation_file_to_object(
+                ref=ref, filename=filename, mime=mime, size=size, encoding=encoding, content=content,
+            )
+            return NamedServiceResponse.ok_response(
+                provider=self.provider_identity(), namespace=request.namespace or NAMESPACE,
+                object_ref=ref, object=obj,
+            )
+
+        link = await self._mint_file_url(
+            ctx, ref=ref, fi_ref=fi_ref, filename=filename, mime=mime, size=size, conversation_id=conv_id,
         )
+        if link and _text(link.get("url")):
+            obj = conversation_file_to_object(
+                ref=ref, filename=filename, mime=mime, size=size, encoding="url",
+                url=_text(link.get("url")), expires_at=int(link.get("expires_at") or 0),
+                note="Binary file — fetch the bytes from `url` over HTTP (the link is short-lived).",
+            )
+            return NamedServiceResponse.ok_response(
+                provider=self.provider_identity(), namespace=request.namespace or NAMESPACE,
+                object_ref=ref, object=obj,
+            )
+
+        if size <= MAX_INLINE_BINARY_BYTES:
+            obj = conversation_file_to_object(
+                ref=ref, filename=filename, mime=mime, size=size, encoding="base64",
+                content=base64.b64encode(data).decode("ascii"),
+            )
+        else:
+            obj = conversation_file_to_object(
+                ref=ref, filename=filename, mime=mime, size=size, encoding="none",
+                note="Binary file too large to inline and no download URL is configured; retrieve it in-app via react.pull.",
+            )
         return NamedServiceResponse.ok_response(
             provider=self.provider_identity(), namespace=request.namespace or NAMESPACE,
             object_ref=ref, object=obj,
         )
+
+    async def _mint_file_url(
+        self, ctx: NamedServiceContext, *, ref: str, fi_ref: str, filename: str,
+        mime: str, size: int, conversation_id: str,
+    ) -> "dict[str, Any] | None":
+        """Ask the registering bundle for an out-of-band download URL. Never raises —
+        a failure just falls back to inline delivery."""
+        if self._file_url_factory is None:
+            return None
+        try:
+            link = await self._file_url_factory(ctx, {
+                "ref": ref, "fi_ref": fi_ref, "filename": filename,
+                "mime": mime, "size": size, "conversation_id": conversation_id,
+            })
+        except Exception:
+            LOGGER.exception("[conversation.named_service.file] download URL factory failed ref=%s", ref)
+            return None
+        return link if isinstance(link, Mapping) else None
 
 
 def _int_or_none(value: Any) -> int | None:
@@ -644,12 +709,14 @@ def make_conversation_search_named_service_provider(
     context_factory: ConversationContextFactory | None = None,
     search_backend_factory: ConversationBackendFactory | None = None,
     read_service_factory: ConversationReadServiceFactory | None = None,
+    file_url_factory: ConversationFileUrlFactory | None = None,
     bundle_id: str | None = None,
 ) -> ConversationSearchNamedServiceProvider:
     return ConversationSearchNamedServiceProvider(
         context_factory=context_factory,
         search_backend_factory=search_backend_factory,
         read_service_factory=read_service_factory,
+        file_url_factory=file_url_factory,
         bundle_id=bundle_id,
     )
 
@@ -658,6 +725,7 @@ __all__ = [
     "CONVERSATION_OBJECT_KIND",
     "CONVERSATION_SEARCH_FILTERS",
     "CONVERSATION_SEARCH_SCOPES",
+    "ConversationFileUrlFactory",
     "ConversationReadServiceFactory",
     "ConversationSearchNamedServiceProvider",
     "NAMESPACE",

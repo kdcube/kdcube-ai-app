@@ -9,6 +9,7 @@ from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import (
     get_current_request_context,
     get_current_user_identity,
 )
+from .request_scope import set_public_base_url_from_request
 from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers import (
     NamedServiceBoundaryCatalog,
     NamedServiceEndpoint,
@@ -214,6 +215,9 @@ class NamedServicesMcpBridge:
         self._tenant = str(tenant or "")
         self._project = str(project or "")
         self._request = request
+        # Capture the public origin the client connected to so downstream providers
+        # can mint absolute out-of-band URLs (e.g. binary file downloads).
+        set_public_base_url_from_request(request)
         self._catalog = NamedServiceBoundaryCatalog(
             _named_service_catalog_config_from_request(request) or self._config
         )

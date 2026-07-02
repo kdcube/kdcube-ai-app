@@ -213,11 +213,12 @@ class _FileBackend:
         return dict(self._result)
 
 
-def _file_provider(backend):
+def _file_provider(backend, *, file_url_factory=None):
     return make_conversation_search_named_service_provider(
         context_factory=lambda c: ConversationSearchContext(user_id=c.user_id or "", conversation_id=c.conversation_id or ""),
         search_backend_factory=lambda c: backend,
         read_service_factory=lambda c: FakeReadService(),
+        file_url_factory=file_url_factory,
         bundle_id="b",
     )
 
@@ -254,6 +255,52 @@ async def test_object_get_conv_fi_binary_base64():
     obj = resp.ret["object"]
     assert obj["body"]["encoding"] == "base64"
     assert _b64.b64decode(obj["body"]["content"]) == b"\x89PN"
+
+
+@pytest.mark.asyncio
+async def test_object_get_conv_fi_binary_prefers_download_url():
+    # With a URL factory wired, a binary is delivered as a short-lived download URL
+    # (bytes stay out of the model's context) — never base64.
+    seen = {}
+
+    async def _factory(ctx, info):
+        seen.update(info)
+        return {"url": "https://host/api/integrations/bundles/t/p/b/public/conv_file_download?download_token=tok", "expires_at": 1900}
+
+    backend = _FileBackend({"ok": True, "filename": "chart.png", "mime": "image/png", "size": 143145, "data": b"\x89PNG..."})
+    provider = _file_provider(backend, file_url_factory=_factory)
+    resp = await provider.object_get(
+        NamedServiceContext(user_id="u", conversation_id="c1"),
+        _req("object.get", object_ref="conv:fi:conv_c1.turn_1.outputs/chart.png"),
+    )
+    assert resp.ok
+    body = resp.ret["object"]["body"]
+    assert body["encoding"] == "url"
+    assert body["url"].endswith("download_token=tok")
+    assert body["expires_at"] == 1900
+    assert "content" not in body
+    # The factory is handed the stripped fi ref + descriptor.
+    assert seen["fi_ref"] == "fi:conv_c1.turn_1.outputs/chart.png"
+    assert seen["mime"] == "image/png"
+
+
+@pytest.mark.asyncio
+async def test_object_get_conv_fi_binary_large_without_url_returns_metadata():
+    # No URL factory + a binary above the inline cap -> metadata only (never a
+    # context-blowing base64 blob).
+    backend = _FileBackend({
+        "ok": True, "filename": "chart.png", "mime": "image/png",
+        "size": 143145, "data": b"x" * 143145,
+    })
+    provider = _file_provider(backend)  # no file_url_factory
+    resp = await provider.object_get(
+        NamedServiceContext(user_id="u", conversation_id="c1"),
+        _req("object.get", object_ref="conv:fi:conv_c1.turn_1.outputs/chart.png"),
+    )
+    assert resp.ok
+    body = resp.ret["object"]["body"]
+    assert body["encoding"] == "none"
+    assert "content" not in body
 
 
 @pytest.mark.asyncio
