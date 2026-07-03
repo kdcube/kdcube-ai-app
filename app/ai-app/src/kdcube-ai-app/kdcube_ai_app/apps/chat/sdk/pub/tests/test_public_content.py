@@ -232,6 +232,23 @@ def test_jsonld_extra_overrides_generated_fields():
     assert doc["@type"] == "BlogPosting" and doc["wordCount"] == 900
 
 
+def test_headline_in_body_omits_generated_header():
+    """Authored bodies that render their own headline card must not get a
+    duplicate <h1>/summary from the platform page (the exact bug: platform
+    page showed the title + summary twice over an authored article)."""
+    item = _item(headline_in_body=True)
+    page = render_item_page(item, config=PublicContentAliasConfig(alias="news", enabled=True))
+    assert "<h1>" not in page.split("<body>")[1].split("</head>")[0] or True
+    body = page.split("<body>", 1)[1]
+    assert "<h1>" not in body                       # no generated headline
+    assert "One lane per conversation." not in body  # no generated summary paragraph
+    assert "<p>Deep dive body.</p>" in body          # the authored body is intact
+    # Machines still get the headline: <title>, OG, JSON-LD are unaffected.
+    assert "<title>The Conversation Is a Lane</title>" in page
+    assert '<meta property="og:title"' in page
+    assert "application/ld+json" in page
+
+
 def test_gone_page_is_noindex():
     page = render_gone_page("kdcube/journal/lane")
     assert '<meta name="robots" content="noindex" />' in page

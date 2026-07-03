@@ -67,6 +67,16 @@ class PublicContentItem(BaseModel):
     title: str
     summary: str = ""
     body_html: str = ""
+    headline_in_body: bool = Field(
+        default=False,
+        description=(
+            "True when body_html already renders its own headline/summary "
+            "presentation (authored articles with their own header card). "
+            "The page renderer then omits its generated <h1> and summary "
+            "paragraph so they are not duplicated; <title>, metadata, and "
+            "JSON-LD are unaffected."
+        ),
+    )
     language: str = "en"
     schema_type: str = Field(
         default="Article",

@@ -98,6 +98,10 @@ Rules that matter:
 - **`body_html` is the crawlable body.** If your stored HTML is a full
   document, extract the `<body>` content — the platform wraps the fragment
   in its own document with all the metadata.
+- **Set `headline_in_body=True` when your body renders its own headline**
+  (authored articles with a title/summary card). Otherwise the platform adds
+  a generated `<h1>` + summary above the body — right for bare fragments,
+  a visible duplicate over authored pages.
 - Never map identity-scoped or private data into an item. Everything in an
   item becomes world-readable.
 

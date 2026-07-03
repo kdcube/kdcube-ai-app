@@ -50,7 +50,10 @@ sdk/pub/
 
 `PublicContentItem`: `alias` + `slug` (clean permalink path, unique within
 the alias — lowercase slug segments, a trailing `.html` normalizes away),
-`title` / `summary` / `body_html` (the crawlable body), `schema_type`
+`title` / `summary` / `body_html` (the crawlable body; `headline_in_body`
+marks an authored body that renders its own headline card, so the page
+renderer skips its generated `<h1>`/summary — metadata and JSON-LD are
+unaffected), `schema_type`
 (JSON-LD `@type`) with `jsonld_extra` overrides, images/author/section/tags/
 language, `published_at` / `lastmod`, and the publication `state`:
 `published` or `retracted`.

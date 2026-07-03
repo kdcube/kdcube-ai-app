@@ -168,15 +168,22 @@ def render_item_page(
 
     head = "\n".join(part for part in head_parts if part)
     lang = _esc(item.language or "en")
-    summary_html = f"<p>{_esc(item.summary)}</p>" if item.summary else ""
+    # The generated <h1>/summary exist for bare body fragments. An authored
+    # body that renders its own headline card sets headline_in_body, and the
+    # page must not duplicate it (the <title>, metadata, and JSON-LD above
+    # carry the headline for machines either way).
+    if item.headline_in_body:
+        header_html = ""
+    else:
+        summary_html = f"<p>{_esc(item.summary)}</p>\n" if item.summary else ""
+        header_html = f"<h1>{_esc(item.title)}</h1>\n{summary_html}"
     return (
         "<!doctype html>\n"
         f'<html lang="{lang}">\n'
         f"<head>\n{head}\n</head>\n"
         "<body>\n"
         "<article>\n"
-        f"<h1>{_esc(item.title)}</h1>\n"
-        f"{summary_html}\n"
+        f"{header_html}"
         f"{item.body_html or ''}\n"
         "</article>\n"
         "</body>\n"
