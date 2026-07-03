@@ -1,56 +1,91 @@
 platform:
   repo: "kdcube-ai-app"
-  ref: "2026.7.1.455"
+  ref: "2026.7.3.243"
   description: |
-    This release follows 2026.7.01.155 with a focused operational hotfix for
-    git-managed bundle refresh.
+    This release follows 2026.7.1.455 with the platform-authority and
+    external-agent integration work that was validated during the Connection Hub
+    rollout.
 
-    The previous release introduced built-in Connection Hub, managed MCP
-    surfaces, and new applications-bundle refs. During staging rollout we found
-    that a processor could keep serving an old managed-bundle path when the
-    descriptor ref changed but the old path still existed on shared storage.
-    That left runtime bundle admin and request-time resolution pointed at stale
-    applications content even after the descriptor authority had the new ref.
+    The main change is that platform authentication configuration is now driven
+    by Connection Hub authority registry data instead of being scattered across
+    assembly-only auth fields. The runtime can describe Cognito or
+    multi-Cognito platform authority providers through the same registry model
+    used by bundle-hosted platform authorities, delegated credentials, request
+    authenticators, cookies, headers, and login/logout entrypoints.
 
-    This release tightens the managed-bundle resolution path. Git-backed
-    bundles now skip materialization only when the managed cache marker proves
-    that the cached path matches the requested repo, ref, and subdir. A stale
-    existing path is no longer enough to bypass git resolution.
+    The release also extends the delegated-credential and managed MCP surface.
+    Connection Hub now preserves custom delegated-consent payload fields through
+    authorize/consent, supports cleaner custom consent UI handoff, and keeps
+    delegated client consent aligned with the selected resource, tools, and
+    grants. KDCube Services and named services continue moving toward a shared
+    external-agent capability model.
 
-    Startup descriptor reset synchronization was also hardened. Workers that do
-    not acquire the descriptor-reset lock now wait for the writer and reload
-    from descriptor authority, instead of silently continuing with stale local
-    registry state. If the wait expires, the worker refreshes directly and
-    publishes a replacement registry.
+    Conversation and named-service surfaces were expanded and hardened. The
+    conversation named-service provider now exposes search/read operations over
+    the shared backend, lightweight conversation timelines, scoped file refs,
+    short-lived file downloads, uniform batch object.get behavior, and clearer
+    MCP bridge traces for tool attempts, denials, and reconsent.
+
+    Runtime auth and stream regressions found during local testing were fixed.
+    SSE relay delivery is scoped by tenant/project so one runtime cannot drop or
+    misroute another runtime's stream messages. Control-plane and hosted-site
+    auth callback handling was tightened so real OIDC callbacks are processed
+    before stale local user state is reused.
 
     Highlights
 
-    - Validates git-managed bundle cache markers before reusing cached bundle
-      paths.
-    - Re-materializes git bundles when descriptor repo/ref/subdir no longer
-      matches the local cache marker.
-    - Releases the startup descriptor-reset lock with a per-worker token.
-    - Makes non-writer startup workers wait for descriptor reset completion and
-      reload from authority before serving bundle registry state.
-    - Adds regression tests for stale-path re-materialization, current-cache
-      reuse, descriptor-reset lock release, and busy-lock reload behavior.
+    - Moves platform auth configuration under Connection Hub authority registry
+      semantics for Cognito, multi-Cognito, and bundle-hosted platform authority
+      providers.
+    - Documents platform authority setup, bundle-hosted platform authorities,
+      credential envelopes, login/logout entrypoints, cookies, and headers.
+    - Fixes custom delegated OAuth consent payload preservation and adds tests
+      around authorize/consent handling.
+    - Adds authority-provider entrypoint resolution so clients can ask the
+      registry for login URLs instead of reading descriptor internals directly.
+    - Expands conversation named-service support with search, timelines,
+      scoped file references, short-lived file download URLs, and batch reads.
+    - Adds managed MCP/named-services bridge logging for call attempts,
+      authorization denials, and reconsent hints.
+    - Scopes SSE relay delivery by tenant/project to avoid cross-runtime stream
+      delivery mismatches.
+    - Improves control-plane and website auth callback behavior for OIDC
+      logins.
+    - Adds descriptor-driven economics reference-model fixes.
+    - Keeps widget build and supervisor execution paths off the event loop for
+      better runtime responsiveness.
+    - Hardens exec output contracts and oversized supervisor environment
+      handling so produced files and structured tool failures survive across
+      runtime boundaries.
 
     Operational impact
 
-    - Environments using git-managed application bundles should now converge
-      to the descriptor ref on processor startup and bundle reload.
-    - Existing correct managed-bundle caches still skip git resolution through
-      the marker check.
-    - Stale caches are corrected visibly through logs and materialization,
-      rather than silently serving old bundle code.
+    - Environments that use Cognito or multi-Cognito should carry the platform
+      authority provider configuration in Connection Hub descriptors while
+      retaining compatible cookie/header runtime values.
+    - Environments that host an application as the platform authority can now
+      model that provider through the same registry and expose application-owned
+      login and consent screens.
+    - MCP clients should reconnect/reconsent when tool or namespace grant
+      metadata changes so their delegated credentials match the current
+      resource contract.
+    - Stream relay logs should now be easier to reason about because delivery
+      is scoped to the active tenant/project runtime.
 
     Changelog
 
-    - Updated git-managed bundle resolution in the bundle registry to validate
-      cache marker state before accepting an existing path.
-    - Updated startup bundle descriptor reset locking so only the lock holder
-      writes under its token and followers reload fresh registry state.
-    - Added targeted tests around stale bundle cache detection and startup
-      descriptor reset coordination.
+    - Added Connection Hub authority provider entrypoint lookup and platform
+      authority setup documentation.
+    - Updated runtime auth docs for credential envelopes and bundle-hosted
+      platform authority flows.
+    - Updated delegated OAuth authorize/consent route handling and regression
+      tests.
+    - Updated bundle-store logging around reserved built-in bundle resolution.
+    - Updated control-plane auth callback handling and auth cookie utilities.
+    - Added conversation named-service provider/read/export facade changes and
+      KDCube Services MCP bridge improvements.
+    - Added economics reference-model fixes and descriptor-driven plan behavior.
+    - Added SSE relay tenant/project scoping.
+    - Added runtime execution contract and supervisor env offload fixes.
 config:
-  version: "2026.7.1.455"
+  version: "2026.7.3.243"
