@@ -66,9 +66,9 @@ derive event identity without duplicating durable fields on every block. When a
 non-tool conversation event is folded into the timeline, it should carry
 explicit `event_source_id` and `event_id`.
 
-An accepted conversation event also has a `logical_path` in the `ev:` namespace,
-for example `ev:turn_<id>.events/<event_path>`. That path identifies the event
-object on the timeline and is readable with `react.read`, like `tc:` for tool
+An accepted conversation event also has a `logical_path` in the `conv:ev:` namespace,
+for example `conv:ev:turn_<id>.events/<event_path>`. That path identifies the event
+object on the timeline and is readable with `react.read`, like `conv:tc:` for tool
 call/result objects. It is not a file/artifact namespace and is not passed to
 `react.pull` or `react.checkout`. If the event body is hosted or points to
 files, the pullable refs live in `hosted_uri`, `payload.event_ref`, or inside
@@ -79,14 +79,14 @@ event are both event occurrences:
 
 | Occurrence | Accepted event type | Default block group / projection |
 |---|---|
-| User prompt | `event.user.prompt` | Built-in projection emits `user.prompt` with an `ar:<turn>.user.prompt...` path. |
-| User attachment | `event.user.attachment.*` | Built-in projection emits `user.attachment.*` with `fi:<turn>.user.attachments/...` paths. |
-| User followup | `event.user.followup` | Built-in projection emits `user.followup` with an `ar:<turn>.external.followup...` path. |
-| User steer | `event.user.steer` | Built-in projection emits `user.steer` / control path with an `ar:<turn>.external.steer...` path. |
+| User prompt | `event.user.prompt` | Built-in projection emits `user.prompt` with an `conv:ar:<turn>.user.prompt...` path. |
+| User attachment | `event.user.attachment.*` | Built-in projection emits `user.attachment.*` with `conv:fi:<turn>.user.attachments/...` paths. |
+| User followup | `event.user.followup` | Built-in projection emits `user.followup` with an `conv:ar:<turn>.external.followup...` path. |
+| User steer | `event.user.steer` | Built-in projection emits `user.steer` / control path with an `conv:ar:<turn>.external.steer...` path. |
 | Tool call | Tool occurrence uses `tool_id == event_source_id` and `tool_call_id == event_id`. | `react.tool.call` plus one or more `react.tool.result` / artifact blocks. |
-| Generic/domain event | `event.external` | One `event.external` block at the event `ev:` path, no blocks, or policy-produced blocks. |
-| Snapshot event | `event.snapshot` | One `event.snapshot` block at the event `ev:` path, or policy-produced blocks. |
-| Canvas state event | `event.canvas` | One `event.canvas` block at the event `ev:` path, or policy-produced blocks. |
+| Generic/domain event | `event.external` | One `event.external` block at the event `conv:ev:` path, no blocks, or policy-produced blocks. |
+| Snapshot event | `event.snapshot` | One `event.snapshot` block at the event `conv:ev:` path, or policy-produced blocks. |
+| Canvas state event | `event.canvas` | One `event.canvas` block at the event `conv:ev:` path, or policy-produced blocks. |
 
 Custom `block_production` policies may expand an accepted event into a richer
 group, such as additional payload/artifact blocks. The default event block body
@@ -243,7 +243,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.events import block_production_
 
 @block_production_policy(event_policy_id="my_bundle.block_production.document_snapshot")
 def document_snapshot_policy(target, **context):
-    target.setdefault("snapshot_refs", []).append("fi:turn_1.snapshots/current.yaml")
+    target.setdefault("snapshot_refs", []).append("conv:fi:turn_1.git/snapshots/current.yaml")
     return target
 ```
 
@@ -268,7 +268,7 @@ preview generation is not implicit. A source can register file rows through
 `artifact_rows`, `declared_file_items`, or `hosted_artifacts`; the shared
 artifact builder will preserve the artifact metadata and make the logical
 artifact path visible. That is enough for ReAct to recover exact content later
-with `react.read(paths=["fi:..."])`.
+with `react.read(paths=["conv:fi:..."])`.
 
 Only producers that already have a bounded text preview should provide
 `text_preview`. Exec does this during its own result production because it has

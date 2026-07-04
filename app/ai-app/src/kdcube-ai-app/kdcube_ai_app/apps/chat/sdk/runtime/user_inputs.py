@@ -453,7 +453,7 @@ def _ref_quality(ref: Any) -> int:
     text = _safe_str(ref)
     if not text:
         return 0
-    if text.startswith("fi:"):
+    if text.startswith("conv:fi:"):
         return 4
     if "://" not in text:
         return 3
@@ -577,7 +577,7 @@ def iter_turn_user_input_entries(blocks: List[Dict[str, Any]], *, turn_id: str) 
         path = _safe_str(block.get("path"))
         if not path:
             suffix = batch_id or str(len(entries))
-            path = f"ar:{turn_id}.user.input.{suffix}"
+            path = f"conv:ar:{turn_id}.user.input.{suffix}"
         meta = _block_meta(block)
         event_ids: List[str] = []
         if batch_id:

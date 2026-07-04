@@ -48,7 +48,7 @@ The section is recomputed for every decision round. It shows:
 - `effective single new file max`: effective size for one newly created file, computed from the file cap and the next-exec byte budget
 
 The active workspace count includes files currently present in the local turn
-workspace, including current-turn files, outputs, materialized attachments, and
+workspace, including current-turn project files, produced artifacts, materialized attachments, and
 exec work files. Hosted-only attachments and already-offloaded historical data do
 not count until they are materialized or pulled into the active workspace.
 
@@ -135,7 +135,7 @@ ANNOUNCE only shows current-turn live events. Historical preserved event blocks 
 [OPEN PLANS]
   - plans: 2 visible
     • plan_id=plan_alpha
-      snapshot_ref=ar:plan.latest:plan_alpha
+      snapshot_ref=conv:ar:plan.latest:plan_alpha
       created_turn=turn_1
       created_ts=2026-02-07T19:10:00Z
       last_update_turn=turn_1
@@ -143,7 +143,7 @@ ANNOUNCE only shows current-turn live events. Historical preserved event blocks 
       ✓ [1] gather sources
       □ [2] draft report
     • plan_id=plan_beta (current)
-      snapshot_ref=ar:plan.latest:plan_beta
+      snapshot_ref=conv:ar:plan.latest:plan_beta
       created_turn=turn_3
       created_ts=2026-02-10T13:50:00Z
       last_update_turn=turn_3
@@ -192,4 +192,4 @@ This avoids the misleading shape where the user only sees the ceiling jump from 
 - Announce is not cached and is re‑rendered each decision round.
 - The `[WORKSPACE]` section is intentionally brief; detailed publish metadata belongs in internal event blocks, not the visible announce surface.
 - The `[LIVE TURN EVENTS]` section is also intentionally brief; it is a same-turn control summary, not a replacement for the underlying timeline blocks.
-- The example uses simplified plan ids (`plan_alpha`, `plan_beta`) for readability. Real runtime-generated `plan_id` values may look like `plan:turn_3:efgh5678`, and the matching stable alias would then be `ar:plan.latest:plan:turn_3:efgh5678`.
+- The example uses simplified plan ids (`plan_alpha`, `plan_beta`) for readability. Real runtime-generated `plan_id` values may look like `plan:turn_3:efgh5678`, and the matching stable alias would then be `conv:ar:plan.latest:plan:turn_3:efgh5678`.

@@ -84,7 +84,7 @@ Canvas and snapshot are deliberately different:
 | Canvas | collaborative | yes, through `named_services.upsert_object(namespace="cnv", ...)` | Working board of pins and suggestions |
 | Snapshot | external state -> model | no | Read-only view of a provider/UI state surface |
 | Chat prompt | user -> model | no | Reactive wake-up request |
-| Chat attachment | user -> model/platform | no | Platform conversation attachment, usually `fi:` |
+| Chat attachment | user -> model/platform | no | Platform conversation attachment, usually `conv:fi:` |
 
 ## Card Semantics
 
@@ -95,31 +95,31 @@ The canvas module owns these card/object kinds:
 | `user.text` | `U` | canvas `cnv:` storage | User-authored note/text placed directly on canvas |
 | `user.attachment` | `A` | canvas `cnv:` storage | User file uploaded to canvas |
 | `agent.text` | `R` | canvas `cnv:` storage | Assistant-authored text card created through `cnv` named-service upsert or dragged from assistant output |
-| `file` | `F` | platform `fi:` or canvas/domain owner namespace | Produced or found file/report artifact |
+| `file` | `F` | platform `conv:fi:` or canvas/domain owner namespace | Produced or found file/report artifact |
 | `memory` | `M` | memory named-service provider `mem:record:<id>` | Memory/search object pin |
-| `source` / `search.result` | `S` | source/search resolver `so:` or subsystem | Source row or search result pin |
+| `source` / `search.result` | `S` | source/search resolver `conv:so:` or subsystem | Source row or search result pin |
 
 These are not platform-managed chat replicas:
 
-- Text typed in chat is `ar:` conversation replica data.
-- Files attached in chat are platform conversation attachments, usually `fi:`.
+- Text typed in chat is `conv:ar:` conversation replica data.
+- Files attached in chat are platform conversation attachments, usually `conv:fi:`.
 - Text written on canvas is a canvas-owned `user.text` object with a `cnv:` ref.
 - Files dropped/uploaded on canvas are canvas-owned `user.attachment` objects
   with `cnv:` refs.
-- Assistant final answers in chat are `ar:` assistant replica data.
+- Assistant final answers in chat are `conv:ar:` assistant replica data.
 - Assistant text put on canvas by `named_services.upsert_object(namespace="cnv", ...)`
   is a canvas-owned `agent.text` object with a `cnv:` ref.
 
 If a canvas-owned card is attached into chat, it remains a `cnv:` ref. Attaching
-does not convert it into a chat prompt, chat attachment, or `fi:` artifact.
+does not convert it into a chat prompt, chat attachment, or `conv:fi:` artifact.
 
 Cards are proxies to objects. For resolver-backed pins, the card id is the
-original resolver URI itself: `acme:...`, `fi:...`, `mem:record:<id>`,
-`so:...`, etc.
+original resolver URI itself: `acme:...`, `conv:fi:...`, `mem:record:<id>`,
+`conv:so:...`, etc.
 One object has one proxy on a canvas:
 
 - dragging the same `acme:ticket:<id>` again does not create another card;
-- dragging the same `fi:`, `cnv:`, `mem:record:<id>`, `so:`, or other resolver-backed ref
+- dragging the same `conv:fi:`, `cnv:`, `mem:record:<id>`, `conv:so:`, or other resolver-backed ref
   again does not create another card;
 - if that proxy is already in the bin, dragging the same object back onto the
   board restores the existing proxy instead of creating a copy;
@@ -295,7 +295,7 @@ for the announce policy to refresh `[CANVAS BOARD]` during the current turn.
 `canvas.read` is not an agent-visible tool. Exact board content is materialized
 through the `cnv:` namespace rehoster used by `react.pull`. The pull result
 returns an ordinary ReAct workspace artifact path; the agent can then inspect
-that returned `fi:` or physical path with `react.read`, `react.rg`, or exec.
+that returned `conv:fi:` or physical path with `react.read`, `react.rg`, or exec.
 
 Agent-originated canvas upserts do not require the client to rebroadcast a
 canvas event to the backend. The provider result is already the authoritative
@@ -323,7 +323,7 @@ entry. The semantic object kind lives on the card:
 new user note          -> card kind user.text, hosted cnv: object
 new canvas upload      -> card kind user.attachment, hosted cnv: object
 new assistant text     -> card kind agent.text, hosted cnv: object
-new assistant file     -> card kind file, usually fi: or cnv:
+new assistant file     -> card kind file, usually conv:fi: or cnv:
 new provider object pin -> card kind object.ref, provider-owned ref such as acme:ticket:<id>
 ```
 
@@ -352,7 +352,7 @@ named_services.upsert_object(namespace="cnv", object_ref="cnv:<name>", base_revi
 - imports exact board JSON plus an `agent_view` into the ReAct workspace;
 - is implemented by `@artifact_namespace_rehoster(namespace="cnv")`;
 - should be used only when the ANNOUNCE map/legend is insufficient;
-- returns `fi:` and physical paths that can be read or searched locally.
+- returns `conv:fi:` and physical paths that can be read or searched locally.
 
 `named_services.upsert_object(namespace="cnv", ...)`:
 
@@ -368,12 +368,12 @@ Agent rules:
 
 - Do not edit/re-save canvas JSON directly.
 - Do not move, resize, or arrange existing cards. Positioning is user/UI work.
-- Do not mutate proxy refs such as `mem:record:<id>`, `fi:`, `acme:`, or `so:`. You may
+- Do not mutate proxy refs such as `mem:record:<id>`, `conv:fi:`, `acme:`, or `conv:so:`. You may
   update the canvas-owned description/comments for those cards.
 - `user.text` content may be updated when the user asks.
 - Generated files are not pinned automatically. Produce the file, then call
   `named_services.upsert_object(namespace="cnv", object_kind="canvas.card", ...)`
-  with `card.logical_path=fi:...`.
+  with `card.logical_path=conv:fi:...`.
 - New assistant outputs should usually be `placement=suggested`, so the user
   can accept, arrange, or discard them.
 
@@ -407,7 +407,7 @@ canvas_write: collaborate through named_services.upsert_object(namespace="cnv", 
 
 Map labels are for spatial reasoning and are assigned by the ANNOUNCE renderer.
 Canvas-owned durable card ids are timestamp-bearing (`ut_...`, `ua_...`,
-`at_...`). Proxy card ids are the original resolver refs (`acme:...`, `fi:...`,
+`at_...`). Proxy card ids are the original resolver refs (`acme:...`, `conv:fi:...`,
 `mem:record:<id>`, etc.). The legend's `card_id` is the value to use in
 `named_services.upsert_object(namespace="cnv", ...)` typed card mutations.
 
@@ -426,7 +426,7 @@ priority: inspect selected cards before broader canvas context unless the user a
 ```
 
 Dragging an individual pin to chat is different. The chat context for that pin
-uses the proxied object ref (`acme:`, `mem:record:<id>`, `fi:`, `cnv:`, etc.)
+uses the proxied object ref (`acme:`, `mem:record:<id>`, `conv:fi:`, `cnv:`, etc.)
 and may carry canvas provenance in metadata, but it is not a canvas-focus event
 by itself.
 

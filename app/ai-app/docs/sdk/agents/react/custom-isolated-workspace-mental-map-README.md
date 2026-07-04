@@ -37,7 +37,7 @@ This is the mental-model companion to the mechanical workspace docs.
 
 - The filesystem layout, lifecycle, and exec snapshot transport are in [workspace-lifecycle-and-distribution-README.md](workspace/workspace-lifecycle-and-distribution-README.md).
 - The `react.pull` / `react.checkout` tool contract is in [workspace/workspace-model-README.md](workspace/workspace-model-README.md).
-- The `files/...` vs `outputs/...` namespace contract is in [workspace-model-README.md](workspace/workspace-model-README.md).
+- The `git/projects/...` vs `files/...` namespace contract is in [workspace-model-README.md](workspace/workspace-model-README.md).
 - Tool cooperation (read/rg/write/patch) is in [artifact-namespace-rehosters-README.md](workspace/artifact-namespace-rehosters-README.md).
 - Git mode is in [workspace/git-backed-workspace-engineering-README.md](workspace/git-backed-workspace-engineering-README.md).
 
@@ -58,29 +58,29 @@ In `custom` mode the agent does not see one mutable directory. It reasons across
   │                                                                          │
   │   out/workdir/                                                           │
   │     turn_<current>/                                                      │
-  │       files/<scope>/...        ← durable workspace/project state         │
-  │       outputs/<scope>/...      ← produced artifacts, not workspace state │
-  │       snapshots/<name>         ← story/workflow snapshots                │
+  │       git/projects/<scope>/... ← durable workspace/project state         │
+  │       files/<scope>/...        ← produced artifacts, not workspace state │
+  │       git/snapshots/<name>         ← story/workflow snapshots                │
   │       attachments/<name>       ← attachments for this turn               │
   │       external/<event_kind>/attachments/<event_id>/...                    │
   │                                                                          │
   │   Written via: react.write, react.patch, exec, react.checkout            │
-  │   Read via:    react.read (logical fi: paths), react.rg                  │
+  │   Read via:    react.read (logical conv:fi: paths), react.rg                  │
   └─────────────────────────────────────────────────────────────────────────┘
                                   │
                                   ▼
   ┌─────────────────────────────────────────────────────────────────────────┐
   │ (2) CONVERSATION ARTIFACT MEMORY  ─  logical, cross-turn, not a folder  │
   │                                                                          │
-  │   fi:turn_<older>.files/<scope>/<path>      ← prior workspace versions   │
-  │   fi:turn_<older>.outputs/<scope>/<path>    ← prior produced artifacts   │
-  │   fi:turn_<older>.snapshots/<path>          ← prior story snapshots      │
-  │   fi:turn_<older>.user.attachments/<name>   ← prior attachments          │
-  │   fi:turn_<older>.external.<event_kind>.attachments/<event_id>/<name>    │
-  │   fi:conv_<conversation_id>.turn_<older>... ← other conversation refs    │
-  │   ar:turn_<id>.* / tc:turn_<id>.* / so:... / su:...                      │
+  │   conv:fi:turn_<older>.git/projects/<scope>/<path> ← prior workspace versions │
+  │   conv:fi:turn_<older>.files/<scope>/<path>    ← prior produced artifacts   │
+  │   conv:fi:turn_<older>.git/snapshots/<path>          ← prior story snapshots      │
+  │   conv:fi:turn_<older>.user.attachments/<name>   ← prior attachments          │
+  │   conv:fi:turn_<older>.external.<event_kind>.attachments/<event_id>/<name>    │
+  │   conv:fi:conv_<conversation_id>.turn_<older>... ← other conversation refs    │
+  │   conv:ar:turn_<id>.* / conv:tc:turn_<id>.* / conv:so:... / conv:su:...                      │
   │                                                                          │
-  │   Materialized locally only via:  react.pull(paths=[fi:...])             │
+  │   Materialized locally only via:  react.pull(paths=[conv:fi:...])             │
   │   Activated into current turn via: react.checkout(mode=…, paths=[…])     │
   └─────────────────────────────────────────────────────────────────────────┘
                                   │
@@ -88,7 +88,7 @@ In `custom` mode the agent does not see one mutable directory. It reasons across
   ┌─────────────────────────────────────────────────────────────────────────┐
   │ (3) OWNER NAMESPACES  task:/mem:/cnv:/... ─ logical, owner-resolved      │
   │                                                                          │
-  │   Not part of the artifact root until pulled or rehosted as fi:.        │
+  │   Not part of the artifact root until pulled or rehosted as conv:fi:.        │
   │   Access goes through the owning service, resolver, or tool surface.     │
   └─────────────────────────────────────────────────────────────────────────┘
                                   │
@@ -141,17 +141,17 @@ What is implemented today:
 
   Inputs to this reconstruction (each round, no cache):
     - the current-turn directory tree on disk
-    - timeline-metadata for prior turn fi: refs
+    - timeline-metadata for prior turn conv:fi: refs
     - the last checkout call's metadata, if any
 ```
 
 So the *rolling map* exists conceptually — the agent does see "what scopes are around, what's currently editable, what was checked out from" — but as a **per-round reconstruction** rendered into ANNOUNCE, not as a separate persisted artifact.
 
-There is **no separate `fi:` artifact path** holding "the latest known version per workspace file". The agent navigates by:
+There is **no separate `conv:fi:` artifact path** holding "the latest known version per workspace file". The agent navigates by:
 
 - inspecting `[WORKSPACE]` in ANNOUNCE every round
-- following `fi:turn_<id>.files/...` refs that appear in tool result blocks earlier in the timeline
-- following `fi:conv_<conversation_id>.turn_<id>...` refs only when a
+- following `conv:fi:turn_<id>.files/...` refs that appear in tool result blocks earlier in the timeline
+- following `conv:fi:conv_<conversation_id>.turn_<id>...` refs only when a
   cross-conversation search/result explicitly provides them
 - pulling custom namespace refs such as `nmsp:...` only when they are visible in
   event/snapshot/tool-result data and a rehoster is available
@@ -188,19 +188,19 @@ Meaning to the agent: *"You are in custom mode; the current turn root exists but
     - turn_1779261800000_aa11bb/    ← historical (read-only here)
     - turn_1779260000000_zz77yy/    ← historical (read-only here)
   current editable workspace:
-    - files/projectA/  (12 files)
+    - git/projects/projectA/  (12 files)
   checked_out_from:
-    - fi:turn_1779261800000_aa11bb.files/projectA
+    - conv:fi:turn_1779261800000_aa11bb.git/projects/projectA
   checkout_mode: replace
 ```
 
-Meaning to the agent: *"You have an active workspace under `turn_<current>/files/projectA/`, built by checking out the `projectA` scope from an earlier turn. To inspect or edit that scope's history, refer to the listed source ref."*
+Meaning to the agent: *"You have an active workspace under `turn_<current>/git/projects/projectA/`, built by checking out the `projectA` scope from an earlier turn. To inspect or edit that scope's history, refer to the listed source ref."*
 
 ### 3.3 What `previous saved workspace paths` would mean — and why it is git-only
 
-In git mode `[WORKSPACE]` also exposes a `previous saved workspace paths` list (the top-level `files/...` paths that have been published to the lineage branch in prior successful turns). That list is meaningful because git mode has an authoritative lineage from which "previously published" can be answered cheaply.
+In git mode `[WORKSPACE]` also exposes a `previous saved workspace paths` list (the top-level `git/projects/...` paths that have been published to the lineage branch in prior successful turns). That list is meaningful because git mode has an authoritative lineage from which "previously published" can be answered cheaply.
 
-**Custom mode does not currently surface that list.** The custom workspace has no lineage branch, no `versions/<turn>` immutable refs, and no separate publish step. "Previous workspace state" in custom mode is whatever is recoverable through visible `fi:turn_<older>.files/...` refs in the timeline and through `react.memsearch` recovery — but not through a curated rolling list.
+**Custom mode does not currently surface that list.** The custom workspace has no lineage branch, no `versions/<turn>` immutable refs, and no separate publish step. "Previous workspace state" in custom mode is whatever is recoverable through visible `conv:fi:turn_<older>.git/projects/...` refs in the timeline and through `react.memsearch` recovery — but not through a curated rolling list.
 
 That asymmetry is intentional today: it is the cost of not requiring git for custom-mode deployments. See §6 for what would close the gap.
 
@@ -214,7 +214,7 @@ In custom mode there is **no delete operation**:
 
 - `react.write` creates or replaces.
 - `react.patch` modifies an existing local current-turn text file.
-- `react.checkout(mode="replace")` rebuilds `turn_<current>/files/` from the supplied refs, which effectively removes anything not requested in that checkout. This is the closest thing to a delete signal in custom mode today.
+- `react.checkout(mode="replace")` rebuilds `turn_<current>/git/projects/` from the supplied refs, which effectively removes anything not requested in that checkout. This is the closest thing to a delete signal in custom mode today.
 - Nothing else *records intent to delete*.
 
 What the agent must therefore avoid:
@@ -232,7 +232,7 @@ What the agent must therefore avoid:
    Absence is "not pulled into this turn", not "removed from the project".
 ```
 
-If a previous turn's `files/projectA/old.md` is not present locally, the only safe interpretation is "I have not materialized it; if I need it, I can `react.pull(fi:turn_<older>.files/projectA/old.md)`". Treating the absence as a delete would be incorrect.
+If a previous turn's `files/projectA/old.md` is not present locally, the only safe interpretation is "I have not materialized it; if I need it, I can `react.pull(conv:fi:turn_<older>.files/projectA/old.md)`". Treating the absence as a delete would be incorrect.
 
 This is the single biggest semantic difference from git mode, where deletion *is* a first-class history event recorded by the commit graph.
 
@@ -257,7 +257,7 @@ This is the single biggest semantic difference from git mode, where deletion *is
    │     scope I need ─ work directly under turn_<current>/  │
    │     files/<scope>/...                                    │
    │                                                          │
-   │   ▸ If I need an earlier version, find its fi: ref by:  │
+   │   ▸ If I need an earlier version, find its conv:fi: ref by:  │
    │     - looking at earlier tool result blocks in timeline │
    │     - or react.memsearch when ref is pruned             │
    └─────────────────────────────────────────────────────────┘
@@ -266,23 +266,23 @@ This is the single biggest semantic difference from git mode, where deletion *is
    ┌─────────────────────────────────────────────────────────┐
    │ (3) Materialize the slice I need.                        │
    │                                                          │
-   │   ▸ react.pull(paths=[fi:turn_<older>.files/<scope>])   │
+   │   ▸ react.pull(paths=[conv:fi:turn_<older>.files/<scope>])   │
    │     to hydrate historical content as read-only side      │
    │     material under turn_<older>/files/...                │
    │                                                          │
    │   ▸ react.checkout(mode="replace"|"overlay",             │
-   │                    paths=[fi:turn_<older>.files/<scope>])│
+   │                    paths=[conv:fi:turn_<older>.files/<scope>])│
    │     to make it the active editable workspace under       │
    │     turn_<current>/files/<scope>/...                     │
    └─────────────────────────────────────────────────────────┘
                               │
                               ▼
    ┌─────────────────────────────────────────────────────────┐
-   │ (4) Edit in place under turn_<current>/files/<scope>/.. │
+   │ (4) Edit in place under turn_<current>/git/projects/<scope>/.. │
    │     using react.write / react.patch / exec.              │
    │                                                          │
    │     Reports/exports/test outputs that should NOT become  │
-   │     workspace state go to turn_<current>/outputs/...     │
+   │     workspace state go to turn_<current>/files/...     │
    │     (see workspace-model-README.md).                    │
    └─────────────────────────────────────────────────────────┘
 ```
@@ -292,7 +292,7 @@ Key invariants:
 - The agent never assumes prior files are *already there*. It pulls or checks out explicitly.
 - The agent never reasons about deletion as a runtime event. It either carries a file forward or does not.
 - The "rolling map" of "what scope to continue under" is read from ANNOUNCE, not from a separate registry.
-- The agent never invents `fi:` for a custom namespace ref. It calls
+- The agent never invents `conv:fi:` for a custom namespace ref. It calls
   `react.pull(paths=["nmsp:..."])` and then uses the returned paths.
 
 ## 5.1 Artifact origins in one local workspace
@@ -304,9 +304,9 @@ refs become local only after explicit `react.pull`.
 ```text
 OUTPUT_DIR/
   turn_<current>/
-    files/<scope>/...                  # current editable workspace
-    outputs/<scope>/...                # current produced artifacts
-    snapshots/...                      # current or rehosted snapshots
+    git/projects/<scope>/...           # current editable workspace
+    files/<scope>/...                  # current produced artifacts
+    git/snapshots/...                      # current or rehosted snapshots
     external/...                       # rehosted domain attachments
   turn_<older>/...                     # pulled same-conversation refs
   conv_<conversation_id>/turn_<older>/ # pulled cross-conversation refs
@@ -338,10 +338,10 @@ discovery rules, see
    │ Rolling-map source     │ ANNOUNCE +             │ ANNOUNCE +             │
    │                        │ live-reconstructed     │ lineage branch         │
    │                        │ from disk + timeline   │ inspection             │
-   │ fi:turn_<id>.files     │ same syntax            │ same syntax            │
+   │ conv:fi:turn_<id>.files     │ same syntax            │ same syntax            │
    │ react.pull             │ same contract          │ same contract          │
    │ react.checkout         │ same contract          │ same contract          │
-   │ files/ vs outputs/     │ same contract          │ same contract          │
+   │ files/ vs files/     │ same contract          │ same contract          │
    └────────────────────────┴────────────────────────┴────────────────────────┘
 ```
 
@@ -357,7 +357,7 @@ Two items remain open for custom mode. Neither blocks normal use; both would tig
 Without an explicit delete signal, "the user/agent removed this file from the project" cannot be distinguished from "this turn did not carry the file forward". The agent compensates by *never inferring deletion from absence* (§4), but a real delete operation would let the runtime record removal intent and surface it through `[WORKSPACE]` and the timeline.
 
 **7.2 Durable conversation-level rolling-map artifact.**
-Today `[WORKSPACE]` is reconstructed each round from disk and timeline metadata. A persisted per-conversation map (one stable `fi:`/`ar:` artifact path that the agent can `react.read` for the full latest-known view per scope) would:
+Today `[WORKSPACE]` is reconstructed each round from disk and timeline metadata. A persisted per-conversation map (one stable `conv:fi:`/`conv:ar:` artifact path that the agent can `react.read` for the full latest-known view per scope) would:
 
 - give the agent a single recoverable reference for workspace state across compaction;
 - avoid repeating disk enumeration each round;
@@ -371,7 +371,7 @@ Both items are tracked as design targets; the current per-round reconstruction i
 
 - Filesystem mechanics, exec workspace transport, snapshot persistence — see [workspace-lifecycle-and-distribution-README.md](workspace/workspace-lifecycle-and-distribution-README.md).
 - `react.pull` vs `react.checkout` semantics, `replace` vs `overlay` modes — see [workspace/workspace-model-README.md](workspace/workspace-model-README.md).
-- `files/<scope>/...` vs `outputs/<scope>/...` namespace rules — see [workspace-model-README.md](workspace/workspace-model-README.md).
+- `git/projects/<scope>/...` vs `files/<scope>/...` namespace rules — see [workspace-model-README.md](workspace/workspace-model-README.md).
 - Per-tool cooperation (`react.read`, `react.rg`, `react.write`, `react.patch`) — see [artifact-namespace-rehosters-README.md](workspace/artifact-namespace-rehosters-README.md).
 - Git-mode lineage branches, immutable version refs, publish flow — see [workspace/git-backed-workspace-engineering-README.md](workspace/git-backed-workspace-engineering-README.md).
 - The shape and lifecycle of ANNOUNCE as a whole — see [react-announce-README.md](./react-announce-README.md).

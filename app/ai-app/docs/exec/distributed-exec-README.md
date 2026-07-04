@@ -139,13 +139,13 @@ chat-proc (FargateRuntime.run)
 │  3. ensure_bundle_snapshot()  (if bundle tools requested)
 │     → zip bundle dir from EFS
 │     → upload to S3:
-│         cb/tenants/{t}/projects/{p}/ai-bundle-snapshots/{bundle_id}.{version}.zip
+│         cb/tenants/{t}/projects/{p}/ai-bundle-git/snapshots/{bundle_id}.{version}.zip
 │     → returns BundleSnapshotInfo with bundle_uri
 │
 │  4. ensure_bundle_storage_snapshot()  (if bundle readonly storage requested)
 │     → zip the per-bundle storage dir from proc
 │     → upload to S3:
-│         cb/tenants/{t}/projects/{p}/ai-bundle-storage-snapshots/{bundle_id}.{sha}.zip
+│         cb/tenants/{t}/projects/{p}/ai-bundle-storage-git/snapshots/{bundle_id}.{sha}.zip
 │     → returns snapshot URI
 │     → this is transport of readonly bundle data, not direct agent-facing path semantics
 │
@@ -305,12 +305,12 @@ cb/tenants/{tenant}/projects/{project}/
         work.zip      ← workdir delta after execution
         out.zip       ← outdir delta after execution (artifacts/workdir, logs/)
 
-  ai-bundle-snapshots/
+  ai-bundle-git/snapshots/
     {bundle_id}.{version}.zip
     {bundle_id}.{version}.sha256
       ← bundle code snapshot
 
-  ai-bundle-storage-snapshots/
+  ai-bundle-storage-git/snapshots/
     {bundle_id}.{sha}.zip
     {bundle_id}.{sha}.sha256
       ← per-bundle readonly data snapshot (content-addressed)
@@ -335,7 +335,7 @@ Preferred model:
    - `access: 'r' | 'rw'`
    - `browseable: bool`
 4. generated code reads that path if appropriate
-5. if code wants later follow-up, it emits normal hosted `fi:` refs or
+5. if code wants later follow-up, it emits normal hosted `conv:fi:` refs or
    owner-defined refs that the owner service can resolve
 6. generated code propagates useful results back through:
    - files under `OUTPUT_DIR`

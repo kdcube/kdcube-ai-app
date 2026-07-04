@@ -50,8 +50,8 @@ TOOL_SPEC = {
         "(\"last week we talked about ...\", \"yesterday you helped me with ...\", a topic "
         "the user clearly worked on before but not in this conversation), pass `scope=\"user\"`. "
         "Recovery path: memsearch -> read returned refs; if refs are incomplete, "
-        "read ar:turn_<id>.react.turn.index, then batch-read/pull exact ar:/tc:/fi:/so: refs. "
-        "If a returned `fi:` path starts `fi:conv_<conversation_id>.turn_<id>...`, the `conv_` segment is the "
+        "read conv:ar:turn_<id>.react.turn.index, then batch-read/pull exact conv:ar:/conv:tc:/conv:fi:/conv:so: refs. "
+        "If a returned `conv:fi:` path starts `conv:fi:conv_<conversation_id>.turn_<id>...`, the `conv_` segment is the "
         "conversation scope and the artifact belongs to that other conversation; pass that exact path to "
         "react.read/react.pull/react.checkout/react.rg."
     ),
@@ -105,10 +105,8 @@ def _clip(text: Any, limit: int = 4000) -> str:
 
 
 # Namespaces whose logical paths can carry a `conv_<id>.` segment after the
-# scheme prefix. Adding a new prefix here is safe — `_scope_path_for_conversation`
-# is a path-rewrite only; the read-side must understand the same convention for
-# round-trip resolution to work.
-_CROSS_CONV_NAMESPACE_PREFIXES = ("fi:", "ev:", "ws:", "ar:", "tc:", "so:")
+# `conv:<namespace>:` prefix.
+_CROSS_CONV_NAMESPACE_PREFIXES = ("conv:ev:", "conv:ws:", "conv:ar:", "conv:tc:", "conv:so:")
 
 
 def _scope_path_for_conversation(*, path: Any, source_conversation_id: str, current_conversation_id: str) -> str:
@@ -118,19 +116,19 @@ def _scope_path_for_conversation(*, path: Any, source_conversation_id: str, curr
     the path verbatim to `react.read` / `react.pull` / `react.checkout` /
     `react.rg` without also having to track the conversation_id externally.
 
-    Convention: insert `conv_<id>.` immediately after the namespace prefix
-    (e.g. `ws:turn_X...` becomes `ws:conv_<id>.turn_X...`). If the path
-    already carries a `conv_<id>.` segment, or the source/current conversations
-    are the same, the path is returned unchanged. For `fi:` paths the canonical
-    artifact builder is used so external-attachment and other special shapes
-    stay correct.
+    Convention: insert `conv_<id>.` immediately after the `conv:<namespace>:`
+    prefix (e.g. `conv:ws:turn_X...` becomes
+    `conv:ws:conv_<id>.turn_X...`). If the path already carries a `conv_<id>.`
+    segment, or the source/current conversations are the same, the path is
+    returned unchanged. For `conv:fi:` paths the canonical artifact builder is
+    used so external-attachment and other special shapes stay correct.
     """
     raw = _as_str(path)
     source_conv = _as_str(source_conversation_id)
     current_conv = _as_str(current_conversation_id)
     if not raw or not source_conv or source_conv == current_conv:
         return raw
-    if raw.startswith("fi:"):
+    if raw.startswith("conv:fi:"):
         existing_conv, turn_id, namespace, rel = split_logical_artifact_ref(raw)
         if existing_conv or not (turn_id and namespace and rel):
             return raw
@@ -142,7 +140,7 @@ def _scope_path_for_conversation(*, path: Any, source_conversation_id: str, curr
         )
         return scoped or raw
     for prefix in _CROSS_CONV_NAMESPACE_PREFIXES:
-        if prefix == "fi:":
+        if prefix == "conv:fi:":
             continue
         if not raw.startswith(prefix):
             continue

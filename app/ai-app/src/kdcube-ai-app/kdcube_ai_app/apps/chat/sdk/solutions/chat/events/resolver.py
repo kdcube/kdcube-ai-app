@@ -14,12 +14,25 @@ takes an injected `store`.
 """
 from __future__ import annotations
 
+import mimetypes
+from pathlib import PurePosixPath
 from typing import Any, Awaitable, Callable, Mapping, Optional
+from urllib.parse import quote
+
+from kdcube_ai_app.apps.chat.sdk.solutions.conversation.presentation import (
+    CONVERSATION_FILE_OBJECT_KIND,
+    is_conv_file_ref,
+)
+from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import (
+    build_physical_artifact_path,
+    split_logical_artifact_ref,
+)
 
 
 CONVERSATION_RESOLVER_NAME = "sdk.chat.conversation"
 CONVERSATION_OBJECT_NAMESPACE = "conv"
 CONVERSATION_OBJECT_KIND = "chat.conversation"
+CONVERSATION_FILE_MIME = "application/vnd.kdcube.conversation.file+json;version=1"
 
 # (user_id, conversation_id, bundle_id) -> conversation details mapping.
 # The details mapping is expected to expose `conversation_title` and
@@ -36,6 +49,15 @@ _REF_FIELDS = ("tenant", "project", "user_id", "bundle_id", "agent", "conversati
 
 def conversation_ref_capabilities() -> dict[str, bool]:
     return {"preview": True, "open": True, "download": False, "rehost": False}
+
+
+def conversation_file_ref_capabilities() -> dict[str, bool]:
+    return {"preview": True, "open": True, "download": True, "rehost": False}
+
+
+def _guess_mime(name: str) -> str:
+    guess, _ = mimetypes.guess_type(name)
+    return (guess or "").strip() or "application/octet-stream"
 
 
 def parse_conversation_ref(ref: str) -> dict[str, str]:
@@ -79,10 +101,105 @@ def _base_response(*, ref: str, action: str) -> dict[str, Any]:
     }
 
 
+def _file_base_response(*, ref: str, action: str) -> dict[str, Any]:
+    return {
+        "ok": True,
+        "action": action,
+        "ref": ref,
+        "object_ref": ref,
+        "namespace": CONVERSATION_OBJECT_NAMESPACE,
+        "object_kind": CONVERSATION_FILE_OBJECT_KIND,
+        "resolver": CONVERSATION_RESOLVER_NAME,
+        "resolver_status": "implemented",
+        "mime": CONVERSATION_FILE_MIME,
+        "capabilities": conversation_file_ref_capabilities(),
+        "default_open_effect_action": "download",
+    }
+
+
+def _resource_download_url(
+    *,
+    tenant: str,
+    project: str,
+    user_id: str,
+    conversation_id: str,
+    turn_id: str,
+    filename_path: str,
+) -> str:
+    if not all([tenant, project, user_id, conversation_id, turn_id, filename_path]):
+        return ""
+    return (
+        f"/api/cb/resources/{quote(tenant, safe='')}/{quote(project, safe='')}"
+        f"/conv/{quote(user_id, safe='')}/{quote(conversation_id, safe='')}"
+        f"/turn/{quote(turn_id, safe='')}/attachment/{quote(filename_path, safe='/')}/download"
+    )
+
+
+def _resolve_file_ref_action(
+    payload: Mapping[str, Any],
+    *,
+    ref: str,
+    action: str,
+    user_id: str,
+    tenant: str,
+    project: str,
+) -> dict[str, Any]:
+    base = _file_base_response(ref=ref, action=action)
+    conversation_id, turn_id, namespace, relpath = split_logical_artifact_ref(ref)
+    conversation_id = conversation_id or str(payload.get("conversation_id") or "").strip()
+    filename = str(payload.get("filename") or PurePosixPath(relpath).name or "artifact").strip()
+    mime = str(payload.get("mime") or _guess_mime(filename)).strip()
+    title = filename or ref
+
+    if action == "capabilities":
+        return {**base, "filename": filename, "mime": mime}
+    if action in {"describe", "preview", "open"}:
+        return {
+            **base,
+            "filename": filename,
+            "mime": mime,
+            "title": title,
+            "summary": f"{title} · {ref}",
+            "conversation_id": conversation_id,
+            "turn_id": turn_id,
+        }
+    if action != "download":
+        return {**base, "ok": False, "error": "unsupported_object_action", "status": 400}
+    if not conversation_id or not turn_id or not namespace or not relpath:
+        return {**base, "ok": False, "error": "invalid_conv_fi_ref", "status": 400}
+
+    filename_path = build_physical_artifact_path(
+        turn_id=turn_id,
+        namespace=namespace,
+        relpath=relpath,
+    )
+    download_url = _resource_download_url(
+        tenant=tenant,
+        project=project,
+        user_id=user_id,
+        conversation_id=conversation_id,
+        turn_id=turn_id,
+        filename_path=filename_path,
+    )
+    if not download_url:
+        return {**base, "ok": False, "error": "conv_fi_download_url_unavailable", "status": 400}
+    return {
+        **base,
+        "resolved": True,
+        "conversation_id": conversation_id,
+        "turn_id": turn_id,
+        "filename": filename,
+        "mime": mime,
+        "download_url": download_url,
+    }
+
+
 async def resolve_conversation_ref_action(
     payload: Mapping[str, Any],
     *,
     user_id: str = "",
+    tenant: str = "",
+    project: str = "",
     fetch_details: ConversationDetailsFetcher,
 ) -> dict[str, Any]:
     """Resolve an object action for a `conv:` ref.
@@ -98,6 +215,15 @@ async def resolve_conversation_ref_action(
         or ""
     ).strip()
     action = str(payload.get("action") or "capabilities").strip().lower()
+    if is_conv_file_ref(ref):
+        return _resolve_file_ref_action(
+            payload,
+            ref=ref,
+            action=action,
+            user_id=user_id,
+            tenant=tenant,
+            project=project,
+        )
     coords = parse_conversation_ref(ref)
     conversation_id = coords.get("conversation_id") or ""
     base = _base_response(ref=ref, action=action)
@@ -158,6 +284,7 @@ __all__ = [
     "CONVERSATION_OBJECT_KIND",
     "CONVERSATION_RESOLVER_NAME",
     "ConversationDetailsFetcher",
+    "conversation_file_ref_capabilities",
     "conversation_id_from_ref",
     "conversation_ref_capabilities",
     "parse_conversation_ref",

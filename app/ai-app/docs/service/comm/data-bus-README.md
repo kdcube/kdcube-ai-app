@@ -488,7 +488,7 @@ The Data Bus stays outside ReAct timelines by default.
 To wake or inform an agent from a handled Data Bus message, the bundle creates
 an explicit conversation submission with `external_events[]` through the
 conversation ingress path. That submission then has conversation/turn semantics
-and may produce `ev:` event paths, timeline blocks, summaries, and compaction
+and may produce `conv:ev:` event paths, timeline blocks, summaries, and compaction
 records.
 
 This keeps bundle state traffic separate from conversation history while still

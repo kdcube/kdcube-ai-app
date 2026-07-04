@@ -1,12 +1,10 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Elena Viter
 
-"""Materialize `fi:` file artifacts referenced by conversation turns.
+"""Materialize `conv:fi:` file artifacts referenced by conversation turns.
 
-Turns reference file artifacts (uploaded attachments, produced outputs, snapshots,
-and pulled external attachments) as `fi:` logical paths — both as search-result
-handles and inside turn text (e.g. working summaries). External clients reach them
-through the `conv` namespace as `conv:fi:<path>` object refs.
+Turns reference file artifacts (uploaded attachments, produced files, snapshots,
+and pulled external attachments) as `conv:fi:` logical paths.
 
 This module owns the byte materialization: it reuses the proven react workspace
 hydration (`rehost_files_from_timeline`) to pull one artifact into a temp dir and
@@ -42,10 +40,10 @@ async def materialize_fi_artifact(
     conversation_id: str = "",
     max_bytes: int = MAX_INLINE_FILE_BYTES,
 ) -> Dict[str, Any]:
-    """Materialize a single `fi:` artifact to bytes.
+    """Materialize a single `conv:fi:` artifact to bytes.
 
     `browser` is a react `ContextBrowser` bound to the caller's identity (its
-    runtime_ctx scopes the read). `fi_ref` is a `fi:<...>` logical path.
+    runtime_ctx scopes the read). `fi_ref` is a `conv:fi:<...>` logical path.
 
     Returns one of:
       {"ok": True, "filename", "mime", "size", "data": bytes, "physical_path"}

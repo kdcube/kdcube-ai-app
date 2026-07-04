@@ -475,7 +475,7 @@ The runtime can stream:
 
 Artifacts keep provenance:
 
-- logical paths such as `fi:`, `tc:`, `ar:`, `so:`, and repository refs such as
+- logical paths such as `conv:fi:`, `conv:tc:`, `conv:ar:`, `conv:so:`, and repository refs such as
   `repo:kdcube-ai-app/app/ai-app/docs/...`
 - owner refs such as `task:issue:...`, `mem:record:...`, `cnv:<board>`
 - tool call/result records

@@ -44,9 +44,9 @@ one pin -> one canonical object ref
 
 No secondary download handle, browser handle, signed URL, `ef:` transport
 handle, or resolver-private path should be persisted on the card. If a file is
-identified as `fi:...`, the canvas stores `fi:...` and only `fi:...`. Download,
+identified as `conv:fi:...`, the canvas stores `conv:fi:...` and only `conv:fi:...`. Download,
 preview, materialization, and rehost all go through the resolver registered for
-`fi:`.
+`conv:fi:`.
 
 ## Board Targeting
 
@@ -69,13 +69,13 @@ A pin's `object_ref` is always passed to an owner resolver.
 
 - **Canvas-owned** (`cnv:`) — canvas owns the board and canvas-hosted object
   grammar.
-- **Provider-owned** (for example `conv:`, `fi:`, `mem:`, `task:`, or
+- **Provider-owned** (for example `conv:`, `conv:fi:`, `mem:`, `task:`, or
   `acme:`) — canvas treats the ref as opaque and asks the owner resolver or
   named-service provider for metadata/actions.
 
 The resolver router may privately choose a resolver from the full
 `object_ref`, but canvas cards and canvas UI do not parse provider URI grammar.
-`conv:` is owned by chat/conversation, `fi:` by the ReAct artifact layer,
+`conv:` is owned by chat/conversation, `conv:fi:` by the ReAct artifact layer,
 `mem:` by memory, and so on.
 
 See [Namespace Services](../../namespace-services/README.md) for the
@@ -89,10 +89,10 @@ compatibility aliases for the same canonical resolver URI.
 
 ```json
 {
-  "id": "fi:conv_123.turn_2026-06-07-12-59-27-283.outputs/problem_statement.md",
+  "id": "conv:fi:conv_123.turn_2026-06-07-12-59-27-283.files/problem_statement.md",
   "kind": "file",
-  "object_ref": "fi:conv_123.turn_2026-06-07-12-59-27-283.outputs/problem_statement.md",
-  "logical_path": "fi:conv_123.turn_2026-06-07-12-59-27-283.outputs/problem_statement.md",
+  "object_ref": "conv:fi:conv_123.turn_2026-06-07-12-59-27-283.files/problem_statement.md",
+  "logical_path": "conv:fi:conv_123.turn_2026-06-07-12-59-27-283.files/problem_statement.md",
   "title": "problem_statement.md",
   "mime": "text/markdown",
   "display_cache": {
@@ -109,9 +109,9 @@ For resolver-backed objects, the card id should be the canonical object ref.
 This makes duplicate prevention deterministic:
 
 - dragging the same `acme:ticket:<id>` again updates/restores the existing pin;
-- dragging the same `fi:` again updates/restores the existing pin;
+- dragging the same `conv:fi:` again updates/restores the existing pin;
 - dragging the same `mem:record:<id>` again updates/restores the existing pin;
-- dragging the same `repo:` or `so:` ref again updates/restores the existing pin.
+- dragging the same `repo:` or `conv:so:` ref again updates/restores the existing pin.
 
 Canvas-owned objects are the exception because the user creates a new object
 first. Their ids are minted by the canvas-owned object host:
@@ -232,7 +232,7 @@ Recommended operation meanings:
 is:
 
 ```text
-canvas card has object_ref=fi:...
+canvas card has object_ref=conv:fi:...
 user clicks Download
 canvas server calls fi resolver download(ref)
 fi resolver returns download_url
@@ -243,7 +243,7 @@ server streams bytes
 For a provider attachment target, the flow is:
 
 ```text
-canvas/chat source has object_ref=fi:...
+canvas/chat source has object_ref=conv:fi:...
 user drops it on provider attachments
 provider subsystem calls fi resolver rehost(ref, target=acme:ticket:<id>)
 provider subsystem writes provider-owned bytes and returns acme:... attachment ref
@@ -375,7 +375,7 @@ Resolver failures should not remove pins. A failed `preview`, `open`,
   "ok": false,
   "error": "resolver_unavailable",
   "namespace": "fi",
-  "object_ref": "fi:...",
+  "object_ref": "conv:fi:...",
   "message": "File resolver is not available in this bundle."
 }
 ```

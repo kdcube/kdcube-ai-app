@@ -382,3 +382,26 @@ async def test_memory_object_action_uses_generic_named_service_resolver(monkeypa
     ]
     assert seen["action"] == "open"
     assert service.entrypoint.scope_filters == []
+
+
+@pytest.mark.asyncio
+async def test_conv_fi_download_uses_conversation_file_resolver(monkeypatch):
+    service = _service(monkeypatch)
+
+    result = await service.object_resolvers({}, user_id="u-1").object_action(
+        {
+            "action": "download",
+            "object_ref": "conv:fi:conv_c1.turn_1.files/expense_tracker/README.md",
+            "filename": "README.md",
+            "mime": "text/markdown",
+        },
+        user_id="u-1",
+    )
+
+    assert result["ok"] is True
+    assert result["object_kind"] == "conversation.file"
+    assert "content_base64" not in result
+    assert result["download_url"] == (
+        "/api/cb/resources/demo/project/conv/u-1/c1/turn/turn_1/attachment/"
+        "turn_1/files/expense_tracker/README.md/download"
+    )

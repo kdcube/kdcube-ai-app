@@ -10,6 +10,7 @@ from urllib.parse import quote
 
 from kdcube_ai_app.apps.chat.sdk.config import get_settings
 from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import (
+    REACT_FILE_REF_PREFIX,
     build_physical_artifact_path,
     split_logical_artifact_ref,
 )
@@ -21,10 +22,13 @@ LOGGER = logging.getLogger(__name__)
 
 def _ref_namespace(ref: str) -> str:
     raw = str(ref or "").strip()
-    head, sep, _tail = raw.partition(":")
-    if not sep or not head:
+    first, sep, rest = raw.partition(":")
+    if not sep or not first:
         return ""
-    return head.strip().lower()
+    if first.strip().lower() == "conv":
+        second, second_sep, _tail = rest.partition(":")
+        return f"conv:{second.strip().lower()}" if second_sep and second.strip() else "conv"
+    return first.strip().lower()
 
 
 def canonicalize_event_ref_for_context(ref: Any, *, conversation_id: str = "") -> str:
@@ -32,12 +36,13 @@ def canonicalize_event_ref_for_context(ref: Any, *, conversation_id: str = "") -
     Return the durable canonical form for an event/object ref when the current
     runtime context can disambiguate it.
 
-    `fi:turn_...` is valid inside the current ReAct runtime, but durable
-    cross-surface consumers such as canvas need `fi:conv_<conversation>.turn_...`.
-    React owns that rewrite because `fi:` is a React-owned file/event namespace.
+    `conv:fi:turn_...` is valid inside the current ReAct runtime, but durable
+    cross-surface consumers such as canvas need
+    `conv:fi:conv_<conversation>.turn_...`. React owns that rewrite because
+    `conv:fi:` is a React-owned file/event namespace.
     """
     value = str(ref or "").strip()
-    if not value.startswith("fi:"):
+    if not value.startswith(REACT_FILE_REF_PREFIX):
         return value
     embedded_conversation_id, turn_id, namespace, relpath = split_logical_artifact_ref(value)
     if embedded_conversation_id or not conversation_id or not turn_id or not namespace or not relpath:
@@ -121,12 +126,12 @@ async def read_event_ref_bytes(
     """
     Resolve bytes for a namespaced event/object ref.
 
-    For now the built-in byte-backed resolver is `fi:`, which is the canonical
-    React-owned file/event reference. More namespaces should register here instead
-    of teaching bundles their storage layouts.
+    For now the built-in byte-backed resolver is `conv:fi:`, the canonical
+    React-owned file/event reference. More namespaces should register here
+    instead of teaching bundles their storage layouts.
     """
     namespace = _ref_namespace(ref)
-    if namespace == "fi":
+    if namespace == "conv:fi":
         return await _read_fi_bytes(
             ref=ref,
             tenant=tenant,
@@ -162,7 +167,7 @@ async def resolve_event_ref_action(
         or ""
     ).strip()
     namespace = _ref_namespace(ref)
-    if namespace == "fi":
+    if namespace == "conv:fi":
         embedded_conversation_id, _turn_id, _artifact_namespace, _relpath = split_logical_artifact_ref(ref)
         if require_embedded_conversation and not embedded_conversation_id:
             action = str(payload.get("action") or "capabilities").strip().lower()
@@ -172,11 +177,11 @@ async def resolve_event_ref_action(
                 "ref": ref,
                 "event_ref": ref,
                 "object_ref": ref,
-                "namespace": "fi",
+                "namespace": "conv:fi",
                 "resolver": "react.event_ref",
                 "resolver_status": "invalid_ref",
                 "error": "fi_ref_requires_embedded_conversation",
-                "message": "Canvas fi: refs must include the cross-conversation prefix: fi:conv_<conversation_id>.turn_<turn_id>...",
+                "message": "Canvas conv:fi: refs must include the cross-conversation prefix: conv:fi:conv_<conversation_id>.turn_<turn_id>...",
                 "status": 400,
             }
         return await _resolve_fi_action(
@@ -211,12 +216,12 @@ async def _read_fi_bytes(
     embedded_conversation_id, turn_id, namespace, relpath = split_logical_artifact_ref(ref)
     source_conversation_id = embedded_conversation_id or str(conversation_id or "").strip()
     if not source_conversation_id or not turn_id or not namespace or not relpath:
-        raise ValueError(f"invalid fi: artifact ref: {ref}")
+        raise ValueError(f"invalid conv:fi: artifact ref: {ref}")
 
     physical_tail = build_physical_artifact_path(turn_id=turn_id, namespace=namespace, relpath=relpath)
     tails = _safe_storage_tails(physical_tail, relpath)
     if not tails:
-        raise FileNotFoundError(f"invalid fi: artifact path: {ref}")
+        raise FileNotFoundError(f"invalid conv:fi: artifact path: {ref}")
 
     store = ConversationStore(storage_path or getattr(get_settings(), "STORAGE_PATH", None))
     base = f"cb/tenants/{tenant}/projects/{project}/attachments"
@@ -237,7 +242,7 @@ async def _read_fi_bytes(
             except Exception:
                 LOGGER.debug("[react.event_ref.resolve] candidate failed ref=%s candidate=%s", ref, candidate, exc_info=True)
                 continue
-    raise FileNotFoundError(f"fi: artifact bytes not found for {ref}")
+    raise FileNotFoundError(f"conv:fi: artifact bytes not found for {ref}")
 
 
 async def _resolve_fi_action(

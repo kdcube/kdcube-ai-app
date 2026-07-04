@@ -51,8 +51,8 @@ tool envelope. This is a strict protocol:
         "visibility": "external",
         "filename": "invoice.pdf",
         "mime_type": "application/pdf",
-        "physical_path": "turn_123/outputs/email-attachments/invoice.pdf",
-        "logical_path": "fi:turn_123.outputs/email-attachments/invoice.pdf"
+        "physical_path": "turn_123/files/email-attachments/invoice.pdf",
+        "logical_path": "conv:fi:turn_123.files/email-attachments/invoice.pdf"
       }
     ]
   }
@@ -125,7 +125,7 @@ cb/tenants/<tenant>/projects/<project>/attachments/
 For example, a produced file with physical path:
 
 ```text
-turn_123/outputs/analysis/zip_contents.json
+turn_123/files/analysis/zip_contents.json
 ```
 
 is hosted under the turn using that same relative path suffix. This allows

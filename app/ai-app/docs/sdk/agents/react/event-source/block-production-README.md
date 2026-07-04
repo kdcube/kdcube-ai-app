@@ -35,7 +35,7 @@ accepted event retained in lane
     -> event reader builds accepted event target
     -> block_production policies mutate one accumulator
     -> policy either emits blocks or marks the occurrence as no-timeline
-    -> default producer emits one event.<type> block at the ev: path when
+    -> default producer emits one event.<type> block at the conv:ev: path when
        no registered policy handled the occurrence
     -> event block body stores {ok, status, error?, ret?, surfaces?}
 ```
@@ -96,8 +96,8 @@ target carries the original owner identity:
 ```python
 {
     "object_ref": "cnv:main",
-    "logical_path": "fi:turn_1.snapshots/cnv/main.json",
-    "physical_path": "turn_1/snapshots/cnv/main.json",
+    "logical_path": "conv:fi:turn_1.git/snapshots/cnv/main.json",
+    "physical_path": "turn_1/git/snapshots/cnv/main.json",
     "stats_only": False,
 }
 ```
@@ -124,7 +124,7 @@ the volatile object when it needs current state again.
 | `source_rows` | Exploration rows for `sources_pool`, such as web search/fetch results. |
 | `artifact_rows` | File/artifact rows, usually from exec `raw.items` or composite hosted artifact results. |
 | `declared_file_items` | Explicit file rows derived from `{artifact_type:"files", files:[...]}`. |
-| `snapshot_refs` | Read-only snapshot payload refs, such as `fi:<turn_id>.snapshots/current.yaml` or `cnv:snapshots/current`, for later projection/ANNOUNCE/compaction. They are not editable canvas state. |
+| `snapshot_refs` | Read-only snapshot payload refs, such as `conv:fi:<turn_id>.git/snapshots/current.yaml` or `cnv:snapshots/current`, for later projection/ANNOUNCE/compaction. They are not editable canvas state. |
 | `announce_candidates` | Data for a later ANNOUNCE phase. ANNOUNCE itself is not persisted on the timeline. |
 | `notice_rows` | Notices/errors/warnings to emit through the existing ReAct notice transport. |
 
@@ -149,7 +149,7 @@ runtime has the produced bytes locally, reads a bounded window, and formats it
 as `[TEXT FILE PREVIEW]` during block production. Rendering tools, hosted-file
 tools, and composite event sources may be metadata-only unless they explicitly
 provide a preview. That is valid. ReAct can inspect the file later with
-`react.read(paths=["fi:..."])` using the visible logical artifact path.
+`react.read(paths=["conv:fi:..."])` using the visible logical artifact path.
 
 If a source does provide a pre-rendered preview, it should mark the produced
 artifact text block:
@@ -188,9 +188,9 @@ treated as raw text and may be rendered with the standard line window,
 
 | Policy ID | Input event type | Default timeline output |
 |---|---|---|
-| `react.block_production.event_default` | `event.external` and other generic domain events | One `event.<type>` JSON block at the accepted event's `ev:` path. The body stores `ok`, `status`, `ret`, optional `error`, optional `event_ref`, and extracted `surfaces`. |
-| `react.block_production.snapshot_default` | `event.snapshot` | One `event.snapshot` JSON block at the `ev:` path. The body preserves snapshot refs and ANNOUNCE candidates as read-only projection data. |
-| `react.block_production.canvas_default` | `event.canvas` | One `event.canvas` JSON block at the `ev:` path. The body preserves the canvas revision/state as collaborative domain state; edits must still go through a bundle API/tool that emits a later canvas event. |
+| `react.block_production.event_default` | `event.external` and other generic domain events | One `event.<type>` JSON block at the accepted event's `conv:ev:` path. The body stores `ok`, `status`, `ret`, optional `error`, optional `event_ref`, and extracted `surfaces`. |
+| `react.block_production.snapshot_default` | `event.snapshot` | One `event.snapshot` JSON block at the `conv:ev:` path. The body preserves snapshot refs and ANNOUNCE candidates as read-only projection data. |
+| `react.block_production.canvas_default` | `event.canvas` | One `event.canvas` JSON block at the `conv:ev:` path. The body preserves the canvas revision/state as collaborative domain state; edits must still go through a bundle API/tool that emits a later canvas event. |
 | `react.block_production.user_prompt_default` | `event.user.prompt` | Built-in `user.prompt` block with event identity in metadata. |
 | `react.block_production.user_followup_default` | `event.user.followup` | Built-in `user.followup` block with event identity and `is_continuation` metadata. |
 | `react.block_production.user_steer_default` | `event.user.steer` | Built-in `user.steer` block with event identity and `is_continuation` metadata. |
@@ -198,8 +198,8 @@ treated as raw text and may be rendered with the standard line window,
 
 ## Generic JSON Is Not A File
 
-Structured JSON results are represented as `tc:<turn>.<call>.result`. They must
-not be normalized into `fi:<turn>.files/<tool_id>`. Only explicit file-backed
+Structured JSON results are represented as `conv:tc:<turn>.<call>.result`. They must
+not be normalized into `conv:fi:<turn>.files/<tool_id>`. Only explicit file-backed
 rows, write-tool rows, exec artifact rows, declared files, or already-hosted
 records go through file path resolution and hosting.
 
@@ -219,7 +219,7 @@ A tool can return several result surfaces in one `ret`:
   "ret": {
     "exploration_results": [],
     "hosted_artifacts": [],
-    "snapshot_refs": ["fi:turn_1.snapshots/current.yaml"],
+    "snapshot_refs": ["conv:fi:turn_1.git/snapshots/current.yaml"],
     "announce_candidates": [{"section": "wizard", "text": "Issue draft changed"}]
   }
 }
@@ -244,7 +244,7 @@ ANNOUNCE candidate together:
   "event_id": "evt_canvas_snapshot_001",
   "type": "event.snapshot",
   "event_source_id": "task_tracker.canvas.snapshot",
-  "logical_path": "ev:turn_1.events/task-tracker/snapshots/draft-123/canvas/latest",
+  "logical_path": "conv:ev:turn_1.events/task-tracker/snapshots/draft-123/canvas/latest",
   "payload": {
     "mime": "application/json",
     "event": {
@@ -260,7 +260,7 @@ ANNOUNCE candidate together:
 ```
 
 For this snapshot event, the default block producer emits one event block at
-the event's `ev:` path. The block body keeps `ret.summary` plus
+the event's `conv:ev:` path. The block body keeps `ret.summary` plus
 `surfaces.artifact_rows`,
 `surfaces.snapshot_refs`, and `surfaces.announce_candidates`.
 

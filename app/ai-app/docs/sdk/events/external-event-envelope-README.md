@@ -1,7 +1,7 @@
 ---
 id: repo:kdcube-ai-app/app/ai-app/docs/sdk/events/external-event-envelope-README.md
 title: "External Event Envelope"
-summary: "Canonical plural external-event payload shape, accepted event fields, event logical paths (`ev:`), hosted event payload URIs, inline payloads, snapshot events, file upload events, and text-selection context events."
+summary: "Canonical plural external-event payload shape, accepted event fields, event logical paths (`conv:ev:`), hosted event payload URIs, inline payloads, snapshot events, file upload events, and text-selection context events."
 status: draft
 tags: ["sdk", "events", "external-events", "event-envelope", "snapshots", "react"]
 updated_at: 2026-06-23
@@ -15,7 +15,7 @@ keywords:
     "hosted_uri",
     "event_source_id",
     "event_id",
-    "ev:",
+    "conv:ev:",
     "cnv:",
     "nmsp:",
     "snapshot event",
@@ -59,7 +59,7 @@ After ingress accepts an event, the event occurrence has this shape:
   "event_id": "evt_canvas_snapshot_001",
   "type": "event.snapshot",
   "event_source_id": "task_tracker.canvas.snapshot",
-  "logical_path": "ev:turn_123.events/task-tracker/snapshots/draft-123/canvas/latest",
+  "logical_path": "conv:ev:turn_123.events/task-tracker/snapshots/draft-123/canvas/latest",
   "hosted_uri": "cnv:snapshots/draft-123/canvas/latest",
   "reactive": false,
   "agent_id": "default.react.agent",
@@ -78,14 +78,14 @@ Field roles:
 | `event_id` | One accepted occurrence id in the target turn timeline. |
 | `type` | Structural event block type, such as `event.snapshot` or `event.external`. |
 | `event_source_id` | Semantic source and policy key, such as `task_tracker.canvas.snapshot`. |
-| `logical_path` | `ev:` path of this event object on the turn timeline. |
+| `logical_path` | `conv:ev:` path of this event object on the turn timeline. |
 | `hosted_uri` | Optional external URI for the hosted event payload/body. |
 | `reactive` | Whether this occurrence may wake or extend ReAct. |
 | `agent_id` | Target agent lane. Defaults to `default.react.agent` when omitted by the producer. |
 | `story_id` | Optional product/story correlation id. |
 | `payload.mime` | MIME type of `payload.event` or of the target of `payload.event_ref`. |
 | `payload.event` | Inline event object/string/bytes metadata. |
-| `payload.event_ref` | Pullable URI for the event payload/body, for example `fi:`, `cnv:`, or an owner-domain namespace such as `nmsp:`. |
+| `payload.event_ref` | Pullable URI for the event payload/body, for example `conv:fi:`, `cnv:`, or an owner-domain namespace such as `nmsp:`. |
 
 The transported envelope carries `event_source_id`, not the source
 declaration's `kind`. `kind` lives in the server-side
@@ -103,24 +103,24 @@ usually matches `payload.event_ref`.
 
 ## Logical Paths
 
-Events are stored on turn timelines, so `ev:` paths include the turn:
+Events are stored on turn timelines, so `conv:ev:` paths include the turn:
 
 ```text
-ev:turn_<turn_id>.events/<event-object-path>
-ev:conv_<conversation_id>.turn_<turn_id>.events/<event-object-path>
+conv:ev:turn_<turn_id>.events/<event-object-path>
+conv:ev:conv_<conversation_id>.turn_<turn_id>.events/<event-object-path>
 ```
 
 The event object path is semantic and should be stable enough to read in
 rendered timeline/ANNOUNCE context:
 
 ```text
-ev:turn_123.events/task-tracker/snapshots/draft-123/canvas/latest
-ev:turn_123.events/task-tracker/canvas/files/file-7/uploaded
-ev:turn_123.events/task-tracker/canvas/selection/evt_9
+conv:ev:turn_123.events/task-tracker/snapshots/draft-123/canvas/latest
+conv:ev:turn_123.events/task-tracker/canvas/files/file-7/uploaded
+conv:ev:turn_123.events/task-tracker/canvas/selection/evt_9
 ```
 
-`ev:` identifies the event occurrence or event object on the timeline. It is
-readable with `react.read` like `tc:`. It is not an artifact URI and is not
+`conv:ev:` identifies the event occurrence or event object on the timeline. It is
+readable with `react.read` like `conv:tc:`. It is not an artifact URI and is not
 pullable with `react.pull`. Artifact bytes or snapshot bodies are accessed
 through `payload.event_ref`, `hosted_uri`, or refs carried inside
 `payload.event`.
@@ -131,7 +131,7 @@ Every accepted event occurrence has:
 
 - `event_source_id`: semantic/policy key;
 - `event_id`: occurrence id;
-- `logical_path`: the `ev:` path of the event object on the timeline;
+- `logical_path`: the `conv:ev:` path of the event object on the timeline;
 - `type`: structural block shape requested by the producer, such as
   `event.external` or `event.snapshot`.
 
@@ -139,14 +139,14 @@ The conceptual event group is the same layer as a tool occurrence:
 
 | Event-source occurrence | Default timeline representation |
 |---|---|
-| User prompt event | Accepted type `event.user.prompt`; built-in projection is `user.prompt` with an `ar:<turn>.user.prompt...` path |
-| User attachment event | Accepted type family `event.user.attachment.*`; built-in projection is `user.attachment.*` with `fi:<turn>.user.attachments/...` paths |
-| User followup event | Accepted type `event.user.followup`; built-in projection is `user.followup` with an `ar:<turn>.external.followup...` path |
-| User steer event | Accepted type `event.user.steer`; built-in projection is `user.steer` / control path with an `ar:<turn>.external.steer...` path |
+| User prompt event | Accepted type `event.user.prompt`; built-in projection is `user.prompt` with an `conv:ar:<turn>.user.prompt...` path |
+| User attachment event | Accepted type family `event.user.attachment.*`; built-in projection is `user.attachment.*` with `conv:fi:<turn>.user.attachments/...` paths |
+| User followup event | Accepted type `event.user.followup`; built-in projection is `user.followup` with an `conv:ar:<turn>.external.followup...` path |
+| User steer event | Accepted type `event.user.steer`; built-in projection is `user.steer` / control path with an `conv:ar:<turn>.external.steer...` path |
 | Tool call | `react.tool.call` plus one or more `react.tool.result` / artifact blocks |
-| Generic/domain event | One `event.external` block at the event `ev:` path |
-| Snapshot event | One `event.snapshot` block at the event `ev:` path |
-| Canvas state event | One `event.canvas` block at the event `ev:` path |
+| Generic/domain event | One `event.external` block at the event `conv:ev:` path |
+| Snapshot event | One `event.snapshot` block at the event `conv:ev:` path |
+| Canvas state event | One `event.canvas` block at the event `conv:ev:` path |
 | Event with attachments | Event block plus `user.attachment.*` / external attachment blocks |
 
 The built-in prompt/followup/steer/attachment blocks are produced by
@@ -191,7 +191,7 @@ Small or already-bounded event bodies can be inline:
   "event_id": "evt_canvas_selection_001",
   "type": "event.external",
   "event_source_id": "task_tracker.canvas.selection.changed",
-  "logical_path": "ev:turn_123.events/task-tracker/canvas/selection/evt_canvas_selection_001",
+  "logical_path": "conv:ev:turn_123.events/task-tracker/canvas/selection/evt_canvas_selection_001",
   "hosted_uri": null,
   "reactive": false,
   "agent_id": "default.react.agent",
@@ -202,15 +202,15 @@ Small or already-bounded event bodies can be inline:
       "selection": {
         "item_ids": ["note-7"]
       },
-      "snapshot": "ev:turn_123.events/task-tracker/snapshots/draft-123/canvas/latest"
+      "snapshot": "conv:ev:turn_123.events/task-tracker/snapshots/draft-123/canvas/latest"
     }
   }
 }
 ```
 
 References inside `payload.event` are ordinary event data. If a field contains
-a pullable URI such as `fi:`, `cnv:`, or `nmsp:`, ReAct can decide to call
-`react.pull(paths=[...])` and then use the returned `fi:` path.
+a pullable URI such as `conv:fi:`, `cnv:`, or `nmsp:`, ReAct can decide to call
+`react.pull(paths=[...])` and then use the returned `conv:fi:` path.
 
 ## Snapshot Events
 
@@ -226,7 +226,7 @@ behind an owner-domain namespace.
   "event_id": "evt_canvas_snapshot_001",
   "type": "event.snapshot",
   "event_source_id": "task_tracker.canvas.snapshot",
-  "logical_path": "ev:turn_123.events/task-tracker/snapshots/draft-123/canvas/latest",
+  "logical_path": "conv:ev:turn_123.events/task-tracker/snapshots/draft-123/canvas/latest",
   "hosted_uri": "cnv:snapshots/draft-123/canvas/latest",
   "reactive": false,
   "agent_id": "default.react.agent",
@@ -245,7 +245,7 @@ block:
 ```json
 {
   "type": "event.snapshot",
-  "path": "ev:turn_123.events/task-tracker/snapshots/draft-123/canvas/latest",
+  "path": "conv:ev:turn_123.events/task-tracker/snapshots/draft-123/canvas/latest",
   "meta": {
     "event_id": "evt_canvas_snapshot_001",
     "event_source_id": "task_tracker.canvas.snapshot",
@@ -293,7 +293,7 @@ the user and the agent can both update. It should be represented as
   "event_id": "evt_canvas_rev_7",
   "type": "event.canvas",
   "event_source_id": "task_tracker.canvas.state",
-  "logical_path": "ev:turn_123.events/task-tracker/canvas/draft-123/state/rev-7",
+  "logical_path": "conv:ev:turn_123.events/task-tracker/canvas/draft-123/state/rev-7",
   "hosted_uri": null,
   "reactive": false,
   "agent_id": "default.react.agent",
@@ -334,7 +334,7 @@ storage and be referenced by a pullable URI inside the event body:
   "event_id": "evt_canvas_file_001",
   "type": "event.external",
   "event_source_id": "task_tracker.canvas.file.uploaded",
-  "logical_path": "ev:turn_123.events/task-tracker/canvas/files/file-7/uploaded",
+  "logical_path": "conv:ev:turn_123.events/task-tracker/canvas/files/file-7/uploaded",
   "hosted_uri": null,
   "reactive": false,
   "agent_id": "default.react.agent",
@@ -377,7 +377,7 @@ request is `event.user.prompt`; it is not a generic `event.external`.
     "event_id": "evt_canvas_selection_001",
     "type": "event.external",
     "event_source_id": "task_tracker.canvas.selection.changed",
-    "logical_path": "ev:turn_123.events/task-tracker/canvas/selection/evt_canvas_selection_001",
+    "logical_path": "conv:ev:turn_123.events/task-tracker/canvas/selection/evt_canvas_selection_001",
     "hosted_uri": null,
     "reactive": false,
     "agent_id": "default.react.agent",
@@ -400,7 +400,7 @@ request is `event.user.prompt`; it is not a generic `event.external`.
     "event_id": "evt_prompt_001",
     "type": "event.user.prompt",
     "event_source_id": "react.message",
-    "logical_path": "ev:turn_123.events/chat/user-prompt/evt_prompt_001",
+    "logical_path": "conv:ev:turn_123.events/chat/user-prompt/evt_prompt_001",
     "hosted_uri": null,
     "reactive": true,
     "agent_id": "default.react.agent",
@@ -410,9 +410,9 @@ request is `event.user.prompt`; it is not a generic `event.external`.
       "event": {
         "text": "Review this selected text and suggest how to improve it.",
         "context_refs": [
-          "ev:turn_123.events/task-tracker/canvas/selection/evt_canvas_selection_001",
-          "ev:turn_123.events/task-tracker/canvas/draft-123/state/rev-7",
-          "ev:turn_123.events/task-tracker/snapshots/draft-123/canvas/latest"
+          "conv:ev:turn_123.events/task-tracker/canvas/selection/evt_canvas_selection_001",
+          "conv:ev:turn_123.events/task-tracker/canvas/draft-123/state/rev-7",
+          "conv:ev:turn_123.events/task-tracker/snapshots/draft-123/canvas/latest"
         ]
       }
     }

@@ -627,7 +627,7 @@ def _artifact_files_from_timeline(timeline: Mapping[str, Any]) -> list[dict[str,
         if not isinstance(block, Mapping):
             continue
         path = str(block.get("path") or "").strip()
-        if not path.startswith("fi:"):
+        if not path.startswith("conv:fi:"):
             continue
         if not _matches_timeline_turn(block, turn_id):
             continue
@@ -637,7 +637,7 @@ def _artifact_files_from_timeline(timeline: Mapping[str, Any]) -> list[dict[str,
         visibility = str(meta.get("visibility") or block.get("visibility") or "external").strip().lower()
         if visibility == "internal":
             continue
-        if not (".files/" in path or ".outputs/" in path or meta.get("hosted_uri") or meta.get("url")):
+        if not (".files/" in path or ".git/projects/" in path or meta.get("hosted_uri") or meta.get("url")):
             continue
         logical_path = str(meta.get("artifact_path") or path).strip()
         file_item = _file_item_from_meta(meta, logical_path=logical_path)

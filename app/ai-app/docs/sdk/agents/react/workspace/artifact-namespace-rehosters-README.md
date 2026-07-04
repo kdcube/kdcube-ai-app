@@ -1,7 +1,7 @@
 ---
 id: repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/workspace/artifact-namespace-rehosters-README.md
 title: "Artifact Namespace Rehosters & Artifact Origin"
-summary: "How owner-domain artifact namespaces (e.g. nmsp:) are bridged into the ReAct artifact model: registering a namespace rehoster, the artifact-origin-to-workspace-layout mapping, and how rehosted refs resolve into files/outputs/snapshots/attachments."
+summary: "How owner-domain artifact namespaces (e.g. nmsp:) are bridged into the ReAct artifact model: registering a namespace rehoster, the artifact-origin-to-workspace-layout mapping, and how rehosted refs resolve into git/projects, files, git/snapshots, and attachments."
 tags: ["sdk", "agents", "react", "workspace", "artifacts", "rehoster", "namespaces"]
 keywords: ["artifact namespace rehoster", "nmsp", "artifact origin", "owner namespace", "react.pull rehost", "destination map"]
 see_also:
@@ -15,7 +15,7 @@ see_also:
 This document explains how **owner-domain artifact namespaces** (custom refs such
 as `nmsp:...`) are bridged into the ReAct artifact model — registering a
 namespace rehoster, how the rehoster chooses a destination, and how rehosted refs
-resolve into `files/`/`outputs/`/`snapshots/`/`attachments/`.
+resolve into `git/projects/`/`files/`/`git/snapshots/`/`attachments/`.
 
 > The agent-facing workspace contract — namespaces, logical vs physical paths,
 > the `[WORKSPACE]` ANNOUNCE map, and the `react.pull` / `react.checkout` /
@@ -42,8 +42,8 @@ The agent does **not** work against one mutable flat directory. It reasons acros
 1) CURRENT TURN ARTIFACT ROOT (physical)
    OUTPUT_DIR == artifact root
    local host layout: out/workdir/
-     turn_<id>/files/...
-     turn_<id>/outputs/...     # produced artifacts, not workspace members
+     turn_<id>/git/projects/...
+     turn_<id>/files/...     # produced artifacts, not workspace members
      turn_<id>/attachments/...
 
    Runtime metadata root, not an agent artifact namespace:
@@ -53,13 +53,13 @@ The agent does **not** work against one mutable flat directory. It reasons acros
      logs/...
 
 2) CONVERSATION ARTIFACT MEMORY (logical)
-   ar:...  tc:...  so:...  su:...
-   fi:<older_turn>.files/...
-   fi:<older_turn>.outputs/...
-   fi:<older_turn>.snapshots/...
-   fi:<older_turn>.user.attachments/...
-   fi:<older_turn>.external.<event_kind>.attachments/<event_id>/...
-   fi:conv_<conversation_id>.turn_<older>.files|outputs|snapshots/...
+   conv:ar:...  conv:tc:...  conv:so:...  conv:su:...
+   conv:fi:<older_turn>.git/projects/...
+   conv:fi:<older_turn>.files/...
+   conv:fi:<older_turn>.git/snapshots/...
+   conv:fi:<older_turn>.user.attachments/...
+   conv:fi:<older_turn>.external.<event_kind>.attachments/<event_id>/...
+   conv:fi:conv_<conversation_id>.turn_<older>.git/projects|files|git/snapshots/...
 
 3) CUSTOM ARTIFACT NAMESPACE REFS (logical, opaque until pulled)
    nmsp:<domain-defined-key>
@@ -72,9 +72,9 @@ This gives two properties at once:
 - the agent can still reason about a current logical workspace view
 
 The logical workspace view is:
-- for `files/<subpath>`: the latest relevant turn version
-- for `outputs/<subpath>`: a produced artifact area, not part of the workspace tree
-- for `snapshots/<subpath>`: story/state snapshots, not ordinary project files
+- for `git/projects/<subpath>`: the latest relevant project/workspace version
+- for `files/<subpath>`: a produced artifact area, not part of the workspace tree
+- for `git/snapshots/<subpath>`: story/state snapshots, not ordinary project files
 - for `attachments/<subpath>`: the attached artifact under its original turn namespace
 - runtime folders like `logs/`: platform diagnostics, not normal agent artifact paths
 - for custom namespace refs such as `nmsp:...`: a domain artifact handle that
@@ -82,7 +82,7 @@ The logical workspace view is:
   rehoster
 
 The agent should only use visible `turn_...` relative paths or logical paths
-(`fi:`, `ar:`, `tc:`, `so:`, `su:`, and registered owner namespace
+(`conv:fi:`, `conv:ar:`, `conv:tc:`, `conv:so:`, `conv:su:`, and registered owner namespace
 refs such as `nmsp:`). It should not use absolute host paths, execution sandbox
 paths, hosted `file://` paths, or the runtime metadata root.
 
@@ -92,22 +92,22 @@ The namespace after the turn id defines artifact meaning. Do not infer meaning
 from file extension alone.
 
 ```text
-files/       durable workspace/project state
-outputs/     produced artifacts, reports, render sources, diagnostics
-snapshots/   story/workflow state snapshots
+git/projects/ durable workspace/project state
+files/        produced artifacts, reports, render sources, diagnostics
+git/snapshots/   story/workflow state snapshots
 attachments/ user-uploaded files for a turn
 external/    externally authored/domain/followup attachments rehosted for ReAct
 ```
 
-`files/` is the only namespace that represents current editable project state.
+`git/projects/` is the only namespace that represents current editable project state.
 It is the namespace that `react.checkout` populates under
-`turn_<current>/files/...`.
+`turn_<current>/git/projects/...`.
 
-`outputs/` is not workspace history. It can hold HTML, Markdown, JSON, images,
+`files/` is not workspace history. It can hold HTML, Markdown, JSON, images,
 PDFs, logs, reports, and render sources, but those are produced artifacts, not
 the project tree.
 
-`snapshots/` is separate from `files/` even when the snapshot is text. A
+`git/snapshots/` is separate from `files/` even when the snapshot is text. A
 snapshot records current story/workflow state, for example a wizard state,
 canvas state, or user-story state. It should not be treated as project source
 unless the bundle deliberately rehosts or writes it into `files/`.
@@ -115,10 +115,10 @@ unless the bundle deliberately rehosts or writes it into `files/`.
 Visibility is orthogonal:
 
 ```text
-files/...   + external  -> workspace member also emitted to the user
-files/...   + internal  -> workspace member not emitted to the user
-outputs/... + external  -> downloadable/visible artifact, not workspace state
-outputs/... + internal  -> runtime/agent artifact, not workspace state
+git/projects/... + external  -> workspace member also emitted to the user
+git/projects/... + internal  -> workspace member not emitted to the user
+files/...        + external  -> downloadable/visible artifact, not workspace state
+files/...        + internal  -> runtime/agent artifact, not workspace state
 ```
 
 ## Artifact origin to workspace layout
@@ -128,21 +128,21 @@ The agent should separate **where an artifact came from** from **where
 
 ```text
 Current turn artifact, already local:
-  logical:  fi:turn_<current>.files/app/src/main.py
-  physical: turn_<current>/files/app/src/main.py
+  logical:  conv:fi:turn_<current>.git/projects/app/src/main.py
+  physical: turn_<current>/git/projects/app/src/main.py
 
 Same conversation, older turn:
-  source:   fi:turn_111.outputs/report.html
-  pull ->   turn_111/outputs/report.html
+  source:   conv:fi:turn_111.files/report.html
+  pull ->   turn_111/files/report.html
 
 Other conversation:
-  source:   fi:conv_conversation-42.turn_222.snapshots/wizard/current.yaml
-  pull ->   conv_conversation-42/turn_222/snapshots/wizard/current.yaml
+  source:   conv:fi:conv_conversation-42.turn_222.git/snapshots/wizard/current.yaml
+  pull ->   conv_conversation-42/turn_222/git/snapshots/wizard/current.yaml
 
 Custom namespace artifact:
   source:   nmsp:draft_browser-crash/issue-draft.yaml
-  pull ->   fi:turn_<current>.snapshots/nmsp/draft_browser-crash/issue-draft.yaml
-            turn_<current>/snapshots/nmsp/draft_browser-crash/issue-draft.yaml
+  pull ->   conv:fi:turn_<current>.git/snapshots/nmsp/draft_browser-crash/issue-draft.yaml
+            turn_<current>/git/snapshots/nmsp/draft_browser-crash/issue-draft.yaml
 ```
 
 After pulling a mixed set of refs, the local `OUTPUT_DIR` artifact root can look
@@ -154,10 +154,10 @@ OUTPUT_DIR/
     files/
       app/                         # editable current project/workspace state
         src/main.py
-    outputs/
+    files/
       app/
         test-results.txt           # produced artifact, not workspace state
-    snapshots/
+    git/snapshots/
       ext/
         task-tracker/
           draft_browser-crash/
@@ -175,30 +175,30 @@ OUTPUT_DIR/
   turn_111/
     files/
       app/src/main.py              # pulled older same-conversation file
-    outputs/
+    files/
       report.html                  # pulled older same-conversation output
-    snapshots/
+    git/snapshots/
       story.yaml                   # pulled older same-conversation snapshot
 
   conv_conversation-42/
     turn_222/
       files/
         app/src/other.py           # pulled cross-conversation file
-      outputs/
+      files/
         other-report.html          # pulled cross-conversation output
-      snapshots/
+      git/snapshots/
         wizard/current.yaml        # pulled cross-conversation snapshot
 ```
 
 Rules:
 
-- `fi:turn_...` belongs to the current conversation.
-- `fi:conv_<conversation_id>.turn_...` belongs to another conversation; the
+- `conv:fi:turn_...` belongs to the current conversation.
+- `conv:fi:conv_<conversation_id>.turn_...` belongs to another conversation; the
   matching local physical root is `conv_<conversation_id>/turn_...`.
 - `nmsp:` is only an example owner-domain namespace. It is not a universal
   built-in artifact store. A bundle or SDK module must register a rehoster for
   the namespace before `react.pull(paths=["nmsp:..."])` can materialize it.
-- The agent must not derive `fi:` paths from custom namespace refs. It calls
+- The agent must not derive `conv:fi:` paths from custom namespace refs. It calls
   `react.pull` and uses the returned `logical_path` / `physical_path` rows.
 
 ## Pull vs checkout
@@ -208,11 +208,11 @@ Rules:
 `react.pull` materializes source refs locally:
 
 ```text
-fi:turn_111.files/app/src/main.py
+conv:fi:turn_111.files/app/src/main.py
   -> turn_111/files/app/src/main.py
 
-fi:conv_conversation-42.turn_222.snapshots/wizard/current.yaml
-  -> conv_conversation-42/turn_222/snapshots/wizard/current.yaml
+conv:fi:conv_conversation-42.turn_222.git/snapshots/wizard/current.yaml
+  -> conv_conversation-42/turn_222/git/snapshots/wizard/current.yaml
 
 nmsp:draft_1/issue-draft.yaml
   -> returns source_ref + materialized logical_path/physical_path chosen by the rehoster
@@ -226,7 +226,7 @@ current turn.
 
 ```json
 {
-  "paths": ["fi:turn_111.files/app"],
+  "paths": ["conv:fi:turn_111.files/app"],
   "mode": "replace"
 }
 ```
@@ -239,7 +239,7 @@ turn_<current>/files/app/...
 
 Checkout rules:
 
-- accepts `fi:...files...` refs only;
+- accepts `conv:fi:...files...` refs only;
 - does not accept owner-domain namespace refs such as `nmsp:` directly;
 - `mode="replace"` clears `turn_<current>/files/` and applies the requested
   refs in order;
@@ -260,7 +260,7 @@ bridges that domain ref into the ReAct artifact model.
 
 The rehoster must know the ReAct workspace layout. Its job is to choose the
 destination surface by artifact meaning, write/copy bytes under the matching
-`OUTPUT_DIR` physical path, and return the `fi:` logical path plus physical
+`OUTPUT_DIR` physical path, and return the `conv:fi:` logical path plus physical
 path that the agent should use after `react.pull`. The structure is defined in
 [ReAct Turn Workspace](workspace-lifecycle-and-distribution-README.md) and the namespace
 semantics are summarized in [Files vs Outputs](workspace-model-README.md).
@@ -360,11 +360,11 @@ namespace exists. A module may also define
 
 The rehoster must understand and apply ReAct artifact semantics:
 
-- `files/...` is durable workspace/project state and is eligible for workspace
+- `git/projects/...` is durable workspace/project state and is eligible for workspace
   history/publish in git mode.
-- `snapshots/...` is story or wizard state. It is readable as an artifact and
+- `git/snapshots/...` is story or wizard state. It is readable as an artifact and
   can be prefix-materialized only where the workspace backend supports that.
-- `outputs/...` is a produced artifact area. It is not workspace state and is
+- `files/...` is a produced artifact area. It is not workspace state and is
   normally pulled by exact ref from hosted artifact metadata.
 - `user.attachments/...` and `external.<event_kind>.attachments/...` are attachment
   surfaces and should be exact-file refs.
@@ -373,10 +373,10 @@ Use this destination map when writing the rehoster:
 
 | Source artifact meaning | ReAct destination |
 |---|---|
-| Story/wizard state snapshot | `fi:turn_<id>.snapshots/<path>` / `turn_<id>/snapshots/<path>` |
-| Evidence or domain attachment | `fi:turn_<id>.external.<event_kind>.attachments/<event_id>/<name>` / `turn_<id>/external/<event_kind>/attachments/<event_id>/<name>` |
-| Editable project/workspace file | `fi:turn_<id>.files/<workspace_scope>/<path>` / `turn_<id>/files/<workspace_scope>/<path>` |
-| Produced report/export/rendered artifact | `fi:turn_<id>.outputs/<artifact_scope>/<path>` / `turn_<id>/outputs/<artifact_scope>/<path>` |
+| Story/wizard state snapshot | `conv:fi:turn_<id>.git/snapshots/<path>` / `turn_<id>/git/snapshots/<path>` |
+| Evidence or domain attachment | `conv:fi:turn_<id>.external.<event_kind>.attachments/<event_id>/<name>` / `turn_<id>/external/<event_kind>/attachments/<event_id>/<name>` |
+| Editable project/workspace file | `conv:fi:turn_<id>.git/projects/<workspace_scope>/<path>` / `turn_<id>/git/projects/<workspace_scope>/<path>` |
+| Produced report/export/rendered artifact | `conv:fi:turn_<id>.files/<artifact_scope>/<path>` / `turn_<id>/files/<artifact_scope>/<path>` |
 
 The returned `materialized` rows are the continuation contract. After pulling an
 external ref, agents should continue from the returned paths.
@@ -405,21 +405,18 @@ physical_path = build_external_attachment_physical_path(
 `react.read`
 - reads by logical path only
 - supports the established turn-scoped forms:
-  - `fi:<turn_id>.files/<subpath>`
-  - `fi:<turn_id>.outputs/<subpath>`
-  - `fi:<turn_id>.snapshots/<subpath>`
-  - `fi:<turn_id>.user.attachments/<subpath>`
-  - `fi:<turn_id>.external.<event_kind>.attachments/<event_id>/<subpath>`
-  - `fi:conv_<conversation_id>.turn_<id>.files|outputs|snapshots/<subpath>`
-- also supports any readable artifact-root file via:
-  - `fi:<artifact-root-relative-path>`
-  - example: `fi:turn_<id>/outputs/report.md`
+  - `conv:fi:turn_<id>.git/projects/<subpath>`
+  - `conv:fi:turn_<id>.files/<subpath>`
+  - `conv:fi:turn_<id>.git/snapshots/<subpath>`
+  - `conv:fi:turn_<id>.user.attachments/<subpath>`
+  - `conv:fi:turn_<id>.external.<event_kind>.attachments/<event_id>/<subpath>`
+  - `conv:fi:conv_<conversation_id>.turn_<id>.git/projects|files|git/snapshots/<subpath>`
 - does not read owner-domain refs such as `nmsp:` directly. Pull the owner ref
-  first and read the returned `fi:` logical path.
+  first and read the returned `conv:fi:` logical path.
 
 `react.rg`
 - searches filenames and/or text for files already materialized in the local artifact workspace
-- accepts visible path roots such as `files/...`, `outputs/...`, `attachments/...`, `turn_<id>/files/...`, `turn_<id>/outputs/...`, `turn_<id>/attachments/...`, or matching `fi:` artifact paths
+- accepts visible path roots such as `git/projects/...`, `files/...`, `git/snapshots/...`, `attachments/...`, `turn_<id>/git/projects/...`, `turn_<id>/files/...`, `turn_<id>/git/snapshots/...`, `turn_<id>/attachments/...`, or matching `conv:fi:` artifact paths
 - returns discovery metadata and line-oriented match ranges
 - does not browse owner namespaces, hidden/pruned timeline, unpulled snapshots, or conversation artifact memory
 - result shape:
@@ -434,21 +431,22 @@ physical_path = build_external_attachment_physical_path(
 
 `react.write`
 - creates or replaces files in the current turn namespaces
-- `files/...` means durable workspace/project state
-- `outputs/...` means artifacts that should be kept/shared but should not become durable workspace state
-- unqualified paths default to `outputs/...`; use `files/...` explicitly for durable workspace/project state
+- `git/projects/...` means durable workspace/project state
+- `files/...` means artifacts that should be kept/shared but should not become durable workspace state
+- `git/snapshots/...` means story/workflow state snapshots
+- unqualified paths default to `files/...`; use `git/projects/...` explicitly for durable workspace/project state
 - `kind=file` writes are hosted with their full workspace-relative path preserved
 - `visibility=external` emits the hosted file to the UI; `visibility=internal` keeps the hosted file available for later agent/runtime use without UI emission
 
 `react.patch`
-- updates an existing current-turn materialized text file under `files/...` or `outputs/...`
+- updates an existing current-turn materialized text file under `git/projects/...`, `files/...`, or `git/snapshots/...`
 - does not require the file to have been created by `react.write`; current-turn files produced by exec are patchable once present locally
-- historical `turn_X/files/...` references are source material. Pull them first if needed; if editing is intended, checkout/copy them into the current turn and patch the current-turn file.
+- historical `turn_X/...` references are source material. Pull them first if needed; if editing durable project state is intended, checkout `conv:fi:...git/projects/...` into the current turn and patch the current-turn file.
 
 ## Namespace-owned file browsing
 
 Namespace-owned files are not part of the current-turn artifact tree unless they
-are pulled or rehosted as normal `fi:` artifacts. If a bundle owns documents,
+are pulled or rehosted as normal `conv:fi:` artifacts. If a bundle owns documents,
 attachments, or source snapshots, it must expose an explicit resolver, rehoster,
 tool, MCP/search API, or named-service operation for the namespace. That owner
 surface is responsible for permissions and transport.
@@ -457,19 +455,19 @@ When exec-time namespace browsing exists:
 1. code starts from a namespace-owned logical ref such as `task:...`
 2. the owner resolver returns an exec-local physical path or byte stream
 3. code inspects descendants/content under that scoped result
-4. code emits owner refs or hosted `fi:` refs for later use
+4. code emits owner refs or hosted `conv:fi:` refs for later use
 5. the agent later uses the correct owner API or `react.read` on normal
-   `fi:`/`tc:`/`ar:` artifacts
+   `conv:fi:`/`conv:tc:`/`conv:ar:` artifacts
 
 ## Safe collaboration rules
 
 The intended cooperation pattern is:
-1. If the needed file is from older conversation state and is not local yet, identify its `fi:` ref from visible context or `react.memsearch`, then `react.pull` it.
+1. If the needed file is from older conversation state and is not local yet, identify its `conv:fi:` ref from visible context or `react.memsearch`, then `react.pull` it.
 2. Use `react.rg` to discover candidate local files or exact text regions.
 3. Take the returned `logical_path`, or the returned `read_item` for exact ranges.
 4. Use `react.read` on that `logical_path`, or pass `read_item` ranges as `items`, to load the needed content into context.
-5. If editing older state is needed, checkout the pulled `fi:<turn>.files/...` ref into `<current_turn>/files/...`, then write or patch the current-turn copy.
-6. If producing a report/export/result that should not become workspace state, write it into `<current_turn>/outputs/...`.
+5. If editing older project state is needed, checkout the pulled `conv:fi:<turn>.git/projects/...` ref into `<current_turn>/git/projects/...`, then write or patch the current-turn copy.
+6. If producing a report/export/result that should not become workspace state, write it into `<current_turn>/files/...`.
 
 This keeps:
 - discovery separate from loading
@@ -484,19 +482,19 @@ not object-store scans and they do not extract execution workspace archives.
 ## Current limitations
 
 - `react.rg` searches readable, already materialized artifact files, not internal execution scratch or the whole conversation timeline.
-- `react.patch` is for existing current-turn materialized text files. Prefer current-turn `files/<scope>/...` for durable project edits and `outputs/<scope>/...` for edited artifacts that should not enter workspace history.
+- `react.patch` is for existing current-turn materialized text files. Prefer current-turn `git/projects/<scope>/...` for durable project edits and `files/<scope>/...` for edited artifacts that should not enter workspace history.
 
 ## Examples
 
 Search current-turn output files and read one:
 ```json
 {
-  "root": "outputs/logs",
+  "root": "files/logs",
   "hits": [
     {
       "path": "docker.err.log",
       "size_bytes": 18342,
-      "logical_path": "fi:<current_turn>.outputs/logs/docker.err.log"
+      "logical_path": "conv:fi:<current_turn>.files/logs/docker.err.log"
     }
   ]
 }
@@ -510,7 +508,7 @@ Search turn files and read one:
     {
       "path": "kdcube-market-comparison.md",
       "size_bytes": 9123,
-      "logical_path": "fi:turn_1773261747483_vfm2tt.files/kdcube-market-comparison.md"
+      "logical_path": "conv:fi:turn_1773261747483_vfm2tt.files/kdcube-market-comparison.md"
     }
   ]
 }

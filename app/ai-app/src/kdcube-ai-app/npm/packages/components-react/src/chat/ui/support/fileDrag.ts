@@ -6,7 +6,7 @@ import {
 
 export const CANVAS_INGRESS_MESSAGE_TYPE = INGRESS_MESSAGE_TYPE
 
-const DURABLE_FI_REF = /^fi:conv_[^.]+\.turn_[^.]+\./
+const DURABLE_FI_REF = /^conv:fi:conv_[^.]+\.turn_[^.]+\./
 const NAMESPACE_REF = /^[a-z][a-z0-9_.-]*:/i
 const BROWSER_SCHEMES = new Set(['blob:', 'data:', 'http:', 'https:', 'javascript:', 'mailto:'])
 
@@ -26,7 +26,7 @@ export function canonicalObjectRef(...refs: Array<string | null | undefined>): s
   for (const raw of refs) {
     const ref = typeof raw === 'string' ? raw.trim() : ''
     if (!ref) continue
-    if (ref.startsWith('fi:')) {
+    if (ref.startsWith('conv:fi:')) {
       if (isDurableFiRef(ref)) return ref
       continue
     }

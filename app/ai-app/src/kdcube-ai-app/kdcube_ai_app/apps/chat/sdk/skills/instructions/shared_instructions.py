@@ -93,15 +93,15 @@ INTERNAL_NOTES_PRODUCER = """
 - Often the best moment is close to the end of the turn, after the main work is done and you know what actually mattered.
 - Do not advertise internal beacon writes in the outer `notes` field or final answer. `notes` may be user-visible status text; keep it empty or use neutral user-safe progress text.
 - One internal write may contain multiple short beacon lines. Start each beacon line with its own tag (`[P]`, `[D]`, `[S]`, `[A]`, or `[K]`) so compaction/search can extract tags while preserving the note as authored.
-- For [K], prefer logical paths (`fi:`, `ar:`, `tc:`, `so:`, `su:` when applicable) plus a short explanation.
-- Example [K]: `[K] fi:turn_123.files/app/src/auth/service.py - invite flow implementation; reopen here before changing user onboarding`
+- For [K], prefer logical paths (`conv:fi:`, `conv:ar:`, `conv:tc:`, `conv:so:`, `conv:su:` when applicable) plus a short explanation.
+- Example [K]: `[K] conv:fi:turn_123.files/app/src/auth/service.py - invite flow implementation; reopen here before changing user onboarding`
 - Keep notes telegraphic. They stay visible to agents across pruning and may be promoted into summaries.
 """
 
 INTERNAL_NOTES_CONSUMER = """
 [INTERNAL MEMORY BEACONS — READ & USE]
 - The timeline may include inline Internal Memory Beacons (react.write channel="internal", scratchpad=true). These are user-invisible.
-- Internal write artifacts may also appear as visibility=internal files; read their fi: path when their content matters.
+- Internal write artifacts may also appear as visibility=internal files; read their conv:fi: path when their content matters.
 - Some older beacons may reappear after compaction as preserved note blocks.
 - Lines are tagged:
   - [P] personal/preferences
@@ -147,7 +147,7 @@ EXTERNAL_TURN_EVENTS_GUIDE = """
 - The timeline is streamed to the user as you produce it; prior assistant completions are already visible. When a followup arrives after you already answered something, answer the new or changed request incrementally. Do not re-list or re-answer earlier parts unless the user explicitly asks, the earlier answer was unclear/failed, or one short bridge is needed for context.
 - `steer` means: the user wants to redirect or stop the current line of work. Treat it as authoritative latest intent. Do not continue the previous plan blindly.
 - Same-turn reactive events may produce another visible `assistant.completion` in the SAME turn.
-- `ar:turn_<id>.assistant.completion` means the latest completion in that turn. Earlier visible completions use `ar:turn_<id>.assistant.completion.<n>`.
+- `conv:ar:turn_<id>.assistant.completion` means the latest completion in that turn. Earlier visible completions use `conv:ar:turn_<id>.assistant.completion.<n>`.
 - If a steer arrives without extra text, assume the user wants the current work stopped and wrapped up at the next safe point with the progress made so far.
 - Engineering may already interrupt an in-flight generation or tool when steer arrives. If you now see a steer block, treat yourself as being in a short finalize phase, not in normal open-ended exploration.
 - In that finalize phase, wrap up briefly from the progress already made. Avoid restarting broad exploration or long new work unless absolutely unavoidable.
@@ -159,7 +159,7 @@ STORY_SNAPSHOTS_GUIDE = """
 [STORY SNAPSHOTS]
 - Story snapshots are durable state artifacts for a user story or wizard.
 - A snapshot is separate from ordinary workspace files and produced outputs. It captures current story state, observed signals, missing fields, evidence refs, and the next useful action.
-- The canonical logical path is `fi:turn_<id>.snapshots/<name>`. Current-turn writes use `turn_<current>/snapshots/<name>`.
+- The canonical logical path is `conv:fi:turn_<id>.git/snapshots/<name>`. Current-turn writes use `turn_<current>/git/snapshots/<name>`.
 - The format is chosen by the story/wizard implementation: YAML, JSON, Markdown, or another text-oriented representation. Preserve the existing format when updating a snapshot.
 """
 
@@ -238,8 +238,9 @@ WORKSPACE_IMPLEMENTATION_GUIDE_CUSTOM = """
 Generated code and ISO/runtime tools work with real files under `OUTPUT_DIR`.
 Use `OUTPUT_DIR`-relative physical paths only when the documented argument is a
 physical path, for example exec code, `react.patch`, and rendering writes:
-`turn_<current>/files/<workspace_scope>/app.py`. Context/materialization tools
-use logical refs such as `fi:turn_<id>.files/<workspace_scope>/app.py`.
+`turn_<current>/git/projects/<project_scope>/app.py`. Context/materialization
+tools use logical refs such as
+`conv:fi:turn_<id>.git/projects/<project_scope>/app.py`.
 
 The diagram below shows the local `OUTPUT_DIR` surface, versioned artifact refs,
 and registered owner refs. When code, rendering, local search,
@@ -250,9 +251,9 @@ or file inspection needs artifact bytes, materialize the visible ref with
 1) CURRENT TURN WORKSPACE (physical; current-turn execution surface; STARTS EMPTY EACH TURN)
    OUTPUT_DIR/
      turn_<current>/
-       files/<workspace_scope>/...   # editable durable workspace/project state
-       outputs/<artifact_scope>/...  # produced artifacts grouped by task/project
-       snapshots/...                 # board/story/wizard state snapshots
+       git/projects/<project_scope>/...  # editable durable project state
+       files/<artifact_scope>/...        # produced artifacts/deliverables
+       git/snapshots/...                 # board/story/wizard state snapshots
        attachments/...               # current user uploads; already turn-scoped
        external/...                  # rehosted event/domain attachments or evidence
      logs/
@@ -260,74 +261,74 @@ or file inspection needs artifact bytes, materialize the visible ref with
      ...
 
 2) VERSIONED CONVERSATION ARTIFACT REFS (logical first, local only after pull)
-   fi:turn_<id>.files/<path>
-   fi:turn_<id>.outputs/<path>
-   fi:turn_<id>.snapshots/<path>
-   fi:turn_<id>.user.attachments/<name>
-   fi:turn_<id>.external.<event_kind>.attachments/<event_id>/<name>
-   fi:conv_<conversation_id>.turn_<id>...   # other conversation
+   conv:fi:turn_<id>.git/projects/<path>
+   conv:fi:turn_<id>.files/<path>
+   conv:fi:turn_<id>.git/snapshots/<path>
+   conv:fi:turn_<id>.user.attachments/<name>
+   conv:fi:turn_<id>.external.<event_kind>.attachments/<event_id>/<name>
+   conv:fi:conv_<conversation_id>.turn_<id>...   # other conversation
 
 3) EXTERNAL OWNER REFS (resolved by react.pull)
    <namespace>:<key>                        # resolved by a registered rehoster
 
 4) TIMELINE EVENT REFS (event identity, not artifact bytes)
-   ev:turn_<id>.events/<event_path>
-   ev:conv_<conversation_id>.turn_<id>.events/<event_path>
+   conv:ev:turn_<id>.events/<event_path>
+   conv:ev:conv_<conversation_id>.turn_<id>.events/<event_path>
 
 ```
 
-- HARD — EACH TURN STARTS BLANK: your local workspace begins empty every turn. The local bytes of anything you materialized in an earlier turn are not on disk now — files you pulled, checked out, or wrote, and files exec produced, are all gone. Only the `fi:` / owner refs persist across turns; the local files do not. A file you had locally last turn is NOT here this turn. Before any local-bytes tool (exec/code, `react.rg`, `react.patch`, rendering tools, file inspection) uses such a file THIS turn, re-materialize it with `react.pull` (and `react.checkout` for editable `files/...`) in an EARLIER round of this turn. If you have not pulled it this turn, it is not local.
-- `fi:` is the versioned file/artifact namespace. It is the main way to refer to older workspace files, non-workspace outputs, snapshots, and attachments.
+- HARD — EACH TURN STARTS BLANK: your local workspace begins empty every turn. The local bytes of anything you materialized in an earlier turn are not on disk now — files you pulled, checked out, or wrote, and files exec produced, are all gone. Only the `conv:fi:` / owner refs persist across turns; the local files do not. A file you had locally last turn is NOT here this turn. Before any local-bytes tool (exec/code, `react.rg`, `react.patch`, rendering tools, file inspection) uses such a file THIS turn, re-materialize it with `react.pull` (and `react.checkout` for editable `git/projects/...`) in an EARLIER round of this turn. If you have not pulled it this turn, it is not local.
+- `conv:fi:` is the versioned file/artifact namespace. It is the main way to refer to older project files, produced files, snapshots, and attachments.
 - Exact logical-to-physical conversion is defined once in [PATHS & ARTIFACT IDS].
-- Current-conversation refs use `fi:turn_<id>...`; cross-conversation refs use `fi:conv_<conversation_id>.turn_<id>...` and keep that conversation scope.
+- Current-conversation refs use `conv:fi:turn_<id>...`; cross-conversation refs use `conv:fi:conv_<conversation_id>.turn_<id>...` and keep that conversation scope.
 - Historical materialization uses conversation artifact metadata and hosting-backed artifact state.
 - Code, rendering, local search, and file inspection operate on artifacts currently materialized under `OUTPUT_DIR`. Use `react.pull(paths=[...])` to materialize historical artifacts before local use.
 - `react.read` loads visible context by logical path. Exec/code require local bytes from `react.pull`.
-- `react.pull` creates local reference material. `react.checkout` is the step that copies versioned `files/...` refs into the current editable workspace.
-- `react.pull` accepts normal `fi:` refs and external owner refs shown by the runtime.
+- `react.pull` creates local reference material. `react.checkout` is the step that copies versioned `git/projects/...` refs into the current editable project tree.
+- `react.pull` accepts normal `conv:fi:` refs and external owner refs shown by the runtime.
 - External owner refs are resolved through registered rehosters. Pass the visible `object_ref` or exact owner ref to `react.pull`; then continue from the returned `logical_path` / `physical_path` rows. A missing rehoster is reported in the pull result.
-- `ev:` identifies an event object on the timeline. It is readable with `react.read` like `tc:`, but it is not artifact storage and is not a `react.pull` or `react.checkout` path. If the event shows `object_ref`, pull that ref. If it instead points to bytes or a snapshot body through another field, pull that artifact ref.
+- `conv:ev:` identifies an event object on the timeline. It is readable with `react.read` like `conv:tc:`, but it is not artifact storage and is not a `react.pull` or `react.checkout` path. If the event shows `object_ref`, pull that ref. If it instead points to bytes or a snapshot body through another field, pull that artifact ref.
 - Bring files in for a reason:
   - use `react.read(paths=[...])` when visible text/context is enough
   - use `react.pull(paths=[...])` when a specific historical or external owner ref must become local reference material for code, rendering, local search, or inspection
-  - use `react.checkout(mode="replace", paths=[...])` after pull when the active current-turn workspace should be built from selected versioned `files/...`
+  - use `react.checkout(mode="replace", paths=[...])` after pull when the active current-turn project tree should be built from selected versioned `git/projects/...`
   - use `react.checkout(mode="overlay", paths=[...])` after pull when selected historical files should be imported into existing current work
-- Folder/slice pulls are supported for `fi:turn_<id>.files/<workspace_scope-or-subtree>`.
+- Folder/slice pulls are supported for `conv:fi:turn_<id>.git/projects/<project_scope-or-subtree>`.
 - In hosted artifact-history mode, folder pulls are reconstructed from conversation artifact metadata and hosting-backed artifact state.
-- `fi:turn_<id>.outputs/...` requires an exact file ref.
-- `fi:turn_<id>.user.attachments/...`, `fi:turn_<id>.external.<event_kind>.attachments/<event_id>/...`, and hosted binaries require exact file refs.
-- Snapshot subtree pulls are available only when the pull tool reports snapshot subtree support; otherwise use exact `fi:turn_<id>.snapshots/<name>` refs.
-- If you need a binary file from hosting (xlsx, pptx, docx, pdf, image, zip, etc.), name that exact `fi:` ref in `react.pull`.
+- `conv:fi:turn_<id>.files/...` requires an exact file ref.
+- `conv:fi:turn_<id>.user.attachments/...`, `conv:fi:turn_<id>.external.<event_kind>.attachments/<event_id>/...`, and hosted binaries require exact file refs.
+- Snapshot subtree pulls are available only when the pull tool reports snapshot subtree support; otherwise use exact `conv:fi:turn_<id>.git/snapshots/<name>` refs.
+- If you need a binary file from hosting (xlsx, pptx, docx, pdf, image, zip, etc.), name that exact `conv:fi:` ref in `react.pull`.
 - After `react.pull`, use the `logical_path` / `physical_path` rows returned by the tool. Returned physical paths are real `OUTPUT_DIR`-relative files and follow the forms listed in [PATHS & ARTIFACT IDS].
-- Pulling a historical `files/...` ref creates a version-scoped readonly reference view under `turn_<older>/files/...`. Use checkout when the current workspace should receive an editable copy.
-- Use `react.checkout(mode="replace", paths=[...])` after `react.pull` when the active current-turn workspace itself must contain a runnable/searchable/testable editable copy of historical `files/...`.
+- Pulling a historical `git/projects/...` ref creates a version-scoped readonly reference view under `turn_<older>/git/projects/...`. Use checkout when the current project tree should receive an editable copy.
+- Use `react.checkout(mode="replace", paths=[...])` after `react.pull` when the active current-turn project tree itself must contain a runnable/searchable/testable editable copy of historical `git/projects/...`.
 - Use `react.checkout(mode="overlay", paths=[...])` after `react.pull` when you want to import or overwrite selected historical files into already materialized current work.
-- `react.checkout(mode="replace", ...)` replaces the current-turn `files/` tree, then applies the requested `fi:turn_<id>.files/...` refs in order.
-- `react.checkout(mode="overlay", ...)` keeps the current-turn `files/` tree and applies the requested refs on top without deleting unspecified files.
-- `react.checkout` is defined for `fi:...files...` refs. It copies selected versioned files into `turn_<current>/files/...` as current editable workspace state.
+- `react.checkout(mode="replace", ...)` replaces the current-turn `git/projects/` tree, then applies the requested `conv:fi:turn_<id>.git/projects/...` refs in order.
+- `react.checkout(mode="overlay", ...)` keeps the current-turn `git/projects/` tree and applies the requested refs on top without deleting unspecified files.
+- `react.checkout` is defined for `conv:fi:...git/projects...` refs. It copies selected versioned files into `turn_<current>/git/projects/...` as current editable project state.
 - Exec/code, rendering tools, `react.patch`, and `react.rg` operate on local physical files. Materialize older refs with `react.pull` before those tools use them.
-- To edit historical workspace files, pull first, checkout after pull, then edit the current copy under `turn_<current>/files/...`.
-- Path namespace determines durable role. Anything under current-turn `turn_<current>/files/<workspace_scope>/...` is workspace/project state whether produced by `react.write`, `react.patch`, exec, or checkout.
-- In `files/<workspace_scope>/...`, `workspace_scope` is a stable workspace/project root, for example `workspace_app` or `analytics_dashboard`. Reuse it when continuing the same project.
-- In `outputs/<artifact_scope>/...`, `artifact_scope` is an artifact grouping bucket for a task/project.
-- `turn_<current>/outputs/<artifact_scope>/...` is for produced artifacts: deliverables, reports, screenshots, render sources, diagnostics, test results, demos, and one-off files.
-- `turn_<current>/snapshots/...` is for story/wizard state. Producers include tool calls, story/wizard event sources, and rehosted bundle/external storage.
-- `attachments/...` is scoped by turn/upload identity. `external/...` is for rehosted event/domain attachments or evidence, scoped by external event kind and event id under `external/<event_kind>/attachments/<event_id>/...`. Use `snapshots/...` for rehosted story or wizard state.
-- Keep the workspace tidy by reusing an existing top-level scope when continuing the same project:
-  - `turn_<current>/files/workspace_app/...`
-  - `turn_<current>/files/analytics_dashboard/...`
-- If ANNOUNCE or the visible local workspace already shows an existing `files/<workspace_scope>/...` scope, continue inside the matching `turn_<current>/files/<workspace_scope>/...` path.
+- To edit historical project files, pull first, checkout after pull, then edit the current copy under `turn_<current>/git/projects/...`.
+- Path namespace determines durable role. Anything under current-turn `turn_<current>/git/projects/<project_scope>/...` is project state. Anything under `turn_<current>/files/<artifact_scope>/...` is a produced artifact or deliverable.
+- In `git/projects/<project_scope>/...`, `project_scope` is a stable project root, for example `workspace_app` or `analytics_dashboard`. Reuse it when continuing the same project.
+- In `files/<artifact_scope>/...`, `artifact_scope` is an artifact grouping bucket for a task/project.
+- `turn_<current>/files/<artifact_scope>/...` is for produced artifacts: deliverables, reports, screenshots, render sources, diagnostics, test results, demos, and one-off files.
+- `turn_<current>/git/snapshots/...` is for story/wizard state. Producers include tool calls, story/wizard event sources, and rehosted owner storage.
+- `attachments/...` is scoped by turn/upload identity. `external/...` is for rehosted event/domain attachments or evidence, scoped by external event kind and event id under `external/<event_kind>/attachments/<event_id>/...`. Use `git/snapshots/...` for rehosted story or wizard state.
+- Keep the project tree tidy by reusing an existing top-level scope when continuing the same project:
+  - `turn_<current>/git/projects/workspace_app/...`
+  - `turn_<current>/git/projects/analytics_dashboard/...`
+- If ANNOUNCE or the visible local workspace already shows an existing `git/projects/<project_scope>/...` scope, continue inside the matching `turn_<current>/git/projects/<project_scope>/...` path.
 - If the old scope name is clearly weak, temporary, or misleading, you may rename the project to a better canonical scope. Treat that as a real rename/migration.
 - Create a separate new top-level scope only when the user explicitly wants a separate project or fork.
 - Keep produced artifacts equally tidy:
-  - `turn_<current>/outputs/workspace_app/report.md`
-  - `turn_<current>/outputs/analytics_dashboard/test_results.txt`
-  - reserve `outputs/tmp/...` only for disposable scratch outputs
+  - `turn_<current>/files/workspace_app/report.md`
+  - `turn_<current>/files/analytics_dashboard/test_results.txt`
+  - reserve `files/tmp/...` only for disposable scratch artifacts
 - Read ANNOUNCE `[WORKSPACE]` first when workspace state matters. It tells what is already materialized locally and which previous saved workspace paths can be pulled or checked out.
-- In ANNOUNCE, `current editable workspace` is the local editable workspace already present in this turn. `previous saved workspace paths` are top-level `files/...` paths saved from earlier successful turns; pull one to bring it local when you need to focus on it, then checkout it when you need to edit it.
-- To continue a previous workspace path as the active workspace, use its `fi:` form and follow the two-step pattern: first `react.pull(paths=["fi:turn_<id>.files/<path_under_files>"])`, then `react.checkout(mode="replace", paths=["fi:turn_<id>.files/<path_under_files>"])`, then write into current-turn `turn_<current>/files/<path_under_files>/...`.
-- `react.rg` searches readable local artifact files already materialized on this worker and returns file metadata plus line-numbered regex matches. Use roots that match visible paths: omit `root`, use canonical physical `turn_<id>/...` roots, or matching `fi:` artifact paths.
-- For conversation history and hidden/pruned blocks, use visible refs, `react.memsearch`, and `react.read`; then `react.pull` the artifact before local search. If you need to edit it, checkout the pulled `files/...` ref into the current turn first.
+- In ANNOUNCE, `current editable workspace` is the local editable project tree already present in this turn. `previous saved workspace paths` are top-level `git/projects/...` paths saved from earlier successful turns; pull one to bring it local when you need to focus on it, then checkout it when you need to edit it.
+- To continue a previous project path as the active workspace, use its `conv:fi:` form and follow the two-step pattern: first `react.pull(paths=["conv:fi:turn_<id>.git/projects/<path_under_projects>"])`, then `react.checkout(mode="replace", paths=["conv:fi:turn_<id>.git/projects/<path_under_projects>"])`, then write into current-turn `turn_<current>/git/projects/<path_under_projects>/...`.
+- `react.rg` searches readable local artifact files already materialized on this worker and returns file metadata plus line-numbered regex matches. Use roots that match visible paths: omit `root`, use canonical physical `turn_<id>/...` roots, or matching `conv:fi:` artifact paths.
+- For conversation history and hidden/pruned blocks, use visible refs, `react.memsearch`, and `react.read`; then `react.pull` the artifact before local search. If you need to edit it, checkout the pulled `git/projects/...` ref into the current turn first.
 - Owner-defined namespaces are not built-in readable paths. If exact content is needed, use the configured namespace/service tool or `react.pull` when the runtime exposes a rehoster, then continue from the returned paths.
 """
 
@@ -336,8 +337,9 @@ WORKSPACE_IMPLEMENTATION_GUIDE_GIT = """
 Generated code and ISO/runtime tools work with real files under `OUTPUT_DIR`.
 Use `OUTPUT_DIR`-relative physical paths only when the documented argument is a
 physical path, for example exec code, `react.patch`, and rendering writes:
-`turn_<current>/files/<workspace_scope>/app.py`. Context/materialization tools
-use logical refs such as `fi:turn_<id>.files/<workspace_scope>/app.py`.
+`turn_<current>/git/projects/<project_scope>/app.py`. Context/materialization
+tools use logical refs such as
+`conv:fi:turn_<id>.git/projects/<project_scope>/app.py`.
 
 The diagram below shows the local `OUTPUT_DIR` surface, versioned artifact refs,
 and registered owner refs. When code, rendering, local search,
@@ -348,100 +350,100 @@ or file inspection needs artifact bytes, materialize the visible ref with
 1) CURRENT TURN WORKSPACE (physical; current-turn execution surface; STARTS EMPTY EACH TURN)
    OUTPUT_DIR/
      turn_<current>/                    # git working tree — repo root for THIS turn (always git mode)
-       files/<workspace_scope>/...      # durable project state — COMMITTED to git each turn (versioned; pull/checkout next turn)
-       outputs/<artifact_scope>/...     # produced artifacts — NOT git-tracked; survive only if listed in the exec contract (hosting)
-       snapshots/...                    # story/wizard state — also git-committed
+       git/projects/<project_scope>/... # durable project state — COMMITTED to git each turn (versioned; pull/checkout next turn)
+       files/<artifact_scope>/...       # produced artifacts — NOT git-tracked; survive when captured/hosted
+       git/snapshots/...                # story/wizard state — also git-committed
        attachments/...                  # current user uploads; already turn-scoped (not git-tracked)
        external/...                     # rehosted event/domain attachments or evidence (not git-tracked)
-       .git/                            # versions files/ and snapshots/ ONLY — outputs/attachments/external are NOT committed
+       .git/                            # versions git/projects/ and git/snapshots/ ONLY — files/attachments/external are NOT committed
      logs/
      timeline.json
      ...
 
 2) VERSIONED CONVERSATION ARTIFACT REFS (logical first, local only after pull)
-   fi:turn_<id>.files/<path>
-   fi:turn_<id>.outputs/<path>
-   fi:turn_<id>.snapshots/<path>
-   fi:turn_<id>.user.attachments/<name>
-   fi:turn_<id>.external.<event_kind>.attachments/<event_id>/<name>
-   fi:conv_<conversation_id>.turn_<id>...   # other conversation
+   conv:fi:turn_<id>.git/projects/<path>
+   conv:fi:turn_<id>.files/<path>
+   conv:fi:turn_<id>.git/snapshots/<path>
+   conv:fi:turn_<id>.user.attachments/<name>
+   conv:fi:turn_<id>.external.<event_kind>.attachments/<event_id>/<name>
+   conv:fi:conv_<conversation_id>.turn_<id>...   # other conversation
 
 3) EXTERNAL OWNER REFS (resolved by react.pull)
    <namespace>:<key>                        # resolved by a registered rehoster
 
 4) TIMELINE EVENT REFS (event identity, not artifact bytes)
-   ev:turn_<id>.events/<event_path>
-   ev:conv_<conversation_id>.turn_<id>.events/<event_path>
+   conv:ev:turn_<id>.events/<event_path>
+   conv:ev:conv_<conversation_id>.turn_<id>.events/<event_path>
 
 ```
 
-- HARD — EACH TURN STARTS BLANK: your local workspace begins empty every turn. The local bytes of anything you materialized in an earlier turn are not on disk now — files you pulled, checked out, or wrote, and files exec produced, are all gone. Only the `fi:` / owner refs persist across turns; the local files do not. A file you had locally last turn is NOT here this turn. Before any local-bytes tool (exec/code, `react.rg`, `react.patch`, rendering tools, file inspection) uses such a file THIS turn, re-materialize it with `react.pull` (and `react.checkout` for editable `files/...`) in an EARLIER round of this turn. If you have not pulled it this turn, it is not local.
+- HARD — EACH TURN STARTS BLANK: your local workspace begins empty every turn. The local bytes of anything you materialized in an earlier turn are not on disk now — files you pulled, checked out, or wrote, and files exec produced, are all gone. Only the `conv:fi:` / owner refs persist across turns; the local files do not. A file you had locally last turn is NOT here this turn. Before any local-bytes tool (exec/code, `react.rg`, `react.patch`, rendering tools, file inspection) uses such a file THIS turn, re-materialize it with `react.pull` (and `react.checkout` for editable `git/projects/...`) in an EARLIER round of this turn. If you have not pulled it this turn, it is not local.
 - The current turn root `turn_<current>/` is bootstrapped as a sparse local git repo in `OUTPUT_DIR`.
 - The repo root path is `Path(OUTPUT_DIR) / "turn_<current>"`.
 - Runtime keeps git history/refs available there. Materialize needed project files with `react.pull` and `react.checkout`.
-- In git mode, the current-turn repo is the active lineage workspace for ongoing project work. Your main workspace is still `turn_<current>/files/...`.
-- Treat `turn_<current>/files/...` as the authoritative project tree for the turn. `turn_<current>/outputs/...` is for current-turn produced artifacts.
-- `fi:` is the versioned file/artifact namespace. It is the main way to refer to older workspace files, non-workspace outputs, snapshots, and attachments.
+- In git mode, the current-turn repo is the active lineage workspace for ongoing project work. Your main project tree is `turn_<current>/git/projects/...`.
+- Treat `turn_<current>/git/projects/...` as the authoritative project tree for the turn. `turn_<current>/files/...` is for current-turn produced artifacts.
+- `conv:fi:` is the versioned file/artifact namespace. It is the main way to refer to older project files, produced files, snapshots, and attachments.
 - Exact logical-to-physical conversion is defined once in [PATHS & ARTIFACT IDS].
-- Current-conversation refs use `fi:turn_<id>...`; cross-conversation refs use `fi:conv_<conversation_id>.turn_<id>...` and keep that conversation scope.
-- `fi:turn_<id>.files/...` resolves against the conversation's git-backed workspace lineage for that version.
-- Outputs, attachments, external attachments, snapshots, and hosted binaries use hosted artifact history and normally require exact refs.
+- Current-conversation refs use `conv:fi:turn_<id>...`; cross-conversation refs use `conv:fi:conv_<conversation_id>.turn_<id>...` and keep that conversation scope.
+- `conv:fi:turn_<id>.git/projects/...` resolves against the conversation's git-backed workspace lineage for that version.
+- Produced files, attachments, external attachments, snapshots, and hosted binaries use hosted artifact history and normally require exact refs.
 - Code, rendering, local search, and file inspection operate on artifacts currently materialized under `OUTPUT_DIR`. Use `react.pull(paths=[...])` to materialize historical artifacts before local use.
 - `react.read` loads visible context by logical path. Exec/code require local bytes from `react.pull`.
-- `react.pull` creates local reference material. `react.checkout` is the step that copies versioned `files/...` refs into the current editable workspace.
-- `react.pull` accepts normal `fi:` refs and external owner refs shown by the runtime.
+- `react.pull` creates local reference material. `react.checkout` is the step that copies versioned `git/projects/...` refs into the current editable project tree.
+- `react.pull` accepts normal `conv:fi:` refs and external owner refs shown by the runtime.
 - External owner refs are resolved through registered rehosters. Pass the visible `object_ref` or exact owner ref to `react.pull`; then continue from the returned `logical_path` / `physical_path` rows. A missing rehoster is reported in the pull result.
-- `ev:` identifies an event object on the timeline. It is readable with `react.read` like `tc:`, but it is not artifact storage and is not a `react.pull` or `react.checkout` path. If the event shows `object_ref`, pull that ref. If it instead points to bytes or a snapshot body through another field, pull that artifact ref.
+- `conv:ev:` identifies an event object on the timeline. It is readable with `react.read` like `conv:tc:`, but it is not artifact storage and is not a `react.pull` or `react.checkout` path. If the event shows `object_ref`, pull that ref. If it instead points to bytes or a snapshot body through another field, pull that artifact ref.
 - Bring files in for a reason:
   - use `react.read(paths=[...])` when visible text/context is enough
   - use `react.pull(paths=[...])` when a specific historical or external owner ref must become local reference material for code, rendering, local search, or inspection
-  - use `react.checkout(mode="replace", paths=[...])` after pull when the active current-turn workspace should be built from selected versioned `files/...`
+  - use `react.checkout(mode="replace", paths=[...])` after pull when the active current-turn project tree should be built from selected versioned `git/projects/...`
   - use `react.checkout(mode="overlay", paths=[...])` after pull when selected historical files should be imported into existing current work
-- Folder/slice pulls are supported for `fi:turn_<id>.files/<workspace_scope-or-subtree>`.
-- In git-backed mode, `fi:turn_<id>.files/...` folder pulls resolve against the conversation's git-backed workspace lineage for that version.
-- `fi:turn_<id>.outputs/...` requires an exact file ref and is resolved through hosted artifact history.
-- `fi:turn_<id>.user.attachments/...`, `fi:turn_<id>.external.<event_kind>.attachments/<event_id>/...`, and hosted binaries require exact file refs.
-- Snapshot subtree pulls are available only when the pull tool reports snapshot subtree support; otherwise use exact `fi:turn_<id>.snapshots/<name>` refs.
-- If you need a binary file from hosting (xlsx, pptx, docx, pdf, image, zip, etc.), name that exact `fi:` ref in `react.pull`.
+- Folder/slice pulls are supported for `conv:fi:turn_<id>.git/projects/<project_scope-or-subtree>`.
+- In git-backed mode, `conv:fi:turn_<id>.git/projects/...` folder pulls resolve against the conversation's git-backed workspace lineage for that version.
+- `conv:fi:turn_<id>.files/...` requires an exact file ref and is resolved through hosted artifact history.
+- `conv:fi:turn_<id>.user.attachments/...`, `conv:fi:turn_<id>.external.<event_kind>.attachments/<event_id>/...`, and hosted binaries require exact file refs.
+- Snapshot subtree pulls are available only when the pull tool reports snapshot subtree support; otherwise use exact `conv:fi:turn_<id>.git/snapshots/<name>` refs.
+- If you need a binary file from hosting (xlsx, pptx, docx, pdf, image, zip, etc.), name that exact `conv:fi:` ref in `react.pull`.
 - After `react.pull`, use the `logical_path` / `physical_path` rows returned by the tool. Returned physical paths are real `OUTPUT_DIR`-relative files and follow the forms listed in [PATHS & ARTIFACT IDS].
-- `react.pull(paths=["fi:turn_<older>.files/..."])` creates a version-scoped historical reference view under `turn_<older>/files/...`. Use checkout when the current workspace should receive an editable copy.
-- Use `react.checkout(mode="replace", paths=[...])` after `react.pull` when the active current-turn workspace itself must contain a runnable/searchable/testable editable copy of historical `files/...`.
+- `react.pull(paths=["conv:fi:turn_<older>.git/projects/..."])` creates a version-scoped historical reference view under `turn_<older>/git/projects/...`. Use checkout when the current project tree should receive an editable copy.
+- Use `react.checkout(mode="replace", paths=[...])` after `react.pull` when the active current-turn project tree itself must contain a runnable/searchable/testable editable copy of historical `git/projects/...`.
 - Use `react.checkout(mode="overlay", paths=[...])` after `react.pull` when you want to import or overwrite selected historical files into already materialized current work.
-- `react.checkout(mode="replace", ...)` replaces the current-turn `files/` tree, then applies the requested `fi:turn_<id>.files/...` refs in order.
-- `react.checkout(mode="overlay", ...)` keeps the current-turn `files/` tree and applies the requested refs on top without deleting unspecified files.
-- `react.checkout` is defined for `fi:...files...` refs. It copies selected versioned files into `turn_<current>/files/...` as current editable workspace state.
+- `react.checkout(mode="replace", ...)` replaces the current-turn `git/projects/` tree, then applies the requested `conv:fi:turn_<id>.git/projects/...` refs in order.
+- `react.checkout(mode="overlay", ...)` keeps the current-turn `git/projects/` tree and applies the requested refs on top without deleting unspecified files.
+- `react.checkout` is defined for `conv:fi:...git/projects...` refs. It copies selected versioned files into `turn_<current>/git/projects/...` as current editable project state.
 - Exec/code, rendering tools, `react.patch`, and `react.rg` operate on local physical files. Materialize older refs with `react.pull` before those tools use them.
-- To edit historical workspace files, pull first, checkout after pull, then edit the current copy under `turn_<current>/files/...`.
-- Path namespace determines durable role. Anything under current-turn `turn_<current>/files/<workspace_scope>/...` is workspace/project state whether produced by `react.write`, `react.patch`, exec, or checkout.
-- In `files/<workspace_scope>/...`, `workspace_scope` is a stable workspace/project root, for example `workspace_app` or `analytics_dashboard`. Reuse it when continuing the same project.
-- In `outputs/<artifact_scope>/...`, `artifact_scope` is an artifact grouping bucket for a task/project.
-- `turn_<current>/outputs/<artifact_scope>/...` is for produced artifacts: deliverables, reports, screenshots, render sources, diagnostics, test results, demos, and one-off files.
-- `turn_<current>/snapshots/...` is for story/wizard state. Producers include tool calls, story/wizard event sources, and rehosted bundle/external storage.
-- `attachments/...` is scoped by turn/upload identity. `external/...` is for rehosted event/domain attachments or evidence, scoped by external event kind and event id under `external/<event_kind>/attachments/<event_id>/...`. Use `snapshots/...` for rehosted story or wizard state.
-- Keep the workspace tidy by reusing an existing top-level scope when continuing the same project:
-  - `turn_<current>/files/workspace_app/...`
-  - `turn_<current>/files/analytics_dashboard/...`
-- If ANNOUNCE or the visible local workspace already shows an existing `files/<workspace_scope>/...` scope, continue inside the matching `turn_<current>/files/<workspace_scope>/...` path.
+- To edit historical project files, pull first, checkout after pull, then edit the current copy under `turn_<current>/git/projects/...`.
+- Path namespace determines durable role. Anything under current-turn `turn_<current>/git/projects/<project_scope>/...` is project state. Anything under `turn_<current>/files/<artifact_scope>/...` is a produced artifact or deliverable.
+- In `git/projects/<project_scope>/...`, `project_scope` is a stable project root, for example `workspace_app` or `analytics_dashboard`. Reuse it when continuing the same project.
+- In `files/<artifact_scope>/...`, `artifact_scope` is an artifact grouping bucket for a task/project.
+- `turn_<current>/files/<artifact_scope>/...` is for produced artifacts: deliverables, reports, screenshots, render sources, diagnostics, test results, demos, and one-off files.
+- `turn_<current>/git/snapshots/...` is for story/wizard state. Producers include tool calls, story/wizard event sources, and rehosted owner storage.
+- `attachments/...` is scoped by turn/upload identity. `external/...` is for rehosted event/domain attachments or evidence, scoped by external event kind and event id under `external/<event_kind>/attachments/<event_id>/...`. Use `git/snapshots/...` for rehosted story or wizard state.
+- Keep the project tree tidy by reusing an existing top-level scope when continuing the same project:
+  - `turn_<current>/git/projects/workspace_app/...`
+  - `turn_<current>/git/projects/analytics_dashboard/...`
+- If ANNOUNCE or the visible local workspace already shows an existing `git/projects/<project_scope>/...` scope, continue inside the matching `turn_<current>/git/projects/<project_scope>/...` path.
 - If the old scope name is clearly weak, temporary, or misleading, you may rename the project to a better canonical scope. Treat that as a real rename/migration.
 - Create a separate new top-level scope only when the user explicitly wants a separate project or fork.
 - Keep produced artifacts equally tidy:
-  - `turn_<current>/outputs/workspace_app/report.md`
-  - `turn_<current>/outputs/analytics_dashboard/test_results.txt`
-  - reserve `outputs/tmp/...` only for disposable scratch outputs
+  - `turn_<current>/files/workspace_app/report.md`
+  - `turn_<current>/files/analytics_dashboard/test_results.txt`
+  - reserve `files/tmp/...` only for disposable scratch artifacts
 - Read ANNOUNCE `[WORKSPACE]` first. It tells what is already materialized locally, whether the sparse repo is clean/dirty, and which previous saved workspace paths can be pulled/checked out.
-- In ANNOUNCE, `current editable workspace` is the local editable workspace already present in this turn. `previous saved workspace paths` are top-level `files/...` paths saved from earlier successful turns; pull one to bring it local when you need to focus on it, then checkout it when you need to edit it.
-- To continue a previous saved workspace path as the active workspace, use its `fi:` form and follow the announced two-step pattern: first `react.pull(paths=["fi:turn_<id>.files/<path_under_files>"])`, then `react.checkout(mode="replace", paths=["fi:turn_<id>.files/<path_under_files>"])`, then write into `turn_<current>/files/<path_under_files>/...`.
+- In ANNOUNCE, `current editable workspace` is the local editable project tree already present in this turn. `previous saved workspace paths` are top-level `git/projects/...` paths saved from earlier successful turns; pull one to bring it local when you need to focus on it, then checkout it when you need to edit it.
+- To continue a previous saved project path as the active workspace, use its `conv:fi:` form and follow the announced two-step pattern: first `react.pull(paths=["conv:fi:turn_<id>.git/projects/<path_under_projects>"])`, then `react.checkout(mode="replace", paths=["conv:fi:turn_<id>.git/projects/<path_under_projects>"])`, then write into `turn_<current>/git/projects/<path_under_projects>/...`.
 - Efficient sparse-workspace pattern:
   1. Read ANNOUNCE workspace status first.
   2. If current-turn local files are already enough, work directly there.
   3. If you need historical content by turn id for comparison or explicit reuse, use `react.pull(paths=[...])`.
-  4. If you need the active project tree in `turn_<current>/files/...`, use `react.pull(paths=[...])` and then `react.checkout(mode="replace", paths=[...])` early in the turn.
+  4. If you need the active project tree in `turn_<current>/git/projects/...`, use `react.pull(paths=[...])` and then `react.checkout(mode="replace", paths=[...])` early in the turn.
   5. If you later need to import or overwrite only part of that workspace from an older version, use `react.pull(paths=[...])` and then `react.checkout(mode="overlay", paths=[...])`.
-  6. After checkout, work directly in `turn_<current>/files/<workspace_scope>/...` and use local git commands in the current-turn repo when they help.
+  6. After checkout, work directly in `turn_<current>/git/projects/<project_scope>/...` and use local git commands in the current-turn repo when they help.
   7. Use exact refs for binaries.
 - Local git inspection/diff/status/commit commands are allowed when useful. Runtime synchronization owns network git operations.
-- `react.rg` searches readable local artifact files already materialized on this worker and returns file metadata plus line-numbered regex matches. Use roots that match visible paths: omit `root`, use canonical physical `turn_<id>/...` roots, or matching `fi:` artifact paths.
-- For conversation history and hidden/pruned blocks, use visible refs, `react.memsearch`, and `react.read`; then `react.pull` the artifact before local search. If you need to edit it, checkout the pulled `files/...` ref into the current turn first.
+- `react.rg` searches readable local artifact files already materialized on this worker and returns file metadata plus line-numbered regex matches. Use roots that match visible paths: omit `root`, use canonical physical `turn_<id>/...` roots, or matching `conv:fi:` artifact paths.
+- For conversation history and hidden/pruned blocks, use visible refs, `react.memsearch`, and `react.read`; then `react.pull` the artifact before local search. If you need to edit it, checkout the pulled `git/projects/...` ref into the current turn first.
 - Owner-defined namespaces are not built-in readable paths. If exact content is needed, use the configured namespace/service tool or `react.pull` when the runtime exposes a rehoster, then continue from the returned paths.
 """
 
@@ -474,56 +476,56 @@ For loading content into visible context, prefer LOGICAL paths.
 Physical → Logical mapping:
 - User prompt:
   physical: (none)
-  logical : ar:turn_<id>.user.prompt
+  logical : conv:ar:turn_<id>.user.prompt
   meaning : full text of the user prompt in that turn
 - Assistant completion:
   physical: (none)
-  logical : ar:turn_<id>.assistant.completion
+  logical : conv:ar:turn_<id>.assistant.completion
   meaning : full text of the latest assistant completion in that turn
-  note    : earlier visible completions, if any, use ar:turn_<id>.assistant.completion.<n>
+  note    : earlier visible completions, if any, use conv:ar:turn_<id>.assistant.completion.<n>
   note    : one turn may contain multiple visible assistant completions
 - Plan latest snapshot alias:
   physical: (none)
-  logical : ar:plan.latest:<plan_id>
+  logical : conv:ar:plan.latest:<plan_id>
   meaning : stable alias for the latest snapshot of a plan lineage; use it with react.read or fetch_ctx
 - Turn index:
   physical: (none)
-  logical : ar:turn_<id>.react.turn.index
+  logical : conv:ar:turn_<id>.react.turn.index
   meaning : on-demand, system-reconstructed compact inventory for a prior turn; use it when a working summary identifies the turn but lacks the exact artifact/tool/message refs
   note    : not a stored block in the turn; react.read reconstructs it from the persisted turn log and artifact metadata
   note    : rows must include semantic labels/hints, not just bare paths
 - User attachment:
   physical: turn_<id>/attachments/<name>
-  logical : fi:turn_<id>.user.attachments/<name>
+  logical : conv:fi:turn_<id>.user.attachments/<name>
   meaning : user-provided file artifact from that turn
 - External event attachment:
   physical: turn_<id>/external/<event_kind>/attachments/<event_id>/<name>
-  logical : fi:turn_<id>.external.<event_kind>.attachments/<event_id>/<name>
+  logical : conv:fi:turn_<id>.external.<event_kind>.attachments/<event_id>/<name>
   meaning : attachment introduced by a live external event in that turn, for example `followup` or `external_event`
 - File artifact (from tools):
   physical: turn_<id>/files/<relpath>
-  logical : fi:turn_<id>.files/<relpath>
+  logical : conv:fi:turn_<id>.files/<relpath>
   meaning : assistant/tool-produced file artifact from that turn
 - Tool call results:
   physical: (none)
-  logical : tc:turn_<id>.<call_id>.call / .result
+  logical : conv:tc:turn_<id>.<call_id>.call / .result
   meaning : saved tool call input or rendered tool result block in timeline memory
 - Source pool:
   physical: (none)
-  logical : so:sources_pool[sid1, sid2, ...] or so:sources_pool[start_sid:end_sid]
+  logical : conv:so:sources_pool[sid1, sid2, ...] or conv:so:sources_pool[start_sid:end_sid]
   meaning : selected sources from the sources pool
 - Cross-conversation source pool:
   physical: (none)
-  logical : so:conv_<conversation_id>.sources_pool[sid1, sid2, ...]
+  logical : conv:so:conv_<conversation_id>.sources_pool[sid1, sid2, ...]
   meaning : selected sources from another conversation's persisted sources pool
 - Summaries:
   physical: (none)
-  logical : su:turn_<id>.conv.range.summary
+  logical : conv:su:turn_<id>.conv.range.summary
   meaning : conversation summary artifact
 - External owner ref (react.pull only):
   physical: (none until pulled)
   logical : <namespace>:<external-key>
-  meaning : owner-managed object/artifact outside the ReAct workspace. Pull it with react.pull; then use the returned fi: logical_path or physical_path.
+  meaning : owner-managed object/artifact outside the ReAct workspace. Pull it with react.pull; then use the returned conv:fi: logical_path or physical_path.
 
 Skills (react.read only):
   physical: (none)
@@ -535,10 +537,10 @@ HARD:
 - If you need several exact objects, pass all known paths in one react.read call instead of spending one round per path.
 - Large/capped data handling is defined in the extended guide. Treat rendered previews as inspection aids, not proof of full content.
 - `react.read` caps apply per path, not across the whole path list. For cheap discovery without content, use `stats_only:true`; it returns size/mime/token metadata in the status block and does not add content blocks.
-- `ctx_tools.fetch_ctx` expects LOGICAL paths, but only supports `ar:`, `tc:`, `so:` namespaces. `fi:`, `sk:`, or `su:` are not supported.
+- `ctx_tools.fetch_ctx` expects LOGICAL paths, but only supports `conv:ar:`, `conv:tc:`, `conv:so:` namespaces. `conv:fi:`, `sk:`, or `conv:su:` are not supported.
 - `ctx_tools.fetch_ctx` returns artifact fields `path`, `mime`, and `payload`. For JSON mime, `payload` is parsed JSON. Compatibility fields such as `text` or `base64` may also be present.
-- For `so:sources_pool[...]`, `react.read` and `ctx_tools.fetch_ctx` return a list of source rows, not an artifact dict.
-- For `so:conv_<conversation_id>.sources_pool[...]`, use `react.read`; this reads another conversation's persisted source pool. `ctx_tools.fetch_ctx` is current-timeline only.
+- For `conv:so:sources_pool[...]`, `react.read` and `ctx_tools.fetch_ctx` return a list of source rows, not an artifact dict.
+- For `conv:so:conv_<conversation_id>.sources_pool[...]`, use `react.read`; this reads another conversation's persisted source pool. `ctx_tools.fetch_ctx` is current-timeline only.
   Web source rows use `text` for preview/snippet and `content` for full fetched page text when available; use `content` first when you need source evidence.
 - Tools that take paths (`react.patch`, `rendering_tools.write_*`) expect PHYSICAL paths.
 - Exec code reads and writes PHYSICAL OUTPUT_DIR-relative paths.
@@ -546,7 +548,7 @@ HARD:
 - If exec code browses a resolved namespace root and finds useful descendants, this is discovery only. Emit logical refs by combining the original resolver input logical_ref with the discovered relative path; then use react.read on those logical refs to bring content into visible context.
 - Example: resolve a runtime-declared owner namespace, inspect the returned directory in exec, find `foo/bar.py`, then emit the namespace-owned logical ref in an OUTPUT_DIR file or short user.log note so the agent can later use the configured namespace/service retrieval path.
 - If you have a physical path, derive logical as above before calling react.read.
-- If you have an external owner ref and exact content is needed, call `react.pull(paths=[...])` first. The pull result tells you the resolved/rehosted `fi:` logical path and physical path; use those returned paths for reading, local search, or exec code. Unsupported namespaces are reported by the pull result.
+- If you have an external owner ref and exact content is needed, call `react.pull(paths=[...])` first. The pull result tells you the resolved/rehosted `conv:fi:` logical path and physical path; use those returned paths for reading, local search, or exec code. Unsupported namespaces are reported by the pull result.
 - react.rg returns `root` plus hits with `path`, `size_bytes`, optional `text_symbols`/`line_count`/`logical_path`, and content `matches` with `read_item` ranges.
 - `path` is relative to the searched root and does not include that root prefix.
 - Hits include `logical_path` when readable and are readable with react.read.
@@ -558,46 +560,44 @@ HARD:
 PATHS_EXTENDED_GUIDE = """
 #### Supported context paths
 - Messages:
-    - `ar:turn_<id>.user.prompt` (brings full text content of the user prompt in that turn)
-    - `ar:turn_<id>.assistant.completion` (brings full text content of the latest assistant completion in that turn)
-    - `ar:turn_<id>.assistant.completion.<n>` (brings full text content of an earlier visible assistant completion in that same turn)
-    - `ar:plan.latest:<plan_id>` (brings the latest snapshot of that plan lineage into visible context)
-    - `ar:turn_<id>.react.turn.index` (reconstructs a compact turn inventory from persisted turn log/artifact metadata; use when you know the turn but need to discover exact refs)
+    - `conv:ar:turn_<id>.user.prompt` (brings full text content of the user prompt in that turn)
+    - `conv:ar:turn_<id>.assistant.completion` (brings full text content of the latest assistant completion in that turn)
+    - `conv:ar:turn_<id>.assistant.completion.<n>` (brings full text content of an earlier visible assistant completion in that same turn)
+    - `conv:ar:plan.latest:<plan_id>` (brings the latest snapshot of that plan lineage into visible context)
+    - `conv:ar:turn_<id>.react.turn.index` (reconstructs a compact turn inventory from persisted turn log/artifact metadata; use when you know the turn but need to discover exact refs)
       Typical shape: summaries, messages, events, tools, artifacts, and sources. Rows should include semantic labels/hints, not just bare paths.
       Some turns may have multiple assistant completions, multiple user-like entries (`user.prompt`, `user.followup`, `user.steer`), or no ordinary user prompt if triggered by reactive/external events.
 - User attachments:
-    - `fi:turn_<id>.user.attachments/<attachment_filepath>` (brings full text content of this file if this is text file.
+    - `conv:fi:turn_<id>.user.attachments/<attachment_filepath>` (brings full text content of this file if this is text file.
       For pdf/image files, they will be attached as multimodal attachments. Filepath can be / and . delimited. relative path)
-    - `fi:turn_<id>.external.<event_kind>.attachments/<event_id>/<attachment_filepath>` (same rules; live events store only hosted references and the receiver hydrates readable content from hosting when the timeline is built)
+    - `conv:fi:turn_<id>.external.<event_kind>.attachments/<event_id>/<attachment_filepath>` (same rules; live events store only hosted references and the receiver hydrates readable content from hosting when the timeline is built)
       Other binary files such as xlsx/xls/pptx/docx are not decoded by `react.read`; inspect them with code and exec tool
       using the physical OUTPUT_DIR path and format-appropriate code when possible.
 - Files produced by react in that turn:
-    - `fi:turn_<id>.files/<filepath>` (brings full text content of this file if this is text file. This also works for files produced by react.write with kind='display'.
-      For pdf/image files, they will be attached as multimodal attachments. Filepath can be / and . delimited. relative path)
-    - `fi:turn_<id>.outputs/<filepath>` (brings full text content of this non-workspace artifact if this is text file.
+    - `conv:fi:turn_<id>.files/<filepath>` (brings full text content of this file if this is text file. This also works for files produced by react.write with kind='display'.
       For pdf/image files, they will be attached as multimodal attachments. Filepath can be / and . delimited. relative path)
       Other binary files such as xlsx/xls/pptx/docx are not decoded by `react.read`; if you created them yourself,
-      inspect the generating `tc:` tool call/result and any related text/code `fi:` source artifacts from that step,
-      not the binary `fi:` file itself. Otherwise inspect the file with code and exec tool.
-      Example (nested path): `fi:turn_<id>.files/reports/weekly/summary.v2.md`
-      Example non-workspace output: `fi:turn_<id>.outputs/reports/test_results.txt`
+      inspect the generating `conv:tc:` tool call/result and any related text/code `conv:fi:` source artifacts from that step,
+      not the binary `conv:fi:` file itself. Otherwise inspect the file with code and exec tool.
+      Example (nested path): `conv:fi:turn_<id>.files/reports/weekly/summary.v2.md`
+      Example produced artifact: `conv:fi:turn_<id>.files/reports/test_results.txt`
 - Source pool items:
-    - `so:sources_pool[sid1, sid2, ...]` or `so:sources_pool[start_sid:end_sid]`
+    - `conv:so:sources_pool[sid1, sid2, ...]` or `conv:so:sources_pool[start_sid:end_sid]`
 - Summaries:
-    - `su:turn_<id>.conv.range.summary` (loads a saved conversation summary into visible context; not supported by fetch_ctx)
+    - `conv:su:turn_<id>.conv.range.summary` (loads a saved conversation summary into visible context; not supported by fetch_ctx)
 - Skills (react.read only):
   - `sk:<skill_id>` (loads a skill into visible timeline; not supported by fetch_ctx)
 - Tool calls:
-    - `tc:turn_<id>.<tool_call_id>.call` (tool call input: tool id + params; bindings already resolved in the saved view)
-    - `tc:turn_<id>.<tool_call_id>.result` (rendered tool result block: status/errors + artifact metadata; inline output only for non‑file tools)
-      If you need the actual artifact content, read the artifact_path listed in the tool result (e.g., `fi:turn_<id>.files/...`).
-You will see these paths in the tool result blocks for each artifact from ar: and fi: namespace.
+    - `conv:tc:turn_<id>.<tool_call_id>.call` (tool call input: tool id + params; bindings already resolved in the saved view)
+    - `conv:tc:turn_<id>.<tool_call_id>.result` (rendered tool result block: status/errors + artifact metadata; inline output only for non‑file tools)
+      If you need the actual artifact content, read the artifact_path listed in the tool result (e.g., `conv:fi:turn_<id>.files/...`).
+You will see these paths in the tool result blocks for each artifact from conv:ar: and conv:fi: namespace.
 
 #### Supported physical paths
-For artifacts in the **fi:** namespace you will also see their physical relative paths.
-`tc:` paths are logical timeline entries and do not have physical paths.
+For artifacts in the **conv:fi:** namespace you will also see their physical relative paths.
+`conv:tc:` paths are logical timeline entries and do not have physical paths.
 Physical relative paths can be only used in exec snippets, in react.patch tool and as a param to rendering_tools.*.
-Artifact physical paths are turn-qualified: `turn_<id>/files/<workspace_scope>/...`, `turn_<id>/outputs/<artifact_scope>/...`, `turn_<id>/snapshots/...`, `turn_<id>/attachments/...`, or `turn_<id>/external/...`.
+Artifact physical paths are turn-qualified: `turn_<id>/git/projects/<project_scope>/...`, `turn_<id>/files/<artifact_scope>/...`, `turn_<id>/git/snapshots/...`, `turn_<id>/attachments/...`, or `turn_<id>/external/...`.
 Cross-conversation pulled refs use the same layout under `conv_<conversation_id>/turn_<id>/...`.
 Using physical relative paths with react.read will result in protocol violation error.
 Using physical relative paths with fetch_ctx tool in exec snippets does not work.
@@ -605,7 +605,7 @@ Using unsupported logical namespaces with fetch_ctx returns an error rather than
 
 #### External owner namespace browsing in exec
 - Some runtimes may expose exec-only namespace resolver tools for external owner namespaces.
-- This is separate from `react.pull` rehosting. `react.pull` returns ordinary `fi:` refs; exec-only resolvers return exec-local physical paths.
+- This is separate from `react.pull` rehosting. `react.pull` returns ordinary `conv:fi:` refs; exec-only resolvers return exec-local physical paths.
 - Call those tools only from generated code running inside `execute_code_python(...)`.
 - Resolver result shape is `{ok, error, ret}` where `ret` is `{physical_path, access, browseable}`.
 - The returned `physical_path` is valid only inside that isolated exec runtime.
@@ -620,7 +620,7 @@ Using unsupported logical namespaces with fetch_ctx returns an error rather than
 
 #### react.rg results
 - `react.rg` does not load full file contents into context.
-- `react.rg` searches only files already materialized under the local artifact workspace. It is not a search over the whole conversation timeline, hidden/pruned blocks, or unmaterialized artifact history. Materialize needed older files first with `react.pull`; if the goal is editing, then checkout the pulled `files/...` ref into the current turn. Use roots that match visible paths: fully qualified `turn_<id>/files/...`, `turn_<id>/outputs/...`, `turn_<id>/attachments/...`, or `fi:...`.
+- `react.rg` searches only files already materialized under the local artifact workspace. It is not a search over the whole conversation timeline, hidden/pruned blocks, or unmaterialized artifact history. Materialize needed older files first with `react.pull`; if the goal is editing, then checkout the pulled `git/projects/...` ref into the current turn. Use roots that match visible paths: fully qualified `turn_<id>/git/projects/...`, `turn_<id>/files/...`, `turn_<id>/attachments/...`, or `conv:fi:...`.
 - Each hit returns:
   - `path`: relative to the searched root
   - `size_bytes`
@@ -634,19 +634,19 @@ Using unsupported logical namespaces with fetch_ctx returns an error rather than
 
 #### Large/capped data operating procedure
 - Work from the rendered timeline surface: paths, metadata, previews, source rows, and explicit truncation/cap markers. Do not reason from internal artifact fields.
-- First identify the object and path namespace: `tc:` tool call/result, `fi:` file/artifact, `so:` source rows, `ar:` generated context, `sk:` skill, `su:` summary, or a runtime-declared owner namespace. For files, note `mime`, `size_bytes`, `text_symbols`, `line_count`, and any physical path shown.
+- First identify the object and path namespace: `conv:tc:` tool call/result, `conv:fi:` file/artifact, `conv:so:` source rows, `conv:ar:` generated context, `sk:` skill, `conv:su:` summary, or a runtime-declared owner namespace. For files, note `mime`, `size_bytes`, `text_symbols`, `line_count`, and any physical path shown.
 - Model-visible text artifact previews are rendered with line numbers when shown on the timeline. These line numbers are viewing prefixes, not file content. Use them to choose `react.read` ranges and patch locations; do not copy the prefixes into full-file replacements or patch content.
 - Use a preview directly only when it is sufficient for the current decision and it does not show truncation/omission/cap markers. If you see `[TOOL RESULT PREVIEW TRUNCATED]`, `[TEXT FILE PREVIEW TRUNCATED]`, `[READ PREVIEW TRUNCATED]`, `omitted`, `capped`, or line windows like `[1-40]/180`, treat the visible text as incomplete.
 - Skills are not read-capped. Owner-defined namespace content is not a built-in readable path; use the configured namespace/service retrieval path and follow its returned refs.
 - For large text artifacts, do not edit or judge the whole file from the initial preview. Use this loop: `react.read(paths=[path],stats_only=true)` for size/line metadata -> `react.rg` when the file is searchable -> `react.read(items=[{"path":path,"line_start":...,"line_count":...}, ...])` to inspect exact line ranges -> repeat for every affected region -> edit/process only after the needed regions are visible.
-- For source rows, use `react.read(paths=["so:sources_pool[...]"])`. Web rows use `content` for fetched page body and `text` for search preview/snippet; use `content` first when you need evidence.
-- If your answer or edit depends on a file/article as evidence, read the needed evidence into visible context. Skills must be read in full. For capped text files/articles, use `react.read` range items to recover content by parts. For searchable `fi:` files, `react.rg` can supply ready-made `read_item` ranges.
+- For source rows, use `react.read(paths=["conv:so:sources_pool[...]"])`. Web rows use `content` for fetched page body and `text` for search preview/snippet; use `content` first when you need evidence.
+- If your answer or edit depends on a file/article as evidence, read the needed evidence into visible context. Skills must be read in full. For capped text files/articles, use `react.read` range items to recover content by parts. For searchable `conv:fi:` files, `react.rg` can supply ready-made `read_item` ranges.
 - Ranged reads always materialize the requested range even if the same logical path is already visible as a full file or preview block.
 - If the whole text must be visible and `text_symbols` is within visible caps, request `max_text_symbols >= text_symbols` and verify the returned status is not truncated. If it is over caps, read consecutive line or symbol ranges until the needed content is visible.
-- For large `tc:` tool results, use the rendered shape/sample to plan and `react.read` for another bounded visible preview. Do not assume exec/fetch output is an uncapped route back into model context.
-- For `fi:` files that exceed visible caps or require exact full-file visibility, use `react.read` range items against the logical `fi:` path. Use exec only for computation or for producing smaller derived artifacts, then inspect those artifacts with `react.read`.
-- For binary/PDF/image files or large attachments, inspect them directly only if the rendered timeline attaches them under caps. If an image is too large, call `react.read` on its `fi:` path; it will downscale a bounded multimodal preview when possible and report `image_view`. For PDFs and unsupported binaries over caps, use exec to extract text, split pages, crop/downsample, or create smaller derived artifacts, then inspect those with `react.read`.
-- For exec-produced text files, the rendered file preview is bounded. The full content is the `fi:` file/physical path shown in the timeline.
+- For large `conv:tc:` tool results, use the rendered shape/sample to plan and `react.read` for another bounded visible preview. Do not assume exec/fetch output is an uncapped route back into model context.
+- For `conv:fi:` files that exceed visible caps or require exact full-file visibility, use `react.read` range items against the logical `conv:fi:` path. Use exec only for computation or for producing smaller derived artifacts, then inspect those artifacts with `react.read`.
+- For binary/PDF/image files or large attachments, inspect them directly only if the rendered timeline attaches them under caps. If an image is too large, call `react.read` on its `conv:fi:` path; it will downscale a bounded multimodal preview when possible and report `image_view`. For PDFs and unsupported binaries over caps, use exec to extract text, split pages, crop/downsample, or create smaller derived artifacts, then inspect those with `react.read`.
+- For exec-produced text files, the rendered file preview is bounded. The full content is the `conv:fi:` file/physical path shown in the timeline.
 - For interactive HTML/browser-facing artifacts, verify behavior with `browser_tools.open_page` and follow-up `browser_tools.click`/`fill`/`scroll`/`status`; check returned `page_errors`, `console_errors`, `request_failures`, `controls`, `scroll`, and `viewport_text_preview` before claiming the app works. Keep `screenshot:false` unless visual state, layout, canvas/SVG, or responsive rendering must be inspected; screenshots are internal image artifacts and add multimodal tokens.
 - Do not claim that you inspected all content from a capped preview. If exact recovery or full processing was needed, mention the recovery method in your notes/final answer.
 
@@ -654,15 +654,15 @@ Using unsupported logical namespaces with fetch_ctx returns an error rather than
 - react.read uses LOGICAL paths.
 - ctx_tools.fetch_ctx uses LOGICAL paths, but only for the supported namespaces listed above.
 - react.patch uses PHYSICAL paths:
-  - `react.patch(path="turn_<current>/files/<workspace_scope>/draft.md", patch="...")`
-  - `react.patch(path="turn_<current>/outputs/<artifact_scope>/page.html", patch="...")`
-- react.patch patches existing current-turn text files under `turn_<current>/files/...` or `turn_<current>/outputs/...`. It does not require the file to have been created by react.write; current-turn files generated by exec are patchable. It does not patch logical `fi:` refs or historical `turn_<older>/...` paths directly. Use react.pull first if needed, then react.checkout for historical `files/...` refs you intend to edit. Use react.write only to create new text or intentionally replace a whole file, not to "register" an existing file for patching.
+  - `react.patch(path="turn_<current>/git/projects/<project_scope>/draft.md", patch="...")`
+  - `react.patch(path="turn_<current>/files/<artifact_scope>/page.html", patch="...")`
+- react.patch patches existing current-turn text files under `turn_<current>/git/projects/...` or `turn_<current>/files/...`. It does not require the file to have been created by react.write; current-turn files generated by exec are patchable. It does not patch logical `conv:fi:` refs or historical `turn_<older>/...` paths directly. Use react.pull first if needed, then react.checkout for historical `git/projects/...` refs you intend to edit. Use react.write only to create new text or intentionally replace a whole file, not to "register" an existing file for patching.
 - rendering_tools.write_* use PHYSICAL paths:
-  - `rendering_tools.write_pdf(path="turn_<current>/outputs/report/report.pdf", content=...)`
+  - `rendering_tools.write_pdf(path="turn_<current>/files/report/report.pdf", content=...)`
 - exec code uses PHYSICAL OUTPUT_DIR-relative paths:
-  - `Path(OUTPUT_DIR) / "turn_<current>/files/app/src/main.py"`
-  - `Path(OUTPUT_DIR) / "turn_<current>/outputs/report/report.pdf"`
-- Use the exact current id and fully qualified physical paths such as `turn_<current>/files/app/docs/report.md` or `turn_<current>/outputs/report/report.pdf`.
+  - `Path(OUTPUT_DIR) / "turn_<current>/git/projects/app/src/main.py"`
+  - `Path(OUTPUT_DIR) / "turn_<current>/files/report/report.pdf"`
+- Use the exact current id and fully qualified physical paths such as `turn_<current>/git/projects/app/docs/report.md` or `turn_<current>/files/report/report.pdf`.
 - Exec contract files may declare optional `visibility="external"|"internal"`:
   - `external` (default): user-shareable produced artifact
   - `internal`: agent/runtime-only file kept in OUT_DIR/timeline, not sent to the user
@@ -678,9 +678,9 @@ When older turns are pruned/compacted, recover only what is needed:
 visible exact path
   -> react.read(paths=[path]) or react.pull(paths=[fi_path]) when exec needs a file
 
-visible summary path (ws:/su:)
+visible summary path (conv:ws:/conv:su:)
   -> react.read(paths=[summary_path])
-  -> if refs are incomplete: react.read(paths=["ar:turn_<id>.react.turn.index"])
+  -> if refs are incomplete: react.read(paths=["conv:ar:turn_<id>.react.turn.index"])
   -> batch exact refs: react.read(paths=[ar_or_tc_or_so_path, ...]) / react.pull(paths=[fi_path, ...])
 
 compacted current-turn prefix
@@ -709,7 +709,7 @@ no exact path: choose react.memsearch by clue
     -> react.memsearch(query="<topic>", from="<iso>", to="<iso>", targets=["summary", "user", "assistant", "attachment"])
     -> omit mode so semantic search is narrowed by the temporal window
 
-  -> read the returned ws:/ar:/fi:/tc:/so: refs, or read ar:turn_<id>.react.turn.index for that turn
+  -> read the returned conv:ws:/conv:ar:/conv:fi:/conv:tc:/conv:so: refs, or read conv:ar:turn_<id>.react.turn.index for that turn
 
 Turn index is reconstructed on demand from the persisted turn log and artifact metadata.
 It is a semantic inventory: summaries, messages, events, tools, artifacts, sources.
@@ -749,19 +749,19 @@ WORK_WITH_DOCUMENTS_AND_IMAGES = """
   `visibility=external`. Use `channel=internal` only for private scratch that
   will not be presented or rendered for the user.
 - Reports, briefs, HTML, Markdown, slide source, DOCX/PDF/PPTX source, and
-  anything under `outputs/` that may become a deliverable should be written with
+  anything under `files/` that may become a deliverable should be written with
   `react.write channel=canvas`, not `channel=internal`.
 - Load the relevant authoring skill when needed (`sk:public.pdf-press`,
   `sk:public.pptx-press`, `sk:public.docx-press`) before writing substantial content.
 - For user document deliverables, first create an external source artifact:
   prefer `react.write(..., channel=canvas, ...)` with an output path such as
-  `turn_<current>/outputs/<artifact_scope>/report.html` or `turn_<current>/outputs/<artifact_scope>/report.md`; exec output with
+  `turn_<current>/files/<artifact_scope>/report.html` or `turn_<current>/files/<artifact_scope>/report.md`; exec output with
   `visibility=external` is also valid. This keeps the draft visible so the user
   can react before rendering if the shape is wrong.
 - Use the input type documented by the target rendering tool. Do not reuse one
   source across different output formats unless that tool explicitly supports it.
 - Preferred: then call the renderer with `content="ref:<visible text source ref>"`,
-  for example `content="ref:fi:turn_<id>.outputs/<artifact_scope>/report.html"`.
+  for example `content="ref:conv:fi:turn_<id>.files/<artifact_scope>/report.html"`.
   Inline renderer content is accepted when needed. If you want to render a
   user/assistant/event object by reference, the referenced content must resolve
   to text in the renderer's requested input format. Do not bind physical paths,
@@ -790,11 +790,11 @@ CODEGEN_BEST_PRACTICES_V2 = """
   However, if the source artifacts have complex structure and reusing them programmatically is error prone,
   make sure the needed, for code generation, artifacts are visible in the context so you can properly write the needed content in code.
 - For programmatic access inside the snippet, use ctx_tools.fetch_ctx only for the logical context objects it supports:
-  ar:turn_<id>.user.prompt, ar:turn_<id>.assistant.completion, ar:turn_<id>.assistant.completion.<n>, ar:plan.latest:<plan_id>, tc:turn_<id>.<call_id>.call, tc:turn_<id>.<call_id>.result, and so:sources_pool[...].
-  It does NOT support fi:, sk:, or su:.
-  ar:turn_<id>.assistant.completion is the latest completion in that turn; numbered paths address earlier visible completions from the same turn.
-  fetch_ctx returns a canonical artifact dict for ar:/tc: paths: {path, kind, mime, payload, text?, base64?}.
-  Use payload; for JSON mime it is parsed JSON. For so:sources_pool[...] it returns source rows; for web rows use content first, text second.
+  conv:ar:turn_<id>.user.prompt, conv:ar:turn_<id>.assistant.completion, conv:ar:turn_<id>.assistant.completion.<n>, conv:ar:plan.latest:<plan_id>, conv:tc:turn_<id>.<call_id>.call, conv:tc:turn_<id>.<call_id>.result, and conv:so:sources_pool[...].
+  It does NOT support conv:fi:, sk:, or conv:su:.
+  conv:ar:turn_<id>.assistant.completion is the latest completion in that turn; numbered paths address earlier visible completions from the same turn.
+  fetch_ctx returns a canonical artifact dict for conv:ar:/conv:tc: paths: {path, kind, mime, payload, text?, base64?}.
+  Use payload; for JSON mime it is parsed JSON. For conv:so:sources_pool[...] it returns source rows; for web rows use content first, text second.
 - The code must be optimal: if programmatic editing/synthesis is possible and best, do it.
 - If some data must be generated and generation is allowed by the agent administrator/runtime limits, generate it — no guessing. Do not regenerate data that already exists in context;
   use fetch_ctx to read it when the exact text is needed, and only generate projections/translations to target DSLs.
@@ -848,25 +848,25 @@ The <channel:summary> channel is allowed ONLY when action is complete or exit.
   ask for it on its own ("send the data file you used", "give me that chart as a PNG"), and it is LOST unless it is in
   the contract. The test is NOT "did I intend this as the deliverable" — it is "is this a separate file that could be
   wanted on its own?" If yes → contract it. When unsure → CONTRACT it. The ONLY files you may leave uncontracted are
-  routine PROJECT SOURCE under `files/`, which git keeps for you (see persistence below).
+  routine PROJECT SOURCE under `git/projects/`, which git keeps for you (see persistence below).
   · CRITICAL! CANONICAL TRAP (do not repeat): you render chart PNGs, embed them into an Excel/PDF, and contract ONLY the
     workbook. Embedding copies the bytes INTO the document, but each standalone PNG is a SEPARATE file that vanishes
     unless contracted. Contract the workbook AND every chart image — one entry each.
   · CRITICAL! EVERY file path that your code will write to disk must be listed in contract. EVERY! Even if you do not plan to share them now to a user.
     Not including files in the contract lead to data loss!!    
 - WHERE a file lives decides HOW it persists:
-  · `turn_<current>/files/…` = GIT — the whole `files/` tree is committed as this turn's snapshot and carried across
-    turns; re-materialize it by pulling/checking out its `fi:turn_<id>.files/…` ref. Durable, versioned PROJECT state
+  · `turn_<current>/git/projects/…` = GIT — the whole `git/projects/` tree is committed as this turn's project snapshot and carried across
+    turns; re-materialize it by pulling/checking out its `conv:fi:turn_<id>.git/projects/…` ref. Durable, versioned PROJECT state
     (source/configs/code); routine project files here are kept by git WITHOUT a contract.
   · the `contract` = HOSTING — each listed file gets its OWN downloadable/pullable handle, INDEPENDENT of git; this is
-    the ONLY way a file becomes individually retrievable/shareable. `turn_<current>/outputs/…` has NO git — files there
+    the ONLY way a file becomes individually retrievable/shareable. `turn_<current>/files/…` has NO git — files there
     survive ONLY if contracted.
   So to hand a file to the user or make it individually retrievable — ESPECIALLY any binary — it MUST be contracted,
-  whether it sits under `outputs/` or `files/`.
+  whether it sits under `git/projects/` or `files/`.
 - Contract entry = `{filepath, description, visibility?}`. Params: `contract` (REQUIRED), `prog_name`, optional `timeout_s`.
   · `filepath`: the FULL OUTPUT_DIR-relative path, BYTE-IDENTICAL to the path your code writes (mismatch → `missing_file`,
-    bytes lost). Its prefix picks the namespace: `turn_<current>/files/<scope>/…` (durable project state) or
-    `turn_<current>/outputs/<scope>/…` (deliverables / one-offs).
+    bytes lost). Its prefix picks the namespace: `turn_<current>/git/projects/<scope>/…` (durable project state) or
+    `turn_<current>/files/<scope>/…` (deliverables / one-offs).
   · `visibility`: `external` (default) = hosted AND delivered to the user (however the interface delivers);
     `internal` = hosted + pullable by you in later turns, but NOT shown to the user — use for reusable building blocks
     you still want to keep.
@@ -891,7 +891,7 @@ EXEC_SNIPPET_RULES = f"""
   - Look for artifact_path and its physical_path in the context.
 - Files - user attachments and files produced by you (assistant) or your code earlier must be read via
   their canonical physical path under OUTPUT_DIR, e.g. `Path(OUTPUT_DIR) / "turn_<id>/attachments/<filename>"`.
-- Example: `Path(OUTPUT_DIR) / "turn_<current>/outputs/report/report.xlsx"` for produced reports/artifacts, `Path(OUTPUT_DIR) / "turn_<current>/files/project/src/app.py"` for durable workspace state, `turn_<id>/attachments/<filename>` for user attachments.
+- Example: `Path(OUTPUT_DIR) / "turn_<current>/files/report/report.xlsx"` for produced reports/artifacts, `Path(OUTPUT_DIR) / "turn_<current>/git/projects/project/src/app.py"` for durable project state, `turn_<id>/attachments/<filename>` for user attachments.
 - Outputs MUST be written to the provided `filename` paths under OUTPUT_DIR.
 - If your snippet must invoke built-in tools, follow the ISO tool execution rule: use `await agent_io_tools.tool_call(...)`. More details:
 {ISO_TOOL_EXECUTION_INSTRUCTION}
@@ -915,9 +915,9 @@ EXEC_SNIPPET_RULES = f"""
   direct renderer tool calls or complete with the artifacts already produced.
 [ ctx_tools.fetch_ctx or read file?]
 - You MAY use ctx_tools.fetch_ctx inside your snippet to load context (generated code only; never in tool_call rounds).
-- fetch_ctx only supports ar:, tc:, so: paths. It does NOT support fi:. For files/attachments use physical OUTPUT_DIR paths.
-- fetch_ctx returns {{path, mime, sources_used, payload, text/base64}} for ar:/tc: artifacts. Use payload; for JSON mime it is parsed JSON.
-  For so:sources_pool[...] it returns source rows. In web rows, `text` is the preview and `content` is full fetched page text when available; use `content or text`.
+- fetch_ctx only supports conv:ar:, conv:tc:, conv:so: paths. It does NOT support conv:fi:. For files/attachments use physical OUTPUT_DIR paths.
+- fetch_ctx returns {{path, mime, sources_used, payload, text/base64}} for conv:ar:/conv:tc: artifacts. Use payload; for JSON mime it is parsed JSON.
+  For conv:so:sources_pool[...] it returns source rows. In web rows, `text` is the preview and `content` is full fetched page text when available; use `content or text`.
   If you need files, you access them directly with OUTPUT_DIR-relative paths.
 """
 
@@ -943,7 +943,7 @@ Do not invent sources or SIDs since they will appear as a broken citation marker
   The sids in such tools results are the sids those sources have in the source pool.
   When such tool is called, returned previews are visible in the context right away; cite only what you can see.
   Use react.read when you need full fetched source content or when a needed snippet is no longer visible.
-  In that case, read from sources_pool with react.read, e.g. react.read(paths=["so:sources_pool[1,2]"]).
+  In that case, read from sources_pool with react.read, e.g. react.read(paths=["conv:so:sources_pool[1,2]"]).
 
 """
 
@@ -963,7 +963,7 @@ ATTACHMENT_BINDING_CODEGEN = """
 [Attachments to Multimodal Tools (CODEGEN)]
 - If a multimodal-capable execution-only tool is explicitly available and the
   task depends on an attachment, use the attachment's physical OUTPUT_DIR-relative
-  path in exec code. Do not use ctx_tools.fetch_ctx for fi: attachments.
+  path in exec code. Do not use ctx_tools.fetch_ctx for conv:fi: attachments.
 - Do not use exec to generate ordinary user-facing prose; use `react.write`.
 - Path guard example:
 ```python
@@ -1036,62 +1036,62 @@ CRITICAL: You never use the filesystem paths in these cases
 CRITICAL: Filesystem paths can be used in exec snippets, in react.write, react.patch, rendering_tools.write_*
 
 #### Logical/physical conversion rule (do not skip)
-Timeline and recovery entries show logical paths as the primary artifact identity. Only `fi:` file/output/snapshot/attachment refs have a derived physical `OUTPUT_DIR`-relative path:
+Timeline and recovery entries show logical paths as the primary artifact identity. Only `conv:fi:` project/file/snapshot/attachment refs have a derived physical `OUTPUT_DIR`-relative path:
 
 | Logical ref | Physical `OUTPUT_DIR`-relative path |
 | --- | --- |
-| `fi:turn_<id>.files/<rel>` | `turn_<id>/files/<rel>` |
-| `fi:turn_<id>.outputs/<rel>` | `turn_<id>/outputs/<rel>` |
-| `fi:turn_<id>.snapshots/<rel>` | `turn_<id>/snapshots/<rel>` |
-| `fi:turn_<id>.user.attachments/<rel>` | `turn_<id>/attachments/<rel>` |
-| `fi:turn_<id>.external.<event_kind>.attachments/<event_id>/<rel>` | `turn_<id>/external/<event_kind>/attachments/<event_id>/<rel>` |
+| `conv:fi:turn_<id>.git/projects/<rel>` | `turn_<id>/git/projects/<rel>` |
+| `conv:fi:turn_<id>.files/<rel>` | `turn_<id>/files/<rel>` |
+| `conv:fi:turn_<id>.git/snapshots/<rel>` | `turn_<id>/git/snapshots/<rel>` |
+| `conv:fi:turn_<id>.user.attachments/<rel>` | `turn_<id>/attachments/<rel>` |
+| `conv:fi:turn_<id>.external.<event_kind>.attachments/<event_id>/<rel>` | `turn_<id>/external/<event_kind>/attachments/<event_id>/<rel>` |
 
-- `ar:`, `tc:`, `so:`, `su:`, and `sk:` are logical context refs, not filesystem paths.
+- `conv:ar:`, `conv:tc:`, `conv:so:`, `conv:su:`, and `sk:` are logical context refs, not filesystem paths.
 - The current runtime may also show namespace refs whose resolvers are connected by the runtime. Runtime instructions or ANNOUNCE may name those namespaces and explain what their refs mean.
-- When a rendered event/object shows `object_ref: <namespace>:...`, that object ref is the owner object identity. If exact content is needed, pass the `object_ref` to `react.pull`; do not pull the event's `ev:` path.
-- If an `fi:` path starts `fi:conv_<conversation_id>.turn_<id>...`, the `conv_` segment is the conversation scope and the file/artifact is from another conversation. When materialized, its physical path starts with `conv_<conversation_id>/turn_<id>/...`. Current-conversation `fi:` paths do not have this segment. Use scoped paths exactly as supplied with `react.read`, `react.pull`, `react.checkout`, or `react.rg`.
-- If an artifact line says `physical_path: exists (derive)`, derive the physical path from its logical `fi:` path with the table above.
+- When a rendered event/object shows `object_ref: <namespace>:...`, that object ref is the owner object identity. If exact content is needed, pass the `object_ref` to `react.pull`; do not pull the event's `conv:ev:` path.
+- If an `conv:fi:` path starts `conv:fi:conv_<conversation_id>.turn_<id>...`, the `conv_` segment is the conversation scope and the file/artifact is from another conversation. When materialized, its physical path starts with `conv_<conversation_id>/turn_<id>/...`. Current-conversation `conv:fi:` paths do not have this segment. Use scoped paths exactly as supplied with `react.read`, `react.pull`, `react.checkout`, or `react.rg`.
+- If an artifact line says `physical_path: exists (derive)`, derive the physical path from its logical `conv:fi:` path with the table above.
 - If no `physical_path` line is shown, do not assume there is a filesystem file.
-- Do not mix separators: logical `fi:` paths use a dot after the turn id and slash after the namespace; physical paths use slashes. If you see `fi:turn_<id>/outputs/...` or `turn_<id>.outputs/...`, normalize mentally to the canonical form before using it.
+- Do not mix separators: logical `conv:fi:` paths use a dot after the turn id and slash after the namespace; physical paths use slashes. If you see `conv:fi:turn_<id>/git/projects/...` or `turn_<id>.git/projects/...`, normalize mentally to the canonical form before using it.
 
 #### Canonical path rule (Decision-only)
-All physical file paths in tool params and exec code are OUTPUT_DIR-relative and qualified with a turn id. The path form itself tells the runtime whether the file is durable workspace state, produced output, or an input attachment.
+All physical file paths in tool params and exec code are OUTPUT_DIR-relative and qualified with a turn id. The path form itself tells the runtime whether the file is durable project state, produced artifact, or an input attachment.
 
 | Intent | Path kind | Use this form |
 | --- | --- | --- |
-| Read visible context/artifact content | logical | `ar:turn_<id>...`, `fi:turn_<id>...`, `tc:turn_<id>...`, `so:...`, `su:...`, `sk:...` |
-| Pull historical files into local execution workspace | logical | `react.pull(paths=["fi:turn_<id>.files/<workspace_scope>/<path>"])` |
+| Read visible context/artifact content | logical | `conv:ar:turn_<id>...`, `conv:fi:turn_<id>...`, `conv:tc:turn_<id>...`, `conv:so:...`, `conv:su:...`, `sk:...` |
+| Pull historical project files into local execution workspace | logical | `react.pull(paths=["conv:fi:turn_<id>.git/projects/<project_scope>/<path>"])` |
 | Resolve and rehost an external owner ref | logical | `react.pull(paths=["<namespace>:<key>"])`, then use returned `logical_path` / `physical_path` |
-| Write or patch current durable workspace state | physical | `turn_<current>/files/<workspace_scope>/<path>` |
-| Write current reports/exports/render sources | physical | `turn_<current>/outputs/<artifact_scope>/<path>` |
-| Read input attachments in exec code | physical or logical | `turn_<id>/attachments/<name>` or `fi:turn_<id>.user.attachments/<name>` |
+| Write or patch current durable project state | physical | `turn_<current>/git/projects/<project_scope>/<path>` |
+| Write current reports/exports/render sources | physical | `turn_<current>/files/<artifact_scope>/<path>` |
+| Read input attachments in exec code | physical or logical | `turn_<id>/attachments/<name>` or `conv:fi:turn_<id>.user.attachments/<name>` |
 
 Examples:
-- `react.read(paths=["fi:turn_<id>.files/app/src/main.py"])`
-- `react.write(path="turn_<current>/files/app/src/main.py", channel="canvas", content=..., kind="file")`
-- `react.patch(path="turn_<current>/files/app/src/main.py", patch=...)`
-- `react.write(path="turn_<current>/outputs/report/summary.md", channel="canvas", content=..., kind="file")`
-- `rendering_tools.write_pdf(path="turn_<current>/outputs/report/summary.pdf", content="ref:turn_<current>/outputs/report/summary.md")`
-- Exec code: `Path(OUTPUT_DIR) / "turn_<current>/outputs/report/data.json"`
+- `react.read(paths=["conv:fi:turn_<id>.git/projects/app/src/main.py"])`
+- `react.write(path="turn_<current>/git/projects/app/src/main.py", channel="canvas", content=..., kind="file")`
+- `react.patch(path="turn_<current>/git/projects/app/src/main.py", patch=...)`
+- `react.write(path="turn_<current>/files/report/summary.md", channel="canvas", content=..., kind="file")`
+- `rendering_tools.write_pdf(path="turn_<current>/files/report/summary.pdf", content="ref:turn_<current>/files/report/summary.md")`
+- Exec code: `Path(OUTPUT_DIR) / "turn_<current>/files/report/data.json"`
 - Exec code reading an attachment: `Path(OUTPUT_DIR) / "turn_<id>/attachments/input.xlsx"`
 
-Use logical paths for `react.read`, `react.pull`, and `ctx_tools.fetch_ctx` (which supports only ar:/tc:/so: in exec code). External owner refs use `react.pull` first when exact content must become workspace material; if a rendered block shows `object_ref`, pull that ref and continue from the returned `fi:` logical path or physical path. Use physical paths for `react.write`, `react.patch`, rendering tools, browser tools, and exec code/contracts.
-- `react.patch` can patch existing current-turn text files under canonical `turn_<current>/files/...` or `turn_<current>/outputs/...`, including current-turn files produced by exec. It is not limited to files previously written by `react.write`.
+Use logical paths for `react.read`, `react.pull`, and `ctx_tools.fetch_ctx` (which supports only conv:ar:/conv:tc:/conv:so: in exec code). External owner refs use `react.pull` first when exact content must become workspace material; if a rendered block shows `object_ref`, pull that ref and continue from the returned `conv:fi:` logical path or physical path. Use physical paths for `react.write`, `react.patch`, rendering tools, browser tools, and exec code/contracts.
+- `react.patch` can patch existing current-turn text files under canonical `turn_<current>/git/projects/...` or `turn_<current>/files/...`, including current-turn files produced by exec. It is not limited to files previously written by `react.write`.
 - Keep workspace organization tidy: when you are continuing the same project, reuse its existing top-level scope instead of inventing a sibling scope.
-- If ANNOUNCE or the visible local workspace already shows existing `files/<workspace_scope>/...` scopes, continue inside the matching scope under `turn_<current>/files/<workspace_scope>/...`.
+- If ANNOUNCE or the visible local workspace already shows existing `git/projects/<project_scope>/...` scopes, continue inside the matching scope under `turn_<current>/git/projects/<project_scope>/...`.
 - If the old scope name is clearly weak, temporary, or misleading, you may rename the project to a better canonical scope.
 - Treat that as a deliberate rename/migration of the project tree, not as a sibling continuation.
 - Only create a genuinely separate new top-level scope when the user explicitly wants a separate project or fork.
-- Use `turn_<current>/outputs/<artifact_scope>/...` for reports, exports, test results, and similar artifacts that should not be committed into workspace history.
-- Reserve `outputs/tmp/...` only for disposable scratch outputs.
+- Use `turn_<current>/files/<artifact_scope>/...` for reports, exports, test results, and similar artifacts that should not be committed into workspace history.
+- Reserve `files/tmp/...` only for disposable scratch artifacts.
 
 ### Using Search/Fetch results (SPECIAL RULE)
 - Search/fetch tool calls result are list of {sid, url, text, content, ..}. `text` is the search preview/snippet;
   `content` is the fetched page body when available and can be large.
   Therefore the timeline management process can truncate such results in the visible context as the timeline progresses (older/large data pruning).
   However, the results of such tools are added in the sources_pool.
-- Whenever some sids are invisible/truncated while you need them, you can bring the selected sids into visibility as JSON source rows with react.read(paths=["so:sources_pool[sid1, sid2, ..]"]) using slice operator, for the enumeration of SIDs `so:sources_pool[1,3,5]` or for range of sids `so:sources_pool[2:6]`. For web rows, inspect/use `content` before `text`.
-- In exec code, `ctx_tools.fetch_ctx(path="so:sources_pool[1]")` returns source rows. For web rows, use
+- Whenever some sids are invisible/truncated while you need them, you can bring the selected sids into visibility as JSON source rows with react.read(paths=["conv:so:sources_pool[sid1, sid2, ..]"]) using slice operator, for the enumeration of SIDs `conv:so:sources_pool[1,3,5]` or for range of sids `conv:so:sources_pool[2:6]`. For web rows, inspect/use `content` before `text`.
+- In exec code, `ctx_tools.fetch_ctx(path="conv:so:sources_pool[1]")` returns source rows. For web rows, use
   `row.get("content") or row.get("text")`; never prefer `text` over `content` when you need full page text.
 """
 
@@ -1257,24 +1257,24 @@ REACT_DECISION_SHARED_OPERATING_GUIDE = f"""
 - Avoid repeating content you already streamed or answered. Summarize/reference attached document(s) when useful, but do not re-list earlier user requests, skills, tool results, or accomplishments unless they are needed to answer the newest unresolved request.
   If the task is simple, answer fully in final_answer without extra streaming.
   If you want to make some illustrations before completing the turn, even if you do not need exploration, you first use react.write. final_answer must be last step in the turn.
-- Ensure needed data/knowledge visible in context when needed: if generation depends on external evidence (search/fetch/attachments) which you do not see now in your visible context loaded (or maybe they are truncated), first load those sources via react.read so they appear in your visible context. Use sources_pool slices (e.g., so:sources_pool[sid,..]) for sources,  sk: for skills or ar: or fi: artifact paths with react.read.
+- Ensure needed data/knowledge visible in context when needed: if generation depends on external evidence (search/fetch/attachments) which you do not see now in your visible context loaded (or maybe they are truncated), first load those sources via react.read so they appear in your visible context. Use sources_pool slices (e.g., conv:so:sources_pool[sid,..]) for sources,  sk: for skills or conv:ar: or conv:fi: artifact paths with react.read.
 - If you see in catalog the skills that relate to the work you are going to do, make sure these skills are read in your visible context. Otherwise read with react.read(paths=[sk:..]). The skill which is 'read' is visible in the context in full and is marked as 💡.
   Example: as one of the steps, you must generate the pptx and pdf. Learn best practices/advice by reading sk:public.pdf-press and sk:public.pptx-press if these skills are not visible as 'read' (💡) in context yet. Learning earlier helps plan better steps so to decide what is the best shape of the data / sequence of data transformation is optimal for the final result.
 - For the strategic rules on which actions may share a round (causality, "already visible", live streaming, forbidden same-round chains), the canonical source is the [ROUND / ACTION CAUSALITY] block at the head of the protocol. Treat it as the controlling rule.
 - Workspace activation is explicit. Do NOT assume historical files are locally present at turn start.
   Read `[WORKSPACE]` in ANNOUNCE first.
-  If current local files are not enough, use `react.pull(paths=[...])` to materialize historical refs on this worker. Use `react.checkout(mode="replace", paths=[...])` after pull when the active current-turn workspace itself must receive an editable copy of that historical `files/...` tree, and `react.checkout(mode="overlay", paths=[...])` after pull when you want to import or overwrite selected historical files into the existing workspace.
+  If current local files are not enough, use `react.pull(paths=[...])` to materialize historical refs on this worker. Use `react.checkout(mode="replace", paths=[...])` after pull when the active current-turn workspace itself must receive an editable copy of that historical `git/projects/...` tree, and `react.checkout(mode="overlay", paths=[...])` after pull when you want to import or overwrite selected historical files into the existing workspace.
   Exec/code and historical cross-turn patching do NOT auto-materialize old files for you.
   In `git` mode, the repo/history shell may exist while the worktree is still sparse. Treat project content as absent until you pulled or intentionally materialized it.
-  In `git` mode, your main workspace is `turn_<current>/files/...`. Treat that current-turn tree as the authoritative project structure for the turn.
-  In `git` mode, `turn_<current>/outputs/...` is a produced-artifact area, not part of workspace/git history.
-  Use `react.pull(paths=["fi:<older_turn>..."])` when you need a specific historical version side-by-side as readonly local reference material.
-  Use `react.checkout(mode="replace", paths=[fi:...])` after pull when the active current-turn workspace itself must contain a runnable/searchable/testable editable copy.
-  Use `react.checkout(mode="overlay", paths=[fi:...])` after pull when you want to import or overwrite selected historical files into an already materialized current-turn workspace.
-  `react.checkout(mode="replace", ...)` replaces the current-turn `files/` tree, then applies the requested `fi:turn_<id>.files/...` refs in order.
-  `react.checkout(mode="overlay", ...)` keeps the current-turn `files/` tree and applies the requested refs on top without deleting unspecified files.
-  In ANNOUNCE, `current editable workspace` is the local editable workspace already present in this turn. `previous saved workspace paths` are top-level `files/...` paths saved from earlier successful turns; pull one to bring it local when you need to focus on it, then checkout it when you need to edit it.
-  To continue one of those previous saved workspace paths as the active workspace, use its `fi:` form and follow the announced two-step pattern: first `react.pull(paths=["fi:turn_<id>.files/<path_under_files>"])`, then `react.checkout(mode="replace", paths=["fi:turn_<id>.files/<path_under_files>"])`, then write into the current turn under the matching canonical `turn_<current>/files/<path_under_files>/...` path.
+  In `git` mode, your main workspace is `turn_<current>/git/projects/...`. Treat that current-turn tree as the authoritative project structure for the turn.
+  In `git` mode, `turn_<current>/files/...` is a produced-artifact area, not part of workspace/git history.
+  Use `react.pull(paths=["conv:fi:<older_turn>..."])` when you need a specific historical version side-by-side as readonly local reference material.
+  Use `react.checkout(mode="replace", paths=[conv:fi:...])` after pull when the active current-turn workspace itself must contain a runnable/searchable/testable editable copy.
+  Use `react.checkout(mode="overlay", paths=[conv:fi:...])` after pull when you want to import or overwrite selected historical files into an already materialized current-turn workspace.
+  `react.checkout(mode="replace", ...)` replaces the current-turn `git/projects/` tree, then applies the requested `conv:fi:turn_<id>.git/projects/...` refs in order.
+  `react.checkout(mode="overlay", ...)` keeps the current-turn `git/projects/` tree and applies the requested refs on top without deleting unspecified files.
+  In ANNOUNCE, `current editable workspace` is the local editable workspace already present in this turn. `previous saved workspace paths` are top-level `git/projects/...` paths saved from earlier successful turns; pull one to bring it local when you need to focus on it, then checkout it when you need to edit it.
+  To continue one of those previous saved workspace paths as the active workspace, use its `conv:fi:` form and follow the announced two-step pattern: first `react.pull(paths=["conv:fi:turn_<id>.git/projects/<path_under_projects>"])`, then `react.checkout(mode="replace", paths=["conv:fi:turn_<id>.git/projects/<path_under_projects>"])`, then write into the current turn under the matching canonical `turn_<current>/git/projects/<path_under_projects>/...` path.
   Continue inside the matching existing scope when the user is extending the same project.
   If you decide the current project deserves a better scope name, perform that as an intentional rename/migration, not as sibling drift into a second project folder.
 - Keep your context sane: if you just retrieved the large snippet which is useless and you plan the further exploration, hide it with react.hide. Help yourself not to repeat the mistakes in search with setting param replacement such that it will hint what's inside very briefly and why you hide it.
@@ -1309,8 +1309,8 @@ Remember, you build the user timeline which allows them to efficiently stay in t
 - Use `notes` for step acknowledgements and short next‑round intent.
 - When acting, include in `notes` the step you are currently working on (e.g., "… [2] Draft report — in progress").
 - ANNOUNCE shows only the last few open plans, each with `plan_id` and `snapshot_ref`.
-- If you need the full latest snapshot for a plan, read `ar:plan.latest:<plan_id>`.
-- Do not expect raw `react.plan` JSON snapshots or raw `react.plan.ack` blocks to be your main plan UI. Your primary plan signals are: notes, plan tool calls, ANNOUNCE, and `ar:plan.latest:<plan_id>`.
+- If you need the full latest snapshot for a plan, read `conv:ar:plan.latest:<plan_id>`.
+- Do not expect raw `react.plan` JSON snapshots or raw `react.plan.ack` blocks to be your main plan UI. Your primary plan signals are: notes, plan tool calls, ANNOUNCE, and `conv:ar:plan.latest:<plan_id>`.
 - Your acknowledgements appear back in internal plan event blocks as `plan_ack`.
 
 [FINALIZING TURN (EXIT/COMPLETE ONLY)]
@@ -1329,21 +1329,21 @@ Remember, you build the user timeline which allows them to efficiently stay in t
   Once the skill is 'read' you see it with 💡banner which denotes the expanded skill content in the timeline.
 
 [REACT EVENTS, TOOL CALLS AND TOOL RESULTS, ARTIFACTS]
-Timeline artifacts may also exist directly under `ar:` paths, not only as prompts/completions. In particular, plans expose a stable latest-snapshot alias under `ar:`:
-  ar:plan.latest:<plan_id>
+Timeline artifacts may also exist directly under `conv:ar:` paths, not only as prompts/completions. In particular, plans expose a stable latest-snapshot alias under `conv:ar:`:
+  conv:ar:plan.latest:<plan_id>
 Each tool call is saved under:
-  tc:turn_<id>.<tool_call_id>.call
+  conv:tc:turn_<id>.<tool_call_id>.call
 Each tool result is saved under:
-  tc:turn_<id>.<tool_call_id>.result
+  conv:tc:turn_<id>.<tool_call_id>.result
 Exception for web_search/web_fetch: the result is saved under
-  so:sources_pool[sid1-sid2]
+  conv:so:sources_pool[sid1-sid2]
 where sid1..sid2 are the first/last SIDs contributed by that call.
 Tool calls may also produce artifacts (files or display content). These appear in tool result blocks and can be read via react.read using their artifact paths.
 The tool result block is a **rendered summary/metadata view** (status/errors + artifact metadata; inline output only for non‑file tools).
 It does **not** contain full file contents. If you need the actual content, read the artifact_path shown there.
 Example (schematic):
   [TOOL RESULT tc_abcd] <tool_id>
-  artifact_path: fi:turn_<id>.files/report/report.xlsx   (or so:sources_pool[1-3] for web tools)
+  artifact_path: conv:fi:turn_<id>.files/report/report.xlsx   (or conv:so:sources_pool[1-3] for web tools)
   [Produced files] ... (e.g., rendering_tools.write_pdf / exec output / react.write with kind=file) or inline content if text
 You can see the tool call id for each tool call in its tool call block.
 For each tool call, we show the tool id, tool call id, params (including bindings), and tool result blocks.
@@ -1394,7 +1394,7 @@ You have following tools to capture content which you produce in the named and d
   - you want to collect the technical details of the project you work on. Mark such lines with [S] (spec, structure)
   - you finished a milestone or achieved something worth carrying forward. Mark such line with [A] (achievements/milestones)
   - you want to remember the important artifact or file to reopen later. Mark such line with [K] (key artifact), include the logical path and one short explanation of what is there and why it matters
-    Example: `[K] fi:turn_123.files/app/src/auth/service.py - invite flow implementation; reopen here before changing user onboarding`
+    Example: `[K] conv:fi:turn_123.files/app/src/auth/service.py - invite flow implementation; reopen here before changing user onboarding`
   Mostly these notes must be telegraphic. They become long conversation memory beacons.
   Do not narrate every step; capture only what is likely to matter later.
   You might additionally share a resulting file with the user with the content you produced by setting kind='file' for react.write.
@@ -1403,8 +1403,8 @@ You have following tools to capture content which you produce in the named and d
   The tool normalizes generated unified-diff hunk counts before applying. Do not switch to full-file replacement only because a hunk count was wrong; retry with enough exact context if the diff content was otherwise correct. Use full replacement only when the intended edit is a whole-file rewrite or the targeted diff still cannot match the file.
   For precise targeted edits, read the affected range with `react.read(items=[{{"path":..., "line_start":..., "line_count":..., "line_numbers":"disabled"}}])` and copy context from that raw range. Timeline previews and normal ranged reads may include line-number prefixes; use those prefixes only to choose ranges.
   If the patch contains rendered-preview line-number prefixes, the tool rejects it. Remove those prefixes and retry.
-  It patches existing current-turn text files under canonical `turn_<current>/files/...` or `turn_<current>/outputs/...`; the file does NOT need to have been created by react.write. Current-turn files produced by exec, checkout, write, or prior patch are patchable once present locally.
-  It does not patch logical `fi:` refs or historical `turn_<older>/...` paths directly. If you intend to edit a historical `files/...` ref, use react.pull first if needed, then react.checkout to copy it into the current-turn `turn_<current>/files/...` namespace before patching. Do not re-emit a whole file with react.write just to "register" it for patching.
+  It patches existing current-turn text files under canonical `turn_<current>/git/projects/...` or `turn_<current>/files/...`; the file does NOT need to have been created by react.write. Current-turn files produced by exec, checkout, write, or prior patch are patchable once present locally.
+  It does not patch logical `conv:fi:` refs or historical `turn_<older>/...` paths directly. If you intend to edit a historical `git/projects/...` ref, use react.pull first if needed, then react.checkout to copy it into the current-turn `turn_<current>/git/projects/...` namespace before patching. Do not re-emit a whole file with react.write just to "register" it for patching.
   The patch itself is streamed to the user in your chosen channel. If kind='file', the updated file is also shared.
   After patching, a post‑patch check may run; if you see a note `post_patch_check_failed`, decide whether to retry, adjust, or stop.
 
@@ -1412,17 +1412,17 @@ You have following tools to capture content which you produce in the named and d
   Do NOT use react.memsearch if the needed artifact or text is already visible in the current context.
   If you can see the needed content (or its logical path), use it directly or call react.read on that path.
   Only use react.memsearch when you cannot identify a path and suspect the info exists in older turns.
-- react.hide: hide a large snippet by logical path (ar:/fi:/tc:/so:), not a query. Use only when the large barely useful snippet is near the tail of your visible context, and clearly no longer needed. The original content remains retrievable via react.read(path).
+- react.hide: hide a large snippet by logical path (conv:ar:/conv:fi:/conv:tc:/conv:so:), not a query. Use only when the large barely useful snippet is near the tail of your visible context, and clearly no longer needed. The original content remains retrievable via react.read(path).
   This is very useful tool when results retrieved by react.read, react.memsearch or web_tools.web_search / web_tools/web_fetch are irrelevant. In that case you can hide the, to avoid spending tokens, and provide the replacement which explains the irrelevance and helps later to correlate the retrieval query (path or semantic query)
   to result it returned so do not repeat the same irrelevant retrieval later. This is also useful when you have already seen the content but it is far in the tail of your visible context and you want to keep the context clean and focused on more relevant content.
-- react.rg: safe ripgrep-like file/region search over files already materialized on this worker (no shell). Use it to locate readable files by name or regex content before reading/editing. Prefer roots that match visible paths: omit `root`, or use fully qualified `turn_<id>/files/...`, `turn_<id>/outputs/...`, `turn_<id>/attachments/...`, or matching `fi:` artifact paths.
-  It does not search hidden/pruned timeline, unmaterialized artifact history, or bundle-owned service namespaces. If the target is from an older turn, identify the `fi:` ref from visible context or `react.memsearch`, then `react.pull` it before local search. If you need to modify it, checkout the pulled `files/...` ref into the current turn.
+- react.rg: safe ripgrep-like file/region search over files already materialized on this worker (no shell). Use it to locate readable files by name or regex content before reading/editing. Prefer roots that match visible paths: omit `root`, or use fully qualified `turn_<id>/git/projects/...`, `turn_<id>/files/...`, `turn_<id>/attachments/...`, or matching `conv:fi:` artifact paths.
+  It does not search hidden/pruned timeline, unmaterialized artifact history, or bundle-owned service namespaces. If the target is from an older turn, identify the `conv:fi:` ref from visible context or `react.memsearch`, then `react.pull` it before local search. If you need to modify it, checkout the pulled `git/projects/...` ref into the current turn.
   It returns discovery metadata (`size_bytes`, `text_symbols`, `line_count`, `logical_path`) and, for content matches, line-numbered previews plus `read_item` ranges. For large text artifacts, search first, then follow up with react.read using `items`/`read_items` for the exact regions you need.
 
 - Use rendering_tools.write_* to render and write the special formats (pdf, pptx, docx, png).
 For normal user document deliverables, write the source first, then render it
-with `content="ref:<visible text source ref>"`, normally a visible `fi:` source
-file such as `content="ref:fi:turn_<id>.outputs/<source-file>"`. Use the input
+with `content="ref:<visible text source ref>"`, normally a visible `conv:fi:` source
+file such as `content="ref:conv:fi:turn_<id>.files/<source-file>"`. Use the input
 type documented by the target rendering tool. Renderer `content=ref:` source
 content must resolve to text in the requested input format. Do not pass physical
 paths. If the source object is external, call `react.pull` first and use the
@@ -1438,13 +1438,13 @@ still valid when needed; do not mix inline content and `ref:` in the same
 [CAPTURING PROGRESS WITH ARTIFACTS]
 - One logical unit of work = one artifact path name.
   Physically this will create a file artifact with the name you provide and replace dots with slashes in the filesystem (e.g., "report.md" → report.md, "analysis.findings.txt" → analysis/findings.txt).
-- Physical paths are used in react.patch, rendering_tools.write_*, and exec snippets. For react.patch, use canonical current-turn paths such as `turn_<current>/files/<workspace_scope>/file.py` or `turn_<current>/outputs/<artifact_scope>/page.html`; an existing exec-produced current-turn text file under those namespaces is patchable.
+- Physical paths are used in react.patch, rendering_tools.write_*, and exec snippets. For react.patch, use canonical current-turn paths such as `turn_<current>/git/projects/<project_scope>/file.py` or `turn_<current>/files/<artifact_scope>/page.html`; an existing exec-produced current-turn text file under those namespaces is patchable.
 - react.read still requires logical paths.
 - All artifacts are files. You can directly inspect them with react.read when they are text or pdf/image.
 - For non-text binary artifacts (for example xlsx/xls/pptx/docx), do NOT expect react.read to decode the payload.
   If you need to understand such a file, inspect it with code and exec tool using its physical OUTPUT_DIR path and format-specific code.
-  If the binary file was created by your own earlier tools, first inspect the corresponding generating `tc:` tool call/result and any related text/code `fi:` source artifacts from that step.
-  Do not expect react.read on the binary `fi:` file itself to reveal its content.
+  If the binary file was created by your own earlier tools, first inspect the corresponding generating `conv:tc:` tool call/result and any related text/code `conv:fi:` source artifacts from that step.
+  Do not expect react.read on the binary `conv:fi:` file itself to reveal its content.
  - Reuse the SAME artifact path name if you still retry the same unit of work (overwrite is OK).
 - In the visible context, artifacts may show `kind=file|display` and `visibility=external|internal`.
   - `kind=display` means displayed to a user in rendering canvas; `kind=file` means it was [also] shared as a file to the user. For internal files this is 'file' automatically.
@@ -1470,8 +1470,8 @@ still valid when needed; do not mix inline content and `ref:` in the same
 4) Only bind/fill params that the tool actually declares in its args.
 5) Use react.write to write your generated content (reports, summaries, plans, prose). For non-internal channels, it will be streamed to a user.
    Regardless of whether you pick the kind='display' (no file shared) or kind='file' (stream and also share the file), we always capture it as a file artifact.
-   Use the canonical physical path rule to choose `turn_<current>/files/...` for durable workspace/project state or `turn_<current>/outputs/...` for produced artifacts.
-   The artifact is available later through logical `fi:turn_<id>.files/<path>` or `fi:turn_<id>.outputs/<path>`.
+   Use the canonical physical path rule to choose `turn_<current>/git/projects/...` for durable project state or `turn_<current>/files/...` for produced artifacts.
+   The artifact is available later through logical `conv:fi:turn_<id>.git/projects/<path>` or `conv:fi:turn_<id>.files/<path>`.
    react.write params must be in order: path (canonical physical path), channel, content, kind, then optional scratchpad.
    So: when you need to record an artifact, call react.write.
    The params MUST be STRICTLY ordered: path, channel, content, kind, then optional scratchpad.
@@ -1483,14 +1483,14 @@ still valid when needed; do not mix inline content and `ref:` in the same
    - If a plan is open but not tagged `(current)` in ANNOUNCE, you cannot ACK it yet.
    Plans appear in ANNOUNCE and drive step acknowledgements.
 
-6) Use react.patch to update an existing current-turn text file under the canonical `turn_<current>/files/...` or `turn_<current>/outputs/...` namespace. It does not require react.write registration. react.patch params must be in order: path, channel, patch, kind.
+6) Use react.patch to update an existing current-turn text file under the canonical `turn_<current>/git/projects/...` or `turn_<current>/files/...` namespace. It does not require react.write registration. react.patch params must be in order: path, channel, patch, kind.
 
 7) Do NOT place artifact contents in final_answer if already streamed. This makes it invisible to a user.
 
 8) rendering_tools.write_* tools: for final PDF/PPTX/DOCX/PNG deliverables,
    prefer generating source content first, then rendering it with
    `content="ref:<visible text source ref>"`, normally
-   `content="ref:fi:turn_<id>.outputs/<source-file>"`. The ref must resolve to
+   `content="ref:conv:fi:turn_<id>.files/<source-file>"`. The ref must resolve to
    text in the renderer's requested input format. Do not pass physical paths as
    renderer `content=ref:`. If the source object is external, call `react.pull`
    first and use the returned logical path. User-facing source files must be external:
@@ -1506,16 +1506,16 @@ still valid when needed; do not mix inline content and `ref:` in the same
 [react.read (CRITICAL)]
 - Use react.read(paths=[...]) to control what artifacts/skills are visible in your context so you can refer to them.
   If the artifacts are already visible in the timeline, you do not need to read them again. This is for artifacts which content is not visible.
-- External owner refs are imported with `react.pull` when exact content is needed. If a rendered event/object shows `object_ref`, pull that ref. After pull, use the returned `fi:` logical path or physical path with `react.read`, `react.rg`, or exec/code.
+- External owner refs are imported with `react.pull` when exact content is needed. If a rendered event/object shows `object_ref`, pull that ref. After pull, use the returned `conv:fi:` logical path or physical path with `react.read`, `react.rg`, or exec/code.
 - Skills are never read-capped. Owner-defined namespace content is retrieved through its configured service or rehoster, then inspected through returned refs.
-- For large/capped data, follow the Large/capped data operating procedure in the shared path guide. In short: `react.read` is visible-context retrieval, `react.rg` locates searchable text ranges, `so:sources_pool[...]` returns source rows, and capped text files/articles are recovered into context by bounded `react.read` ranges. Exec can compute or create smaller artifacts, but it is not an uncapped way to show full content to the model.
+- For large/capped data, follow the Large/capped data operating procedure in the shared path guide. In short: `react.read` is visible-context retrieval, `react.rg` locates searchable text ranges, `conv:so:sources_pool[...]` returns source rows, and capped text files/articles are recovered into context by bounded `react.read` ranges. Exec can compute or create smaller artifacts, but it is not an uncapped way to show full content to the model.
 - For large text artifacts, do not edit from a capped preview. Use `stats_only:true` to get line metadata, use `react.rg` to find anchors when searchable, pass returned or manual `read_item` ranges to `react.read(items=[...])`, repeat until every affected region is visible, then edit/process.
 - Example tool_call (load sources + artifact + skill):
-  {{"tool_id":"react.read","params":["so:sources_pool[2,3]","fi:turn_<id>.files/some_art.md","sk:<skill id or num>"]}}
+  {{"tool_id":"react.read","params":["conv:so:sources_pool[2,3]","conv:fi:turn_<id>.files/some_art.md","sk:<skill id or num>"]}}
 - Example bounded preview:
-  {{"tool_id":"react.read","params":{{"paths":["fi:turn_<id>.outputs/report.md"],"max_text_symbols":4000}}}}
+  {{"tool_id":"react.read","params":{{"paths":["conv:fi:turn_<id>.files/report.md"],"max_text_symbols":4000}}}}
 - Example exact line ranges:
-  {{"tool_id":"react.read","params":{{"items":[{{"path":"fi:turn_<id>.outputs/page.html","line_start":806,"line_count":80}}]}}}}
+  {{"tool_id":"react.read","params":{{"items":[{{"path":"conv:fi:turn_<id>.files/page.html","line_start":806,"line_count":80}}]}}}}
 
 {REACT_ARTIFACTS_AND_PATHS}
 """

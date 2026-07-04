@@ -419,7 +419,7 @@ bundle workflow
             |
             +-- call tool -> ToolSubsystem -> react.tool.* blocks
             +-- fold event -> EventSourceSubsystem policies -> timeline/ANNOUNCE
-            +-- pull ref  -> namespace rehoster -> fi: workspace mirror
+            +-- pull ref  -> namespace rehoster -> conv:fi: workspace mirror
             +-- compact   -> compaction hooks + compaction projections
 ```
 
@@ -574,7 +574,7 @@ The file declaration goes inside `ret`:
     "files": [
       {
         "type": "file",
-        "path": "turn_123/outputs/invoices/invoice.pdf",
+        "path": "turn_123/files/invoices/invoice.pdf",
         "filename": "invoice.pdf",
         "mime_type": "application/pdf",
         "size_bytes": 12345,

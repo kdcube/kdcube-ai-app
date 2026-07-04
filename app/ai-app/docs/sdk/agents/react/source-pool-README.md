@@ -63,7 +63,7 @@ All rows are dictionaries; fields are additive. Common fields:
 - `content` (str): full body (optional)
 - `mime` (str)
 - `size_bytes` (int)
-- `artifact_path` (str): logical path (e.g., `fi:<turn>.files/report.pdf`)
+- `artifact_path` (str): logical path (e.g., `conv:fi:<turn>.files/report.pdf`)
 - `physical_path` (str): artifact-root-relative `turn_...` file path
 - `rn`, `hosted_uri`, `key` (str): hosting references (not rendered to the model)
 
@@ -82,21 +82,21 @@ Notes:
 - For binary sources (`image/*`, `application/pdf`), the snippet is rendered as `<base64>`.
 
 ### In the model context
-- Load sources with `react.read(["so:sources_pool[1-5]"])` or a comma list
-  like `react.read(["so:sources_pool[1,3,7]"])`.
+- Load sources with `react.read(["conv:so:sources_pool[1-5]"])` or a comma list
+  like `react.read(["conv:so:sources_pool[1,3,7]"])`.
 - `react.read` returns an `application/json` list of source rows, not a prose
   rendering. It also records `items_stats` in the read status/result metadata so
   the model can see row counts and content sizes.
 - Source rows are returned in full by default. If `max_text_symbols` is supplied
   explicitly, only text-bearing fields such as `content`/`text` are capped; the
   JSON remains valid and all rows remain present.
-- `so:sources_pool[...]` result blocks are exempt from the generic
+- `conv:so:sources_pool[...]` result blocks are exempt from the generic
   `tool_result_preview_max_text_symbols` prompt cap.
 - For web rows, use `content` first when full fetched text is needed. `text` is
   the search preview/snippet.
 
 ### In code (exec)
-- Use `context_tools.fetch_ctx("so:sources_pool[1,3]")`.
+- Use `context_tools.fetch_ctx("conv:so:sources_pool[1,3]")`.
 - `fetch_ctx` returns the raw list of source rows (not a canonical artifact object).
 - For web rows, use `row.get("content") or row.get("text")` when you need source text.
   `text` is the search preview; `content` is the fetched page body when available.

@@ -2674,7 +2674,7 @@ class ReactSolverV2:
             "turn_id": self.scratchpad.turn_id or "",
             "ts": time.time(),
             "mime": "application/json",
-            "path": f"ar:{self.scratchpad.turn_id}.react.exit",
+            "path": f"conv:ar:{self.scratchpad.turn_id}.react.exit",
             "text": json.dumps({
                 "reason": reason,
             }, ensure_ascii=False, indent=2),
@@ -2711,7 +2711,7 @@ class ReactSolverV2:
                     "turn_id": turn_id,
                     "ts": time.time(),
                     "mime": "text/plain",
-                    "path": f"ar:{turn_id}.react.turn.finalize",
+                    "path": f"conv:ar:{turn_id}.react.turn.finalize",
                     "text": final_text,
                     "meta": {"model_visible": True, "sections": ["BUDGET", "OPEN PLANS"]},
                 })
@@ -2729,7 +2729,7 @@ class ReactSolverV2:
                     "turn_id": self.ctx_browser.runtime_ctx.turn_id or "",
                     "ts": time.time(),
                     "mime": "application/json",
-                    "path": f"ar:{self.ctx_browser.runtime_ctx.turn_id}.react.state",
+                    "path": f"conv:ar:{self.ctx_browser.runtime_ctx.turn_id}.react.state",
                     "text": json.dumps(react_state.to_dict(), ensure_ascii=False, indent=2),
                 })
         except Exception:

@@ -36,7 +36,7 @@ Current implementation state:
 
 - `react.pull` calls the provider through `object.get(response_mode=stream)`.
 - `react.read` calls owner block production through `block.produce` when the
-  pulled `fi:` artifact preserves the canonical owner identity as `object_ref`.
+  pulled `conv:fi:` artifact preserves the canonical owner identity as `object_ref`.
 - `Timeline.render()` renders stored timeline blocks, applies local ReAct
   projection policies, then runs the optional named-service `block.render`
   projection for providers whose objects are present in the visible timeline.
@@ -72,7 +72,7 @@ Current implementation state:
      local model/tool runtime -> namespace rehoster
    latency:
      local dispatch plus one provider lookup/call when the ref is not already
-     a local fi: artifact
+     a local conv:fi: artifact
 
         |
         v
@@ -104,11 +104,11 @@ Current implementation state:
    runtime: consumer ReAct runtime
    work:
      write streamed bytes under OUTPUT_DIR
-     mint a local fi: artifact path for the current turn
+     mint a local conv:fi: artifact path for the current turn
      preserve the provider-returned canonical object_ref in pull state and
      artifact metadata
    result:
-     logical_path  = fi:turn_1.files/mem_123.json
+     logical_path  = conv:fi:turn_1.files/mem_123.json
      physical_path = turn_1/files/mem_123.json
      object_ref    = mem:record:mem_123
      source_namespace = mem
@@ -122,13 +122,13 @@ Current implementation state:
    executor: ReAct tool runner
    runtime: consumer ReAct runtime
    call:
-     react.read(items=[{"path": "fi:turn_1.files/mem_123.json"}])
+     react.read(items=[{"path": "conv:fi:turn_1.files/mem_123.json"}])
    work:
      read local bytes
      construct a read target whose metadata includes:
        meta.object_ref       = mem:record:mem_123
        meta.source_namespace = mem
-       meta.materialized_path = fi:turn_1.files/mem_123.json
+       meta.materialized_path = conv:fi:turn_1.files/mem_123.json
    latency:
      local filesystem read before owner projection
 
@@ -182,9 +182,9 @@ Current implementation state:
        timeline block path may remain owner-oriented or include owner metadata
        block.meta.owner_projected = true
        block.meta.object_ref = mem:record:mem_123
-       block.meta.materialized_path = fi:turn_1.files/mem_123.json
+       block.meta.materialized_path = conv:fi:turn_1.files/mem_123.json
      fallback:
-       generic text block for the local fi: artifact
+       generic text block for the local conv:fi: artifact
    latency:
      local timeline append
 
@@ -233,8 +233,8 @@ Current implementation state:
 ```json
 {
   "object_ref": "cnv:main",
-  "logical_path": "fi:turn_1.snapshots/cnv/main.json",
-  "physical_path": "turn_1/snapshots/cnv/main.json",
+  "logical_path": "conv:fi:turn_1.git/snapshots/cnv/main.json",
+  "physical_path": "turn_1/git/snapshots/cnv/main.json",
   "scope": "snapshots",
   "mime": "application/json"
 }
@@ -251,7 +251,8 @@ the provider-returned canonical ref when the provider normalizes an alias such
 as `mem:<id>` to `mem:record:<id>`. A materializer may retain the requested ref
 as diagnostic metadata when it differs, but read/projection/render policy
 selection uses `object_ref`.
-This is the URI used by `react.read`, owner event-source routing, and
+`react.read` is called with the materialized `conv:fi:` path. The carried
+`object_ref` is the owner identity used by owner event-source routing and
 `block.produce`.
 
 ## Projection And Rendering Ownership
@@ -291,7 +292,7 @@ model clients.
 For an object namespace that supports ReAct materialization:
 
 - `object.get(response_mode=stream)` provides the exact bytes that become the
-  local `fi:` artifact.
+  local `conv:fi:` artifact.
 - The stream response sidecar carries compact identity and diagnostics. The
   large object body is streamed as bytes, not embedded in the JSON response.
 - `event.resolve` provides lightweight URI-to-event-source routing when the
@@ -309,9 +310,9 @@ the reference pattern:
 
 ```text
 react.pull(paths=["cnv:main"])
-  -> writes fi:turn_1.snapshots/cnv/main.json
+  -> writes conv:fi:turn_1.git/snapshots/cnv/main.json
 
-react.read(paths=["fi:turn_1.snapshots/cnv/main.json"])
+react.read(paths=["conv:fi:turn_1.git/snapshots/cnv/main.json"])
   -> canvas block-production emits a compact [CANVAS TOOL RESULT] fact
   -> canvas announce policy renders [CANVAS BOARD] for N render rounds
 ```
@@ -321,7 +322,7 @@ should tell the model how to refresh:
 
 ```text
 announce_effect: board projection refreshed in ANNOUNCE for 3 render rounds
-refresh_rule: use react.pull(paths=['cnv:main']) and react.read on the returned fi: path if you need an updated or prolonged board view
+refresh_rule: use react.pull(paths=['cnv:main']) and react.read on the returned conv:fi: path if you need an updated or prolonged board view
 ```
 
 This text is produced by the canvas owner policy, not by generic `react.read`.
@@ -405,7 +406,7 @@ For a consumer ReAct runtime:
 - Pull state preserves the owner URI:
   `logical_path -> object_ref/source_namespace`.
 - Read targets carry that owner metadata into block production.
-- Owner projection uses owner metadata, not the local `fi:` prefix.
+- Owner projection uses owner metadata, not the local `conv:fi:` prefix.
 - Read traces are emitted under `react.read.owner_projection`.
 - The prompt renderer consumes stored blocks and may call provider
   `block.render` hooks for visible provider-owned blocks.

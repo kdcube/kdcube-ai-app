@@ -76,7 +76,7 @@ Clients send client-authored events through the normal chat ingress request:
           "event_id": "evt_canvas_snapshot_001",
           "type": "event.snapshot",
           "event_source_id": "task_tracker.canvas.snapshot",
-          "logical_path": "ev:turn_123.events/task-tracker/snapshots/draft-123/canvas/latest",
+          "logical_path": "conv:ev:turn_123.events/task-tracker/snapshots/draft-123/canvas/latest",
           "hosted_uri": "cnv:snapshots/draft-123/canvas/latest",
           "reactive": false,
           "agent_id": "default.react.agent",
@@ -90,7 +90,7 @@ Clients send client-authored events through the normal chat ingress request:
           "event_id": "evt_prompt_001",
           "type": "event.user.prompt",
           "event_source_id": "react.message",
-          "logical_path": "ev:turn_123.events/chat/user-prompt/evt_prompt_001",
+          "logical_path": "conv:ev:turn_123.events/chat/user-prompt/evt_prompt_001",
           "hosted_uri": null,
           "reactive": true,
           "agent_id": "default.react.agent",
@@ -100,7 +100,7 @@ Clients send client-authored events through the normal chat ingress request:
             "event": {
               "text": "Review this selected area and suggest the next step.",
               "context_refs": [
-                "ev:turn_123.events/task-tracker/snapshots/draft-123/canvas/latest"
+                "conv:ev:turn_123.events/task-tracker/snapshots/draft-123/canvas/latest"
               ]
             }
           }
@@ -118,7 +118,7 @@ Field roles:
 | `external_events[]` | Plural list of client-authored event occurrences. The target protocol does not use a singular event field. |
 | `external_events[].type` | Structural event block shape, for example `event.user.prompt`, `event.snapshot`, or `event.external`. |
 | `external_events[].event_source_id` | Semantic event source, used for event-source discovery and policy lookup. |
-| `external_events[].logical_path` | `ev:` path of this event object on the turn timeline. |
+| `external_events[].logical_path` | `conv:ev:` path of this event object on the turn timeline. |
 | `external_events[].hosted_uri` | Optional external URI for a hosted copy of the event payload/body. |
 | `external_events[].reactive` | Effective occurrence flag when this event may wake or continue ReAct. Absence/false means no wake. |
 | `external_events[].story_id` | Optional product/story correlation carried with the event. |
@@ -133,22 +133,22 @@ runtime turn comes from `ExternalEventPayload.routing.turn_id`.
 The canonical envelope and examples for snapshot, file upload, and text
 selection events are in
 [External Event Envelope](external-event-envelope-README.md).
-The logical reference namespace model for `ev:`, `ar:`, `fi:`, `cnv:`,
+The logical reference namespace model for `conv:ev:`, `conv:ar:`, `conv:fi:`, `cnv:`,
 `task:`, `mem:`, and related refs is in [Logical Reference Namespaces](namespaces-README.md).
 
-`ev:` is event identity, not artifact storage. ReAct can read the event object
-with `react.read(paths=["ev:..."])`, similar to `tc:` tool-call/result refs.
-ReAct should not pass `ev:` to `react.pull` or `react.checkout`. When the event
+`conv:ev:` is event identity, not artifact storage. ReAct can read the event object
+with `react.read(paths=["conv:ev:..."])`, similar to `conv:tc:` tool-call/result refs.
+ReAct should not pass `conv:ev:` to `react.pull` or `react.checkout`. When the event
 points to material that must become local, use the event's `hosted_uri`,
 `payload.event_ref`, or artifact refs carried inside `payload.event`.
 
 When ReAct folds an accepted event, block-production policies decide whether
 the event becomes timeline material. Built-in user event policies project
 `event.user.prompt`, `event.user.followup`, `event.user.steer`, and
-`event.user.attachment.*` into the current ReAct user block shapes (`ar:` for
-chat text/control blocks and `fi:` for user attachment refs). Generic/domain,
+`event.user.attachment.*` into the current ReAct user block shapes (`conv:ar:` for
+chat text/control blocks and `conv:fi:` for user attachment refs). Generic/domain,
 snapshot, and canvas event policies emit event blocks at the accepted event's
-`ev:` path. Those event block bodies mirror a tool-result envelope:
+`conv:ev:` path. Those event block bodies mirror a tool-result envelope:
 `payload.event` becomes `ret`, errors become `error`, and recognized composite
 result surfaces are preserved under `surfaces`. Current built-in surface
 extractors understand exploration/source rows, hosted artifact rows, declared
@@ -171,7 +171,7 @@ File refs carried by events are also just refs unless a source policy chooses
 to project them. A block-production policy may preserve hosted artifact rows or
 declared file rows as timeline metadata without embedding file text. That is a
 valid ReAct integration: the rendered timeline gives the model the logical
-artifact path, and the model can call `react.read(paths=["fi:..."])` when it
+artifact path, and the model can call `react.read(paths=["conv:fi:..."])` when it
 needs the content. Automatic `[TEXT FILE PREVIEW]` blocks are not implied by
 `hosted_artifacts`; producers such as exec must explicitly provide
 `text_preview` when they want source-owned bounded preview text.
@@ -238,7 +238,7 @@ provider; use `@artifact_namespace_rehoster(namespace="nmsp")` for custom owner
 namespaces that are not yet named-service providers. The agent materializes the
 ref explicitly with `react.pull(paths=["nmsp:..."])`. The materializer resolves
 the custom URI and copies the bytes into the current ReAct artifact surface. The
-pull result then contains the materialized `fi:` logical path and current-turn
+pull result then contains the materialized `conv:fi:` logical path and current-turn
 physical path that `react.read` or generated code can use. Agents should follow
 the returned rows instead of deriving a target path from the owner-domain ref.
 

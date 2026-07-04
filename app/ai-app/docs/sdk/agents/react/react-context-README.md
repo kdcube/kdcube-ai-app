@@ -64,21 +64,25 @@ Block formatting lives in:
 
 ReAct interacts with these data spaces:
 
-- **Artifact root / OUTPUT_DIR** (`fi:`) — per-turn execution output and hosted artifacts (read/write during the turn).
+- **Artifact root / OUTPUT_DIR** (`conv:fi:`) — per-turn execution output and hosted artifacts (read/write during the turn).
 - **Owner namespaces** such as `task:`, `mem:`, or `cnv:` — domain-owned refs
   resolved through their owning service, rehoster, or tool surface.
 - **Conversation Workspace** (future) — shared, writable workspace across turns (not implemented yet).
 
 ```mermaid
 flowchart LR
-  Agent -->|react.read fi:...| OUT["Artifact root / OUTPUT_DIR (per-turn)"]
+  Agent -->|react.read conv:fi:...| OUT["Artifact root / OUTPUT_DIR (per-turn)"]
   Agent -->|react.write / react.patch| OUT
   Agent -->|owner tool / rehoster| OWN["Owner namespaces"]
   Agent -. future: read/write .-> WK["Conversation Workspace (future, RW)"]
 ```
 
 Notes:
-- **OUTPUT_DIR** is where tools write artifacts during a turn. It points to the artifact root (`out/workdir` in local host storage). Turn outputs map to `fi:<turn_id>.files/...` or `fi:<turn_id>.outputs/...`, and readable artifact files can be loaded with `fi:<artifact-root-relative-path>`.
+- **OUTPUT_DIR** is where tools write current-turn material. It points to the
+  artifact root (`out/workdir` in local host storage). Durable project state
+  maps to `conv:fi:<turn_id>.git/projects/...`, produced artifacts map to
+  `conv:fi:<turn_id>.files/...`, and state snapshots map to
+  `conv:fi:<turn_id>.git/snapshots/...`.
 - **Owner namespaces** are accessed through their owner APIs; `react.read` only
   reads them after they are rehosted or materialized as normal artifacts.
 - Runtime metadata such as `timeline.json`, `tool_calls_index.json`, tool-call JSON, and logs lives in the sibling runtime root `out/`; it is platform state, not the normal agent artifact namespace.
@@ -88,8 +92,8 @@ Other owner-domain namespaces can also become usable context when their owning
 module registers runtime hooks. Examples are `mem:` for memory items and `cnv:`
 for canvas boards or canvas-owned files. When exact content is needed, the
 decision agent imports the ref with `react.pull(paths=[...])`; the namespace
-rehoster materializes an `fi:` workspace mirror, and the agent reads, searches,
-or executes against that returned path.
+rehoster materializes a `conv:fi:` artifact in the current turn, and the agent
+reads, searches, or executes against the returned logical or physical path.
 
 ---
 

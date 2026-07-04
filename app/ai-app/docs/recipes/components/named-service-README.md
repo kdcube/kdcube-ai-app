@@ -2,7 +2,7 @@
 
 A named-service app makes a domain realm usable by generic agents and UI
 surfaces. It lets unfamiliar apps interoperate through object refs such as
-`mem:record:...`, `task:issue:...`, `fi:...`, and `cnv:...` without copying the
+`mem:record:...`, `task:issue:...`, `conv:fi:...`, and `cnv:...` without copying the
 realm's storage or action rules.
 
 This is not the only way apps interact in KDCube. Apps can also expose API/MCP,

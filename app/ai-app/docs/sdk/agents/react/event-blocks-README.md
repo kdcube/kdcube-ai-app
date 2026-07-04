@@ -57,13 +57,13 @@ Blocks are dicts with:
 1) Tool Call
    - `type`: `react.tool.call`
    - `mime`: `application/json`
-   - `path`: `tc:<turn_id>.<call_id>.call`
+   - `path`: `conv:tc:<turn_id>.<call_id>.call`
    - `text`: JSON payload `{tool_id, tool_call_id, params}`
 
 2) Tool Result
    - `type`: `react.tool.result`
    - `mime`: based on output (`application/json`, `text/markdown`, `image/png`, `application/pdf`, ...)
-   - `path`: `tc:<turn_id>.<call_id>.result`
+   - `path`: `conv:tc:<turn_id>.<call_id>.result`
    - `text` or `base64` content
    - Metadata JSON block text contains a **safe digest** (no hosted_uri/rn/key/physical_path):
      - `artifact_path`
@@ -73,17 +73,17 @@ Blocks are dicts with:
      - `visibility` (`external` | `internal`)
      - `tool_call_id` (tool_id is derived via the tool call map)
      - `sources_used` (list of SIDs, if any)
-   - File content blocks (path `fi:...`) store hosting info in `meta`:
+   - File content blocks (path `conv:fi:...`) store hosting info in `meta`:
      `hosted_uri`, `rn`, `key`, `physical_path`, plus `meta.digest`.
    - Hosting metadata is **not** rendered in the timeline text.
 
 3) Exec Code (react.tool.code)
    - `type`: `react.tool.code`
    - `mime`: `text/x-python` (or `text/plain`)
-   - `path`: `fi:<turn_id>.code.<call_id>`
+   - `path`: `conv:fi:<turn_id>.code.<call_id>`
    - `text`: code content
    - Rendered as:
-     `[AI Agent wrote code] fi:<turn_id>.code.<call_id>:\n<code>`
+     `[AI Agent wrote code] conv:fi:<turn_id>.code.<call_id>:\n<code>`
    - For exec tools, `react.tool.code` is emitted **before** the tool call block.
 
 ### Example: exec with missing output file
@@ -92,7 +92,7 @@ Blocks are dicts with:
   "type": "react.tool.result",
   "call_id": "abc123",
   "mime": "application/json",
-  "path": "tc:turn_123.abc123.result",
+  "path": "conv:tc:turn_123.abc123.result",
   "text": "{\n  \"tool_id\": \"exec_tools.execute_code_python\",\n  \"tool_call_id\": \"abc123\",\n  \"error\": {\n    \"code\": \"missing_artifact\",\n    \"message\": \"Artifact 'report_md' not produced\",\n    \"details\": {\"missing_artifact\": \"report_md\"}\n  },\n  \"ts\": \"2026-02-09T03:15:49Z\"\n}"
 }
 ```
@@ -107,7 +107,7 @@ active timeline:
    - `type`: `user.followup`
    - `author`: `user`
    - `mime`: `text/markdown`
-   - `path`: `ar:<turn_id>.external.followup.<message_id>`
+   - `path`: `conv:ar:<turn_id>.external.followup.<message_id>`
    - `text`: followup text, if provided
    - `meta`:
      - `event_kind = "followup"`
@@ -119,7 +119,7 @@ active timeline:
      - `owner_turn_id`
      - `explicit`
    - attachments, when present, use:
-     - `fi:<turn_id>.external.followup.attachments/<message_id>/<filename>`
+     - `conv:fi:<turn_id>.external.followup.attachments/<message_id>/<filename>`
    - live transport stores only hosted attachment references; the receiver hydrates readable content from hosting when materializing timeline blocks
      - `source`
      - optional `payload`
@@ -127,13 +127,13 @@ active timeline:
 2) Steer
    - `type`: `user.steer`
    - same shape as followup, but:
-   - `path`: `ar:<turn_id>.external.steer.<message_id>`
+   - `path`: `conv:ar:<turn_id>.external.steer.<message_id>`
    - `meta.event_kind = "steer"`
 
 Rendered form:
 ```text
 [FOLLOWUP DURING TURN]
-[path: ar:<turn_id>.external.followup.<message_id>]
+[path: conv:ar:<turn_id>.external.followup.<message_id>]
 ...
 ```
 
@@ -141,7 +141,7 @@ or:
 
 ```text
 [STEER DURING TURN]
-[path: ar:<turn_id>.external.steer.<message_id>]
+[path: conv:ar:<turn_id>.external.steer.<message_id>]
 ...
 ```
 
@@ -155,14 +155,14 @@ Behavioral meaning:
 - If a live turn does not consume the event, the same durable event may later be promoted into a normal scheduled turn by proc.
 
 ### react.read status block
-`react.read` always emits a **status JSON block first** at `tc:<turn_id>.<call_id>.result` with
+`react.read` always emits a **status JSON block first** at `conv:tc:<turn_id>.<call_id>.result` with
 `paths`, `missing`, and `exists_in_visible_context`. Result blocks follow after the status block.
 
 ### Decision notes (react.notes)
 Decision `notes` are emitted as their own block **before** the tool call:
 - `type`: `react.notes`
 - `mime`: `text/markdown`
-- `path`: `ar:<turn_id>.react.notes.<tool_call_id>`
+- `path`: `conv:ar:<turn_id>.react.notes.<tool_call_id>`
 - `text`: notes content
 - `meta.channel="timeline_text"`
 
@@ -177,8 +177,8 @@ this is injected as a separate line:
 ```
 
 Path convention:
-- latest completion in the turn: `ar:<turn_id>.assistant.completion`
-- earlier visible completions in the same turn: `ar:<turn_id>.assistant.completion.<n>`
+- latest completion in the turn: `conv:ar:<turn_id>.assistant.completion`
+- earlier visible completions in the same turn: `conv:ar:<turn_id>.assistant.completion.<n>`
 
 One turn can therefore contain multiple `assistant.completion` blocks.
 
@@ -195,14 +195,14 @@ They are best written when the agent has something stable and reusable to carry 
 Example:
 ```text
 [INTERNAL NOTE]
-[K] fi:turn_123.files/src/app/auth/service.py - invite flow implementation; reopen here before changing user onboarding
+[K] conv:fi:turn_123.files/src/app/auth/service.py - invite flow implementation; reopen here before changing user onboarding
 ```
 
 ### Thinking blocks (react.thinking)
 Decision streaming captures the internal thinking section and stores it as a hidden block:
 - `type`: `react.thinking`
 - `mime`: `text/markdown`
-- `path`: `ar:<turn_id>.react.thinking.<iteration>`
+- `path`: `conv:ar:<turn_id>.react.thinking.<iteration>`
 - `text`: thinking content
 - `meta.channel="thinking"`
 - `meta.title`: human‑readable label for UI (e.g., `solver.react.v2.decision (2)`)
@@ -215,7 +215,7 @@ reconstructed from the turn log during fetch.
 On **schema error** retries, we store the raw JSON the model produced so it can see what went wrong:
 - `type`: `react.decision.raw`
 - `mime`: `application/json`
-- `path`: `ar:<turn_id>.react.decision.raw.<iteration>`
+- `path`: `conv:ar:<turn_id>.react.decision.raw.<iteration>`
 - `text`: raw JSON from the ReactDecisionOutV2 channel
 - Rendered as `[REACT DECISION RAW]` followed by the raw JSON.
 
@@ -228,7 +228,7 @@ Successful and failed git-workspace publication is captured as an internal event
 - `type`: `react.workspace.publish`
 - `author`: `react.workspace`
 - `mime`: `application/json`
-- `path`: `ar:<turn_id>.react.workspace.publish`
+- `path`: `conv:ar:<turn_id>.react.workspace.publish`
 - `text`: JSON payload with high-signal publish status and metadata
 - `meta.status`: `succeeded` or `failed`
 
@@ -268,7 +268,7 @@ Example:
   "type": "system.message",
   "author": "system",
   "turn_id": "turn_123",
-  "path": "ar:turn_123.system.message.cache_pruned",
+  "path": "conv:ar:turn_123.system.message.cache_pruned",
   "text": "[SYSTEM MESSAGE] Context was pruned because the session TTL (1800s) was exceeded. ...",
   "meta": {"kind": "cache_ttl_pruned", "ttl_seconds": 1800}
 }
@@ -283,15 +283,15 @@ Blocks can be hidden with `react.hide(path, replacement_text)` (path is a logica
 - Hidden state is persisted in the timeline.
 
 ## Paths (Stable)
-- `ar:<turn_id>.user.prompt`
-- `ar:<turn_id>.assistant.completion`
-- `ar:<turn_id>.react.notes.<tool_call_id>`
-- `ar:<turn_id>.react.decision.raw.<iteration>`
-- `fi:<turn_id>.user.attachments/<name>`
-- `fi:<turn_id>.files/<relative_path>`
-- `fi:<turn_id>.code.<call_id>`
-- `tc:<turn_id>.<call_id>.call` / `.result`
-- `so:sources_pool[...]`
+- `conv:ar:<turn_id>.user.prompt`
+- `conv:ar:<turn_id>.assistant.completion`
+- `conv:ar:<turn_id>.react.notes.<tool_call_id>`
+- `conv:ar:<turn_id>.react.decision.raw.<iteration>`
+- `conv:fi:<turn_id>.user.attachments/<name>`
+- `conv:fi:<turn_id>.files/<relative_path>`
+- `conv:fi:<turn_id>.code.<call_id>`
+- `conv:tc:<turn_id>.<call_id>.call` / `.result`
+- `conv:so:sources_pool[...]`
 
 Physical (artifact-root-relative):
 - attachments: `turn_<id>/attachments/<name>`
@@ -304,12 +304,12 @@ Physical (artifact-root-relative):
 [TURN turn_1770603271112_2yz1lp] ts=2026-02-09T02:14:32.676425Z
 
 [USER MESSAGE]
-[path: ar:turn_1770603271112_2yz1lp.user.prompt]
+[path: conv:ar:turn_1770603271112_2yz1lp.user.prompt]
 could you find top 3 places to eat here in wuppertal
 
 [USER ATTACHMENT] menu.pdf | application/pdf
 summary: 2‑page menu, prices & address (Wuppertal)
-[path: fi:turn_1770603271112_2yz1lp.user.attachments/menu.pdf]
+[path: conv:fi:turn_1770603271112_2yz1lp.user.attachments/menu.pdf]
 [physical_path: turn_1770603271112_2yz1lp/attachments/menu.pdf]
 
 <document media_type=application/pdf b64_len=183942>
@@ -326,7 +326,7 @@ id=plan_abc
 { "tool_id": "web_tools.web_search", "tool_call_id": "tc_18f62649fb3b", "params": { ... } }
 
 [react.tool.result] (JSON meta)
-{ "artifact_path": "tc:turn_1770603271112_2yz1lp.tc_18f62649fb3b.result", "tool_call_id": "tc_18f62649fb3b" }
+{ "artifact_path": "conv:tc:turn_1770603271112_2yz1lp.tc_18f62649fb3b.result", "tool_call_id": "tc_18f62649fb3b" }
 
 [react.tool.result] (JSON content)
 [{ "sid": 1, "title": "...", "url": "https://..." }, { "sid": 2, "title": "...", "url": "https://..." }]
@@ -340,7 +340,7 @@ Here are the top three places...
 
 [react.tool.result] (JSON meta)
 {
-  "artifact_path": "fi:turn_1770603271112_2yz1lp.files/draft.md",
+  "artifact_path": "conv:fi:turn_1770603271112_2yz1lp.files/draft.md",
   "physical_path": "turn_1770603271112_2yz1lp/files/draft.md",
   "tool_call_id": "tc_6a3f1e0d9b21",
   "edited": true
@@ -355,27 +355,27 @@ Here are the top three places...
 The model does **not** see raw tool-result JSON directly. The rendered timeline groups results:
 ```
 [TOOL CALL tc_...] .call <tool_id>
-tc:<turn_id>.<tool_call_id>.call
+conv:tc:<turn_id>.<tool_call_id>.call
 
 [TOOL RESULT tc_...].summary <tool_id>     # artifact-producing tools
 Status: success|error
 Artifacts:
-- logical_path: fi:...
+- logical_path: conv:fi:...
   (metadata: kind/visibility/channel/tokens/sources_used)
 
 [TOOL RESULT tc_...].result <tool_id>      # non-artifact tools
-logical_path: so:... / tc:... / ar:... / sk:...
+logical_path: conv:so:... / conv:tc:... / conv:ar:... / sk:...
 <result payload>
 
 [TOOL RESULT tc_...].artifact <tool_id>    # each artifact
-logical_path: fi:... (physical_path only if hosted)
+logical_path: conv:fi:... (physical_path only if hosted)
 <content block immediately follows>
 ```
 
 ### Exec ordering (notes → code → tool call)
 ```
 [AI Agent say]: Converting the data into an Excel report
-[AI Agent wrote code] fi:turn_123.code.tc_abcd1234:
+[AI Agent wrote code] conv:fi:turn_123.code.tc_abcd1234:
 <python code...>
 [TOOL CALL tc_abcd1234] exec_tools.execute_code_python
 Params:
@@ -384,7 +384,7 @@ Params:
 
 ### artifact_path vs physical_path
 ```
-artifact_path : fi:turn_1771234567890_abcd.files/reports/summary.md
+artifact_path : conv:fi:turn_1771234567890_abcd.files/reports/summary.md
 physical_path : turn_1771234567890_abcd/files/reports/summary.md   # artifact-root-relative
 ```
 
@@ -392,13 +392,13 @@ physical_path : turn_1771234567890_abcd/files/reports/summary.md   # artifact-ro
 Blocks emitted:
 ```
 type: react.tool.call
-path: tc:turn_...<id>.call
+path: conv:tc:turn_...<id>.call
 text: {"tool_id":"react.write",...}
 
 type: react.tool.result   (meta JSON)
-path: tc:turn_...<id>.result
+path: conv:tc:turn_...<id>.result
 text: {
-  "artifact_path":"fi:turn_...files/report.md",
+  "artifact_path":"conv:fi:turn_...files/report.md",
   "physical_path":"turn_.../files/report.md",
   "kind":"display",
   "visibility":"external",
@@ -410,7 +410,7 @@ text: {
 }
 
 type: react.tool.result   (content)
-path: fi:turn_...files/report.md
+path: conv:fi:turn_...files/report.md
 mime: text/markdown
 text: "...generated markdown..."
 ```
@@ -439,7 +439,7 @@ Plan snapshot and acknowledgements:
 ```
 type: react.plan
 mime: application/json
-path: ar:turn_...react.plan.<plan_id>
+path: conv:ar:turn_...react.plan.<plan_id>
 text: {
   "plan_id": "plan_alpha",
   "steps": ["...", "..."],
@@ -450,7 +450,7 @@ text: {
 
 type: react.plan.ack
 mime: text/markdown
-path: ar:turn_...react.plan.ack.<iteration>
+path: conv:ar:turn_...react.plan.ack.<iteration>
 text:
   ✓ 1. Locate sources
   … 2. Draft report — in progress
@@ -461,7 +461,7 @@ Blocks emitted:
 ```
 react.tool.call (params include path)
 react.tool.result (meta JSON with artifact_path + physical_path + kind=file + rn/hosted_uri/key if hosted)
-react.tool.result (binary block) with path=fi:turn_...files/<file>
+react.tool.result (binary block) with path=conv:fi:turn_...files/<file>
 ```
 
 ### exec tool producing two files (xlsx + pdf)

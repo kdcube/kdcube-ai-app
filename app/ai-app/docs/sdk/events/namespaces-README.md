@@ -1,213 +1,202 @@
 ---
 id: repo:kdcube-ai-app/app/ai-app/docs/sdk/events/namespaces-README.md
 title: "Logical Reference Namespaces"
-summary: "Foundational model for model-facing logical refs such as ar:, ev:, tc:, fi:, task:, mem:, cnv:, and so:, and how they relate to events, react.read, react.pull, and react.checkout."
-status: draft
+summary: "Foundational model for conversation-owned ReAct refs such as conv:fi, conv:ar, conv:ev, external owner refs such as task/mem/cnv, and how they relate to events, react.read, react.pull, and react.checkout."
+status: active
 tags: ["sdk", "events", "react", "logical-references", "namespaces", "artifacts"]
-updated_at: 2026-06-23
+updated_at: 2026-07-04
 keywords:
   [
     "logical reference namespace",
+    "conv:fi",
+    "conv:ar",
+    "conv:ev",
+    "conv:tc",
+    "task:",
+    "mem:",
+    "cnv:",
     "react.read",
     "react.pull",
     "react.checkout",
-    "ev:",
-    "ar:",
-    "tc:",
-    "fi:",
-    "task:",
-    "mem:",
-    "so:",
-    "cnv:",
   ]
 see_also:
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/ecosystem-component/components-ecosystem-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/react-realm-refs-and-workspace-paths-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/workspace/workspace-model-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/providers-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/react-object-materialization-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/events/external-events-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/events/event-ingress-to-react-turn-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/events/external-event-envelope-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/events/event-subsystem-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/artifact-discovery-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/workspace/workspace-model-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/workspace/workspace-model-README.md
 ---
 # Logical Reference Namespaces
 
-A logical reference namespace is the prefix before the first colon in a
-model-facing reference:
+A logical reference namespace is the resolver prefix of a model-facing ref.
+
+ReAct conversation-owned refs have a two-part prefix:
 
 ```text
-fi:turn_123.outputs/report.pdf
-ev:turn_123.events/task-tracker/state/rev-7
-ar:turn_123.user.prompt.evt_1
-task:issues/ticket_2026-06-07-10-20-30
+conv:<family>:<body>
 ```
 
-The namespace tells ReAct and event-source policies which subsystem owns the
-reference and which resolver/tool path can interpret it. When that owner exposes
-a cross-bundle/client contract, use the
-[Namespace Services: Providers](../namespace-services/providers-README.md)
-model. In that model, a namespace-owning provider is a namespaced service.
+Examples:
 
-This is not a transport concept. For example, Data Bus `object_ref` is an
-opaque partition key unless a bundle explicitly chooses to put a logical ref
-there. Data Bus does not resolve namespaces.
+```text
+conv:fi:turn_123.files/report.pdf
+conv:ar:turn_123.user.prompt.evt_1
+conv:tc:turn_123.tc_abcd.result
+conv:so:sources_pool[1-3]
+conv:ev:turn_123.events/chat/user-prompt/evt_1
+```
 
-## Core Rule
+External owner refs use their owner namespace directly:
 
-The namespace owner defines the semantics.
+```text
+mem:mem_123
+task:issue:ticket_123
+cnv:canvas/users/.../objects/...
+```
 
-Do not infer that two refs are interchangeable because they have similar text.
-For example:
+The namespace tells ReAct, event-source policies, UI reducers, and resolvers
+which subsystem owns the ref. Data Bus object refs can carry these strings, but
+Data Bus itself does not resolve namespaces.
 
-- `ar:` is a conversation replica or control record.
-- `ev:` is an event occurrence/object on a turn timeline.
-- `fi:` is a ReAct artifact/file ref.
-- `task:` is a task subsystem object ref.
-- `mem:` is a memory subsystem object ref.
-- `cnv:` is a canvas subsystem object or board ref.
+## `conv:` And `conv_<id>` Are Different
 
-When one subsystem pins or mentions another subsystem's object, it should
-preserve the original ref. A canvas pin of a task remains `task:...`; a canvas
-pin of a ReAct artifact remains `fi:...`. The resolver remains the original
-owner.
+```text
+conv:      outer owner namespace for ReAct conversation-owned refs
+conv_<id>  optional body segment selecting another conversation
+```
 
-Only the subsystem creating a new hosted object should mint a new id in its own
-namespace.
+`conv_<id>` must stay inside the body after the family:
+
+```text
+conv:fi:conv_<conversation_id>.turn_<turn_id>.files/report.pdf
+conv:ar:conv_<conversation_id>.turn_<turn_id>.assistant.completion
+```
+
+It is not a replacement for `conv:` and it is not a standalone namespace.
+
+## Owner Rule
+
+The namespace owner defines the semantics. Do not infer that two refs are
+interchangeable because they contain similar path text.
+
+| Ref | Owner | Meaning |
+| --- | --- | --- |
+| `conv:fi:` | ReAct conversation realm | File/artifact bytes and materialized workspace paths. |
+| `conv:ar:` | ReAct conversation realm | User/assistant/plan/conversation replica records. |
+| `conv:tc:` | ReAct conversation realm | Tool call/result/notice records. |
+| `conv:so:` | ReAct conversation realm | Source-pool rows and source metadata. |
+| `conv:ws:` | ReAct conversation realm | Working summaries. |
+| `conv:su:` | ReAct conversation realm | Summary/search-summary records. |
+| `conv:ev:` | ReAct conversation realm | Accepted event occurrence/object on a turn timeline. |
+| `task:` | Task provider | Task issues, task attachments, and task actions. |
+| `mem:` | Memory provider | Durable user memory records. |
+| `cnv:` | Canvas provider | Canvas boards, pins, and canvas-owned objects. |
+
+When one subsystem pins or mentions another subsystem's object, it preserves the
+original owner ref. A canvas pin of a task remains `task:...`; a canvas pin of a
+ReAct file remains `conv:fi:...`.
 
 ## ReAct Tool Semantics
 
-| Namespace | Primary owner | `react.read` | `react.pull` | `react.checkout` |
-| --- | --- | --- | --- | --- |
-| `ar:` | ReAct conversation replicas and controls | yes, for visible conversation records and stable aliases | no | no |
-| `ev:` | External event objects on a turn timeline | yes, for the event object/metadata | no; pull refs carried by the event payload instead | no |
-| `tc:` | ReAct tool call/result records | yes, for call/result records | no; pull artifact refs carried by the tool result instead | no |
-| `fi:` | ReAct artifact/file storage | yes | yes, to materialize bytes locally | only for supported `fi:...files/...` workspace refs |
-| `task:` | Task subsystem object refs | not directly by default; use visible context or owner tools | yes through the task provider materializer, normally named-service `object.get`; returns `fi:` rows | no; pull first, then checkout only if the returned `fi:` is a supported files ref |
-| `mem:` | Memory subsystem refs | not directly by default; use visible context | yes through the memory provider materializer, normally named-service `object.get`; returns a `fi:` mirror | no |
-| `cnv:` | Canvas subsystem refs, including live boards such as `cnv:main`, fixed revisions such as `cnv:main@7`, and canvas-owned objects | not directly by default; use visible canvas ANNOUNCE/context | yes through the canvas provider materializer; returns a `fi:` mirror | no |
-| `so:` / `su:` | Source/search subsystems | through source/search tooling or visible source pools | subsystem-defined | no |
-
-This table describes the default architectural contract. A bundle can add a
-registered rehoster or tool for a namespace, but that registration belongs to
-the namespace owner and must be documented by that subsystem.
+| Namespace | `react.read` | `react.pull` | `react.checkout` |
+| --- | --- | --- | --- |
+| `conv:ar:` | yes | no | no |
+| `conv:tc:` | yes | no | no |
+| `conv:so:` | yes | no | no |
+| `conv:ws:` | yes | no | no |
+| `conv:su:` | yes | no | no |
+| `conv:ev:` | yes, event object/metadata | no; pull refs carried by the event payload instead | no |
+| `conv:fi:` | yes | yes, materializes bytes locally | only `conv:fi:<turn>.git/projects/...` project refs |
+| `task:` | no direct default read; use visible blocks or owner tools | yes through the task provider materializer | no |
+| `mem:` | no direct default read; use visible blocks or owner tools | yes through the memory provider materializer | no |
+| `cnv:` | no direct default read; use visible canvas context or owner tools | yes through the canvas provider materializer | no |
 
 External owner refs are not workspace files. If exact owner content is needed,
-use `react.pull(paths=["<namespace>:..."])`. The runtime-connected namespace
-rehoster mirrors the owner content into the ReAct workspace and returns ordinary
-`fi:` logical paths plus physical paths. ReAct then reads, searches, or executes
-against those returned paths. ReAct does not hard-code memory, canvas, task, or
-owner object rendering.
-
-When `react.pull` materializes an owner ref into `fi:`, the runtime preserves
-the owner identity as `object_ref` plus `source_namespace`. A later
-`react.read(fi:...)` uses the same `object_ref` to call the namespace owner's
-`block.produce` policy. The
-prompt renderer then renders the stored blocks locally. The full
-runtime-boundary diagram is
-[Namespace Services: ReAct Object Materialization](../namespace-services/react-object-materialization-README.md).
+call `react.pull(paths=["<namespace>:..."])`. The connected owner rehoster
+mirrors that content into the current ReAct turn and returns `conv:fi:`
+logical paths plus physical paths. The agent then reads, searches, executes, or
+renders against those returned paths.
 
 ## Events And Namespaces
 
-Every accepted external event can have an event logical path:
+Every accepted external event can have a conversation-owned event path:
 
 ```text
-ev:turn_<turn_id>.events/<event-object-path>
-ev:conv_<conversation_id>.turn_<turn_id>.events/<event-object-path>
+conv:ev:turn_<turn_id>.events/<event-object-path>
+conv:ev:conv_<conversation_id>.turn_<turn_id>.events/<event-object-path>
 ```
 
-The `ev:` ref identifies the event occurrence/object on the timeline. It is
-readable as event metadata. It is not the event's hosted bytes.
+The `conv:ev:` ref identifies the event occurrence/object on the timeline. It
+is readable as event metadata. It is not the event's hosted bytes.
 
-Event payloads may also carry refs owned by other namespaces:
+Event payloads may carry refs owned by other namespaces:
 
 ```json
 {
-  "logical_path": "ev:turn_123.events/task-tracker/snapshot/latest",
-  "hosted_uri": "cnv:main@7",
+  "logical_path": "conv:ev:turn_123.events/task-tracker/snapshot/latest",
+  "object_ref": "cnv:main@7",
   "payload": {
     "mime": "application/json",
-    "event_ref": "cnv:main@7",
-    "event": {
-      "context_refs": [
-        "task:issues/ticket_2026-06-07-10-20-30",
-        "fi:turn_122.outputs/report.pdf"
-      ]
-    }
+    "context_refs": [
+      "task:issue:ticket_2026-06-07-10-20-30",
+      "conv:fi:turn_122.files/report.pdf"
+    ]
   }
 }
 ```
 
 In that example:
 
-- `ev:` names the event object.
+- `conv:ev:` names the event object.
 - `cnv:` names the canvas-owned board/snapshot payload.
 - `task:` names a task subsystem object.
-- `fi:` names a ReAct artifact.
+- `conv:fi:` names a ReAct file artifact.
 
-Block-production and rendering policies decide which of these refs become
-visible in timeline or ANNOUNCE. ReAct then uses the appropriate tool path for
-the namespace.
+Block-production and rendering policies decide which refs become visible in
+timeline or ANNOUNCE.
 
 ## Built-In User Events
 
-Built-in conversation events are still external events at ingress, but ReAct
-projects them into established namespaces:
+Built-in conversation events are external events at ingress. ReAct projects
+them into established conversation-owned namespaces:
 
 | Event type | Typical projection |
 | --- | --- |
-| `event.user.prompt` | `ar:<turn>.user.prompt...` |
-| `event.user.followup` | `ar:<turn>.external.followup...` |
-| `event.user.steer` | `ar:<turn>.external.steer...` |
-| `event.user.attachment.*` | `fi:<turn>.user.attachments/...` |
-
-Generic/domain events keep their event occurrence identity as `ev:` and may
-carry refs in other namespaces.
+| `event.user.prompt` | `conv:ar:<turn>.user.prompt...` |
+| `event.user.followup` | `conv:ar:<turn>.external.followup...` |
+| `event.user.steer` | `conv:ar:<turn>.external.steer...` |
+| `event.user.attachment.*` | `conv:fi:<turn>.user.attachments/...` |
+| Generic/domain event | `conv:ev:<turn>.events/...` plus any owner refs in the payload |
 
 ## Pull Versus Read
 
-Use `react.read` when the target ref already names readable model/context
-content in the ReAct-visible logical space, such as `ar:`, `tc:`, `ev:`, `fi:`,
-`so:`, `su:`, or `sk:` refs supported by the runtime.
+Use `react.read` when the target ref already names readable
+conversation-owned content such as `conv:ar:`, `conv:tc:`, `conv:ev:`,
+`conv:fi:`, `conv:so:`, `conv:ws:`, or `conv:su:`.
 
 Use `react.pull` when exact bytes/content from historical artifacts or external
-owner refs must be materialized into the current ReAct artifact space. Pull
-returns one or more `fi:` rows. The agent should use those returned refs for
-later `react.read`, generated code, local search, or checkout decisions.
+owner refs must be materialized into the current ReAct workspace. Pull returns
+one or more `conv:fi:` rows. Use those returned refs and paths for later
+`react.read`, generated code, local search, rendering, or checkout decisions.
 
-Use `react.checkout` only when the agent needs an editable current-turn
-workspace copy. Checkout is not a generic resolver. It accepts only supported
-workspace-like `fi:...files/...` refs.
-
-## Cross-Conversation Refs
-
-Some `fi:` and `ev:` refs include a conversation prefix:
-
-```text
-fi:conv_<conversation_id>.turn_<turn_id>.outputs/report.pdf
-ev:conv_<conversation_id>.turn_<turn_id>.events/<event-path>
-```
-
-The `conv_...` segment is part of the ref identity. Validators and tools must
-preserve it. Dropping that segment changes the owner conversation and breaks
-cross-conversation artifact/event resolution.
+Use `react.checkout` only when an historical project tree should become an
+editable current-turn copy. Checkout accepts only supported
+`conv:fi:...git/projects/...` refs.
 
 ## Design Checklist
 
 When introducing a new namespace:
 
-- define the namespace owner;
-- define the namespaced service when other bundles, widgets, agents, or scene
-  hosts need a stable provider/client contract for the namespace;
-- define whether refs are event objects, artifacts, domain objects, or aliases;
-- define whether `react.read` can read them directly;
-- if `react.read` is supported, register an owner-domain event source reader
-  and block-production policy;
-- define whether `react.pull` can rehost them to `fi:`;
-- define whether any returned `fi:` refs can be checked out;
-- define permissions and user/project/tenant visibility;
-- document how refs appear in events, timeline blocks, ANNOUNCE, and tool
-  results;
+- define the owner;
+- define whether refs are event objects, files/artifacts, domain objects, or aliases;
+- define whether refs are read directly, pulled, both, or neither;
+- if pull is supported, define the returned `conv:fi:` location and metadata;
+- if read is supported, define the event/source block-production policy;
+- define permissions and tenant/project/user visibility;
+- document how refs appear in events, timeline blocks, ANNOUNCE, tool results,
+  UI cards, and named-service schemas;
 - keep transport docs free of namespace semantics unless the transport itself
   owns the namespace.

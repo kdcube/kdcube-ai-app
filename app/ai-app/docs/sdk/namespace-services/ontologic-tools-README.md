@@ -154,7 +154,7 @@ from the real tasks realm (`task.issue`):
                "required": {"namespace": "task", "object_ref": "task:issue:<issue_id>"}},
     "host_file": {"tool": "named_services.host_file",
                   "required": {"namespace": "task", "object_ref": "task:issue:<issue_id>",
-                               "file_ref": "fi:turn_<id>.files/<path> or a local runtime file path"},
+                               "file_ref": "conv:fi:turn_<id>.files/<path> or a local runtime file path"},
                   "optional": ["filename", "mime", "description"],
                   "returns": "task:issue:attachment:<issue_id>/attachments/<attachment_id>/v<version>/<filename>"},
     "attach_hosted_refs": {"tool": "named_services.upsert_object",

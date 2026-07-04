@@ -585,7 +585,7 @@ Provider stream result
 
 ReAct workspace materialization
   Runtime writes TaskProvider.chunks to:
-    ReAct.fi.logical_path = fi:turn_<id>....
+    ReAct.fi.logical_path = conv:fi:turn_<id>....
     ReAct.physical_path = current turn workspace file
   react.pull returns:
     PullResult.materialized[].logical_path = ReAct.fi.logical_path
@@ -650,7 +650,7 @@ Owner projection then runs before the generic read block is committed:
    surface: current turn timeline
    work:
      append provider blocks when returned
-     otherwise append generic textual fi: read block
+     otherwise append generic textual conv:fi: read block
 
         |
         v
@@ -691,9 +691,9 @@ foreign namespaces only through explicit pull materialization. Provider
 `block.render` receives already-produced visible blocks and returns rendering
 patches; it is not a file/body materialization path.
 
-The `fi:` path is only the local workspace location. Namespace-aware rendering
+The `conv:fi:` path is only the local workspace location. Namespace-aware rendering
 and policy selection uses the preserved `object_ref` / `source_namespace`
-metadata, not the `fi:` prefix. The detailed runtime-boundary diagram for this
+metadata, not the `conv:fi:` prefix. The detailed runtime-boundary diagram for this
 path is [ReAct Object Materialization](react-object-materialization-README.md).
 
 ## ReAct Named-Service Tool Flow
@@ -836,7 +836,7 @@ Important ownership rules:
   hosting, streamed bytes, and any domain-specific error.
 - Large bytes do not ride inside generic tool JSON. `react.pull` uses
   `object.get(response_mode=stream)` and writes provider bytes into ReAct
-  `fi:` workspace files.
+  `conv:fi:` workspace files.
 
 ## Host-File Flow
 
@@ -847,7 +847,7 @@ for the hosted file.
 
 ```text
 ReAct/runtime
-  ReAct.file_ref = fi:turn_1.files/report.md
+  ReAct.file_ref = conv:fi:turn_1.files/report.md
   ReAct.filename = report.md
   ReAct.mime = text/markdown
 
@@ -949,7 +949,7 @@ operation name or the two-step host/cite strategy.
    `uri -> resolution info` such as `event_source_id`, `object_ref`, and
    `object_kind`. It must not read the object body.
 10. Implement streamed `object.get` for attachment refs that should become
-   ReAct `fi:` artifacts.
+   ReAct `conv:fi:` artifacts.
 11. Implement `object.host_file` when callers need to create provider-owned
    file refs from runtime files or artifact refs.
 12. Implement `block.produce` when provider objects should become

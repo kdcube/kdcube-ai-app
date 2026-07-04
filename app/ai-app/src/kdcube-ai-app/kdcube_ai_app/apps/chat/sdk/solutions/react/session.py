@@ -10,6 +10,7 @@ from dataclasses import dataclass, replace
 from typing import Any, Dict, List, Optional, Tuple
 
 from kdcube_ai_app.apps.chat.sdk.solutions.react.proto import ToolCallView
+from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import REACT_FILE_REF_PREFIX
 from kdcube_ai_app.apps.chat.sdk.solutions.react.events.common import event_source_pipeline_enabled
 from kdcube_ai_app.apps.chat.sdk.solutions.react.events.projection import (
     apply_event_source_transformers,
@@ -657,11 +658,11 @@ def _ttl_retrieval_stub(
         kind = "tool_call"
     elif btype == "react.tool.result":
         kind = "tool_result"
-    elif path.startswith("fi:"):
+    elif path.startswith(REACT_FILE_REF_PREFIX):
         kind = "file"
     elif path.startswith("sk:"):
         kind = "skill"
-    elif path.startswith("so:"):
+    elif path.startswith("conv:so:"):
         kind = "source"
     else:
         kind = btype.replace(".", "_") or "block"
@@ -824,13 +825,13 @@ def _build_skill_prune_message(path: str) -> str:
     kind = "artifact"
     if label.startswith("sk:"):
         kind = "skill"
-    elif label.startswith("so:"):
+    elif label.startswith("conv:so:"):
         kind = "source"
-    elif label.startswith("fi:"):
+    elif label.startswith(REACT_FILE_REF_PREFIX):
         kind = "file"
-    elif label.startswith("ar:"):
+    elif label.startswith("conv:ar:"):
         kind = "artifact"
-    elif label.startswith("tc:"):
+    elif label.startswith("conv:tc:"):
         kind = "tool result"
     if label:
         return (
@@ -847,7 +848,7 @@ def _build_prune_message_text(ttl_seconds: int) -> str:
     return (
         "[SYSTEM MESSAGE] Context was pruned because the session TTL "
         f"({ttl_seconds}s) was exceeded. Some blocks were hidden. "
-        "Pruning does NOT remove artifacts: their logical paths (fi:/ar:/so:/sk:) still exist. "
+        "Pruning does NOT remove artifacts: their logical paths (conv:fi:/conv:ar:/conv:so:/sk:) still exist. "
         "Do not assume a path must be re-read just because pruning happened: first scan the currently visible timeline. "
         "If the needed content or an ACTIVE 💡 skill block is visible, use it directly. "
         "Use react.read(paths=[path]) only when the exact needed content is not visible."
@@ -918,7 +919,7 @@ def _build_search_result_replacement_compact(
             "url": item.get("url") or item.get("link"),
             "title": item.get("title"),
         }
-        # If item refers to a file/attachment, keep the fi: path.
+        # If item refers to a file/attachment, keep the conv:fi: path.
         for key in ("artifact_path", "path"):
             val = item.get(key)
             if isinstance(val, str) and val.strip():
@@ -1120,7 +1121,7 @@ def apply_cache_ttl_pruning(
         if not isinstance(blk, dict):
             continue
         path = (blk.get("path") or "").strip()
-        if not path or not path.startswith("fi:"):
+        if not path or not path.startswith(REACT_FILE_REF_PREFIX):
             continue
         if _extract_turn_id(blk) not in recent_turns:
             continue
@@ -1173,7 +1174,7 @@ def apply_cache_ttl_pruning(
             continue
         if not path and _is_turn_finalize_stats_block(blk) and turn_id:
             blk["type"] = "react.turn.finalize"
-            blk["path"] = f"ar:{turn_id}.react.turn.finalize"
+            blk["path"] = f"conv:ar:{turn_id}.react.turn.finalize"
             path = (blk.get("path") or "").strip()
         if not path or path in path_replacements:
             continue
@@ -1195,7 +1196,7 @@ def apply_cache_ttl_pruning(
                 continue
             view = _get_view(tool_id)
             rep = view.build_call_replacement(tool_call_block=blk, payload=payload, cfg=cfg)
-        elif btype == "react.tool.result" and (path.startswith("tc:") or path.startswith("so:")):
+        elif btype == "react.tool.result" and (path.startswith("conv:tc:") or path.startswith("conv:so:")):
             payload = _parse_json(blk.get("text") or "") if isinstance(blk.get("text"), str) else None
             meta = blk.get("meta") if isinstance(blk.get("meta"), dict) else {}
             call_id = (meta.get("tool_call_id") or blk.get("call_id") or "").strip()
@@ -1213,7 +1214,7 @@ def apply_cache_ttl_pruning(
             else:
                 view = _get_view(tool_id)
                 rep = view.build_result_replacement(tool_result_block=blk, payload=payload or {}, cfg=cfg)
-        elif path.startswith("fi:"):
+        elif path.startswith(REACT_FILE_REF_PREFIX):
             meta = blk.get("meta") if isinstance(blk.get("meta"), dict) else {}
             call_id = (meta.get("tool_call_id") or blk.get("call_id") or "").strip()
             tool_id = ""
@@ -1298,7 +1299,7 @@ def apply_cache_ttl_pruning(
             or tools_insights.is_fetch_uri_content_tool(tool_id)
         ):
             try:
-                if tool_id in {"react.memsearch", "react.search_knowledge"} and not path.startswith(("tc:", "so:")):
+                if tool_id in {"react.memsearch", "react.search_knowledge"} and not path.startswith(("conv:tc:", "conv:so:")):
                     rep = _build_skill_prune_message(path)
                 elif tools_insights.is_search_tool(tool_id) or tools_insights.is_fetch_uri_content_tool(tool_id):
                     rep = _build_search_result_replacement_compact(
@@ -1422,7 +1423,7 @@ def apply_cache_ttl_pruning(
                 "turn_id": turn_id,
                 "ts": ts,
                 "mime": "text/markdown",
-                "path": f"ar:{turn_id}.system.message.cache_pruned" if turn_id else "",
+                "path": f"conv:ar:{turn_id}.system.message.cache_pruned" if turn_id else "",
                 "text": ttl_msg,
                 "meta": {
                     "kind": "cache_ttl_pruned",

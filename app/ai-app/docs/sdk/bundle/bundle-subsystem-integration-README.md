@@ -91,7 +91,7 @@ task-tracker@1-0 composition bundle
   memory subsystem        SDK memory owns mem: storage, APIs, widget, tools
   canvas subsystem        SDK canvas owns board storage, canvas tools, canvas UI
   issue subsystem         bundle/task subsystem owns task: issues and issue UI
-  ReAct artifact layer    SDK ReAct owns fi: artifacts and file resolver behavior
+  ReAct artifact layer    SDK ReAct owns conv:fi: artifacts and file resolver behavior
 ```
 
 The composition bundle should:
@@ -111,7 +111,7 @@ The composition bundle should:
 The composition bundle should not:
 
 - reimplement the memory widget API if the memory mixin already declares it
-- teach canvas how to download `fi:` or open `task:` objects directly
+- teach canvas how to download `conv:fi:` or open `task:` objects directly
 - duplicate subsystem event rendering policies in unrelated bundle files
 - hide inherited widgets with restrictive visibility defaults unless that is an
   explicit product policy
@@ -451,7 +451,7 @@ async def rehost_memory_ref(*, uri, **context):
 
 The rehoster resolves the owner-domain object and returns a materialized
 workspace artifact row. The model calls `react.pull(paths=["mem:..."])`; after
-that it reads or searches the returned `fi:`/physical workspace path. It does
+that it reads or searches the returned `conv:fi:`/physical workspace path. It does
 not call `memory.read_memory(...)` unless that function is also explicitly
 exposed as a normal tool.
 
@@ -489,7 +489,7 @@ Resolvers belong to the subsystem that owns the object namespace.
 | Namespace | Owner | Resolver Belongs In |
 | --- | --- | --- |
 | `mem:` | memory module | `sdk/context/memory/events/resolver.py` |
-| `fi:` | ReAct artifact/event layer | `sdk/solutions/react/events/resolver.py` |
+| `conv:fi:` | ReAct artifact/event layer | `sdk/solutions/react/events/resolver.py` |
 | `task:` | task/issue subsystem | the task subsystem package |
 | `cnv:` | canvas module | `sdk/solutions/canvas/events/resolver.py` |
 | provider-defined refs | named-service provider, MCP/search surface, or explicit rehoster | the owning subsystem package |
@@ -515,7 +515,7 @@ Each subsystem owns its storage:
 - memory owns `user_memory_*` Postgres tables
 - canvas owns canvas board/revision/card-content storage
 - task subsystem owns task records and task-owned attachments
-- ReAct owns `fi:` turn artifacts
+- ReAct owns `conv:fi:` turn artifacts
 
 The composition bundle should configure stores and call schema provisioning
 through subsystem hooks. It should not share one artifact namespace across
@@ -610,12 +610,12 @@ configuration_defaults()
 
 The task subsystem should provide the `task:` resolver. The memory subsystem
 should provide the `mem:` resolver. The ReAct event/artifact layer should
-provide the `fi:` resolver. Canvas should not implement those semantics.
+provide the `conv:fi:` resolver. Canvas should not implement those semantics.
 
 Validation:
 
 - canvas board loads and stores revisions
-- card pins keep canonical refs (`fi:`, `mem:`, `task:`, canvas-owned refs)
+- card pins keep canonical refs (`conv:fi:`, `mem:`, `task:`, canvas-owned refs)
 - board refs use the canvas namespace. Import the live board with
   `react.pull(paths=["cnv:main"])`; import `cnv:main@27` only when a fixed
   historical revision is intentional. Inspect the returned workspace path.

@@ -148,7 +148,7 @@ Use this when the source already has a canonical object URI:
 {
   "type": "kdcube.canvas.ingress",
   "payload": {
-    "object_ref": "fi:conv_.../weather_cli.zip",
+    "object_ref": "conv:fi:conv_.../weather_cli.zip",
     "mime": "application/zip",
     "title": "weather_cli.zip",
     "filename": "weather_cli.zip",
@@ -156,7 +156,7 @@ Use this when the source already has a canonical object URI:
     "presentation": {
       "label": "file",
       "namespace": "fi",
-      "object_kind": "fi:artifact"
+      "object_kind": "conv:fi:artifact"
     }
   }
 }

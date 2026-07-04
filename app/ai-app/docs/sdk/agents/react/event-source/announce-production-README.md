@@ -33,8 +33,8 @@ event history and refs. Snapshot materialization is a source/tool responsibility
 and should write a ref such as:
 
 ```text
-fi:<turn_id>.snapshots/<name>
-fi:conv_<conversation_id>.<turn_id>.snapshots/<name>
+conv:fi:<turn_id>.git/snapshots/<name>
+conv:fi:conv_<conversation_id>.<turn_id>.git/snapshots/<name>
 ```
 
 The `conv_...` segment means the referenced artifact belongs to another
@@ -63,7 +63,7 @@ Canvas is the reference example:
 
 ```text
 [CANVAS BOARD]
-visibility: 3/3 render rounds remaining; use react.pull(paths=['cnv:main']) and react.read on the returned fi: path if you need it updated/prolonged.
+visibility: 3/3 render rounds remaining; use react.pull(paths=['cnv:main']) and react.read on the returned conv:fi: path if you need it updated/prolonged.
 ```
 
 Two different event sources can legitimately refer to the same board in one

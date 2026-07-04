@@ -116,7 +116,7 @@ Important consequences:
   with `react.state`, `react.exit`, and `react.workspace.publish`.
 - A long turn can therefore contain multiple completion attempts and multiple
   working summaries if followups arrive during finalization and create new
-  portions of work. The canonical `ws:<turn_id>.conv.working.summary` handle is
+  portions of work. The canonical `conv:ws:<turn_id>.conv.working.summary` handle is
   an alias to the latest working summary for that turn; attempt-scoped paths
   remain individually addressable.
 - The rendered model view groups tool output into:

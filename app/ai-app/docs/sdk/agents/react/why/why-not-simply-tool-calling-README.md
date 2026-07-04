@@ -415,13 +415,13 @@ That pushes the architecture toward:
 - runtime-controlled tool surfaces
 
 For example:
-- React tools operate mostly on logical paths such as `fi:`, `ar:`, `so:`,
-  `su:`, `tc:`, `ev:`, and `sk:`, plus owner namespace handoff rules
-- `tc:` addresses tool call/result memory
-- `ev:` addresses generic accepted event occurrences
+- React tools operate mostly on logical paths such as `conv:fi:`, `conv:ar:`, `conv:so:`,
+  `conv:su:`, `conv:tc:`, `conv:ev:`, and `sk:`, plus owner namespace handoff rules
+- `conv:tc:` addresses tool call/result memory
+- `conv:ev:` addresses generic accepted event occurrences
 - registered external namespaces such as `nmsp:`, `cnv:`, or `mem:` can be
   resolved by a namespace rehoster and materialized by `react.pull(...)` into
-  normal `fi:` refs
+  normal `conv:fi:` refs
 - historical files and rehosted external artifacts are activated explicitly
   with `react.pull(...)`
 - code execution happens in isolated runtime
@@ -653,7 +653,7 @@ The current React implementation that reflects this design includes:
   - `external-exec-README.md`
 - explicit workspace activation and logical-path-oriented artifacts:
   - `react.pull(...)`
-  - `fi:`, `ar:`, `so:`, `su:`, `tc:`, `ev:`, `sk:`, and owner namespace handoff rules
+  - `conv:fi:`, `conv:ar:`, `conv:so:`, `conv:su:`, `conv:tc:`, `conv:ev:`, `sk:`, and owner namespace handoff rules
   - registered external owner namespaces such as `nmsp:`, `cnv:`, or `mem:` through namespace
     rehosters
 
@@ -666,8 +666,8 @@ Current output protocol:
 ```
 
 Current workspace model:
-- current-turn `files/...` = durable workspace/project state
-- current-turn `outputs/...` = non-workspace produced artifacts
+- current-turn `git/projects/...` = durable workspace/project state
+- current-turn `files/...` = non-workspace produced artifacts
 - historical workspace activation is explicit
 - external artifact activation is explicit and resolver/rehoster-driven
 - in `git` mode, the current turn root is a sparse local git repo

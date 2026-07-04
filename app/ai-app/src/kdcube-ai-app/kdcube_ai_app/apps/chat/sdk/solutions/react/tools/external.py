@@ -10,6 +10,7 @@ import pathlib
 import time
 
 from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import (
+    REACT_FILE_REF_PREFIX,
     build_artifact_meta_block,
     build_artifact_binary_block,
     build_artifact_view,
@@ -73,7 +74,7 @@ def _format_sources_pool_path(sids: List[int]) -> str:
         start = prev = sid
     ranges.append((start, prev))
     parts = [str(a) if a == b else f"{a}-{b}" for a, b in ranges]
-    return f"so:sources_pool[{', '.join(parts)}]"
+    return f"conv:so:sources_pool[{', '.join(parts)}]"
 
 
 def _shape_of(value: Any, *, depth: int = 0, max_depth: int = 3) -> Any:
@@ -1199,7 +1200,7 @@ async def _handle_external_tool_legacy(*,
                 "call_id": tool_call_id,
                 "tool_id": tool_id,
                 "mime": mime,
-                "path": f"fi:{turn_id}.code.{tool_call_id}" if turn_id else "",
+                "path": f"conv:fi:{turn_id}.code.{tool_call_id}" if turn_id else "",
                 "text": code_txt,
                 "ts": ts,
                 "meta": {
@@ -1675,7 +1676,7 @@ async def _handle_external_tool_legacy(*,
                 pass
         edited = detect_edit(
             timeline=getattr(ctx_browser, "timeline", None),
-            artifact_path=artifact_path if artifact_path.startswith("fi:") else "",
+            artifact_path=artifact_path if artifact_path.startswith(REACT_FILE_REF_PREFIX) else "",
             tool_call_id=tool_call_id,
         )
         enrich_artifact_file_metadata(
@@ -1939,7 +1940,7 @@ async def _handle_external_tool_legacy(*,
             physical_path = phys_path if expose_file_path else ""
         edited = detect_edit(
             timeline=getattr(ctx_browser, "timeline", None),
-            artifact_path=artifact_path if artifact_path.startswith("fi:") else "",
+            artifact_path=artifact_path if artifact_path.startswith(REACT_FILE_REF_PREFIX) else "",
             tool_call_id=tool_call_id,
         )
         enrich_artifact_file_metadata(

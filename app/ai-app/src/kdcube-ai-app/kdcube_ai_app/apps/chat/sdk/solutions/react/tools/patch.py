@@ -11,7 +11,8 @@ import re
 
 from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import (
     ARTIFACT_NAMESPACE_FILES,
-    ARTIFACT_NAMESPACE_OUTPUTS,
+    ARTIFACT_NAMESPACE_PROJECTS,
+    REACT_FILE_REF_PREFIX,
     build_physical_artifact_path,
     build_artifact_meta_block,
     build_artifact_view,
@@ -39,7 +40,7 @@ from kdcube_ai_app.apps.chat.sdk.runtime.workspace import resolve_artifact_path
 TOOL_SPEC = {
     "id": "react.patch",
     "purpose": (
-        "Apply a text patch to an existing current-turn materialized text file under the canonical turn_<current>/files/... or turn_<current>/outputs/... namespace and stream the patch to the user. "
+        "Apply a text patch to an existing current-turn materialized text file under the canonical turn_<current>/files/... or turn_<current>/git/projects/... namespace and stream the patch to the user. "
         "If patch starts with ---/+++/@@ it is treated as unified diff and generated hunk counts are normalized, otherwise replaces the whole file. "
         "Unified diffs are applied against exact old/context bytes; hunk line counts may be wrong, but old/context lines must match the actual current file. "
         "Keep targeted hunks small and anchored by nearby exact context from the target file. "
@@ -51,7 +52,7 @@ TOOL_SPEC = {
         "If kind='file' the updated file is shared; if kind='display' it is streamed only."
     ),
     "args": {
-        "path": "str (FIRST FIELD). Canonical current-turn physical OUT_DIR-relative file path, e.g. turn_<current>/files/<scope>/x.py or turn_<current>/outputs/<scope>/x.html.",
+        "path": "str (FIRST FIELD). Canonical current-turn physical OUT_DIR-relative file path, e.g. turn_<current>/files/<scope>/x.html or turn_<current>/git/projects/<scope>/x.py.",
         "channel": "str (SECOND FIELD). 'canvas' (default).",
         "patch": "str (THIRD FIELD). Unified diff if starts with ---/+++/@@; otherwise full replacement. Prefer small unified-diff hunks copied from exact raw file content.",
         "kind": "str (FOURTH FIELD). 'display' or 'file'.",
@@ -137,7 +138,7 @@ def _normalize_patch_target(path_value: str, *, turn_id: str) -> tuple[str, str,
     raw = (path_value or "").strip().lstrip("/")
     if not raw:
         return "", "", "", {"code": "missing_artifact_name", "message": "react.patch requires params.path."}
-    if raw.startswith("fi:"):
+    if raw.startswith(REACT_FILE_REF_PREFIX):
         old_turn, namespace, rel = split_logical_artifact_path(raw)
         extra: Dict[str, Any] = {"path": path_value}
         if old_turn and namespace and rel:
@@ -150,7 +151,7 @@ def _normalize_patch_target(path_value: str, *, turn_id: str) -> tuple[str, str,
         return "", "", "", {
             "code": "patch_requires_current_turn_path",
             "message": (
-                "react.patch expects a current-turn physical path, not a logical fi: path. "
+                "react.patch expects a current-turn physical path, not a logical conv:fi: path. "
                 "Use react.pull to materialize historical refs; for historical files use react.checkout "
                 "to copy them into the current turn before patching."
             ),
@@ -163,7 +164,7 @@ def _normalize_patch_target(path_value: str, *, turn_id: str) -> tuple[str, str,
             return "", "", "", {
                 "code": "patch_requires_current_turn_path",
                 "message": (
-                    "react.patch only patches canonical current-turn files/ or outputs/ paths. For a historical files/ path, "
+                    "react.patch only patches canonical current-turn files/ or git/projects/ paths. For a historical git/projects/ path, "
                     "use react.pull first if needed, then react.checkout to copy it into the current turn; "
                     "patch the resulting current-turn path."
                 ),
@@ -175,15 +176,15 @@ def _normalize_patch_target(path_value: str, *, turn_id: str) -> tuple[str, str,
                     "relpath": rel,
                 },
             }
-        if namespace not in {ARTIFACT_NAMESPACE_FILES, ARTIFACT_NAMESPACE_OUTPUTS}:
+        if namespace not in {ARTIFACT_NAMESPACE_FILES, ARTIFACT_NAMESPACE_PROJECTS}:
             return "", "", "", {
                 "code": "patch_unsupported_namespace",
-                "message": "react.patch supports only canonical current-turn files/ and outputs/ text paths.",
+                "message": "react.patch supports only canonical current-turn files/ and git/projects/ text paths.",
                 "extra": {"path": path_value, "namespace": namespace},
             }
         return raw, rel, namespace, None
 
-    for candidate_namespace in (ARTIFACT_NAMESPACE_FILES, ARTIFACT_NAMESPACE_OUTPUTS):
+    for candidate_namespace in (ARTIFACT_NAMESPACE_FILES, ARTIFACT_NAMESPACE_PROJECTS):
         prefix = f"{candidate_namespace}/"
         if raw.startswith(prefix):
             rel = raw[len(prefix):].strip("/")
@@ -196,7 +197,7 @@ def _normalize_patch_target(path_value: str, *, turn_id: str) -> tuple[str, str,
 
     return "", "", "", {
         "code": "patch_requires_namespaced_path",
-        "message": "react.patch path must be a canonical current-turn files/ or outputs/ path.",
+        "message": "react.patch path must be a canonical current-turn files/ or git/projects/ path.",
         "extra": {"path": path_value},
     }
 

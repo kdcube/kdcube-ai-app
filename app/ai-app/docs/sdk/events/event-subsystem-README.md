@@ -99,7 +99,7 @@ Authored conversation events use the same source/occurrence model. Their
 accepted transport envelope is documented in
 [External Event Envelope](external-event-envelope-README.md). In that envelope,
 `event_source_id` selects policies, `event_id` identifies the occurrence, and
-`logical_path` is the `ev:` path of the event object on the turn timeline.
+`logical_path` is the `conv:ev:` path of the event object on the turn timeline.
 User prompts, user attachments, followups, and steers are built-in external
 event types (`event.user.prompt`, `event.user.attachment.*`,
 `event.user.followup`, `event.user.steer`) and should be authored through the
@@ -225,7 +225,7 @@ This keeps owner-domain policy rendering generic. ReAct does not implement
 memory, task, canvas, or knowledge-source semantics itself; it relies on the
 namespace owner's reader/policies when runtime code needs owner payloads.
 Model-facing exact content access is different: use `react.pull` with a
-namespace rehoster, then inspect the returned `fi:` artifact.
+namespace rehoster, then inspect the returned `conv:fi:` artifact.
 For named-service namespaces, the pull/read path preserves the owner URI and
 lets `react.read` call the owner's `block.produce` operation before the read
 block is stored. The boundary diagram is
@@ -253,13 +253,13 @@ Duplicate namespace registrations are rejected during discovery.
 
 The same module discovery path can register artifact namespace rehosters. A
 rehoster is different from an event source: it turns an external owner ref such
-as `cnv:...` or `mem:...` into a normal ReAct `fi:` artifact ref by copying
+as `cnv:...` or `mem:...` into a normal ReAct `conv:fi:` artifact ref by copying
 bytes into the current turn artifact surface. The rehoster owns the mapping from
 the owner ref to the ReAct artifact namespace.
 
 A rehoster must be aware of the ReAct workspace and artifact surfaces. It does
 not merely download bytes; it chooses where the artifact belongs in the ReAct
-model and returns the resulting `fi:` logical path plus `OUTPUT_DIR`-relative
+model and returns the resulting `conv:fi:` logical path plus `OUTPUT_DIR`-relative
 physical path. Read
 [Agent Workspace Collaboration](../agents/react/workspace/artifact-namespace-rehosters-README.md)
 and [Files vs Outputs](../agents/react/workspace/workspace-model-README.md) before
@@ -311,21 +311,21 @@ react = self.build_react(
 
 Inside `events/my_artifacts.py`:
 
-- snapshot-like state should materialize as `fi:turn_<id>.snapshots/...`
+- snapshot-like state should materialize as `conv:fi:turn_<id>.git/snapshots/...`
 - external evidence/files should materialize as
-  `fi:turn_<id>.external.<event_kind>.attachments/<event_id>/<name>`
+  `conv:fi:turn_<id>.external.<event_kind>.attachments/<event_id>/<name>`
 - editable workspace/project state should materialize as
-  `fi:turn_<id>.files/...`
-- produced deliverables/reports should materialize as `fi:turn_<id>.outputs/...`
+  `conv:fi:turn_<id>.git/projects/...`
+- produced deliverables/reports should materialize as `conv:fi:turn_<id>.files/...`
 
 The destination is semantic:
 
 | Source artifact meaning | ReAct destination |
 |---|---|
-| Story/wizard state snapshot | `fi:turn_<id>.snapshots/<path>` / `turn_<id>/snapshots/<path>` |
-| Evidence or domain attachment | `fi:turn_<id>.external.<event_kind>.attachments/<event_id>/<name>` / `turn_<id>/external/<event_kind>/attachments/<event_id>/<name>` |
-| Editable project/workspace file | `fi:turn_<id>.files/<workspace_scope>/<path>` / `turn_<id>/files/<workspace_scope>/<path>` |
-| Produced report/export/rendered artifact | `fi:turn_<id>.outputs/<artifact_scope>/<path>` / `turn_<id>/outputs/<artifact_scope>/<path>` |
+| Story/wizard state snapshot | `conv:fi:turn_<id>.git/snapshots/<path>` / `turn_<id>/git/snapshots/<path>` |
+| Evidence or domain attachment | `conv:fi:turn_<id>.external.<event_kind>.attachments/<event_id>/<name>` / `turn_<id>/external/<event_kind>/attachments/<event_id>/<name>` |
+| Editable project/workspace file | `conv:fi:turn_<id>.git/projects/<workspace_scope>/<path>` / `turn_<id>/git/projects/<workspace_scope>/<path>` |
+| Produced report/export/rendered artifact | `conv:fi:turn_<id>.files/<artifact_scope>/<path>` / `turn_<id>/files/<artifact_scope>/<path>` |
 
 The returned paths are the agent contract. After
 `react.pull(paths=["cnv:main@7"])`, the agent should use the returned
@@ -344,8 +344,8 @@ async def rehost_canvas_ref(*, ref, key, ctx_browser, outdir, **context):
     return {
         "materialized": [{
             "object_ref": ref,
-            "logical_path": "fi:turn_<id>.snapshots/cnv/main.json",
-            "physical_path": "turn_<id>/snapshots/cnv/main.json",
+            "logical_path": "conv:fi:turn_<id>.git/snapshots/cnv/main.json",
+            "physical_path": "turn_<id>/git/snapshots/cnv/main.json",
         }]
     }
 ```
@@ -358,7 +358,7 @@ def list_artifact_namespace_rehosters():
     return [rehost_canvas_ref]
 ```
 
-`react.pull` calls registered rehosters before the normal `fi:` hydration path.
+`react.pull` calls registered rehosters before the normal `conv:fi:` hydration path.
 A registered rehoster is required for each external owner namespace that should
 be importable into ReAct. This keeps owner refs such as `cnv:...` and `mem:...`
 explicit on the timeline while giving agents a standard way to materialize exact
@@ -368,7 +368,7 @@ includes the source ref and the resolved/rehosted `logical_path` /
 
 Named-service rehosters use the same artifact contract. The provider supplies
 bytes through `object.get(response_mode=stream)`. The consumer ReAct runtime
-writes those bytes into the current `fi:` workspace and stores the original
+writes those bytes into the current `conv:fi:` workspace and stores the original
 owner ref beside the local path. Later `react.read` can project the owner object
 through `block.produce`; later `Timeline.render()` renders the stored blocks
 locally.
@@ -389,7 +389,7 @@ not automatically imply that the file body is copied into model-visible text.
 A source should provide `text_preview` only when it already has the bytes and
 can create a bounded, source-owned preview during block production. Exec does
 this for text files produced in the isolated runtime. Other sources can stay
-metadata-only; ReAct can later call `react.read(paths=["fi:..."])` on the
+metadata-only; ReAct can later call `react.read(paths=["conv:fi:..."])` on the
 visible logical artifact path when exact content is needed.
 
 If a source emits a pre-rendered file preview block, the block should carry:

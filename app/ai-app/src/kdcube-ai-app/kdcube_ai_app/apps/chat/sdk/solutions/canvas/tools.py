@@ -157,7 +157,7 @@ class CanvasTools:
                 "replace_card, suggest_deletion, delete_card, comment_card. "
                 "For artifact delivery use new_card with the semantic kind of the object "
                 "(file, memory, source, search.result, provided.text or agent.text for text), title/summary, "
-                "mime, and logical_path set to the produced/resolved fi:/cnv:/mem:/so: or provider-owned ref. "
+                "mime, and logical_path set to the produced/resolved conv:fi:/cnv:/mem:/conv:so: or provider-owned ref. "
                 "Use placement=suggested for pending bot suggestions. For replacement suggestions, use "
                 "replace_card with the target card_id; omit mode or use mode=suggested to create "
                 "a floating replacement, and use mode=in_place only for explicit overwrite requests."

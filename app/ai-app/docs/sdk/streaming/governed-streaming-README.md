@@ -135,7 +135,7 @@ Example streamed shape:
   "tool_call": {
     "tool_id": "react.write",
     "params": {
-      "path": "outputs/report.md",
+      "path": "files/report.md",
       "content": "large content..."
     }
   }

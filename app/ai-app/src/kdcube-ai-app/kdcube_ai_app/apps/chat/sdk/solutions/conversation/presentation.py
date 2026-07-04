@@ -25,8 +25,8 @@ TURN_MIME = "application/vnd.kdcube.conversation.turn+json;version=1"
 CONVERSATION_MIME = "application/vnd.kdcube.conversation+json;version=1"
 NAMED_SERVICE_OBJECT_SCHEMA = "kdcube.named_service.object.v1"
 
-# A file artifact referenced by a turn, addressed through the conv namespace as
-# `conv:fi:<fi-body>` — a conv-namespaced view of a `fi:` logical path.
+# A file artifact referenced by a turn, addressed through the conversation owner
+# namespace as `conv:fi:<body>`.
 CONV_FILE_REF_PREFIX = "conv:fi:"
 
 
@@ -51,35 +51,29 @@ def conversation_id_from_ref(value: Any) -> str:
     return ""
 
 
-def _scope_fi_to_conversation(fi_path: str, conversation_id: str) -> str:
-    """Ensure a `fi:` path self-describes its conversation (`fi:conv_<id>.turn_...`).
+def _scope_conv_file_to_conversation(file_ref: str, conversation_id: str) -> str:
+    """Ensure a `conv:fi:` path self-describes its conversation.
 
     External clients have no ambient conversation, so every emitted file ref must
     carry the conversation scope for the read side to resolve the turn.
     """
-    raw = _text(fi_path)
+    raw = _text(file_ref)
     conv = _text(conversation_id)
-    if not conv or not raw.startswith("fi:"):
+    if not conv or not raw.startswith(CONV_FILE_REF_PREFIX):
         return raw
-    body = raw[len("fi:"):]
+    body = raw[len(CONV_FILE_REF_PREFIX):]
     if body.startswith("conv_"):  # already scoped
         return raw
-    return f"fi:conv_{conv}.{body}"
+    return f"{CONV_FILE_REF_PREFIX}conv_{conv}.{body}"
 
 
 def conv_file_ref(fi_path: Any, conversation_id: str = "") -> str:
-    """Round-trippable conv-namespaced handle for a `fi:` artifact path.
+    """Round-trippable conv-namespaced handle for a file artifact path.
 
-    `fi:[conv_<id>.]<body>` -> `conv:fi:[conv_<id>.]<body>`, scoped to its
-    conversation when known so an external client can resolve it. An already-
-    `conv:fi:` ref or a non-`fi:` value (e.g. an `ar:`/`tc:` handle) passes through.
+    `conv:fi:[conv_<id>.]<body>` is scoped to its conversation when known so an
+    external client can resolve it. Non-file handles pass through unchanged.
     """
-    raw = _scope_fi_to_conversation(_text(fi_path), conversation_id)
-    if raw.startswith(CONV_FILE_REF_PREFIX):
-        return raw
-    if raw.startswith("fi:"):
-        return f"{CONV_FILE_REF_PREFIX}{raw[len('fi:'):]}"
-    return raw
+    return _scope_conv_file_to_conversation(_text(fi_path), conversation_id)
 
 
 def is_conv_file_ref(value: Any) -> bool:
@@ -87,11 +81,9 @@ def is_conv_file_ref(value: Any) -> bool:
 
 
 def fi_path_from_conv_ref(value: Any) -> str:
-    """`conv:fi:<body>` -> `fi:<body>`. Tolerates a bare `fi:` ref; returns "" otherwise."""
+    """Return the canonical `conv:fi:<body>` file ref or "" otherwise."""
     raw = _text(value)
     if raw.startswith(CONV_FILE_REF_PREFIX):
-        return f"fi:{raw[len(CONV_FILE_REF_PREFIX):]}"
-    if raw.startswith("fi:"):
         return raw
     return ""
 
@@ -280,9 +272,8 @@ def conversation_schema_payload(
             "purpose": (
                 "Turns reference files — uploaded attachments, produced outputs, snapshots, pulled "
                 "external attachments. Search results present these as conv:fi:<path> handles, and "
-                "fi:<path> refs also appear inside turn text (e.g. working summaries). To read a "
-                "referenced file, call object.get with its conv:fi:<path> ref (an fi: path seen in "
-                "text is the same artifact — address it as conv:fi:<that-path>)."
+                "conv:fi:<path> refs may also appear inside turn text (e.g. working summaries). To read a "
+                "referenced file, call object.get with its conv:fi:<path> ref."
             ),
             "returns": (
                 "the file: {ref, filename, mime, size, encoding, ...}. encoding=text -> content is "
@@ -316,7 +307,7 @@ def conversation_schema_payload(
                 "turn_index_path, snippets[{role,path,text,ts}]}, score."
             ),
             "recovery": (
-                "read the returned snippet paths, or turn_index_path (ar:turn_<id>.react.turn.index), "
+                "read the returned snippet paths, or turn_index_path (conv:ar:turn_<id>.react.turn.index), "
                 "to recover full turn content."
             ),
         },

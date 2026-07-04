@@ -87,7 +87,7 @@ when selected cards are part of the request:
 
 Cards dragged from canvas into chat are not rendered as a special canvas-focus
 section. They are rendered as the objects they proxy: `mem:` as memory context,
-`fi:` as a platform artifact, provider-owned refs through their namespace
+`conv:fi:` as a platform artifact, provider-owned refs through their namespace
 resolver, canvas-owned `cnv:` refs as canvas-owned user/assistant content, and so on. Canvas
 provenance may appear as metadata such as `canvas_context`, but the rendered
 `object_ref` remains the identity to pull or act on.
@@ -95,7 +95,7 @@ provenance may appear as metadata such as `canvas_context`, but the rendered
 Canvas read/write behavior:
 - Use the map/legend for awareness. When exact hidden board state, full JSON,
   full card metadata, coordinates, or refs are needed, import the current board
-  with `react.pull(paths=["cnv:<name>"])`, then inspect the returned `fi:`
+  with `react.pull(paths=["cnv:<name>"])`, then inspect the returned `conv:fi:`
   logical path or physical path. Use `cnv:<name>@<revision>` only when you
   intentionally need the board at a known revision.
 - `cnv:` refs identify canvas-owned board/object state. They are external owner
@@ -121,7 +121,7 @@ Canvas read/write behavior:
 - If `named_services.upsert_object(namespace="cnv", ...)` returns
   `canvas_revision_conflict`, the mutation was not applied. Pull/read the
   current board with `react.pull(paths=["cnv:<name>"])`, inspect the returned
-  `fi:` snapshot, then issue a new upsert that is valid for that current
+  `conv:fi:` snapshot, then issue a new upsert that is valid for that current
   revision. Do not blind-retry an old payload.
 - Each successful canvas upsert creates a new canvas revision and a canvas
   event/projection for the board.
@@ -140,7 +140,7 @@ Card placement and ref behavior:
   `placement=trashed` means it is in the persisted bin.
 - Use visible card previews when sufficient. When exact content for a proxied
   object is needed, pull the rendered `object_ref` with `react.pull`; then
-  inspect the returned `fi:` logical path or physical path. Unsupported refs are
+  inspect the returned `conv:fi:` logical path or physical path. Unsupported refs are
   reported by the pull result.
 - Canvas-owned cards are hosted by the runtime's canvas storage, not by the
   platform conversation artifact store:
@@ -161,7 +161,7 @@ Card placement and ref behavior:
   can annotate proxy cards with descriptions/comments, but editing the
   underlying object belongs to the owning namespace's tools/APIs.
 - `user.text` card content may be updated with `update_card content={text}`.
-- Proxy card refs such as `mem:`, `fi:`, search/source refs, provider-owned
+- Proxy card refs such as `mem:`, `conv:fi:`, search/source refs, provider-owned
   refs, and hosted attachments stay immutable. You may update the canvas-owned
   description and comments on those cards when the user asks.
 - New assistant output should usually be a suggested card, not an automatic
@@ -170,7 +170,7 @@ Card placement and ref behavior:
   discover/reuse the board `object_ref`, then call
   `named_services.upsert_object(namespace="cnv", object_ref=<board object_ref>,
   base_revision=<visible revision>, object_json={"object_kind":"canvas.card",
-  ...})` with `card.logical_path` pointing at the produced `fi:` or `cnv:` ref.
+  ...})` with `card.logical_path` pointing at the produced `conv:fi:` or `cnv:` ref.
 
 Semantics:
 - Canvas is an editable collaborative board. Stories, namespace-owned objects,

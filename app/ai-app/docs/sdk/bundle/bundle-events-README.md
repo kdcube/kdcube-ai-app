@@ -80,7 +80,7 @@ assistance requests, canvas review requests, or saved story snapshots.
 | `kind` | Event-source occurrence family. `react.tool` means a ReAct tool-call/result source; `react.event_source_reader` means an owner-domain reader for runtime/policy code; `react.external` means an authored external event. |
 | `story_id` | Bundle-owned product-flow instance id, for example one open wizard/canvas/case. It helps policies and tools interpret the event. |
 | `event source reader` | Namespace-owner callable registered with `@event_source_reader`; resolves owner refs for runtime/policy code. |
-| `artifact namespace rehoster` | A bundle/SDK handler that turns an external owner ref such as `cnv:...` or `mem:...` into a ReAct `fi:` artifact path for `react.pull`. |
+| `artifact namespace rehoster` | A bundle/SDK handler that turns an external owner ref such as `cnv:...` or `mem:...` into a ReAct `conv:fi:` artifact path for `react.pull`. |
 
 For tool-backed events:
 
@@ -415,8 +415,8 @@ ReAct paths, for example:
 ```json
 {
   "source_ref": "nmsp:workspace/draft-123/snapshots/current.yaml",
-  "logical_path": "fi:turn_123.snapshots/nmsp/workspace/draft-123/current.yaml",
-  "physical_path": "turn_123/snapshots/nmsp/workspace/draft-123/current.yaml"
+  "logical_path": "conv:fi:turn_123.git/snapshots/nmsp/workspace/draft-123/current.yaml",
+  "physical_path": "turn_123/git/snapshots/nmsp/workspace/draft-123/current.yaml"
 }
 ```
 
@@ -437,10 +437,10 @@ Destination map:
 
 | Source artifact meaning | ReAct destination |
 |---|---|
-| Story/wizard/canvas snapshot | `fi:turn_<id>.snapshots/<path>` / `turn_<id>/snapshots/<path>` |
-| Evidence or domain attachment | `fi:turn_<id>.external.<event_kind>.attachments/<event_id>/<name>` / `turn_<id>/external/<event_kind>/attachments/<event_id>/<name>` |
-| Editable project/workspace file | `fi:turn_<id>.files/<workspace_scope>/<path>` / `turn_<id>/files/<workspace_scope>/<path>` |
-| Produced report/export/rendered artifact | `fi:turn_<id>.outputs/<artifact_scope>/<path>` / `turn_<id>/outputs/<artifact_scope>/<path>` |
+| Story/wizard/canvas snapshot | `conv:fi:turn_<id>.git/snapshots/<path>` / `turn_<id>/git/snapshots/<path>` |
+| Evidence or domain attachment | `conv:fi:turn_<id>.external.<event_kind>.attachments/<event_id>/<name>` / `turn_<id>/external/<event_kind>/attachments/<event_id>/<name>` |
+| Editable project/workspace file | `conv:fi:turn_<id>.git/projects/<workspace_scope>/<path>` / `turn_<id>/git/projects/<workspace_scope>/<path>` |
+| Produced report/export/rendered artifact | `conv:fi:turn_<id>.files/<artifact_scope>/<path>` / `turn_<id>/files/<artifact_scope>/<path>` |
 
 Example:
 
@@ -529,7 +529,7 @@ ReAct `EventSourceSubsystem`.
 
 5. Agent needs snapshot/object bytes
    agent calls react.pull(paths=["<namespace>:..."])
-   named-service object.get or namespace rehoster materializes it as fi:...
+   named-service object.get or namespace rehoster materializes it as conv:fi:...
 
 6. Agent responds in side chat or produces artifacts
    bundle UI can render the response next to the wizard/canvas
@@ -550,7 +550,7 @@ selection metadata.
 - Keep high-frequency UI state in bundle storage or the domain system.
 - Emit authored events for meaningful transitions: saved, uploaded, deleted,
   assistance requested, review requested, snapshot available.
-- Carry refs to snapshots/artifacts in event data. Materialize through
+- Carry refs to git/snapshots/artifacts in event data. Materialize through
   `react.pull` when the agent needs bytes. Prefer a named-service provider
   with `object.get` and `block.produce`; use a custom namespace rehoster only
   for owner domains that are not yet exposed through named services.

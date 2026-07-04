@@ -1,10 +1,12 @@
 ---
 id: repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/artifact-storage-README.md
 title: "Artifact Storage"
-summary: "Where artifacts are stored and how artifact files/attachments are organized."
+summary: "Where ReAct files, attachments, timeline artifacts, hosted file metadata, and conv:fi paths are stored and indexed."
 tags: ["sdk", "agents", "react", "artifacts", "storage"]
-keywords: ["artifact storage", "attachments", "turn artifacts", "timeline files", "storage rules"]
+updated_at: 2026-07-04
+keywords: ["artifact storage", "attachments", "turn artifacts", "timeline files", "conv:fi", "storage rules"]
 see_also:
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/react-realm-refs-and-workspace-paths-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/artifact-discovery-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/conversation-artifacts-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/react-tools-README.md
@@ -12,159 +14,147 @@ see_also:
 ---
 # Artifact Storage Rules
 
-Scope:
-- this document describes current artifact persistence and hosting behavior
-- it does not define workspace-membership semantics by itself
-- the current namespace split between durable workspace `files/...` and non-workspace `outputs/...` is described in `workspace-model-README.md`
+This page describes persistence and hosting. The workspace/ref grammar is in
+[ReAct Realm Refs And Workspace Paths](./react-realm-refs-and-workspace-paths-README.md).
 
 ## Files vs Tool Results
-Tool results are stored in the **event log blocks** (timeline), not on disk.
-Only the following are written to disk in the artifact output root:
-- exec tool outputs
-- `react.write` artifacts
-- `rendering_tools.write_*` outputs
-- user attachments (materialized when needed)
 
-Path root contract:
-- Agent-visible physical paths are always relative paths such as
-  `turn_<id>/files/...`, `turn_<id>/outputs/...`, and
-  `turn_<id>/attachments/...`.
-- The agent should not know or mention the host/runtime prefix. It should only
-  use the `turn_...` path.
-- In local runtime storage, those paths live under the artifact root
-  `out/workdir/`.
-- The sibling runtime root `out/` is reserved for platform metadata such as
-  `timeline.json`, `tool_calls_index.json`, tool-call JSON records, logs, and
-  execution diagnostics.
+Tool call/result JSON is stored in timeline/tool-call records such as
+`conv:tc:<turn>.<call>.result`, not as ordinary disk files unless a tool also
+produces files.
 
-User attachments:
-- PDFs/images are attached as binary blocks.
-- Other types (e.g., `.docx`, `.xlsx`, `.txt`) are **meta only** and must be read via `physical_path`
-  (e.g., `turn_<id>/attachments/<filename>`).
+Only these byte-bearing objects are written under the artifact output root:
 
-## Hosted storage location
-Assistant-produced file bytes are hosted in the conversation file storage
-surface under the current turn. The stored key preserves the full
-artifact-root-relative path, so files with the same basename in different
-directories remain distinct.
+- exec tool outputs;
+- `react.write` file/display artifacts;
+- `rendering_tools.write_*` outputs;
+- user attachments;
+- owner refs materialized by `react.pull`.
+
+## Physical Path Contract
+
+Agent-visible physical paths are always `OUTPUT_DIR`-relative:
+
+```text
+turn_<id>/git/projects/<project_scope>/...     # editable durable project state
+turn_<id>/files/<artifact_scope>/...           # produced files and deliverables
+turn_<id>/git/snapshots/<snapshot_scope>/...    # state snapshots
+turn_<id>/attachments/<filename>               # user uploads
+turn_<id>/external/<kind>/attachments/<event_id>/<filename>
+conv_<conversation_id>/turn_<id>/<area>/<path> # cross-conversation material
+```
+
+The agent should not know or mention host/runtime absolute prefixes. In local
+runtime storage these paths live under the artifact root, for example
+`out/workdir/`.
+
+Logical refs use the `conv:fi:` family:
+
+```text
+conv:fi:turn_<id>.git/projects/<project_scope>/<path>
+conv:fi:turn_<id>.files/<artifact_scope>/<path>
+conv:fi:turn_<id>.git/snapshots/<snapshot_scope>/<path>
+conv:fi:turn_<id>.user.attachments/<filename>
+conv:fi:turn_<id>.external.<kind>.attachments/<event_id>/<filename>
+```
+
+Artifacts never use `current_turn` in stored paths. Always use the concrete
+`turn_id`.
+
+## Hosted Storage Location
+
+Assistant-produced file bytes are hosted in conversation file storage under the
+current turn. The stored key preserves the full artifact-root-relative path, so
+files with the same basename in different directories remain distinct.
 
 General shape:
-```
+
+```text
 s3://<bucket>/<prefix>/cb/tenants/<tenant>/projects/<project>/attachments/<user_id>/<conversation_id>/<turn_id>/<artifact-root-relative-path>
 ```
 
 Example:
+
 ```text
 physical_path:
-  turn_2026-05-27-21-10-44-540/outputs/analysis/zip_contents.json
+  turn_2026-07-04-09-00-00-000/files/analysis/zip_contents.json
+
+logical_path:
+  conv:fi:turn_2026-07-04-09-00-00-000.files/analysis/zip_contents.json
 
 storage key:
   cb/tenants/demo/projects/demo/attachments/<user>/<conversation>/
-    turn_2026-05-27-21-10-44-540/
-    turn_2026-05-27-21-10-44-540/outputs/analysis/zip_contents.json
+    turn_2026-07-04-09-00-00-000/
+    turn_2026-07-04-09-00-00-000/files/analysis/zip_contents.json
 ```
 
-Visibility controls transport/UI emission, not whether the file bytes are
-hosted. External files are hosted and emitted to the UI. Internal files are
-hosted for later agent/runtime use and recorded in metadata, but are not emitted
-as visible user files.
+Visibility controls transport/UI emission, not byte persistence.
 
 ## Conversation State Artifacts
-Conversation state is stored as two artifacts:
-- `artifact:conv.timeline.v1` — timeline blocks + conversation metadata + current full `sources_pool`
-- `artifact:conv:sources_pool` — sources pool only
 
-The timeline snapshot includes `react.thinking` blocks (hidden) but **does not**
-persist a `conv.thinking.stream` artifact anymore. UI-facing thinking items are
-reconstructed from the turn log timeline during fetch.
+Conversation state is stored as conversation artifacts:
 
-The sources pool payload is:
-```json
-{ "sources_pool": [ ... ] }
-```
+- `artifact:conv.timeline.v1` — timeline blocks, conversation metadata, and
+  current full `sources_pool`;
+- `artifact:conv:sources_pool` — sources pool only;
+- `artifact:turn.log` — per-turn block log.
 
-### PostgreSQL index record (conv_messages)
-Both artifacts are indexed in `conv_messages` with:
-- `role = "artifact"`
-- `tags` include `artifact:<kind>` and `turn:<turn_id>`
-- `text` is a compact JSON summary (not the full payload)
+These artifacts are indexed in `conv_messages` with `role = "artifact"` and
+tags such as `artifact:conv.timeline.v1`, `artifact:conv:sources_pool`, and
+`kind:turn.log`.
 
-**Timeline record (`artifact:conv.timeline.v1`)**
-`text` contains:
-```json
-{
-  "conversation_title": "...",
-  "conversation_started_at": "...",
-  "last_activity_at": "...",
-  "blocks_count": 18,
-  "sources_pool_count": 2,
-  "turn_ids": ["turn_..."]
-}
-```
+## Hosted File Fields
 
-**Sources pool record (`artifact:conv:sources_pool`)**
-`text` contains:
-```json
-{
-  "sources_pool": [
-    { "sid": 1, "title": "...", "url": "...", "text": "short snippet", "published_time_iso": "...", "favicon": "..." }
-  ],
-  "sources_pool_count": 2,
-  "turn_ids": ["turn_..."],
-  "last_activity_at": "..."
-}
-```
-
-## Paths (Stable)
-- Logical artifact path (used by `react.read` / `fetch_ctx`):
-  - `ar:<turn_id>.user.prompt`
-  - `ar:<turn_id>.assistant.completion`
-  - `ar:<turn_id>.assistant.completion.<n>` for earlier visible completions from the same turn
-- `fi:<turn_id>.user.attachments/<name>`
-- `fi:<turn_id>.files/<relative_path>`
-- `fi:<turn_id>.outputs/<relative_path>`
-- Physical paths (artifact-root-relative, under `out/workdir` locally):
-  - Files: `turn_<id>/files/<relative_path>`
-  - Outputs: `turn_<id>/outputs/<relative_path>`
-  - Attachments: `turn_<id>/attachments/<filename>`
-
-Artifacts never use `current_turn` in their paths. Always use the concrete `turn_id`.
-Do not expose absolute host paths, execution sandbox paths, or hosted `file://`
-paths to the agent as write/read targets.
-
-## Hosted file fields
 When a file is hosted, metadata blocks include:
-- `rn` (resource name; primary download handle)
-- `hosted_uri` (S3 path)
-- `key` (storage key)
-These are **not interchangeable**; UI expects `rn` for downloads.
 
-`react.pull` uses `hosted_uri` or `key` to materialize file bytes. It must not
-fall back to a visible text preview as if that preview were the complete file.
+| Field | Meaning |
+| --- | --- |
+| `rn` | Resource name; primary download/open handle for clients. |
+| `hosted_uri` | Backing storage URI, usually S3. |
+| `key` | Storage key under the configured bucket/prefix. |
+| `logical_path` or `artifact_path` | `conv:fi:` ref. |
+| `physical_path` | `OUTPUT_DIR`-relative path. |
+
+These fields are not interchangeable. UI download flows expect `rn`.
+`react.pull` uses hosted metadata or the current workspace backend to
+materialize bytes. It must not treat a text preview as the complete file.
 
 ## Visibility
-- `visibility=external`: sent to user (chat or file attachment)
-- `visibility=internal`: hosted and stored for agent/runtime use, not emitted to the user
-  - Internal notes written via `react.write(channel="internal")` are stored as `react.note` blocks.
-  - Files created with `kind=file` are hosted with their full workspace-relative path.
-  - Exec contract files may explicitly request `visibility=internal` to keep the output agent-only.
 
-Important:
-- `visibility` answers who receives the artifact
-- it does not suppress persistence of produced file bytes
-- it does **not** answer whether the artifact is part of the durable workspace/project tree
-- that distinction lives at the namespace level (`files/...` vs `outputs/...`), not in `visibility`
+| Visibility | Meaning |
+| --- | --- |
+| `external` | Emitted to the user/client when the transport supports this artifact class. |
+| `internal` | Persisted and available to agent/runtime, not emitted as a user artifact. |
+
+Visibility does not decide whether something is project state. Namespace does:
+
+```text
+git/projects/... + external/internal  -> project state
+files/...        + external/internal  -> produced artifact
+git/snapshots/...+ external/internal  -> state snapshot
+```
 
 ## Kind
-- `kind=file`: normal file artifact
-- `kind=display`: streamed display artifact
-- `kind=file`: downloadable file artifact when hosting succeeds
 
-## Example (meta block)
+Common artifact kinds:
+
+| Kind | Meaning |
+| --- | --- |
+| `file` | Byte-bearing file artifact. |
+| `display` | Displayable artifact block, often rendered in Artifacts UI. |
+| `search_result` | Search-result artifact entry; not a downloadable file unless it also has a file payload. |
+| `timeline` | Timeline/progress text; not an Artifacts-tab item. |
+
+Clients should use explicit package/artifact metadata, not namespace guesses,
+when deciding whether something belongs in Files, Artifacts, Links, Steps, or
+Timeline.
+
+## Example Metadata Block
+
 ```json
 {
-  "artifact_path": "fi:turn_1771234567890_abcd.files/report.md",
-  "physical_path": "turn_1771234567890_abcd/files/report.md",
+  "artifact_path": "conv:fi:turn_2026-07-04-09-00-00-000.files/report/report.md",
+  "physical_path": "turn_2026-07-04-09-00-00-000/files/report/report.md",
   "mime": "text/markdown",
   "kind": "display",
   "visibility": "external",

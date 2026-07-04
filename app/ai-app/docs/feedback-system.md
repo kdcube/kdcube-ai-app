@@ -131,7 +131,7 @@ When a React v2 session renders a timeline:
 
 ```
 type: "turn.feedback"
-path: "ar:<turn_id>.feedback.<key>"
+path: "conv:ar:<turn_id>.feedback.<key>"
 meta: {
   origin: "user" | "machine",
   reaction: "ok" | "not_ok" | "neutral" | null,

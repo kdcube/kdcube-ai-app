@@ -103,7 +103,7 @@ User sees the object opened in the scene
 
 | Concern | Owner |
 | --- | --- |
-| Object identity | The originating namespace, for example `fi:`, `cnv:`, or an app-owned namespace such as `task:`. |
+| Object identity | The originating namespace, for example `conv:fi:`, `cnv:`, or an app-owned namespace such as `task:`. |
 | Object semantics | The namespace owner's named-service provider or resolver. |
 | Open-effect declaration | The namespace owner, usually through `default_open_effect_action`. |
 | Surface mounting and z-order | Scene host. |

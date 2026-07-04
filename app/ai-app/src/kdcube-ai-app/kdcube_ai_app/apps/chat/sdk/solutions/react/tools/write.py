@@ -10,7 +10,9 @@ import pathlib
 
 from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import (
     ARTIFACT_NAMESPACE_FILES,
-    ARTIFACT_NAMESPACE_OUTPUTS,
+    ARTIFACT_NAMESPACE_PROJECTS,
+    ARTIFACT_NAMESPACE_SNAPSHOTS,
+    REACT_FILE_REF_PREFIX,
     build_logical_artifact_path,
     materialize_inline_artifact_to_file,
     build_artifact_view,
@@ -38,8 +40,8 @@ TOOL_SPEC = {
         "Use channel='canvas' for LARGE MARKDOWN OR any non‑markdown (HTML/JSON/YAML/XML/Mermaid) — produced as an external artifact that the connected interface presents to the user somewhere outside the inline chat stream. Markdown is first-class on canvas: full reports, multi-section briefs, big markdown tables, slide sources all live here. For short inline, mid-turn information the user should see now (an observation, an early finding, a milestone), use the action's root `notes` instead of an artifact. "
         "Use channel='internal' to write user-invisible internal file artifacts. "
         "Set scratchpad=true only for short inline notes that should appear as react.note. "
-        "Use canonical current-turn physical paths: turn_<current>/files/... for durable workspace state, "
-        "or turn_<current>/outputs/... for reports, exports, demos, and other produced artifacts. "
+        "Use canonical current-turn physical paths: turn_<current>/git/projects/... for durable project workspace state, "
+        "or turn_<current>/files/... for reports, exports, demos, and other produced artifacts. "
         "The file extension MUST match the content format (e.g., HTML -> .html, Markdown -> .md). "
         "When channel='canvas', the file extension MUST match a supported canvas format: "
         ".md/.markdown, .html/.htm, .mermaid/.mmd, .json, .yaml/.yml, .txt, .xml. "
@@ -50,11 +52,11 @@ TOOL_SPEC = {
         "This tool creates external artifacts by default. HARD: For any report, brief, slide source, document source, HTML/Markdown, or content the user should see/download/approve, set channel='canvas'. "
         "Do NOT set channel='internal' for PDF/PPTX/DOCX source files or user deliverables. "
         "Use channel='internal' only for private scratch/notes that will not be shown to the user and will not be rendered. "
-        "CAUSALITY (HARD): after react.write, STOP. The written file's `fi:` path is NOT visible until the next round, so do not render it, patch it, or otherwise consume it in the SAME round (see the protocol's [HARD: FORBIDDEN SAME-ROUND CHAINS] block). Write now; review next round; render or patch in a later round. "
+        "CAUSALITY (HARD): after react.write, STOP. The written file's `conv:fi:` path is NOT visible until the next round, so do not render it, patch it, or otherwise consume it in the SAME round (see the protocol's [HARD: FORBIDDEN SAME-ROUND CHAINS] block). Write now; review next round; render or patch in a later round. "
         "If a workflow skill governs the content shape (e.g. for document/slide source), load that skill with react.read in an EARLIER round and wait until the ACTIVE skill block is visible before writing — the skill's instructions are not actionable until that block is in your timeline."
     ),
     "args": {
-        "path": "str (FIRST FIELD). Canonical current-turn physical filepath: turn_<current>/outputs/<scope>/<name> or turn_<current>/files/<scope>/<path> for durable workspace state.",
+        "path": "str (FIRST FIELD). Canonical current-turn physical filepath: turn_<current>/files/<scope>/<name> for produced artifacts, or turn_<current>/git/projects/<scope>/<path> for durable project workspace state.",
         "channel": "str (SECOND FIELD). Pick by content shape: 'canvas' for LARGE / visual / tabular content or renderer sources, produced as an external artifact the connected interface surfaces to the user; 'internal' only for private scratch never shown to the user. For short inline mid-turn updates, use the action's root `notes` rather than an artifact.",
         "content": "str|object (THIRD FIELD). Content to record.",
         "kind": "str (FOURTH FIELD). 'display' or 'file'.",
@@ -142,9 +144,9 @@ async def handle_react_write(*, react: Any, ctx_browser: Any, state: Dict[str, A
         return state
     ext_notice = None
     rewrite_notice = None
-    if artifact_name.startswith("fi:") and all(
-        marker not in artifact_name[len("fi:"):]
-        for marker in (".files/", ".outputs/", ".snapshots/")
+    if artifact_name.startswith(REACT_FILE_REF_PREFIX) and all(
+        marker not in artifact_name[len(REACT_FILE_REF_PREFIX):]
+        for marker in (f".{ARTIFACT_NAMESPACE_PROJECTS}/", f".{ARTIFACT_NAMESPACE_FILES}/", f".{ARTIFACT_NAMESPACE_SNAPSHOTS}/")
     ):
         state["exit_reason"] = "error"
         state["error"] = {"where": "tool_execution", "error": "invalid_write_logical_path", "managed": True}
@@ -167,7 +169,7 @@ async def handle_react_write(*, react: Any, ctx_browser: Any, state: Dict[str, A
     phys_path, rel_path, rewritten = normalize_physical_path(
         artifact_name,
         turn_id=ctx_browser.runtime_ctx.turn_id or "",
-        default_namespace=ARTIFACT_NAMESPACE_OUTPUTS,
+        default_namespace=ARTIFACT_NAMESPACE_FILES,
     )
     original_path = (params.get("path") or "").strip()
     if rewritten and original_path and original_path != phys_path:
@@ -181,7 +183,7 @@ async def handle_react_write(*, react: Any, ctx_browser: Any, state: Dict[str, A
         state["error"] = {"where": "tool_execution", "error": "unsafe_path", "managed": True}
         return state
     artifact_name = phys_path
-    artifact_namespace = infer_artifact_namespace(artifact_name, default=ARTIFACT_NAMESPACE_OUTPUTS)
+    artifact_namespace = infer_artifact_namespace(artifact_name, default=ARTIFACT_NAMESPACE_FILES)
     artifact_display_path = f"{artifact_namespace}/{rel_path}" if rel_path else artifact_name
 
     text = None

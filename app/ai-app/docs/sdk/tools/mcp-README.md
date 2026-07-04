@@ -184,7 +184,7 @@ If an MCP-backed tool intentionally materializes files into the current React
     "files": [
       {
         "type": "file",
-        "path": "turn_123/outputs/export.csv",
+        "path": "turn_123/files/export.csv",
         "filename": "export.csv",
         "mime_type": "text/csv",
         "visibility": "external"
@@ -197,7 +197,7 @@ If an MCP-backed tool intentionally materializes files into the current React
 React v2 and v3 unwrap the envelope and host declared files only when
 `ret.artifact_type == "files"`. The declared path must be accessible from
 the React runtime, usually as an `OUT_DIR`-relative path under
-`turn_<id>/outputs/...`. Remote MCP services that cannot write to that workspace
+`turn_<id>/files/...`. Remote MCP services that cannot write to that workspace
 should return data or already-hosted references through an explicit product tool
 contract instead of relying on automatic local hosting.
 
@@ -228,7 +228,7 @@ mcp.<alias>.<tool_name>
 
 If no event-source declaration matches that id, ReAct applies the structured
 fallback:
-- JSON/text results become ordinary `tc:<turn>.<call>.result` blocks.
+- JSON/text results become ordinary `conv:tc:<turn>.<call>.result` blocks.
 - `ret.artifact_type == "files"` still produces declared file artifacts when
   the declared files exist in the React workspace.
 - Generic JSON is not treated as a file-backed artifact.

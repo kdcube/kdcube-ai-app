@@ -51,8 +51,8 @@ policy system.
 ReAct generic layer
   owns:
     - tool protocol: react.pull, react.read
-    - fi: materialized artifact paths
-    - pull state mapping: fi: logical_path -> original object_ref
+    - conv:fi: materialized artifact paths
+    - pull state mapping: conv:fi: logical_path -> original object_ref
     - generic read target fields:
         object_ref
         logical_path
@@ -96,14 +96,14 @@ canvas namespace rehoster
     writes JSON snapshot bytes into ReAct artifact storage
     returns:
       object_ref     = cnv:main
-      logical_path   = fi:turn_...snapshots/cnv/main-....json
-      physical_path  = turn_.../snapshots/cnv/main-....json
+      logical_path   = conv:fi:turn_...git/snapshots/cnv/main-....json
+      physical_path  = turn_.../git/snapshots/cnv/main-....json
       scope          = snapshots
         |
         v
 ReAct pull state
   records:
-    fi:turn_...snapshots/cnv/main-....json -> cnv:main
+    conv:fi:turn_...git/snapshots/cnv/main-....json -> cnv:main
         |
         v
 react.read(paths=[<fi path>])
@@ -130,7 +130,7 @@ Timeline.render()
 
 | Surface | Registered by | Called by | Purpose |
 | --- | --- | --- | --- |
-| `artifact_namespace_rehoster(namespace=...)` | namespace owner | `react.pull` | Materialize a namespace ref into a local `fi:` artifact while preserving `object_ref`. |
+| `artifact_namespace_rehoster(namespace=...)` | namespace owner | `react.pull` | Materialize a namespace ref into a local `conv:fi:` artifact while preserving `object_ref`. |
 | `event_source_resolver(namespace=...)` | namespace owner or named-service adapter | `react.read` owner dispatch | Resolve an `object_ref` to the owner event source when `named_services.<namespace>` is not enough. |
 | `event_source_reader(namespace=...)` | namespace owner | runtime/policy code | Resolve a canonical ref to the owner's current structured payload. This is not the model-facing exact-content path. |
 | `block_production_policy(...)` | namespace owner | `react.read` | Convert an object/read target into bounded model-visible blocks or stats blocks. |
@@ -161,7 +161,7 @@ produced block:
     "canvas_name": "main",
     "revision": 416,
     "cards_count": 21,
-    "read_snapshot_with": "react.read(paths=['fi:turn_...snapshots/cnv/main.json'])",
+    "read_snapshot_with": "react.read(paths=['conv:fi:turn_...git/snapshots/cnv/main.json'])",
     "read_latest_with": "react.pull(paths=['cnv:main'])"
   }
 }
@@ -175,7 +175,7 @@ contract to copy into the stats response:
 {
   "paths": [
     {
-      "path": "fi:turn_...snapshots/cnv/main.json",
+      "path": "conv:fi:turn_...git/snapshots/cnv/main.json",
       "status": "stats_only",
       "object_ref": "cnv:main",
       "original_object_stats": {
@@ -224,7 +224,7 @@ Block production and ANNOUNCE solve different problems:
 Canvas is volatile. A board attached or focused by the user can be rendered in
 ANNOUNCE for a bounded number of render rounds. If the agent needs a fresh
 exact board after that, it should call `react.pull(paths=["cnv:<name>"])` again
-and then read the returned `fi:` path.
+and then read the returned `conv:fi:` path.
 
 The read itself should also leave a compact timeline fact. For canvas that fact
 looks like:
@@ -237,7 +237,7 @@ canvas_name: main
 revision: 416
 cards=21 placed=20 floating=1 selected=conv:...
 announce_effect: board projection refreshed in ANNOUNCE for 3 render rounds
-refresh_rule: use react.pull(paths=['cnv:main']) and react.read on the returned fi: path if you need an updated or prolonged board view
+refresh_rule: use react.pull(paths=['cnv:main']) and react.read on the returned conv:fi: path if you need an updated or prolonged board view
 ```
 
 The compact fact is timeline history. The board map rendered in ANNOUNCE is
@@ -247,7 +247,7 @@ Owner ANNOUNCE policies should make this lifetime visible in the rendered
 section. For example, canvas renders a line like:
 
 ```text
-visibility: 3/3 render rounds remaining; use react.pull(paths=['cnv:main']) and react.read on the returned fi: path if you need it updated/prolonged.
+visibility: 3/3 render rounds remaining; use react.pull(paths=['cnv:main']) and react.read on the returned conv:fi: path if you need it updated/prolonged.
 ```
 
 That instruction belongs in the owner policy because only the owner knows

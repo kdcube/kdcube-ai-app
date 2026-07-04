@@ -10,6 +10,7 @@ from typing import Any
 from kdcube_ai_app.apps.chat.sdk.runtime.workspace import artifact_outdir_for, resolve_artifact_path
 from kdcube_ai_app.apps.chat.sdk.solutions.react.artifact_analysis import analyze_write_tool_output
 from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import (
+    REACT_FILE_REF_PREFIX,
     build_artifact_binary_block,
     build_artifact_meta_block,
     build_artifact_view,
@@ -48,7 +49,7 @@ def _format_sources_pool_path(sids: list[int]) -> str:
         start = prev = sid
     ranges.append((start, prev))
     parts = [str(a) if a == b else f"{a}-{b}" for a, b in ranges]
-    return f"so:sources_pool[{', '.join(parts)}]"
+    return f"conv:so:sources_pool[{', '.join(parts)}]"
 
 
 def _shape_of(value: Any, *, depth: int = 0, max_depth: int = 3) -> Any:
@@ -453,7 +454,7 @@ async def emit_policy_artifact_blocks(
 
         edited = detect_edit(
             timeline=getattr(ctx_browser, "timeline", None),
-            artifact_path=artifact_path if artifact_path.startswith("fi:") else "",
+            artifact_path=artifact_path if artifact_path.startswith(REACT_FILE_REF_PREFIX) else "",
             tool_call_id=tool_call_id,
         )
         enrich_artifact_file_metadata(

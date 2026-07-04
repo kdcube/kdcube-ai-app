@@ -352,7 +352,7 @@ def _catalog_snippets(row: Dict[str, Any], targets: List[str]) -> List[Dict[str,
     if want_summary and _as_str(row.get("working_summary_text")):
         snippets.append({
             "role": "summary",
-            "path": row.get("working_summary_path") or f"ws:{tid}.conv.working.summary",
+            "path": row.get("working_summary_path") or f"conv:ws:{tid}.conv.working.summary",
             "text": _clip(row.get("working_summary_text")),
             "ts": _ts_to_text(row.get("working_summary_ts") or row.get("started_at") or row.get("ts")),
             "meta": {"source": "turn_catalog", **({"conversation_id": conversation_id} if conversation_id else {})},
@@ -360,7 +360,7 @@ def _catalog_snippets(row: Dict[str, Any], targets: List[str]) -> List[Dict[str,
     if want_user and _as_str(row.get("first_user_text")):
         snippets.append({
             "role": "user",
-            "path": row.get("user_path") or f"ar:{tid}.user.prompt",
+            "path": row.get("user_path") or f"conv:ar:{tid}.user.prompt",
             "text": _clip(row.get("first_user_text")),
             "ts": _ts_to_text(row.get("first_user_ts") or row.get("started_at") or row.get("ts")),
             "meta": {"source": "turn_catalog", **({"conversation_id": conversation_id} if conversation_id else {})},
@@ -368,7 +368,7 @@ def _catalog_snippets(row: Dict[str, Any], targets: List[str]) -> List[Dict[str,
     if want_assistant and _as_str(row.get("last_assistant_text")):
         snippets.append({
             "role": "assistant",
-            "path": row.get("assistant_path") or f"ar:{tid}.assistant.completion",
+            "path": row.get("assistant_path") or f"conv:ar:{tid}.assistant.completion",
             "text": _clip(row.get("last_assistant_text")),
             "ts": _ts_to_text(row.get("last_assistant_ts") or row.get("ended_at") or row.get("ts")),
             "meta": {"source": "turn_catalog", **({"conversation_id": conversation_id} if conversation_id else {})},
@@ -493,8 +493,8 @@ async def run_conversation_search(
             hits.append({
                 "conversation_id": hit_conversation_id,
                 "turn_id": tid,
-                "turn_index_path": row.get("turn_index_path") or f"ar:{tid}.react.turn.index",
-                "working_summary_path": row.get("working_summary_path") or f"ws:{tid}.conv.working.summary",
+                "turn_index_path": row.get("turn_index_path") or f"conv:ar:{tid}.react.turn.index",
+                "working_summary_path": row.get("working_summary_path") or f"conv:ws:{tid}.conv.working.summary",
                 "snippets": snippets,
                 "score": None,
                 "sim_score": None,
@@ -728,7 +728,7 @@ async def run_conversation_search(
         hit_out_meta = {
             "conversation_id": hit_conversation_id,
             "turn_id": tid,
-            "turn_index_path": f"ar:{tid}.react.turn.index",
+            "turn_index_path": f"conv:ar:{tid}.react.turn.index",
             "snippets": snippets,
             "score": h.get("score"),
             "sim_score": h.get("sim"),

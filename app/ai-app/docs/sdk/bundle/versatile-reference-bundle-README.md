@@ -202,7 +202,7 @@ The scene also demonstrates current resolver ownership boundaries:
 
 | Namespace | Owner |
 | --- | --- |
-| `fi:` | ReAct event/artifact resolver |
+| `conv:fi:` | ReAct event/artifact resolver |
 | `mem:` | memory subsystem resolver |
 | `cnv:` | canvas-owned object resolver |
 

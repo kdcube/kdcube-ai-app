@@ -225,7 +225,7 @@ Historical/project content is not assumed to be present locally.
 The historical-materialization tool is:
 
 ```json
-{"tool_id":"react.pull","params":{"paths":["fi:<turn_id>.files/<scope>/<path-or-prefix>"]}}
+{"tool_id":"react.pull","params":{"paths":["conv:fi:<turn_id>.git/projects/<scope>/<path-or-prefix>"]}}
 ```
 
 Rules:
@@ -238,21 +238,21 @@ This rule is enforced in runtime and stated in the agent instructions.
 
 Important distinction:
 - `react.pull(...)` materializes a historical snapshot view under the referenced version path such as:
-  - `out/workdir/<older_turn>/files/...` in local runtime storage
+  - `out/workdir/<older_turn>/git/projects/...` in local runtime storage
 - the active editable workspace in `git` mode remains:
-  - `out/workdir/<current_turn>/files/...` in local runtime storage
-- React should treat `turn_<current_turn>/files/...` as its main project tree for the turn.
+  - `out/workdir/<current_turn>/git/projects/...` in local runtime storage
+- React should treat `turn_<current_turn>/git/projects/...` as its main project tree for the turn.
 
 If React wants the active current-turn workspace itself to contain a runnable,
 searchable, or testable project snapshot, it should use:
 
 ```json
-{"tool_id":"react.checkout","params":{"paths":["fi:<turn_id>.files/<scope-or-path>"]}}
+{"tool_id":"react.checkout","params":{"paths":["conv:fi:<turn_id>.git/projects/<scope-or-path>"]}}
 ```
 
-`react.checkout(mode="replace", ...)` replaces `turn_<current_turn>/files/`,
-then applies the requested `fi:<turn_id>.files/...` refs in order.
-`react.checkout(mode="overlay", ...)` keeps `turn_<current_turn>/files/` and
+`react.checkout(mode="replace", ...)` replaces `turn_<current_turn>/git/projects/`,
+then applies the requested `conv:fi:<turn_id>.git/projects/...` refs in order.
+`react.checkout(mode="overlay", ...)` keeps `turn_<current_turn>/git/projects/` and
 imports or overwrites only the selected historical files/scopes on top.
 This is the normal way to seed or selectively extend the active workspace from
 historical/project state; `react.pull(...)` remains historical side
@@ -277,7 +277,7 @@ In split Docker execution, two output roots are visible:
 - the artifact output root is exposed to generated code as `OUTPUT_DIR` and is
   used for files the code creates
 
-`ctx_tools.fetch_ctx` resolves logical `ar:`, `tc:`, and `so:` paths from the
+`ctx_tools.fetch_ctx` resolves logical `conv:ar:`, `conv:tc:`, and `conv:so:` paths from the
 runtime output root, then falls back to the artifact root for legacy layouts.
 
 If referenced paths belong to a git-backed turn root:

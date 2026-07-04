@@ -305,7 +305,7 @@ async def rendering_tool_call_validation_policy(
     have local assets materialized before the isolated renderer runs. This
     policy owns the rendering-specific preflight behavior:
 
-    - rewrite `params.path` from `fi:` or turn-prefixed refs to the current
+    - rewrite `params.path` from `conv:fi:` or turn-prefixed refs to the current
       turn physical path shape expected by the renderer;
     - redirect attempted writes to `attachments/` into `files/`;
     - hydrate referenced local assets from visible file/attachment refs into

@@ -99,8 +99,8 @@ Current public contract:
 - `OUTPUT_DIR` is the artifact root; in local host storage this is
   `out/workdir`, while in Docker/Fargate it is the executor artifact mount
 - each contract file must use an agent-visible `turn_...` path, normally
-  `turn_<id>/files/...` for durable workspace files or
-  `turn_<id>/outputs/...` for produced reports/artifacts
+  `turn_<id>/git/projects/...` for durable workspace files or
+  `turn_<id>/files/...` for produced reports/artifacts
 - each contract item supports:
   - `filename`
   - `description`
@@ -345,7 +345,7 @@ So today the safest public contract for agentic/copilot-like exec is still:
 - Bundle version is computed from bundle content (SHA‑256 prefix) at load time in
   `kdcube_ai_app/apps/chat/sdk/solutions/chatbot/entrypoint.py`.
 - Snapshot path:
-  `cb/tenants/<tenant>/projects/<project>/ai-bundle-snapshots/<bundle_id>.<version>.zip`
+  `cb/tenants/<tenant>/projects/<project>/ai-bundle-git/snapshots/<bundle_id>.<version>.zip`
   and `.sha256`
 - If version is missing, fallback uses SHA256 prefix as version.
 - Cached if object already exists (no re-upload).

@@ -166,7 +166,7 @@ def _artifact_from_timeline_dict(item: Dict[str, Any], *, fallback_id: str) -> D
         or source.get("path")
         or ""
     ).strip()
-    if logical_path and not logical_path.startswith("fi:"):
+    if logical_path and not logical_path.startswith("conv:fi:"):
         logical_path = ""
     physical_path = str(
         source.get("physical_path")
@@ -317,7 +317,7 @@ def _artifact_access_payload(
                 "current_turn.physical_path from code/rendering tools."
             ),
         },
-        "artifact_kind": "output" if ".outputs/" in logical_path else ("workspace_file" if ".files/" in logical_path else "file"),
+        "artifact_kind": "project_file" if ".git/projects/" in logical_path else ("file" if ".files/" in logical_path else "artifact"),
     }
 
 
@@ -434,11 +434,11 @@ async def materialize_execution_artifact_for_current_turn(
     data = await _read_artifact_bytes(selected, storage_root=storage_root)
     target_name = _filename_from_artifact(selected)
     rel = pathlib.PurePosixPath("recovered-job-artifacts") / _safe_filename(execution_id, "execution") / target_name
-    physical_path = f"{turn_id}/outputs/{rel.as_posix()}"
+    physical_path = f"{turn_id}/files/{rel.as_posix()}"
     target = pathlib.Path(outdir_raw) / physical_path
     await asyncio.to_thread(target.parent.mkdir, parents=True, exist_ok=True)
     await asyncio.to_thread(target.write_bytes, data)
-    logical = f"fi:{turn_id}.outputs/{rel.as_posix()}"
+    logical = f"conv:fi:{turn_id}.files/{rel.as_posix()}"
     mime_type = str(selected.get("mime_type") or selected.get("mime") or mimetypes.guess_type(target_name)[0] or "").strip()
     return {
         "execution_id": execution.get("id"),

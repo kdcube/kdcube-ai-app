@@ -525,7 +525,7 @@ function ChatTimelineBlockImpl({ artifact }: { artifact: TimelineArtifact }) {
 
 /** File artifact in Chat view — extension-aware icon + resolver-backed Download.
  *
- *  The public identity is `objectRef`/`logicalPath` (usually `fi:`).
+ *  The public identity is `objectRef`/`logicalPath` (usually `conv:fi:`).
  *  Download and drag both use that canonical object ref; transport handles
  *  stay behind the resolver boundary. */
 function isPreviewableImageFile(artifact: FileArtifact, iconKind: ReturnType<typeof fileKind>['icon']): boolean {
@@ -547,7 +547,7 @@ function ChatFileBlockImpl({
   const ext = fileExtension(artifact.filename)
   const kind = fileKind(ext)
   const pinRef = canonicalObjectRef(artifact.objectRef, artifact.logicalPath)
-  // A durable `fi:` artifact downloads directly; any other namespace ref OPENS
+  // A durable `conv:fi:` artifact downloads directly; any other namespace ref OPENS
   // through its resolver (object.action) — matching the in-tree widget.
   const isDirectDownload = Boolean(pinRef && isDirectDownloadObjectRef(pinRef))
   const canActivate = Boolean(pinRef)

@@ -23,8 +23,9 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.timeline import resolve_artifac
 from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import (
     ARTIFACT_NAMESPACE_ATTACHMENTS,
     ARTIFACT_NAMESPACE_FILES,
-    ARTIFACT_NAMESPACE_OUTPUTS,
+    ARTIFACT_NAMESPACE_PROJECTS,
     ARTIFACT_NAMESPACE_SNAPSHOTS,
+    REACT_FILE_REF_PREFIX,
     build_logical_artifact_path,
     build_physical_artifact_path,
     split_logical_artifact_ref,
@@ -204,14 +205,14 @@ async def read_artifact_for_react(
         line_numbers: Any = LINE_NUMBERS_DISABLED,
 ) -> Dict[str, Any]:
     """
-    Resolve a fi: artifact path to a local file (rehosting if needed) and read its
+    Resolve a conv:fi: artifact path to a local file (rehosting if needed) and read its
     content in a safe, model-friendly form. Returns dict with keys:
       - artifact, mime, text, base64, physical_path, missing, error
     """
     if not isinstance(path, str) or not path.strip():
         return {"missing": True}
     raw_path = path.strip()
-    if not raw_path.startswith("fi:"):
+    if not raw_path.startswith(REACT_FILE_REF_PREFIX):
         return {"missing": True}
     embedded_conversation_id, source_turn_id, source_namespace, source_rel = split_logical_artifact_ref(raw_path)
     if embedded_conversation_id:
@@ -378,7 +379,7 @@ async def resolve_logical_artifact(
         except Exception:
             pass
 
-    if not raw_path.startswith("fi:"):
+    if not raw_path.startswith(REACT_FILE_REF_PREFIX):
         return None
     tid = source_turn_id
     if not tid:
@@ -463,8 +464,8 @@ async def rehost_files_from_timeline(
     if target_conversation_id == current_conversation_id:
         target_conversation_id = ""
 
-    by_turn: Dict[str, List[str]] = {}
-    by_turn_outputs: Dict[str, List[str]] = {}
+    by_turn_projects: Dict[str, List[str]] = {}
+    by_turn_files: Dict[str, List[str]] = {}
     by_turn_snapshots: Dict[str, List[str]] = {}
     by_turn_attachments: Dict[str, List[str]] = {}
     for p in paths:
@@ -473,16 +474,16 @@ async def rehost_files_from_timeline(
         embedded_conversation_id, turn_id, namespace, rel = split_physical_artifact_ref(p)
         if embedded_conversation_id and not target_conversation_id and embedded_conversation_id != current_conversation_id:
             target_conversation_id = embedded_conversation_id
-        if namespace == ARTIFACT_NAMESPACE_FILES and turn_id:
+        if namespace == ARTIFACT_NAMESPACE_PROJECTS and turn_id:
             if not _safe_relpath(p):
                 errors.append(f"unsafe_path:{p}")
                 continue
-            by_turn.setdefault(turn_id, []).append(rel)
-        elif namespace == ARTIFACT_NAMESPACE_OUTPUTS and turn_id:
+            by_turn_projects.setdefault(turn_id, []).append(rel)
+        elif namespace == ARTIFACT_NAMESPACE_FILES and turn_id:
             if not _safe_relpath(p):
                 errors.append(f"unsafe_path:{p}")
                 continue
-            by_turn_outputs.setdefault(turn_id, []).append(rel)
+            by_turn_files.setdefault(turn_id, []).append(rel)
         elif namespace == ARTIFACT_NAMESPACE_SNAPSHOTS and turn_id:
             if not _safe_relpath(p):
                 errors.append(f"unsafe_path:{p}")
@@ -493,6 +494,18 @@ async def rehost_files_from_timeline(
                 errors.append(f"unsafe_path:{p}")
                 continue
             by_turn_attachments.setdefault(turn_id, []).append(rel)
+        elif f"/{ARTIFACT_NAMESPACE_PROJECTS}/" in p or p.endswith(f"/{ARTIFACT_NAMESPACE_PROJECTS}"):
+            if not _safe_relpath(p):
+                errors.append(f"unsafe_path:{p}")
+                continue
+            if p.endswith(f"/{ARTIFACT_NAMESPACE_PROJECTS}"):
+                tid = p[: -len(f"/{ARTIFACT_NAMESPACE_PROJECTS}")].rstrip("/")
+                rel = ""
+            else:
+                tid, rel = p.split(f"/{ARTIFACT_NAMESPACE_PROJECTS}/", 1)
+            if not tid:
+                continue
+            by_turn_projects.setdefault(tid, []).append(rel)
         elif "/files/" in p or p.endswith("/files"):
             if not _safe_relpath(p):
                 errors.append(f"unsafe_path:{p}")
@@ -504,20 +517,12 @@ async def rehost_files_from_timeline(
                 tid, rel = p.split("/files/", 1)
             if not tid:
                 continue
-            by_turn.setdefault(tid, []).append(rel)
-        elif "/outputs/" in p:
+            by_turn_files.setdefault(tid, []).append(rel)
+        elif f"/{ARTIFACT_NAMESPACE_SNAPSHOTS}/" in p:
             if not _safe_relpath(p):
                 errors.append(f"unsafe_path:{p}")
                 continue
-            tid, rel = p.split("/outputs/", 1)
-            if not tid or not rel:
-                continue
-            by_turn_outputs.setdefault(tid, []).append(rel)
-        elif "/snapshots/" in p:
-            if not _safe_relpath(p):
-                errors.append(f"unsafe_path:{p}")
-                continue
-            tid, rel = p.split("/snapshots/", 1)
+            tid, rel = p.split(f"/{ARTIFACT_NAMESPACE_SNAPSHOTS}/", 1)
             if not tid or not rel:
                 continue
             by_turn_snapshots.setdefault(tid, []).append(rel)
@@ -580,11 +585,11 @@ async def rehost_files_from_timeline(
                 return
             if kind == "attachments" and namespace == ARTIFACT_NAMESPACE_ATTACHMENTS:
                 _record_rel(rel)
-            elif kind == "outputs" and namespace == ARTIFACT_NAMESPACE_OUTPUTS:
-                _record_rel(rel)
-            elif kind == "snapshots" and namespace == ARTIFACT_NAMESPACE_SNAPSHOTS:
+            elif kind == "projects" and namespace == ARTIFACT_NAMESPACE_PROJECTS:
                 _record_rel(rel)
             elif kind == "files" and namespace == ARTIFACT_NAMESPACE_FILES:
+                _record_rel(rel)
+            elif kind == "snapshots" and namespace == ARTIFACT_NAMESPACE_SNAPSHOTS:
                 _record_rel(rel)
 
         def _record_physical(candidate: str) -> None:
@@ -596,11 +601,11 @@ async def rehost_files_from_timeline(
                 return
             if kind == "attachments" and namespace == ARTIFACT_NAMESPACE_ATTACHMENTS:
                 _record_rel(rel)
-            elif kind == "outputs" and namespace == ARTIFACT_NAMESPACE_OUTPUTS:
-                _record_rel(rel)
-            elif kind == "snapshots" and namespace == ARTIFACT_NAMESPACE_SNAPSHOTS:
+            elif kind == "projects" and namespace == ARTIFACT_NAMESPACE_PROJECTS:
                 _record_rel(rel)
             elif kind == "files" and namespace == ARTIFACT_NAMESPACE_FILES:
+                _record_rel(rel)
+            elif kind == "snapshots" and namespace == ARTIFACT_NAMESPACE_SNAPSHOTS:
                 _record_rel(rel)
 
         for block in blocks or []:
@@ -627,10 +632,16 @@ async def rehost_files_from_timeline(
                 namespace=ARTIFACT_NAMESPACE_ATTACHMENTS,
                 relpath=rel,
             )
-        elif kind == "outputs":
+        elif kind == "projects":
             artifact_path = build_logical_artifact_path(
                 turn_id=turn_id,
-                namespace=ARTIFACT_NAMESPACE_OUTPUTS,
+                namespace=ARTIFACT_NAMESPACE_PROJECTS,
+                relpath=rel,
+            )
+        elif kind == "files":
+            artifact_path = build_logical_artifact_path(
+                turn_id=turn_id,
+                namespace=ARTIFACT_NAMESPACE_FILES,
                 relpath=rel,
             )
         elif kind == "snapshots":
@@ -683,8 +694,11 @@ async def rehost_files_from_timeline(
             return False
 
     async def _rehost_kind(*, by_turn_paths: Dict[str, List[str]], kind: str) -> None:
-        target_ns = "attachments" if kind == "attachments" else (
-            "outputs" if kind == "outputs" else ("snapshots" if kind == "snapshots" else "files")
+        target_ns = (
+            ARTIFACT_NAMESPACE_ATTACHMENTS if kind == "attachments" else
+            ARTIFACT_NAMESPACE_PROJECTS if kind == "projects" else
+            ARTIFACT_NAMESPACE_SNAPSHOTS if kind == "snapshots" else
+            ARTIFACT_NAMESPACE_FILES
         )
         for turn_id, rels in by_turn_paths.items():
             for rel in rels:
@@ -699,7 +713,7 @@ async def rehost_files_from_timeline(
                     turn_id=turn_id,
                     namespace=(
                         ARTIFACT_NAMESPACE_ATTACHMENTS if kind == "attachments" else
-                        ARTIFACT_NAMESPACE_OUTPUTS if kind == "outputs" else
+                        ARTIFACT_NAMESPACE_PROJECTS if kind == "projects" else
                         ARTIFACT_NAMESPACE_SNAPSHOTS if kind == "snapshots" else
                         ARTIFACT_NAMESPACE_FILES
                     ),
@@ -714,7 +728,7 @@ async def rehost_files_from_timeline(
                         turn_id=turn_id,
                         namespace=(
                             ARTIFACT_NAMESPACE_ATTACHMENTS if kind == "attachments" else
-                            ARTIFACT_NAMESPACE_OUTPUTS if kind == "outputs" else
+                            ARTIFACT_NAMESPACE_PROJECTS if kind == "projects" else
                             ARTIFACT_NAMESPACE_SNAPSHOTS if kind == "snapshots" else
                             ARTIFACT_NAMESPACE_FILES
                         ),
@@ -788,8 +802,8 @@ async def rehost_files_from_timeline(
                     except Exception as e:
                         errors.append(f"rehost_failed:{target_key}:{e}")
 
-    await _rehost_kind(by_turn_paths=by_turn, kind="files")
-    await _rehost_kind(by_turn_paths=by_turn_outputs, kind="outputs")
+    await _rehost_kind(by_turn_paths=by_turn_projects, kind="projects")
+    await _rehost_kind(by_turn_paths=by_turn_files, kind="files")
     await _rehost_kind(by_turn_paths=by_turn_snapshots, kind="snapshots")
     await _rehost_kind(by_turn_paths=by_turn_attachments, kind="attachments")
 
@@ -876,14 +890,14 @@ def build_exec_snapshot_workspace(
     except Exception:
         pass
 
-    # Copy referenced files (physical paths in code + fi: logical refs)
+    # Copy referenced files (physical paths in code + conv:fi: logical refs)
     code_paths, _ = extract_code_file_paths(code, turn_id="")
     file_paths = list(code_paths)
     for p in fetch_paths:
-        if p.startswith("fi:"):
+        if p.startswith(REACT_FILE_REF_PREFIX):
             file_paths.append(p)
     for p in file_paths:
-        if p.startswith("fi:"):
+        if p.startswith(REACT_FILE_REF_PREFIX):
             # logical -> physical
             try:
                 art = resolve_artifact_from_timeline({"blocks": tl_blocks, "sources_pool": tl_sources}, p)
@@ -904,7 +918,7 @@ def build_exec_snapshot_workspace(
         if (artifact_outdir / turn_id / ".git").exists():
             git_turn_roots.add(turn_id)
     for phys in file_paths:
-        if not isinstance(phys, str) or not phys.strip() or phys.startswith("fi:"):
+        if not isinstance(phys, str) or not phys.strip() or phys.startswith(REACT_FILE_REF_PREFIX):
             continue
         root_name = phys.split("/", 1)[0]
         artifact_outdir = artifact_outdir_for(outdir)
@@ -934,7 +948,7 @@ def build_exec_snapshot_workspace(
     for phys in file_paths:
         if not isinstance(phys, str) or not phys.strip():
             continue
-        if phys.startswith("fi:"):
+        if phys.startswith(REACT_FILE_REF_PREFIX):
             continue
         if phys in seen:
             continue

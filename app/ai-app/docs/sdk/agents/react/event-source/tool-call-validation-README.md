@@ -53,7 +53,7 @@ code channels, writes needed local timeline state, and can request a retry
 before execution. Rendering validation normalizes output paths and ensures
 referenced local assets are present under the current turn artifact root.
 Renderer `content=ref:...` parameters must resolve to text in the renderer's
-requested input format. For `fi:` refs, validation must use the real file
+requested input format. For `conv:fi:` refs, validation must use the real file
 content and must not fall back to a timeline-rendered preview block. External
 owner objects should be imported with `react.pull` before rendering.
 

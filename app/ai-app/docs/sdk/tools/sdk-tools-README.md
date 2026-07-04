@@ -118,7 +118,7 @@ path by returning the standard envelope with a file marker inside `ret`:
     "files": [
       {
         "type": "file",
-        "path": "turn_123/outputs/result.xlsx",
+        "path": "turn_123/files/result.xlsx",
         "filename": "result.xlsx",
         "mime_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         "visibility": "external"
@@ -245,8 +245,8 @@ Renderer input rule:
 - `content="ref:..."` renderer source refs must resolve to text in the
   renderer's requested input format, for example markdown for DOCX or HTML for
   normal PDF rendering.
-- Visible `fi:` source files are the normal case for generated reports, for
-  example `content="ref:fi:turn_<id>.outputs/report/source.html"`.
+- Visible `conv:fi:` source files are the normal case for generated reports, for
+  example `content="ref:conv:fi:turn_<id>.files/report/source.html"`.
 - Do not pass physical paths as renderer `content=ref:...`.
 - If a source object is external, import it with `react.pull` first and render
   from the returned logical path.

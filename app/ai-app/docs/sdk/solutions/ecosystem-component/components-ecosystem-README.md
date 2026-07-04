@@ -98,7 +98,7 @@ KDCube Runtime / Tenant / Project
 |     |       UI surface: memory viewer/list/editor
 |     |
 |     +-- Chat/ReAct artifact layer
-|     |     owns: conv:..., fi:...
+|     |     owns: conv:..., conv:fi:...
 |     |     exposes:
 |     |       conversation open/load actions
 |     |       artifact preview/download/materialization
@@ -241,11 +241,11 @@ ReAct turn
   +-- materialization
   |     react.pull(paths=["mem:record:..."])
   |       -> provider object.get(response_mode=stream)
-  |       -> workspace fi: artifact
+  |       -> workspace conv:fi: artifact
   |       -> preserve original object_ref in metadata
   |
   +-- read/projection
-  |     react.read(fi:...)
+  |     react.read(conv:fi:...)
   |       -> event.resolve(original object_ref)
   |       -> provider block.produce
   |       -> model-visible blocks
@@ -420,7 +420,7 @@ generic ReAct, Pinboard, Chat, and Scene workflows.
 
 | Component | Namespace / surface | Expected ecosystem role |
 | --- | --- | --- |
-| Chat | `conv:`, `fi:`, `sdk.chat.context` | Conversation UI, context attach/open, ReAct turn entry, artifact refs. |
+| Chat | `conv:`, `conv:fi:`, `sdk.chat.context` | Conversation UI, context attach/open, ReAct turn entry, artifact refs. |
 | Pinboard / Canvas | `cnv:`, `sdk.canvas.pinboard` | Neutral board, card layout/comments, opaque object pins, canvas-owned objects. |
 | Memory | `mem:record:...`, `sdk.memory.viewer` | Provider-owned memory search/read/upsert/open/render. |
 | Task Tracker | `task:issue:...`, `task:attachment:...` | Provider-owned task object search/upsert/open/download/render. |

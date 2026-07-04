@@ -101,19 +101,11 @@ export const addArtifactStreamParsers = (...parsers: ArtifactStreamParser[]) => 
 const parseExternalAttachmentPath = (artifactPath?: string | null) => {
     if (!artifactPath || typeof artifactPath !== "string") return {};
 
-    const externalMatch = artifactPath.match(/^fi:([^.]*)\.external\.([^.]+)\.attachments\/([^/]+)\/(.+)$/);
+    const externalMatch = artifactPath.match(/^conv:fi:([^.]*)\.external\.([^.]+)\.attachments\/([^/]+)\/(.+)$/);
     if (externalMatch) {
         return {
             eventType: `event.user.${externalMatch[2]}`,
             sourceMessageId: externalMatch[3],
-        };
-    }
-
-    const legacyExternalMatch = artifactPath.match(/^fi:([^.]*)\.external\.([^.]+)\.([^.]+)\.attachments\/(.+)$/);
-    if (legacyExternalMatch) {
-        return {
-            eventType: `event.user.${legacyExternalMatch[2]}`,
-            sourceMessageId: legacyExternalMatch[3],
         };
     }
 
@@ -122,14 +114,13 @@ const parseExternalAttachmentPath = (artifactPath?: string | null) => {
 
 const parseExternalMessageIdFromPath = (path?: string | null) => {
     if (!path || typeof path !== "string") return undefined;
-    const match = path.match(/^ar:([^.]*)\.external\.([^.]+)\.([^.]+)$/);
+    const match = path.match(/^conv:ar:([^.]*)\.external\.([^.]+)\.([^.]+)$/);
     return match?.[3];
 }
 
 const isExternalAttachmentArtifact = (artifactPath?: string | null) => {
     return !!artifactPath && (
-        /^fi:([^.]*)\.external\.([^.]+)\.attachments\//.test(artifactPath) ||
-        /^fi:([^.]*)\.external\.([^.]+)\.([^.]+)\.attachments\//.test(artifactPath)
+        /^conv:fi:([^.]*)\.external\.([^.]+)\.attachments\//.test(artifactPath)
     );
 }
 

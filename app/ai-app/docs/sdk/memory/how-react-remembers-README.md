@@ -122,9 +122,9 @@ when it wants the internal write to also become an inline `react.note`.
   "tool_call": {
     "tool_id": "react.write",
     "params": {
-      "path": "outputs/internal_notes/rendering_refs.md",
+      "path": "files/internal_notes/rendering_refs.md",
       "channel": "internal",
-      "content": "[K] fi:turn_old.outputs/report.html - HTML source used for PDF rendering.\n[D] Rendering source refs must point at text source artifacts.\n[P] User prefers direct engineering explanations.",
+      "content": "[K] conv:fi:turn_old.files/report.html - HTML source used for PDF rendering.\n[D] Rendering source refs must point at text source artifacts.\n[P] User prefers direct engineering explanations.",
       "kind": "display",
       "scratchpad": true
     }
@@ -142,14 +142,14 @@ This creates two runtime objects:
 
 ```text
 1. Internal file artifact
-   path:       fi:<turn_id>.outputs/internal_notes/rendering_refs.md
+   path:       conv:fi:<turn_id>.files/internal_notes/rendering_refs.md
    visibility: internal
    user sees:  no
    content:    the full multi-line beacon text
 
 2. Inline timeline note
    type:       react.note
-   path:       same fi:<turn_id>... path
+   path:       same conv:fi:<turn_id>... path
    visibility: internal/user-invisible
    text:       the same multi-line beacon text
    meta:       channel=internal
@@ -162,8 +162,8 @@ into an `[INTERNAL MEMORY DIGEST]` inside the range summary.
 The preserved-note path uses the compaction summary turn id and an index:
 
 ```text
-ar:<summary_turn_id>.react.note.preserved.1
-ar:<summary_turn_id>.react.note.preserved.2
+conv:ar:<summary_turn_id>.react.note.preserved.1
+conv:ar:<summary_turn_id>.react.note.preserved.2
 ...
 ```
 
@@ -191,13 +191,13 @@ discoverable indirectly through summaries or turn indexes.
 | Mechanism | Written By | User Visible | Automatically Visible To ReAct | Retrieval | Compaction / Pruning Behavior | Cross Conversation | Semantic Purpose |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Current visible timeline tail | Runtime | Mixed | Yes, while still in context | Already visible, or `react.read` for visible refs | Old blocks may be compacted or replaced by summaries/path placeholders | No, except persisted conversation index | Immediate working context for the active turn/conversation |
-| `conv.working.summary` | Assistant packet/runtime after a turn or attempt | Usually internal timeline/debug context | Often visible for old turns when loaded into context | `react.read("ws:<turn_id>.conv.working.summary")`; `react.memsearch(targets=["summary"])` | Stored/readable as a per-turn `ws:` recovery object; may help build a later `conv.range.summary`, but is not the main visible replacement for a compacted prefix | Conversation/user indexed, not durable user memory | Recover "what this turn accomplished / what matters next" without loading the whole turn |
-| `conv.range.summary` | Compaction | Internal timeline context | Yes when compacted prefix is visible | `react.read("su:<turn_id>.conv.range.summary")` | Replaces a pruned prefix; receives internal preference digest and is kept as compact context | Conversation scoped | Summarize older pruned conversation history |
+| `conv.working.summary` | Assistant packet/runtime after a turn or attempt | Usually internal timeline/debug context | Often visible for old turns when loaded into context | `react.read("conv:ws:<turn_id>.conv.working.summary")`; `react.memsearch(targets=["summary"])` | Stored/readable as a per-turn `conv:ws:` recovery object; may help build a later `conv.range.summary`, but is not the main visible replacement for a compacted prefix | Conversation/user indexed, not durable user memory | Recover "what this turn accomplished / what matters next" without loading the whole turn |
+| `conv.range.summary` | Compaction | Internal timeline context | Yes when compacted prefix is visible | `react.read("conv:su:<turn_id>.conv.range.summary")` | Replaces a pruned prefix; receives internal preference digest and is kept as compact context | Conversation scoped | Summarize older pruned conversation history |
 | Inline internal beacon: `react.note` | `react.write(channel="internal", scratchpad=true)` | No | Yes while visible; after compaction only if selected into preserved notes or summarized | Visible timeline; `react.read` by path if known; `react.memsearch(targets=["notes"])` after indexing | During compaction, deduped note blocks from the compacted slice are candidates for `react.note.preserved`; tags are extracted from all bracket lines; `[P]` lines from selected notes may also enter an internal digest | Conversation index; cross-conversation only through `react.memsearch(scope="user")` when retained/indexed, not durable user memory | Small high-signal "stones" left by the agent: preferences, decisions, specs, milestones, artifact anchors |
-| Preserved beacon: `react.note.preserved` | Compaction | No | Yes after compaction | Visible timeline; `react.read("ar:<summary_turn_id>.react.note.preserved.<n>")` if path known | Up to `MAX_PROMOTED_INTERNAL_NOTES` deduped note blocks from the compacted slice are re-emitted as authored immediately after the new range summary; this is capped retention, not all notes forever | Conversation scoped | Keep selected important beacons visible after pruning |
-| Internal file artifact | `react.write(channel="internal", scratchpad=false)` or internal tool output | No | Not inline by default | `react.read("fi:<...>")` if exact path is known; discover via turn index if indexed | File may persist, but content is not promoted as a note; old timeline references can be compacted | Conversation/turn artifact scoped | Larger private scratch material or internal source files that should not be shown to the user |
-| `react.memsearch` | Tool over conversation index | Tool result is internal | Only when agent calls it | `react.memsearch(mode=..., scope="conversation"|"user", targets=["summary","user","assistant","attachment","notes"])`, then read returned `ws:`, `ar:`, `fi:`, `tc:` refs | Not memory itself; searches persisted indexes and turn catalog while retention/TTL allows | Explicitly supports conversation scope or user scope; user scope may recover indexed turns from other conversations | Find the turn or artifact when the path is not already known |
-| Turn index: `ar:<turn_id>.react.turn.index` | `react.read` resolver from persisted turn log/artifact metadata | Internal | Only when read | `react.read(["ar:<turn_id>.react.turn.index"])` | Reconstructed from persisted turn log metadata | Conversation/turn scoped | Discover exact refs inside a known turn |
+| Preserved beacon: `react.note.preserved` | Compaction | No | Yes after compaction | Visible timeline; `react.read("conv:ar:<summary_turn_id>.react.note.preserved.<n>")` if path known | Up to `MAX_PROMOTED_INTERNAL_NOTES` deduped note blocks from the compacted slice are re-emitted as authored immediately after the new range summary; this is capped retention, not all notes forever | Conversation scoped | Keep selected important beacons visible after pruning |
+| Internal file artifact | `react.write(channel="internal", scratchpad=false)` or internal tool output | No | Not inline by default | `react.read("conv:fi:<...>")` if exact path is known; discover via turn index if indexed | File may persist, but content is not promoted as a note; old timeline references can be compacted | Conversation/turn artifact scoped | Larger private scratch material or internal source files that should not be shown to the user |
+| `react.memsearch` | Tool over conversation index | Tool result is internal | Only when agent calls it | `react.memsearch(mode=..., scope="conversation"|"user", targets=["summary","user","assistant","attachment","notes"])`, then read returned `conv:ws:`, `conv:ar:`, `conv:fi:`, `conv:tc:` refs | Not memory itself; searches persisted indexes and turn catalog while retention/TTL allows | Explicitly supports conversation scope or user scope; user scope may recover indexed turns from other conversations | Find the turn or artifact when the path is not already known |
+| Turn index: `conv:ar:<turn_id>.react.turn.index` | `react.read` resolver from persisted turn log/artifact metadata | Internal | Only when read | `react.read(["conv:ar:<turn_id>.react.turn.index"])` | Reconstructed from persisted turn log metadata | Conversation/turn scoped | Discover exact refs inside a known turn |
 | Durable user memory hotset | SDK memory store and widget | Yes by default | Yes only when memory announce is enabled | Announce hotset, `mem:record:<id>` reads, widget/API search | Not part of timeline compaction; stored in Postgres | Yes | Stable user-visible facts, preferences, durable decisions, reusable anchors, specs, and milestones that should affect future conversations |
 | Durable user memory search | SDK memory tools/widget | Yes for widget, internal for agent tools | Only when called or rendered in announce | Widget search, future memory search/read tools | Independent of ReAct pruning | Yes | Retrieve durable user memory by hybrid search, labels, keywords, recency, salience, confidence |
 
@@ -210,10 +210,10 @@ Recommended shape:
 
 ```text
 [P] User prefers impact-first technical explanations.
-[D] We chose ref normalization instead of telling the model to emit only fi: refs.
+[D] We chose ref normalization instead of telling the model to emit only conv:fi: refs.
 [S] Rendering refs accepted by write_* are text source artifacts, not final files.
 [A] Memory widget CRUD was implemented and connected to bundle entrypoints.
-[K] fi:turn_123.outputs/report.html - HTML source used for PDF rendering.
+[K] conv:fi:turn_123.files/report.html - HTML source used for PDF rendering.
 ```
 
 A single `react.write(content=...)` may contain several short beacon lines.
@@ -279,11 +279,11 @@ roughly like this:
   - User prefers direct engineering explanations.
 
 [react.note.preserved]
-  path: ar:<summary_turn_id>.react.note.preserved.1
-  source_path: fi:<old_turn>.outputs/internal_notes/rendering_refs.md
+  path: conv:ar:<summary_turn_id>.react.note.preserved.1
+  source_path: conv:fi:<old_turn>.files/internal_notes/rendering_refs.md
   note_tags: ["K", "D", "P"]
   text:
-    [K] fi:<old_turn>.outputs/report.html - HTML source used for PDF rendering.
+    [K] conv:fi:<old_turn>.files/report.html - HTML source used for PDF rendering.
     [D] Rendering source refs must point at text source artifacts.
     [P] User prefers direct engineering explanations.
 ```
@@ -345,8 +345,8 @@ searches the turn catalog. It then returns handles such as:
 
 ```text
 turn_id
-turn_index_path = ar:<turn_id>.react.turn.index
-working_summary_path = ws:<turn_id>.conv.working.summary
+turn_index_path = conv:ar:<turn_id>.react.turn.index
+working_summary_path = conv:ws:<turn_id>.conv.working.summary
 snippets[].path
 ```
 
@@ -354,10 +354,10 @@ The intended recovery path is:
 
 ```text
 react.memsearch(query="...", targets=["summary","user","assistant","attachment","notes"])
-  -> inspect returned turn_id / ws: / ar: refs
-  -> react.read(["ws:<turn_id>.conv.working.summary"])
-  -> if exact refs are missing, react.read(["ar:<turn_id>.react.turn.index"])
-  -> read/pull exact fi:/tc:/so:/ar: refs
+  -> inspect returned turn_id / conv:ws: / conv:ar: refs
+  -> react.read(["conv:ws:<turn_id>.conv.working.summary"])
+  -> if exact refs are missing, react.read(["conv:ar:<turn_id>.react.turn.index"])
+  -> read/pull exact conv:fi:/conv:tc:/conv:so:/conv:ar: refs
 ```
 
 For `notes` hits, the tool result includes the note text directly as a snippet.
@@ -377,12 +377,12 @@ The structured tool result available to ReAct has the full note block in
 [
   {
     "turn_id": "turn_prev",
-    "turn_index_path": "ar:turn_prev.react.turn.index",
+    "turn_index_path": "conv:ar:turn_prev.react.turn.index",
     "snippets": [
       {
         "role": "notes",
-        "path": "fi:turn_prev.outputs/internal_notes/rendering.md",
-        "text": "[K] fi:turn_prev.outputs/report.html - source for rendered PDF\n[D] Renderer refs point at text source artifacts.",
+        "path": "conv:fi:turn_prev.files/internal_notes/rendering.md",
+        "text": "[K] conv:fi:turn_prev.files/report.html - source for rendered PDF\n[D] Renderer refs point at text source artifacts.",
         "ts": "2026-05-05T19:37:00Z",
         "meta": {
           "channel": "internal",
@@ -409,10 +409,10 @@ handles without duplicating the note text:
   "hits": [
     {
       "turn_id": "turn_prev",
-      "turn_index_path": "ar:turn_prev.react.turn.index",
+      "turn_index_path": "conv:ar:turn_prev.react.turn.index",
       "snippets": [
         {
-          "path": "fi:turn_prev.outputs/internal_notes/rendering.md",
+          "path": "conv:fi:turn_prev.files/internal_notes/rendering.md",
           "role": "notes",
           "ts": "2026-05-05T19:37:00Z"
         }
@@ -428,9 +428,9 @@ And each note snippet is materialized as a separate internal tool-result block:
 ```text
 type: react.tool.result
 mime: text/markdown
-path: fi:turn_prev.outputs/internal_notes/rendering.md
+path: conv:fi:turn_prev.files/internal_notes/rendering.md
 text:
-  [K] fi:turn_prev.outputs/report.html - source for rendered PDF
+  [K] conv:fi:turn_prev.files/report.html - source for rendered PDF
   [D] Renderer refs point at text source artifacts.
 ```
 
@@ -459,7 +459,7 @@ Examples:
 The user lives in Wuppertal, Germany.
 When summarizing engineering work, start with the practical impact.
 The user prefers neutral examples in product documentation.
-For project X, the canonical board brief template is mem:record:<id> / fi:<path>.
+For project X, the canonical board brief template is mem:record:<id> / conv:fi:<path>.
 The user-approved integration decision for product Y is to keep auth external.
 ```
 
@@ -478,7 +478,7 @@ Use the mechanisms this way:
 | Continue a long active task after pruning | `conv.range.summary`, `conv.working.summary`, `react.note.preserved` |
 | Remember a key artifact path in this conversation | `[K]` beacon with `scratchpad=true` |
 | Remember a project decision made in this conversation | `[D]` beacon with `scratchpad=true` |
-| Recover an old turn when no path is visible | `react.memsearch`, then `react.read(ar:<turn_id>.react.turn.index)` |
+| Recover an old turn when no path is visible | `react.memsearch`, then `react.read(conv:ar:<turn_id>.react.turn.index)` |
 | Store a user-visible fact, preference, durable decision, reusable anchor, spec, or milestone for future conversations | Durable user memory |
 | Let the user inspect/edit what is remembered | Memory widget |
 | Keep a long private scratch file | `react.write(channel="internal", scratchpad=false)` |
@@ -573,7 +573,7 @@ kdcube_ai_app/apps/chat/sdk/solutions/react/tools/memsearch.py
   searches prior turns and returns recovery refs
 
 kdcube_ai_app/apps/chat/sdk/solutions/react/tools/read.py
-  resolves ar:<turn_id>.react.turn.index and other logical refs
+  resolves conv:ar:<turn_id>.react.turn.index and other logical refs
 
 kdcube_ai_app/apps/chat/sdk/context/memory/
   durable user memory models, store, scoring, tools, widget APIs

@@ -209,7 +209,7 @@ def build_internal_note_compaction_result(
         blk = entry.get("block") if isinstance(entry.get("block"), dict) else None
         if not blk:
             continue
-        preserved_path = f"ar:{turn_id}.react.note.preserved.{idx}" if turn_id else ""
+        preserved_path = f"conv:ar:{turn_id}.react.note.preserved.{idx}" if turn_id else ""
         preserved.append(
             _clone_preserved_internal_note_block(
                 block=blk,

@@ -331,7 +331,7 @@ turn.
 If event data carries a compact owner-domain artifact URI such as `nmsp:...`,
 `mem:...`, or `cnv:...`,
 register an artifact namespace rehoster in a loaded tool or event module so
-`react.pull` can materialize it as a normal `fi:` ref.
+`react.pull` can materialize it as a normal `conv:fi:` ref.
 
 Read:
 
@@ -370,7 +370,7 @@ Object resolver behavior belongs to the namespace owner.
 
 | Namespace | Owner |
 | --- | --- |
-| `fi:` | ReAct/chat artifact layer |
+| `conv:fi:` | ReAct/chat artifact layer |
 | `mem:` | memory subsystem |
 | `task:` | task or issue subsystem |
 | `cnv:` | canvas subsystem |

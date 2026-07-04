@@ -64,7 +64,7 @@ Allowed:
 
 Not allowed:
 
-- interpreting what `task:`, `mem:`, `fi:`, or `conv:` means;
+- interpreting what `task:`, `mem:`, `conv:fi:`, or `conv:` means;
 - deriving actions from card kind or namespace;
 - declaring widget event subscriptions on behalf of components;
 - building provider-specific payloads.

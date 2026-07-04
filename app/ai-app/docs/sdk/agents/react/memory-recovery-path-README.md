@@ -29,12 +29,12 @@ The recovery path is built on stable logical paths:
 
 | Namespace | Meaning |
 |---|---|
-| `ws:` | React working summary for a turn |
-| `su:` | model-generated compacted conversation range summary |
-| `ar:` | authored conversation artifacts such as user prompts, assistant completions, plans |
-| `tc:` | tool call / tool result blocks |
-| `fi:` | user attachments, produced files, and opt-in snapshot artifacts |
-| `so:` | sources pool rows and slices |
+| `conv:ws:` | React working summary for a turn |
+| `conv:su:` | model-generated compacted conversation range summary |
+| `conv:ar:` | authored conversation artifacts such as user prompts, assistant completions, plans |
+| `conv:tc:` | tool call / tool result blocks |
+| `conv:fi:` | user attachments, produced files, and opt-in snapshot artifacts |
+| `conv:so:` | sources pool rows and slices |
 
 The model should not need physical paths for normal recovery. It uses
 `react.read` on logical paths. It uses `react.pull` only when execution code
@@ -67,7 +67,7 @@ Supported targets:
 
 | Target | Returned snippets |
 |---|---|
-| `summary` | working-summary snippets and `ws:` paths |
+| `summary` | working-summary snippets and `conv:ws:` paths |
 | `user` | user prompts, followups, and steers |
 | `assistant` | assistant completions |
 | `attachment` | original and event-scoped user attachments |
@@ -76,17 +76,17 @@ Every useful hit should include `turn_id` and `turn_index_path`. If snippets
 identify the turn but not the exact artifact/tool path, read:
 
 ```text
-react.read(["ar:<turn_id>.react.turn.index"])
+react.read(["conv:ar:<turn_id>.react.turn.index"])
 ```
 
 ## What Remains Visible After Compaction
 
-After hard compaction, the model may no longer see the older `ar:`, `tc:`,
-`fi:`, or `so:` rows from the compacted turns. It sees a compacted checkpoint:
+After hard compaction, the model may no longer see the older `conv:ar:`, `conv:tc:`,
+`conv:fi:`, or `conv:so:` rows from the compacted turns. It sees a compacted checkpoint:
 
 ```text
 [COMPACTED PRIOR CONVERSATION MEMORY]
-[path: su:<cut_turn>.conv.range.summary]
+[path: conv:su:<cut_turn>.conv.range.summary]
 covered_turns: first_turn, second_turn, ... penultimate_turn, last_turn (count=N)
 compacted_time_range: ...
 conversation_first_message_ts: ...
@@ -100,7 +100,7 @@ retrieval_anchors:
 - entity: "tool id, function/class, bundle id, task id, turn id, subsystem"
 - time: "timestamp or time range if known"
 read_refs:
-- "KDCube logical path only: ar:/tc:/fi:/ws:/su:/so:, or (none yet)"
+- "KDCube logical path only: conv:ar:/conv:tc:/conv:fi:/conv:ws:/conv:su:/conv:so:, or (none yet)"
 done:
 - ...
 open:
@@ -165,7 +165,7 @@ For oversized text payloads, `react.read` returns a bounded visible preview
 instead of copying the full content into the visible timeline:
 
 ```text
-react.read(["tc:<turn>.<call>.result"])
+react.read(["conv:tc:<turn>.<call>.result"])
   -> status=truncated_for_visible_context
   -> preview is capped by ai.react.read_visible_* settings
   -> exact path remains recoverable
@@ -180,7 +180,7 @@ When the agent first needs only shape/size metadata, it can avoid visible
 content entirely:
 
 ```text
-react.read({"paths":["tc:<turn>.<call>.result"],"stats_only":true})
+react.read({"paths":["conv:tc:<turn>.<call>.result"],"stats_only":true})
   -> status=stats_only
   -> bytes/tokens/text_symbols/mime in the status block
   -> no content block added to the visible timeline
@@ -189,15 +189,15 @@ react.read({"paths":["tc:<turn>.<call>.result"],"stats_only":true})
 Examples:
 
 ```text
-react.read(["ws:turn_13083704.conv.working.summary"])
-react.read(["tc:turn_13083704.tc_8fc21a80902b.result"])
-react.read(["fi:turn_13083704.outputs/email-attachments/invoice.pdf"])
-react.read(["fi:turn_13083704.snapshots/wizard-state.yaml"])
-react.read(["ar:turn_13083704.assistant.completion"])
-react.read(["so:sources_pool[1,3,5]"])
+react.read(["conv:ws:turn_13083704.conv.working.summary"])
+react.read(["conv:tc:turn_13083704.tc_8fc21a80902b.result"])
+react.read(["conv:fi:turn_13083704.files/email-attachments/invoice.pdf"])
+react.read(["conv:fi:turn_13083704.git/snapshots/wizard-state.yaml"])
+react.read(["conv:ar:turn_13083704.assistant.completion"])
+react.read(["conv:so:sources_pool[1,3,5]"])
 ```
 
-Snapshot artifacts use a dedicated `fi:<turn_id>.snapshots/<name>` namespace
+Snapshot artifacts use a dedicated `conv:fi:<turn_id>.git/snapshots/<name>` namespace
 for durable story/wizard state. The format is not enforced; snapshot files may
 be YAML, JSON, Markdown, or another text-oriented representation chosen by the
 bundle or event generator. This concept is opt-in per ReAct agent; bundle config
@@ -206,7 +206,7 @@ must enable `react.story_snapshots.enabled: true`, or bundle code must call
 block is added to that agent's decision prompt. Cross-conversation recovery
 continues to work for ordinary file/output refs even when this block is off.
 
-A cross-conversation `fi:` artifact path carries the conversation scope as a
+A cross-conversation `conv:fi:` artifact path carries the conversation scope as a
 leading `conv_` segment. The ordinary same-conversation form stays short; the
 scoped form appears only when some recovery/linking surface emits a path to
 another conversation:
@@ -215,16 +215,16 @@ another conversation:
 {
   "items": [
     {
-      "path": "fi:conv_9f3d27c2.turn_x.snapshots/wizard-state.yaml"
+      "path": "conv:fi:conv_9f3d27c2.turn_x.git/snapshots/wizard-state.yaml"
     }
   ]
 }
 ```
 
-The `turn_id` is still part of the logical path. If an `fi:` path starts
-`fi:conv_<conversation_id>.turn_<id>...`, the `conv_` segment is the
+The `turn_id` is still part of the logical path. If an `conv:fi:` path starts
+`conv:fi:conv_<conversation_id>.turn_<id>...`, the `conv_` segment is the
 conversation scope and the artifact belongs to that other conversation. Current
-conversation `fi:` paths do not have this segment. Consumers must preserve the
+conversation `conv:fi:` paths do not have this segment. Consumers must preserve the
 segment and pass the scoped path directly to `react.read`, `react.pull`,
 `react.checkout`, or `react.rg`.
 
@@ -232,7 +232,7 @@ For non-text binary files needed by code:
 
 ```text
 visible summary/checkpoint
-  -> fi: path is present
+  -> conv:fi: path is present
   -> react.pull([fi path])
   -> exec code reads the pulled local file
 ```
@@ -257,7 +257,7 @@ Semantic clue:
 visible checkpoint gives semantic clue
   -> react.memsearch(query=..., targets=["summary", ...])
   -> memsearch returns turn_id + snippet paths
-  -> react.read(paths=[snippet path or ws:<turn_id>.conv.working.summary])
+  -> react.read(paths=[snippet path or conv:ws:<turn_id>.conv.working.summary])
 ```
 
 Ordinal or temporal clue:
@@ -269,7 +269,7 @@ user asks "what was the second turn about?"
 
 user asks "what did we discuss around March?"
   -> react.memsearch(mode="temporal", from="...", to="...", targets=["summary", "user", "assistant"])
-  -> read returned refs, or read ar:<turn_id>.react.turn.index for exact inventory
+  -> read returned refs, or read conv:ar:<turn_id>.react.turn.index for exact inventory
 ```
 
 Topic plus temporal clue:
@@ -329,15 +329,15 @@ Memsearch result shape:
 ```json
 {
   "turn_id": "turn_13083704",
-  "turn_index_path": "ar:turn_13083704.react.turn.index",
-  "working_summary_path": "ws:turn_13083704.conv.working.summary",
+  "turn_index_path": "conv:ar:turn_13083704.react.turn.index",
+  "working_summary_path": "conv:ws:turn_13083704.conv.working.summary",
   "ordinal": 42,
   "total_turns": 91,
   "started_at": "2026-05-05T19:27:38Z",
   "snippets": [
     {
       "role": "summary",
-      "path": "ws:turn_13083704.conv.working.summary",
+      "path": "conv:ws:turn_13083704.conv.working.summary",
       "ts": "2026-05-05T19:37:19Z"
     }
   ]
@@ -349,8 +349,8 @@ Behavior:
 - `targets=["summary"]` searches prior turn context and returns
   `conv.working.summary` snippets from matching turn logs.
 - Summary snippets carry paths like
-  `ws:<turn_id>.conv.working.summary.attempt.N`.
-- `react.read(["ws:<turn_id>.conv.working.summary"])` is a canonical alias for
+  `conv:ws:<turn_id>.conv.working.summary.attempt.N`.
+- `react.read(["conv:ws:<turn_id>.conv.working.summary"])` is a canonical alias for
   the latest working-summary attempt for that turn.
 - `mode="ordinal"`, `mode="temporal"`, and `mode="timeline"` can run without
   `query` because they use the deterministic turn catalog.
@@ -366,8 +366,8 @@ The normal recovery path through a working summary is:
 ```text
 react.memsearch(targets=["summary"])
   -> hit: turn_id=turn_13083704
-  -> snippet path: ws:turn_13083704.conv.working.summary.attempt.1
-  -> react.read(["ws:turn_13083704.conv.working.summary"])
+  -> snippet path: conv:ws:turn_13083704.conv.working.summary.attempt.1
+  -> react.read(["conv:ws:turn_13083704.conv.working.summary"])
   -> summary contains Refs
   -> react.read / react.pull exact refs
 ```
@@ -376,7 +376,7 @@ Example summary shape:
 
 ```text
 [WORKING SUMMARY]
-[path: ws:turn_13083704.conv.working.summary.attempt.1]
+[path: conv:ws:turn_13083704.conv.working.summary.attempt.1]
 Goal: Create ZIP with all Anthropic April 2026 invoice PDFs.
 Outcome: Failed to ZIP after materializing 20 PDFs; exec sandbox could not access hosted artifacts.
 Key facts:
@@ -384,18 +384,18 @@ Key facts:
 - Materialization succeeded with file_count=20 and errors=0.
 - ZIP failed at hosted artifact vs exec filesystem boundary.
 Refs:
-- user: ar:turn_13083704.user.prompt
-- email scan result: tc:turn_13083704.tc_8fc21a80902b.result
-- materialized attachments: tc:turn_13083704.tc_29268b000988.result
-- assistant final: ar:turn_13083704.assistant.completion
+- user: conv:ar:turn_13083704.user.prompt
+- email scan result: conv:tc:turn_13083704.tc_8fc21a80902b.result
+- materialized attachments: conv:tc:turn_13083704.tc_29268b000988.result
+- assistant final: conv:ar:turn_13083704.assistant.completion
 ```
 
 The model can then read the exact objects:
 
 ```text
 react.read([
-  "tc:turn_13083704.tc_29268b000988.result",
-  "ar:turn_13083704.assistant.completion"
+  "conv:tc:turn_13083704.tc_29268b000988.result",
+  "conv:ar:turn_13083704.assistant.completion"
 ])
 ```
 
@@ -422,13 +422,13 @@ was important, so it should name the refs that make future recovery cheap.
 The runtime persists the model's `summary` channel as:
 
 ```text
-ws:<turn_id>.conv.working.summary.attempt.<N>
+conv:ws:<turn_id>.conv.working.summary.attempt.<N>
 ```
 
 The runtime also resolves the canonical alias:
 
 ```text
-ws:<turn_id>.conv.working.summary
+conv:ws:<turn_id>.conv.working.summary
 ```
 
 to the latest available summary attempt. The canonical path is a read alias, not
@@ -444,7 +444,7 @@ The runtime is responsible for:
 
 ### Compaction model
 
-The compaction model produces `su:<turn_id>.conv.range.summary` for older
+The compaction model produces `conv:su:<turn_id>.conv.range.summary` for older
 timeline ranges that are removed from the visible stream.
 
 It should treat working summaries and tool/artifact digests as high-value input.
@@ -487,7 +487,7 @@ Visible context after compaction:
   - compacted checkpoint mentions the broad work
   - working summary forgot to mention the spreadsheet path
 Model needs:
-  - the exact fi: path
+  - the exact conv:fi: path
 ```
 
 Semantic search may find the turn, but without a deterministic turn inventory
@@ -503,7 +503,7 @@ when the model calls `react.read`.
 Proposed path:
 
 ```text
-ar:<turn_id>.react.turn.index
+conv:ar:<turn_id>.react.turn.index
 ```
 
 Proposed recovery chain:
@@ -511,10 +511,10 @@ Proposed recovery chain:
 ```text
 compacted memory
   -> react.memsearch finds relevant turn/summary
-  -> react.read(["ws:<turn_id>.conv.working.summary"])
+  -> react.read(["conv:ws:<turn_id>.conv.working.summary"])
   -> if refs are missing or incomplete:
-       react.read(["ar:<turn_id>.react.turn.index"])
-  -> read/pull exact ar:/tc:/fi:/so: refs from the index
+       react.read(["conv:ar:<turn_id>.react.turn.index"])
+  -> read/pull exact conv:ar:/conv:tc:/conv:fi:/conv:so: refs from the index
 ```
 
 The turn index should be compact enough for model use, but complete enough for
@@ -524,47 +524,47 @@ Schematic index:
 
 ```text
 [TURN INDEX]
-[path: ar:turn_13083704.react.turn.index]
+[path: conv:ar:turn_13083704.react.turn.index]
 turn_id: turn_13083704
 started_at: 2026-05-05T19:27:38Z
 ended_at: 2026-05-05T19:37:19Z
 
 summaries:
-- latest working summary: ws:turn_13083704.conv.working.summary
-  source: ws:turn_13083704.conv.working.summary.attempt.1
+- latest working summary: conv:ws:turn_13083704.conv.working.summary
+  source: conv:ws:turn_13083704.conv.working.summary.attempt.1
   label: Anthropic April invoice ZIP attempt
 
 messages:
-- user prompt: ar:turn_13083704.user.prompt
+- user prompt: conv:ar:turn_13083704.user.prompt
   hint: user asked to retry the Anthropic April invoice ZIP workflow
-- assistant completion: ar:turn_13083704.assistant.completion
+- assistant completion: conv:ar:turn_13083704.assistant.completion
   hint: final answer reported materialization success but ZIP failure
 
 events:
 - none
 
 tools:
-- email scan: tc:turn_13083704.tc_8fc21a80902b.call / tc:turn_13083704.tc_8fc21a80902b.result
+- email scan: conv:tc:turn_13083704.tc_8fc21a80902b.call / conv:tc:turn_13083704.tc_8fc21a80902b.result
   tool: email.process_user_emails
   status: success
   hint: found 10 Anthropic April emails and current attachment IDs
-- attachment materialization: tc:turn_13083704.tc_29268b000988.call / tc:turn_13083704.tc_29268b000988.result
+- attachment materialization: conv:tc:turn_13083704.tc_29268b000988.call / conv:tc:turn_13083704.tc_29268b000988.result
   tool: email.materialize_email_attachments
   status: success
   hint: materialized 20 Anthropic PDF invoice attachments
 
 artifacts:
-- invoice PDF: fi:turn_13083704.outputs/email-attachments/Invoice_1.pdf
+- invoice PDF: conv:fi:turn_13083704.files/email-attachments/Invoice_1.pdf
   mime: application/pdf
   source_tool: tc_29268b000988
   hint: Anthropic invoice PDF materialized from Gmail
-- invoice PDF: fi:turn_13083704.outputs/email-attachments/Invoice_2.pdf
+- invoice PDF: conv:fi:turn_13083704.files/email-attachments/Invoice_2.pdf
   mime: application/pdf
   source_tool: tc_29268b000988
   hint: Anthropic invoice PDF materialized from Gmail
 
 sources:
-- so:sources_pool[1-2]
+- conv:so:sources_pool[1-2]
   hint: source pool rows visible in the sources pool when restored/read
 ```
 
@@ -580,10 +580,10 @@ Preferred order:
 2. If an exact visible logical path exists, call `react.read` or `react.pull`.
 3. If no path exists, call `react.memsearch` with the mode that matches the clue.
 4. Read the matching working summary with
-   `ws:<turn_id>.conv.working.summary`.
+   `conv:ws:<turn_id>.conv.working.summary`.
 5. If the working summary lacks the needed refs, read the turn index:
-   `ar:<turn_id>.react.turn.index`.
-6. Read or pull the exact `ar:`, `tc:`, `fi:`, or `so:` refs from the index.
+   `conv:ar:<turn_id>.react.turn.index`.
+6. Read or pull the exact `conv:ar:`, `conv:tc:`, `conv:fi:`, or `conv:so:` refs from the index.
 
 The model should not reopen large old data unless the summary/checkpoint/index
 indicates it is relevant to the current task.

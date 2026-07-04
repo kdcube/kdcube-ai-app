@@ -188,7 +188,7 @@ def _chat_input_kind(event_type: Any) -> str:
 
 
 def _produced_file_count(blocks: Any, turn_id: str) -> int:
-    """Count current-turn files/outputs exposed in timeline blocks."""
+    """Count current-turn produced files exposed in timeline blocks."""
     if not isinstance(blocks, list):
         return 0
     turn_text = str(turn_id or "").strip()
@@ -201,13 +201,13 @@ def _produced_file_count(blocks: Any, turn_id: str) -> int:
         if "/attachments/" in path or ".attachments/" in path:
             return
         if turn_text:
-            if path.startswith(f"fi:{turn_text}.files/") or path.startswith(f"fi:{turn_text}.outputs/"):
+            if path.startswith(f"conv:fi:{turn_text}.files/") or path.startswith(f"conv:fi:{turn_text}.git/projects/"):
                 produced.add(path)
                 return
-            if path.startswith(f"{turn_text}/files/") or path.startswith(f"{turn_text}/outputs/"):
+            if path.startswith(f"{turn_text}/files/") or path.startswith(f"{turn_text}/git/projects/"):
                 produced.add(path)
                 return
-        if path.startswith("fi:files/") or path.startswith("fi:outputs/"):
+        if path.startswith("conv:fi:files/") or path.startswith("conv:fi:git/projects/"):
             produced.add(path)
 
     def _scan_mapping(mapping: Mapping[str, Any]) -> None:
@@ -1538,7 +1538,7 @@ class BaseWorkflow():
             scratch.user_message_persisted = True
             return
         ts = self._ctx["conversation"]["ts"]
-        path = f"ar:{turn_id}.user.prompt"
+        path = f"conv:ar:{turn_id}.user.prompt"
         await self._persist_user_conversation_entry(
             scratchpad=scratch,
             text=scratch.user_text or scratch.short_text,
@@ -1829,7 +1829,7 @@ class BaseWorkflow():
             entries = [{
                 "text": scratchpad.answer_raw or scratchpad.answer or "",
                 "ts": getattr(scratchpad, "ended_at", None) or datetime.datetime.utcnow().isoformat() + "Z",
-                "path": f"ar:{turn_id}.assistant.completion",
+                "path": f"conv:ar:{turn_id}.assistant.completion",
             }]
 
         persisted = 0
@@ -2062,7 +2062,7 @@ class BaseWorkflow():
             turn_id=turn_id,
             ts=ts,
             mime="application/json",
-            path=f"ar:{turn_id}.react.workspace.publish",
+            path=f"conv:ar:{turn_id}.react.workspace.publish",
             text=json.dumps(body, ensure_ascii=False, indent=2),
             meta={"status": status},
         )
@@ -2988,7 +2988,7 @@ class BaseWorkflow():
                             "mime": (att.get("mime") or att.get("mime_type") or "").strip(),
                             "size_bytes": att.get("size") or att.get("size_bytes"),
                             "physical_path": physical_path,
-                            "artifact_path": f"fi:{turn_id}.user.attachments/{filename}",
+                            "artifact_path": f"conv:fi:{turn_id}.user.attachments/{filename}",
                             "turn_id": turn_id,
                         }
                         if hosted_uri:

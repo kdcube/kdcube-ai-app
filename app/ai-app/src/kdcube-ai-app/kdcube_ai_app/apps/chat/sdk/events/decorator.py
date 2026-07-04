@@ -42,10 +42,10 @@ class EventSourceDeclaration:
 
 @dataclass(frozen=True)
 class ArtifactNamespaceRehosterDeclaration:
-    """Callable metadata for a non-`fi:` artifact namespace.
+    """Callable metadata for a non-`conv:fi:` artifact namespace.
 
     A rehoster accepts an owner ref such as `cnv:...` or `mem:...` and copies the source
-    bytes into the ReAct artifact surface, returning normal `fi:`/physical path
+    bytes into the ReAct artifact surface, returning normal `conv:fi:`/physical path
     rows that `react.read`, `react.pull`, and `react.checkout` already know how
     to use. The rehoster chooses the destination by artifact meaning: workspace
     state goes to files, story/wizard state goes to snapshots, evidence goes to
@@ -181,7 +181,7 @@ def artifact_namespace_rehoster(
     """Mark a callable as a namespace rehoster for ReAct artifact tools.
 
     The callable is discovered from the same tool/event modules as event
-    sources. It is invoked by `react.pull` before the normal `fi:` hydration
+    sources. It is invoked by `react.pull` before the normal `conv:fi:` hydration
     path when a requested ref starts with the registered namespace prefix. The
     returned rows must use the ReAct workspace/artifact layout so downstream
     tools can continue from the returned `logical_path` or `physical_path`.

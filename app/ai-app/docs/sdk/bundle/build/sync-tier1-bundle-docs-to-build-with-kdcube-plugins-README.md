@@ -278,7 +278,7 @@ The plugin should steer agents away from these recurring mistakes:
 - bundles with wizard/canvas/snapshot events should include their configured
   event modules, event-source specs, docs, tests, and release scope
 - externally tracked artifact refs visible to ReAct need a namespace rehoster
-  that materializes them into the appropriate `fi:` namespace
+  that materializes them into the appropriate `conv:fi:` namespace
 - `host_files(...)` documentation states that it requires prepared tool context
   from `BaseWorkflow.build_react(...)` or isolated `bootstrap_bind_all(...)`
 - generated executor code gets files by calling a catalog tool through
@@ -292,8 +292,8 @@ The plugin should steer agents away from these recurring mistakes:
 - for Telegram integration, use the SDK bundle wiring checklist; do not
   hand-roll user registry, webhook duplicate handling, Mini App `initData`
   verification, or Telegram delivery if the SDK subsystem fits
-- use `react.pull` before relying on historical `fi:` files locally, and use
-  `react.checkout` only when a prior `files/...` path must become editable in
+- use `react.pull` before relying on historical `conv:fi:` files locally, and use
+  `react.checkout` only when a prior `git/projects/...` path must become editable in
   the current turn
 - use `react.rg` -> `react.read` -> `react.patch` for precise text artifact
   repair; timeline line numbers are display-only and must never be emitted into

@@ -78,7 +78,7 @@ inside the standard `{ok, error, ret}` envelope:
       {
         "type": "file",
         "visibility": "external",
-        "physical_path": "turn_123/outputs/report.pdf",
+        "physical_path": "turn_123/files/report.pdf",
         "filename": "report.pdf",
         "mime_type": "application/pdf"
       }

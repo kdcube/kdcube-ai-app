@@ -327,7 +327,7 @@ system must choose how to hand it over. None of these options are free.
 | --- | --- | --- |
 | Direct task text | Small instruction or task payload | Fast, but only works when enough context fits directly. |
 | Precise summary | Generated summary of the needed state | Adds summary latency/model cost; saves subagent tokens. |
-| Object refs | Paths such as `fi:...`, `mem:...`, `cnv:...` | Small prompt; subagent must pull/read through runtime tools when needed. |
+| Object refs | Paths such as `conv:fi:...`, `mem:...`, `cnv:...` | Small prompt; subagent must pull/read through runtime tools when needed. |
 | Timeline slice | Selected blocks copied from main timeline | Accurate but can be expensive if the slice is large. |
 | Full transcript copy | Large block of prior context | Easiest to wire, usually worst for cache and tokens. |
 

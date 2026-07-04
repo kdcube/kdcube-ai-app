@@ -1,430 +1,195 @@
 ---
 id: repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/artifact-discovery-README.md
 title: "Artifact Discovery"
-summary: "How artifacts are discovered from timeline blocks and how logical/physical paths resolve for tools."
-tags: ["sdk", "agents", "react", "artifacts", "paths"]
-updated_at: 2026-06-17
-keywords: ["logical paths", "physical paths", "react.read", "attachments", "artifact resolution", "timeline blocks"]
+summary: "How ReAct discovers, reads, pulls, searches, and checks out conversation-owned refs and external owner refs without confusing logical refs, physical paths, and produced artifacts."
+tags: ["sdk", "agents", "react", "artifacts", "discovery", "pull", "read"]
+updated_at: 2026-07-04
+keywords:
+  [
+    "artifact discovery",
+    "conv:fi",
+    "react.pull",
+    "react.read",
+    "react.checkout",
+    "external owner refs",
+    "materialization",
+  ]
 see_also:
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/events/namespaces-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/events/event-subsystem-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/integration-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/react-object-materialization-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/artifact-storage-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/react-tools-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/timeline-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/react-realm-refs-and-workspace-paths-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/workspace/workspace-model-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/memory-recovery-path-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/artifact-storage-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/events/namespaces-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/react-object-materialization-README.md
 ---
-# Artifact Discovery (Logical/Physical Paths)
+# Artifact Discovery
 
-This document defines how artifacts are discovered from timeline blocks and how logical/physical paths
-are resolved for tools (`react.read`, `fetch_ctx`, `react.patch`, exec code).
-For the broader namespace model across `ar:`, `ev:`, `tc:`, `fi:`, `cnv:`,
-`task:`, `mem:`, and `so:`, read
-[Logical Reference Namespaces](../../events/namespaces-README.md).
+This page explains how an agent should move from a visible ref to usable
+content. The grammar is defined in
+[ReAct Realm Refs And Workspace Paths](./react-realm-refs-and-workspace-paths-README.md).
 
-Important distinction:
-- this document is about artifact discovery and artifact-root-relative paths
-- it is not the contract for bundle namespace resolution inside isolated exec
-- it describes the current artifact path model, including the phase-1 `files/...` vs `outputs/...` namespace split
+## Ref Classes
 
-For owner namespace browsing via generated exec code, the relevant model is:
-- an owner may expose an exec-only namespace resolver, rehoster, or service
-  operation
-- that surface returns an exec-visible path or byte stream scoped to the request
-- this is separate from timeline artifact discovery
+| Ref class | Examples | What to do |
+| --- | --- | --- |
+| Conversation text/control records | `conv:ar:turn_1.user.prompt`, `conv:tc:turn_1.tc_a.result`, `conv:so:sources_pool[1]`, `conv:ev:turn_1.events/...` | Use `react.read` when exact content is needed. |
+| Conversation file/artifact refs | `conv:fi:turn_1.files/report.pdf`, `conv:fi:turn_1.git/projects/app/main.py` | Pull if bytes must exist locally; read for context previews/contents. |
+| External owner refs | `mem:mem_123`, `task:issue:ticket_123`, `cnv:main@7` | Use `react.pull`; then use returned `conv:fi:` and physical paths. |
+| Physical current-turn paths | `turn_1/files/report.pdf`, `turn_1/git/projects/app/main.py` | Use with exec, rendering, patch, or rg when the path is local this turn. |
 
-## Key Concepts
+The agent should not derive physical paths from external owner refs. Owner refs
+are opaque until `react.pull` returns concrete paths.
 
-**Logical path**  
-Stable identifier used in `react.read` / `fetch_ctx`. Examples:
-- `ar:<turn_id>.user.prompt`
-- `ar:<turn_id>.assistant.completion`
-- `ar:<turn_id>.assistant.completion.<n>`
-- `ar:plan.latest:<plan_id>` (stable latest snapshot of a plan lineage)
-- `fi:<turn_id>.files/<relpath>`
-- `fi:<turn_id>.outputs/<relpath>`
-- `fi:<turn_id>.user.attachments/<name>`
-- `fi:logs/docker.err.log`
-- `so:sources_pool[...]`
-- `su:<turn_id>.conv.range.summary`
-- `tc:<turn_id>.<call_id>.result`
-
-**Physical path**  
-Artifact-root-relative path used for `react.patch`, rendering tools, and exec code file I/O.
-Common forms:
-- `turn_<id>/files/<relpath>` (files; current or historical)
-- `turn_<id>/outputs/<relpath>` (non-workspace produced artifacts)
-- `turn_<id>/attachments/<name>` (attachments)
-
-This `physical_path` means:
-- artifact location relative to the agent artifact root
-- in local runtime storage, the actual host path is under `out/workdir/<physical_path>`
-- in Docker/Fargate, `OUTPUT_DIR` points directly at the equivalent artifact root
-
-It does **not** mean:
-- an absolute host path
-- a hosted `file://` or S3 path
-- a path relative to the runtime metadata root `out/`
-- bundle namespace resolution for readonly bundle data inside isolated exec
-
-That other case uses a different contract:
-- bundle-defined exec-only resolver
-- returns `ret = {physical_path: str | null, access: 'r' | 'rw', browseable: bool}`
-- the returned `physical_path` is valid only inside the current isolated execution runtime
-- it must not be reused by the agent outside exec, copied into normal react tool calls, or treated as a stable artifact path
-- generated code may use it only according to `access`:
-  - `access='r'` means read-only
-  - `access='rw'` means the code may read and write there
-- if generated code wants the agent to continue later with `react.read(...)`, it should use the resolver input logical_ref as the logical base and emit derived logical refs itself
-
-**Block metadata**  
-Artifacts are described by a **metadata JSON result block** plus one or more **content blocks**:
-- **Metadata block** is a `react.tool.result` JSON block whose **text** is a **safe digest** of artifact
-  metadata.
-  - `artifact_path` (logical path)
-  - `physical_path` (artifact-root-relative `turn_...` path, when applicable)
-  - `tool_call_id`
-  - `mime`, `kind`, `visibility`, `channel` (when applicable)
-  - hosted blob handles (`hosted_uri`, `key`, `rn`) when file bytes were hosted
-  - `sources_used` (if known)
-  - `edited` (boolean if a prior version exists)
-- **Content block(s)** carry the same logical path in `path` and include the payload:
-  - `text` for textual artifacts
-  - `base64` for binary artifacts (image/pdf)
-  - `meta.tool_call_id` is present.
-- **File blocks** also include **hosting metadata** in `meta` (`hosted_uri`, `rn`, `key`, `physical_path`)
-    and the safe digest in `meta.digest`.
-
-Text content blocks may be previews. A preview block describes the artifact for
-the model; it is not authoritative storage. File materialization must use the
-hosted blob handles when present.
-
-For **user attachments**, `user.attachment.meta` stores the safe digest in `text`, while the
-attachment file block stores hosting metadata + `meta.digest`.
-
-## External Object Pull, Read, And Owner Rendering
-
-External owner refs such as `mem:record:...`, `task:...`, and `cnv:...` are not
-`fi:` files. They first have to be materialized into the current ReAct
-workspace. The materialized file is local, but it keeps the original owner URI
-in metadata so owner-specific block production can still run.
-
-The canonical runtime-boundary diagram for named-service objects is
-[Namespace Services: ReAct Object Materialization](../../namespace-services/react-object-materialization-README.md).
+## Discovery Loop
 
 ```text
-1. Visible ref
-   executor: model / timeline / search-result UI
-   surface: ReAct visible context
-   value:
-     object_ref = mem:record:mem_123
-
+visible timeline / ANNOUNCE / tool result
         |
         v
-
-2. Pull exact bytes
-   executor: react.tools.pull in the consumer ReAct runtime
-   surface: current turn workspace / artifact root
-   work:
-     call namespace rehoster or named-service artifact rehoster
-     named-service path calls provider object.get(response_mode=stream)
-     write streamed bytes under OUTPUT_DIR
-   result:
-     logical_path  = fi:turn_1.files/mem_123.json
-     physical_path = turn_1/files/mem_123.json
-     object_ref    = mem:record:mem_123
-     state.pulled_logical_refs[logical_path].object_ref = object_ref
-
+identify ref class
         |
-        v
-
-3. Read materialized bytes
-   executor: react.tools.read in the consumer ReAct runtime
-   surface: current turn timeline block production
-   work:
-     read fi:turn_1.files/mem_123.json
-     build a read target whose meta includes:
-       object_ref       = mem:record:mem_123
-       source_namespace = mem
-
+        +-- conv:ar / conv:tc / conv:so / conv:ws / conv:su / conv:ev
+        |       -> react.read when exact record content is needed
         |
-        v
-
-4. Owner event-source resolution
-   executor: EventSourceSubsystem
-   surface: consumer runtime event-source registry
-   work:
-     try resolve_event_source_id_for_ref(object_ref)
-       provider event.resolve may answer named_services.mem
-     otherwise use registered named_services.<source_namespace> when present
-   traces:
-     react.read.owner_projection status=...
-
+        +-- conv:fi
+        |       -> react.read for content/projection
+        |       -> react.pull if local bytes are needed this turn
+        |       -> react.checkout only for conv:fi:<turn>.git/projects/...
         |
-        v
-
-5. Owner block production
-   executor: named-service block-production adapter
-   surface: configured named_services.<namespace> event source
-   work:
-     call provider block.produce(object_ref=object_ref, target=read_target)
-
-        |
-        v
-
-6. Visible blocks
-   executor: react.tools.read
-   surface: current turn timeline
-   result:
-     if provider returns blocks:
-       append provider-authored blocks
-       block.meta.owner_projected = true
-       block.meta.materialized_path = fi:turn_1.files/mem_123.json
-     else:
-       append generic textual fi: read block
+        +-- mem / task / cnv / other registered owner namespace
+                -> react.pull
+                -> continue with returned conv:fi logical_path and physical_path
 ```
 
-This provider call happens during block production for the `react.read` tool
-result. Later prompt rendering reads the stored blocks, applies normal
-timeline/compaction projection policies, and can call provider `block.render`
-for visible owner-projected blocks. If the stored block was owner-projected,
-rendering starts from the owner-authored block; if no owner block was produced,
-rendering starts from the generic `fi:` read block.
+## Materialization Results
 
-For provider authors, the split is:
+`react.pull` returns rows that bind the original ref to current-turn material:
 
-| Operation | Purpose |
-| --- | --- |
-| `object.get(response_mode=stream)` | Produce bytes that `react.pull` writes into an `fi:` artifact. |
-| `event.resolve` | Optionally map an owner ref to a more specific event source id. |
-| `block.produce` | Produce the model-visible ReAct block for the owner object. |
-| `block.render` | Optional prompt-render patch operation for provider-owned visible blocks, also available to explicit clients. |
-
-For the pull/read/model-context path, the provider operation is
-`block.produce`. For provider-specific prompt-render patches, the provider
-operation is `block.render`.
-
-For consumer authors, the invariant is:
-
-```text
-fi: path = local materialized bytes
-meta.object_ref = semantic owner identity for read/projection
-meta.source_namespace = routing namespace for owner projection
-```
-
-## Discovery Rules
-
-Artifacts are reconstructed from **timeline blocks**, not from the turn log directly.
-
-1) **Find by logical path**
-   - Match blocks by `path == logical_path`.
-   - `ar:<turn_id>.assistant.completion` resolves to the latest completion in that turn.
-   - `ar:<turn_id>.assistant.completion.<n>` resolves to an earlier visible completion from that same turn.
-   - If a metadata JSON block exists with `artifact_path == logical_path`, it supplies the canonical
-     `mime/kind/visibility/physical_path` metadata.
-
-2) **Group by tool call**
-   - Blocks for the same artifact in one tool call share `meta.tool_call_id`.
-   - `tool_id` is derived via the call map (`tool_call_id → tool_id`) from the tool call block.
-   - Grouping key: `(tool_call_id, artifact_path)`.
-
-3) **Edits**
-   - If a new block arrives for an existing `artifact_path`, it is marked `edited=true`.
-   - The timeline keeps all versions; discovery resolves to the latest.
-
-4) **Hidden blocks**
-   - Hidden is stored in `meta.hidden`; replacement text in `meta.replacement_text`.
-   - Timeline renderers replace hidden groups with a single replacement block.
-   - Discovery still resolves to the latest version, hidden or not.
-
-## Path Normalization & Current-Turn Paths
-
-Writer-like tools normalize current-turn paths into the active turn namespace. Use `files/...` for durable workspace/project state and `outputs/...` for produced artifacts. Unqualified `react.write` and exec contract paths default to `outputs/...`.
-
-Example:
-```
-input path: outputs/report.csv
-current turn: turn_999
-rewrite -> turn_999/outputs/report.csv (physical), fi:turn_999.outputs/report.csv (logical)
-```
-
-The rewrite is recorded as a **protocol notice** in the timeline so the agent can learn.
-`react.patch` is stricter: it accepts only existing current-turn `files/...` or `outputs/...` physical paths. It does not rewrite logical `fi:` paths or historical `turn_old/...` paths.
-
-## Tool Behaviors (Summary)
-
-**react.read / fetch_ctx**
-- Accept logical path (fi:/ar:/so:/su:/tc:).
-- Resolve artifact by logical path; return canonical artifact payload.
-- For plan-related `ar:` paths, the recovery handle to use is the stable latest-snapshot alias: `ar:plan.latest:<plan_id>`.
-- For `fi:` paths, `react.read` **rehosts** the file into the artifact root and reconstructs the
-  metadata block from `meta.digest` (if present). It then emits:
-  - metadata digest block (text only)
-  - file content block (text or base64) when readable; binary files emit **metadata only**
-- If an `fi:` path starts `fi:conv_<conversation_id>.turn_<id>...`, the
-  `conv_` segment is the conversation scope. The artifact belongs to another
-  conversation and consumers must preserve that segment.
-- `react.read` also accepts `fi:<artifact-root-relative-path>` for readable
-  files already present in the artifact root. New artifact reads should use
-  `turn_...` paths or canonical `fi:<turn_id>...` logical paths. Runtime logs
-  and metadata are platform diagnostics, not normal agent artifacts.
-
-**react.patch**
-- Accepts current-turn physical path (artifact-root-relative), usually `files/<scope>/...`, `outputs/<scope>/...`, or their canonical `turn_<id>/...` form.
-- Patches any existing current-turn materialized text file, including files produced by exec; it is not limited to files created by `react.write`.
-- Historical (`turn_X/files/...`) files are never patched directly. Pull first if needed, then checkout/copy the pulled file into the current turn and patch the current-turn path.
-
-**rendering_tools.write_*** / **react.write**
-- Use physical path; timeline stores logical path in `meta`.
-- For `kind=file`, file bytes are hosted and metadata (`hosted_uri`, `key`, `rn`) is stored in metadata blocks.
-  - `visibility=external` files are also emitted to the UI.
-  - `visibility=internal` files are hosted for later agent/runtime use but are not emitted to the UI.
-- For `kind=display`, content is emitted and stored as text block.
-
-**react.rg**
-- Searches files already materialized under the artifact root and returns discovery metadata plus optional line-numbered content matches.
-- It does not search hidden/pruned timeline, unpulled historical snapshots, or
-  owner namespaces. Use visible refs or `react.memsearch` to identify older
-  `fi:` refs, then `react.pull` them before local search. Checkout only when
-  you need an editable current-turn copy.
-- `fi:conv_<conversation_id>.turn_<id>...` roots are cross-conversation refs and
-  are resolved with that conversation scope after materialization.
-- Result shape is `{root, hits}`.
-- Each hit contains:
-  - `path`: relative to the searched root
-  - `size_bytes`
-  - `text_symbols` and `line_count` for recognizable text files
-  - `logical_path`, suitable for `react.read`
-- Content matches also include `read_item` ranges; pass them to `react.read({"items":[...]})` to inspect exact regions.
-- This is the bridge from filesystem discovery to content loading.
-
-**react.pull**
-- Accepts `fi:` refs and registered owner-domain namespace refs such as `nmsp:...`, `mem:...`, or `cnv:...`.
-- Custom namespace refs are rehosted by the registered namespace owner; use the
-  returned `fi:` rows for later `react.read`, generated code, or checkout
-  decisions.
-- `fi:conv_<conversation_id>.turn_<id>...` paths are cross-conversation refs and
-  are resolved with that conversation scope.
-- For `fi:<turn>.files/<prefix>` folder pulls, the current implementation does **not** scan all hosted storage.
-- In `workspace_implementation=custom`, it inspects artifact metadata for the referenced turn from timeline/turn-log state, expands the matching descendants, and fetches only the exact matched hosted blobs.
-- In `workspace_implementation=git`, `fi:<turn>.files/...` resolves against the git-backed lineage snapshot for that version instead of scanning artifact history.
-- Folder pulls currently imply:
-  - descendants are discovered from metadata, not by listing object storage
-  - file bytes come from hosted blob handles, not from text previews
-  - no execution workspace archive extraction
-- User attachments are allowed only by exact logical ref, for example:
-  - `fi:<turn>.user.attachments/template.xlsx`
-- Exact produced artifacts are also allowed:
-  - `fi:<turn>.outputs/analysis/zip_contents.json`
-- Future design note:
-  - `fi:<turn>.outputs/...` is the explicit non-workspace artifact retrieval namespace
-  - unlike `fi:<turn>.files/...`, it does not participate in workspace history semantics
-
-**bundle_data.resolve_namespace** (bundle-defined, exec-only)
-- Not a general artifact-discovery tool.
-- Not driven by timeline blocks.
-- Intended only for generated code inside `execute_code_python(...)`.
-- Resolves a logical bundle namespace/path to:
-  - `physical_path: str | null`
-  - `access: 'r' | 'rw'`
-  - `browseable: bool`
-- If generated code wants the agent to follow up later, emit a normal hosted
-  `fi:` artifact ref or an owner ref that the owner service can resolve.
-- The returned `physical_path` is an exec-runtime path only.
-- It is not an artifact `physical_path`, not artifact-root-relative, and not a valid input to normal react tools.
-- Generated code must respect `access` exactly; for example, `access='r'` means browse/read only.
-- The generated code must then decide what to do and propagate any useful result back through:
-  - files written under `OUTPUT_DIR`
-  - and/or short `user.log` output
-
-## Compaction Notes
-
-Compaction summarizes **blocks**, not artifacts. Artifact metadata must remain visible:
-- Compaction serializer includes the **metadata JSON block** (`artifact_path`, `physical_path`, `mime`,
-  `tool_call_id`, etc.).
-- This preserves discovery even if older content blocks are summarized.
-
-## Artifact Mentions Cache Misses → Pull
-
-When rendering tools (e.g., `rendering_tools.write_pdf`, `write_pptx`, `write_png`) receive
-HTML/Markdown content, that content may reference **local artifacts** that are not currently
-present in the artifact root. We treat these as **cache misses** and pull
-the required assets before rendering.
-
-### How it works
-
-1) **Local path mentions**
-   - The content is scanned for local paths (`turn_<id>/files/...`, `turn_<id>/outputs/...`, and `turn_<id>/attachments/...`).
-   - For each referenced path, the runtime rehosts that file into the artifact root.
-   - If any are missing, a tool notice is emitted (`tool_call_error.missing_assets`).
-
-2) **SID mentions**
-   - The content is scanned for citation tokens (`[[S:n]]`).
-   - Each SID is resolved against `sources_pool`.
-   - If a SID maps to a file/attachment source (via `physical_path` or `artifact_path`),
-     that file is rehosted into the artifact root.
-   - If a SID is missing in sources_pool, a warning notice is emitted
-     (`tool_call_warning.missing_sources`).
-
-### Required sources_pool metadata
-
-To enable SID→file resolution, file/attachment sources MUST carry:
-- `physical_path` (e.g., `turn_123/attachments/photo.png`)
-- `artifact_path` (e.g., `fi:turn_123.user.attachments/photo.png`)
-- `source_type` = `attachment` or `file`
-- `mime` (used for read/render and announce)
-
-These fields are populated automatically for:
-- **User attachments** at turn start (source_type=`attachment`)
-- **Produced files** (exec/render/write tools) when hosted (source_type=`file`)
-
-### Why this matters
-
-Rendering tools run in isolated workspaces and only see the artifact root through **OUTPUT_DIR**. Rehosting ensures:
-- `<img src="turn_123/attachments/x.png">` renders correctly
-- `[[S:n]]` that references a file source becomes renderable
-- Tool outputs are reproducible even when prior turns are compacted
-
-## Examples
-
-### Namespace resolver result inside exec
-```python
+```json
 {
-  "physical_path": "/exec-visible/resolved/src",
-  "access": "r",
-  "browseable": True,
+  "source_ref": "mem:mem_123",
+  "logical_path": "conv:fi:turn_2026-07-04-09-00-00-000.files/memory/mem_123.json",
+  "physical_path": "turn_2026-07-04-09-00-00-000/files/memory/mem_123.json",
+  "mime": "application/json",
+  "snapshot": true,
+  "object_ref": "mem:mem_123"
 }
 ```
 
-This is intentionally different from artifact metadata `physical_path` like:
-- `turn_abc/files/report.pdf`
-- `turn_abc/outputs/analysis/report.json`
-- `turn_abc/attachments/photo.png`
+Use the returned values. Do not guess a `conv:fi:` path from the source ref.
 
-### File artifact (exec output)
-```
-meta = {
-  artifact_path: "fi:turn_abc.outputs/analysis/report.json",
-  physical_path: "turn_abc/outputs/analysis/report.json",
-  mime: "application/json",
-  kind: "file",
-  visibility: "internal",
-  tool_call_id: "c1a2",
-  hosted_uri: "s3://...",
-  key: "cb/tenants/.../attachments/.../turn_abc/outputs/analysis/report.json",
-  rn: "ef:..."
-}
+## Workspace Path Rules
+
+Current physical namespaces:
+
+```text
+turn_<id>/git/projects/...     editable durable project state
+turn_<id>/files/...            produced artifacts and deliverables
+turn_<id>/git/snapshots/...    story/canvas/wizard state snapshots
+turn_<id>/attachments/...      current user uploads
+turn_<id>/external/...         rehosted event/domain attachments
 ```
 
-### Display artifact (react.write, kind=display)
+Logical equivalents:
+
+```text
+conv:fi:turn_<id>.git/projects/...
+conv:fi:turn_<id>.files/...
+conv:fi:turn_<id>.git/snapshots/...
+conv:fi:turn_<id>.user.attachments/...
+conv:fi:turn_<id>.external.<kind>.attachments/<event_id>/...
 ```
-meta = {
-  artifact_path: "fi:turn_abc.files/summary.md",
-  physical_path: "turn_abc/files/summary.md",
-  kind: "display",
-  tool_call_id: "c1a2",
-  sources_used: [1,2]
-}
+
+## Read vs Pull vs Checkout
+
+```text
+react.read
+  Put readable logical content into context.
+  Good for conv:ar, conv:tc, conv:so, conv:ws, conv:su, conv:ev, conv:fi.
+
+react.pull
+  Materialize bytes into this turn.
+  Required before local search, code execution, patch, rendering, or file-byte inspection
+  when the content is not already local in [WORKSPACE].
+
+react.checkout
+  Make historical project state editable.
+  Only for conv:fi:<turn>.git/projects/... refs.
 ```
+
+## Search And Local Inspection
+
+`react.rg` searches the local materialized workspace only. It does not search:
+
+- unpulled `conv:fi:` historical refs;
+- `mem:`, `task:`, `cnv:` owner refs;
+- hidden/pruned timeline blocks;
+- storage-provider URLs.
+
+If a search needs older project state:
+
+```text
+1. Find the project ref from visible context or [WORKSPACE] REMOTE.
+2. react.pull(paths=["conv:fi:turn_<anchor>.git/projects/<project>"])
+3. react.rg(paths=["turn_<anchor>/git/projects/<project>"], pattern="...")
+```
+
+If the older project must be edited:
+
+```text
+react.checkout(paths=["conv:fi:turn_<anchor>.git/projects/<project>"], mode="replace")
+```
+
+Then edit:
+
+```text
+turn_<current>/git/projects/<project>/...
+```
+
+## Rendering And Exec
+
+Rendering tools and exec code operate on physical files or inline content
+according to their tool contracts. If the source is only available as a logical
+ref, materialize it first.
+
+Examples:
+
+```text
+source logical ref:
+  conv:fi:turn_1.files/report/source.html
+
+pull result:
+  physical_path = turn_1/files/report/source.html
+
+render input:
+  path/content/ref according to the rendering tool doc, using local source bytes
+```
+
+For project source files, use `git/projects`. For generated reports/downloads,
+use `files`.
+
+## Owner Projections
+
+When `react.read` reads a materialized owner object, the stored metadata keeps
+the owner identity:
+
+```text
+source_ref / object_ref = mem:mem_123
+logical_path            = conv:fi:turn_1.files/memory/mem_123.json
+```
+
+The owner-specific block-production policy can use `object_ref` to render a
+better model-facing block than a raw JSON/text file. This does not make `mem:`
+directly readable by `react.read`; the materialized `conv:fi:` row is still the
+local conversation-owned artifact.
+
+## Checklist
+
+- Use `react.read` for readable conversation-owned records.
+- Use `react.pull` when bytes must become local this turn.
+- Use `react.checkout` only for editable `git/projects` project state.
+- Use returned pull paths; do not invent materialized paths.
+- Use `git/projects` for project state.
+- Use `files` for produced artifacts.
+- Use `git/snapshots` for state snapshots.
+- Keep external owner refs (`mem:`, `task:`, `cnv:`) opaque until the owner
+  rehoster returns materialized paths.

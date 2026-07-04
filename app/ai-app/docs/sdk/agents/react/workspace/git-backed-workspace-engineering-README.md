@@ -37,18 +37,18 @@ points). It is **not** the agent-facing contract — for namespaces, the
 > `custom` as historical context.
 
 This document explains the git-backed React workspace model and keeps the same
-agent-facing `fi:` / `react.pull(...)` contract described in
+agent-facing `conv:fi:` / `react.pull(...)` contract described in
 [workspace-model-README.md](./workspace-model-README.md).
 
 The main design choices in this model are:
 
-- **keep `fi:` unchanged**
+- **keep `conv:fi:` unchanged**
 - **keep `<version>` equal to `turn_...`**
 - **keep both workspace implementations supported (`custom` and `git`)**
 - **make git the authoritative version-control layer for textual project trees**
 - **keep hosted storage as the authoritative layer for binary artifacts**
 - **do not eagerly materialize whole projects**
-- **introduce explicit workspace hydration via `react.pull(paths=[fi:...])`**
+- **introduce explicit workspace hydration via `react.pull(paths=[conv:fi:...])`**
 - **make lineage-only git metadata isolation part of the contract**
 
 The intent is to give React a natural local git workspace it can inspect,
@@ -57,7 +57,7 @@ isolated execution runtime.
 
 Current implementation status:
 - `REACT_WORKSPACE_IMPLEMENTATION=custom|git` is implemented and wired through `RuntimeCtx`
-- `react.pull(paths=[fi:...])` is implemented for both workspace backends
+- `react.pull(paths=[conv:fi:...])` is implemented for both workspace backends
 - `git` mode bootstraps the current turn as a sparse local git repo
 - `git` mode bootstraps that repo from a lineage-only bare mirror, not from a broader shared cache clone
 - successful `git` turns publish the lineage branch and immutable per-turn version ref on host-side turn finish
@@ -125,16 +125,16 @@ The model is:
 - one workspace lineage branch per user conversation
 - one immutable named git ref per turn version
 - the public version id remains the existing `turn_...`
-- `fi:<version>.files/<scope>/<path>` stays the visible reference syntax
+- `conv:fi:<version>.git/projects/<scope>/<path>` is the visible project-state reference syntax
 - cross-conversation refs keep the same syntax with a conversation prefix:
-  `fi:conv_<conversation_id>.turn_<id>.files|outputs|snapshots/...`
-- custom namespace refs such as `nmsp:...` are not `fi:` refs; `react.pull`
+  `conv:fi:conv_<conversation_id>.turn_<id>.git/projects|files|git/snapshots/...`
+- custom namespace refs such as `nmsp:...` are not `conv:fi:` refs; `react.pull`
   resolves them only when a matching namespace rehoster is registered
 - `REACT_WORKSPACE_GIT_REPO` identifies the remote repo engineering uses for that lineage
 - engineering resolves that version id to the correct git ref in the current lineage
 - engineering prefetches the isolated lineage repo locally before exec/code runs
 - React explicitly asks for the workspace slice it needs with:
-  - `react.pull(paths=[fi:...])`
+  - `react.pull(paths=[conv:fi:...])`
 - folder pulls bring git-tracked textual content only
 - exact binary refs may also be pulled point-wise when explicitly named
 - the agent can inspect history and commit locally, but cannot pull/push
@@ -145,7 +145,7 @@ There are only two supported workspace paradigms:
 - `git`
 
 Both paradigms keep the same user-facing contract:
-- `fi:...`
+- `conv:fi:...`
 - `react.pull(paths=[...])`
 
 But the agent is instructed differently:
@@ -155,8 +155,8 @@ But the agent is instructed differently:
 Custom namespace refs are separate from the git lineage. For example,
 `nmsp:draft/...` is an opaque domain artifact until a registered
 `@artifact_namespace_rehoster(namespace="nmsp")` materializes it. If the rehoster
-returns `fi:turn_<id>.snapshots/...`, the result is a snapshot artifact; if it
-returns `fi:turn_<id>.external.nmsp.attachments/...`, the result is an attachment
+returns `conv:fi:turn_<id>.git/snapshots/...`, the result is a snapshot artifact; if it
+returns `conv:fi:turn_<id>.external.nmsp.attachments/...`, the result is an attachment
 artifact. It becomes git workspace content only if the rehoster deliberately
 places it under `files/...` or the agent explicitly writes a current-turn
 `turn_<current>/files/...` copy.
@@ -168,9 +168,9 @@ places it under `files/...` or the agent explicitly writes a current-turn
 - React cannot pull or push from exec.
 - The git metadata visible inside exec is limited to the assigned lineage and explicitly prepared version refs only.
 - Git tools running inside exec cannot enumerate or inspect other users' branches, tags, refs, or broader remote metadata.
-- React can explicitly hydrate the needed workspace slice with `react.pull(paths=[fi:...])`.
-- `fi:` keeps the same syntax and uses `turn_...` as the version id.
-- The system can resolve `fi:<turn_id>.files/...` to the correct snapshot in the current lineage.
+- React can explicitly hydrate the needed workspace slice with `react.pull(paths=[conv:fi:...])`.
+- `conv:fi:` keeps the same syntax and uses `turn_...` as the version id.
+- The system can resolve `conv:fi:<turn_id>.files/...` to the correct snapshot in the current lineage.
 - Deletes are represented by git history, not guessed from missing files.
 - Folder pulls do not implicitly bring hosted binaries.
 - Exact binary refs can still be hydrated locally when explicitly requested.
@@ -222,14 +222,14 @@ So a scan-based reconstruction cannot represent deletion reliably.
 
 ## 3) Core Design Decisions
 
-### 3.1 Keep `fi:` unchanged
+### 3.1 Keep `conv:fi:` unchanged
 
 Do not introduce a new ref family for the first iteration.
 
 The existing visible contract stays:
 
 ```text
-fi:<version>.files/<scope>/<path>
+conv:fi:<version>.files/<scope>/<path>
 ```
 
 Where:
@@ -238,7 +238,7 @@ Where:
 
 The meaning changes internally:
 - `<version>` resolves to a git-backed snapshot in the current workspace lineage
-- React can pass those `fi:` refs directly to `react.pull(...)` to materialize local workspace content
+- React can pass those `conv:fi:` refs directly to `react.pull(...)` to materialize local workspace content
 
 ### 3.2 Keep `turn_...` as the public version id
 
@@ -263,7 +263,7 @@ The branch lineage should be tied to:
 not to a guessed “project” name.
 
 Reason:
-- the next segment under `files/` is only a workspace scope/root
+- the next segment under `git/projects/` is only a workspace scope/root
 - React can discover available scopes by inspecting the local workspace tree
 - engineering can optionally surface top-level scopes in ANNOUNCE, but React can also learn them from the filesystem
 
@@ -369,7 +369,7 @@ refs/kdcube/<tenant>/<project>/<user_id>/<conversation_id>/versions/<turn_id>
 Where `<turn_id>` remains:
 - `turn_...`
 
-This is the git entity that later resolves `fi:<turn_id>.files/...`.
+This is the git entity that later resolves `conv:fi:<turn_id>.files/...`.
 
 ---
 
@@ -427,14 +427,14 @@ This must be true mechanically, not only by instruction:
 The primary workspace-hydration tool should be:
 
 ```json
-{"tool_id":"react.pull","params":{"paths":["fi:<turn_id>.files/<scope>/<path-or-prefix>"]}}
+{"tool_id":"react.pull","params":{"paths":["conv:fi:<turn_id>.files/<scope>/<path-or-prefix>"]}}
 ```
 
 This tool explicitly asks engineering/runtime to bring a needed slice of the
 versioned workspace into local execution space.
 
 Phase-1 semantics:
-- input is one or more `fi:` paths or prefixes
+- input is one or more `conv:fi:` paths or prefixes
 - text/git-tracked content is hydrated from the git snapshot resolved by `<turn_id>` in the lineage-only mirror
 - exact binary refs may be hydrated point-wise from hosting if explicitly requested
 - binaries are not inferred as part of a pulled folder
@@ -453,8 +453,8 @@ active current-turn workspace. The fuller cross-backend rationale is captured in
 `workspace/workspace-model-README.md`:
 
 - keep `react.pull(...)` strictly historical
-- make checkout define the contents of `turn_<current>/files/`
-- let checkout accept an ordered list of `fi:...files...` refs
+- make checkout define the contents of `turn_<current>/git/projects/`
+- let checkout accept an ordered list of `conv:fi:...git/projects...` refs
 
 ### 5.3 Current-turn writable root stays familiar
 
@@ -462,34 +462,34 @@ To minimize disruption, pulled editable content should still appear under the
 familiar turn-local root:
 
 ```text
-<current_turn>/files/
+<current_turn>/git/projects/
 ```
 
 That path represents:
 - the current editable local worktree content that has been activated for this turn
 - the main workspace tree React should treat as "the project" for the current turn
 
-Historical versions mentioned by explicit `fi:<older_turn>...` references can be
+Historical versions mentioned by explicit `conv:fi:<older_turn>...` references can be
 pulled lazily as compatibility views under:
 
 ```text
-<older_turn>/files/...
+<older_turn>/git/projects/...
 ```
 
 Those historical trees are read-only compatibility hydrations, not the primary
 editable workspace.
 
 The current mental model should be:
-- keep working in `<current_turn>/files/...`
-- use checkout to define what is materialized into `<current_turn>/files/...`
+- keep working in `<current_turn>/git/projects/...`
+- use checkout to define what is materialized into `<current_turn>/git/projects/...`
 - pull historical slices explicitly when needed as side views
 
 ### 5.4 Top-level scopes
 
-The first segment after `files/` is the workspace scope/root:
+The first segment after `git/projects/` is the workspace scope/root:
 
 ```text
-<current_turn>/files/<scope>/...
+<current_turn>/git/projects/<scope>/...
 ```
 
 Examples:
@@ -536,12 +536,12 @@ This keeps ANNOUNCE operational and short while still teaching sparse-workspace 
 
 ---
 
-## 6) How `fi:` Resolves and How `react.pull` Uses It
+## 6) How `conv:fi:` Resolves and How `react.pull` Uses It
 
 The visible syntax remains:
 
 ```text
-fi:<turn_id>.files/<scope>/<path>
+conv:fi:<turn_id>.files/<scope>/<path>
 ```
 
 Resolution algorithm:
@@ -562,7 +562,7 @@ turn_<id>/files/<scope>/<path>
 
 5. tooling and exec can then use the local path naturally
 
-So `fi:` does not change syntax, only resolution semantics.
+So `conv:fi:` does not change syntax, only resolution semantics.
 
 Important implemented split in `git` mode:
 - text-like `.files/...` refs are resolved from git snapshots
@@ -580,9 +580,9 @@ Initial contract should stay small:
 ```json
 {
   "paths": [
-    "fi:turn_1774995817638_h68d2o.files/projectA/src/",
-    "fi:turn_1774995817638_h68d2o.files/projectA/README.md",
-    "fi:turn_1774995817638_h68d2o.user.attachments/template.xlsx"
+    "conv:fi:turn_1774995817638_h68d2o.files/projectA/src/",
+    "conv:fi:turn_1774995817638_h68d2o.files/projectA/README.md",
+    "conv:fi:turn_1774995817638_h68d2o.user.attachments/template.xlsx"
   ]
 }
 ```
@@ -626,7 +626,7 @@ If a binary file is not in git, then a normal workspace slice pull does not
 know that the binary should also appear inside the local workspace.
 
 So the phase-1 rule is:
-- `react.pull(fi:...folder...)` only guarantees git-tracked textual content
+- `react.pull(conv:fi:...folder...)` only guarantees git-tracked textual content
 - binaries are not brought automatically as part of that folder
 - if React needs a binary, it must request it explicitly by exact logical ref
 
@@ -640,8 +640,8 @@ That means the agent instructions must say clearly:
 If React needs a hosted binary, it should reference it exactly, for example:
 
 ```text
-fi:<turn_id>.user.attachments/template.xlsx
-fi:<turn_id>.files/rendered/report.pdf
+conv:fi:<turn_id>.user.attachments/template.xlsx
+conv:fi:<turn_id>.files/rendered/report.pdf
 ```
 
 Engineering/runtime may then hydrate that exact binary locally when allowed.
@@ -694,15 +694,15 @@ artifact or included in a persisted execution snapshot.
 ```text
 Turn 1
   base: empty lineage branch
-  react.pull(fi:turn_1.files/projectA/)
-  local workspace: <turn_1>/files/projectA/{file1,file2,file3}
+  react.pull(conv:fi:turn_1.git/projects/projectA/)
+  local workspace: <turn_1>/git/projects/projectA/{file1,file2,file3}
   commit on lineage branch -> C1
   immutable version ref:
     refs/kdcube/.../versions/turn_1 -> C1
 
 Turn 2
-  react.pull(fi:turn_1.files/projectA/)
-  materialize snapshot C1 into <turn_2>/files/projectA/
+  react.pull(conv:fi:turn_1.git/projects/projectA/)
+  materialize snapshot C1 into <turn_2>/git/projects/projectA/
   agent deletes file1, adds file4
   workspace now: {file2,file3,file4}
   commit on lineage branch -> C2
@@ -710,7 +710,7 @@ Turn 2
     refs/kdcube/.../versions/turn_2 -> C2
 
 Turn 3
-  react.pull(fi:turn_2.files/projectA/)
+  react.pull(conv:fi:turn_2.files/projectA/)
   materialize snapshot C2 into <turn_3>/files/projectA/
   agent edits file2 and file3
   commit on lineage branch -> C3
@@ -740,11 +740,11 @@ Historical `<turn>/files/...` trees exist only when explicitly needed.
 ### Diagram 3: Text vs binary pull semantics
 
 ```text
-react.pull(fi:turn_2.files/projectA/src/)
+react.pull(conv:fi:turn_2.files/projectA/src/)
   -> pulls git-tracked text/project tree for src/
   -> does NOT implicitly pull hosted binaries under projectA/
 
-react.pull(fi:turn_2.user.attachments/template.xlsx)
+react.pull(conv:fi:turn_2.user.attachments/template.xlsx)
   -> may pull that exact hosted binary point-wise
 ```
 
@@ -760,11 +760,11 @@ flowchart TD
     B --> C[Immutable version ref per turn\nrefs/kdcube/.../versions/<turn_id>]
     C --> D[Engineering prefetch]
     D --> E[Local isolated git clone/worktree]
-    E --> F[React pull request\nreact.pull(paths=[fi:...])]
+    E --> F[React pull request\nreact.pull(paths=[conv:fi:...])]
     F --> G[Pulled current writable tree\n<current_turn>/files/...]
     F --> H[Historical hydration on demand\n<older_turn>/files/...]
     I[Hosted storage for binaries] --> F
-    F --> J[Point-wise binary hydration\nexact fi: only]
+    F --> J[Point-wise binary hydration\nexact conv:fi: only]
     E --> K[React exec/code tools\nno network]
     K --> L[Local git commit only]
     L --> M[Engineering publish/push outside exec]
@@ -783,9 +783,9 @@ sequenceDiagram
     R->>E: start turn for user+conversation
     E->>G: fetch lineage branch + needed version refs
     E->>X: prepare local isolated lineage repo
-    X->>E: react.pull(fi:turn_x.files/projectA/src/)
+    X->>E: react.pull(conv:fi:turn_x.files/projectA/src/)
     E->>X: materialize requested text slice locally
-    X->>E: optionally request exact binary fi:path
+    X->>E: optionally request exact binary conv:fi:path
     E->>H: fetch exact binary if explicitly requested
     E->>X: place that binary locally
     X->>X: React runs code, reads files, uses git log/diff/show
@@ -819,7 +819,7 @@ Current role:
 Future role:
 - resolve `react.pull(...)` requests into local hydrated workspace slices
 - materialize git-backed text slices for current turn
-- resolve historical `fi:<turn_id>...` through immutable version refs
+- resolve historical `conv:fi:<turn_id>...` through immutable version refs
 - support exact binary hydration by explicit logical ref
 
 Key functions likely to evolve:
@@ -851,18 +851,18 @@ Current role:
 - rehost historical files before exec
 
 Future role:
-- detect versioned `fi:` references
+- detect versioned `conv:fi:` references
 - request git-based hydration via `react.pull(...)` instead of pure timeline scan
 - preserve compatibility for legacy artifact paths where needed
 
 ### 10.3 `read.py`
 
 Current role:
-- read `fi:` and other logical refs into visible context
+- read `conv:fi:` and other logical refs into visible context
 
 Future role:
-- keep `fi:` syntax
-- resolve `fi:<turn_id>.files/...` using lineage-scoped git snapshot semantics
+- keep `conv:fi:` syntax
+- resolve `conv:fi:<turn_id>.files/...` using lineage-scoped git snapshot semantics
 - continue surfacing metadata-only behavior for unsupported binary reading
 
 ### 10.4 `timeline.py`
@@ -874,7 +874,7 @@ Current role:
 
 Future role:
 - preserve historical logical resolution across git-backed snapshots
-- ensure `fi:` remains meaningful even when underlying storage is git-backed
+- ensure `conv:fi:` remains meaningful even when underlying storage is git-backed
 - no direct need to convert timeline into git storage, but timeline must understand the new artifact semantics
 
 ### 10.5 `runtime.py`
@@ -945,9 +945,9 @@ The alternate instructions should teach:
 - the workspace is git-backed
 - read `[WORKSPACE]` in ANNOUNCE first
 - if current-turn local files are enough, work directly there
-- React must explicitly pull the needed slice with `react.pull(paths=[fi:...])`
-- if historical content by turn id is needed, use `react.pull(fi:...)`
-- `fi:` stays the reference syntax
+- React must explicitly pull the needed slice with `react.pull(paths=[conv:fi:...])`
+- if historical content by turn id is needed, use `react.pull(conv:fi:...)`
+- `conv:fi:` stays the reference syntax
 - pulled folders contain git-tracked textual content
 - binaries are not included automatically in folder pulls
 - if a binary is needed, it must be referenced point-wise by exact logical ref
@@ -961,11 +961,11 @@ The alternate instructions should teach:
 
 React should be taught this model in simple terms:
 
-- the current writable project tree appears under `<current_turn>/files/...` after it is pulled
-- the first segment after `files/` is a workspace scope
-- use `react.pull(paths=[fi:...])` to bring the needed version/scope locally
+- the current writable project tree appears under `<current_turn>/git/projects/...` after it is checked out
+- the first segment after `git/projects/` is a workspace scope
+- use `react.pull(paths=[conv:fi:...])` to bring the needed version/scope locally
 - earlier versions can be referenced as:
-  - `fi:<older_turn>.files/<scope>/<path>`
+  - `conv:fi:<older_turn>.git/projects/<scope>/<path>`
 - historical versions are immutable
 - current workspace is the editable worktree
 - local git commands are available for the current lineage only

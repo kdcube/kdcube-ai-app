@@ -42,7 +42,7 @@ Internally, plans are persisted as timeline blocks of type `react.plan`.
 
 ```text
 type: react.plan
-path: ar:<turn_id>.react.plan.<plan_id>
+path: conv:ar:<turn_id>.react.plan.<plan_id>
 mime: application/json
 ```
 
@@ -67,7 +67,7 @@ Progress acknowledgements are also stored internally as:
 
 ```text
 type: react.plan.ack
-path: ar:<turn_id>.react.plan.ack.<iteration>
+path: conv:ar:<turn_id>.react.plan.ack.<iteration>
 mime: text/markdown
 ```
 
@@ -83,7 +83,7 @@ The model normally sees:
 2. `react.plan` tool-call blocks
 3. ANNOUNCE plan summaries
 4. `react.plan.history` blocks after compaction
-5. stable reread handles: `ar:plan.latest:<plan_id>`
+5. stable reread handles: `conv:ar:plan.latest:<plan_id>`
 
 The model does **not** normally rely on:
 
@@ -104,7 +104,7 @@ Current-vs-open rule:
 Every plan lineage has a stable latest-snapshot alias:
 
 ```text
-ar:plan.latest:<plan_id>
+conv:ar:plan.latest:<plan_id>
 ```
 
 This is the important handle for the model.
@@ -112,11 +112,11 @@ This is the important handle for the model.
 Important:
 
 - the alias does **not** have a separate turn-id segment
-- `plan_id` is the whole suffix after `ar:plan.latest:`
+- `plan_id` is the whole suffix after `conv:ar:plan.latest:`
 - current runtime-generated `plan_id` values often happen to include the origin turn id inside the id text itself
 - the model should treat `plan_id` as an opaque stable identifier, not parse it structurally
 - examples below use simplified ids like `plan_alpha` for readability
-- in real runtime output today, a generated id may look like `plan:turn_12:abcd1234`, and the matching stable alias would then be `ar:plan.latest:plan:turn_12:abcd1234`
+- in real runtime output today, a generated id may look like `plan:turn_12:abcd1234`, and the matching stable alias would then be `conv:ar:plan.latest:plan:turn_12:abcd1234`
 
 Use it when:
 
@@ -127,7 +127,7 @@ Use it when:
 Example:
 
 ```text
-react.read(["ar:plan.latest:<plan_id>"])
+react.read(["conv:ar:plan.latest:<plan_id>"])
 ```
 
 This returns the latest snapshot for that lineage, regardless of which turn last updated it.
@@ -155,7 +155,7 @@ Example:
 [AI Agent say]: Create a plan for the investigation.
 
 [TOOL CALL tc_plan_1].call react.plan
-tc:turn_12.tc_plan_1.call
+conv:tc:turn_12.tc_plan_1.call
 Params:
 {
   "mode": "new",
@@ -169,7 +169,7 @@ Params:
 [TOOL RESULT tc_plan_1].summary react.plan
 mode: new
 plan_id: plan_alpha
-latest_snapshot_ref: ar:plan.latest:plan_alpha
+latest_snapshot_ref: conv:ar:plan.latest:plan_alpha
 ```
 
 So the model can learn the stable latest-snapshot handle directly from the tool result, and ANNOUNCE then shows the open plan:
@@ -178,7 +178,7 @@ So the model can learn the stable latest-snapshot handle directly from the tool 
 [OPEN PLANS]
   - plans: 1 visible
     • plan_id=plan_alpha (current)
-      snapshot_ref=ar:plan.latest:plan_alpha
+      snapshot_ref=conv:ar:plan.latest:plan_alpha
       created_turn=turn_12
       created_ts=2026-03-28T10:00:00Z
       last_update_turn=turn_12
@@ -210,7 +210,7 @@ Runtime then:
 Model-facing effect:
 
 - ANNOUNCE updates the visible step markers
-- the stable alias `ar:plan.latest:<plan_id>` now resolves to the newer snapshot
+- the stable alias `conv:ar:plan.latest:<plan_id>` now resolves to the newer snapshot
 
 So the model should think of `notes` as the normal progress-reporting mechanism.
 
@@ -251,7 +251,7 @@ Rendered example:
 
 ```text
 [TOOL CALL tc_plan_8].call react.plan
-tc:turn_17.tc_plan_8.call
+conv:tc:turn_17.tc_plan_8.call
 Params:
 {
   "mode": "activate",
@@ -261,9 +261,9 @@ Params:
 [TOOL RESULT tc_plan_8].summary react.plan
 mode: activate
 target_plan_id: plan_alpha
-target_snapshot_ref: ar:plan.latest:plan_alpha
+target_snapshot_ref: conv:ar:plan.latest:plan_alpha
 plan_id: plan_alpha
-latest_snapshot_ref: ar:plan.latest:plan_alpha
+latest_snapshot_ref: conv:ar:plan.latest:plan_alpha
 ```
 
 Important:
@@ -294,7 +294,7 @@ Rendered example:
 
 ```text
 [TOOL CALL tc_plan_9].call react.plan
-tc:turn_18.tc_plan_9.call
+conv:tc:turn_18.tc_plan_9.call
 Params:
 {
   "mode": "replace",
@@ -308,16 +308,16 @@ Params:
 [TOOL RESULT tc_plan_9].summary react.plan
 mode: replace
 target_plan_id: plan_alpha
-target_snapshot_ref: ar:plan.latest:plan_alpha
+target_snapshot_ref: conv:ar:plan.latest:plan_alpha
 plan_id: plan_beta
-latest_snapshot_ref: ar:plan.latest:plan_beta
+latest_snapshot_ref: conv:ar:plan.latest:plan_beta
 ```
 
 After execution:
 
 - `plan_alpha` is marked superseded internally
 - the replacement plan appears in ANNOUNCE with its own `plan_id`
-- the stable reread handle for the new plan is `ar:plan.latest:<new_plan_id>`
+- the stable reread handle for the new plan is `conv:ar:plan.latest:<new_plan_id>`
 
 ### 7.4 `mode="close"`
 
@@ -334,7 +334,7 @@ Rendered example:
 
 ```text
 [TOOL CALL tc_plan_10].call react.plan
-tc:turn_19.tc_plan_10.call
+conv:tc:turn_19.tc_plan_10.call
 Params:
 {
   "mode": "close",
@@ -344,9 +344,9 @@ Params:
 [TOOL RESULT tc_plan_10].summary react.plan
 mode: close
 target_plan_id: plan_beta
-target_snapshot_ref: ar:plan.latest:plan_beta
+target_snapshot_ref: conv:ar:plan.latest:plan_beta
 plan_id: plan_beta
-latest_snapshot_ref: ar:plan.latest:plan_beta
+latest_snapshot_ref: conv:ar:plan.latest:plan_beta
 ```
 
 ## 8) What “open plan” means
@@ -435,7 +435,7 @@ react.plan(mode="close", plan_id="<plan_id>")
 2. inspect its latest snapshot if needed:
 
 ```text
-react.read(["ar:plan.latest:<plan_id>"])
+react.read(["conv:ar:plan.latest:<plan_id>"])
 ```
 
 If the alias-backed snapshot is already present as an equivalent visible full
@@ -481,7 +481,7 @@ Use react.read([...]) on the refs below if one becomes relevant again.
 - plan #1 id=plan_alpha (unfinished) last=2026-03-28T10:08:00Z
   ✓ [1] collect metrics
   … [2] compare trends
-  snapshot_ref: ar:plan.latest:plan_alpha
+  snapshot_ref: conv:ar:plan.latest:plan_alpha
   latest_note_preview: Need to revisit the trend break later.
 ```
 
@@ -516,7 +516,7 @@ Model-facing:
 - `react.plan` tool-call blocks
 - ANNOUNCE plan list
 - `react.plan.history`
-- `ar:plan.latest:<plan_id>`
+- `conv:ar:plan.latest:<plan_id>`
 
 If you are reasoning about the agent behavior, reason from the model-facing layer first.
 
@@ -526,7 +526,7 @@ The current mechanism is efficient enough for normal use:
 
 - plan blocks are sparse
 - latest state is derived by scanning plan snapshots
-- stable alias resolution avoids exposing every rolling `ar:<turn_id>.react.plan...` path to the model
+- stable alias resolution avoids exposing every rolling `conv:ar:<turn_id>.react.plan...` path to the model
 
 Current limitations:
 

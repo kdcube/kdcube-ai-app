@@ -47,7 +47,7 @@ subsystems:
 ```text
 task:issue:...
 mem:...
-fi:conv_.../turn_.../outputs/report.md
+conv:fi:conv_.../turn_.../files/report.md
 repo:kdcube-ai-app/app/ai-app/docs/...
 cnv:.../ut_...
 ```
@@ -55,7 +55,7 @@ cnv:.../ut_...
 The surface that displays or pins an object should not own the object's
 semantics. A canvas card for `task:issue:...` should not know task storage. A
 chat widget that displays `mem:...` should not implement memory preview. A
-download button for `fi:...` should go to the ReAct/platform artifact resolver,
+download button for `conv:fi:...` should go to the ReAct/platform artifact resolver,
 not to a canvas-specific file path.
 
 The first cross-bundle idea was request/reply over the Data Bus:
@@ -125,7 +125,7 @@ event plane:
 
 | Namespace | Owner | Resolver should live with |
 | --- | --- | --- |
-| `fi:` | ReAct/platform artifact system | ReAct event/artifact module |
+| `conv:fi:` | ReAct/platform artifact system | ReAct event/artifact module |
 | `mem:` | Memory subsystem | SDK memory module |
 | `task:` | Task/issue subsystem | Task solution or bundle task domain |
 | `repo:` | Repository-backed knowledge subsystem | Knowledge bundle/module |
@@ -175,7 +175,7 @@ Examples:
 ```text
 kdcube:resolver-registry:demo-tenant:demo-project:task:task_tracker.issue_story
 kdcube:resolver-registry:demo-tenant:demo-project:mem:sdk.memory
-kdcube:resolver-registry:demo-tenant:demo-project:fi:react.event_ref
+kdcube:resolver-registry:demo-tenant:demo-project:conv:fi:react.event_ref
 ```
 
 Value schema:
@@ -434,7 +434,7 @@ The resolver result should include `output_ref` when data is not inline:
 {
   "ok": true,
   "operation": "download",
-  "object_ref": "fi:conv_.../turn_.../outputs/report.pdf",
+  "object_ref": "conv:fi:conv_.../turn_.../files/report.pdf",
   "mime": "application/pdf",
   "output_ref": "tmp:demo-tenant:demo-project:blob_...",
   "filename": "report.pdf",
@@ -492,8 +492,8 @@ there are unsaved edits.
 ### Download Flow
 
 ```text
-user clicks Download on fi: card
-  -> object_action facade(fi:..., download)
+user clicks Download on conv:fi: card
+  -> object_action facade(conv:fi:..., download)
      current compatible alias: canvas_object_action
   -> resolver client finds ReAct artifact resolver
   -> direct resolver_execute(download)
@@ -506,7 +506,7 @@ No `rn`, `ef`, or browser route is stored on the canvas card.
 ### Rehost Flow
 
 ```text
-user drops fi: artifact onto task attachments
+user drops conv:fi: artifact onto task attachments
   -> task subsystem calls resolver_execute(fi, download or rehost-source)
   -> task subsystem computes deterministic attachment id
   -> task subsystem stores bytes under task-owned namespace
@@ -627,7 +627,7 @@ Canvas storage does not keep:
 ```text
 download URL
 browser route
-rn/ef handle for fi:
+rn/ef handle for conv:fi:
 task internals
 memory internals
 ```
@@ -640,7 +640,7 @@ bundles if it uses the resolver client.
 ```text
 chat widget bundle
   local resolvers:
-    fi: if ReAct artifact module is imported
+    conv:fi: if ReAct artifact module is imported
 
   remote resolvers:
     task: from task bundle directory record
@@ -654,7 +654,7 @@ canonical object ref:
 ```text
 mem:...      remains mem:...
 task:...     remains task:...
-fi:conv_...  remains fi:conv_...
+conv:fi:conv_...  remains conv:fi:conv_...
 ```
 
 ReAct rendering is still handled by event policies. Resolver operations are
@@ -718,7 +718,7 @@ The helper should:
 - Keep local resolver registry as first dispatch path.
 - Move common resolver interfaces to `sdk/solutions/event-hub`.
 - Keep namespace owner implementations in their domains:
-  - `react/events/resolver.py` for `fi:`;
+  - `react/events/resolver.py` for `conv:fi:`;
   - `memory/events/resolver.py` for `mem:`;
   - task domain resolver for `task:`;
   - canvas resolver for canvas-owned refs.
@@ -775,7 +775,7 @@ The helper should:
 | Missing resolver | Caller returns `resolver_not_available` and keeps pin visible. |
 | Open UI event | Resolver returns `ui.object.open.requested`; target widget handles dirty state. |
 | Data Bus separation | `preview` does not enqueue Data Bus; `patch` does. |
-| Canonical ref preservation | `fi:`, `task:`, `mem:` refs stay unchanged across canvas/chat/context. |
+| Canonical ref preservation | `conv:fi:`, `task:`, `mem:` refs stay unchanged across canvas/chat/context. |
 
 ## Open Questions
 

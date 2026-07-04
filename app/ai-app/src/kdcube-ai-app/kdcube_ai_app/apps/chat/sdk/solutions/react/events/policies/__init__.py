@@ -1020,7 +1020,7 @@ def snapshot_refs_block_production_policy(
     """Collect read-only snapshot refs from a composite tool/event result.
 
     Snapshot refs are durable or rehostable references such as
-    `fi:<turn_id>.snapshots/current.yaml` or `ext:<bundle>/snapshots/current`.
+    `conv:fi:<turn_id>.git/snapshots/current.yaml` or `ext:<app>/snapshots/current`.
     They tell later projection/ANNOUNCE/compaction policies that a snapshot can
     be read. They do not authorize ReAct to edit that snapshot in place.
     Mutually writable state should be represented by a dedicated structural

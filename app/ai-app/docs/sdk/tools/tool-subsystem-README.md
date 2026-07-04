@@ -315,7 +315,7 @@ policy plane for that tool occurrence.
 If a tool has no matching event-source declaration, ReAct still handles it with
 the structured-result default policy pack. That preserves the normal custom
 tool behavior:
-- JSON/text output becomes an ordinary `tc:<turn>.<call>.result` block;
+- JSON/text output becomes an ordinary `conv:tc:<turn>.<call>.result` block;
 - `ret.artifact_type == "files"` produces declared file artifacts;
 - generic JSON results are not treated as file paths;
 - no source-pool rows, snapshot refs, or ANNOUNCE candidates are produced unless
@@ -366,7 +366,7 @@ the file declaration belongs inside `ret`:
     "files": [
       {
         "type": "file",
-        "path": "turn_123/outputs/report.pdf",
+        "path": "turn_123/files/report.pdf",
         "filename": "report.pdf",
         "mime_type": "application/pdf",
         "visibility": "external"
@@ -381,7 +381,7 @@ React v2 and v3 unwrap `{ok, error, ret}` before result handling. If
 conversation store and emitted as normal artifact metadata.
 
 The declared `path` / `physical_path` must refer to a file accessible from the
-current React `OUT_DIR`, typically under `turn_<id>/outputs/...`.
+current React `OUT_DIR`, typically under `turn_<id>/files/...`.
 
 Trusted bundle tools can also call
 `kdcube_ai_app.apps.chat.sdk.tools.bundle_tool_context.host_files(...)` after

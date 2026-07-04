@@ -88,8 +88,8 @@ def _tool_call_id_from_block(blk: Dict[str, object]) -> Optional[str]:
     if rid:
         return rid
     path = (blk.get("path") or "").strip()
-    if path.startswith("tc:"):
-        tail = path[len("tc:"):]
+    if path.startswith("conv:tc:"):
+        tail = path[len("conv:tc:"):]
         parts = [p for p in tail.split(".") if p]
         if len(parts) >= 2:
             return parts[1].strip() or None

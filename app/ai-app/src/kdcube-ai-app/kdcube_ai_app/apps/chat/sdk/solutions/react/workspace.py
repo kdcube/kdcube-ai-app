@@ -13,8 +13,9 @@ from typing import Any, Dict, List, Optional
 from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import (
     ARTIFACT_NAMESPACE_ATTACHMENTS,
     ARTIFACT_NAMESPACE_FILES,
-    ARTIFACT_NAMESPACE_OUTPUTS,
+    ARTIFACT_NAMESPACE_PROJECTS,
     ARTIFACT_NAMESPACE_SNAPSHOTS,
+    REACT_FILE_REF_PREFIX,
     build_physical_artifact_path,
     is_turn_id,
     physical_path_to_logical_path,
@@ -44,12 +45,12 @@ _TURN_ID_PATTERN = (
     r"\d{4}-\d{2}-\d{2}-\d{2}-\d{2}(?:-\d{2})?(?:-\d{3,6})?)"
 )
 _CONVERSATION_ID_PATTERN = r"conv_[A-Za-z0-9_.:-]+"
-_ARTIFACT_PHYSICAL_ROOT_PATTERN = r"(?:files|outputs|snapshots|attachments|external)"
+_ARTIFACT_PHYSICAL_ROOT_PATTERN = r"(?:git/(?:projects|snapshots)|files|attachments|external)"
 _CODE_PATH_RE = re.compile(
     rf"((?:{_CONVERSATION_ID_PATTERN}/)?{_TURN_ID_PATTERN}/{_ARTIFACT_PHYSICAL_ROOT_PATTERN}/[^\s'\"\)\];,]+)"
 )
 _PATH_TOKEN_RE = re.compile(r"[^\s'\"\)\];,]+")
-_UNQUALIFIED_ARTIFACT_PREFIXES = ("files/", "outputs/", "snapshots/", "attachments/")
+_UNQUALIFIED_ARTIFACT_PREFIXES = ("git/projects/", "files/", "git/snapshots/", "attachments/")
 _FETCH_CTX_PATH_RE = re.compile(r"([a-z]{2}:[A-Za-z0-9_./\\-]+)")
 _TURN_ROOT_RE = re.compile(rf"\b({_TURN_ID_PATTERN})\b")
 
@@ -67,8 +68,9 @@ def get_workspace_implementation(runtime_ctx: Any | None) -> str:
 
 def extract_code_file_paths(code: str, *, turn_id: str = "") -> tuple[List[str], List[str]]:
     """
-    Return (paths, rewritten_paths). Paths are physical (turn_id/files/rel).
-    Relative "files/<rel>" are rewritten to current turn_id.
+    Return (paths, rewritten_paths). Paths are physical
+    (`turn_<id>/git/projects/<rel>` or `turn_<id>/files/<rel>`).
+    Relative artifact-role paths are rewritten to current turn_id.
     """
     if not isinstance(code, str) or not code.strip():
         return [], []
@@ -86,9 +88,9 @@ def extract_code_file_paths(code: str, *, turn_id: str = "") -> tuple[List[str],
 
     seen = set()
     out: List[str] = []
-    current_files_prefix = f"{turn_id}/files/" if turn_id else ""
-    current_outputs_prefix = f"{turn_id}/outputs/" if turn_id else ""
-    current_snapshots_prefix = f"{turn_id}/snapshots/" if turn_id else ""
+    current_projects_prefix = f"{turn_id}/{ARTIFACT_NAMESPACE_PROJECTS}/" if turn_id else ""
+    current_files_prefix = f"{turn_id}/{ARTIFACT_NAMESPACE_FILES}/" if turn_id else ""
+    current_snapshots_prefix = f"{turn_id}/{ARTIFACT_NAMESPACE_SNAPSHOTS}/" if turn_id else ""
     current_att_prefix = f"{turn_id}/attachments/" if turn_id else ""
     current_external_prefix = f"{turn_id}/external/" if turn_id else ""
     for p in cleaned:
@@ -98,8 +100,8 @@ def extract_code_file_paths(code: str, *, turn_id: str = "") -> tuple[List[str],
         tid, namespace, rel = split_physical_artifact_path(p)
         if not (tid and namespace and rel):
             continue
-        if (current_files_prefix and p.startswith(current_files_prefix)) or (
-            current_outputs_prefix and p.startswith(current_outputs_prefix)
+        if (current_projects_prefix and p.startswith(current_projects_prefix)) or (
+            current_files_prefix and p.startswith(current_files_prefix)
         ) or (
             current_snapshots_prefix and p.startswith(current_snapshots_prefix)
         ) or (
@@ -166,10 +168,12 @@ def _infer_physical_from_fi(path: str) -> str:
         )
         if physical:
             return physical
-    if p.startswith("fi:"):
-        rel = p[len("fi:"):].strip().lstrip("/")
+    if p.startswith(REACT_FILE_REF_PREFIX):
+        rel = p[len(REACT_FILE_REF_PREFIX):].strip().lstrip("/")
         if rel and _safe_relpath(rel):
             return rel
+    if ":" in p:
+        return ""
     if p and _safe_relpath(p):
         return p
     return ""
@@ -266,7 +270,7 @@ def current_turn_files_root(*, runtime_ctx: Any) -> pathlib.Path:
     turn_id = str(getattr(runtime_ctx, "turn_id", "") or "").strip()
     if not outdir_raw or not turn_id:
         return pathlib.Path("")
-    return artifact_outdir_for(pathlib.Path(outdir_raw)) / turn_id / "files"
+    return artifact_outdir_for(pathlib.Path(outdir_raw)) / turn_id / ARTIFACT_NAMESPACE_PROJECTS
 
 
 def current_turn_files_nonempty(*, runtime_ctx: Any) -> bool:
@@ -303,7 +307,7 @@ def list_materialized_turn_roots(*, runtime_ctx: Any) -> List[str]:
 
 def summarize_current_turn_scopes(*, runtime_ctx: Any) -> List[Dict[str, Any]]:
     turn_root = workspace_turn_root(runtime_ctx=runtime_ctx)
-    files_root = turn_root / "files"
+    files_root = turn_root / ARTIFACT_NAMESPACE_PROJECTS
     if not files_root.exists():
         return []
     out: List[Dict[str, Any]] = []
@@ -395,10 +399,10 @@ async def hydrate_workspace_paths(
 ) -> Dict[str, Any]:
     """
     Materialize requested physical workspace paths using the configured implementation.
-    Text workspace namespaces under <turn>/files and <turn>/snapshots may come
+    Text workspace namespaces under <turn>/git/projects and <turn>/git/snapshots may come
     from the git-backed workspace when configured, with hosted artifact/turn-log
-    rehost as the fallback path. Outputs and attachments always use the custom
-    artifact/hosting path.
+    rehost as the fallback path. Produced files and attachments always use the
+    custom artifact/hosting path.
     """
     normalized = [str(p).strip() for p in (paths or []) if isinstance(p, str) and str(p).strip()]
     if not normalized:
@@ -447,11 +451,11 @@ async def hydrate_workspace_paths(
     for path in normalized:
         _, _, namespace, _ = split_physical_artifact_ref(path)
         if (
-            namespace in {ARTIFACT_NAMESPACE_FILES, ARTIFACT_NAMESPACE_SNAPSHOTS}
-            or "/files/" in path
-            or path.endswith("/files")
-            or "/snapshots/" in path
-            or path.endswith("/snapshots")
+            namespace in {ARTIFACT_NAMESPACE_PROJECTS, ARTIFACT_NAMESPACE_SNAPSHOTS}
+            or f"/{ARTIFACT_NAMESPACE_PROJECTS}/" in path
+            or path.endswith(f"/{ARTIFACT_NAMESPACE_PROJECTS}")
+            or f"/{ARTIFACT_NAMESPACE_SNAPSHOTS}/" in path
+            or path.endswith(f"/{ARTIFACT_NAMESPACE_SNAPSHOTS}")
         ):
             workspace_paths.append(path)
         else:
@@ -559,10 +563,10 @@ async def hydrate_workspace_paths(
 
 def _parse_checkout_file_ref(path: str) -> Optional[Dict[str, str]]:
     raw = str(path or "").strip()
-    if not raw.startswith("fi:"):
+    if not raw.startswith(REACT_FILE_REF_PREFIX):
         return None
     conversation_id, turn_id, namespace, rel = split_logical_artifact_ref(raw)
-    if turn_id and namespace == ARTIFACT_NAMESPACE_FILES and rel:
+    if turn_id and namespace == ARTIFACT_NAMESPACE_PROJECTS and rel:
         physical_path = build_physical_artifact_path(
             turn_id=turn_id,
             namespace=namespace,
@@ -576,9 +580,10 @@ def _parse_checkout_file_ref(path: str) -> Optional[Dict[str, str]]:
             "rel": rel.strip("/"),
             "physical_path": physical_path,
         }
-    logical = unscoped_logical_artifact_path(raw)[len("fi:"):].strip()
-    if logical.endswith(".files"):
-        turn_id = logical[: -len(".files")].strip()
+    logical = unscoped_logical_artifact_path(raw)[len(REACT_FILE_REF_PREFIX):].strip()
+    project_suffix = f".{ARTIFACT_NAMESPACE_PROJECTS}"
+    if logical.endswith(project_suffix):
+        turn_id = logical[: -len(project_suffix)].strip()
         if turn_id:
             return {
                 "logical_path": raw,
@@ -587,13 +592,14 @@ def _parse_checkout_file_ref(path: str) -> Optional[Dict[str, str]]:
                 "rel": "",
                 "physical_path": build_physical_artifact_path(
                     turn_id=turn_id,
-                    namespace=ARTIFACT_NAMESPACE_FILES,
+                    namespace=ARTIFACT_NAMESPACE_PROJECTS,
                     relpath=".",
                     conversation_id=conversation_id,
                 ).rstrip("/."),
             }
-    if logical.endswith(".files/"):
-        turn_id = logical[: -len(".files/")].strip()
+    project_suffix_slash = f"{project_suffix}/"
+    if logical.endswith(project_suffix_slash):
+        turn_id = logical[: -len(project_suffix_slash)].strip()
         if turn_id:
             return {
                 "logical_path": raw,
@@ -602,7 +608,7 @@ def _parse_checkout_file_ref(path: str) -> Optional[Dict[str, str]]:
                 "rel": "",
                 "physical_path": build_physical_artifact_path(
                     turn_id=turn_id,
-                    namespace=ARTIFACT_NAMESPACE_FILES,
+                    namespace=ARTIFACT_NAMESPACE_PROJECTS,
                     relpath=".",
                     conversation_id=conversation_id,
                 ).rstrip("/."),
@@ -613,7 +619,6 @@ def _parse_checkout_file_ref(path: str) -> Optional[Dict[str, str]]:
 def normalize_checkout_requests(
     *,
     raw_paths: List[Any] | None,
-    legacy_version: str = "",
     current_turn_id: str = "",
 ) -> tuple[List[Dict[str, str]], List[Dict[str, str]]]:
     accepted: List[Dict[str, str]] = []
@@ -645,32 +650,18 @@ def normalize_checkout_requests(
             if not parsed:
                 invalid.append({
                     "path": raw,
-                    "reason": "react.checkout accepts fi:turn_<id>.files/<scope-or-path> refs only",
+                    "reason": "react.checkout accepts conv:fi:turn_<id>.git/projects/<scope-or-path> refs only",
                 })
                 continue
             if current_turn_id and parsed["turn_id"] == current_turn_id:
                 invalid.append({
                     "path": raw,
-                    "reason": "react.checkout cannot use current-turn fi: refs as checkout sources",
+                    "reason": "react.checkout cannot use current-turn conv:fi: refs as checkout sources",
                 })
                 continue
             _accept(parsed)
         return accepted, invalid
 
-    version = str(legacy_version or "").strip()
-    if version:
-        if current_turn_id and version == current_turn_id:
-            invalid.append({
-                "path": version,
-                "reason": "react.checkout cannot use current-turn fi: refs as checkout sources",
-            })
-        else:
-            _accept({
-                "logical_path": f"fi:{version}.files/",
-                "turn_id": version,
-                "rel": "",
-                "physical_path": f"{version}/files",
-            })
     return accepted, invalid
 
 
@@ -737,7 +728,7 @@ async def checkout_workspace_paths(
         )
 
     artifact_outdir = artifact_outdir_for(outdir)
-    files_root = artifact_outdir / turn_id / "files"
+    files_root = artifact_outdir / turn_id / ARTIFACT_NAMESPACE_PROJECTS
     if mode == "replace" and current_turn_files_nonempty(runtime_ctx=runtime_ctx):
         return {
             "mode": mode,
@@ -776,16 +767,16 @@ async def checkout_workspace_paths(
                 "logical_path": logical_path,
                 **({"conversation_id": req.get("conversation_id")} if req.get("conversation_id") else {}),
                 "physical_path": source_physical,
-                "kind": "files",
+                "kind": ARTIFACT_NAMESPACE_PROJECTS,
                 "reason": "source_not_materialized",
                 "pull_hint": f"react.pull({json.dumps(pull_payload, ensure_ascii=False)})",
             })
             continue
         for matched_physical in matched:
-            rel_after = matched_physical.split("/files/", 1)[1] if "/files/" in matched_physical else rel
+            rel_after = matched_physical.split(f"/{ARTIFACT_NAMESPACE_PROJECTS}/", 1)[1] if f"/{ARTIFACT_NAMESPACE_PROJECTS}/" in matched_physical else rel
             staged_sources.append({
                 "source_physical": matched_physical,
-                "target_physical": f"{turn_id}/files/{rel_after}",
+                "target_physical": f"{turn_id}/{ARTIFACT_NAMESPACE_PROJECTS}/{rel_after}",
                 "logical_path": logical_path,
             })
 
@@ -818,7 +809,7 @@ async def checkout_workspace_paths(
         if source_logical:
             checkout_counts[source_logical] = checkout_counts.get(source_logical, 0) + 1
 
-    current_files_prefix = f"{turn_id}/files/"
+    current_files_prefix = f"{turn_id}/{ARTIFACT_NAMESPACE_PROJECTS}/"
     target_rels = [
         p[len(current_files_prefix):]
         for p in materialized_targets
@@ -826,11 +817,11 @@ async def checkout_workspace_paths(
     ]
     materialized = _tree_summary_for_relpaths(target_rels)
     materialized.update({
-        "target_root": f"{turn_id}/files",
-        "target_logical_root": f"fi:{turn_id}.files/",
+        "target_root": f"{turn_id}/{ARTIFACT_NAMESPACE_PROJECTS}",
+        "target_logical_root": f"{REACT_FILE_REF_PREFIX}{turn_id}.{ARTIFACT_NAMESPACE_PROJECTS}/",
         "path_rule": {
-            "physical": f"{turn_id}/files/<path shown in tree>",
-            "logical": f"fi:{turn_id}.files/<path shown in tree>",
+            "physical": f"{turn_id}/{ARTIFACT_NAMESPACE_PROJECTS}/<path shown in tree>",
+            "logical": f"{REACT_FILE_REF_PREFIX}{turn_id}.{ARTIFACT_NAMESPACE_PROJECTS}/<path shown in tree>",
         },
     })
     checked_out = [

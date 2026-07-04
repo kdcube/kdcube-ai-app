@@ -112,7 +112,7 @@ If the tentative cut lands inside the **current turn**, the current turn is
 protected. Blocks from the active turn have not yet been finalized into an
 immutable turn log, so compaction must not move the summary boundary past them.
 Large current-turn blocks may be hidden in the model-facing projection, but the
-original `tc:`, `ar:`, and `fi:` blocks stay in the active timeline under their
+original `conv:tc:`, `conv:ar:`, and `conv:fi:` blocks stay in the active timeline under their
 original logical paths.
 
 If the tentative cut lands inside a historical, non-current turn, the cut is advanced
@@ -125,7 +125,7 @@ turn-prefix summarizer is not allowed to replace active current-turn data.
 Compaction inserts a **summary block**:
 
 - `type = conv.range.summary`
-- `path = su:<turn_id>.conv.range.summary`
+- `path = conv:su:<turn_id>.conv.range.summary`
 - `meta.compaction_digest` describes compacted artifacts
 - `meta.covered_turn_ids` lists turns compacted into the summary
 - `meta.split_turn_id` may exist on older/legacy summaries; current-turn data
@@ -135,7 +135,7 @@ The model-facing renderer wraps this block as a prior-conversation checkpoint:
 
 ```text
 [COMPACTED PRIOR CONVERSATION MEMORY]
-[path: su:<turn_id>.conv.range.summary]
+[path: conv:su:<turn_id>.conv.range.summary]
 covered_turns: first_turn, second_turn, ... penultimate_turn, last_turn (count=N)
 compacted_time_range: 2026-02-01T10:00:00Z -> 2026-02-03T12:30:00Z
 conversation_first_message_ts: 2026-02-01T10:00:00Z
@@ -150,7 +150,7 @@ retrieval_anchors:
 - entity: "<tool id, function/class name, bundle id, task id, turn id, or subsystem>"
 - time: "<timestamp or time range if known>"
 read_refs:
-- <KDCube logical path only: ar:/tc:/fi:/ws:/su:/so:, or "(none yet)">
+- <KDCube logical path only: conv:ar:/conv:tc:/conv:fi:/conv:ws:/conv:su:/conv:so:, or "(none yet)">
 done:
 - <completed work relevant to this request>
 open:
@@ -203,8 +203,8 @@ Compaction may also insert plan-carry blocks immediately after the summary:
 
 - a carried latest active `react.plan` snapshot if the active plan would otherwise fall behind the summary boundary
 - a visible `react.plan.history` index block for older compacted plans
-- stable `ar:` latest-snapshot aliases for plans:
-  - `ar:plan.latest:<plan_id>`
+- stable `conv:ar:` latest-snapshot aliases for plans:
+  - `conv:ar:plan.latest:<plan_id>`
 
 When compaction is forced by a too-large **current turn**, it does **not** insert
 a prior-conversation summary for the current turn prefix. Instead:
@@ -229,7 +229,7 @@ Model-facing shape:
 TURN <turn_id> (started at ...)
 
 [USER MESSAGE]
-[path: ar:<turn_id>.user.prompt]
+[path: conv:ar:<turn_id>.user.prompt]
 ...
 
 [MID-TURN COMPACTION 1]
@@ -246,7 +246,7 @@ retrieval_anchors:
 - entity: "<tool id, call id, artifact name, turn id, or subsystem>"
 - time: "<timestamp or range if known>"
 read_refs:
-- <tc:/ar:/fi:/ws:/su:/so: logical refs, or "(none yet)">
+- <conv:tc:/conv:ar:/conv:fi:/conv:ws:/conv:su:/conv:so: logical refs, or "(none yet)">
 done:
 - <prefix work already completed>
 open:
@@ -268,16 +268,16 @@ compacted_large_results:
 engineering_ledger:
 - tool_call_id: <call_id>
   tool: email.process_user_emails
-  call: tc:<turn_id>.<call_id>.call
+  call: conv:tc:<turn_id>.<call_id>.call
   params: "..."
-  result: tc:<turn_id>.<call_id>.result
+  result: conv:tc:<turn_id>.<call_id>.result
   result_tokens_estimate: 89167
   result_shape: "ok=bool, messages=list[50]"
   result_hint: "ok=true ..."
   files:
-  - fi:<turn_id>.outputs/report.pdf mime=application/pdf
+  - conv:fi:<turn_id>.files/report.pdf mime=application/pdf
   sources:
-  - so:sources_pool[1-3]
+  - conv:so:sources_pool[1-3]
 [/MID-TURN COMPACTION 1]
 
 ┌──────── ROUND 2 ────────┐
@@ -285,7 +285,7 @@ engineering_ledger:
   ...
   [TOOL RESULT <read_call>].result react.read
   read_paths:
-  - tc:<turn_id>.<call_id>.result (tokens=89167)
+  - conv:tc:<turn_id>.<call_id>.result (tokens=89167)
 └────────────────────────┘
 ```
 
@@ -342,7 +342,7 @@ Schematic visible stream after historical compaction:
 
 ```text
 [COMPACTED PRIOR CONVERSATION MEMORY]
-path: su:turn_13083713.conv.range.summary
+path: conv:su:turn_13083713.conv.range.summary
 covered_turns: telegram_turn_13083619, ..., turn_13083708
 compacted_time_range: 2026-05-03T01:15:31Z -> 2026-05-05T23:42:47Z
 conversation_first_message_ts: 2026-05-03T01:15:31Z
@@ -358,8 +358,8 @@ retrieval_anchors:
 - entity: "processor watchdog; ChatCommunicator.emit; ClaudeCodeAgent stdout reader"
 - time: "2026-05-08T14:01:55Z to 2026-05-08T16:12:15Z"
 read_refs:
-- su:<turn_id>.conv.range.summary
-- ar:<turn_id>.assistant.completion
+- conv:su:<turn_id>.conv.range.summary
+- conv:ar:<turn_id>.assistant.completion
 done:
 - mid-turn compaction representation was fixed
 open:
@@ -369,7 +369,7 @@ next:
 recovery_plan:
 - first: "Use this visible reminder and the retained suffix."
 - if_needed: "react.memsearch query='Task idle timeout exceeded after 600.768s processor watchdog' targets=['summary','user','assistant','tool'] mode='timeline'"
-- then_read: "react.read(read_refs plus any ar:/tc:/su: paths named by memsearch results)"
+- then_read: "react.read(read_refs plus any conv:ar:/conv:tc:/conv:su: paths named by memsearch results)"
 
 ## Goals
 ...
@@ -392,7 +392,7 @@ Schematic visible stream when the current turn itself is too large:
 
 ```text
 [COMPACTED PRIOR CONVERSATION MEMORY]   # only when prior history existed
-path: su:<current_turn>.conv.range.summary
+path: conv:su:<current_turn>.conv.range.summary
 covered_turns: previous historical turns
 <summary of prior history only>
 [END COMPACTED PRIOR CONVERSATION MEMORY]
@@ -409,8 +409,8 @@ done/open/next:
 compacted_large_results:
 - <large result paths, shape, and recovery method>
 engineering_ledger:
-- tool_call: path=tc:<current_turn>.<call>.call ...
-- tool_result: path=tc:<current_turn>.<call>.result ...
+- tool_call: path=conv:tc:<current_turn>.<call>.call ...
+- tool_result: path=conv:tc:<current_turn>.<call>.result ...
 [/MID-TURN COMPACTION 1]
 
   [TOOL CALL react.read or exec_tools.execute_code_python ...]
@@ -534,7 +534,7 @@ After compaction (in memory):
 - hidden blocks and replacement text
 
 It is used to recover context if later needed via `react.read`.
-For plan history specifically, the primary recovery handles are the `react.plan.history` entries plus the stable `ar:plan.latest:<plan_id>` refs rather than the digest itself.
+For plan history specifically, the primary recovery handles are the `react.plan.history` entries plus the stable `conv:ar:plan.latest:<plan_id>` refs rather than the digest itself.
 
 Working summaries are also injected into the compaction prompt when they belong
 to turns being compacted. They are serialized as `[Working Summary]`, so the

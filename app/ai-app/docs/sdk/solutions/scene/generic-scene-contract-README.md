@@ -82,7 +82,7 @@ into context chips. The scene core still emits the same envelope.
 | Surface | A UI participant in the scene: iframe widget, in-page component, floating editor, board, chat panel, analytics card, or preview. |
 | Surface alias | Host-local name used to mount and address a surface instance, for example `chat`, `pinboard`, or `usage_card`. |
 | Target surface | Provider-owned logical surface id, for example `sdk.memory.viewer` or `task_tracker.issue_editor`. |
-| Object ref | Canonical URI owned by a namespace, for example `mem:record:...`, `task:issue:...`, `fi:...`, or `cnv:...`. |
+| Object ref | Canonical URI owned by a namespace, for example `mem:record:...`, `task:issue:...`, `conv:fi:...`, or `cnv:...`. |
 | Namespace / object kind | Optional provider/source metadata used as presentation lookup keys. These are not routing rules. |
 | Namespace provider | Backend owner of object semantics. It resolves object actions and can return UI events. |
 | Scene transport | Browser-local communication between host and surfaces, normally `postMessage` for iframes or callbacks for in-page components. |

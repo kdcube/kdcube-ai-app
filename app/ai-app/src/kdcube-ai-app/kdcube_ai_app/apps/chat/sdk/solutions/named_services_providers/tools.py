@@ -683,7 +683,7 @@ async def get_object(
 
 async def host_file(
     namespace: Annotated[str, "Configured named-service namespace or provider-declared scoped namespace, for example 'sensor'."],
-    file_ref: Annotated[str, "A fi:/ef: artifact ref or a local file path under the current ReAct output/workdir."],
+    file_ref: Annotated[str, "A conv:fi:/ef: artifact ref or a local file path under the current ReAct output/workdir."],
     object_ref: Annotated[str, "Optional namespace object/container ref, for example 'sensor:temperature:reading-123'."] = "",
     object_id: Annotated[str, "Optional namespace object/container id when object_ref is not known."] = "",
     filename: Annotated[str, "Optional filename override for the hosted file."] = "",

@@ -998,7 +998,7 @@ Current behavior:
 - durable truth is the bundle-owned storage mutation, not the reply event
 
 Data Bus handlers do not create chat turns, `external_events[]`, timeline
-entries, or `ev:` artifacts unless the bundle explicitly bridges a handled
+entries, or `conv:ev:` artifacts unless the bundle explicitly bridges a handled
 domain message into conversation ingress.
 
 See:

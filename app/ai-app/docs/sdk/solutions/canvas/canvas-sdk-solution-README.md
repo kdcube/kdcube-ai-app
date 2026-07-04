@@ -122,11 +122,11 @@ namespace when pinned:
 
 | Object | Canonical ref kept by canvas | Owner |
 | --- | --- | --- |
-| ReAct/chat artifact | `fi:conv_<conversation>/turn_.../outputs/file.md` | ReAct artifact layer |
+| ReAct/chat artifact | `conv:fi:conv_<conversation>/turn_.../files/file.md` | ReAct artifact layer |
 | Memory | `mem:record:<memory-id>` | Memory named-service provider |
 | Provider object | `acme:ticket:<object-id>` | Provider subsystem |
 | Canvas user text/upload | `cnv:<canvas-object>` | Canvas storage owner |
-| Knowledge/source row | `repo:<repo>/<path>` or `so:<source>` | Knowledge/source subsystem |
+| Knowledge/source row | `repo:<repo>/<path>` or `conv:so:<source>` | Knowledge/source subsystem |
 
 Canvas does not rehost external objects just because they are pinned. Rehosting
 is an explicit action owned by the target subsystem, for example attaching a
@@ -142,7 +142,7 @@ When the pinboard is embedded without a scene host, it can fetch the same
 public endpoint directly as a fallback.
 
 The same map is consumed by chat context chips and the scene drag overlay. This
-keeps `mem:*`, `task:*`, `fi:*`, and `cnv:*` visual identity consistent across
+keeps `mem:*`, `task:*`, `conv:fi:*`, and `cnv:*` visual identity consistent across
 chat, drag target areas, and canvas pins. See
 [Scene Composition](../scene/scene-composition-README.md#namespace-presentation-config).
 
@@ -258,7 +258,7 @@ The instructions explain:
 - `[CANVAS FOCUSED CONTEXT]` is turn-local selected/multi-selected card
   context for batch operations on the attached board.
 - Individual pins dragged from canvas into chat render as their proxied objects
-  (`acme:`, `mem:record:<id>`, `fi:`, `cnv:`, etc.), not as canvas-focus
+  (`acme:`, `mem:record:<id>`, `conv:fi:`, `cnv:`, etc.), not as canvas-focus
   events.
 - Individual pins dragged from canvas to another scene surface emit the same
   canonical context-pin payload. The scene broker, not canvas, decides which
@@ -266,7 +266,7 @@ The instructions explain:
   provider for the `open` effect.
 - `react.pull(paths=["cnv:<name>"])` imports the live board into the ReAct
   workspace. `react.pull(paths=["cnv:<name>@<revision>"])` imports a fixed
-  revision; inspect the returned `fi:` or physical path.
+  revision; inspect the returned `conv:fi:` or physical path.
 - `named_services.upsert_object(namespace="cnv", ...)` is the agent write path.
   Ask `named_services.object_schema(namespace="cnv", object_kind=...)` for
   exact payloads such as `canvas.card.comment`,
@@ -288,7 +288,7 @@ The SDK exposes canvas as a namespace provider plus a namespace rehoster:
 | Source id | `kind` | How the model uses it |
 | --- | --- | --- |
 | `cnv` named-service provider | `named_service` | Calls `named_services.object_schema(namespace="cnv", ...)`, `named_services.search_objects(namespace="cnv", ...)`, and `named_services.upsert_object(namespace="cnv", ...)`. |
-| `cnv` rehoster | `artifact_namespace_rehoster` | Calls `react.pull(paths=["cnv:<name>"])` or `react.pull(paths=["cnv:<name>@<revision>"])`; the rehoster materializes exact canvas state/content as returned `fi:` artifacts. |
+| `cnv` rehoster | `artifact_namespace_rehoster` | Calls `react.pull(paths=["cnv:<name>"])` or `react.pull(paths=["cnv:<name>@<revision>"])`; the rehoster materializes exact canvas state/content as returned `conv:fi:` artifacts. |
 
 A bundle can still wrap the SDK core directly for internal storage/event
 implementation, but that wrapper is not the preferred ReAct-facing contract:
@@ -357,7 +357,7 @@ This is the intended SDK boundary:
 | --- | --- |
 | Canvas SDK policies | Text shape for `[CANVAS STATE]`, `[CANVAS BOARD]`, `[CANVAS FOCUS]`, and `[CANVAS FOCUSED CONTEXT]`. Focus means selected/multi-selected cards on a board. |
 | Composition bundle wrappers | Event-source ids, event-policy ids, storage prefixes, and compatibility metadata keys. |
-| Domain resolvers | Object-specific previews, open/download/rehost actions for refs such as `acme:`, `mem:record:<id>`, `fi:`, and `repo:`. |
+| Domain resolvers | Object-specific previews, open/download/rehost actions for refs such as `acme:`, `mem:record:<id>`, `conv:fi:`, and `repo:`. |
 
 ## Data Bus Integration
 
@@ -407,7 +407,7 @@ type CanvasPatch = (payload: CanvasPatchInput) => Promise<CanvasPatchResponse>
 />
 ```
 
-The UI component does not know how to download a `fi:` file or open an
+The UI component does not know how to download a `conv:fi:` file or open an
 `acme:` object. It sends object actions to the bundle, and the bundle dispatches
 through the resolver registry.
 

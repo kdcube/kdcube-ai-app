@@ -77,7 +77,7 @@ surface.
 
 Memory also registers a `mem:` namespace rehoster. When exact saved memory
 content is needed, ReAct imports the owner ref with
-`react.pull(paths=["mem:record:mem_..."])`; the pull result returns a normal `fi:`
+`react.pull(paths=["mem:record:mem_..."])`; the pull result returns a normal `conv:fi:`
 artifact mirror that can be inspected with `react.read`, `react.rg`, or
 exec/code. ReAct does not implement a separate hard-coded memory renderer.
 
@@ -388,8 +388,8 @@ The exact-content path is generic:
 react.pull(paths=["mem:record:mem_2026-05-15-14-20-00-123456789"])
   -> EventSourceSubsystem namespace rehoster for mem:
   -> memory owner reads the authenticated memory record
-  -> memory snapshot is mirrored into a ReAct fi: artifact
-  -> agent reads/searches the returned fi: path
+  -> memory snapshot is mirrored into a ReAct conv:fi: artifact
+  -> agent reads/searches the returned conv:fi: path
 ```
 
 The memory owner enforces authenticated user visibility and the configured

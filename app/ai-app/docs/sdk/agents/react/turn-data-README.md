@@ -18,7 +18,7 @@ turn logs and stream artifacts. It reflects the current UI expectations in the r
 Scope:
 - this document is about fetch/UI payload shape
 - it does not define workspace-membership semantics
-- `outputs/...` artifacts already surface through the same external file artifact path unless UI needs a stronger distinction
+- `files/...` artifacts already surface through the same external file artifact path unless UI needs a stronger distinction
 
 ## Fetch flow (server)
 Endpoint: `POST /api/cb/conversations/{tenant}/{project}/{conversation_id}/fetch`
@@ -80,7 +80,7 @@ From the reconstructed turn view / ordered turn-log block stream:
 Visibility caps affect only what the model-facing timeline block contains
 during the agent run. `react.read` caps apply per requested path. Large normal
 tool results are also prompt-capped before the next decision round while the
-full `tc:` block remains stored. With `stats_only: true`, only metadata is
+full `conv:tc:` block remains stored. With `stats_only: true`, only metadata is
 emitted into the status block and no content block is added. Fetch/download
 payloads are reconstructed from artifact metadata and hosting fields (`rn`,
 `hosted_uri`, `physical_path`) when available; they should not rely on a large
@@ -129,7 +129,7 @@ file or tool result having been inlined into the model context.
   but they are now projected into the fetched `chat:user` sequence for that turn.
 - One turn can now produce multiple `chat:user` and multiple `chat:assistant` artifacts.
 - Future namespace note:
-  - assistant artifact paths are now split into durable workspace `files/...` and non-workspace `outputs/...`
+  - assistant artifact paths are now split into durable workspace `git/projects/...` and produced artifact `files/...`
   - fetch does not need a new top-level artifact family immediately
   - both still surface as external assistant files, with the namespace preserved in metadata/path
 - Stream artifacts `conv.thinking.stream` and `conv.timeline_text.stream` are now **synthesized**

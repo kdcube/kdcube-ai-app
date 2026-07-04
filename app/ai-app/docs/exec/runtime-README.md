@@ -583,11 +583,11 @@ cb/tenants/<tenant>/projects/<project>/executions/<user_type>/<user_or_fp>/<conv
     work.zip
     out.zip
 
-cb/tenants/<tenant>/projects/<project>/ai-bundle-snapshots/
+cb/tenants/<tenant>/projects/<project>/ai-bundle-git/snapshots/
   <bundle_id>.<version>.zip
   <bundle_id>.<version>.sha256
 
-cb/tenants/<tenant>/projects/<project>/ai-bundle-storage-snapshots/
+cb/tenants/<tenant>/projects/<project>/ai-bundle-storage-git/snapshots/
   <bundle_id>.<sha>.zip
   <bundle_id>.<sha>.sha256
 ```

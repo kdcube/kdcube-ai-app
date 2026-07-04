@@ -188,7 +188,7 @@ Consumer calls provider operation allowed for that surface:
   object.resolve       -> cheap metadata, actions, default_open_effect_action
   object.action(open)  -> provider ui_event, scene routes target_surface
   object.action(download) -> provider download_url, browser streams bytes
-  object.get(stream)   -> ReAct/materializer writes bytes to fi:
+  object.get(stream)   -> ReAct/materializer writes bytes to conv:fi:
   block.produce        -> model-visible blocks
         |
         v
@@ -221,9 +221,9 @@ resolver results for capabilities/actions. Client code must not infer behavior
 from `kind`, visual label, or URI shape.
 
 When a consumer materializes a namespace ref with `react.pull`, the resulting
-workspace artifact is local (`fi:...`) but not semantically anonymous. The pull
+workspace artifact is local (`conv:fi:...`) but not semantically anonymous. The pull
 result and later `react.read` blocks preserve the provider-returned canonical
-URI as `object_ref` plus `source_namespace`. The `fi:` path identifies the
+URI as `object_ref` plus `source_namespace`. The `conv:fi:` path identifies the
 local workspace copy; `object_ref` identifies the owner object. When a provider
 accepts an alias and returns a normalized ref, the normalized ref is the
 `object_ref` used by read/projection/render policy selection.
@@ -233,16 +233,16 @@ For ReAct reads, this owner handoff is part of the generic client path:
 ```text
 react.pull(mem:record:mem_123)
   -> object.get(response_mode=stream)
-  -> fi:turn_1.files/mem_123.json
-  -> state.pulled_logical_refs[fi:...] = {object_ref: mem:record:mem_123}
+  -> conv:fi:turn_1.files/mem_123.json
+  -> state.pulled_logical_refs[conv:fi:...] = {object_ref: mem:record:mem_123}
 
-react.read(fi:turn_1.files/mem_123.json)
+react.read(conv:fi:turn_1.files/mem_123.json)
   -> build generic read target with meta.object_ref = mem:record:mem_123
   -> resolve owner event source:
        event.resolve(object_ref), or registered named_services.<namespace>
   -> apply block_production for that event source
   -> provider block.produce returns model-visible owner blocks
-  -> fallback to generic fi: text only when no owner block is produced
+  -> fallback to generic conv:fi: text only when no owner block is produced
 ```
 
 The read path logs `react.read.owner_projection` with states such as
@@ -523,7 +523,7 @@ part rather than reading the whole thing; **projection selectors
 not current params.**
 
 For ReAct specifically, fully reading a provider-owned namespace ref means
-`react.pull(<provider_ref>)` first, then `react.read(<materialized fi:...>)`.
+`react.pull(<provider_ref>)` first, then `react.read(<materialized conv:fi:...>)`.
 This applies even when the provider object is JSON or markdown, not only when
 it is a binary file. The provider decides the materialized representation and
 MIME. `named_services.get_object` is the provider operation behind configured
@@ -574,7 +574,7 @@ integrations normally use `bundle_registry`; large object bytes are streamed
 only by explicit pull materialization, not during normal render. Here "normal
 render" means canvas/chat/timeline preview, open, and block projection. Those
 paths may resolve metadata or model-visible blocks, but they do not copy
-provider-owned bytes into ReAct's `fi:` workspace.
+provider-owned bytes into ReAct's `conv:fi:` workspace.
 The client bundle does not configure provider-specific resolver semantics here:
 `surfaces.as_consumer.ui.canvas.resolvers` only opts the namespace and canvas
 operation families into use. `object.resolve` resolves a concrete ref into
@@ -645,7 +645,7 @@ This lets `react.pull` materialize refs such as `task:issue:issue_123` or
 calls the owning provider's configured pull operation, normally `object.get`,
 with `response_mode: stream`. The provider returns structured named-service
 metadata plus async byte chunks; the runtime writes the chunks into the ReAct
-`fi:` workspace. Access checks happen in the provider under the current auth
+`conv:fi:` workspace. Access checks happen in the provider under the current auth
 context, and provider errors are returned in the `react.pull` tool result under
 `errors`.
 
@@ -677,7 +677,7 @@ foreign ref, the resolver bridge calls provider `event.resolve` first and uses
 the provider-returned event source id before block production.
 
 The same event source is also used by `react.read` after `react.pull`
-materialization. For a pulled `fi:` artifact with `meta.object_ref`, ReAct can
+materialization. For a pulled `conv:fi:` artifact with `meta.object_ref`, ReAct can
 route directly to the registered `named_services.<root_namespace>` event source
 when present. This keeps `event.resolve` useful for richer routing, but does
 not make it a hard requirement for ordinary owner rendering.

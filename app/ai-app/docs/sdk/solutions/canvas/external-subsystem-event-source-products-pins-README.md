@@ -152,13 +152,13 @@ Current implementation:
 
 - `cnv:` canvas-owned user text, user attachments, and agent text are hosted
   by canvas storage.
-- `fi:` ReAct artifacts are platform-owned and may be cross-conversation.
+- `conv:fi:` ReAct artifacts are platform-owned and may be cross-conversation.
 - `mem:` is memory-provider owned through the named-service bridge; durable
   memory records should use `mem:record:<id>`.
 - Provider refs are preserved on object pins and dispatched by their root
   namespace. For `acme:ticket:<id>`, `acme` is the routing namespace and
   `acme:ticket` is the provider-owned owner key/subnamespace.
-- `so:` is preserved for source/search-row pins. The full row reader path is
+- `conv:so:` is preserved for source/search-row pins. The full row reader path is
   planned.
 
 The provider UI should include enough preview metadata on `object.ref` cards

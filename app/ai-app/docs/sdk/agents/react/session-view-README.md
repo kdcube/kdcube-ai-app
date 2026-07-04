@@ -53,7 +53,7 @@ This document describes how the session view is derived from the timeline when c
 - User/assistant blocks are eligible for pruning when they are older than `keep_recent_turns` (they remain intact in the recent windows). This applies per block, so multiple prompt-like user entries or assistant completions from one older turn can be pruned independently.
 - Internal Memory Beacons (`react.note`, `react.note.preserved`) and `conv.working.summary` blocks are not hidden by TTL pruning.
 - External `user.followup`, `user.steer`, and their preserved copies are also not hidden by TTL pruning.
-- If compaction also ran, older plan history may still remain directly reopenable through stable `ar:plan.latest:<plan_id>` refs that sit behind the visible history summaries.
+- If compaction also ran, older plan history may still remain directly reopenable through stable `conv:ar:plan.latest:<plan_id>` refs that sit behind the visible history summaries.
 - A system notice is appended when pruning runs:
   - Announce stack: `[SYSTEM MESSAGE] Context was pruned...`
   - Timeline block: `type=system.message`, `meta.kind=cache_ttl_pruned`
@@ -110,18 +110,18 @@ model-facing representation.
   ... prior compacted memory checkpoint ...
 
 [WORKING SUMMARY]
-[path: ws:turn_old.conv.working.summary.attempt.N]
+[path: conv:ws:turn_old.conv.working.summary.attempt.N]
 Goal: ...
 Outcome: ...
 Key facts:
 - ...
 Refs:
-- user: ar:turn_old.user.prompt
-- decisive result: tc:turn_old.tc_x.result
-- artifact: fi:turn_old.outputs/report.xlsx
+- user: conv:ar:turn_old.user.prompt
+- decisive result: conv:tc:turn_old.tc_x.result
+- artifact: conv:fi:turn_old.files/report.xlsx
 
 [WORKING SUMMARY]
-[path: ws:turn_other.conv.working.summary.attempt.N]
+[path: conv:ws:turn_other.conv.working.summary.attempt.N]
 Goal: ...
 Outcome: ...
 
@@ -145,7 +145,7 @@ starts at the selected cut point.
 
 ```text
 [COMPACTED PRIOR CONVERSATION MEMORY]
-[path: su:turn_cut.conv.range.summary]
+[path: conv:su:turn_cut.conv.range.summary]
 covered_turns: first_turn, second_turn, ... penultimate_turn, last_turn (count=N)
 compacted_time_range: 2026-05-03T01:15:31Z -> 2026-05-05T23:42:47Z
 conversation_first_message_ts: 2026-05-03T01:15:31Z
@@ -157,7 +157,7 @@ Outcome: ...
 Key facts:
 - ...
 Key artifacts:
-- fi:...
+- conv:fi:...
 [END COMPACTED PRIOR CONVERSATION MEMORY]
 
 [ACTIVE/CARRIED PLAN]                    # only if needed
@@ -201,8 +201,8 @@ preserve.
 | `conv.working.summary` | Visible durable turn summary | Not hidden; used as the primary old-turn representation | Injected into the compaction prompt for covered turns; visible if retained |
 | User/assistant messages | Render normally | Hidden outside recent window; represented through the turn working summary | Serialized into compaction prompt if covered; exact content recoverable by path |
 | Tool calls/results | Render as compact call/result view | Hidden outside recent window; per-tool replacement text is stored for estimates/retrieval, but working summary suppresses row spam | Serialized for compaction; digest carries tool/artifact facts |
-| Files/artifacts (`fi:`) | Metadata plus supported inline media | Oversized image/PDF base64 may be hidden even in recent window; old files are named through summary refs | Digest carries produced artifact refs; files remain recoverable by logical path |
-| Sources (`so:`) | Sources pool or source rows when rendered | Old source rows may become compact source refs; no per-row timestamp in the pruned skeleton | Compaction may include source/tool facts if in covered blocks |
+| Files/artifacts (`conv:fi:`) | Metadata plus supported inline media | Oversized image/PDF base64 may be hidden even in recent window; old files are named through summary refs | Digest carries produced artifact refs; files remain recoverable by logical path |
+| Sources (`conv:so:`) | Sources pool or source rows when rendered | Old source rows may become compact source refs; no per-row timestamp in the pruned skeleton | Compaction may include source/tool facts if in covered blocks |
 | Skills (`sk:`) / skill reads | Render where the read/materialized block is visible | Current behavior uses ordinary path visibility plus `react.read` result hints such as `exists_in_visible_context`; no generic singleton registry yet | Treat as context facts if covered; future singleton policy should avoid duplicate visible skill bodies |
 | `react.note` / preserved notes | Visible internal memory beacons | Not hidden by TTL pruning | Preserved after compaction when needed |
 | `user.followup` / `user.steer` | Visible in timeline order as user control input | Not hidden by TTL pruning | If behind the cut, copied forward as `.preserved` blocks |
@@ -316,7 +316,7 @@ Runtime session fields:
 When the model needs exact old content, it should first use the visible
 working-summary/checkpoint facts. It should call `react.read(path)` only when
 the exact hidden artifact/message/tool result is needed. When plan-history refs
-are present after compaction, those `ar:` refs are usually the smoothest way to
+are present after compaction, those `conv:ar:` refs are usually the smoothest way to
 reopen an older compacted plan in the same turn.
 
 `react.read` is visible-context retrieval, not an unlimited loader. Text reads

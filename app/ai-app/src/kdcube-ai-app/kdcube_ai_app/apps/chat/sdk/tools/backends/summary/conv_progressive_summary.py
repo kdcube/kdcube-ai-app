@@ -46,7 +46,7 @@ retrieval_anchors:
 - entity: "[tool id, function/class name, bundle id, task id, turn id, or subsystem]"
 - time: "[timestamp or time range if known]"
 read_refs:
-- [KDCube logical path only: ar:/tc:/fi:/ws:/su:/so:, or "(none yet)"]
+- [KDCube logical path only: conv:ar:/conv:tc:/conv:fi:/conv:ws:/conv:su:/conv:so:, or "(none yet)"]
 done:
 - [What has already been completed toward this active request]
 open:
@@ -117,7 +117,7 @@ The Active Work Reminder is the handoff and retrieval anchor for a future model
 that sees only compacted memory. Make it recognizable and searchable: include
 exact phrases, tool ids, task ids, turn ids, timestamps, and KDCube logical
 paths where available. `read_refs` must contain only model-facing logical refs
-(`ar:`, `tc:`, `fi:`, `ws:`, `su:`, or `so:`). Do not invent physical host file
+(`conv:ar:`, `conv:tc:`, `conv:fi:`, `conv:ws:`, `conv:su:`, or `conv:so:`). Do not invent physical host file
 paths as recovery handles. If a user mentioned a host/local path, preserve it
 only as quoted context in `phrase` or Critical Context, not as `read_refs`.
 Avoid vague references like "that log" unless the same line names exact visible
@@ -152,7 +152,7 @@ retrieval_anchors:
 - entity: "[tool id, function/class name, bundle id, task id, turn id, or subsystem]"
 - time: "[timestamp or time range if known]"
 read_refs:
-- [KDCube logical path only: ar:/tc:/fi:/ws:/su:/so:, or "(none yet)"]
+- [KDCube logical path only: conv:ar:/conv:tc:/conv:fi:/conv:ws:/conv:su:/conv:so:, or "(none yet)"]
 done:
 - [Completed work relevant to the active request]
 open:
@@ -162,7 +162,7 @@ next:
 recovery_plan:
 - first: "Use this visible reminder and the retained suffix before searching."
 - if_needed: "Use react.memsearch with the exact phrase/entity anchors above."
-- then_read: "Use react.read(paths=[...read_refs]) for exact old content; use ctx_tools.fetch_ctx(path=...) from exec only for large tc: results listed in read_refs."
+- then_read: "Use react.read(paths=[...read_refs]) for exact old content; use ctx_tools.fetch_ctx(path=...) from exec only for large conv:tc: results listed in read_refs."
 
 ## Goals
 [Preserve existing goals, add new ones if the task expanded]
@@ -221,8 +221,8 @@ The Active Work Reminder is the handoff and retrieval anchor for a future model
 that sees only compacted memory. Keep it fresh, specific, and searchable:
 active request, exact phrase/entity/time anchors, KDCube logical refs,
 completed work, unresolved work, immediate next action, and concrete recovery
-path. `read_refs` must contain only model-facing logical refs (`ar:`, `tc:`,
-`fi:`, `ws:`, `su:`, or `so:`). Do not invent physical host file paths as
+path. `read_refs` must contain only model-facing logical refs (`conv:ar:`, `conv:tc:`,
+`conv:fi:`, `conv:ws:`, `conv:su:`, or `conv:so:`). Do not invent physical host file paths as
 recovery handles. If a user mentioned a host/local path, preserve it only as
 quoted context in `phrase` or Critical Context, not as `read_refs`. If there is
 truly no active work, write `open: - (none)`, `next: - wait for new user input`,
@@ -250,7 +250,7 @@ retrieval_anchors:
 - entity: "[tool id, call id, artifact name, bundle id, task id, turn id, or subsystem]"
 - time: "[timestamp or time range if known]"
 read_refs:
-- [KDCube logical path only: ar:/tc:/fi:/ws:/su:/so:, or "(none yet)"]
+- [KDCube logical path only: conv:ar:/conv:tc:/conv:fi:/conv:ws:/conv:su:/conv:so:, or "(none yet)"]
 done:
 - [What the prefix already completed]
 open:
@@ -283,11 +283,11 @@ compacted_large_results:
   date/internal_date, snippet/body_excerpt, message/thread ids, and any flags
   present.
 - State the recommended recovery method, usually
-  `react.read(paths=["<tc:...result>"])`, then `stats_only` and ranged `react.read`
+  `react.read(paths=["<conv:tc:...result>"])`, then `stats_only` and ranged `react.read`
   items if the result is large text. Exec output is capped too; mention exec
   only for computation or for producing smaller derived artifacts.
 - If there are files or sources produced by the result, mention their logical
-  paths or selector shape (`fi:...`, `so:sources_pool[...]`) and which tool call
+  paths or selector shape (`conv:fi:...`, `conv:so:sources_pool[...]`) and which tool call
   produced them.
 - Do not claim the future agent has the full payload visible. Explain that the
   payload is compacted in the render and must be reopened by logical path.
@@ -427,7 +427,7 @@ def _summarize_large_tool_result_text(
         lines.append(f"logical_path: {path}")
         lines.append(f"recover_with: react.read(paths=[{json.dumps(path)}], stats_only=true), then ranged react.read items if text is large")
     else:
-        lines.append("recover_with: use the matching tc:<turn>.<call>.result path from the engineering ledger")
+        lines.append("recover_with: use the matching conv:tc:<turn>.<call>.result path from the engineering ledger")
 
     if parsed is not None:
         try:
@@ -687,7 +687,7 @@ def _large_tool_result_recovery_rows(blocks: List[dict], *, min_tokens: int = 12
         turn_id = str(blk.get("turn_id") or blk.get("turn") or tool_meta.get("turn_id") or "").strip()
         path = str(blk.get("path") or "").strip()
         if not path and turn_id and call_id:
-            path = f"tc:{turn_id}.{call_id}.result"
+            path = f"conv:tc:{turn_id}.{call_id}.result"
         key = path or f"{turn_id}:{call_id}"
         if not key or key in seen:
             continue

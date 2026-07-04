@@ -114,7 +114,7 @@ When enabled, snapshots are written under `REACT_DEBUG_ROOT`, normally
 - `workdir`: working directory for this run.
 - `outdir`: output directory for this run.
 - `bundle_storage`: optional per-bundle managed storage directory for bundle-owned data such as cloned repos, built indexes, and other readonly data prepared by the bundle.
-- `workspace_implementation`: workspace backend selector. `custom` uses the existing artifact/timeline rehost model. `git` resolves `fi:<turn>.files/...` slices from the configured git-backed lineage snapshots. This does not by itself force the prompt into explicit-pull mode.
+- `workspace_implementation`: workspace backend selector. `custom` uses the existing artifact/timeline rehost model. `git` resolves `conv:fi:<turn>.git/projects/...` slices from the configured git-backed lineage snapshots. This does not by itself force the prompt into explicit-pull mode.
 - `workspace_git_repo`: optional remote git repo URL used as the authoritative backup/version-control store for React's git-backed workspace lineage snapshots.
 - `multi_action_mode`: decision contract selector. `off` keeps the one-action-per-response contract. `safe_fanout` enables the experimental v3 multi-action protocol.
 - `model_service`: model service handle.
@@ -162,19 +162,19 @@ When enabled, snapshots are written under `REACT_DEBUG_ROOT`, normally
 This is the only React workspace paradigm switch:
 
 - `custom`
-  - agent uses `fi:` + `react.pull(...)`
-  - `.files/...` pulls are hydrated from artifact/timeline/hosting-backed snapshot state
+  - agent uses `conv:fi:` + `react.pull(...)`
+  - `.git/projects/...` and `.files/...` pulls are hydrated from artifact/timeline/hosting-backed snapshot state
   - agent is not instructed to reason about the workspace as git
 - `git`
-  - agent uses `fi:` + `react.pull(...)`
-  - `.files/...` pulls are hydrated from git-backed lineage snapshots
+  - agent uses `conv:fi:` + `react.pull(...)`
+  - `.git/projects/...` pulls are hydrated from git-backed lineage snapshots
   - current turn root `out/workdir/<current_turn>/` is bootstrapped as a local repo in local runtime storage
   - that repo keeps lineage history available but does not eagerly populate the worktree
   - agent is instructed that the activated current-turn workspace can be explored locally with git commands except pull/push/fetch
 
 Exact attachment/binary pulls remain point-wise and hosting-backed in both modes.
 
-`react.rg` searches only files already materialized in the local artifact workspace on the worker handling the turn. It does not search unpulled lineage snapshots, hidden/pruned timeline blocks, or owner namespaces. If a task needs local search over older state, first identify the `fi:` ref from visible context or `react.memsearch`, then materialize it with `react.pull`; use `react.checkout` only when the pulled `files/...` ref must become an editable current-turn copy. Preferred `react.rg` roots are visible path forms: `files/...`, `outputs/...`, `attachments/...`, `turn_<id>/files/...`, `turn_<id>/outputs/...`, `turn_<id>/attachments/...`, or matching `fi:` artifact paths.
+`react.rg` searches only files already materialized in the local artifact workspace on the worker handling the turn. It does not search unpulled lineage snapshots, hidden/pruned timeline blocks, or owner namespaces. If a task needs local search over older state, first identify the `conv:fi:` ref from visible context or `react.memsearch`, then materialize it with `react.pull`; use `react.checkout` only when the pulled `git/projects/...` ref must become an editable current-turn copy. Preferred `react.rg` roots are visible path forms: `git/projects/...`, `files/...`, `git/snapshots/...`, `attachments/...`, `turn_<id>/git/projects/...`, `turn_<id>/files/...`, `turn_<id>/git/snapshots/...`, `turn_<id>/attachments/...`, or matching `conv:fi:` artifact paths.
 
 ## Visible read limits
 
@@ -200,7 +200,7 @@ the whole `paths` list. `stats_only: true` bypasses content materialization and
 returns metadata in the `react.read` status block.
 
 Large initial tool results use `tool_result_preview_max_text_symbols` before
-the next decision prompt is built. The timeline keeps the full `tc:` result,
+the next decision prompt is built. The timeline keeps the full `conv:tc:` result,
 but the model-visible view contains a truncated preview, a depth-limited shape,
 size metadata, and recovery instructions.
 

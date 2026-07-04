@@ -433,8 +433,8 @@ With the managed wrapper this means `ret.artifact_type == "files"`:
     "files": [
       {
         "type": "file",
-        "path": "turn_123/outputs/invoices/invoice.pdf",
-        "physical_path": "turn_123/outputs/invoices/invoice.pdf",
+        "path": "turn_123/files/invoices/invoice.pdf",
+        "physical_path": "turn_123/files/invoices/invoice.pdf",
         "filename": "invoice.pdf",
         "mime_type": "application/pdf",
         "size_bytes": 12345,
@@ -455,8 +455,8 @@ body:
   "files": [
     {
       "type": "file",
-      "path": "turn_123/outputs/invoices/invoice.pdf",
-      "physical_path": "turn_123/outputs/invoices/invoice.pdf",
+      "path": "turn_123/files/invoices/invoice.pdf",
+      "physical_path": "turn_123/files/invoices/invoice.pdf",
       "filename": "invoice.pdf",
       "mime_type": "application/pdf",
       "size_bytes": 12345,
@@ -469,7 +469,7 @@ body:
 The `react.block_production.declared_file_items` policy recognizes this exact
 shape on the result body. Each declared file is copied into the conversation
 store and receives hosted artifact metadata for transport. User-facing object
-identity should remain the logical artifact ref (`fi:...`), not transport
+identity should remain the logical artifact ref (`conv:fi:...`), not transport
 handles such as renderer names or download URLs.
 
 This contract works for one file or many files. The marker and container are
@@ -591,7 +591,7 @@ Example plain multi-surface result body:
     {"url": "https://example.test/a", "title": "A", "content": "Excerpt"}
   ],
   "snapshot_refs": [
-    "fi:turn_2026-06-09-12-00-00-000.snapshots/report/current.json"
+    "conv:fi:turn_2026-06-09-12-00-00-000.git/snapshots/report/current.json"
   ],
   "announce_candidates": [
     {"title": "Report state", "summary": "Snapshot was refreshed."}
@@ -610,7 +610,7 @@ Example wrapped multi-surface result body:
       {"filename": "report.pdf", "mime": "application/pdf", "hosted_uri": "..."}
     ],
     "snapshot_refs": [
-      "fi:turn_2026-06-09-12-00-00-000.snapshots/report/current.json"
+      "conv:fi:turn_2026-06-09-12-00-00-000.git/snapshots/report/current.json"
     ]
   }
 }
@@ -637,7 +637,7 @@ async def export_report(
     sc = scope()
     turn_id = sc["turn_id"]
     outdir = Path(sc["outdir"])
-    rel = Path(turn_id) / "outputs" / "reports" / filename
+    rel = Path(turn_id) / "files" / "reports" / filename
     target = outdir / rel
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text("hello\n", encoding="utf-8")
@@ -658,7 +658,7 @@ async def export_report(
 
 Path rules:
 - `path` / `physical_path` should be relative to the current React `OUT_DIR`.
-- Use `turn_<id>/outputs/...` for tool-generated outputs.
+- Use `turn_<id>/files/...` for tool-generated outputs.
 - Use `visibility: "external"` only when the file is intended for user delivery.
 - Do not inline large binary payloads in `ret`; write the file and return a path.
 
@@ -677,7 +677,7 @@ async def export_report():
     # Write the file under the current OUT_DIR first.
     hosted = await host_files([
         {
-            "path": "turn_123/outputs/reports/report.pdf",
+            "path": "turn_123/files/reports/report.pdf",
             "filename": "report.pdf",
             "mime_type": "application/pdf",
             "visibility": "external",
@@ -802,7 +802,7 @@ react.compaction_projection.identity
 ```
 
 That fallback mirrors the old `external.py` behavior for ordinary custom tools:
-- JSON/text results are rendered as ordinary `tc:<turn>.<call>.result`
+- JSON/text results are rendered as ordinary `conv:tc:<turn>.<call>.result`
   `react.tool.result` blocks.
 - Errors become ordinary tool-result/error notices.
 - `artifact_type: "files"` plus `files[]` on the result body still produces

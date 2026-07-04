@@ -35,7 +35,7 @@ Working summaries are first-class timeline blocks. They are not synthetic
 post-processing at persistence time: when React emits `channel:summary` together
 with a final/exit answer attempt, the summary is contributed into the same turn.
 If a later followup causes another answer attempt, that attempt can contribute a
-new summary with its own path. The unsuffixed `ws:<turn_id>.conv.working.summary`
+new summary with its own path. The unsuffixed `conv:ws:<turn_id>.conv.working.summary`
 handle resolves to the latest summary for that turn.
 
 It is persisted as a single artifact: `artifact:conv.timeline.v1`.
@@ -186,23 +186,23 @@ When `RuntimeCtx.session.cache_ttl_seconds` is set, the timeline applies TTL-bas
 ```
 TURN turn_13083620 (started at 2026-05-03T01:17:11Z)
 [WORKING SUMMARY]
-[path: ws:turn_13083620.conv.working.summary]
+[path: conv:ws:turn_13083620.conv.working.summary]
 Goal: Find the 2 most exciting medical news stories from the last two weeks.
 Outcome: Answered with two MedicalNewsToday-backed stories and direct links.
 Key facts:
 - Initial web searches returned empty, direct source fetch succeeded.
 - Selected stories: oral GLP-1 pill approval and stroke-risk reduction drug.
 Refs:
-- user: ar:turn_13083620.user.prompt
-- source fetch: tc:turn_13083620.tc_530c5199feb6.result
-- assistant final: ar:turn_13083620.assistant.completion
+- user: conv:ar:turn_13083620.user.prompt
+- source fetch: conv:tc:turn_13083620.tc_530c5199feb6.result
+- assistant final: conv:ar:turn_13083620.assistant.completion
 
 TURN turn_without_summary (started at 2026-05-03T01:19:24Z)
 [PRUNED TURN DATA]
 turn_id: turn_without_summary
 retrieval_rows: logical paths and hints for hidden historical blocks
-user: path=ar:turn_without_summary.user.prompt hint="great, but by some reason i do not see the actual links..."
-assistant: path=ar:turn_without_summary.assistant.completion hint="Provided direct URLs for raw citation tokens."
+user: path=conv:ar:turn_without_summary.user.prompt hint="great, but by some reason i do not see the actual links..."
+assistant: path=conv:ar:turn_without_summary.assistant.completion hint="Provided direct URLs for raw citation tokens."
 [TURN STATUS]
 turn_id: turn_without_summary
 rounds: 3/12
@@ -252,16 +252,16 @@ Experimental `v3` may accept multiple requested actions in one response, but the
 
 ### Rendered tool results (model view)
 Tool calls/results are rendered into a compact, consistent view:
-- **Tool call**: `[TOOL CALL <id>].call <tool_id>` + bare `tc:<turn_id>.<tool_call_id>.call` line + params
+- **Tool call**: `[TOOL CALL <id>].call <tool_id>` + exact `conv:tc:<turn_id>.<tool_call_id>.call` path line + params
 - **Artifact‑producing tools**: `[TOOL RESULT <id>].summary <tool_id>`  
   Status + artifact list (logical_path + key metadata, including `sources_used` when present)
 - **Non‑artifact tools**: `[TOOL RESULT <id>].result <tool_id>`  
   `logical_path: ...` + result payload. If the payload exceeds
   `tool_result_preview_max_text_symbols`, the prompt-visible view contains
   `[TOOL RESULT PREVIEW TRUNCATED]`, size metadata, a depth-limited shape,
-  a bounded raw preview, and recovery instructions. The stored `tc:` result is
+  a bounded raw preview, and recovery instructions. The stored `conv:tc:` result is
   not truncated.
-- **Source-row payloads**: `so:sources_pool[...]` JSON rows are not passed
+- **Source-row payloads**: `conv:so:sources_pool[...]` JSON rows are not passed
   through the generic tool-result preview cap. They stay structured and visible
   so the model can cite/use searched content without guessing from a blind cut.
 - **Each artifact**: `[TOOL RESULT <id>].artifact <tool_id>`  
@@ -277,7 +277,7 @@ rules are separate from TTL pruning:
   per-call `max_text_symbols`; the cap is per requested path
 - once `react.read` has admitted or explicitly preview-capped content, prompt
   rendering does not apply the generic tool-result preview cap again
-- `so:sources_pool[...]` reads are structured JSON source-row reads. They are
+- `conv:so:sources_pool[...]` reads are structured JSON source-row reads. They are
   full by default and include `items_stats`; explicit `max_text_symbols` caps
   only source text fields while preserving valid JSON rows.
 - raw payloads are bounded by `read_visible_max_bytes`
@@ -292,7 +292,7 @@ rules are separate from TTL pruning:
 
 ### Owner-projected reads and ANNOUNCE
 
-For materialized namespace objects, `react.read` still reads a local `fi:`
+For materialized namespace objects, `react.read` still reads a local `conv:fi:`
 artifact, but the visible blocks can be produced by the object owner. The
 generic read tool passes identity such as `object_ref`, `logical_path`,
 `physical_path`, and `stats_only`; the owner policy decides what model-visible
@@ -310,7 +310,7 @@ The tool-result fact should tell the model the retention rule, for example:
 
 ```text
 announce_effect: board projection refreshed in ANNOUNCE for 3 render rounds
-refresh_rule: use react.pull(paths=['cnv:main']) and react.read on the returned fi: path if you need an updated or prolonged board view
+refresh_rule: use react.pull(paths=['cnv:main']) and react.read on the returned conv:fi: path if you need an updated or prolonged board view
 ```
 
 This is owner policy text. Generic ReAct does not know that `cnv:` is canvas,
@@ -323,8 +323,8 @@ Assistant completion blocks (`assistant.completion`) are rendered with an extra 
 ```
 
 Path convention:
-- latest completion in the turn keeps `ar:<turn_id>.assistant.completion`
-- earlier visible completions in the same turn use `ar:<turn_id>.assistant.completion.<n>`
+- latest completion in the turn keeps `conv:ar:<turn_id>.assistant.completion`
+- earlier visible completions in the same turn use `conv:ar:<turn_id>.assistant.completion.<n>`
 - fetch reconstruction can therefore emit multiple `chat:assistant` entries for one turn
 
 Debugging:
@@ -358,7 +358,7 @@ Each block may include:
   (hosted fields are **not** rendered to the model; logical paths are surfaced instead)
 
 `physical_path` is always an artifact-root-relative `turn_...` path such as
-`turn_<id>/outputs/report.pdf`. In local runtime storage the file sits under
+`turn_<id>/files/report.pdf`. In local runtime storage the file sits under
 `out/workdir/<physical_path>`. The sibling runtime root `out/` contains
 timeline/tool-call/log metadata and is not the agent-facing artifact namespace.
 

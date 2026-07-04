@@ -930,7 +930,7 @@ Runtime-owned behavior:
 - federated Data Bus clients arrive as ordinary `UserSession` actors after the
   bundle validates upstream identity and claims a scoped token
 - Data Bus handling does not write conversation `external_events[]`, ReAct
-  timeline entries, or `ev:` artifacts unless bundle code explicitly bridges
+  timeline entries, or `conv:ev:` artifacts unless bundle code explicitly bridges
   into conversation ingress
 
 ### Publishing to Data Bus from tools and entrypoints

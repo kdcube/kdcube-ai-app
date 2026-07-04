@@ -107,6 +107,7 @@ class CONFIG:
         ENV_SYNC_LOCK_FMT = "kdcube:config:bundles:env-sync-lock:{tenant}:{project}"
         PRELOAD_LOCK_FMT = "kdcube:config:bundles:preload-lock:{tenant}:{project}"
         PRELOAD_BUNDLE_LOCK_FMT = "kdcube:config:bundles:preload-lock:{tenant}:{project}:{bundle_id}"
+        PRELOAD_BUNDLE_DONE_FMT = "kdcube:config:bundles:preload-done:{tenant}:{project}:{bundle_id}:{generation}"
 
     class GATEWAY:
         NAMESPACE = "kdcube:config:gateway"

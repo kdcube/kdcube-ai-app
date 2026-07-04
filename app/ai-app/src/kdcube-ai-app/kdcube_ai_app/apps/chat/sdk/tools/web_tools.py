@@ -84,7 +84,7 @@ class WebTools:
                 "Returns an envelope: {ok, error, ret}.\n"
                 "Returned items are added to sources_pool with their sid. "
                 "`text` is the search preview/snippet. `content` is full fetched page text when available. "
-                "Use react.read on so:sources_pool[...] to bring JSON source rows into visible context; use content before text. "
+                "Use react.read on conv:so:sources_pool[...] to bring JSON source rows into visible context; use content before text. "
                 "If exec code processes source rows, it must write a smaller derived artifact; exec stdout is capped too.\n"
         )
     )
@@ -250,7 +250,7 @@ class WebTools:
                 "Returns an envelope: {ok, error, ret}.\n"
                 "Returned items are added to sources_pool with their sid. "
                 "`content` contains fetched page text and `text` is the preview/snippet. Use react.read on "
-                "so:sources_pool[...] to bring JSON source rows into visible context. If exec code processes source rows, "
+                "conv:so:sources_pool[...] to bring JSON source rows into visible context. If exec code processes source rows, "
                 "it must write a smaller derived artifact; exec stdout is capped too."
         )
     )

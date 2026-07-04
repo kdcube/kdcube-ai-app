@@ -233,7 +233,7 @@ Supervisor container                         Executor container
   codegen_result_*.json                        codegen_result_*.json
   turn_<id>/                                   turn_<id>/
     files/                                       files/
-    outputs/                                     outputs/
+    files/                                     files/
     attachments/                                 attachments/
 
 /workspace/runtime-out/                      /workspace/logs/executor/
@@ -417,7 +417,7 @@ side keeps a full diagnostic tree:
       codegen_result_*.json
       turn_<id>/
         files/
-        outputs/
+        files/
         attachments/
 ```
 
@@ -619,7 +619,7 @@ Descriptor controls:
 
 The monitored writable roots are the executor work directory, artifact
 `OUTPUT_DIR`, `LOG_DIR`, and `EXECUTOR_LOG_DIR`. Current-turn artifacts created
-by the assistant under `files/` or `outputs/` count toward these limits. User
+by the assistant under `files/` or `files/` count toward these limits. User
 attachments also count when they are materialized into the active turn artifact
 workspace, for example under `turn_<id>/attachments/`, or when the agent pulls
 an attachment into the workspace before using it. Attachments that only exist in

@@ -26,7 +26,7 @@ def canvas_event_default_block_production_policy(
 ) -> MutableMapping[str, Any]:
     """Produce the default durable timeline block for collaborative canvas state.
 
-    Default output: one `event.canvas` block at the event's `ev:` logical path.
+    Default output: one `event.canvas` block at the event's `conv:ev:` logical path.
     The JSON block body keeps the canvas revision in `ret` and preserves common
     result surfaces. Unlike `event.snapshot`, canvas represents mutually
     writable domain state; updates should still happen through a bundle API/tool

@@ -254,7 +254,7 @@ def build_plan_block(*, snap: PlanSnapshot, turn_id: str, ts: str) -> Dict[str, 
         "turn_id": turn_id,
         "ts": ts,
         "mime": "application/json",
-        "path": f"ar:{turn_id}.react.plan.{snap.plan_id}" if snap.plan_id else f"ar:{turn_id}.react.plan",
+        "path": f"conv:ar:{turn_id}.react.plan.{snap.plan_id}" if snap.plan_id else f"conv:ar:{turn_id}.react.plan",
         "text": json.dumps(payload, ensure_ascii=False, indent=2),
         "meta": {
             "plan_id": snap.plan_id,
@@ -282,7 +282,7 @@ def build_plan_carry_block(*, snap: PlanSnapshot, turn_id: str, ts: str) -> Dict
         "turn_id": turn_id,
         "ts": ts,
         "mime": "application/json",
-        "path": f"ar:{turn_id}.react.plan.{snap.plan_id}.carry" if snap.plan_id else f"ar:{turn_id}.react.plan.carry",
+        "path": f"conv:ar:{turn_id}.react.plan.{snap.plan_id}.carry" if snap.plan_id else f"conv:ar:{turn_id}.react.plan.carry",
         "text": json.dumps(payload, ensure_ascii=False, indent=2),
         "meta": {
             "plan_id": snap.plan_id,
@@ -322,7 +322,7 @@ def build_plan_ack_block(
         "turn_id": turn_id,
         "ts": ts,
         "mime": "text/markdown",
-        "path": f"ar:{turn_id}.react.plan.ack.{iteration}",
+        "path": f"conv:ar:{turn_id}.react.plan.ack.{iteration}",
         "text": "\n".join(lines).strip(),
         "meta": {
             "iteration": iteration,
@@ -463,7 +463,7 @@ def collect_plan_snapshots(blocks: List[Dict[str, Any]]) -> Tuple[Dict[str, Dict
 
 
 def plan_snapshot_ref(plan_id: str) -> str:
-    return f"ar:plan.latest:{plan_id}" if plan_id else ""
+    return f"conv:ar:plan.latest:{plan_id}" if plan_id else ""
 
 
 def _plan_sort_key(snap: PlanSnapshot) -> Tuple[str, str]:
@@ -646,7 +646,7 @@ def build_active_plan_blocks(
         "turn_id": current_turn_id,
         "ts": current_ts,
         "mime": "text/markdown",
-        "path": f"ar:{current_turn_id}.react.plan.active.{pid}" if pid else "",
+        "path": f"conv:ar:{current_turn_id}.react.plan.active.{pid}" if pid else "",
         "text": text,
         "meta": {
             "plan_id": pid,
@@ -856,7 +856,7 @@ def build_compacted_plan_history_blocks(
         "turn_id": turn_id,
         "ts": ts,
         "mime": "text/markdown",
-        "path": f"ar:{turn_id}.react.plan.history" if turn_id else "",
+        "path": f"conv:ar:{turn_id}.react.plan.history" if turn_id else "",
         "text": "\n".join(lines).strip(),
         "meta": {
             "preserved_by_compaction": True,

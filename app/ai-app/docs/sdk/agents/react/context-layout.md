@@ -156,18 +156,18 @@ See `compaction-README.md` for exact cut‑point rules.
 ## Stable Paths (concrete, no “current_turn”)
 All paths use a concrete `turn_id` and standard `tool_call_id` (always `tc_<id>`):
 
-- `ar:<turn_id>.user.prompt`
-- `ar:<turn_id>.assistant.completion`
-- `ar:<turn_id>.assistant.completion.<n>`
-- `ar:<turn_id>.react.notes.<tool_call_id>`
-- `ar:<turn_id>.react.note.preserved.<idx>`
-- `fi:<turn_id>.user.attachments/<name>`
-- `fi:<turn_id>.files/<relative_path>`
-- `fi:<turn_id>.code.<tool_call_id>`
-- `tc:<turn_id>.<tool_call_id>.call`
-- `tc:<turn_id>.<tool_call_id>.result`
-- `tc:<turn_id>.tool_calls.<tool_call_id>.notice.json`
-- `so:sources_pool[...]`
+- `conv:ar:<turn_id>.user.prompt`
+- `conv:ar:<turn_id>.assistant.completion`
+- `conv:ar:<turn_id>.assistant.completion.<n>`
+- `conv:ar:<turn_id>.react.notes.<tool_call_id>`
+- `conv:ar:<turn_id>.react.note.preserved.<idx>`
+- `conv:fi:<turn_id>.user.attachments/<name>`
+- `conv:fi:<turn_id>.files/<relative_path>`
+- `conv:fi:<turn_id>.code.<tool_call_id>`
+- `conv:tc:<turn_id>.<tool_call_id>.call`
+- `conv:tc:<turn_id>.<tool_call_id>.result`
+- `conv:tc:<turn_id>.tool_calls.<tool_call_id>.notice.json`
+- `conv:so:sources_pool[...]`
 
 ---
 
@@ -183,12 +183,12 @@ Blocks are rendered **oldest → newest** (newest at bottom). Each turn begins w
 [TURN turn_1770603271112_2yz1lp] ts=2026-02-09T02:14:32.676425Z
 
 [USER MESSAGE]
-[path: ar:turn_1770603271112_2yz1lp.user.prompt]
+[path: conv:ar:turn_1770603271112_2yz1lp.user.prompt]
 Could you find top 3 places to eat here in Wuppertal?
 
 [USER ATTACHMENT] menu.pdf | application/pdf
 summary: 2‑page menu, prices & address (Wuppertal)
-[path: fi:turn_1770603271112_2yz1lp.user.attachments/menu.pdf]
+[path: conv:fi:turn_1770603271112_2yz1lp.user.attachments/menu.pdf]
 [physical_path: turn_1770603271112_2yz1lp/attachments/menu.pdf]
 
 <document media_type=application/pdf b64_len=183942>
@@ -196,21 +196,21 @@ summary: 2‑page menu, prices & address (Wuppertal)
 [AI Agent say]: Searching for top‑rated restaurants in Wuppertal
 
 [TOOL CALL tc_18f62649fb3b].call web_tools.web_search
-tc:turn_1770603271112_2yz1lp.tc_18f62649fb3b.call
+conv:tc:turn_1770603271112_2yz1lp.tc_18f62649fb3b.call
 Params:
 { ... }
 
 [TOOL RESULT tc_18f62649fb3b].result web_tools.web_search
-logical_path: so:sources_pool[1-5]
+logical_path: conv:so:sources_pool[1-5]
 ...
 ```
 
 Notes:
 - Artifact‑producing tools render **summary + artifact** blocks.
 - Non‑artifact tools render a single `.result` block with `logical_path`.
-- `ar:<turn_id>.assistant.completion` is always the latest completion alias for that turn.
-  Earlier visible completions use `ar:<turn_id>.assistant.completion.<n>`.
-- For file artifacts, the content block uses `fi:<turn_id>.files/...`; hosted metadata stays in `meta`.
+- `conv:ar:<turn_id>.assistant.completion` is always the latest completion alias for that turn.
+  Earlier visible completions use `conv:ar:<turn_id>.assistant.completion.<n>`.
+- For file artifacts, the content block uses `conv:fi:<turn_id>.files/...`; hosted metadata stays in `meta`.
 - Feedback updates are fetched **only at turn start** (timeline load). If cache is cold, they are injected
   into the target turn and still announced once with “(incorporated into turn timeline)”.
 - Internal Memory Beacons render as `[INTERNAL NOTE]` blocks and are part of the model-visible timeline.

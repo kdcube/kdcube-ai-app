@@ -78,18 +78,18 @@ def _logical_path(*, turn_id: str, event_id: str, event: Mapping[str, Any]) -> s
     value = str(event.get("logical_path") or event.get("logicalPath") or "").strip()
     if value:
         return value
-    return f"ev:{turn_id}.events/{event_id}" if turn_id and event_id else ""
+    return f"conv:ev:{turn_id}.events/{event_id}" if turn_id and event_id else ""
 
 
 def _block_path(*, turn_id: str, event_id: str, block_type: str, logical_path: str) -> str:
     if not turn_id:
         return logical_path
     if block_type == "event.user.prompt":
-        return f"ar:{turn_id}.user.prompt.{event_id}" if event_id else f"ar:{turn_id}.user.prompt"
+        return f"conv:ar:{turn_id}.user.prompt.{event_id}" if event_id else f"conv:ar:{turn_id}.user.prompt"
     if block_type == "event.user.followup":
-        return f"ar:{turn_id}.external.followup.{event_id}" if event_id else f"ar:{turn_id}.external.followup"
+        return f"conv:ar:{turn_id}.external.followup.{event_id}" if event_id else f"conv:ar:{turn_id}.external.followup"
     if block_type == "event.user.steer":
-        return f"ar:{turn_id}.external.steer.{event_id}" if event_id else f"ar:{turn_id}.external.steer"
+        return f"conv:ar:{turn_id}.external.steer.{event_id}" if event_id else f"conv:ar:{turn_id}.external.steer"
     return logical_path
 
 
@@ -218,13 +218,13 @@ async def _produce_event_blocks(
             "event_source_id": REACT_USER_ATTACHMENT_EVENT_SOURCE_ID,
             "event_id": event_id,
             "block_type": "event.user.attachment",
-            "logical_path": f"fi:{turn_id}.user.attachments/{event_id}",
+            "logical_path": f"conv:fi:{turn_id}.user.attachments/{event_id}",
             "story_id": story_id,
             "reactive": False,
             "turn_id": turn_id,
             "ts": str(event.get("timestamp") or event.get("ts") or timestamp),
             "attachments": [_event_attachment_row(event)],
-            "path_root": f"fi:{turn_id}.user.attachments/{event_id}",
+            "path_root": f"conv:fi:{turn_id}.user.attachments/{event_id}",
             "physical_root": f"{turn_id}/attachments/{event_id}",
             "meta_extra": {
                 "event_kind": "external_event",

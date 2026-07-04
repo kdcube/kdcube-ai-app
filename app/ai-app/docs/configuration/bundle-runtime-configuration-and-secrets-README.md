@@ -516,7 +516,7 @@ This config controls visibility, not secrets:
   render only `namespaces applicable`, so the model sees which namespaces may
   use each generic tool without seeing provider protocol ids.
 - Existing external object refs should normally be materialized with
-  `react.pull`; the pull policy calls provider `object.get` and writes an `fi:`
+  `react.pull`; the pull policy calls provider `object.get` and writes an `conv:fi:`
   artifact with provider-selected MIME.
 - Agent-owned runtime files can be hosted into a provider namespace only when
   the namespace allows `object.host_file`; ReAct then sees

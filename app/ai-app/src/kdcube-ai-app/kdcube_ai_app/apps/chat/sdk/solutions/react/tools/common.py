@@ -69,7 +69,7 @@ def _tool_call_omission_marker(*, value: str, key_path: str, call_path: str) -> 
         )
     else:
         recover_with = (
-            "react.read on the matching tc:<turn>.<call>.call path to load the saved full tool-call payload; "
+            "react.read on the matching conv:tc:<turn>.<call>.call path to load the saved full tool-call payload; "
             f"then inspect field {key_path!r}. Use stats_only/ranged read items only if that artifact is still capped."
         )
     return {
@@ -79,7 +79,7 @@ def _tool_call_omission_marker(*, value: str, key_path: str, call_path: str) -> 
         "text_symbols": len(value),
         "size_bytes": len(value.encode("utf-8", errors="ignore")),
         "sha1": _hash_text(value),
-        "full_value_ref": call_path or "tc:<turn>.<call>.call",
+        "full_value_ref": call_path or "conv:tc:<turn>.<call>.call",
         "full_value_field": key_path,
         "recovery_hint": "This is only a shortened preview. The saved tool-call artifact preserves the complete value.",
         "recover_with": recover_with,
@@ -211,11 +211,11 @@ def enrich_artifact_file_metadata(
 def _turn_from_path(path: str) -> str:
     if not path:
         return ""
-    if path.startswith("tc:"):
-        rest = path[3:]
+    if path.startswith("conv:tc:"):
+        rest = path[len("conv:tc:"):]
         return rest.split(".", 1)[0]
-    if path.startswith("fi:"):
-        rest = path[3:]
+    if path.startswith("conv:fi:"):
+        rest = path[len("conv:fi:"):]
         return rest.split("/", 1)[0]
     return ""
 
@@ -291,13 +291,13 @@ def add_block(ctx_browser, block: Dict[str, Any]) -> None:
 def tc_call_path(*, turn_id: str, call_id: str) -> str:
     if not turn_id or not call_id:
         return ""
-    return f"tc:{turn_id}.{call_id}.call"
+    return f"conv:tc:{turn_id}.{call_id}.call"
 
 
 def tc_result_path(*, turn_id: str, call_id: str) -> str:
     if not turn_id or not call_id:
         return ""
-    return f"tc:{turn_id}.{call_id}.result"
+    return f"conv:tc:{turn_id}.{call_id}.result"
 
 
 def tool_call_block(*, ctx_browser, tool_call_id: str, tool_id: str, payload: Dict[str, Any]) -> None:
@@ -371,7 +371,7 @@ def notice_block(
         "type": "react.notice",
         "call_id": tool_call_id,
         "mime": "application/json",
-        "path": f"tc:{turn_id}.{tool_call_id}.notice" if turn_id else "",
+        "path": f"conv:tc:{turn_id}.{tool_call_id}.notice" if turn_id else "",
         "text": json.dumps(payload, ensure_ascii=False, indent=2),
     })
 
@@ -1002,7 +1002,7 @@ async def deliver_file_artifact(
 
     The caller is responsible for building `artifact` with value.path pointing at the
     on-disk file (outdir-relative), plus artifact_kind/visibility/channel/mime.
-    `physical_path` is the outdir-relative path; `artifact_path` is its logical fi: path.
+    `physical_path` is the outdir-relative path; `artifact_path` is its logical conv:fi: path.
     `artifact_rel` is an optional alternate relpath retried if the first host attempt is empty.
     """
     from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import (

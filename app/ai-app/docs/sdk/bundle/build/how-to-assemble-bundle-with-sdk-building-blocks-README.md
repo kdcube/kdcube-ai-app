@@ -136,7 +136,7 @@ ownership.
 | Web search and web fetch with source-pool provenance | `web_tools` | [SDK Tools](../../tools/sdk-tools-README.md) |
 | Policy-driven tool result rendering | tool `@event_source(...)` declarations plus `react_phase=block_production` policies | [Bundle Events](../bundle-events-README.md), [React Event Sources](../../agents/react/event-source/event-source-README.md) |
 | Story-aware wizard/canvas/chat events and snapshots | authored external events with `payload.target.agent_id`, `story_kind`, `story_id`, and `external_events[].event_source_id`; first understand the lane/wake/bundle-load/ReAct-turn fences | [Conversation Events And ReAct Turns](how-to-understand-conversation-events-and-react-turns-README.md), [Bundle Events](../bundle-events-README.md), [External Events](../../events/external-events-README.md) |
-| Bundle/domain artifact refs visible to ReAct | `@artifact_namespace_rehoster(...)` for compact owner namespaces such as `nmsp:...`, `mem:...`, or `cnv:...`; `react.pull` returns the materialized `fi:` path | [Bundle Events](../bundle-events-README.md), [React Event Source](../../agents/react/event-source/event-source-README.md), [React Turn Workspace](../../agents/react/workspace/workspace-lifecycle-and-distribution-README.md) |
+| Bundle/domain artifact refs visible to ReAct | `@artifact_namespace_rehoster(...)` for compact owner namespaces such as `nmsp:...`, `mem:...`, or `cnv:...`; `react.pull` returns the materialized `conv:fi:` path | [Bundle Events](../bundle-events-README.md), [React Event Source](../../agents/react/event-source/event-source-README.md), [React Turn Workspace](../../agents/react/workspace/workspace-lifecycle-and-distribution-README.md) |
 | Real browser verification for generated HTML, widgets, and local browser flows | `browser_tools`, shared Playwright backend, per-turn BrowserContext | [Browser Tools](../../integrations/browser/browser-tools-README.md), [Playwright Backend](../../integrations/browser/playwright-README.md) |
 | ReAct-side artifact recovery, search, and precise text editing | `react.pull`, `react.checkout`, `react.rg`, `react.read`, `react.patch` | [React Turn Workspace](../../agents/react/workspace/workspace-lifecycle-and-distribution-README.md), [React Runtime Configuration](../../agents/react/runtime-configuration-README.md) |
 | PDF, DOCX, PPTX, PNG, HTML generation | `rendering_tools` plus public rendering skills | [SDK Tools](../../tools/sdk-tools-README.md) |
@@ -245,7 +245,7 @@ main UI
   -> bundle APIs save product state and host domain files
   -> authored external events carry story_id, agent_id, and snapshot/artifact refs
   -> ReAct event-source policies produce timeline blocks
-  -> rehosters materialize owner refs such as cnv:/mem:/task:/nmsp: into fi: refs when react.pull is called
+  -> rehosters materialize owner refs such as cnv:/mem:/task:/nmsp: into conv:fi: refs when react.pull is called
 ```
 
 Bundle code owns the story identity model, event-source ids, snapshot storage,
@@ -397,7 +397,7 @@ The bundle owns the scene only as a composition layer:
   `sdk://solutions/canvas/ui/component`, …);
 - serve the host page itself through `ui.main_view.src_folder: ui/scene`;
 - register the object resolvers for every namespace the scene can open
-  (`mem:`, `fi:`, `cnv:`, …) so canvas pins resolve to the right surface.
+  (`mem:`, `conv:fi:`, `cnv:`, …) so canvas pins resolve to the right surface.
 
 The scene host does not own object semantics. It knows which iframe surface is
 mounted and how to deliver a command to it; the namespace owner's resolver

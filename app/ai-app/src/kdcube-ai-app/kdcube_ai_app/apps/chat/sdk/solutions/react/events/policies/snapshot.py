@@ -26,7 +26,7 @@ def snapshot_event_default_block_production_policy(
 ) -> MutableMapping[str, Any]:
     """Produce the default durable timeline block for a read-only snapshot event.
 
-    Default output: one `event.snapshot` block at the event's `ev:` logical
+    Default output: one `event.snapshot` block at the event's `conv:ev:` logical
     path. The JSON block body preserves the hosted/ref payload as `ret` or
     `event_ref`, plus extracted surfaces such as `snapshot_refs` and
     `announce_candidates`. The snapshot is reference material; ReAct should

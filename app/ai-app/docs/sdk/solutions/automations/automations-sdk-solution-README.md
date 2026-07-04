@@ -416,7 +416,7 @@ automations.get_automation_execution(execution_id)
   -> confirms exact result and artifacts
 automations.materialize_execution_artifact(artifact_ref)
   -> copies the selected file into the current ReAct turn outputs
-react.read(["fi:<current_turn>.outputs/..."])
+react.read(["conv:fi:<current_turn>.files/..."])
 ```
 
 The widget/download flow is:

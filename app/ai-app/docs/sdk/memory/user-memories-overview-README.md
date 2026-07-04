@@ -158,7 +158,7 @@ tools. The preferred exact-read path is:
 ```text
 react.pull(paths=["mem:record:<id>"])
   -> memory event-source pull policy calls provider object.get
-  -> current turn receives an fi: workspace artifact
+  -> current turn receives an conv:fi: workspace artifact
   -> react.read / react.rg inspects that artifact
 ```
 

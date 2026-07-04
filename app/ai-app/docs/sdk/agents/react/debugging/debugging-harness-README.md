@@ -142,10 +142,10 @@ Use this table to decide whether a subsystem ran.
 | Mechanism | Expected side effect | Useful markers |
 | --- | --- | --- |
 | React decision loop | timeline blocks, iteration logs, final state | `ANNOUNCE`, `phase=decision`, `turn_log_blocks` |
-| React tool call | `react.tool.call` and `react.tool.result` blocks | `tool_call_id`, `tc:<turn>.<call>.call`, `tc:<turn>.<call>.result` |
+| React tool call | `react.tool.call` and `react.tool.result` blocks | `tool_call_id`, `conv:tc:<turn>.<call>.call`, `conv:tc:<turn>.<call>.result` |
 | Bundle/custom tool | start/success/error logs with scope | `[bundle.tool.start]`, `[bundle.tool.success]`, `[bundle.tool.error]` |
 | Isolated tool bridge | supervisor/runtime bootstrap and tool-call result | `bootstrap_bind_all`, `ToolStub`, `agent_io_tools.tool_call` |
-| Current-turn workspace | files under current `OUT_DIR` / turn workspace | `turn_<id>/outputs/...`, `exec-workspace` |
+| Current-turn workspace | files under current `OUT_DIR` / turn workspace | `turn_<id>/git/projects/...`, `turn_<id>/files/...`, `exec-workspace` |
 | Declarative file result | React hosts `ret.artifact_type == "files"` rows | `[react.artifact.host.*]`, `chat.files` |
 | Tool-side file hosting | trusted tool hosts through `host_files(...)` | `[bundle.tool.host_files.*]`, `chat.files` |
 | Communicator streaming | delta/file events emitted to room or peer | `ChatRelayCommunicator`, `chat.delta`, `chat.files` |
@@ -168,7 +168,7 @@ Files are recognized only through the strict tool envelope:
       {
         "type": "file",
         "visibility": "external",
-        "physical_path": "turn_123/outputs/report.pdf",
+        "physical_path": "turn_123/files/report.pdf",
         "filename": "report.pdf",
         "mime_type": "application/pdf"
       }
@@ -363,7 +363,7 @@ Execution workspace:
 Turn outputs usually use:
 
 ```text
-<OUT_DIR>/<turn_id>/outputs/...
+<OUT_DIR>/<turn_id>/files/...
 ```
 
 Hosted turn logs may appear as:

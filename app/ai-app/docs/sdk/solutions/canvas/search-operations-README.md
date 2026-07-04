@@ -51,7 +51,7 @@ card holds. The blob is newline-joined, in this order (blank fields skipped):
 | 5 | **mime** | |
 | 6 | **comments** | each comment's `text`/`body` |
 | 7 | **kind** | e.g. `file`, `note`, `canvas`, `memory` |
-| 8 | **ref / logical_path** | e.g. `fi:…`, `task:issue:…`, `cnv:…`, `mem:record:…` |
+| 8 | **ref / logical_path** | e.g. `conv:fi:…`, `task:issue:…`, `cnv:…`, `mem:record:…` |
 
 That blob is what gets **embedded** (semantic) and **FTS5-indexed** (lexical);
 **recency** comes from the card's `updated_at`/`created_at`. The `card_id` is

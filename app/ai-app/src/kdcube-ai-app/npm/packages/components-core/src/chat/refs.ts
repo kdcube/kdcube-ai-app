@@ -9,7 +9,7 @@
 
 const NAMESPACE_REF = /^[a-z][a-z0-9_.-]*:/i
 const BROWSER_SCHEMES = new Set(['blob:', 'data:', 'http:', 'https:', 'javascript:', 'mailto:'])
-const DURABLE_FI_REF = /^fi:conv_[^.]+\.turn_[^.]+\./
+const DURABLE_FI_REF = /^conv:fi:conv_[^.]+\.turn_[^.]+\./
 
 export function canonicalObjectRef(...refs: Array<string | null | undefined>): string {
   for (const raw of refs) {
@@ -21,10 +21,12 @@ export function canonicalObjectRef(...refs: Array<string | null | undefined>): s
   return ''
 }
 
-/** The leading namespace token of an object ref (`task:issue:1` → `task`), or "". */
+/** The style namespace of an object ref (`task:issue:1` -> `task`, `conv:fi:...` -> `conv:fi`), or "". */
 export function namespaceFromObjectRef(ref: string): string {
-  const match = String(ref || '').trim().match(/^([a-z][a-z0-9_.-]*):/i)
-  return match?.[1]?.toLowerCase() || ''
+  const match = String(ref || '').trim().match(/^([a-z][a-z0-9_.-]*):([a-z][a-z0-9_.-]*:)?/i)
+  const root = match?.[1]?.toLowerCase() || ''
+  const child = (match?.[2] || '').replace(/:$/, '').toLowerCase()
+  return root === 'conv' && child ? `${root}:${child}` : root
 }
 
 export function isDurableFiRef(ref: string): boolean {
@@ -39,8 +41,8 @@ export function durableHistoricalObjectRef(value: unknown, conversationId?: stri
   const ref = typeof value === 'string' ? value.trim() : ''
   if (!ref) return null
   const conv = String(conversationId || '').trim()
-  if (ref.startsWith('fi:turn_') && conv && !/[./\\]/.test(conv)) {
-    return `fi:conv_${conv}.${ref.slice('fi:'.length)}`
+  if (ref.startsWith('conv:fi:turn_') && conv && !/[./\\]/.test(conv)) {
+    return `conv:fi:conv_${conv}.${ref.slice('conv:fi:'.length)}`
   }
   return ref
 }

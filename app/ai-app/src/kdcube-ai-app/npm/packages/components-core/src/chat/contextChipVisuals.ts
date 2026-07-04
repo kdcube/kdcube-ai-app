@@ -56,18 +56,26 @@ function rootNamespace(value: string): string {
   return safeClass(value.split(':', 1)[0] || '')
 }
 
+function namespaceKey(value: string): string {
+  const clean = value.split(/[?#]/, 1)[0].trim().toLowerCase()
+  if (!clean) return ''
+  const parts = clean.split(':').filter(Boolean)
+  if (parts[0] === 'conv' && parts[1]) return `conv:${safeClass(parts[1])}`
+  return rootNamespace(clean)
+}
+
 function namespaceFromRef(ref: string): string {
   const clean = ref.split(/[?#]/, 1)[0].trim()
   const index = clean.indexOf(':')
-  return index > 0 ? rootNamespace(clean.slice(0, index)) : ''
+  return index > 0 ? namespaceKey(clean) : ''
 }
 
 export function contextNamespace(context: unknown): string {
   const item = asContextLike(context)
   const data = asContextLike(item.data)
-  const explicit = rootNamespace(text(item.namespace))
+  const explicit = namespaceKey(text(item.namespace))
   if (explicit) return explicit
-  const nested = rootNamespace(text(data.namespace))
+  const nested = namespaceKey(text(data.namespace))
   if (nested) return nested
   return namespaceFromRef(objectRef(item))
 }
@@ -82,9 +90,10 @@ export function namespaceStyleVars(
   namespace: string,
   namespaceStyles: NamespaceStyleMap = {},
 ): NamespaceStyleVars | undefined {
+  const key = namespaceKey(namespace)
   const root = rootNamespace(namespace)
   if (!root) return undefined
-  const style = styleFromRaw(namespaceStyles[root])
+  const style = styleFromRaw(namespaceStyles[key]) || styleFromRaw(namespaceStyles[root])
   if (!style) return undefined
   const ink = style.ink || style.color
   const border = style.border || style.color

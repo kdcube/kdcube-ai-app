@@ -436,17 +436,17 @@ async def materialize_email_attachments_for_current_turn(
             account_key = _safe_segment(str(selected.get("email") or selected.get("account_id") or "email"), fallback="email")
             message_key = _safe_segment(message_id, fallback="message")
             rel = pathlib.PurePosixPath("email-attachments") / account_key / message_key / filename
-            target_rel = pathlib.PurePosixPath(turn) / "outputs" / rel
+            target_rel = pathlib.PurePosixPath(turn) / "files" / rel
             target = outdir_path / target_rel
             if await asyncio.to_thread(target.exists):
                 stem = pathlib.PurePosixPath(filename).stem or "attachment"
                 suffix = pathlib.PurePosixPath(filename).suffix
                 rel = pathlib.PurePosixPath("email-attachments") / account_key / message_key / f"{stem}-{len(files) + 1}{suffix}"
-                target_rel = pathlib.PurePosixPath(turn) / "outputs" / rel
+                target_rel = pathlib.PurePosixPath(turn) / "files" / rel
                 target = outdir_path / target_rel
             await asyncio.to_thread(target.parent.mkdir, parents=True, exist_ok=True)
             await asyncio.to_thread(target.write_bytes, data)
-            logical = f"fi:{turn}.outputs/{rel.as_posix()}"
+            logical = f"conv:fi:{turn}.files/{rel.as_posix()}"
             physical = target_rel.as_posix()
             mime_type = str(fetched.get("mime_type") or attachment.get("mime_type") or mimetypes.guess_type(filename)[0] or "application/octet-stream")
             files.append(

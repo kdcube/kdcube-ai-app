@@ -195,11 +195,11 @@ once, instead of repeating it in every named-service tool description:
   search/list/mutation unless a fresh provider description is already visible in
   the current context.
 - ReAct starts each turn with a sparse local workspace. It can directly use
-  only current-turn `su:`, `so:`, `fi:`, and `ar:` refs that were produced in
+  only current-turn `conv:su:`, `conv:so:`, `conv:fi:`, and `conv:ar:` refs that were produced in
   this turn or explicitly materialized in this turn.
 - Existing namespace refs in events, pins, canvas drops, prior messages, or
   prior tool results are handles. Use `react.pull` to materialize such a handle
-  into this turn's local `fi:` workspace before reading concrete content.
+  into this turn's local `conv:fi:` workspace before reading concrete content.
 - In `search_objects`, the `namespace` argument is the search scope. A scoped
   namespace searches that provider-declared object space.
 - Use `object_schema` when exact body fields, search filter contracts, or
@@ -276,12 +276,12 @@ surfaces:
 
 `react.pull(paths=["sensor:temperature:reading-123"])` uses the configured
 namespace pull policy, calls the configured resolver operation, and stores the
-selected MIME as a current-turn `fi:` artifact. The model can then use
+selected MIME as a current-turn `conv:fi:` artifact. The model can then use
 `react.read` for bounded reads of the materialized artifact.
 
 Expose `named_services.get_object` only when the agent must deliberately query
 live namespace service state as a tool call. For event refs already present on
-the timeline, prefer pull/read so the handle becomes a visible `fi:` artifact
+the timeline, prefer pull/read so the handle becomes a visible `conv:fi:` artifact
 with normal ReAct provenance.
 
 ## Provider About And Schema
@@ -302,7 +302,7 @@ advertised for that object kind.
 ## Hosting Files Into Namespace Refs
 
 `named_services.host_file` is the reverse of pull materialization. Pull brings a
-namespace ref into ReAct as an `fi:` artifact. Host-file sends an agent-owned
+namespace ref into ReAct as an `conv:fi:` artifact. Host-file sends an agent-owned
 runtime file/ref to a namespace service so the service can create or register a
 namespace ref.
 
@@ -310,7 +310,7 @@ Clean flow:
 
 ```text
 ReAct owns file/ref
-  ReAct.file_ref = fi:turn_1.files/report.md
+  ReAct.file_ref = conv:fi:turn_1.files/report.md
 
         |
         v

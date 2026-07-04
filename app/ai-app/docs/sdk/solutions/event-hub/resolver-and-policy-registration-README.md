@@ -42,7 +42,7 @@ one working assistant scene.
 | Term | Meaning |
 | --- | --- |
 | Event domain | A subsystem that owns a logical object family, event source family, or namespace. Examples: ReAct artifacts, memory, task issues, canvas. |
-| Namespace | The prefix before `:` in a logical ref. Examples: `fi:`, `mem:`, `task:`, `cnv:`. |
+| Namespace | The prefix before `:` in a logical ref. Examples: `conv:fi:`, `mem:`, `task:`, `cnv:`. |
 | Namespace owner | The domain that mints refs in a namespace and defines their semantics. |
 | Named service provider | The broader provider/client contract for namespace owners and other named semantic services. It can expose object operations, relations, actions, capabilities, and transport adapters. |
 | Resolver | Backend callable owned by the namespace owner. It maps `object_ref + action` to a bounded result. |
@@ -74,14 +74,14 @@ one working assistant scene.
 
 | Domain | Canonical refs or event source | Owner module | Resolver location | Policy location | Default representation owner |
 | --- | --- | --- | --- | --- | --- |
-| ReAct artifacts | `fi:<artifact-ref>` | ReAct event/artifact layer | `kdcube_ai_app.apps.chat.sdk.solutions.react.events.resolver` | ReAct event policies | ReAct SDK |
+| ReAct artifacts | `conv:fi:<artifact-ref>` | ReAct event/artifact layer | `kdcube_ai_app.apps.chat.sdk.solutions.react.events.resolver` | ReAct event policies | ReAct SDK |
 | Memory | `mem:<memory-id>` | SDK memory module | `kdcube_ai_app.apps.chat.sdk.context.memory.events.resolver` | memory event policies when present | Memory SDK |
 | Task issue story | `task:issue:<issue-id>` | Task/issue subsystem | bundle task module, for example `issues/events/resolver.py` | task issue policies | Task subsystem |
 | Canvas board | canvas events and canvas-owned refs | Canvas subsystem | canvas module, for example `canvas/events/resolver.py` | canvas event policies | Canvas subsystem |
 | Knowledge source | `repo:<repo>/<path>` | Knowledge subsystem | knowledge resolver module | knowledge/source policies | Knowledge subsystem |
 
 The task-tracker bundle is currently a composition bundle. It imports the
-domains above and registers them. It is not the owner of `fi:` or `mem:`.
+domains above and registers them. It is not the owner of `conv:fi:` or `mem:`.
 
 ## Resolver Contract
 
@@ -123,8 +123,8 @@ Action meanings:
 | `rehost` | Copy bytes/object into another owning subsystem. | New canonical ref in target namespace. |
 
 The resolver must not return implementation-only UI handles as object
-identity. For a ReAct artifact card, the identity remains `fi:...`; download
-transport is returned only by the `fi:` resolver when `download` is called.
+identity. For a ReAct artifact card, the identity remains `conv:fi:...`; download
+transport is returned only by the `conv:fi:` resolver when `download` is called.
 
 Resolver results control actions and capabilities. Colors, icons, and labels
 come from namespace presentation config, not from resolver implementation code.
@@ -177,7 +177,7 @@ rehost. Model-facing exact content uses the sparse workspace import path.
 react.pull(paths=["mem:mem_123"])
   -> namespace owner rehoster for mem:
   -> materialized workspace artifact
-  -> returned fi:/physical path
+  -> returned conv:fi:/physical path
   -> react.read or react.rg against the returned path
 ```
 
@@ -238,7 +238,7 @@ visibility is a separate decision made through the tool descriptor.
 | User clicked "open" on a `task:` card. | Which task object to open, and which UI event to emit. | Not involved. |
 | Agent sees `[CANVAS BOARD]` in ANNOUNCE. | Not involved. | Canvas announce policy rendered the board. |
 | Agent calls `react.pull(paths=["mem:..."])`. | Not involved unless the rehoster delegates to an object resolver. | Not involved; the result is a workspace artifact that can then be read/searched. |
-| User drags a `fi:` file to canvas. | `fi:` resolver can later preview/download it. | ReAct artifact policies can render it in timeline/ANNOUNCE if included as event context. |
+| User drags a `conv:fi:` file to canvas. | `conv:fi:` resolver can later preview/download it. | ReAct artifact policies can render it in timeline/ANNOUNCE if included as event context. |
 | Agent calls `task.patch`. | Task tool and task resolver own the task mutation result. | Task tool result policy renders compact timeline and refreshed ANNOUNCE. |
 | Old turn is compacted. | Not involved. | Compaction policy renders durable summary. |
 
@@ -407,10 +407,10 @@ card" ambiguous for ReAct.
 
 | Anti-pattern | Correct behavior |
 | --- | --- |
-| Canvas stores `rn` or `ef` download handles as card identity. | Canvas stores only canonical refs such as `fi:...`, `task:...`, `mem:...`, `cnv:...`. |
+| Canvas stores `rn` or `ef` download handles as card identity. | Canvas stores only canonical refs such as `conv:fi:...`, `task:...`, `mem:...`, `cnv:...`. |
 | Composition bundle reimplements `mem:` preview. | Import memory resolver and register it. |
 | Task resolver lives in `canvas/`. | Task resolver lives in task domain, for example `issues/events/resolver.py`. |
-| ReAct `fi:` canonicalization lives in canvas. | ReAct owns `fi:` canonicalization in `react/events/resolver.py`. |
+| ReAct `conv:fi:` canonicalization lives in canvas. | ReAct owns `conv:fi:` canonicalization in `react/events/resolver.py`. |
 | Timeline policy dumps full JSON bodies. | Timeline policy renders compact facts and refs; ANNOUNCE carries current high-priority view. |
 | Agent instructions contain mutable per-turn state. | Mutable state is rendered by event policies into timeline/ANNOUNCE. Instructions describe stable rules only. |
 | Widget open silently replaces dirty editor state. | Target widget gates navigation and asks the user. |
@@ -450,7 +450,7 @@ A composition bundle that mounts multiple event domains needs focused tests:
 | Test | Assertion |
 | --- | --- |
 | Resolver path imports | All registered resolver modules import successfully. |
-| Namespace dispatch | `task:`, `mem:`, `fi:`, `cnv:` route to the expected resolver id. |
+| Namespace dispatch | `task:`, `mem:`, `conv:fi:`, `cnv:` route to the expected resolver id. |
 | Canonical ref preservation | Dragging/pinning the same object from different surfaces produces the same `object_ref`. |
 | Context event preservation | Live chat send and dry-run render the same context event batch before `[USER MESSAGE]`. |
 | Policy rendering | Timeline is compact; ANNOUNCE contains current high-priority view. |

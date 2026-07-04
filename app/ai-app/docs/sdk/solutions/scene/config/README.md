@@ -40,7 +40,7 @@ backend app config
 The scene host should not hardcode namespace semantics. It may contain host
 composition policy such as "the task editor surface is mounted at this rail" or
 "the chat surface accepts attach drops". It must not decide what a `mem:`,
-`task:`, `fi:`, or `conv:` object means beyond passing the full object ref to a
+`task:`, `conv:fi:`, or `conv:` object means beyond passing the full object ref to a
 configured provider or surface.
 
 ## Genericity Status
@@ -55,7 +55,7 @@ known follow-up cleanup, not hidden behavior branches in the scene host.
 | --- | --- | --- |
 | Website scene (`website/index.html`, `website/scene-summon.js`, `website/scene-context-drag.js`) | Config-driven. Components, target surfaces, drop targets, namespace presentation, ready rules, runtime profiles, object-action gateway, and command contracts are read from `kdcube.config.json`. | Drop-target compatibility may use explicit host policy patterns such as `conv:*`, `mem:*`, or `task:*`. This is acceptable composition config for now; provider/surface-declared compatibility is the stronger future target. |
 | `@kdcube/components-core/scene` | Generic surface-command, drag/drop, and event-claim runtime. It routes `kdcube.surface.command`, delegates open through an injected `objectAction` client, accepts drop compatibility from config, and dispatches events only to aliases that registered claims. | Drop compatibility may still use explicit selector patterns in deployment config; provider/surface-declared compatibility is the stronger future target. |
-| `@kdcube/components-core/canvas` | Provider pins are stored as opaque `object_ref`; canvas-owned content uses canvas-owned refs and kinds. Card `kind` is a display label, not a behavior selector. | Some chat/file UI paths still know the durable `fi:` direct-download shape. This should move behind object-action/provider capabilities. Canvas-owned text labels such as `provided.text` and `agent.text` remain local hosted-content labels, not provider-object routing keys. |
+| `@kdcube/components-core/canvas` | Provider pins are stored as opaque `object_ref`; canvas-owned content uses canvas-owned refs and kinds. Card `kind` is a display label, not a behavior selector. | Some chat/file UI paths still know the durable `conv:fi:` direct-download shape. This should move behind object-action/provider capabilities. Canvas-owned text labels such as `provided.text` and `agent.text` remain local hosted-content labels, not provider-object routing keys. |
 
 ## What Belongs In Scene Config
 
@@ -87,7 +87,7 @@ capabilities, and UI events. The scene relays and routes those results.
 When checking whether a scene remains generic:
 
 1. Search host code for concrete namespace prefixes such as `mem:`, `task:`,
-   `conv:`, and `fi:`. Host config may contain explicit compatibility policy
+   `conv:`, and `conv:fi:`. Host config may contain explicit compatibility policy
    for a composed website, but host code should not branch on these prefixes.
 2. Search host code for app ids such as `versatile@...`, `task-tracker@...`,
    `news@...`, or `kdcube.stats@...`. They should appear in config, not core

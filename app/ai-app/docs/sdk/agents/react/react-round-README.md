@@ -37,7 +37,7 @@ Tool call blocks are JSON text blocks with metadata:
 - `type`: `react.tool.call`
 - `call_id`: tool call id
 - `mime`: `application/json`
-- `path`: `tc:<turn_id>.<call_id>.call`
+- `path`: `conv:tc:<turn_id>.<call_id>.call`
 - `text`: JSON payload `{tool_id, tool_call_id, reasoning, params}`
 
 ## Tool Result Blocks
@@ -71,9 +71,9 @@ replacement content.
 ## Reading Results
 `react.read` can load:
 - Turn-level artifacts via:
-  - `ar:<turn_id>.user.prompt`
-  - `ar:<turn_id>.assistant.completion`
-  - `ar:<turn_id>.assistant.completion.<n>`
-- Files via `fi:<turn_id>.files/<filepath>`
-- Sources via `so:sources_pool[...]`
-- Tool call payloads via `tc:<turn_id>.<id>.call` or `.result`
+  - `conv:ar:<turn_id>.user.prompt`
+  - `conv:ar:<turn_id>.assistant.completion`
+  - `conv:ar:<turn_id>.assistant.completion.<n>`
+- Files via `conv:fi:<turn_id>.files/<filepath>`
+- Sources via `conv:so:sources_pool[...]`
+- Tool call payloads via `conv:tc:<turn_id>.<id>.call` or `.result`

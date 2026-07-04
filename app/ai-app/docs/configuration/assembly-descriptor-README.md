@@ -431,7 +431,7 @@ Visible read limits use separate units:
 - `exec_text_preview_max_symbols` affects exec-produced text artifact previews,
   not `react.read`.
 - `tool_result_preview_max_text_symbols` affects normal tool-result rendering
-  before any `react.read` call. The full `tc:` result remains stored and
+  before any `react.read` call. The full `conv:tc:` result remains stored and
   recoverable; only the prompt-visible view is bounded.
 
 These settings are part of the cold-cache cost control path. A long persisted

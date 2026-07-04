@@ -10,7 +10,7 @@ import subprocess
 from typing import Any, Dict, List, Optional
 
 from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import (
-    ARTIFACT_NAMESPACE_FILES,
+    ARTIFACT_NAMESPACE_PROJECTS,
     ARTIFACT_NAMESPACE_SNAPSHOTS,
     split_physical_artifact_ref,
 )
@@ -30,7 +30,7 @@ from kdcube_ai_app.infra.service_hub.inventory import AgentLogger
 from kdcube_ai_app.apps.chat.sdk.runtime.workspace import artifact_outdir_for, runtime_outdir_for_artifact_outdir
 
 _SKIP_WORKSPACE_DIRS = {".git", "__pycache__", ".pytest_cache", "node_modules", ".venv", "logs", "executed_programs"}
-_GIT_WORKSPACE_NAMESPACES = (ARTIFACT_NAMESPACE_FILES, ARTIFACT_NAMESPACE_SNAPSHOTS)
+_GIT_WORKSPACE_NAMESPACES = (ARTIFACT_NAMESPACE_PROJECTS, ARTIFACT_NAMESPACE_SNAPSHOTS)
 _WORKSPACE_BRANCH = "workspace"
 _WORKSPACE_BRANCH_REF = f"refs/heads/{_WORKSPACE_BRANCH}"
 
@@ -226,7 +226,7 @@ def current_turn_modified_files_scopes(
     runtime_ctx: Any,
     outdir: pathlib.Path,
 ) -> set:
-    """Top-level files/<scope> dirs with uncommitted changes in the current-turn repo.
+    """Top-level git/projects/<scope> dirs with uncommitted changes in the current-turn repo.
 
     Used by the ANNOUNCE [WORKSPACE] map to mark a checked-out project as
     MODIFIED this turn. Best-effort: returns an empty set on any error.
@@ -247,7 +247,7 @@ def current_turn_modified_files_scopes(
     except Exception:
         return set()
     scopes: set = set()
-    prefix = f"{ARTIFACT_NAMESPACE_FILES}/"
+    prefix = f"{ARTIFACT_NAMESPACE_PROJECTS}/"
     for line in (proc.stdout or "").splitlines():
         if len(line) < 4:
             continue
@@ -754,7 +754,7 @@ def _stage_current_turn_text_workspace(*, turn_root: pathlib.Path) -> None:
                 continue
             if _workspace_path_is_skipped(path, turn_root=turn_root):
                 continue
-            # Binaries are intentionally included in the project snapshot: files/ is the
+            # Binaries are intentionally included in the project snapshot: git/projects/ is the
             # git-backed project, so its whole tree (text AND binary) is versioned per turn.
             # (Retrieval/sharing of an individual file still goes through hosting via the
             # exec contract — the rn resolver points at hosting, not git.)

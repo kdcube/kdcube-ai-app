@@ -688,6 +688,8 @@ class VersatileCanvasService:
             return await resolve_conversation_ref_action(
                 {**dict(action_payload if action_payload is not None else {}), "action": action},
                 user_id=resolver_user_id,
+                tenant=tenant,
+                project=project,
                 fetch_details=_fetch_conversation_details,
             )
 

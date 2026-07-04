@@ -81,7 +81,7 @@ mounted without a scene host, it can fetch the same public endpoint directly as
 a fallback.
 
 The same map is used by the scene drag overlay and canvas pins, so a `mem:*`,
-`task:*`, `fi:*`, or `cnv:*` ref keeps the same color across chat, canvas, and
+`task:*`, `conv:fi:*`, or `cnv:*` ref keeps the same color across chat, canvas, and
 drop targets. See
 [Scene Composition](../scene/scene-composition-README.md#namespace-presentation-config).
 
@@ -342,7 +342,7 @@ attached.
 ## Relation To Event Hub
 
 The chat widget packages events, but event semantics come from event domains.
-For example, `fi:` artifacts are resolved by the ReAct artifact domain,
+For example, `conv:fi:` artifacts are resolved by the ReAct artifact domain,
 `mem:` by the memory named-service provider, `task:` by the task subsystem, and
 `cnv:` by canvas.
 

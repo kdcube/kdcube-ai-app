@@ -48,10 +48,10 @@ A composition bundle can integrate several subsystems. A typical shape is:
 ```text
 canvas module                  board, pins, revisions, comments, suggestions
 provider subsystem             acme:ticket:<id>, provider tools, provider editor
-chat subsystem                 conv: conversations, fi: artifacts through owner resolvers
+chat subsystem                 conv: conversations, conv:fi: artifacts through owner resolvers
 memory named-service provider  mem:record:<id>, memory search, memory actions
 knowledge subsystem            repo: repository-backed knowledge articles through MCP/search
-source/search pool             so: or future source refs
+source/search pool             conv:so: or future source refs
 ```
 
 Canvas stores pins. Resolvers make pins useful.
@@ -66,7 +66,7 @@ them to owner resolvers:
 canvas = CanvasModule(
     storage=CanvasStorage(...),
     resolvers=[
-        ReactArtifactResolver(),                  # owns fi:
+        ReactArtifactResolver(),                  # owns conv:fi:
         NamedServiceCanvasObjectResolver("acme"), # owner for acme:
         NamedServiceCanvasObjectResolver("mem"),  # owner for mem:
         KnowledgeArticleResolver(),               # owns repo: when registered
@@ -96,7 +96,7 @@ is registry internals. Canvas UI code should never inspect URI structure:
 
 ```text
 acme:ticket:ticket_...      -> ProviderObjectResolver
-fi:conv_...                 -> ReactArtifactResolver
+conv:fi:conv_...                 -> ReactArtifactResolver
 mem:record:mem_...          -> NamedServiceCanvasObjectResolver("mem")
 repo:kdcube-ai-app/app/ai-app/docs/...                 -> KnowledgeArticleResolver
 cnv:.../ut_...              -> CanvasOwnedResolver
@@ -111,14 +111,14 @@ The SDK canvas code uses the same shape locally:
 
 ```text
 canvas/events/resolver.py        CanvasObjectResolverRegistry and canvas-owned cnv: resolver
-React events/resolver.py         fi: resolver owned by the ReAct SDK event/artifact layer
+React events/resolver.py         conv:fi: resolver owned by the ReAct SDK event/artifact layer
 named service resolvers          provider-owned refs via the namespace-service bridge,
                                   including mem: when memory is exposed as a named service
 ```
 
 The composition entrypoint only assembles the registry for the mounted bundle.
-It does not implement provider, `fi:`, or `mem:` semantics inline. Provider
-behavior is in the provider subsystem, `fi:` behavior is in the ReAct
+It does not implement provider, `conv:fi:`, or `mem:` semantics inline. Provider
+behavior is in the provider subsystem, `conv:fi:` behavior is in the ReAct
 event/artifact layer, and `mem:` behavior is reached through the memory
 named-service provider. That boundary is intentional: adding a new namespace
 means registering the owning subsystem's resolver, not teaching canvas a new
@@ -263,11 +263,11 @@ object ref and asks the namespace resolver to download.
 For a ReAct artifact:
 
 ```text
-pin.object_ref = fi:conv_....turn_...outputs/problem_statement.md
+pin.object_ref = conv:fi:conv_....turn_...files/problem_statement.md
 click Download
- -> object_action(action=download, object_ref=fi:...)
+ -> object_action(action=download, object_ref=conv:fi:...)
     current compatible alias: canvas_object_action
- -> ReactArtifactResolver.download(fi:...)
+ -> ReactArtifactResolver.download(conv:fi:...)
  -> resolver returns download_url
  -> browser GETs download_url with its existing session cookie
  -> server streams bytes
@@ -291,11 +291,11 @@ same operation as pinning.
 Examples:
 
 ```text
-drop fi: file onto canvas
-  -> pin file as fi:
+drop conv:fi: file onto canvas
+  -> pin file as conv:fi:
   -> no rehost
 
-drop fi: file onto provider attachments
+drop conv:fi: file onto provider attachments
   -> provider subsystem rehosts bytes
   -> provider creates provider-owned attachment ref
 
@@ -382,7 +382,7 @@ ANNOUNCE contains the volatile rich views:
 
 `[CANVAS FOCUSED CONTEXT]` is for selected/multi-selected cards on the attached
 canvas. A pin dragged by itself is rendered as the object it proxies (`acme:`,
-`mem:record:<id>`, `fi:`, `cnv:`, etc.) and may carry canvas provenance
+`mem:record:<id>`, `conv:fi:`, `cnv:`, etc.) and may carry canvas provenance
 metadata, but it is not a canvas-focus event by itself.
 
 If dry-run rendering shows context but live rendering only shows
@@ -433,7 +433,7 @@ expanded, then shows only resolver-supported actions. The generic behavior is:
 | Canvas-owned `cnv:` | yes | no | yes | Canvas-owned board/object artifact storage. |
 | provider namespace | provider-defined | provider-defined | provider-defined | Reads and opens through the provider subsystem. |
 | configured memory provider | provider-defined | provider-defined | provider-defined | Canvas stores and forwards the canonical `mem:record:<id>` ref; memory owns actions. |
-| `fi:` | no | no | no | Canonical file refs are preserved. Download/preview waits for a platform artifact resolver. |
+| `conv:fi:` | no | no | no | Canonical file refs are preserved. Download/preview waits for a platform artifact resolver. |
 
 For provider open, the resolver returns:
 
@@ -464,5 +464,5 @@ tree.
 
 Remaining work items:
 
-- add real platform artifact resolver support for `fi:` preview/download;
+- add real platform artifact resolver support for `conv:fi:` preview/download;
 - ensure live chat send includes the same context events that dry-run renders.

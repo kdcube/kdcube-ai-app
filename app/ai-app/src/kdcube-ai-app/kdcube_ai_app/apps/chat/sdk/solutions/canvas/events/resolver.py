@@ -278,7 +278,7 @@ class CanvasObjectResolver:
     """Namespace-owned object resolver used by the canvas registry.
 
     Canvas owns board state and dispatch. The resolver implementation owns the
-    semantics of the underlying object namespace (`fi:`, `mem:`, provider-owned
+    semantics of the underlying object namespace (`conv:fi:`, `mem:`, provider-owned
     refs, etc.).
     See repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-subsystem-integration-README.md
     and repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/canvas/pin-integration-README.md.

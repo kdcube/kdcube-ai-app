@@ -429,7 +429,7 @@ as the same plural event batch used by every other client:
       "event_id": "telegram.prompt.abc123",
       "type": "event.user.prompt",
       "event_source_id": "telegram.user.prompt",
-      "logical_path": "ev:turn_2026-06-05-10-00-00-000.events/telegram.prompt.abc123",
+      "logical_path": "conv:ev:turn_2026-06-05-10-00-00-000.events/telegram.prompt.abc123",
       "reactive": true,
       "agent_id": "react",
       "payload": {

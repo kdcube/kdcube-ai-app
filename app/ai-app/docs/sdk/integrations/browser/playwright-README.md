@@ -123,8 +123,8 @@ Every browser action returns current page state:
 This means an action has observable effects even without screenshot capture. Use screenshots only when visual layout,
 canvas/SVG state, or responsive rendering must be inspected; screenshots add multimodal tokens.
 
-If the browser tool itself fails, for example because a local `fi:` file cannot be resolved, ReAct renders the
-`tc:` result with `status: error` and an `error` object containing `code`, `message`, and `where`.
+If the browser tool itself fails, for example because a local `conv:fi:` file cannot be resolved, ReAct renders the
+`conv:tc:` result with `status: error` and an `error` object containing `code`, `message`, and `where`.
 
 ## Screenshot Storage
 
@@ -132,10 +132,10 @@ Screenshots are written under `OUTPUT_DIR`, hosted with the normal tool artifact
 
 ```json
 {
-  "path": "fi:turn_x.outputs/browser_screenshots/123_main.png",
-  "logical_path": "fi:turn_x.outputs/browser_screenshots/123_main.png",
-  "artifact_path": "fi:turn_x.outputs/browser_screenshots/123_main.png",
-  "physical_path": "turn_x/outputs/browser_screenshots/123_main.png",
+  "path": "conv:fi:turn_x.files/browser_screenshots/123_main.png",
+  "logical_path": "conv:fi:turn_x.files/browser_screenshots/123_main.png",
+  "artifact_path": "conv:fi:turn_x.files/browser_screenshots/123_main.png",
+  "physical_path": "turn_x/files/browser_screenshots/123_main.png",
   "filename": "123_main.png",
   "mime": "image/png",
   "kind": "file",
@@ -145,15 +145,15 @@ Screenshots are written under `OUTPUT_DIR`, hosted with the normal tool artifact
 }
 ```
 
-They are not returned inline as base64 in the JSON payload. ReAct renders the hosted internal `fi:` screenshot as a file block for multimodal model inspection and does not emit it to the user.
+They are not returned inline as base64 in the JSON payload. ReAct renders the hosted internal `conv:fi:` screenshot as a file block for multimodal model inspection and does not emit it to the user.
 
 ## Local File Resolution
 
 Browser tools can open runtime files by:
 
-- `fi:<turn>.outputs/...`
-- `fi:<turn>.files/...`
-- `fi:<turn>.attachments/...`
+- `conv:fi:<turn>.files/...`
+- `conv:fi:<turn>.files/...`
+- `conv:fi:<turn>.attachments/...`
 - `OUTPUT_DIR`-relative paths
 - `WORKDIR`-relative paths
 

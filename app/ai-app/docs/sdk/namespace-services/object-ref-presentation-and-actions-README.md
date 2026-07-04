@@ -178,7 +178,7 @@ Expected resolver shape:
 ```
 
 The generic UI decides which buttons to show from `capabilities`/`actions`.
-It does not infer that `task:*` can open, that `fi:*` can download, or that
+It does not infer that `task:*` can open, that `conv:fi:*` can download, or that
 `mem:*` should use a memory viewer. The provider resolver returns those facts.
 
 `open` can return a scene-routable UI event:
@@ -299,7 +299,7 @@ ReAct uses the same identity:
 
 - `react.pull(paths=["cnv:main"])` materializes the current object into the
   turn workspace while preserving `object_ref`;
-- `react.read(fi:...)` uses preserved `meta.object_ref` to ask the owner
+- `react.read(conv:fi:...)` uses preserved `meta.object_ref` to ask the owner
   block-production policy for model-facing blocks;
 - block-production policies can include `original_object_stats` or other
   provider metadata directly on blocks so generic ReAct code stays provider

@@ -91,8 +91,8 @@ unsupported or oversized binaries remain metadata/recovery rows.
 - Fetch reconstructs `chat:user` / `chat:assistant` from the ordered block stream, so one turn may
   materialize into multiple user and assistant chat entries.
 - The latest assistant completion keeps the legacy logical path alias
-  `ar:<turn_id>.assistant.completion`; earlier visible completions use
-  `ar:<turn_id>.assistant.completion.<n>`.
+  `conv:ar:<turn_id>.assistant.completion`; earlier visible completions use
+  `conv:ar:<turn_id>.assistant.completion.<n>`.
 - No `files` list is stored separately. Files are reconstructed from blocks.
 - All paths must include concrete `turn_id` (no `current_turn`).
 - Internal Memory Beacons are stored in the turn log as normal blocks, but they are not user-facing UI artifacts.

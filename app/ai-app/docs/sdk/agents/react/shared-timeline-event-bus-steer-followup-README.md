@@ -423,7 +423,7 @@ Recommended block example:
   "turn_id": active_turn_id,
   "ts": "...",
   "mime": "application/json",
-  "path": "ar:turn_123.external.followup.mabc123",
+  "path": "conv:ar:turn_123.external.followup.mabc123",
   "text": "{\"message\": \"also include the legal cases\", ...}",
   "meta": {
     "event_kind": "followup",
@@ -438,7 +438,7 @@ Recommended block example:
 
 If the event carries attachments, their canonical paths are message-owned:
 
-- `fi:<turn_id>.external.followup.attachments/<message_id>/<filename>`
+- `conv:fi:<turn_id>.external.followup.attachments/<message_id>/<filename>`
 
 Transport rule:
 

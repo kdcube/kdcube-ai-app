@@ -254,7 +254,7 @@ named_services_schema(namespace="mem")
 named_services_search(namespace="mem", query="...")
 named_services_get(namespace="mem", object_ref="mem:<id>")
 named_services_upsert(namespace="mem", object_json="{...}")
-named_services_host_file(namespace="task", file_ref="fi:...")
+named_services_host_file(namespace="task", file_ref="conv:fi:...")
 named_services_action(namespace="mem", object_ref="mem:<id>", action="preview")
 named_services_delete(namespace="task", object_ref="task:<id>")
 ```

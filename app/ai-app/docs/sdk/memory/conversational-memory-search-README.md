@@ -52,7 +52,7 @@ assistant said, and the user's uploaded attachments — not bot-produced files).
 
 The agent's context window is finite. Conversations grow past it. Compaction
 prunes the timeline tail, summaries replace pruned ranges, and the handles
-that *were* visible (`fi:`, `ar:`, `tc:`, `so:` refs) disappear from view.
+that *were* visible (`conv:fi:`, `conv:ar:`, `conv:tc:`, `conv:so:` refs) disappear from view.
 Without a way to recover them, the agent loses access to its own prior work.
 
 There are three failure modes that motivated this tool:
@@ -76,9 +76,9 @@ The engineering response to each:
 
 | Failure mode | Mechanism |
 | --- | --- |
-| Pruned-but-needed turn | Working summaries persisted per turn with `ws:` handles; semantic search over them |
+| Pruned-but-needed turn | Working summaries persisted per turn with `conv:ws:` handles; semantic search over them |
 | Literal-string recovery | `Retrieval-anchors:` block in summaries → BM25F lexical index on a `search_tsv` column → `ts_rank_cd` ranking |
-| Cross-conversation | `scope="user"` parameter; `fi:conv_<id>.turn_<id>...` path resolution |
+| Cross-conversation | `scope="user"` parameter; `conv:fi:conv_<id>.turn_<id>...` path resolution |
 
 Hybrid retrieval (semantic + lexical + RRF) is not a refinement; it is what
 makes both the paraphrase case and the literal-string case work in one tool.
@@ -156,8 +156,8 @@ TURN N (the producing turn)                       TURN N+K (the recovering turn)
                                                                 v
                                                   hits returned to agent:
                                                   +--------------------------+
-                                                  | turn_id, ws: path,       |
-                                                  | ar: turn index path,     |
+                                                  | turn_id, conv:ws: path,       |
+                                                  | conv:ar: turn index path,     |
                                                   | snippets, score,         |
                                                   | rrf_score, sem_rank,     |
                                                   | lex_rank, primary_source |
@@ -247,8 +247,8 @@ scope = "user"
 
 The cross-conversation scope is what makes this a *district* rather than just a
 conversation cache. The same user's prior conversations remain searchable as
-long as their rows are within TTL. A returned `fi:` path that begins with
-`fi:conv_<id>.turn_<id>...` indicates the artifact lives in another
+long as their rows are within TTL. A returned `conv:fi:` path that begins with
+`conv:fi:conv_<id>.turn_<id>...` indicates the artifact lives in another
 conversation; passing it to `react.read` / `react.pull` resolves against that
 conversation's storage automatically.
 
@@ -388,7 +388,7 @@ future humans/agents as prose; only the last one is parsed structurally:
 | `Goal` | Future agent reading the summary | What the turn set out to do |
 | `Outcome` | Future agent | What actually happened |
 | `Key facts` | Future agent | Decisive context the next turn would need |
-| `Refs` | Future agent | Logical handles produced (`fi:`, `ar:`, `tc:`, `so:` paths) |
+| `Refs` | Future agent | Logical handles produced (`conv:fi:`, `conv:ar:`, `conv:tc:`, `conv:so:` paths) |
 | `Retrieval-anchors` | The runtime parser | High-precision lexical index tokens |
 
 The `Retrieval-anchors` block is the one with a machine contract. The other
@@ -451,7 +451,7 @@ which of the following actually happened:
 
 | Producer behavior | Effect on retrieval |
 | --- | --- |
-| Summary omitted entirely | No `ws:` row persisted; the turn is invisible to `targets=["summary"]`, recoverable only via `targets=["assistant","user"]` |
+| Summary omitted entirely | No `conv:ws:` row persisted; the turn is invisible to `targets=["summary"]`, recoverable only via `targets=["assistant","user"]` |
 | Summary present, no `Retrieval-anchors:` block | `anchors_text` empty; lexical recall is body-only with `'english'` stemming. Filenames and error strings often miss |
 | `Retrieval-anchors:` present but empty lists | Same as above; the parser produces an empty string |
 | Phrases are paraphrases, not verbatim | Lexical recall does not match the user's literal re-quote; the case the anchors exist to handle silently fails |
@@ -505,7 +505,7 @@ top-level:
 
 per hit:
   score             fused RRF + recency score (hybrid hits)
-  turn_index_path   ar:[conv_<id>.]turn_<id>.react.turn.index — fallback handle
+  turn_index_path   conv:ar:[conv_<id>.]turn_<id>.react.turn.index — fallback handle
                     when snippets are not enough material
   ordinal           1-based turn position (catalog modes only)
   total_turns       size of the catalog window (catalog modes only)
@@ -580,20 +580,20 @@ The full recovery chain, hop by hop:
 
 1. **`react.memsearch(query=..., scope="user")`** — runs hybrid retrieval
    across the same user's other conversations. Returns hits with snippet
-   paths self-scoped as `ev:conv_X.turn_Y.events/...`,
-   `ar:conv_X.turn_Y.assistant.completion`,
-   `ws:conv_X.turn_Y.conv.working.summary...`, and friends. The envelope
+   paths self-scoped as `conv:ev:conv_X.turn_Y.events/...`,
+   `conv:ar:conv_X.turn_Y.assistant.completion`,
+   `conv:ws:conv_X.turn_Y.conv.working.summary...`, and friends. The envelope
    already carries an inline text preview (≤500 chars per snippet), so
    for most "I just need to recall what happened" cases the agent has the
    material in hand without another tool call.
 
-2. **`react.read` on the snippet paths** (`ev:`/`ar:`/`ws:`/`tc:`) — works
+2. **`react.read` on the snippet paths** (`conv:ev:`/`conv:ar:`/`conv:ws:`/`conv:tc:`) — works
    immediately because memsearch added each snippet to the timeline as a
    `react.tool.result` block keyed by the same self-scoped path. The agent
    reads the path; the in-context block is matched and returned. No
    cross-conversation fetch needed.
 
-3. **`react.read("ar:conv_X.turn_Y.react.turn.index")`** — for deeper
+3. **`react.read("conv:ar:conv_X.turn_Y.react.turn.index")`** — for deeper
    traversal: the agent reads the turn-index of a cross-conv turn to
    discover all the artifact refs that turn produced.
    - `parse_turn_index_path` strips the `conv_X.` segment and returns
@@ -603,12 +603,12 @@ The full recovery chain, hop by hop:
      against the conversation index, fetches the blocks for that turn,
      and renders the turn-index from them.
 
-4. **`react.pull(["fi:conv_X.turn_Y.files/foo.py"])`** — materializes a
+4. **`react.pull(["conv:fi:conv_X.turn_Y.files/foo.py"])`** — materializes a
    cross-conversation file into the current-turn workspace. Already
    supported via `split_logical_artifact_ref` honoring the `conv_<id>`
-   prefix on `fi:` paths.
+   prefix on `conv:fi:` paths.
 
-5. **`react.checkout(paths=["fi:conv_X.turn_Y.files/..."])`** — same
+5. **`react.checkout(paths=["conv:fi:conv_X.turn_Y.files/..."])`** — same
    resolution path as pull; copies cross-conv files into the editable
    current-turn workspace.
 
@@ -617,7 +617,7 @@ The full recovery chain, hop by hop:
    `solutions/react/workspace.py`) accepts the optional `conv_<id>/`
    prefix on physical paths. If a referenced cross-conv file is not yet
    materialized locally, the validator stops with `pre_exec_pull_required`
-   and the `pull_hint` includes the cross-conv `fi:conv_<id>...` ref so
+   and the `pull_hint` includes the cross-conv `conv:fi:conv_<id>...` ref so
    the agent's next call has the right path.
 
 All five read-side tool surfaces (`read`, `pull`, `checkout`, `rg`, `exec`)
@@ -625,12 +625,12 @@ accept the same self-describing `<ns>:conv_<id>...` shape. The agent does
 not need to track conversation_id separately; the path itself is the
 address.
 
-**`tc:` cross-conv is intentionally not wired through memsearch.** `tc:`
+**`conv:tc:` cross-conv is intentionally not wired through memsearch.** `conv:tc:`
 tool-call results are not indexed in `conv_messages`, so memsearch never
-returns `tc:conv_<id>...` directly. `tc:` refs surface only inside a
+returns `conv:tc:conv_<id>...` directly. `conv:tc:` refs surface only inside a
 cross-conv turn-index (step 3 above); the agent traverses to them by
-reading the cross-conv turn-index and pulling the underlying `fi:` or
-`ar:` ref the `tc:` references.
+reading the cross-conv turn-index and pulling the underlying `conv:fi:` or
+`conv:ar:` ref the `conv:tc:` references.
 
 **What's not crossable.** `scope="user"` cannot cross tenants, projects,
 or storage backends — those are configuration-level boundaries enforced
@@ -705,12 +705,12 @@ kdcube_ai_app/apps/chat/sdk/solutions/react/artifacts.py
 
 kdcube_ai_app/apps/chat/sdk/solutions/react/timeline.py
   parse_turn_index_path, parse_turn_index_ref — accept the cross-conv
-  ar:conv_<id>.turn_<X>.react.turn.index form;
-  ws: alias resolver and tc: call_id parser also strip the conv_<id>. prefix
+  conv:ar:conv_<id>.turn_<X>.react.turn.index form;
+  conv:ws: alias resolver and conv:tc: call_id parser also strip the conv_<id>. prefix
 
 kdcube_ai_app/apps/chat/sdk/solutions/react/tools/read.py
   _conversation_id_for_path — falls back to peel_conversation_prefix for
-  ar:/ws:/ev:/tc:/so: paths so cross-conv loading via get_turn_log fires
+  conv:ar:/conv:ws:/conv:ev:/conv:tc:/conv:so: paths so cross-conv loading via get_turn_log fires
 ```
 
 ## Bottom Line

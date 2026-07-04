@@ -45,6 +45,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.plan import (
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import (
     ARTIFACT_NAMESPACE_FILES,
+    REACT_FILE_REF_PREFIX,
     physical_path_to_logical_path,
     split_physical_artifact_path,
 )
@@ -78,6 +79,20 @@ TOOL_RESULT_PREVIEW_SHAPE_MAX_ITEMS = 10
 WEB_SOURCE_RESULT_TOOL_IDS = {"web_tools.web_search", "web_tools.web_fetch"}
 
 logger = logging.getLogger(__name__)
+
+CONV_AR_PREFIX = "conv:ar:"
+CONV_TC_PREFIX = "conv:tc:"
+CONV_SO_PREFIX = "conv:so:"
+CONV_WS_PREFIX = "conv:ws:"
+CONV_SU_PREFIX = "conv:su:"
+CONV_NAMESPACE_PREFIXES = (
+    REACT_FILE_REF_PREFIX,
+    CONV_AR_PREFIX,
+    CONV_TC_PREFIX,
+    CONV_SO_PREFIX,
+    CONV_WS_PREFIX,
+    CONV_SU_PREFIX,
+)
 
 
 @dataclass(frozen=True)
@@ -553,16 +568,16 @@ def parse_sources_pool_ref(path: str) -> tuple[Optional[str], str]:
     Parse a sources-pool reference.
 
     Supported forms:
-      - so:sources_pool[1,3-5]
+      - conv:so:sources_pool[1,3-5]
       - sources_pool[1,3-5]
-      - so:conv_<conversation_id>.sources_pool[1,3-5]
+      - conv:so:conv_<conversation_id>.sources_pool[1,3-5]
 
     Returns (conversation_id, selector). conversation_id is None for the
     currently loaded timeline.
     """
     raw = str(path or "").strip()
-    if raw.startswith("so:"):
-        raw = raw[len("so:"):]
+    if raw.startswith("conv:so:"):
+        raw = raw[len("conv:so:"):]
     if raw.startswith("sources_pool["):
         return None, raw
     if raw.startswith("conv_"):
@@ -712,16 +727,17 @@ TURN_INDEX_SUFFIX = ".react.turn.index"
 
 def parse_turn_index_path(path: str) -> Optional[str]:
     """
-    Extract the turn_id from a turn-index path. Accepts both the bare form
-    `ar:turn_<id>.react.turn.index` and the cross-conversation form
-    `ar:conv_<id>.turn_<id>.react.turn.index`. In the cross-conv case the
+    Extract the turn_id from a turn-index path. Accepts both the current
+    conversation form `conv:ar:turn_<id>.react.turn.index` and the
+    cross-conversation form `conv:ar:conv_<id>.turn_<id>.react.turn.index`.
+    In the cross-conv case the
     conv_<id> prefix is stripped silently; callers that need the
     conversation_id can call `parse_turn_index_ref` instead.
     """
     p = str(path or "").strip()
-    if not p.startswith("ar:") or not p.endswith(TURN_INDEX_SUFFIX):
+    if not p.startswith("conv:ar:") or not p.endswith(TURN_INDEX_SUFFIX):
         return None
-    body = p[len("ar:") : -len(TURN_INDEX_SUFFIX)].strip()
+    body = p[len("conv:ar:") : -len(TURN_INDEX_SUFFIX)].strip()
     if body.startswith("conv_"):
         _, sep, rest = body.partition(".")
         if sep and rest:
@@ -736,9 +752,9 @@ def parse_turn_index_ref(path: str) -> Optional[tuple[str, str]]:
     Returns `None` when the path is not a turn-index path.
     """
     p = str(path or "").strip()
-    if not p.startswith("ar:") or not p.endswith(TURN_INDEX_SUFFIX):
+    if not p.startswith("conv:ar:") or not p.endswith(TURN_INDEX_SUFFIX):
         return None
-    body = p[len("ar:") : -len(TURN_INDEX_SUFFIX)].strip()
+    body = p[len("conv:ar:") : -len(TURN_INDEX_SUFFIX)].strip()
     conv_id = ""
     if body.startswith("conv_"):
         seg, sep, rest = body.partition(".")
@@ -852,9 +868,9 @@ def _tool_status_and_hint(result_block: Optional[Dict[str, Any]]) -> tuple[str, 
 
 def _default_message_path(turn_id: str, btype: str, index: int = 1, total: int = 1) -> str:
     if btype == "user.prompt":
-        return f"ar:{turn_id}.user.prompt"
+        return f"conv:ar:{turn_id}.user.prompt"
     if btype == "assistant.completion":
-        return f"ar:{turn_id}.assistant.completion" if index == total else f"ar:{turn_id}.assistant.completion.{index}"
+        return f"conv:ar:{turn_id}.assistant.completion" if index == total else f"conv:ar:{turn_id}.assistant.completion.{index}"
     return ""
 
 
@@ -891,7 +907,7 @@ def build_turn_index_text(
     if not tid:
         tids = extract_turn_ids_from_blocks(filtered)
         tid = tids[0] if tids else ""
-    path = f"ar:{tid}.react.turn.index" if tid else "ar:turn_<id>.react.turn.index"
+    path = f"conv:ar:{tid}.react.turn.index" if tid else "conv:ar:turn_<id>.react.turn.index"
     ts_vals = [_block_ts(b) for b in filtered if _block_ts(b)]
     started_at = ts_vals[0] if ts_vals else ""
     ended_at = ts_vals[-1] if ts_vals else ""
@@ -920,7 +936,7 @@ def build_turn_index_text(
         if tid:
             lines.extend(_format_index_row(
                 "latest working summary",
-                f"ws:{tid}.conv.working.summary",
+                f"conv:ws:{tid}.conv.working.summary",
                 attrs={"source": latest_path} if latest_path else {},
                 hint=latest.get("text") or "",
             ))
@@ -1014,16 +1030,16 @@ def build_turn_index_text(
             call_blk = call_blocks.get(call_id)
             results = result_blocks.get(call_id) or []
             result_blk = next(
-                (b for b in reversed(results) if str(b.get("path") or "").strip().startswith("tc:")),
+                (b for b in reversed(results) if str(b.get("path") or "").strip().startswith(CONV_TC_PREFIX)),
                 None,
             ) or (results[-1] if results else None)
             tool_id = _tool_id_from_call_or_result(result_blk or {}, call_blk)
             call_path = (call_blk.get("path") or "").strip() if isinstance(call_blk, dict) else ""
             result_path = (result_blk.get("path") or "").strip() if isinstance(result_blk, dict) else ""
             if not call_path:
-                call_path = f"tc:{tid}.{call_id}.call"
+                call_path = f"{CONV_TC_PREFIX}{tid}.{call_id}.call"
             if not result_path:
-                result_path = f"tc:{tid}.{call_id}.result"
+                result_path = f"{CONV_TC_PREFIX}{tid}.{call_id}.result"
             status, hint = _tool_status_and_hint(result_blk)
             label = tool_id or "tool"
             attrs = {
@@ -1038,7 +1054,7 @@ def build_turn_index_text(
     artifacts: Dict[str, Dict[str, Any]] = {}
     for blk in filtered:
         bpath = (blk.get("path") or "").strip()
-        if bpath.startswith("fi:"):
+        if bpath.startswith(REACT_FILE_REF_PREFIX):
             meta = blk.get("meta") if isinstance(blk.get("meta"), dict) else {}
             entry = artifacts.setdefault(bpath, {"path": bpath})
             if blk.get("mime"):
@@ -1053,7 +1069,7 @@ def build_turn_index_text(
             if not isinstance(parsed, dict):
                 continue
             apath = str(parsed.get("artifact_path") or "").strip()
-            if not apath or not apath.startswith("fi:"):
+            if not apath or not apath.startswith(REACT_FILE_REF_PREFIX):
                 continue
             meta = blk.get("meta") if isinstance(blk.get("meta"), dict) else {}
             entry = artifacts.setdefault(apath, {"path": apath})
@@ -1094,7 +1110,7 @@ def build_turn_index_text(
             sid = row.get("sid")
             if sid is None:
                 continue
-            selector = f"so:sources_pool[{int(sid)}]" if isinstance(sid, (int, float)) else f"so:sources_pool[{sid}]"
+            selector = f"{CONV_SO_PREFIX}sources_pool[{int(sid)}]" if isinstance(sid, (int, float)) else f"{CONV_SO_PREFIX}sources_pool[{sid}]"
             attrs = {
                 "title": row.get("title"),
                 "url": row.get("url"),
@@ -1460,13 +1476,8 @@ def resolve_artifact_from_timeline(timeline: Dict[str, Any], path: str) -> Optio
 
     blocks = _collect_blocks(timeline)
     working_summary_suffix = ".conv.working.summary"
-    if p.startswith("ws:") and p.endswith(working_summary_suffix):
-        # Accept both bare `ws:turn_<X>.conv.working.summary` and the
-        # cross-conv form `ws:conv_<id>.turn_<X>.conv.working.summary`. The
-        # conv_<id> prefix tells the caller (and any cross-conv-aware loader
-        # higher up the stack) which conversation the path belongs to; the
-        # block lookup itself filters by turn_id, which is globally unique.
-        body = p[len("ws:") : -len(working_summary_suffix)].strip()
+    if p.startswith(CONV_WS_PREFIX) and p.endswith(working_summary_suffix):
+        body = p[len(CONV_WS_PREFIX) : -len(working_summary_suffix)].strip()
         if body.startswith("conv_"):
             _, sep, rest = body.partition(".")
             if sep and rest:
@@ -1503,8 +1514,8 @@ def resolve_artifact_from_timeline(timeline: Dict[str, Any], path: str) -> Optio
                         continue
                     art[key] = val
                 return art
-    if p.startswith("ar:plan.latest:"):
-        plan_id = p[len("ar:plan.latest:") :].strip()
+    if p.startswith(f"{CONV_AR_PREFIX}plan.latest:"):
+        plan_id = p[len(f"{CONV_AR_PREFIX}plan.latest:") :].strip()
         latest_block = latest_plan_block_by_id(blocks, plan_id, include_preserved=True)
         if not isinstance(latest_block, dict):
             return None
@@ -1618,8 +1629,8 @@ def materialize_show_artifacts(timeline: Dict[str, Any], show_paths: List[str]) 
         if not isinstance(raw_path, str) or not raw_path.strip():
             continue
         path = raw_path.strip()
-        if path.startswith("tc:"):
-            # Prefer the canonical resolved artifact so tc:<...>.result reads back the
+        if path.startswith(CONV_TC_PREFIX):
+            # Prefer the canonical resolved artifact so conv:tc:<...>.result reads back the
             # actual inline tool payload when present, not just the envelope/meta block.
             val = resolve_artifact_from_timeline(timeline, path)
             if isinstance(val, dict) and (
@@ -1646,8 +1657,8 @@ def materialize_show_artifacts(timeline: Dict[str, Any], show_paths: List[str]) 
                     "artifact": artifact,
                 })
                 continue
-        if path.startswith("so:"):
-            path = path[len("so:"):]
+        if path.startswith(CONV_SO_PREFIX):
+            path = path[len(CONV_SO_PREFIX):]
         if path.startswith("sources_pool["):
             val = {"kind": "sources_pool", "items": resolve_sources_pool_selector(timeline, path)}
         elif path.startswith("sk:"):
@@ -2227,8 +2238,8 @@ class Timeline:
             if not p:
                 continue
             paths.add(p)
-            if p.startswith("so:"):
-                paths.add(p[3:])
+            if p.startswith(CONV_SO_PREFIX):
+                paths.add(p[len(CONV_SO_PREFIX):])
         return paths
 
     def materialize_show_artifacts(self, show_paths: List[str]) -> List[Dict[str, Any]]:
@@ -2263,21 +2274,23 @@ class Timeline:
 
         def _current_turn_logical_ref(ref_value: str) -> str:
             raw = (ref_value or "").strip().lstrip("/")
-            if raw.startswith("fi:"):
-                raw = raw[len("fi:"):].strip().lstrip("/")
+            if raw.startswith(REACT_FILE_REF_PREFIX):
+                raw = raw[len(REACT_FILE_REF_PREFIX):].strip().lstrip("/")
             turn_id = (self.runtime.turn_id or "").strip()
             if not turn_id:
                 return ""
-            for namespace in ("outputs", "files", "attachments"):
+            for namespace in ("files", "git/projects", "git/snapshots", "attachments"):
                 prefix = f"{namespace}/"
                 if raw.startswith(prefix):
                     rel = raw[len(prefix):].strip().lstrip("/")
                     if rel:
-                        if namespace == "outputs":
-                            return f"fi:{turn_id}.outputs/{rel}"
                         if namespace == "files":
-                            return f"fi:{turn_id}.files/{rel}"
-                        return f"fi:{turn_id}.user.attachments/{rel}"
+                            return f"{REACT_FILE_REF_PREFIX}{turn_id}.files/{rel}"
+                        if namespace == "git/projects":
+                            return f"{REACT_FILE_REF_PREFIX}{turn_id}.git/projects/{rel}"
+                        if namespace == "git/snapshots":
+                            return f"{REACT_FILE_REF_PREFIX}{turn_id}.git/snapshots/{rel}"
+                        return f"{REACT_FILE_REF_PREFIX}{turn_id}.user.attachments/{rel}"
             return ""
 
         def _visible_ref_exists(ref_value: str) -> bool:
@@ -2315,7 +2328,7 @@ class Timeline:
             original_ref = ref
             if (
                 ref
-                and not ref.startswith(("fi:", "ar:", "tc:", "so:", "su:", "ks:", "sk:", "sources_pool["))
+                and not ref.startswith((*CONV_NAMESPACE_PREFIXES, "ks:", "sk:", "sources_pool["))
             ):
                 current_turn_ref = _current_turn_logical_ref(ref)
                 if current_turn_ref and _visible_ref_exists(current_turn_ref):
@@ -2351,8 +2364,8 @@ class Timeline:
                 if isinstance(resolved, dict):
                     visibility = (resolved.get("visibility") or "").strip()
                 logical_ref = physical_path_to_logical_path(original_ref)
-                if not logical_ref and original_ref and not original_ref.startswith(("fi:", "ar:", "tc:", "so:", "su:", "ks:", "sk:", "sources_pool[")):
-                    logical_ref = f"fi:{original_ref.lstrip('/')}"
+                if not logical_ref and original_ref and not original_ref.startswith((*CONV_NAMESPACE_PREFIXES, "ks:", "sk:", "sources_pool[")):
+                    logical_ref = f"{REACT_FILE_REF_PREFIX}{original_ref.lstrip('/')}"
                 if visibility == "internal":
                     violations.append({
                         "code": "ref_internal_not_visible",
@@ -2372,15 +2385,15 @@ class Timeline:
                         "path": original_ref,
                         "param": param_name,
                         **({"suggested_ref": logical_ref} if logical_ref else {}),
-                        **({"message": "ref: bindings use logical artifact paths such as fi:<turn>.outputs/<file>, not physical turn/<namespace>/<file> paths."} if logical_ref else {}),
+                        **({"message": "ref: bindings use logical artifact paths such as conv:fi:<turn>.files/<file>, not physical turn/<namespace>/<file> paths."} if logical_ref else {}),
                     })
                 return None
-            if param_name == "sources_list" and not (ref.startswith("so:") or ref.startswith("sources_pool[")):
+            if param_name == "sources_list" and not (ref.startswith(CONV_SO_PREFIX) or ref.startswith("sources_pool[")):
                 violations.append({"code": "sources_list_requires_sources_pool", "path": ref, "param": param_name})
                 return None
             # resolve via timeline
-            if ref.startswith("so:") or ref.startswith("sources_pool["):
-                resolved = self.resolve_sources_pool(ref if ref.startswith("sources_pool[") else ref[3:])
+            if ref.startswith(CONV_SO_PREFIX) or ref.startswith("sources_pool["):
+                resolved = self.resolve_sources_pool(ref if ref.startswith("sources_pool[") else ref[len(CONV_SO_PREFIX):])
                 if is_rendering_content_ref:
                     violations.append({
                         "code": "renderer_content_ref_not_text",
@@ -2397,7 +2410,7 @@ class Timeline:
                     txt = _read_text_from_file(fp)
                     if isinstance(txt, str):
                         return txt
-                if ref.startswith("fi:"):
+                if ref.startswith(REACT_FILE_REF_PREFIX):
                     encoded = resolved.get("base64")
                     mime = (resolved.get("mime") or "").strip()
                     if encoded:
@@ -2421,8 +2434,8 @@ class Timeline:
                         "path": ref,
                         "param": param_name,
                         "message": (
-                            "This fi: ref is visible but its artifact file is not materialized locally. "
-                            "ref:fi bindings must consume artifact bytes/text, not timeline-rendered previews."
+                            "This conv:fi: ref is visible but its artifact file is not materialized locally. "
+                            "ref:conv:fi bindings must consume artifact bytes/text, not timeline-rendered previews."
                         ),
                     })
                     return None
@@ -2986,7 +2999,7 @@ class Timeline:
         text = raw_text if isinstance(raw_text, str) else str(raw_text or "")
         if (tool_id or "").strip() == "react.read":
             return text
-        if (path or "").strip().startswith("so:sources_pool["):
+        if (path or "").strip().startswith(f"{CONV_SO_PREFIX}sources_pool["):
             return text
         cap = self._tool_result_preview_max_text_symbols()
         is_structured_file_preview = (
@@ -3088,12 +3101,12 @@ class Timeline:
     @staticmethod
     def _large_text_recovery_lines(*, path: str, physical_path: str = "") -> List[str]:
         lines: List[str] = []
-        if path.startswith("fi:"):
+        if path.startswith(REACT_FILE_REF_PREFIX):
             lines.append("- Use react.rg on the file to find relevant regions before editing.")
             lines.append("- Pass react.rg read_item ranges to react.read(items=[...]) for exact visible regions.")
             if physical_path:
                 lines.append("- For exec, derive the physical OUT_DIR path from logical_path only when computation needs the file.")
-        elif path.startswith("tc:"):
+        elif path.startswith(CONV_TC_PREFIX):
             lines.append("- Use react.read for another bounded visible preview.")
             lines.append("- For large text, use react.read stats_only and then ranged react.read items.")
         elif path:
@@ -3115,7 +3128,7 @@ class Timeline:
             start = prev = sid
         ranges.append((start, prev))
         parts = [str(a) if a == b else f"{a}-{b}" for a, b in ranges]
-        return f"so:sources_pool[{', '.join(parts)}]"
+        return f"{CONV_SO_PREFIX}sources_pool[{', '.join(parts)}]"
 
     @staticmethod
     def _extract_fi_paths_from_payload(value: Any, *, limit: int = 20) -> List[str]:
@@ -3128,7 +3141,7 @@ class Timeline:
             if isinstance(obj, dict):
                 for key in ("artifact_path", "logical_path", "path"):
                     val = obj.get(key)
-                    if isinstance(val, str) and val.startswith("fi:") and val not in seen:
+                    if isinstance(val, str) and val.startswith(REACT_FILE_REF_PREFIX) and val not in seen:
                         seen.add(val)
                         out.append(val)
                         if len(out) >= limit:
@@ -3149,8 +3162,8 @@ class Timeline:
     @staticmethod
     def _source_sids_from_selector(path: str) -> List[int]:
         raw = str(path or "").strip()
-        if raw.startswith("so:"):
-            raw = raw[3:]
+        if raw.startswith(CONV_SO_PREFIX):
+            raw = raw[len(CONV_SO_PREFIX):]
         if not raw.startswith("sources_pool[") or not raw.endswith("]"):
             return []
         body = raw[len("sources_pool["):-1]
@@ -3220,7 +3233,7 @@ class Timeline:
             tool_id = tool_id or str(payload.get("tool_id") or "").strip()
             call_id = call_id or str(payload.get("tool_call_id") or "").strip()
 
-        if path.startswith("fi:"):
+        if path.startswith(REACT_FILE_REF_PREFIX):
             return {
                 "kind": "file",
                 "path": path,
@@ -3230,7 +3243,7 @@ class Timeline:
                 "hint": self._one_line_preview(text, limit=220),
             }
 
-        if path.startswith("so:"):
+        if path.startswith(CONV_SO_PREFIX):
             return {
                 "kind": "sources",
                 "path": path,
@@ -3517,7 +3530,7 @@ class Timeline:
                 tokens = 0
 
             should_hide = already_current_compacted or btype in progress_types
-            if not should_hide and path.startswith(("fi:", "so:")):
+            if not should_hide and path.startswith((REACT_FILE_REF_PREFIX, CONV_SO_PREFIX)):
                 should_hide = True
             if not should_hide and btype in user_visible_types and tokens >= min_user_tokens:
                 should_hide = True
@@ -3605,7 +3618,7 @@ class Timeline:
             turn_id=tid,
             ts=ts or "",
             text="\n".join(lines).strip(),
-            path=f"ar:{tid}.react.mid_turn.compaction.{marker_index}",
+            path=f"{CONV_AR_PREFIX}{tid}.react.mid_turn.compaction.{marker_index}",
             meta={
                 "current_turn_compaction_checkpoint": True,
                 "marker_index": marker_index,
@@ -3796,7 +3809,7 @@ class Timeline:
             suffix = str(meta.get("event_kind") or "").strip().lower()
             if not suffix:
                 suffix = "followup" if "followup" in btype else "steer" if "steer" in btype else "event"
-            preserved_path = f"ar:{turn_id}.external.{suffix}.preserved.{idx}" if turn_id else ""
+            preserved_path = f"{CONV_AR_PREFIX}{turn_id}.external.{suffix}.preserved.{idx}" if turn_id else ""
             preserved.append(
                 self._clone_preserved_external_event_block(
                     block=blk,
@@ -3878,16 +3891,16 @@ class Timeline:
             call_blk = call_blocks.get(call_id)
             results = result_blocks.get(call_id) or []
             result_blk = next(
-                (b for b in reversed(results) if str(b.get("path") or "").strip().startswith("tc:")),
+                (b for b in reversed(results) if str(b.get("path") or "").strip().startswith(CONV_TC_PREFIX)),
                 None,
             ) or (results[-1] if results else None)
             tool_id = _tool_id_from_call_or_result(result_blk or {}, call_blk)
             call_path = (call_blk.get("path") or "").strip() if isinstance(call_blk, dict) else ""
             result_path = (result_blk.get("path") or "").strip() if isinstance(result_blk, dict) else ""
             if not call_path:
-                call_path = f"tc:{split_turn_id}.{call_id}.call"
+                call_path = f"{CONV_TC_PREFIX}{split_turn_id}.{call_id}.call"
             if not result_path:
-                result_path = f"tc:{split_turn_id}.{call_id}.result"
+                result_path = f"{CONV_TC_PREFIX}{split_turn_id}.{call_id}.result"
 
             payload = _tool_call_payload(call_blk or {})
             params = payload.get("params") if isinstance(payload, dict) else None
@@ -3993,7 +4006,7 @@ class Timeline:
                     "kind": "tool_call",
                     "tool_id": tool_id,
                     "tool_call_id": call_id,
-                    "path": path or (f"tc:{split_turn_id}.{call_id}.call" if call_id else ""),
+                    "path": path or (f"{CONV_TC_PREFIX}{split_turn_id}.{call_id}.call" if call_id else ""),
                     "ts": ts,
                     "params": _compact_hint(params, max_chars=500) if params is not None else "",
                 })
@@ -4047,7 +4060,7 @@ class Timeline:
                 ts=_last_block_ts(blocks),
                 mime="application/json",
                 text=json.dumps(payload, ensure_ascii=False, indent=2),
-                path=f"ar:{turn_id}.react.rounds.compacted" if turn_id else "",
+                path=f"{CONV_AR_PREFIX}{turn_id}.react.rounds.compacted" if turn_id else "",
                 meta={
                     "preserved_by_compaction": True,
                     "source_turn_id": split_turn_id,
@@ -4204,11 +4217,11 @@ class Timeline:
             kind = "tool_call"
         elif btype == "react.tool.result":
             kind = "tool_result"
-        elif path.startswith("fi:"):
+        elif path.startswith(REACT_FILE_REF_PREFIX):
             kind = "file"
         elif path.startswith("sk:"):
             kind = "skill"
-        elif path.startswith("so:"):
+        elif path.startswith(CONV_SO_PREFIX):
             kind = "source"
         else:
             kind = btype.replace(".", "_")
@@ -4221,9 +4234,9 @@ class Timeline:
         if call_id:
             parts.append(f"call_id={call_id}")
         mime = (block.get("mime") or block.get("media_type") or meta.get("mime") or "").strip()
-        if include_path and mime and path.startswith("fi:"):
+        if include_path and mime and path.startswith(REACT_FILE_REF_PREFIX):
             parts.append(f"mime={mime}")
-        if include_path and path.startswith("fi:"):
+        if include_path and path.startswith(REACT_FILE_REF_PREFIX):
             filename = self._path_basename_for_stub(path)
             if filename:
                 parts.append(f"file={json.dumps(filename, ensure_ascii=False)}")
@@ -4239,7 +4252,7 @@ class Timeline:
                 payload = _maybe_parse_json(block.get("text") or "") if isinstance(block.get("text"), str) else None
             if payload is not None:
                 hint = self._tool_result_hint_for_stub(payload)
-        elif btype in {"user.prompt", "assistant.completion", "assistant.completion.attempt"} or path.startswith(("sk:", "so:", "fi:")):
+        elif btype in {"user.prompt", "assistant.completion", "assistant.completion.attempt"} or path.startswith(("sk:", CONV_SO_PREFIX, REACT_FILE_REF_PREFIX)):
             hint = self._one_line_preview(block.get("text"), limit=180)
         else:
             hint = self._one_line_preview(block.get("text"), limit=140)
@@ -4290,8 +4303,8 @@ class Timeline:
             if ".tool_calls." in path:
                 tail = path.split(".tool_calls.", 1)[1]
                 return tail.split(".", 1)[0]
-            if path.startswith("tc:"):
-                tail = path[len("tc:"):]
+            if path.startswith(CONV_TC_PREFIX):
+                tail = path[len(CONV_TC_PREFIX):]
                 parts = tail.split(".")
                 if len(parts) >= 3:
                     return parts[1]
@@ -4549,7 +4562,7 @@ class Timeline:
                             "type": "react.pruned.turn_status",
                             "author": "react",
                             "turn_id": turn_id,
-                            "path": f"ar:{turn_id}.react.turn.status",
+                            "path": f"{CONV_AR_PREFIX}{turn_id}.react.turn.status",
                             "text": status_text,
                             "hidden": False,
                             "meta": {"pruned_turn_status": True},
@@ -4584,7 +4597,7 @@ class Timeline:
                         repl_blk = dict(blk)
                         repl_blk.pop("base64", None)
                         repl_blk["type"] = "react.pruned.turn_status"
-                        repl_blk["path"] = f"ar:{turn_id}.react.turn.status"
+                        repl_blk["path"] = f"{CONV_AR_PREFIX}{turn_id}.react.turn.status"
                         repl_blk["text"] = status_text
                         repl_blk["hidden"] = False
                         repl_blk["ts"] = ""
@@ -5371,7 +5384,7 @@ class Timeline:
             turn_id=summary_turn_id,
             ts="",
             text=internal_note_compaction.summary_text,
-            path=(f"su:{summary_turn_id}.conv.range.summary" if summary_turn_id else ""),
+            path=(f"{CONV_SU_PREFIX}{summary_turn_id}.conv.range.summary" if summary_turn_id else ""),
             meta=meta,
         )
 
@@ -6177,15 +6190,14 @@ class Timeline:
             if not p:
                 return ""
             try:
-                # tc:turn_<id>.tool_calls.<call_id>.out.json
+                # conv:tc:turn_<id>.tool_calls.<call_id>.out.json
                 if ".tool_calls." in p:
                     tail = p.split(".tool_calls.", 1)[1]
                     call_id = tail.split(".", 1)[0]
                     return call_id
-                # tc:turn_<id>.<call_id>.call|result — also accept the
-                # cross-conv form tc:conv_<id>.turn_<id>.<call_id>.call|result
-                if p.startswith("tc:"):
-                    tail = p[len("tc:"):]
+                # conv:tc:turn_<id>.<call_id>.call|result
+                if p.startswith(CONV_TC_PREFIX):
+                    tail = p[len(CONV_TC_PREFIX):]
                     if tail.startswith("conv_"):
                         _, sep, rest = tail.partition(".")
                         if sep and rest:
@@ -6204,16 +6216,16 @@ class Timeline:
             path = (raw_path or "").strip()
             if not path:
                 return ""
-            if path.startswith("fi:"):
+            if path.startswith(REACT_FILE_REF_PREFIX):
                 return path
             tid, namespace, rel = split_physical_artifact_path(path)
             if tid and namespace == ARTIFACT_NAMESPACE_FILES and rel:
-                return f"fi:{tid}.files/{rel}"
+                return f"{REACT_FILE_REF_PREFIX}{tid}.files/{rel}"
             if "/files/" in path and ".files/" in path:
                 # already logical-ish
-                return f"fi:{path}"
+                return f"{REACT_FILE_REF_PREFIX}{path}"
             if turn_id:
-                return f"fi:{turn_id}.files/{path.lstrip('/')}"
+                return f"{REACT_FILE_REF_PREFIX}{turn_id}.files/{path.lstrip('/')}"
             return path
 
         def _sources_pool_range(rows: List[Dict[str, Any]]) -> str:
@@ -6221,7 +6233,7 @@ class Timeline:
             sids = [s for s in sids if s > 0]
             if not sids:
                 return ""
-            return f"so:sources_pool[{sids[0]}-{sids[-1]}]"
+            return f"{CONV_SO_PREFIX}sources_pool[{sids[0]}-{sids[-1]}]"
 
         out: List[Dict[str, Any]] = []
         current_round_id: Optional[str] = None
@@ -7011,7 +7023,7 @@ class Timeline:
                 ts_line = _ts_line(ts)
                 if ts_line:
                     lines.append(ts_line)
-                code_path = path or (f"fi:{turn_id}.code.{tool_call_id}" if turn_id and tool_call_id else "")
+                code_path = path or (f"{REACT_FILE_REF_PREFIX}{turn_id}.code.{tool_call_id}" if turn_id and tool_call_id else "")
                 if code_path:
                     lines.append(f"[AI Agent wrote code] {code_path}:")
                 else:
@@ -7059,7 +7071,7 @@ class Timeline:
                             content_lower = content_val.lower()
                             has_see_ref = any(
                                 token in content_lower
-                                for token in ("see fi:", "see so:", "see sk:", "see ar:", "see tc:")
+                                for token in ("see conv:fi:", "see conv:so:", "see sk:", "see conv:ar:", "see conv:tc:")
                             )
                             if (not has_see_ref) and len(content_val) > 100:
                                 file_path = _derive_file_context_path(
@@ -7287,7 +7299,7 @@ class Timeline:
                     if ts_line:
                         lines.append(ts_line)
                     tool_id = call_id_to_tool_id.get(tool_call_id, "")
-                    is_artifact = path.startswith(("fi:", "ar:", "sk:", "so:"))
+                    is_artifact = path.startswith((REACT_FILE_REF_PREFIX, CONV_AR_PREFIX, "sk:", CONV_SO_PREFIX))
                     if is_artifact:
                         header = f"[TOOL RESULT {short_id}].artifact"
                         if tool_id:

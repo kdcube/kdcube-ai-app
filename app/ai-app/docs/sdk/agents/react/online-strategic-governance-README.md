@@ -117,7 +117,7 @@ Normal tool-call JSON does this:
   "tool_call": {
     "tool_id": "react.write",
     "params": {
-      "path": "outputs/report.md",
+      "path": "files/report.md",
       "content": "..."
     }
   }
@@ -306,7 +306,7 @@ Input:
   "tool_call": {
     "tool_id": "react.write",
     "params": {
-      "path": "outputs/report.md",
+      "path": "files/report.md",
       "content": "..."
     }
   },

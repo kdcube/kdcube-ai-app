@@ -35,7 +35,7 @@ editing ReAct core.
 
 Compaction policies should preserve durable recovery anchors. For story
 snapshots and cross-conversation recovery, leave explicit refs such as
-`fi:<turn>.snapshots/...` or `fi:conv_<conversation_id>.<turn>.snapshots/...`
+`conv:fi:<turn>.git/snapshots/...` or `conv:fi:conv_<conversation_id>.<turn>.git/snapshots/...`
 visible enough for later `react.read`, `react.pull`, or `react.checkout`.
 
 ## Volatile ANNOUNCE Is Not Preservation
@@ -46,6 +46,6 @@ not be preserved by compaction just because it was announced. The durable
 recovery anchor is the timeline fact or snapshot ref that produced it.
 
 For canvas, compaction should preserve refs/facts such as `cnv:main`,
-`cnv:main@52`, or the pulled `fi:...snapshots/cnv/...json` path when they are
+`cnv:main@52`, or the pulled `conv:fi:...git/snapshots/cnv/...json` path when they are
 relevant. It should not treat the rendered `[CANVAS BOARD]` ANNOUNCE text as
 authoritative state.

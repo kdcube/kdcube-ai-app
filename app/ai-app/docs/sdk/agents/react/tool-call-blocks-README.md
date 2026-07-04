@@ -53,7 +53,7 @@ When a decision uses `action=call_tool`, the timeline receives blocks in this or
 
 1. **Decision notes** (optional)
    - `type`: `react.notes`
-   - `path`: `ar:<turn_id>.react.notes.<tool_call_id>`
+   - `path`: `conv:ar:<turn_id>.react.notes.<tool_call_id>`
    - `text`: the decision `notes`
    - `meta.channel="timeline_text"`
    - Emitted by the **decision node**, independent of which tool is called.
@@ -61,13 +61,13 @@ When a decision uses `action=call_tool`, the timeline receives blocks in this or
 
 2. **Tool call**
    - `type`: `react.tool.call`
-   - `path`: `tc:<turn_id>.<tool_call_id>.call`
+   - `path`: `conv:tc:<turn_id>.<tool_call_id>.call`
    - `text`: JSON `{tool_id, tool_call_id, params, ts}`
    - Notes are **not** embedded in the call payload.
 
 3. **Notices (optional)**
    - `type`: `react.notice`
-   - `path`: `tc:<turn_id>.<tool_call_id>.notice`
+   - `path`: `conv:tc:<turn_id>.<tool_call_id>.notice`
    - Used for protocol violations, path rewrites, tool errors, etc.
 
 4. **Tool results**
@@ -81,7 +81,7 @@ When a decision uses `action=call_tool`, the timeline receives blocks in this or
      - `[TOOL RESULT <id>].artifact <tool_id>` for each artifact (logical path + optional physical path + content)
 
 Notes:
-- File content blocks (`path=fi:...`) store hosting info in `meta` (`hosted_uri`, `rn`, `key`, `physical_path`)
+- File content blocks (`path=conv:fi:...`) store hosting info in `meta` (`hosted_uri`, `rn`, `key`, `physical_path`)
   plus `meta.digest`. Hosted fields are never rendered to the model.
 - Exec tools emit `react.tool.code` **before** the tool call block.
 
@@ -103,7 +103,7 @@ If the target path is **before** the pre‑tail cache point, the tool returns
 `react.read` brings existing artifacts into the visible timeline.
 
 Behavior
-- Emits a **status block first** at `tc:<turn_id>.<tool_call_id>.result` with:
+- Emits a **status block first** at `conv:tc:<turn_id>.<tool_call_id>.result` with:
   `paths`, `missing`, `missing_skills`, `exists_in_visible_context`, `total_tokens`,
   and the active visible read caps.
 - Emits result blocks **after** the status block.
@@ -120,11 +120,11 @@ Behavior
 - All readable payloads are also bounded by `read_visible_max_bytes`.
 - Large normal tool results are bounded before the next decision prompt by
   `tool_result_preview_max_text_symbols`. The rendered result keeps shape,
-  size metadata, a raw preview, and recovery instructions; the full `tc:` block
+  size metadata, a raw preview, and recovery instructions; the full `conv:tc:` block
   remains stored.
 - Rendered tool-result bodies are labeled as `payload` after the logical path
   and mime, matching the `fetch_ctx` artifact shape.
-- Exec snippets can use `ctx_tools.fetch_ctx(path="tc:<turn>.<call>.result")`
+- Exec snippets can use `ctx_tools.fetch_ctx(path="conv:tc:<turn>.<call>.result")`
   for computation or to create smaller derived artifacts. The returned artifact
   has `path`, `mime`, and `payload`; for JSON mime, `payload` is parsed JSON.
   Exec stdout is capped and is not a way to put uncapped full content back into
@@ -136,17 +136,17 @@ Behavior
   recovery marker instead of content.
 
 Path handling
-- `fi:` rehosts the file locally and emits:
+- `conv:fi:` rehosts the file locally and emits:
   - metadata digest block (JSON text)
   - file content block when readable and under caps (text or base64 for pdf/image); binary files emit metadata only
-- `so:sources_pool[...]`:
-  - file/attachment rows resolve as `fi:`
+- `conv:so:sources_pool[...]`:
+  - file/attachment rows resolve as `conv:fi:`
   - non-file rows render as sources_pool text
 - `sk:` emits ACTIVE skill blocks
 - external owner namespaces such as `mem:` or `cnv:` are not direct
   `react.read` inputs by default. When exact content is needed, the visible
   action is `react.pull`; the namespace rehoster mirrors owner content into a
-  returned `fi:` artifact, which can then be read or searched.
+  returned `conv:fi:` artifact, which can then be read or searched.
 
 Example:
 
@@ -154,8 +154,8 @@ Example:
 react.pull(paths=["cnv:main@27"])
   -> namespace rehoster cnv
   -> canvas owner reads board revision
-  -> pull returns fi:turn_<id>.snapshots/...
-  -> react.read(paths=[returned fi:])
+  -> pull returns conv:fi:turn_<id>.git/snapshots/...
+  -> react.read(paths=[returned conv:fi:])
 ```
 
 ---
@@ -173,7 +173,7 @@ For write tools we also validate the output file and record:
 When `channel="internal"`, `react.write` creates a user-invisible internal
 file artifact by default. This is the preferred shape for longer notes,
 working data, scratch reports, or any content that should be recoverable by
-`fi:` path without bloating the visible timeline.
+`conv:fi:` path without bloating the visible timeline.
 
 Set `scratchpad=true` only for short inline notes that should also appear as a
 `react.note` block. Those notes are **Internal Memory Beacons**:
@@ -186,7 +186,7 @@ Set `scratchpad=true` only for short inline notes that should also appear as a
 1. `react.notes` (optional)
 2. `react.tool.call`
    - `params.content` is shortened to a prefix and then appended with:
-     `"... [see fi:<turn_id>.files/<name>]"` to avoid duplication.
+     `"... [see conv:fi:<turn_id>.files/<name>]"` to avoid duplication.
 3. `react.notice` (optional)
    - `protocol_violation.path_rewritten`
    - `react.write.hosting_failed` (file missing / hosting failure)
@@ -200,7 +200,7 @@ Set `scratchpad=true` only for short inline notes that should also appear as a
 If `react.write(channel="internal")` is used without `scratchpad=true`, the
 timeline records the normal tool call and an internal meta result, but it does
 not inline the content as `react.note`. The content is stored as a file and is
-recoverable through its `fi:` path.
+recoverable through its `conv:fi:` path.
 
 If `scratchpad=true` is provided, the same internal file is written and the
 short content is also emitted as `react.note`. Later compaction may preserve
@@ -215,35 +215,35 @@ Typical sequence:
 **Example (simplified)**
 ```json
 // react.notes
-{ "type": "react.notes", "path": "ar:turn_1.react.notes.abc", "text": "Drafting summary" }
+{ "type": "react.notes", "path": "conv:ar:turn_1.react.notes.abc", "text": "Drafting summary" }
 
 // react.tool.call (content truncated)
-{ "type": "react.tool.call", "path": "tc:turn_1.abc.call",
-  "text": "{ \"tool_id\": \"react.write\", \"tool_call_id\": \"abc\", \"params\": {\"content\": \"# Report... [see fi:turn_1.files/report.md]\", ...} }" }
+{ "type": "react.tool.call", "path": "conv:tc:turn_1.abc.call",
+  "text": "{ \"tool_id\": \"react.write\", \"tool_call_id\": \"abc\", \"params\": {\"content\": \"# Report... [see conv:fi:turn_1.files/report.md]\", ...} }" }
 
 // react.tool.result (meta, tokens included if available)
-{ "type": "react.tool.result", "path": "tc:turn_1.abc.result",
-  "text": "{ \"artifact_path\": \"fi:turn_1.files/report.md\", \"physical_path\": \"turn_1/files/report.md\", \"kind\": \"display\", \"visibility\": \"external\", \"tokens\": 1234 }" }
+{ "type": "react.tool.result", "path": "conv:tc:turn_1.abc.result",
+  "text": "{ \"artifact_path\": \"conv:fi:turn_1.files/report.md\", \"physical_path\": \"turn_1/files/report.md\", \"kind\": \"display\", \"visibility\": \"external\", \"tokens\": 1234 }" }
 
 // content
-{ "type": "react.tool.result", "path": "fi:turn_1.files/report.md", "mime": "text/markdown", "text": "# Report..." }
+{ "type": "react.tool.result", "path": "conv:fi:turn_1.files/report.md", "mime": "text/markdown", "text": "# Report..." }
 
 
 ```
 
 Internal file example:
 ```json
-{ "type": "react.tool.result", "path": "tc:turn_1.mem1.result",
-  "text": "{ \"artifact_path\": \"fi:turn_1.files/memory/key-artifacts.md\", \"visibility\": \"internal\", \"kind\": \"file\" }" }
+{ "type": "react.tool.result", "path": "conv:tc:turn_1.mem1.result",
+  "text": "{ \"artifact_path\": \"conv:fi:turn_1.files/memory/key-artifacts.md\", \"visibility\": \"internal\", \"kind\": \"file\" }" }
 ```
 
 Internal scratchpad beacon example:
 ```json
-{ "type": "react.tool.result", "path": "tc:turn_1.mem1.result",
-  "text": "{ \"artifact_path\": \"fi:turn_1.files/memory/key-artifacts.md\", \"visibility\": \"internal\" }" }
+{ "type": "react.tool.result", "path": "conv:tc:turn_1.mem1.result",
+  "text": "{ \"artifact_path\": \"conv:fi:turn_1.files/memory/key-artifacts.md\", \"visibility\": \"internal\" }" }
 
-{ "type": "react.note", "path": "fi:turn_1.files/memory/key-artifacts.md",
-  "text": "[K] fi:turn_1.files/src/app/auth/service.py - invite flow implementation; reopen here before changing user onboarding",
+{ "type": "react.note", "path": "conv:fi:turn_1.files/memory/key-artifacts.md",
+  "text": "[K] conv:fi:turn_1.files/src/app/auth/service.py - invite flow implementation; reopen here before changing user onboarding",
   "meta": { "channel": "internal" } }
 ```
 
@@ -276,11 +276,11 @@ Rendered view uses `[TOOL RESULT <id>].summary` + `[TOOL RESULT <id>].artifact` 
 **Example (PDF)**
 ```json
 // meta
-{ "type": "react.tool.result", "path": "tc:turn_1.def.result",
-  "text": "{ \"artifact_path\": \"fi:turn_1.files/report.pdf\", \"physical_path\": \"turn_1/files/report.pdf\", \"mime\": \"application/pdf\", \"kind\": \"file\", \"visibility\": \"external\" }" }
+{ "type": "react.tool.result", "path": "conv:tc:turn_1.def.result",
+  "text": "{ \"artifact_path\": \"conv:fi:turn_1.files/report.pdf\", \"physical_path\": \"turn_1/files/report.pdf\", \"mime\": \"application/pdf\", \"kind\": \"file\", \"visibility\": \"external\" }" }
 
 // binary
-{ "type": "react.tool.result", "path": "fi:turn_1.files/report.pdf", "mime": "application/pdf", "base64": "<...>" }
+{ "type": "react.tool.result", "path": "conv:fi:turn_1.files/report.pdf", "mime": "application/pdf", "base64": "<...>" }
 ```
 
 ---
@@ -288,7 +288,7 @@ Rendered view uses `[TOOL RESULT <id>].summary` + `[TOOL RESULT <id>].artifact` 
 ## exec_tools.execute_code_* (contracted outputs)
 
 Exec tools produce:
-- A **text report** at `tc:<turn_id>.<tool_call_id>.result` describing runtime error (if any),
+- A **text report** at `conv:tc:<turn_id>.<tool_call_id>.result` describing runtime error (if any),
   file‑level errors, and the list of produced files.
 - Per‑file blocks **only for produced artifacts** (meta + optional binary/text).
 - For **text files**, exec emits a bounded `text_preview` in the artifact payload
@@ -296,7 +296,7 @@ Exec tools produce:
   The cap is `ai.react.exec_text_preview_max_symbols` /
   `AI_REACT_EXEC_TEXT_PREVIEW_MAX_SYMBOLS` and is measured in text characters.
   Larger files are marked with `[TEXT FILE PREVIEW TRUNCATED]`; the full file
-  remains available by its `fi:` path.
+  remains available by its `conv:fi:` path.
 - Each contracted output may optionally declare `visibility=external|internal`.
   - `external` is the default and is user-shareable.
   - `internal` remains agent-visible in the timeline/artifact root but is not hosted or sent to the user.
@@ -332,7 +332,7 @@ Rendered view follows the same summary/artifact layout for produced files.
 Blocks:
 1) `react.notes` (optional)  
 2) `react.tool.call`  
-3) **Exec report** (text) at `tc:...result`  
+3) **Exec report** (text) at `conv:tc:...result`  
 4) For each produced artifact:  
    - `react.tool.result` (meta JSON)  
    - optional binary block (pdf/image)  
@@ -343,7 +343,7 @@ Blocks:
 Blocks:
 1) `react.notes` (optional)  
 2) `react.tool.call`  
-3) **Exec report** (text) at `tc:...result`  
+3) **Exec report** (text) at `conv:tc:...result`  
 4) For each **produced** artifact: meta (+ binary if pdf/image)  
 
 ### Case C: Partial contract produced + runtime error
@@ -351,13 +351,13 @@ Blocks:
 Blocks:
 1) `react.notes` (optional)  
 2) `react.tool.call`  
-3) **Exec report** (text) at `tc:...result`  
+3) **Exec report** (text) at `conv:tc:...result`  
 4) For each produced artifact: meta (+ binary if pdf/image)  
 
 **Exec report example (one success, one failure)**
 ```json
 { "type": "react.tool.result",
-  "path": "tc:turn_1.xyz.result",
+  "path": "conv:tc:turn_1.xyz.result",
   "mime": "text/markdown",
   "text": "Runtime error: execution_failed — Missing output files: turn_1/files/report.xlsx\nFile errors:\n- turn_1/files/report.xlsx: file not produced\nSucceeded:\n- turn_1/files/summary.pdf"
 }
@@ -372,42 +372,42 @@ Blocks:
 react.notes (optional)
 react.tool.code            # emitted before tool call
 react.tool.call
-react.tool.result          # exec report at tc:<turn>.<tc>.result (status/errors + produced files)
-react.tool.result          # meta digest for fi:<turn>.files/report.pdf
-react.tool.result          # file block (base64 pdf) at fi:<turn>.files/report.pdf
-react.tool.result          # meta digest for fi:<turn>.files/notes.txt
-react.tool.result          # file block (text) at fi:<turn>.files/notes.txt
-react.tool.result          # meta digest for fi:<turn>.files/data.xlsx
-react.tool.result          # file block (no text/base64; binary) at fi:<turn>.files/data.xlsx
+react.tool.result          # exec report at conv:tc:<turn>.<tc>.result (status/errors + produced files)
+react.tool.result          # meta digest for conv:fi:<turn>.files/report.pdf
+react.tool.result          # file block (base64 pdf) at conv:fi:<turn>.files/report.pdf
+react.tool.result          # meta digest for conv:fi:<turn>.files/notes.txt
+react.tool.result          # file block (text) at conv:fi:<turn>.files/notes.txt
+react.tool.result          # meta digest for conv:fi:<turn>.files/data.xlsx
+react.tool.result          # file block (no text/base64; binary) at conv:fi:<turn>.files/data.xlsx
 ```
 
 ### 2) Web search call
 ```
 react.notes (optional)
 react.tool.call            # tool_id=web_tools.web_search
-react.tool.result          # meta digest for so:sources_pool[1-5]
+react.tool.result          # meta digest for conv:so:sources_pool[1-5]
 react.tool.result          # sources_pool content (text, truncated policy)
 ```
 
 ### 3) react.read mixed inputs
 Paths:
-- so:sources_pool[1,2] (row 1 = file, row 2 = web result)
-- fi:<turnA>.user.attachments/notes.txt
-- fi:<turnA>.user.attachments/image.png
-- fi:<turnB>.files/board.pptx
+- conv:so:sources_pool[1,2] (row 1 = file, row 2 = web result)
+- conv:fi:<turnA>.user.attachments/notes.txt
+- conv:fi:<turnA>.user.attachments/image.png
+- conv:fi:<turnB>.files/board.pptx
 
 ```
 react.tool.call
-react.tool.result          # STATUS block first at tc:<turn>.<tc>.result (paths/missing/exists)
-react.tool.result          # meta digest for fi:<turnX>.files/report.pdf
-react.tool.result          # file block (base64) for fi:<turnX>.files/report.pdf
+react.tool.result          # STATUS block first at conv:tc:<turn>.<tc>.result (paths/missing/exists)
+react.tool.result          # meta digest for conv:fi:<turnX>.files/report.pdf
+react.tool.result          # file block (base64) for conv:fi:<turnX>.files/report.pdf
 react.tool.result          # sources_pool text for non-file rows
-react.tool.result          # meta digest for fi:<turnA>.user.attachments/notes.txt
-react.tool.result          # file block (text) for fi:<turnA>.user.attachments/notes.txt
-react.tool.result          # meta digest for fi:<turnA>.user.attachments/image.png
-react.tool.result          # file block (base64) for fi:<turnA>.user.attachments/image.png when under read_visible_max_bytes
-react.tool.result          # meta digest for fi:<turnB>.files/board.pptx
-react.tool.result          # file block (binary, no base64) for fi:<turnB>.files/board.pptx
+react.tool.result          # meta digest for conv:fi:<turnA>.user.attachments/notes.txt
+react.tool.result          # file block (text) for conv:fi:<turnA>.user.attachments/notes.txt
+react.tool.result          # meta digest for conv:fi:<turnA>.user.attachments/image.png
+react.tool.result          # file block (base64) for conv:fi:<turnA>.user.attachments/image.png when under read_visible_max_bytes
+react.tool.result          # meta digest for conv:fi:<turnB>.files/board.pptx
+react.tool.result          # file block (binary, no base64) for conv:fi:<turnB>.files/board.pptx
 ```
 
 ---
@@ -430,15 +430,15 @@ By the time timeline blocks are built:
 **Example (simplified)**
 ```json
 // tool call
-{ "type": "react.tool.call", "path": "tc:turn_1.s1.call",
+{ "type": "react.tool.call", "path": "conv:tc:turn_1.s1.call",
   "text": "{ \"tool_id\": \"web_tools.web_search\", \"tool_call_id\": \"s1\", \"params\": {\"queries\": [\"best restaurants wuppertal\"], \"n\": 5} }" }
 
 // meta
-{ "type": "react.tool.result", "path": "tc:turn_1.s1.result",
-  "text": "{ \"artifact_path\": \"tc:turn_1.s1.result\", \"mime\": \"application/json\", \"kind\": \"file\", \"visibility\": \"internal\" }" }
+{ "type": "react.tool.result", "path": "conv:tc:turn_1.s1.result",
+  "text": "{ \"artifact_path\": \"conv:tc:turn_1.s1.result\", \"mime\": \"application/json\", \"kind\": \"file\", \"visibility\": \"internal\" }" }
 
 // content (results list)
-{ "type": "react.tool.result", "path": "tc:turn_1.s1.result",
+{ "type": "react.tool.result", "path": "conv:tc:turn_1.s1.result",
   "mime": "application/json",
   "text": "[{\"sid\":1,\"title\":\"...\",\"url\":\"https://...\"},{\"sid\":2,\"title\":\"...\",\"url\":\"https://...\"}]"
 }
@@ -455,15 +455,15 @@ By the time timeline blocks are built:
 **Example (simplified)**
 ```json
 // tool call
-{ "type": "react.tool.call", "path": "tc:turn_1.f1.call",
+{ "type": "react.tool.call", "path": "conv:tc:turn_1.f1.call",
   "text": "{ \"tool_id\": \"web_tools.web_fetch\", \"tool_call_id\": \"f1\", \"params\": {\"urls\": [\"https://example.com\"]} }" }
 
 // meta
-{ "type": "react.tool.result", "path": "tc:turn_1.f1.result",
-  "text": "{ \"artifact_path\": \"tc:turn_1.f1.result\", \"mime\": \"application/json\", \"kind\": \"file\", \"visibility\": \"internal\" }" }
+{ "type": "react.tool.result", "path": "conv:tc:turn_1.f1.result",
+  "text": "{ \"artifact_path\": \"conv:tc:turn_1.f1.result\", \"mime\": \"application/json\", \"kind\": \"file\", \"visibility\": \"internal\" }" }
 
 // content (fetch payload)
-{ "type": "react.tool.result", "path": "tc:turn_1.f1.result",
+{ "type": "react.tool.result", "path": "conv:tc:turn_1.f1.result",
   "mime": "application/json",
   "text": "{\"https://example.com\": {\"content\": \"...\", \"title\": \"Example\"}}"
 }

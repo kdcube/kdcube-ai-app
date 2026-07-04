@@ -212,8 +212,8 @@ named-service/materialization path:
 ```text
 react.pull(paths=["acme:ticket:ticket_123"])
   -> provider object.get(response_mode=stream)
-  -> workspace fi: artifact
-  -> react.read(fi:...) preserves original object_ref
+  -> workspace conv:fi: artifact
+  -> react.read(conv:fi:...) preserves original object_ref
   -> event.resolve / block.produce
   -> model-visible owner blocks
 ```

@@ -24,7 +24,7 @@ The workspace is execution state. Canonical conversation state still lives in ti
 
 Scope:
 - this document describes the concrete workspace filesystem and lifecycle
-- the agent-facing contract — namespaces (`files/` vs `outputs/` vs `snapshots/`),
+- the agent-facing contract — namespaces (`git/projects/` vs `files/` vs `git/snapshots/`),
   the `[WORKSPACE]` ANNOUNCE map, and pull/checkout — is in
   [workspace-model-README.md](./workspace-model-README.md)
 
@@ -44,9 +44,9 @@ exec_<UTC timestamp>_<suffix>/
     logs/
     workdir/            # artifact root exposed as OUTPUT_DIR
       turn_<current>/
-        files/          # durable workspace/project state
-        outputs/        # produced artifacts, not workspace state
-        snapshots/      # story/workflow snapshots
+        git/projects/   # durable workspace/project state
+        files/          # produced artifacts, not workspace state
+        git/snapshots/      # story/workflow snapshots
         attachments/    # user attachments
         external/...    # rehosted external/followup/domain attachments
       turn_<older>/...  # pulled same-conversation history
@@ -57,30 +57,30 @@ exec_<UTC timestamp>_<suffix>/
 Current behavior:
 - History is preserved physically under `out/workdir/turn_<id>/...`; cross-conversation refs materialize under `out/workdir/conv_<conversation_id>/turn_<id>/...`.
 - Writes for the current turn go to:
-  - `out/workdir/<current_turn>/files/...` for durable workspace/project state
-  - `out/workdir/<current_turn>/outputs/...` for non-workspace produced artifacts
+  - `out/workdir/<current_turn>/git/projects/...` for durable workspace/project state
+  - `out/workdir/<current_turn>/files/...` for non-workspace produced artifacts
 - Reads can target:
   - versioned turn artifacts and attachments
   - any readable artifact file already present under `out/workdir/`
 - External owner refs such as `nmsp:`, `cnv:`, or `mem:` have no physical path
   until `react.pull` invokes a registered namespace rehoster and returns the
-  materialized `fi:` / physical rows.
+  materialized `conv:fi:` / physical rows.
 
 Workspace implementation (`RuntimeCtx.workspace_implementation`):
 - `custom`
-  - the agent is taught to use `fi:` plus `react.pull(paths=[...])` for historical materialization and `react.checkout(paths=[...])` for copying pulled `files/...` refs into the active current-turn workspace
-  - `.files/...` pulls hydrate from artifact/timeline metadata and hosted blobs
+  - the agent is taught to use `conv:fi:` plus `react.pull(paths=[...])` for historical materialization and `react.checkout(paths=[...])` for copying pulled `git/projects/...` refs into the active current-turn workspace
+  - `.git/projects/...` and `.files/...` pulls hydrate from artifact/timeline metadata and hosted blobs
   - the agent is not instructed to treat the activated workspace as git
 - `git`
-  - the agent is taught to use `fi:` plus `react.pull(paths=[...])` for historical materialization and `react.checkout(paths=[...])` for copying pulled `files/...` refs into the active current-turn workspace
-  - `.files/...` pulls hydrate from git-backed lineage snapshots
+  - the agent is taught to use `conv:fi:` plus `react.pull(paths=[...])` for historical materialization and `react.checkout(paths=[...])` for copying pulled `git/projects/...` refs into the active current-turn workspace
+  - `.git/projects/...` pulls hydrate from git-backed lineage snapshots
   - the current turn root `out/workdir/<current_turn>/` is bootstrapped as a local git repo
   - that current-turn repo keeps lineage history available but does not eagerly populate the worktree
   - ANNOUNCE may show `previous saved workspace paths (pull to bring local; checkout to edit)` so React can see prior saved workspace paths without mistaking them for the current editable workspace
   - the agent may use local git inspection/history/edit commands inside that current-turn repo, except pull/push/fetch
 - in both modes:
   - `react.pull` materializes refs as historical/reference material
-  - `react.checkout` copies selected `fi:...files...` refs into the active current-turn `files/` workspace
+  - `react.checkout` copies selected `conv:fi:...git/projects...` refs into the active current-turn `git/projects/` workspace
   - folder pulls expand from timeline/git metadata and fetch exact hosted blobs; they do not list storage buckets or extract execution snapshots
   - in `git` mode, exact non-text `.files/...` refs that resolve to hosted artifacts are still hydrated from artifact/hosting history, not from git
 
@@ -99,7 +99,7 @@ When such a resolver exists, the generated code flow is:
 4. inspect the content for discovery only
 5. emit owner refs or hosted file refs back into OUTPUT_DIR artifacts or short
    logs so the agent can later use the correct owner API or `react.read` on
-   normal `fi:`/`tc:`/`ar:` artifacts
+   normal `conv:fi:`/`conv:tc:`/`conv:ar:` artifacts
 
 ## Lifecycle at a glance
 
@@ -173,16 +173,16 @@ exec_20260506125243_ab12/
         user_code.py                       # verbatim agent-generated program body/snippet
     workdir/                               # artifact root exposed as OUTPUT_DIR
       turn_<turn_id>/
-        files/                             # durable workspace/project state
-        outputs/                           # non-workspace produced artifacts
-        snapshots/                         # story/workflow snapshots
+        git/projects/                      # durable workspace/project state
+        files/                             # non-workspace produced artifacts
+        git/snapshots/                         # story/workflow snapshots
         attachments/                       # turn-scoped user attachment files
         external/<event_kind>/attachments/... # external-event attachments, e.g. followup
       conv_<conversation_id>/               # pulled artifacts from another conversation
         turn_<turn_id>/
+          git/projects/
           files/
-          outputs/
-          snapshots/
+          git/snapshots/
     logs/                                  # isolated runtime logs
       user.log                             # program/user stream (stdout/stderr + logger "user")
       infra.log                            # merged infra view for current execution id
@@ -206,16 +206,16 @@ Notes:
 
 ### Path conventions used inside the workspace
 
-The full `fi:` grammar, custom namespace rules, and pull/checkout contract live
+The full `conv:fi:` grammar, custom namespace rules, and pull/checkout contract live
 in [artifact-namespace-rehosters-README.md](artifact-namespace-rehosters-README.md).
 This runtime article only needs the operational shape:
 
 ```text
 OUTPUT_DIR/
   turn_<current>/
-    files/...       # editable workspace/project state
-    outputs/...     # produced artifacts, reports, render sources, diagnostics
-    snapshots/...   # story/workflow state snapshots
+    git/projects/... # editable workspace/project state
+    files/...        # produced artifacts, reports, render sources, diagnostics
+    git/snapshots/...   # story/workflow state snapshots
     attachments/... # user uploads for this turn
   turn_<older>/...  # pulled same-conversation references
   conv_<conversation_id>/turn_<older>/...
@@ -224,16 +224,16 @@ OUTPUT_DIR/
 
 Workspace/read-write summary:
 - `react.write`, `react.patch`, rendering tools, and exec outputs may write to
-  `turn_<current>/files/...` or `turn_<current>/outputs/...`.
-- Use `files/...` for durable workspace/project state; use `outputs/...` for
-  generated artifacts that should not become editable project state.
+  `turn_<current>/git/projects/...` or `turn_<current>/files/...`.
+- Use `git/projects/...` for durable workspace/project state; use `files/...`
+  for generated artifacts that should not become editable project state.
 - `react.pull` materializes selected same-turn, older-turn, cross-conversation,
   or custom-namespace refs into `OUTPUT_DIR`.
-- `react.checkout` copies pulled historical `files/...` refs into the active
-  current-turn `files/` workspace for editing.
+- `react.checkout` copies pulled historical `git/projects/...` refs into the active
+  current-turn `git/projects/` workspace for editing.
 - Custom refs such as `nmsp:...`, `cnv:...`, or `mem:...` have no derived local path. `react.pull` calls a
   registered namespace rehoster and its result tells the agent the materialized
-  `fi:` path.
+  `conv:fi:` path.
 - `react.rg` searches readable files already materialized in `OUTPUT_DIR`; it is
   not a search over unpulled history.
 - `work/` is internal execution scratch and is not part of the normal React search/read contract.

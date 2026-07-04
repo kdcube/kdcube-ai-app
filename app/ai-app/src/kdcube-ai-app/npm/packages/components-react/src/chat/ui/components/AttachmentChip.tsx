@@ -37,8 +37,8 @@ export function AttachmentChip({
 }) {
   const vm = useChatViewModel()
   const [downloading, setDownloading] = useState(false)
-  // A user attachment's logical_path is often the non-durable `fi:turn_…`
-  // form; promote it to the durable `fi:conv_<id>.turn_…` ref the canvas
+  // A user attachment's logical_path is often the non-durable `conv:fi:turn_...`
+  // form; promote it to the durable `conv:fi:conv_<id>.turn_...` ref the canvas
   // accepts (the same normalization assistant files already get), so the
   // chip becomes draggable/pinnable like a bot-produced file.
   const dragRef = canonicalObjectRef(durableHistoricalObjectRef(attachment.logicalPath, conversationId ?? undefined))

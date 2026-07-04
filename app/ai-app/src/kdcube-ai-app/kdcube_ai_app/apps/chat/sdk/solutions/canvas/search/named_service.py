@@ -144,7 +144,7 @@ CANVAS_CARD_SCHEMA: dict[str, Any] = {
         "title": {"type": "string", "description": "Card title/label."},
         "summary": {"type": "string", "description": "Card summary or description when present."},
         "mime": {"type": "string", "description": "MIME type visible on the card when present."},
-        "logical_path": {"type": "string", "description": "Hosted or pinned object ref, such as cnv:, fi:, mem:, task:, or so:."},
+        "logical_path": {"type": "string", "description": "Hosted or pinned object ref, such as cnv:, conv:fi:, mem:, task:, or conv:so:."},
         "namespace": {"type": "string", "description": "Root namespace of the pinned object ref."},
         "board": {"type": "string", "description": "Canvas board id containing the card."},
         "score": {"type": "number", "description": "Provider-local relevance score; use returned order as rank."},

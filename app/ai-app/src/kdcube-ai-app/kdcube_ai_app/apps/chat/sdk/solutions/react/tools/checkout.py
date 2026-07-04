@@ -25,31 +25,30 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.workspace import (
 TOOL_SPEC = {
     "id": "react.checkout",
     "purpose": (
-        "Define the active current-turn workspace by copying selected materialized fi:turn_<id>.files refs "
-        "into turn_<current>/files in order. "
+        "Define the active current-turn project workspace by copying selected materialized "
+        "conv:fi:turn_<id>.git/projects refs into turn_<current>/git/projects in order. "
         "Use this when the current workspace itself must contain a runnable/searchable project snapshot, "
         "rather than only materializing historical side views with react.pull. "
         "For older refs that may not be local on this worker, call react.pull(paths=[...]) first. "
-        "react.checkout accepts only fi:...files... workspace refs; external owner namespaces and ev: timeline event refs are not checkout paths."
+        "react.checkout accepts only conv:fi:...git/projects... workspace refs; external owner namespaces and event refs are not checkout paths."
     ),
     "args": {
         "mode": (
             "optional str: replace|overlay. "
-            "replace clears current-turn files/ before applying refs. "
-            "overlay keeps existing current-turn files/ and overwrites only the selected files."
+            "replace clears current-turn git/projects/ before applying refs. "
+            "overlay keeps existing current-turn git/projects/ and overwrites only the selected files."
         ),
         "paths": (
-            "ordered list[str] of fi:turn_<id>.files refs to apply into the current-turn workspace. "
-            "An fi:conv_<conversation_id>.turn_<id>... ref belongs to another conversation and is resolved with that scope. "
-            "Later entries override earlier ones if they overlap. "
-            "For compatibility, params.version is still accepted as a whole-tree checkout of fi:turn_<id>.files/."
+            "ordered list[str] of conv:fi:turn_<id>.git/projects refs to apply into the current-turn workspace. "
+            "A conv:fi:conv_<conversation_id>.turn_<id>... ref belongs to another conversation and is resolved with that scope. "
+            "Later entries override earlier ones if they overlap."
         ),
     },
     "returns": (
         "JSON object {mode, checked_out_from, checked_out, materialized, missing, errors}. "
-        "materialized is a compact tree summary under the current-turn files/ root, not a per-file manifest. "
-        "replace clears current-turn files/ before applying refs. "
-        "overlay keeps current-turn files/ and applies refs on top. "
+        "materialized is a compact tree summary under the current-turn git/projects/ root, not a per-file manifest. "
+        "replace clears current-turn git/projects/ before applying refs. "
+        "overlay keeps current-turn git/projects/ and applies refs on top. "
         "Historical refs remain available separately via react.pull."
     ),
 }
@@ -119,20 +118,19 @@ async def handle_react_checkout(*, ctx_browser: Any, state: Dict[str, Any], tool
 
     requests, invalid = normalize_checkout_requests(
         raw_paths=raw_paths,
-        legacy_version=str(params.get("version") or "").strip(),
         current_turn_id=turn_id,
     )
     if invalid:
         return _fail(
             "protocol_violation.checkout_invalid_paths",
-            "react.checkout requires fi:turn_<id>.files refs in params.paths (or legacy params.version).",
+            "react.checkout requires conv:fi:turn_<id>.git/projects refs in params.paths.",
             extra={"invalid": invalid},
         )
 
     if not requests:
         return _fail(
             "protocol_violation.checkout_missing_paths",
-            "react.checkout requires params.paths with fi:turn_<id>.files refs (or legacy params.version).",
+            "react.checkout requires params.paths with conv:fi:turn_<id>.git/projects refs.",
         )
 
     result = await checkout_workspace_paths(
@@ -195,7 +193,7 @@ async def handle_react_checkout(*, ctx_browser: Any, state: Dict[str, Any], tool
         "turn_id": turn_id,
         "type": "react.workspace.checkout",
         "mime": "application/json",
-        "path": f"ar:{turn_id}.react.workspace.checkout",
+        "path": f"conv:ar:{turn_id}.react.workspace.checkout",
         "text": json.dumps(checkout_event_payload, ensure_ascii=False, indent=2),
         "meta": {
             "tool_call_id": tool_call_id,

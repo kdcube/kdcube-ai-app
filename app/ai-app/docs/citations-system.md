@@ -48,7 +48,7 @@ All tools converge on this shape (subset is OK; fields are additive):
   "source_type": "web|file|attachment|manual",
   "mime": "text/html",
   "size_bytes": 12345,
-  "artifact_path": "fi:<turn>.files/report.pdf",
+  "artifact_path": "conv:fi:<turn>.files/report.pdf",
   "physical_path": "turn_<id>/files/report.pdf",
 
   // Optional metadata
@@ -180,6 +180,6 @@ Renderers (`write_pdf`, `write_png`, `write_pptx`, `write_docx`) extract citatio
 
 ## Access & Validation
 
-- Use `react.read(["so:sources_pool[1-5]"])` to load JSON source rows into visible context. Rows are full by default and include item stats metadata; for web rows prefer `content` over `text` when evidence needs full fetched page text.
-- Use `context_tools.fetch_ctx("so:sources_pool[1,3]")` for programmatic access (returns raw rows).
+- Use `react.read(["conv:so:sources_pool[1-5]"])` to load JSON source rows into visible context. Rows are full by default and include item stats metadata; for web rows prefer `content` over `text` when evidence needs full fetched page text.
+- Use `context_tools.fetch_ctx("conv:so:sources_pool[1,3]")` for programmatic access (returns raw rows).
 - Use `extract_citation_sids_any` or `citations_present_inline` for validation/debug.

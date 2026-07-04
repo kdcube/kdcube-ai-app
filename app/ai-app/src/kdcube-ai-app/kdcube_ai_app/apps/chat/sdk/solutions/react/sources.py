@@ -17,6 +17,7 @@ from kdcube_ai_app.apps.chat.sdk.tools.citations import (
 )
 from kdcube_ai_app.apps.chat.sdk.runtime.run_ctx import SOURCE_ID_CV
 from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import (
+    REACT_FILE_REF_PREFIX,
     build_physical_artifact_path,
     split_logical_artifact_path,
     split_physical_artifact_path,
@@ -294,7 +295,7 @@ async def ensure_rendering_assets(
                 physical_path = (row.get("physical_path") or row.get("local_path") or "").strip()
                 if not physical_path:
                     ap = (row.get("artifact_path") or "").strip()
-                    if ap.startswith("fi:"):
+                    if ap.startswith(REACT_FILE_REF_PREFIX):
                         tid, namespace, rel = split_logical_artifact_path(ap)
                         if tid and namespace and rel:
                             physical_path = build_physical_artifact_path(
@@ -303,7 +304,7 @@ async def ensure_rendering_assets(
                                 relpath=rel,
                             )
                         else:
-                            physical_path = ap[len("fi:"):].lstrip("/")
+                            physical_path = ap[len(REACT_FILE_REF_PREFIX):].lstrip("/")
                 tid, namespace, rel = split_physical_artifact_path(physical_path)
                 if tid and namespace and rel:
                     sid_rehost.append(physical_path)

@@ -158,7 +158,7 @@ def _telegram_connect_answer(turn_id: str) -> Dict[str, Any]:
         "timeline": {
             "blocks": [
                 {
-                    "path": f"tc:{turn_id}.telegram.connect_required",
+                    "path": f"conv:tc:{turn_id}.telegram.connect_required",
                     "type": "answer",
                     "text": text,
                 }

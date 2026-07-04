@@ -17,7 +17,7 @@ This subsystem controls:
 3) **Budgets** (plan quotas, plan overrides, user lifetime credits, project money)
 4) **Top-ups** (admin top-ups, subscription top-ups, Stripe credit purchases)
 
-It is designed so:
+It is designed conv:so:
 - **Rate limiting is fast** (Redis counters + Lua for atomic ops).
 - **Money/accounting is correct** (PostgreSQL row locks + ledger).
 - **User credits are concurrency-safe** (reservations prevent oversubscription).

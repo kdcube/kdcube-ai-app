@@ -457,8 +457,8 @@ Use `@artifact_namespace_rehoster(...)` when a snapshot, attachment, or domain
 artifact is represented by an owner namespace such as `nmsp:...`, `mem:...`, or
 `cnv:...`. The
 rehoster chooses the ReAct destination by artifact meaning: snapshots under
-`snapshots/`, editable workspace files under `files/`, produced artifacts under
-`outputs/`, and domain attachments under
+`git/snapshots/`, editable workspace files under `git/projects/`, produced artifacts under
+`files/`, and domain attachments under
 `external/<event_kind>/attachments/<event_id>/...`.
 
 If the bundle needs external human setup before an integration can work, add an

@@ -108,7 +108,7 @@ block = {
   "ts": scratchpad.started_at,
   "mime": "text/markdown",
   "text": "[STAGE: GATE OUTPUT]\nroute: tools_general",
-  "path": f"ar:{turn_id}.stage.gate",
+  "path": f"conv:ar:{turn_id}.stage.gate",
 }
 
 browser.contribute(
@@ -151,7 +151,7 @@ react.pull(paths=["mem:mem_123"])
   -> artifact_namespace_rehoster(namespace="mem")
   -> owner uses current tenant/project/user scope
   -> owner mirrors content into the ReAct artifact workspace
-  -> pull returns fi:/physical paths for later read/search/exec
+  -> pull returns conv:fi:/physical paths for later read/search/exec
 ```
 
 This keeps ContextBrowser generic. It does not know how to render memory,

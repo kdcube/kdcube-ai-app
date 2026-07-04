@@ -17,6 +17,7 @@ from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import (
 )
 from kdcube_ai_app.apps.chat.sdk.runtime.run_ctx import OUTDIR_CV, WORKDIR_CV
 from kdcube_ai_app.apps.chat.sdk.runtime.tool_module_bindings import get_bound_context, get_shared_browser_service
+from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import REACT_FILE_REF_PREFIX
 
 
 _SESSIONS: dict[str, "BrowserSession"] = {}
@@ -217,13 +218,16 @@ def _session_matches_bound_context(session: BrowserSession, bound_context: Any) 
 
 
 def _logical_fi_to_relative(path: str) -> Optional[pathlib.Path]:
-    if not path.startswith("fi:"):
+    if not path.startswith(REACT_FILE_REF_PREFIX):
         return None
-    logical = path[3:]
-    for marker in (".outputs/", ".files/", ".attachments/"):
+    logical = path[len(REACT_FILE_REF_PREFIX):]
+    for marker in (".files/", ".git/projects/", ".git/snapshots/", ".user.attachments/"):
         if marker in logical:
             turn_id, rest = logical.split(marker, 1)
-            return pathlib.Path(turn_id) / marker.strip("./") / rest
+            namespace = marker.strip("./")
+            if namespace == "user.attachments":
+                namespace = "attachments"
+            return pathlib.Path(turn_id) / namespace / rest
     return None
 
 
@@ -907,11 +911,11 @@ class BrowserBackend:
         turn_id = _current_turn_id(self.bound_context)
         if requested_path:
             rel = pathlib.Path(str(requested_path).strip()).expanduser()
-            if rel.is_absolute():
-                raise PermissionError("screenshot_path must be OUTPUT_DIR-relative")
+        if rel.is_absolute():
+            raise PermissionError("screenshot_path must be OUTPUT_DIR-relative")
         else:
             stamp = int(time.time() * 1000)
-            rel = pathlib.Path(turn_id) / "outputs" / "browser_screenshots" / f"{stamp}_{_scrub_id(tab_id)}.png"
+            rel = pathlib.Path(turn_id) / "files" / "browser_screenshots" / f"{stamp}_{_scrub_id(tab_id)}.png"
 
         target = (outdir / rel).resolve()
         if not _is_relative_to(target, outdir):
@@ -921,9 +925,9 @@ class BrowserBackend:
 
         logical = None
         rel_posix = rel.as_posix()
-        marker = f"{turn_id}/outputs/"
+        marker = f"{turn_id}/files/"
         if rel_posix.startswith(marker):
-            logical = f"fi:{turn_id}.outputs/{rel_posix[len(marker):]}"
+            logical = f"{REACT_FILE_REF_PREFIX}{turn_id}.files/{rel_posix[len(marker):]}"
         return {
             "path": logical,
             "logical_path": logical,

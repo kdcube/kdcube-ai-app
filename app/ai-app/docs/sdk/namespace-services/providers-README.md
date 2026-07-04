@@ -55,7 +55,7 @@ Examples:
 | task issue provider | `task:issue:...`, issue search, issue editor actions |
 | memory provider | `mem:...`, memory search, memory viewer actions |
 | canvas provider | `cnv:<board>`, `cnv:<board>@<revision>`, `cnv:canvas/.../objects/...`, board/card search, board/card upsert, object actions |
-| ReAct artifact provider | `fi:...`, artifact preview/download/materialization |
+| ReAct artifact provider | `conv:fi:...`, artifact preview/download/materialization |
 | document/source provider | provider-owned refs such as `docs:...` or `repo:...`, document/source search and read actions |
 
 Use **named service provider** for the top-level concept. Use **namespaced
@@ -441,7 +441,7 @@ Canvas exposes these object families:
 | `object_kind` | Refs / payloads | Notes |
 |---|---|---|
 | `canvas.board` | `cnv:<board-name>` and `cnv:<board-name>@<revision>` | Board document with cards, layout, and revision metadata. `object.upsert` writes/replaces the board document. |
-| `canvas.card` | card body inside a board; hosted content may produce `cnv:canvas/users/.../objects/...` | `object.upsert` creates or updates a card. Cards may host canvas-owned content or pin `fi:`, `mem:`, `task:`, `so:`, or other refs. |
+| `canvas.card` | card body inside a board; hosted content may produce `cnv:canvas/users/.../objects/...` | `object.upsert` creates or updates a card. Cards may host canvas-owned content or pin `conv:fi:`, `mem:`, `task:`, `conv:so:`, or other refs. |
 | `canvas.object` | `cnv:canvas/users/<user>/canvases/<board>/objects/<kind>/<card-id>/v000001.<ext>` | Versioned bytes/text hosted by a card. Mutate the owning `canvas.card`; do not upsert this hosted object directly. |
 | `canvas.card.comment` | `object_ref=cnv:<board-name>`, payload names `card_id` and `text` | Appends a comment to a card without mutating the proxied object. |
 | `canvas.card.replacement` | `object_ref=cnv:<board-name>`, payload names `card_id`, `mode`, and replacement `card` | Suggests a floating replacement by default; `mode=in_place` is explicit. |
@@ -638,7 +638,7 @@ provider-specific read formatting. The preferred shape is:
 ```text
 object.get(response_mode=stream)
   response: compact sidecar descriptor
-  chunks:   compact JSON/file bytes to write into fi:
+  chunks:   compact JSON/file bytes to write into conv:fi:
 
 block.produce
   input target.meta.object_ref or target.object_ref
@@ -650,11 +650,11 @@ block.render
 ```
 
 Model-visible owner formatting is the `block.produce` contract. After
-`react.read(fi:...)`, the consumer runtime preserves `object_ref` and asks the
+`react.read(conv:fi:...)`, the consumer runtime preserves `object_ref` and asks the
 owner event source to run `block.produce`. Every object family that needs
 formatting different from raw file text should expose `block.produce`. If
 `block.produce` returns no blocks, the consumer falls back to generic text for
-textual `fi:` artifacts.
+textual `conv:fi:` artifacts.
 
 `block.render` is the optional second-stage rendering contract. It has two
 compatible call modes:
@@ -767,7 +767,7 @@ Request shape:
   "object_ref": "task:issue:BUG-123",
   "payload": {
     "file": {
-      "ref": "fi:turn_1.files/report.md",
+      "ref": "conv:fi:turn_1.files/report.md",
       "filename": "report.md",
       "mime": "text/markdown",
       "description": "Investigation note"
@@ -779,7 +779,7 @@ Request shape:
 The request carries a file descriptor, not base64 bytes. Same-runtime providers
 may accept a runtime-local `local_path` descriptor when the transport is trusted
 and request-bound. Cross-runtime and agent-facing paths should normally use
-artifact refs such as `fi:` and let the provider materialize the source through
+artifact refs such as `conv:fi:` and let the provider materialize the source through
 platform storage under the current auth context.
 
 Response shape:
@@ -1549,7 +1549,7 @@ When introducing a named service provider:
   `bundle_operation_url(...)`. JSON responses carry the URL and metadata; the
   bytes stream from the URL target.
 - define streamed `object.get` with `response_mode: stream` for large
-  attachment refs that must become `fi:` artifacts;
+  attachment refs that must become `conv:fi:` artifacts;
 - define `block.produce` when ReAct should project provider-owned objects as
   model-visible blocks;
 - define `block.render` timeline mode when provider-owned blocks need

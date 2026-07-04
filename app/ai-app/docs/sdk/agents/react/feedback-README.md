@@ -50,7 +50,7 @@ Feedback can be shown in two places, depending on cache state:
 
 ```
 type: "turn.feedback"
-path: "ar:<turn_id>.feedback.<key>"
+path: "conv:ar:<turn_id>.feedback.<key>"
 meta: {
   origin: "user" | "machine",
   reaction: "ok" | "not_ok" | "neutral" | null,

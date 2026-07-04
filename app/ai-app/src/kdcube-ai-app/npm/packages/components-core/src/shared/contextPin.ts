@@ -31,7 +31,7 @@ export interface ContextItem {
   /** Semantic kind, e.g. 'object.ref' | 'memory' | 'file' | 'conversation' | 'task.issue'. */
   kind: string
   label: string
-  /** THE canonical object uri — `task:issue:…` | `mem:…` | `fi:conv_…` | `cnv:…` | `conv:…`. Required. */
+  /** THE canonical object uri — `task:issue:...` | `mem:...` | `conv:fi:conv_...` | `cnv:...` | `conv:...`. Required. */
   ref: string
   summary?: string
   mime?: string

@@ -48,7 +48,7 @@ It works with a **memory architecture** composed of several cooperating surfaces
 - derived memory forms such as **summaries**, **replacement text**, **feedback**, and **plans**
 - a durable beacon lane of **Internal Memory Beacons** inside the timeline
 - adjacent readable memory realms exposed through **logical namespaces** such as `sk:`
-- registered external artifact namespaces that can be rehosted into React-readable `fi:` refs
+- registered external artifact namespaces that can be rehosted into React-readable `conv:fi:` refs
 
 The key design choice is this:
 
@@ -80,7 +80,7 @@ That is why React memory is organized around:
 | ANNOUNCE | Operational attention board / signal memory | Tail, always easy to find | Rebuilt each round; final state persisted on exit |
 | Turn log | Per-turn reconstruction memory | Not directly the model view | Persisted as `artifact:turn.log` |
 | Event-source policy projections | Source-specific model views over durable blocks | Render-time only | Derived from timeline blocks and source policies |
-| Workspace | Project/file continuity memory | Local filesystem + `fi:` refs | Files/outputs in the artifact root, optionally git-backed |
+| Workspace | Project/file continuity memory | Local filesystem + `conv:fi:` refs | Files/outputs in the artifact root, optionally git-backed |
 | Conversation artifact index | Searchable/indexed memory | Not directly visible | Postgres index rows + storage blobs |
 | Summaries / hidden replacements / feedback / plans | Derived memory layers | Sometimes visible, sometimes retrievable | Persisted as blocks and/or artifacts |
 
@@ -178,31 +178,31 @@ Logical paths do two jobs:
 
 | Namespace | Meaning | Typical role in memory |
 |---|---|---|
-| `ar:` | Timeline / conversation artifact memory | prompts, completions, feedback blocks, plan aliases, internal events |
-| `fi:` | File/workspace/output memory | workspace files, outputs, attachments, logs |
-| `so:` | Sources pool memory | source rows and citations |
-| `su:` | Summary memory | `conv.range.summary` blocks and compacted ranges |
-| `tc:` | Tool call/result memory | exact call/result artifacts from tool execution |
-| `ev:` | Event occurrence memory | accepted external events and their durable event refs |
+| `conv:ar:` | Timeline / conversation artifact memory | prompts, completions, feedback blocks, plan aliases, internal events |
+| `conv:fi:` | File/artifact/workspace memory | project state under `git/projects`, produced artifacts under `files`, snapshots, attachments, logs |
+| `conv:so:` | Sources pool memory | source rows and citations |
+| `conv:su:` | Summary memory | `conv.range.summary` blocks and compacted ranges |
+| `conv:tc:` | Tool call/result memory | exact call/result artifacts from tool execution |
+| `conv:ev:` | Event occurrence memory | accepted external events and their durable event refs |
 | `sk:` | Skill memory | loaded skill instructions and sources |
 | registered external namespaces such as `nmsp:`, `cnv:`, or `mem:` | External owner refs | domain-owned content resolved and rehosted through `react.pull` |
 
-Some of these are strictly conversation memory (`ar:`, `so:`, `su:`, `tc:`, `ev:`), while others connect adjacent reusable memory realms (`sk:`) or bundle/domain artifact stores (`nmsp:`, `cnv:`, `mem:`, and other registered namespaces). React treats them as one readable system because the retrieval contract is unified at the path level.
+Some of these are strictly conversation memory (`conv:ar:`, `conv:so:`, `conv:su:`, `conv:tc:`, `conv:ev:`), while others connect adjacent reusable memory realms (`sk:`) or bundle/domain artifact stores (`nmsp:`, `cnv:`, `mem:`, and other registered namespaces). React treats them as one readable system because the retrieval contract is unified at the path level.
 
 Examples:
 
-- `ar:<turn_id>.user.prompt`
-- `ar:<turn_id>.assistant.completion`
-- `ar:<turn_id>.assistant.completion.<n>`
-- `ar:plan.latest:<plan_id>`
-- `fi:<turn_id>.files/<path>`
-- `fi:<turn_id>.outputs/<path>`
-- `fi:<turn_id>.user.attachments/<name>`
-- `so:sources_pool[1-5]`
-- `su:<turn_id>.conv.range.summary`
-- `tc:<turn_id>.<tool_call_id>.result`
-- `ev:turn_<id>.events/<event_id>`
-- `ev:conv_<conversation_id>.turn_<id>.events/<event_id>`
+- `conv:ar:<turn_id>.user.prompt`
+- `conv:ar:<turn_id>.assistant.completion`
+- `conv:ar:<turn_id>.assistant.completion.<n>`
+- `conv:ar:plan.latest:<plan_id>`
+- `conv:fi:<turn_id>.files/<path>`
+- `conv:fi:<turn_id>.files/<path>`
+- `conv:fi:<turn_id>.user.attachments/<name>`
+- `conv:so:sources_pool[1-5]`
+- `conv:su:<turn_id>.conv.range.summary`
+- `conv:tc:<turn_id>.<tool_call_id>.result`
+- `conv:ev:turn_<id>.events/<event_id>`
+- `conv:ev:conv_<conversation_id>.turn_<id>.events/<event_id>`
 - `cnv:users/<user_id>/canvases/<canvas_id>/latest.json`
 
 This is one of the main reasons the memory system stays coherent:
@@ -210,13 +210,13 @@ This is one of the main reasons the memory system stays coherent:
 - the agent does not have to remember every storage backend
 - it remembers a path family and the tool that can reopen it
 
-Registered external refs do not have a deterministic `fi:` mapping until the
+Registered external refs do not have a deterministic `conv:fi:` mapping until the
 namespace rehoster runs. React calls `react.pull(paths=["cnv:..."])`,
 `react.pull(paths=["mem:..."])`, or an equivalent registered namespace ref. The
 namespace rehoster resolves the external object, places the bytes into a
-React-readable artifact location, and returns the resulting `fi:` logical path
+React-readable artifact location, and returns the resulting `conv:fi:` logical path
 and physical path. After that,
-ordinary file-oriented tools use the returned `fi:` path.
+ordinary file-oriented tools use the returned `conv:fi:` path.
 
 ## 5. Attention Area: Always-On-Top Memory
 
@@ -337,7 +337,7 @@ Workspace-related file memory is intentionally split:
 
 - `files/...`
   - durable workspace/project state
-- `outputs/...`
+- `files/...`
   - produced artifacts that should not become workspace history
 
 That split matters because “user-visible artifact” and “workspace member” are different questions.
@@ -366,7 +366,7 @@ React supports two workspace backends:
 
 Attachments and non-text hosted artifacts are also part of memory, but they behave differently:
 
-- they are often reopened by exact `fi:` path
+- they are often reopened by exact `conv:fi:` path
 - they may be hosted rather than stored as readable text in context
 - folder pulls do not imply binary descendants
 
@@ -381,8 +381,8 @@ Registered external artifact refs extend this model. A domain may expose an
 owner ref such as `nmsp:...`, `cnv:...`, or `mem:...` for a user attachment,
 canvas object, memory item, or snapshot.
 `react.pull` invokes the registered namespace rehoster, which decides whether
-the resolved object belongs under `files/`, `outputs/`, `snapshots/`, or another
-React-readable artifact shape, and returns the resulting `fi:` handle. The
+the resolved object belongs under `files/`, `files/`, `git/snapshots/`, or another
+React-readable artifact shape, and returns the resulting `conv:fi:` handle. The
 agent should use that returned handle for later `react.read`, `react.rg`, exec,
 or checkout decisions.
 
@@ -439,7 +439,7 @@ decide what the model sees in each context phase.
 Compaction inserts:
 
 - `conv.range.summary`
-- logical path family `su:...`
+- logical path family `conv:su:...`
 
 These summaries are durable memory for ranges of earlier turns.
 
@@ -477,7 +477,7 @@ React stores plan snapshots and history as timeline blocks such as:
 
 and exposes stable recovery handles such as:
 
-- `ar:plan.latest:<plan_id>`
+- `conv:ar:plan.latest:<plan_id>`
 
 Plans therefore exist in three memory forms at once:
 
@@ -543,13 +543,13 @@ Use when the agent already knows the logical path.
 
 Examples:
 
-- reopen a hidden prompt or completion via `ar:...`
-- reopen a summary via `su:...`
-- reopen source rows via `so:...`
-- reopen workspace files or outputs via `fi:...`
-- reopen an accepted event occurrence via `ev:...`
+- reopen a hidden prompt or completion via `conv:ar:...`
+- reopen a summary via `conv:su:...`
+- reopen source rows via `conv:so:...`
+- reopen project files, produced artifacts, snapshots, or attachments via `conv:fi:...`
+- reopen an accepted event occurrence via `conv:ev:...`
 - load a skill via `sk:...`
-- read the `fi:` path returned by `react.pull` for a registered external ref
+- read the `conv:fi:` path returned by `react.pull` for a registered external ref
 
 This is the most direct path-based memory retrieval tool.
 
@@ -575,7 +575,7 @@ Use to search the current local filesystem surface:
 
 It does not search hidden/pruned timeline, unpulled historical snapshots, or
 registered external refs. Use visible refs or `react.memsearch` to identify
-older `fi:` or registered external refs, then `react.pull` or `react.checkout`
+older `conv:fi:` or registered external refs, then `react.pull` or `react.checkout`
 them before local search.
 
 It returns `logical_path` for hits, and content matches include `read_item` ranges so the agent can immediately reopen exact regions with `react.read({"items":[...]})`.
@@ -588,19 +588,19 @@ artifact memory locally.
 This is the materialization tool for:
 
 - subtree pulls for `.files/...`
-- exact file pulls for `.outputs/...` and attachments
+- exact file pulls for `.files/...` and attachments
 - registered external namespace refs such as `nmsp:...`, `cnv:...`, or `mem:...`, resolved through a
-  namespace rehoster into returned `fi:` refs
+  namespace rehoster into returned `conv:fi:` refs
 
 ### `react.checkout`
 
 Use to materialize the active current-turn workspace itself under
-`turn_<current_turn>/files/...` when React needs a runnable/searchable/testable
+`turn_<current_turn>/git/projects/...` when React needs a runnable/searchable/testable
 project snapshot.
 
 `react.checkout` remains a workspace activation tool. It works from materialized
 workspace file refs, not directly from arbitrary external namespace refs. Pull
-first, then use the returned `fi:...files...` ref when a checkout is needed.
+first, then use the returned `conv:fi:...git/projects...` ref when a checkout is needed.
 
 ### Generated code / exec
 

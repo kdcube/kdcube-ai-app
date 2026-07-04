@@ -347,7 +347,7 @@ resolver returns default_open_effect_action
   | open     -> object.action("open") -> host kdcube-object-open
 ```
 
-The chat component does not decide that `mem:`, `task:`, `cnv:`, or `fi:` means
+The chat component does not decide that `mem:`, `task:`, `cnv:`, or `conv:fi:` means
 open or download. The concrete resolver response declares the effect.
 
 ## Dry Run Preview

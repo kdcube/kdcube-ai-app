@@ -149,7 +149,7 @@ def _canvas_tool_fact(
                 f"board projection refreshed in ANNOUNCE for {retention_rounds} render rounds"
             )
             fact["refresh_rule"] = (
-                f"use react.pull(paths=[{live_ref!r}]) and react.read on the returned fi: path "
+                f"use react.pull(paths=[{live_ref!r}]) and react.read on the returned conv:fi: path "
                 "if you need an updated or prolonged board view"
             )
     if action == "patch":
@@ -302,7 +302,7 @@ def append_canvas_tool_fact_block(
     if action == "read":
         path = str(fact.get("requested_uri") or fact.get("canvas_uri") or "").strip()
     if not path and turn_id and tool_call_id:
-        path = f"tc:{turn_id}.{tool_call_id}.result"
+        path = f"conv:tc:{turn_id}.{tool_call_id}.result"
     blocks = target.setdefault("blocks", [])
     if isinstance(blocks, list):
         blocks.append(
@@ -784,7 +784,7 @@ def project_canvas_tool_result_blocks(
             refresh_rule = str(parsed.get("refresh_rule") or "").strip()
             if not refresh_rule and live_ref:
                 refresh_rule = (
-                    f"use react.pull(paths=[{live_ref!r}]) and react.read on the returned fi: path "
+                    f"use react.pull(paths=[{live_ref!r}]) and react.read on the returned conv:fi: path "
                     "if you need an updated or prolonged board view"
                 )
             if refresh_rule:
@@ -979,7 +979,7 @@ def _legend_lines(legend: list[dict[str, Any]], *, total_count: int) -> list[str
         if description:
             lines.append(f"  description: {description[:500]}")
     if total_count > len(legend):
-        lines.append(f"- ... {total_count - len(legend)} older cards omitted from ANNOUNCE; use react.pull on the cnv: board ref, then read the returned fi: path for exact full board state.")
+        lines.append(f"- ... {total_count - len(legend)} older cards omitted from ANNOUNCE; use react.pull on the cnv: board ref, then read the returned conv:fi: path for exact full board state.")
     return lines
 
 
@@ -1041,7 +1041,7 @@ def produce_canvas_announce_blocks(
     if remaining_rounds is not None:
         status_lines.append(
             f"visibility: {remaining_rounds}/{retention_rounds} render rounds remaining; "
-            f"use react.pull(paths=['cnv:{canvas_name}']) and react.read on the returned fi: path if you need it updated/prolonged."
+            f"use react.pull(paths=['cnv:{canvas_name}']) and react.read on the returned conv:fi: path if you need it updated/prolonged."
         )
     if cards_count > len(recent_legend):
         status_lines.append(f"showing: latest {len(recent_legend)} of {cards_count} cards by updated_at")

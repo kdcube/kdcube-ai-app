@@ -35,7 +35,7 @@ def external_event_default_block_production_policy(
     for later projection, announce, or compaction policies.
 
     Default output: one `event.external`-family block at the accepted event's
-    `ev:` logical path. The block body is JSON with `ok`, `status`, `ret`,
+    `conv:ev:` logical path. The block body is JSON with `ok`, `status`, `ret`,
     optional `error`, optional `event_ref`, and optional `surfaces`.
     """
     if not isinstance(target, MutableMapping):

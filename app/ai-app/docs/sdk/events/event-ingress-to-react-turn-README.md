@@ -105,7 +105,7 @@ turn finalization
 | `batch_id` | Ingress stamps one when absent. | One submission group. If any event in a batch is followup semantics, the batch is treated as one followup group by policy. |
 | `sequence` | Redis event lane. | Monotonic order inside the conversation/agent lane. |
 | `event.timestamp` | Accepted event envelope timestamp. | Lane freshness and close-gate comparison value. It is not derived from the turn id string. |
-| `event.logical_path` | Ingress event acceptance. | `ev:` path for the accepted event occurrence. |
+| `event.logical_path` | Ingress event acceptance. | `conv:ev:` path for the accepted event occurrence. |
 | `origin.*` metadata on blocks | ContextBrowser materialization. | Previous active/owner/target turn context. It is provenance, not the block's runtime turn id. |
 
 The rule is:

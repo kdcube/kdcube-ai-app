@@ -139,7 +139,7 @@ and provider-backed refs gain a live cross-app/object-owner bridge.
 | [Object Refs, Presentation, And Actions](object-ref-presentation-and-actions-README.md) | Canonical UI/provider boundary: `object_ref` is opaque to components, visual identity comes from `namespace_presentation_config`, and actions come from provider resolvers. |
 | [ReAct Object Materialization](react-object-materialization-README.md) | Runtime-boundary diagram for `react.pull`, streamed `object.get`, `react.read`, owner `block.produce`, and prompt rendering. |
 | [ReAct Object Policy Bridge](react-object-policy-bridge-README.md) | Owner policy contract for namespace rehosters, event-source routing, block production, render hooks, and `original_object_stats`. |
-| [Logical Reference Namespaces](../events/namespaces-README.md) | Foundational rules for `task:`, `mem:`, `cnv:`, `fi:`, and other refs. |
+| [Logical Reference Namespaces](../events/namespaces-README.md) | Foundational rules for `task:`, `mem:`, `cnv:`, `conv:fi:`, and other refs. |
 
 ## Current Scope
 
@@ -162,9 +162,9 @@ through Named Service Discovery:
 - namespace artifact refs can be materialized by `react.pull`; the backend
   rehoster calls the provider's `object.get` with `response_mode: stream`,
   receives a normal named-service response plus byte chunks, and writes those
-  chunks into the ReAct `fi:` workspace under the current auth context. The
+  chunks into the ReAct `conv:fi:` workspace under the current auth context. The
   materialized artifact keeps the original namespace URI as `object_ref`, so
-  later `react.read(fi:...)` blocks can still be routed to
+  later `react.read(conv:fi:...)` blocks can still be routed to
   namespace-specific rendering or block-production policy. That routing is
   traceable through `react.read.owner_projection` logs and falls back to
   generic text only when no owner block is produced;

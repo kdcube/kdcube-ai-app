@@ -26,6 +26,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.workspace import (
     summarize_current_turn_scopes,
     latest_workspace_publish_event,
 )
+from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import REACT_FILE_REF_PREFIX
 
 from kdcube_ai_app.apps.chat.sdk.skills.skills_registry import (
     set_active_skill_tool_catalog,
@@ -185,7 +186,7 @@ def build_user_input_blocks(
     blocks: List[Dict[str, Any]] = []
     user_text = (user_text or "").strip()
     if user_text:
-        prompt_path = f"ar:{tid}.user.prompt"
+        prompt_path = f"conv:ar:{tid}.user.prompt"
         prompt_meta: Dict[str, Any] = {"message_id": prompt_message_id}
         if event_type:
             prompt_meta["event_type"] = event_type
@@ -203,7 +204,7 @@ def build_user_input_blocks(
         ts=ts,
         user_attachments=user_attachments,
         block_factory=block_factory,
-        path_root=f"fi:{tid}.user.attachments",
+        path_root=f"conv:fi:{tid}.user.attachments",
         synthetic_physical_root=f"{tid}/attachments",
         meta_extra={"message_id": prompt_message_id},
     ))
@@ -336,7 +337,7 @@ def build_assistant_completion_blocks(
     blocks: List[Dict[str, Any]] = []
     total = len(entries)
     for idx, entry in enumerate(entries, start=1):
-        path = f"ar:{tid}.assistant.completion" if idx == total else f"ar:{tid}.assistant.completion.{idx}"
+        path = f"conv:ar:{tid}.assistant.completion" if idx == total else f"conv:ar:{tid}.assistant.completion.{idx}"
         meta: Dict[str, Any] = {}
         sources_used = entry.get("sources_used") if isinstance(entry.get("sources_used"), list) else []
         if sources_used:
@@ -387,7 +388,7 @@ def build_assistant_completion_attempt_blocks(
         author="assistant",
         turn_id=tid,
         ts=str(entry.get("ts") or "").strip(),
-        path=f"ar:{tid}.assistant.completion.attempt.{idx}",
+        path=f"conv:ar:{tid}.assistant.completion.attempt.{idx}",
         text=text,
         meta=meta,
     )]
@@ -448,7 +449,7 @@ def build_working_summary_attempt_blocks(
         author="assistant",
         turn_id=tid,
         ts=(ts or getattr(runtime, "started_at", "") or "").strip(),
-        path=f"ws:{tid}.conv.working.summary.attempt.{idx}",
+        path=f"conv:ws:{tid}.conv.working.summary.attempt.{idx}",
         text=text,
         mime="text/markdown",
         meta=meta,
@@ -492,7 +493,7 @@ def build_interrupted_generation_blocks(
         turn_id=tid,
         ts=ts,
         mime="text/plain",
-        path=f"ar:{tid}.react.decision.raw.interrupted.{int(iteration or 0)}",
+        path=f"conv:ar:{tid}.react.decision.raw.interrupted.{int(iteration or 0)}",
         text=raw_text,
         meta=meta,
     )]
@@ -720,7 +721,7 @@ def build_announce_workspace_lines(
     if current_checkout:
         for item in (current_checkout.get("checked_out_from") or []):
             ref = str(item or "").strip()
-            m = re.search(r"\.files/([^/]+)", ref)
+            m = re.search(r"\.git/projects/([^/]+)", ref)
             if m:
                 provenance.setdefault(m.group(1), ref)
 
@@ -792,20 +793,20 @@ def build_announce_workspace_lines(
             return [], 0
         return rels[:cap], len(rels)
 
-    def _render_files_namespace(
+    def _render_projects_namespace(
         out: List[str],
         root_path: pathlib.Path,
         *,
         is_current: bool,
         show_empty: bool = False,
     ) -> None:
-        files_root = root_path / "files"
-        children = _direct_children(files_root)
+        projects_root = root_path / "git" / "projects"
+        children = _direct_children(projects_root)
         if not children:
             if show_empty:
-                out.append("    files/ (empty)")
+                out.append("    git/projects/ (empty)")
             return
-        out.append("    files/")
+        out.append("    git/projects/")
         for child in children:
             name = child.name
             ann = []
@@ -842,7 +843,7 @@ def build_announce_workspace_lines(
         out.append(f"    {name}/")
         for rel in files:
             suffix = ""
-            if is_current and name == "outputs":
+            if is_current and name == "files":
                 suffix = "   \u2014 produced this turn"
             elif is_current and name == "attachments":
                 suffix = "   \u2014 user upload this turn"
@@ -852,18 +853,18 @@ def build_announce_workspace_lines(
         if total > len(files):
             out.append(f"      \u2026 +{total - len(files)} more")
 
-    # local files/ presence (for cross-tagging REMOTE rows)
-    current_files_projects = set(_top_dirs(turn_id, "files")) if turn_id else set()
+    # local git/projects/ presence (for cross-tagging REMOTE rows)
+    current_files_projects = set(_top_dirs(turn_id, "git/projects")) if turn_id else set()
     readonly_files_projects: set = set()
     for root in roots:
         if root != turn_id:
-            readonly_files_projects.update(_top_dirs(root, "files"))
+            readonly_files_projects.update(_top_dirs(root, "git/projects"))
 
     # ---------- LOCAL ----------
     lines.append("")
     lines.append("  LOCAL — materialized on disk THIS turn.")
     lines.append("  This tree lists actual files already present under the artifact workdir.")
-    lines.append("  Timeline fi: refs that are not listed here are hosted/unhydrated; use react.pull to hydrate them before local-byte tools.")
+    lines.append("  Timeline conv:fi: refs that are not listed here are hosted/unhydrated; use react.pull to hydrate them before local-byte tools.")
     lines.append("  react.read may inspect provider-rendered text for a hosted ref, but it does not make local bytes appear here.")
     lines.append("  react.rg / react.patch / exec can touch only paths listed here or paths you create in this turn.")
     local_entries = _workdir_entries()
@@ -886,12 +887,12 @@ def build_announce_workspace_lines(
         by_name = {child.name: child for child in children}
         rendered: set[str] = set()
         if is_current:
-            _render_files_namespace(entry_lines, entry, is_current=is_current, show_empty=True)
-            rendered.add("files")
-        elif "files" in by_name:
-            _render_files_namespace(entry_lines, entry, is_current=is_current)
-            rendered.add("files")
-        ordered_names = ["outputs", "attachments", "external", "snapshots"]
+            _render_projects_namespace(entry_lines, entry, is_current=is_current, show_empty=True)
+            rendered.add("git")
+        elif (entry / "git" / "projects").is_dir():
+            _render_projects_namespace(entry_lines, entry, is_current=is_current)
+            rendered.add("git")
+        ordered_names = ["git", "attachments", "external"]
         for child_name in ordered_names:
             child = by_name.get(child_name)
             if child_name in rendered:
@@ -927,7 +928,7 @@ def build_announce_workspace_lines(
         projects = [
             str(it.get("scope") or "").strip().strip("/")
             for it in (lineage or [])
-            if str(it.get("namespace") or "files").strip().strip("/") == "files"
+            if str(it.get("namespace") or "git/projects").strip().strip("/") == "git/projects"
         ]
         projects = [p for p in projects if p]
         lines.append("")
@@ -935,7 +936,7 @@ def build_announce_workspace_lines(
         if anchor:
             lines.append(f"  latest committed turn: {anchor}")
             lines.append("  \u2192 pull any project or subpath at its latest by building the ref with THIS turn id (same anchor for all projects):")
-            lines.append(f"        fi:{anchor}.files/<project>[/<subpath>]")
+            lines.append(f"        conv:fi:{anchor}.git/projects/<project>[/<subpath>]")
         if projects:
             for p in projects[:12]:
                 if p in current_files_projects:
@@ -944,7 +945,7 @@ def build_announce_workspace_lines(
                     tag = "   [pulled \u00b7 read-only]"
                 else:
                     tag = ""
-                lines.append(f"    files/{p}{tag}")
+                lines.append(f"    git/projects/{p}{tag}")
             if len(projects) > 12:
                 lines.append(f"    \u2026 +{len(projects) - 12} more")
         elif anchor:
@@ -952,8 +953,8 @@ def build_announce_workspace_lines(
         if anchor and projects:
             ex = projects[0]
             lines.append("  examples:")
-            lines.append(f'    pull a subfolder:  react.pull(paths=["fi:{anchor}.files/{ex}/<subpath>"])')
-            lines.append(f'    make writable:     react.checkout(mode="replace", paths=["fi:{anchor}.files/{ex}"])')
+            lines.append(f'    pull a subfolder:  react.pull(paths=["conv:fi:{anchor}.git/projects/{ex}/<subpath>"])')
+            lines.append(f'    make writable:     react.checkout(mode="replace", paths=["conv:fi:{anchor}.git/projects/{ex}"])')
 
     return lines
 
@@ -1382,7 +1383,7 @@ def build_announce_runtime_limit_lines(*, runtime_ctx: Optional[RuntimeCtx]) -> 
         f"next exec new bytes max={_bytes_label(next_exec_new_bytes)}; effective single new file max={_bytes_label(effective_single_file)}"
     )
     lines.append(
-        "  recomputed each round; materialized attachments and current-turn files/outputs count when present locally"
+        "  recomputed each round; materialized attachments, current-turn files, and git/projects count when present locally"
     )
     return lines
 
@@ -1637,7 +1638,7 @@ def build_sources_pool_text(
             if title and not (title.startswith("\"") and title.endswith("\"")):
                 title = f"\"{title}\""
             title = _shorten(title, title_w)
-            if artifact_path and (source_type in {"file", "attachment"} or artifact_path.startswith("fi:")):
+            if artifact_path and (source_type in {"file", "attachment"} or artifact_path.startswith(REACT_FILE_REF_PREFIX)):
                 domain = artifact_path
             else:
                 domain = (src.get("domain") or "").strip() or _domain_from_url(url)
@@ -1666,9 +1667,9 @@ def build_sources_pool_text(
     lines.append(hr)
     if pool:
         lines.append("  Hint: to see the full snippet if not visible / hide if no need and big (example)")
-        lines.append("  Load:  react.read(paths=[\"so:sources_pool[1,3,5]\"])")
-        lines.append("  Exec:  ctx_tools.fetch_ctx(path=\"so:sources_pool[1]\") returns rows; for web rows use content first, text second")
-        lines.append("  Hide:  react.hide(path=\"so:sources_pool[1]\", replacement=\"<replacement text to understand why/what its hidden>\")")
+        lines.append("  Load:  react.read(paths=[\"conv:so:sources_pool[1,3,5]\"])")
+        lines.append("  Exec:  ctx_tools.fetch_ctx(path=\"conv:so:sources_pool[1]\") returns rows; for web rows use content first, text second")
+        lines.append("  Hide:  react.hide(path=\"conv:so:sources_pool[1]\", replacement=\"<replacement text to understand why/what its hidden>\")")
         lines.append(hr)
     return "\n".join(lines) + "\n"
 
@@ -1703,7 +1704,7 @@ def build_gate_stage_block(*, runtime: RuntimeCtx, gate_out: Any, clarification_
         "ts": getattr(runtime, "started_at", "") or "",
         "mime": "text/markdown",
         "text": "\n".join(lines),
-        "path": f"ar:{turn_id}.stage.gate" if turn_id else "",
+        "path": f"conv:ar:{turn_id}.stage.gate" if turn_id else "",
     }
 
 
@@ -1729,7 +1730,7 @@ def build_feedback_stage_block(*, runtime: RuntimeCtx, reaction: Dict[str, Any])
         "ts": ts,
         "mime": "text/markdown",
         "text": "\n".join(lines),
-        "path": f"ar:{turn_id}.stage.feedback" if turn_id else "",
+        "path": f"conv:ar:{turn_id}.stage.feedback" if turn_id else "",
     }
 
 
@@ -1756,7 +1757,7 @@ def build_clarification_stage_block(*, runtime: RuntimeCtx, ticket: Any = None, 
         "ts": getattr(runtime, "started_at", "") or "",
         "mime": "text/markdown",
         "text": "\n".join(lines),
-        "path": f"ar:{turn_id}.stage.clarification" if turn_id else "",
+        "path": f"conv:ar:{turn_id}.stage.clarification" if turn_id else "",
         "meta": {"questions": qs} if qs else None,
     }
 
@@ -1783,7 +1784,7 @@ def build_clarification_resolution_block(*, runtime_ctx: RuntimeCtx, ticket: Any
         "ts": runtime_ctx.started_at,
         "mime": "text/markdown",
         "text": "\n".join(lines),
-        "path": f"ar:{turn_id}.stage.clarification.resolved",
+        "path": f"conv:ar:{turn_id}.stage.clarification.resolved",
     }
 
 
@@ -1805,7 +1806,7 @@ def build_suggested_followups_block(
         "ts": ts,
         "mime": "text/markdown",
         "text": "\n".join(lines),
-        "path": f"ar:{turn_id}.stage.suggested_followups" if turn_id else "",
+        "path": f"conv:ar:{turn_id}.stage.suggested_followups" if turn_id else "",
         "meta": {"items": items} if items else None,
     }
 

@@ -58,14 +58,14 @@ Open a URL or local artifact in a named tab.
 
 Important parameters:
 
-- `url_or_path`: `https://...`, `http://...`, `data:...`, `file://...`, `OUTPUT_DIR`-relative path, or `fi:<turn>.outputs/...`.
+- `url_or_path`: `https://...`, `http://...`, `data:...`, `file://...`, `OUTPUT_DIR`-relative path, or `conv:fi:<turn>.files/...`.
 - `tab_id`: named tab within the current turn-scoped browser session. Defaults to `main`.
 - `wait_until`: `commit`, `domcontentloaded`, `load`, or `networkidle`. Defaults to `domcontentloaded`.
 - `timeout_ms`: navigation timeout. Defaults to `10000`.
 - `settle_ms`: extra delay after navigation before inspection. Defaults to `150`.
 - `width`, `height`: viewport size.
 - `text_limit`: full-body and viewport text preview size.
-- `screenshot`: when true, writes a PNG screenshot artifact under `OUTPUT_DIR` and exposes it as an internal `fi:` file. Use sparingly because screenshots add multimodal tokens.
+- `screenshot`: when true, writes a PNG screenshot artifact under `OUTPUT_DIR` and exposes it as an internal `conv:fi:` file. Use sparingly because screenshots add multimodal tokens.
 - `screenshot_full_page`: capture full page when true, viewport only when false.
 - `screenshot_path`: optional `OUTPUT_DIR`-relative screenshot path.
 - `session_id`: optional explicit session id. Omit for normal turn-scoped behavior.
@@ -142,7 +142,7 @@ results to the inner `ret` payload. Do not rely on every rendered tool result ha
 `ret`.
 
 Errors are still explicit. If the callable returns `ok=false` or the runtime catches a call error, the rendered
-`tc:` result metadata includes:
+`conv:tc:` result metadata includes:
 
 ```json
 {
@@ -191,10 +191,10 @@ The page-action payload includes:
     "document_height": 3300
   },
   "screenshot": {
-    "path": "fi:turn_x.outputs/browser_screenshots/123_main.png",
-    "logical_path": "fi:turn_x.outputs/browser_screenshots/123_main.png",
-    "artifact_path": "fi:turn_x.outputs/browser_screenshots/123_main.png",
-    "physical_path": "turn_x/outputs/browser_screenshots/123_main.png",
+    "path": "conv:fi:turn_x.files/browser_screenshots/123_main.png",
+    "logical_path": "conv:fi:turn_x.files/browser_screenshots/123_main.png",
+    "artifact_path": "conv:fi:turn_x.files/browser_screenshots/123_main.png",
+    "physical_path": "turn_x/files/browser_screenshots/123_main.png",
     "filename": "123_main.png",
     "mime": "image/png",
     "kind": "file",
@@ -206,10 +206,10 @@ The page-action payload includes:
   "artifact_type": "files",
   "files": [
     {
-      "path": "fi:turn_x.outputs/browser_screenshots/123_main.png",
-      "logical_path": "fi:turn_x.outputs/browser_screenshots/123_main.png",
-      "artifact_path": "fi:turn_x.outputs/browser_screenshots/123_main.png",
-      "physical_path": "turn_x/outputs/browser_screenshots/123_main.png",
+      "path": "conv:fi:turn_x.files/browser_screenshots/123_main.png",
+      "logical_path": "conv:fi:turn_x.files/browser_screenshots/123_main.png",
+      "artifact_path": "conv:fi:turn_x.files/browser_screenshots/123_main.png",
+      "physical_path": "turn_x/files/browser_screenshots/123_main.png",
       "filename": "123_main.png",
       "mime": "image/png",
       "kind": "file",
@@ -273,7 +273,7 @@ For generated interactive HTML:
    {
      "tool_id": "browser_tools.open_page",
      "params": {
-       "url_or_path": "fi:turn_x.outputs/app.html",
+       "url_or_path": "conv:fi:turn_x.files/app.html",
        "tab_id": "main",
        "screenshot": false,
        "width": 1280,
@@ -338,7 +338,7 @@ different BrowserContexts.
 The browser tool can open:
 
 - HTTP/HTTPS/data URLs.
-- `fi:<turn>.outputs/...`, `fi:<turn>.files/...`, and `fi:<turn>.attachments/...`.
+- `conv:fi:<turn>.files/...`, `conv:fi:<turn>.files/...`, and `conv:fi:<turn>.attachments/...`.
 - Paths relative to the current runtime `OUTPUT_DIR` or `WORKDIR`.
 - `file://` URLs only when they resolve under allowed runtime roots.
 
@@ -347,18 +347,18 @@ arbitrary host files.
 
 ## Screenshots
 
-Screenshots are stored as internal artifacts under `OUTPUT_DIR`, not inlined as base64 in the JSON tool result. The tool hosts the screenshot with the normal `host_files(..., emit=false)` helper, then ReAct emits it as an internal `fi:` file block so the model can inspect it as multimodal content when the renderer keeps it visible. Internal screenshots are not sent to the user as files.
+Screenshots are stored as internal artifacts under `OUTPUT_DIR`, not inlined as base64 in the JSON tool result. The tool hosts the screenshot with the normal `host_files(..., emit=false)` helper, then ReAct emits it as an internal `conv:fi:` file block so the model can inspect it as multimodal content when the renderer keeps it visible. Internal screenshots are not sent to the user as files.
 
 Default path:
 
 ```text
-<turn_id>/outputs/browser_screenshots/<timestamp>_<tab_id>.png
+<turn_id>/files/browser_screenshots/<timestamp>_<tab_id>.png
 ```
 
 Returned logical path:
 
 ```text
-fi:<turn_id>.outputs/browser_screenshots/<timestamp>_<tab_id>.png
+conv:fi:<turn_id>.files/browser_screenshots/<timestamp>_<tab_id>.png
 ```
 
 If `screenshot_path` is supplied, it must remain `OUTPUT_DIR`-relative.

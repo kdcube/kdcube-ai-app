@@ -21,6 +21,7 @@ from kdcube_ai_app.apps.chat.sdk.util import (
 from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import (
     build_artifact_meta_block,
     peel_conversation_prefix,
+    REACT_FILE_REF_PREFIX,
     split_logical_artifact_ref,
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.react.solution_workspace import (
@@ -49,7 +50,7 @@ DEFAULT_VISIBLE_READ_MAX_BYTES = 10 * 1024 * 1024
 DEFAULT_VISIBLE_READ_CONTEXT_FRACTION = 0.15
 DEFAULT_SYMBOLS_PER_TOKEN_BUDGET = 4
 MIN_VISIBLE_READ_MAX_TOKENS = 4_000
-READ_DEDUP_PREFIXES = ("fi:", "so:", "sk:", "tc:", "ev:", "ar:", "ks:", "su:", "ws:")
+READ_DEDUP_PREFIXES = ("conv:fi:", "conv:so:", "sk:", "conv:tc:", "conv:ev:", "conv:ar:", "ks:", "conv:su:", "conv:ws:")
 LOGGER = logging.getLogger("kdcube.react.read")
 
 TOOL_SPEC = {
@@ -57,28 +58,28 @@ TOOL_SPEC = {
     "purpose": (
         "Read ReAct-local logical refs into visible context so you can use them. "
         "Paths must be logical paths (look like <namespace>:), not physical paths. "
-        "Built-in examples include ar:, fi:, tc:, ev:, so:, su:, ws:, and sk:. "
+        "Built-in examples include conv:ar:, conv:fi:, conv:tc:, conv:ev:, conv:so:, conv:su:, conv:ws:, and sk:. "
         "External namespace refs such as mem:, cnv:, or task: are not read directly. "
         "When exact content from an external ref is needed, first use react.pull on that ref; "
-        "then use the returned fi: logical_path or physical_path with react.read, react.rg, or exec/code. "
+        "then use the returned conv:fi: logical_path or physical_path with react.read, react.rg, or exec/code. "
         "For an event/object that shows object_ref, use react.pull on that object_ref when exact external content is needed; then read the returned path. "
-        "For event payload bytes or snapshot bodies carried through another field, read a visible fi: path or first use react.pull on that referenced artifact ref. "
-        "For old-turn recovery, ar:turn_<id>.react.turn.index reconstructs a compact semantic inventory; "
+        "For event payload bytes or snapshot bodies carried through another field, read a visible conv:fi: path or first use react.pull on that referenced artifact ref. "
+        "For old-turn recovery, conv:ar:turn_<id>.react.turn.index reconstructs a compact semantic inventory; "
         "use it with react.memsearch hits when the summary does not name enough refs. "
         "Batch multiple known paths in one read call. "
         "react.rg read_items are directly readable here via params.items. "
         "Each path you read becomes visible in the timeline; skills are shown with ACTIVE 💡 banner and are never read-capped. "
         "A read result is visible only after the current response is rendered; do not emit a downstream action in the same response when it depends on newly read content. "
         "Skill reads may be combined with independent actions such as web search when those actions do not rely on the unread skill text. "
-        "For fi: files, normal readable content is text, plus multimodal PDF/image payloads. "
-        "For so:sources_pool[...] paths, react.read returns JSON source rows; web rows use content for full fetched text "
+        "For conv:fi: files, normal readable content is text, plus multimodal PDF/image payloads. "
+        "For conv:so:sources_pool[...] paths, react.read returns JSON source rows; web rows use content for full fetched text "
         "when available and text for the search preview/snippet. Source rows are materialized in full by default. "
-        "Use so:conv_<conversation_id>.sources_pool[...] for source rows from another conversation's persisted source pool. "
+        "Use conv:so:conv_<conversation_id>.sources_pool[...] for source rows from another conversation's persisted source pool. "
         "⚠️ BINARY FILE RESTRICTION (HARD): Other binary files such as xlsx/xls/pptx/docx/zip are not decoded into usable content by react.read; "
         "calling react.read on unsupported binary files returns only metadata, NOT content."
         "Inspect those with code and exec tool against their physical OUTPUT_DIR path. "
-        "If your own earlier tools produced the binary file, inspect the generating tool call/result (tc:) and any related text/code source artifacts (fi:) "
-        "from that generating step; do not expect react.read on the binary fi: file itself to reveal its content. "
+        "If your own earlier tools produced the binary file, inspect the generating tool call/result (conv:tc:) and any related text/code source artifacts (conv:fi:) "
+        "from that generating step; do not expect react.read on the binary conv:fi: file itself to reveal its content. "
         "Oversized regular text results are rematerialized as bounded visible previews using configured text/token/byte caps. "
         "Caps apply independently per requested path. "
         "To recover large text into model-visible context, use stats_only to get size/line metadata, then read bounded ranges "
@@ -88,19 +89,19 @@ TOOL_SPEC = {
     "args": {
         "paths": (
             "list[str] logical refs to read. Built-in examples: "
-            "turn indexes via ar:turn_<id>.react.turn.index, "
-            "files via fi:turn_<id>.files/<filepath>, "
-            "event blocks via ev:turn_<id>.events/<event_path>, "
-            "sources via so:sources_pool[...] or so:conv_<conversation_id>.sources_pool[...], "
+            "turn indexes via conv:ar:turn_<id>.react.turn.index, "
+            "files via conv:fi:turn_<id>.files/<filepath>, "
+            "event blocks via conv:ev:turn_<id>.events/<event_path>, "
+            "sources via conv:so:sources_pool[...] or conv:so:conv_<conversation_id>.sources_pool[...], "
             "skills via sk:<skill_id or num>. "
-            "External namespace refs such as mem:, cnv:, or task: must be pulled first; after pull, read the returned fi: logical_path. "
-            "fi: normally yields full text for text files and multimodal/base64 payloads for PDF/images only. "
-            "An fi:conv_<conversation_id>.turn_<id>... path belongs to another conversation and is resolved in that conversation. "
-            "An ev:conv_<conversation_id>.turn_<id>... path identifies an event object from another conversation when that event block is present in visible or recovered timeline state."
+            "External namespace refs such as mem:, cnv:, or task: must be pulled first; after pull, read the returned conv:fi: logical_path. "
+            "conv:fi: normally yields full text for text files and multimodal/base64 payloads for PDF/images only. "
+            "A conv:fi:conv_<conversation_id>.turn_<id>... path belongs to another conversation and is resolved in that conversation. "
+            "A conv:ev:conv_<conversation_id>.turn_<id>... path identifies an event object from another conversation when that event block is present in visible or recovered timeline state."
         ),
         "items": (
             "optional list of read specs, each with path plus optional line_start/line_count or "
-            "offset_text_symbols/max_text_symbols. Works for text-backed logical paths such as fi: and tc:/ev:/ar:. "
+            "offset_text_symbols/max_text_symbols. Works for text-backed logical paths such as conv:fi: and conv:tc:/conv:ev:/conv:ar:. "
             "Use read_items returned by react.rg when available; otherwise create manual line ranges from stats_only metadata."
         ),
         "line_numbers": (
@@ -111,7 +112,7 @@ TOOL_SPEC = {
             "optional int; for text payloads, materialize at most this many visible characters/symbols per path. "
             "Use when a large file/result needs a smaller explicit in-context preview than the configured default. "
             "This is a request, not a guarantee: the runtime clamps it to the configured ai.react.read_visible_max_text_symbols, token budget, and context caps. "
-            "For so:sources_pool[...] this is an explicit structured cap for large text fields only; without it, source rows are read in full."
+            "For conv:so:sources_pool[...] this is an explicit structured cap for large text fields only; without it, source rows are read in full."
         ),
         "stats_only": (
             "optional bool, default false. When true, resolve each path and return size/mime/token metadata in "
@@ -123,7 +124,7 @@ TOOL_SPEC = {
         "PDF payloads are attached as multimodal content only when under the configured byte cap. "
         "Image payloads are attached when under the byte cap; oversized images are downscaled into a bounded multimodal preview when possible, with image_view metadata. "
         "For unsupported binary files react.read may only surface metadata/path presence. "
-        "so:sources_pool[...] returns application/json source rows and item stats; source content is full unless max_text_symbols was explicitly supplied. "
+        "conv:so:sources_pool[...] returns application/json source rows and item stats; source content is full unless max_text_symbols was explicitly supplied. "
         "Ranged item reads return exact labeled chunks when they fit configured visible caps. "
         "Oversized non-source text payloads return status=truncated_for_visible_context with a bounded preview. "
         "Oversized PDFs and images that cannot be downscaled return status=too_large_for_visible_context_bytes. "
@@ -610,7 +611,7 @@ async def handle_react_read(*, ctx_browser: Any, state: Dict[str, Any], tool_cal
     if turn_index_paths:
         artifact_paths = [p for p in artifact_paths if p not in turn_index_paths]
     for item_path in item_paths:
-        if item_path.startswith(("fi:", "sk:", "SK", "skill:", "skills.", "ks:")) or parse_turn_index_path(item_path):
+        if item_path.startswith((REACT_FILE_REF_PREFIX, "sk:", "SK", "skill:", "skills.", "ks:")) or parse_turn_index_path(item_path):
             continue
         if item_path not in artifact_paths:
             artifact_paths.append(item_path)
@@ -743,7 +744,7 @@ async def handle_react_read(*, ctx_browser: Any, state: Dict[str, Any], tool_cal
             ref["tool_call_id"] = call_id
         if turn and call_id:
             ref["tool_result_path"] = tc_result_path(turn_id=turn, call_id=call_id)
-        render_role = "artifact" if path.startswith(("fi:", "ar:", "sk:", "so:")) else "result"
+        render_role = "artifact" if path.startswith(("conv:fi:", "conv:ar:", "sk:", "conv:so:")) else "result"
         if call_id:
             label = f"[TOOL RESULT {call_id}].{render_role}"
             if tool_id_existing:
@@ -1321,7 +1322,7 @@ async def handle_react_read(*, ctx_browser: Any, state: Dict[str, Any], tool_cal
 
     missing_artifacts: List[str] = []
     items: List[Dict[str, Any]] = []
-    fi_paths = [p for p in artifact_paths if isinstance(p, str) and p.startswith("fi:")]
+    fi_paths = [p for p in artifact_paths if isinstance(p, str) and p.startswith(REACT_FILE_REF_PREFIX)]
     other_paths = [p for p in artifact_paths if p not in fi_paths]
     try:
         items = ctx_browser.timeline_artifacts(
@@ -1562,15 +1563,15 @@ async def handle_react_read(*, ctx_browser: Any, state: Dict[str, Any], tool_cal
 
     def _conversation_id_for_path(ctx_path: str, item_req: Optional[Dict[str, Any]] = None) -> Optional[str]:
         item_req = item_req or {}
-        # Try the fi:-specific splitter first because it understands special
+        # Try the conv:fi:-specific splitter first because it understands special
         # shapes (external attachments, user attachments) that the generic
         # peeler does not.
         embedded_conversation_id, _, _, _ = split_logical_artifact_ref(ctx_path)
         conversation_id = str(embedded_conversation_id or "").strip()
         if conversation_id:
             return conversation_id
-        # Fall back to the generic peeler so cross-conv `ar:`, `ws:`, `ev:`,
-        # `tc:`, and `so:` paths (`<ns>:conv_<id>.<rest>`) resolve their
+        # Fall back to the generic peeler so cross-conv `conv:ar:`, `conv:ws:`,
+        # `conv:ev:`, `conv:tc:`, and `conv:so:` paths resolve their
         # source conversation too.
         _, peeled_conv, _ = peel_conversation_prefix(ctx_path)
         return peeled_conv or None
@@ -2080,7 +2081,7 @@ async def handle_react_read(*, ctx_browser: Any, state: Dict[str, Any], tool_cal
         item_path = str(item_req.get("path") or "").strip()
         if not item_path:
             continue
-        if item_path.startswith("fi:"):
+        if item_path.startswith(REACT_FILE_REF_PREFIX):
             await _emit_fi_path(item_path, item_req)
             continue
         if item_path.startswith("ks:"):
@@ -2099,11 +2100,11 @@ async def handle_react_read(*, ctx_browser: Any, state: Dict[str, Any], tool_cal
             await _emit_ks_path(ks_path)
 
     for raw_path in artifact_paths:
-        if isinstance(raw_path, str) and raw_path.startswith("fi:"):
+        if isinstance(raw_path, str) and raw_path.startswith(REACT_FILE_REF_PREFIX):
             await _emit_fi_path(raw_path)
             continue
 
-        if isinstance(raw_path, str) and raw_path.startswith("so:"):
+        if isinstance(raw_path, str) and raw_path.startswith("conv:so:"):
             source_conversation_id, selector = parse_sources_pool_ref(raw_path)
             if selector:
                 resolver_status = ""
@@ -2214,8 +2215,8 @@ async def handle_react_read(*, ctx_browser: Any, state: Dict[str, Any], tool_cal
 
         path = raw_path
         display_path = raw_path
-        if path.startswith("so:"):
-            path = path[len("so:"):]
+        if path.startswith("conv:so:"):
+            path = path[len("conv:so:"):]
             display_path = raw_path
         item = items_by_path.get(path)
         if not item:
@@ -2225,7 +2226,7 @@ async def handle_react_read(*, ctx_browser: Any, state: Dict[str, Any], tool_cal
 
         art = item.get("artifact") or {}
         ctx_path = item.get("context_path") or path
-        if display_path.startswith("so:"):
+        if display_path.startswith("conv:so:"):
             ctx_path = display_path
         art_text = art.get("text") if isinstance(art, dict) else None
         art_base64 = art.get("base64") if isinstance(art, dict) else None

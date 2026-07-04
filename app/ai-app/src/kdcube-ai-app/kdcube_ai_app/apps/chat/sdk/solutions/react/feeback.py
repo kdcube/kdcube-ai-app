@@ -36,7 +36,7 @@ class Feedback:
         self.log = logger_obj or logger
 
     def _path_for(self, item: FeedbackItem) -> str:
-        return f"ar:{item.turn_id}.feedback.latest"
+        return f"conv:ar:{item.turn_id}.feedback.latest"
 
     def _digest_items(self, items: Iterable[FeedbackItem]) -> str:
         payload = []

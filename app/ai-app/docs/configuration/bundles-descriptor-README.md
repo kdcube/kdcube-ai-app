@@ -434,7 +434,7 @@ Rules:
   what each resolver action may do.
 - For existing external refs, prefer pull/read over a normal model-callable
   `object.get`. The event-source `pull` policy calls provider `object.get` and
-  stores an `fi:` artifact with provider-selected MIME, so large JSON or bytes
+  stores an `conv:fi:` artifact with provider-selected MIME, so large JSON or bytes
   can be read in ranges.
 - For agent-owned runtime files that must become provider-owned refs, allow
   `object.host_file` and use `named_services.host_file`; the returned provider

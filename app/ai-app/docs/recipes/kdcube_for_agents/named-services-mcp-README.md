@@ -171,8 +171,8 @@ Snippets carry text AND a resolvable handle.
   agent can pass straight back to object.get.
 
 Refs are self-contained.
-  The agent has no ambient conversation, so a bare fi:turn_... would be
-  unresolvable. conv scopes every emitted file ref to its conversation:
+  The agent has no ambient conversation, so cross-conversation file refs include
+  both the ReAct conversation owner namespace and the conversation body segment:
   conv:fi:conv_<conversation_id>.turn_<id>.<...>. A ref that only resolves with
   server-side ambient state is not agent-friendly.
 ```
@@ -187,7 +187,7 @@ is the opposite of friendly.
 `conv` delivers a `conv:fi:<path>` file by type:
 
 ```text
-object.get conv:fi:conv_<id>.turn_<id>.outputs/chart.png
+object.get conv:fi:conv_<id>.turn_<id>.files/chart.png
   ->
   { ref, filename, mime, size, encoding, ... }
 
@@ -293,8 +293,8 @@ Recall a discussion and show the chart the user made:
      -> conv:turn:... hits with snippets + conversation_id
 2. get     conv:conversation:<id>
      -> timeline; an assistant.file event carries
-        conv:fi:conv_<id>.turn_<id>.outputs/chart.png
-3. get     conv:fi:conv_<id>.turn_<id>.outputs/chart.png
+        conv:fi:conv_<id>.turn_<id>.files/chart.png
+3. get     conv:fi:conv_<id>.turn_<id>.files/chart.png
      -> { encoding: "url", url, expires_at, mime: image/png }
 4. agent GETs the url over HTTP -> raw PNG, never in context
 ```

@@ -12,7 +12,11 @@ import pathlib
 from kdcube_ai_app.apps.chat.sdk.solutions.react.solution_workspace import (
     resolve_logical_artifact,
 )
-from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import split_logical_artifact_ref
+from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import (
+    ARTIFACT_NAMESPACE_SNAPSHOTS,
+    REACT_FILE_REF_PREFIX,
+    split_logical_artifact_ref,
+)
 from kdcube_ai_app.apps.chat.sdk.solutions.react.workspace import (
     WORKSPACE_IMPLEMENTATION_GIT,
     _infer_physical_from_fi,
@@ -38,24 +42,24 @@ TOOL_SPEC = {
     "id": "react.pull",
     "purpose": (
         "Materialize artifact refs locally under OUT_DIR and return the paths that other tools should use next. "
-        "fi: refs already belong to the ReAct artifact model and have the normal logical/physical path rules. "
+        "conv:fi: refs already belong to the ReAct artifact model and have the normal logical/physical path rules. "
         "Externally owned refs such as cnv:, mem:, or task: may appear in timeline events, snapshots, or tool results. "
         "They are opaque owner handles resolved only when a registered namespace rehoster is available. "
-        "ev: refs identify event objects on the timeline; they are not artifact refs and are not accepted by react.pull. "
+        "conv:ev: refs identify event objects on the timeline; they are not artifact refs and are not accepted by react.pull. "
         "When an event/object shows object_ref, pass that object_ref. "
         "When an event points to bytes or a snapshot body through another field, pass that referenced artifact ref. "
         "Unsupported namespaces are reported by the pull result. "
         "For an externally owned ref, react.pull calls the registered namespace rehoster, copies the artifact into a ReAct artifact surface, "
-        "and returns the materialized fi: logical_path plus physical_path. "
-        "The rehoster chooses whether the artifact lands into files, snapshots, external attachments, or another supported ReAct artifact surface. "
+        "and returns the materialized conv:fi: logical_path plus physical_path. "
+        "The rehoster chooses whether the artifact lands into files, git/snapshots, external attachments, or another supported ReAct artifact surface. "
         "Use those returned paths with react.read, react.rg, exec/code, or later artifact operations. "
         "Use this for versioned files/folders you need locally as historical reference material. "
         "Pulled content stays under its historical turn root as reference material; checkout copies versioned files into the editable current-turn workspace. "
-        "Folder/slice pulls are supported for fi:turn_<id>.files/<scope-or-subtree>. "
+        "Folder/slice pulls are supported for conv:fi:turn_<id>.git/projects/<scope-or-subtree>. "
         "Snapshot subtree pulls are available when the backing implementation reports snapshot subtree support. "
-        "Outputs, user attachments, external-event attachments, and hosted binaries require exact refs. "
-        "An fi:conv_<conversation_id>.turn_<id>... path belongs to another conversation and is resolved in that conversation. "
-        "Current-conversation fi: paths use fi:turn_<id>... without a conv_ scope segment. "
+        "Produced files, user attachments, external-event attachments, and hosted binaries require exact refs. "
+        "A conv:fi:conv_<conversation_id>.turn_<id>... path belongs to another conversation and is resolved in that conversation. "
+        "Current-conversation conv:fi: paths use conv:fi:turn_<id>... without a conv_ scope segment. "
         "share defaults to false; pull normally just materializes locally for your own use. "
         "Set share=true ONLY in the rare case where you specifically want to hand the materialized file straight to the user now "
         "(e.g. a binary DOCX/PDF/PPTX/image you cannot re-author through a text writer). It is not a routine step. "
@@ -70,22 +74,22 @@ TOOL_SPEC = {
             "a folder/subtree pull or a multi-ref pull is never delivered."
         ),
         "paths": (
-            "list[str] of artifact refs to materialize locally. Each item is either a normal fi: ref or an externally owned ref shown by the runtime. "
-            "Allowed fi: refs include fi:turn_<id>.files/<path> (exact file or subtree), "
-            "fi:turn_<id>.snapshots/<path> (exact text snapshot or subtree when git-backed), "
-            "fi:turn_<id>.outputs/<file> (exact file only), "
-            "fi:turn_<id>.user.attachments/<file> (exact file only), "
-            "fi:turn_<id>.external.<event_kind>.attachments/<event_id>/<file> (exact file only), "
-            "and cross-conversation fi:conv_<conversation_id>.turn_<id>... refs. "
+            "list[str] of artifact refs to materialize locally. Each item is either a normal conv:fi: ref or an externally owned ref shown by the runtime. "
+            "Allowed conv:fi: refs include conv:fi:turn_<id>.git/projects/<path> (exact file or subtree), "
+            "conv:fi:turn_<id>.git/snapshots/<path> (exact text snapshot or subtree when git-backed), "
+            "conv:fi:turn_<id>.files/<file> (exact produced file), "
+            "conv:fi:turn_<id>.user.attachments/<file> (exact file only), "
+            "conv:fi:turn_<id>.external.<event_kind>.attachments/<event_id>/<file> (exact file only), "
+            "and cross-conversation conv:fi:conv_<conversation_id>.turn_<id>... refs. "
             "External namespaces such as cnv:, mem:, or task: are accepted only when a namespace rehoster is registered. "
-            "ev: timeline event refs are not artifact refs."
+            "conv:ev: timeline event refs are not artifact refs."
         ),
     },
     "returns": (
         "JSON object with requested refs and compact pulled summaries. "
         "Folder pulls are grouped by logical_root/physical_root with file_count, bounded tree, and path_rule. "
         "Exact file pulls return one logical_path/physical_path item. "
-        "Externally owned refs return object_ref plus the resolved/rehosted fi: logical_path, physical_path, materialization scope (surface), mime, size_bytes, and file_count when available. "
+        "Externally owned refs return object_ref plus the resolved/rehosted conv:fi: logical_path, physical_path, materialization scope (surface), mime, size_bytes, and file_count when available. "
         "When share=true, each delivered file is also listed under shared with its logical_path. "
         "Diagnostics such as missing, invalid, and errors are included only when non-empty."
     ),
@@ -255,7 +259,7 @@ async def handle_react_pull(*, react: Any = None, ctx_browser: Any, state: Dict[
         raw = req["path"]
         embedded_conversation_id, _, _, _ = split_logical_artifact_ref(raw)
         source_conversation_id = str(embedded_conversation_id or "").strip()
-        if not raw.startswith("fi:"):
+        if not raw.startswith(REACT_FILE_REF_PREFIX):
             namespace = raw.partition(":")[0].strip() if ":" in raw else ""
             rehoster = getattr(event_sources, "namespace_rehoster", lambda _namespace: None)(namespace) if namespace else None
             if rehoster is None:
@@ -278,7 +282,7 @@ async def handle_react_pull(*, react: Any = None, ctx_browser: Any, state: Dict[
                 invalid.append({
                     "path": raw,
                     **({"conversation_id": source_conversation_id} if source_conversation_id else {}),
-                    "reason": "react.pull accepts fi: refs or registered artifact namespaces",
+                    "reason": "react.pull accepts conv:fi: refs or registered artifact namespaces",
                     "namespace": namespace,
                     "event_sources_bound": event_sources is not None,
                     "registered_namespaces": registered_namespaces,
@@ -327,8 +331,9 @@ async def handle_react_pull(*, react: Any = None, ctx_browser: Any, state: Dict[
                 "reason": "unresolvable_fi_ref",
             })
             continue
-        snapshot_can_use_workspace = "/snapshots/" in physical and workspace_impl == WORKSPACE_IMPLEMENTATION_GIT
-        if "/attachments/" in physical or "/outputs/" in physical or ("/snapshots/" in physical and not snapshot_can_use_workspace):
+        snapshot_marker = f"/{ARTIFACT_NAMESPACE_SNAPSHOTS}/"
+        snapshot_can_use_workspace = snapshot_marker in physical and workspace_impl == WORKSPACE_IMPLEMENTATION_GIT
+        if "/attachments/" in physical or "/files/" in physical or (snapshot_marker in physical and not snapshot_can_use_workspace):
             artifact = await resolve_logical_artifact(
                 ctx_browser=ctx_browser,
                 path=raw,
@@ -339,8 +344,8 @@ async def handle_react_pull(*, react: Any = None, ctx_browser: Any, state: Dict[
                     "attachment_pulls_require_exact_file_ref"
                     if "/attachments/" in physical
                     else "snapshot_pulls_require_exact_file_ref"
-                    if "/snapshots/" in physical
-                    else "output_pulls_require_exact_file_ref"
+                    if snapshot_marker in physical
+                    else "file_pulls_require_exact_file_ref"
                 )
                 invalid.append({
                     "path": raw,

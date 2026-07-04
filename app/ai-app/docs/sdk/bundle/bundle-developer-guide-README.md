@@ -335,7 +335,7 @@ Visibility rule:
 - `user_types` on `@api(...)` and `@ui_widget(...)` are threshold-based, not exact-match
 - order is:
   - `anonymous < registered < paid < privileged`
-- so:
+- conv:so:
   - `user_types=("registered",)` means registered-or-higher
   - `user_types=("paid",)` means paid-or-higher
   - `user_types=("privileged",)` means privileged only

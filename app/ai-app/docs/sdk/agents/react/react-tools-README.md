@@ -45,11 +45,11 @@ share the round. See
 
 Used for reading, hiding, or reopening existing artifacts:
 
-- `fi:...` — files, outputs, attachments
-- `ar:...` — timeline artifact aliases
-- `so:...` — sources pool rows
-- `su:...` — summary blocks
-- `tc:...` — tool call / tool result records
+- `conv:fi:...` — ReAct file/artifact refs: `git/projects`, `files`, `git/snapshots`, attachments, and rehosted external material
+- `conv:ar:...` — timeline artifact aliases
+- `conv:so:...` — sources pool rows
+- `conv:su:...` — summary blocks
+- `conv:tc:...` — tool call / tool result records
 - owner-defined logical namespaces after they are rehosted or resolved through
   their owning surface
 
@@ -60,11 +60,12 @@ Used for writing or patching new current-turn files:
 - artifact-root-relative paths under the current turn
 - `OUTPUT_DIR` is the artifact root; in local host storage that root is
   `out/workdir`
-- `files/<scope>/...` for durable workspace/project state
-- `outputs/<scope>/...` for reports, exports, test results, demos, and other produced artifacts
-- unqualified `react.write` and exec contract paths default to `outputs/...`; use `files/...` explicitly for durable workspace/project state
+- `git/projects/<scope>/...` for durable editable workspace/project state
+- `files/<scope>/...` for reports, exports, test results, demos, and other produced artifacts
+- `git/snapshots/<scope>/...` for state snapshots
+- unqualified `react.write` and exec contract paths default to `files/...`; use `git/projects/...` explicitly for durable workspace/project state
 
-Do not pass logical `fi:` paths to `react.write` or `react.patch`.
+Do not pass logical `conv:fi:` paths to `react.write` or `react.patch`.
 Do not pass absolute host paths, hosted `file://` paths, or `out/workdir`
 prefixed paths. Tool params use the agent-visible relative path only.
 
@@ -81,7 +82,7 @@ Reads existing logical artifacts back into the visible timeline.
 - optional input: `items: list[object]` — exact read specs with `path` plus
   optional `line_start`/`line_count` or `offset_text_symbols`/`max_text_symbols`.
   `react.rg` returns ready-to-pass `read_item` entries for this field. Text-backed
-  logical paths such as `fi:`, `tc:`, and `ar:` can also be read directly by
+  logical paths such as `conv:fi:`, `conv:tc:`, and `conv:ar:` can also be read directly by
   line or symbol ranges through this field.
 - optional input: `max_text_symbols` — maximum visible text characters per text
   path. This requests a smaller explicit preview than the configured default.
@@ -96,24 +97,24 @@ Reads existing logical artifacts back into the visible timeline.
   For PDF/image multimodal reads there is no partial read: the payload is
   attached only when it is under the byte cap; otherwise `react.read` returns a
   recovery marker.
-- accepted paths: `ar:`, `tc:`, `fi:`, `so:`, `su:`, `ws:`, `sk:`
+- accepted paths: `conv:ar:`, `conv:tc:`, `conv:fi:`, `conv:so:`, `conv:su:`, `conv:ws:`, `conv:ev:`, `sk:`
 - external owner refs: refs such as `mem:...`, `cnv:main@7`, or `task:...`
   are not direct `react.read` inputs by default. If exact owner content is
   needed, use `react.pull` first; then read/search/execute against the returned
-  `fi:` logical path or physical path.
-- `ev:` refs identify event objects on the timeline. Read them like `tc:` refs
+  `conv:fi:` logical path or physical path.
+- `conv:ev:` refs identify event objects on the timeline. Read them like `conv:tc:` refs
   when the event block itself is needed. If an event points to payload bytes,
   use the event's `hosted_uri`, `payload.event_ref`, or artifact refs carried
   inside `payload.event`.
-- cross-conversation `fi:` paths: if a path starts
-  `fi:conv_<conversation_id>.turn_<id>...`, it belongs to another
-  conversation. Current-conversation `fi:` paths do not have this segment; use
+- cross-conversation `conv:fi:` paths: if a path starts
+  `conv:fi:conv_<conversation_id>.turn_<id>...`, it belongs to another
+  conversation. Current-conversation `conv:fi:` paths do not have this segment; use
   scoped paths exactly as supplied.
 - emits: one JSON status/result block plus one visible content block per reopened path
 - deduplication: full visible blocks are not duplicated; ranged reads are
   emitted as distinct range blocks
 - hidden data: hidden/pruned blocks can be reopened by exact path
-- generated views: `ar:<turn_id>.react.turn.index` is reconstructed on demand from the persisted turn log
+- generated views: `conv:ar:<turn_id>.react.turn.index` is reconstructed on demand from the persisted turn log
 - large text guard: oversized text payloads are copied back only as bounded
   visible previews. The status row uses
   `status=truncated_for_visible_context`, the preview names the exact path, and
@@ -143,39 +144,39 @@ board content is not `canvas.read(...)`; import it with `react.pull` first:
 {"paths":["cnv:main@27"]}
 ```
 
-Then inspect the `fi:`/physical path returned by `react.pull`. The model-visible
+Then inspect the `conv:fi:`/physical path returned by `react.pull`. The model-visible
 write path is `named_services.upsert_object(namespace="cnv", object_ref="cnv:<board>", ...)`
 with a typed canvas object from `named_services.object_schema(namespace="cnv", object_kind=...)`.
 
-Skills are not read-capped. If a regular text-backed logical path (`fi:`,
-`tc:`, `ar:`) is too large, call `react.read` with `stats_only:true` to get
+Skills are not read-capped. If a regular text-backed logical path (`conv:fi:`,
+`conv:tc:`, `conv:ar:`) is too large, call `react.read` with `stats_only:true` to get
 line/count metadata, then recover the needed content through bounded `items`
 ranges:
 
 ```json
-{"paths":["fi:turn_.../files/example.md"],"stats_only":true}
-{"items":[{"path":"fi:turn_.../files/example.md","line_start":1,"line_count":120}]}
-{"items":[{"path":"fi:turn_.../files/example.md","line_start":121,"line_count":120}]}
+{"paths":["conv:fi:turn_<id>.files/example.md"],"stats_only":true}
+{"items":[{"path":"conv:fi:turn_<id>.files/example.md","line_start":1,"line_count":120}]}
+{"items":[{"path":"conv:fi:turn_<id>.files/example.md","line_start":121,"line_count":120}]}
 ```
 
 Do not use exec stdout as an uncapped read channel; exec output is capped too.
 Use exec for computation or to create smaller derived artifacts, then inspect
 those artifacts with `react.read`.
 
-For `so:sources_pool[...]`, `fetch_ctx` returns source rows. Web rows use `text`
+For `conv:so:sources_pool[...]`, `fetch_ctx` returns source rows. Web rows use `text`
 for the preview/snippet and `content` for the fetched page body when available;
 bulk processors should prefer `content` over `text`.
 
-`react.read` on `so:sources_pool[...]` also returns JSON source rows, not a prose
+`react.read` on `conv:so:sources_pool[...]` also returns JSON source rows, not a prose
 view. These reads are full by default and include `items_stats` metadata. If
 `max_text_symbols` is explicitly provided, the runtime caps only source text
-fields while preserving valid JSON rows. `so:sources_pool[...]` result blocks
+fields while preserving valid JSON rows. `conv:so:sources_pool[...]` result blocks
 are not passed through the generic prompt preview cap.
 
 Example bounded preview:
 
 ```json
-{"paths":["fi:turn_abc.outputs/report.md"],"max_text_symbols":4000}
+{"paths":["conv:fi:turn_abc.files/report.md"],"max_text_symbols":4000}
 ```
 
 Ranged reads always materialize a new range block. They are not suppressed just
@@ -184,30 +185,30 @@ because the same logical path already has a full or preview block visible.
 Example exact range read:
 
 ```json
-{"items":[{"path":"fi:turn_abc.outputs/page.html","line_start":812,"line_count":60}]}
+{"items":[{"path":"conv:fi:turn_abc.files/page.html","line_start":812,"line_count":60}]}
 ```
 
 Example metadata-only read:
 
 ```json
-{"paths":["tc:turn_abc.tc_big.result","fi:turn_abc.outputs/report.pdf"],"stats_only":true}
+{"paths":["conv:tc:turn_abc.tc_big.result","conv:fi:turn_abc.files/report.pdf"],"stats_only":true}
 ```
 
 ### `react.pull`
 
-Materializes historical `fi:` refs and registered external owner refs locally so
+Materializes historical `conv:fi:` refs and registered external owner refs locally so
 code or later tools can use them by local path.
 
 - input: `paths: list[str]`
-- accepted paths: `fi:` refs and registered external owner namespaces such as
+- accepted paths: `conv:fi:` refs and registered external owner namespaces such as
   `cnv:` or `mem:`
-- cross-conversation refs: `fi:conv_<conversation_id>.turn_<id>...` belongs to
+- cross-conversation refs: `conv:fi:conv_<conversation_id>.turn_<id>...` belongs to
   another conversation and is resolved with that scope
 - external owner refs: `react.pull(paths=["cnv:..."])` or
   `react.pull(paths=["mem:..."])` calls the registered namespace rehoster and
   returns the materialized `logical_path` / `physical_path`; use those returned
   paths next
-- event refs: `ev:` identifies a readable timeline event object and is not
+- event refs: `conv:ev:` identifies a readable timeline event object and is not
   accepted by `react.pull`; pull the event's `hosted_uri`,
   `payload.event_ref`, or refs inside `payload.event`
 - output: local files plus a result block listing pulled paths
@@ -220,19 +221,19 @@ Use it for historical/reference material, not for defining what the current edit
 
 ### `react.checkout`
 
-Copies materialized historical `fi:<turn>.files/...` refs into the active current-turn workspace.
+Copies materialized historical `conv:fi:<turn>.git/projects/...` refs into the active current-turn workspace.
 
 - input: `paths: list[str]`, `mode: replace|overlay`
-- accepted paths: workspace `fi:<turn>.files/...` refs
-- rejected paths: external owner namespaces and `ev:...`
+- accepted paths: workspace `conv:fi:<turn>.git/projects/...` refs
+- rejected paths: external owner namespaces and `conv:ev:...`
   are not checkout refs. Pull/rehost first, then checkout only if the returned
-  `fi:` ref is a `files/...` workspace ref.
-- cross-conversation refs: `fi:conv_<conversation_id>.turn_<id>.files/...`
+  `conv:fi:` ref is a `git/projects/...` workspace ref.
+- cross-conversation refs: `conv:fi:conv_<conversation_id>.turn_<id>.git/projects/...`
   belongs to another conversation and is resolved with that scope
 - output: current-turn workspace files plus a compact checkout result block
-- checkout result: includes `checked_out_from`, per-source file counts, and a tree-like `materialized` summary under `turn_<current>/files`; it is not a per-file manifest
-- `mode=replace`: clears and rebuilds the current-turn workspace
-- `mode=overlay`: applies refs on top of the existing current-turn workspace
+- checkout result: includes `checked_out_from`, per-source file counts, and a tree-like `materialized` summary under `turn_<current>/git/projects`; it is not a per-file manifest
+- `mode=replace`: clears and rebuilds the current-turn `git/projects` workspace
+- `mode=overlay`: applies refs on top of the existing current-turn `git/projects` workspace
 - conflict rule: later refs override earlier refs if they overlap
 
 Use it when React needs an editable runnable/searchable/testable project tree in the current turn. For older refs that may not be local on the worker, call `react.pull(paths=[...])` first, then `react.checkout(...)`. Use `react.pull` alone when the older version is only reference material.
@@ -242,8 +243,8 @@ Use it when React needs an editable runnable/searchable/testable project tree in
 Creates a new text artifact.
 
 - input: `path`, `content`, optional `channel`, optional `kind`
-- accepted paths: current-turn relative paths, not logical `fi:` paths
-- namespace behavior: use `files/...` for durable workspace/project state and `outputs/...` for produced artifacts; unqualified paths default to `outputs/...`
+- accepted paths: current-turn relative paths, not logical `conv:fi:` paths
+- namespace behavior: use `git/projects/...` for durable workspace/project state and `files/...` for produced artifacts; unqualified paths default to `files/...`
 - channels: `canvas`, `timeline_text`, `internal`
 - kinds: `display`, `file`
 - output: local text artifact plus timeline/result blocks
@@ -254,17 +255,17 @@ Use it for text artifacts only. For PDFs, PPTX, DOCX, PNG, and other binary deli
 
 ### `react.patch`
 
-Updates an existing current-turn materialized text file under `files/...` or `outputs/...`.
+Updates an existing current-turn materialized text file under `git/projects/...`, `files/...`, or `git/snapshots/...`.
 
 - input: `path`, `patch`
-- accepted paths: current-turn artifact-root-relative paths; prefer concise paths such as `files/<scope>/file.py` or `outputs/<scope>/page.html`, not logical `fi:` paths
+- accepted paths: current-turn artifact-root-relative paths; prefer concise paths such as `git/projects/<scope>/file.py` for project edits or `files/<scope>/page.html` for produced artifacts, not logical `conv:fi:` paths
 - patch format: unified diff or full replacement text
 - generated unified-diff hunk counts are normalized before apply; a wrong `@@ -a,b +c,d @@` count should not force a full-file rewrite when the hunk content is otherwise correct
 - for targeted diffs, inspect the affected range with `react.read(items=[{"path": "...", "line_start": ..., "line_count": ..., "line_numbers": "disabled"}])` and copy old/context lines from that raw range
 - rendered-preview line-number prefixes are rejected; remove the viewing prefixes and retry
 - output: updated local file plus normal tool call/result blocks
 - file origin does not matter: current-turn files produced by exec, `react.write`, `react.patch`, or `react.checkout` are patchable once they exist locally
-- older files are never patched in place; materialize with `react.pull` if needed, then use `react.checkout` for historical `files/...` refs you need to edit and patch the resulting current-turn path
+- older files are never patched in place; materialize with `react.pull` if needed, then use `react.checkout` for historical `git/projects/...` refs you need to edit and patch the resulting current-turn path
 
 When a unified diff cannot be applied exactly, `react.patch` returns a
 structured `hunk_mismatch` diagnostic. Treat this as a context mismatch, not as
@@ -289,7 +290,7 @@ Example mismatch result:
     }
   },
   "suggested_read": {
-    "path": "turn_new/files/demo/test_app.py",
+    "path": "turn_new/git/projects/demo/test_app.py",
     "line_start": 1,
     "line_count": 12,
     "line_numbers": "disabled"
@@ -339,7 +340,7 @@ The targets the agent selects determine which row families come back:
 **Scopes.**
 
 - `scope="conversation"` (default): the current conversation only. Cannot leak across conversations.
-- `scope="user"`: the same user across all of their conversations, inside the same tenant + project + storage boundary. Does not cross tenants or projects. Returned `fi:` paths shaped `fi:conv_<id>.turn_<id>...` indicate cross-conversation artifacts; pass them verbatim to `react.read` / `react.pull` / `react.checkout` / `react.rg` and they resolve against the other conversation's storage.
+- `scope="user"`: the same user across all of their conversations, inside the same tenant + project + storage boundary. Does not cross tenants or projects. Returned `conv:fi:` paths shaped `conv:fi:conv_<id>.turn_<id>...` indicate cross-conversation artifacts; pass them verbatim to `react.read` / `react.pull` / `react.rg`. Use `react.checkout` only when such a ref is a `git/projects` project ref.
 
 **Retrieval function.** When `query` is set, semantic and lexical retrievals run
 in parallel and are fused by Reciprocal Rank Fusion (`k=60`) per target with a
@@ -364,7 +365,7 @@ The tool infers routing from which fields are set; there is no `mode` knob.
 Output per hit (the envelope is deliberately minimal — anything not listed is omitted):
 
 - `score`: the fused RRF + recency-lift relevance score (for hybrid hits) — use this to rank when there are multiple hits
-- `turn_index_path`: usually `ar:<turn_id>.react.turn.index` — read this when the snippets alone are not enough material to act on
+- `turn_index_path`: usually `conv:ar:<turn_id>.react.turn.index` — read this when the snippets alone are not enough material to act on
 - `ordinal` and `total_turns`: when the hit came from the turn catalog (ordinal / timeline modes)
 - `snippets`: rows with `path`, `role`, and an inline `text` preview (≤500 chars) so the envelope is self-sufficient for triage
 
@@ -377,7 +378,7 @@ Conversation, turn_id, timestamps, sub-scores, and matched-target metadata are i
 Event-scoped attachment paths use:
 
 ```text
-fi:<turn>.external.<event_kind>.attachments/<event_id>/<filename>
+conv:fi:<turn>.external.<event_kind>.attachments/<event_id>/<filename>
 ```
 
 Scenarios:
@@ -385,12 +386,12 @@ Scenarios:
 | User intent | Tool params | Next step |
 |---|---|---|
 | "What have we talked about so far?" | `targets=["summary"]`, `order="asc"`, high enough `top_k`, no `query`, no bounds | summarize returned turn summaries |
-| "Find the brief on the Q2 spreadsheet" | `query`, `targets=["summary"]` | read returned `ws:` summary, then exact refs |
+| "Find the brief on the Q2 spreadsheet" | `query`, `targets=["summary"]` | read returned `conv:ws:` summary, then exact refs |
 | "What was the second turn about?" | `ordinal=2`, `targets=["summary","user","assistant"]` | answer from snippets or read `turn_index_path` |
 | "What did we discuss in March?" | `from`, `to`, `targets=["summary","user"]`, no `query` | scan returned turns, then read exact refs |
 | "Find the openpyxl issue from March" | `query`, `from`, `to`, `targets=["summary","user","assistant"]` | hybrid search narrowed to the time window |
-| "Last week / yesterday we discussed X" / "you helped me with X before" | `query`, `scope="user"`, `targets=["summary","user","assistant"]` | read the cross-conversation `ws:` / `ar:` / `fi:conv_<id>...` refs returned |
-| "I need that old file but only remember the topic" | `query`, `targets=["summary","attachment"]` | read/pull returned `fi:` refs or read the turn index |
+| "Last week / yesterday we discussed X" / "you helped me with X before" | `query`, `scope="user"`, `targets=["summary","user","assistant"]` | read the cross-conversation `conv:ws:` / `conv:ar:` / `conv:fi:conv_<id>...` refs returned |
+| "I need that old file but only remember the topic" | `query`, `targets=["summary","attachment"]` | read/pull returned `conv:fi:` refs or read the turn index |
 | "Find the renderer-ref decision I left for myself" | `query`, `targets=["notes","summary"]` | read the returned note snippet, then exact refs |
 
 Examples:
@@ -415,7 +416,7 @@ Rules:
 - For broad overview questions, set no `query`, no `ordinal`, no bounds, and `targets=["summary"]`. Generic queries like `"conversation topics discussed"` are not useful — they should be omitted, not invented.
 - For an exact turn position, set `ordinal` and omit `query`.
 - For a date-only window, set `from`/`to` and omit `query`. For topic plus date range, set all three; the search narrows to the window.
-- Read `turn_index_path` when the returned snippets identify the turn but do not name the needed exact `ar:`, `tc:`, `fi:`, or `so:` path.
+- Read `turn_index_path` when the returned snippets identify the turn but do not name the needed exact `conv:ar:`, `conv:tc:`, `conv:fi:`, or `conv:so:` path.
 - Batch-read exact refs after discovery; avoid one round per path.
 
 ### `react.hide`
@@ -423,7 +424,7 @@ Rules:
 Replaces a visible tail block with a short placeholder.
 
 - input: `paths: list[str]`, optional replacement text
-- accepted paths: logical paths such as `ar:`, `fi:`, `tc:`, `so:`
+- accepted paths: logical paths such as `conv:ar:`, `conv:fi:`, `conv:tc:`, `conv:so:`
 - output: hidden replacement blocks; original content remains stored
 - restriction: only the editable tail window can be hidden
 - cache safety: runtime enforces checkpoint rules before hiding
@@ -436,8 +437,8 @@ Searches safely over files already materialized in the local artifact workspace 
 
 - input: file name regex and/or content regex
 - scope: rooted search only, under runtime-managed artifact files already present on this worker; root can be a file or a subtree
-- preferred roots: omit `root`, or use `files/...`, `outputs/...`, `attachments/...`, `turn_<id>/files/...`, `turn_<id>/outputs/...`, `turn_<id>/attachments/...`, or matching `fi:` artifact paths such as `fi:<turn_id>.files/...`, `fi:<turn_id>.outputs/...`, and `fi:<turn_id>.user.attachments/...`
-- cross-conversation roots: if the root starts `fi:conv_<conversation_id>.turn_<id>...`, it belongs to another conversation and is resolved with that scope after the file has been pulled locally
+- preferred roots: omit `root`, or use `git/projects/...`, `files/...`, `git/snapshots/...`, `attachments/...`, `turn_<id>/git/projects/...`, `turn_<id>/files/...`, `turn_<id>/git/snapshots/...`, `turn_<id>/attachments/...`, or matching `conv:fi:` artifact paths such as `conv:fi:<turn_id>.git/projects/...`, `conv:fi:<turn_id>.files/...`, `conv:fi:<turn_id>.git/snapshots/...`, and `conv:fi:<turn_id>.user.attachments/...`
+- cross-conversation roots: if the root starts `conv:fi:conv_<conversation_id>.turn_<id>...`, it belongs to another conversation and is resolved with that scope after the file has been pulled locally
 - legacy roots: `outdir` and `outdir/<path>` are still accepted for older callers, but new calls should use visible path forms
 - not a search over hidden/pruned timeline, unpulled historical snapshots, or
   owner namespaces; locate older refs first, then `react.pull` them before local

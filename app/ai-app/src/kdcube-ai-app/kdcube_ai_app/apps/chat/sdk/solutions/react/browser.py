@@ -1116,9 +1116,9 @@ class ContextBrowser:
         event_id = str(getattr(event, "message_id", "") or "").strip() or f"seq_{int(getattr(event, 'sequence', 0) or 0)}"
         is_prompt_event = kind in {"message", "regular"}
         if is_prompt_event:
-            path = f"ar:{turn_id}.user.prompt.{event_id}" if turn_id else ""
+            path = f"conv:ar:{turn_id}.user.prompt.{event_id}" if turn_id else ""
         else:
-            path = f"ar:{turn_id}.external.{kind}.{event_id}" if turn_id else ""
+            path = f"conv:ar:{turn_id}.external.{kind}.{event_id}" if turn_id else ""
         payload = getattr(event, "payload", None) or {}
         payload = payload if isinstance(payload, dict) else {}
         accepted_event = payload.get("event") if isinstance(payload.get("event"), dict) else {}
@@ -1182,9 +1182,9 @@ class ContextBrowser:
         attachments = self._attachments_from_external_event(event) if kind in {"message", "regular", "followup", "external_event"} else []
         attachment_kind = "user" if is_prompt_event else f"external.{kind}"
         path_root = (
-            f"fi:{turn_id}.user.attachments/{event_id}"
+            f"conv:fi:{turn_id}.user.attachments/{event_id}"
             if is_prompt_event
-            else f"fi:{turn_id}.external.{kind}.attachments/{event_id}"
+            else f"conv:fi:{turn_id}.external.{kind}.attachments/{event_id}"
         )
         physical_root = (
             f"{turn_id}/attachments/{event_id}"
@@ -1222,11 +1222,11 @@ class ContextBrowser:
             meta["prompt_origin"] = "external_event_lane"
         block_path = path
         if builtin_user_prompt:
-            block_path = f"ar:{turn_id}.user.prompt.{event_id}" if turn_id else ""
+            block_path = f"conv:ar:{turn_id}.user.prompt.{event_id}" if turn_id else ""
         elif builtin_user_followup:
-            block_path = f"ar:{turn_id}.external.followup.{event_id}" if turn_id else ""
+            block_path = f"conv:ar:{turn_id}.external.followup.{event_id}" if turn_id else ""
         elif builtin_user_steer:
-            block_path = f"ar:{turn_id}.external.steer.{event_id}" if turn_id else ""
+            block_path = f"conv:ar:{turn_id}.external.steer.{event_id}" if turn_id else ""
         elif kind == "external_event" and logical_path:
             block_path = logical_path
         target = {
@@ -1314,7 +1314,7 @@ class ContextBrowser:
         Bundle widgets may stage bytes in bundle storage first and send event
         data with `storage_uri`/`hosted_uri`. ReAct materialization turns that
         source object into a normal conversation-hosted artifact so later
-        `react.read`, `react.pull`, and cross-conversation `fi:conv_...` paths
+        `react.read`, `react.pull`, and cross-conversation `conv:fi:conv_...` paths
         resolve through the existing artifact pipeline.
         """
 
@@ -1793,7 +1793,7 @@ class ContextBrowser:
                 "turn_id": turn_id,
                 "ts": time.time(),
                 "mime": "application/json",
-                "path": f"tc:{turn_id}.{call_id}.notice" if (turn_id and call_id) else "",
+                "path": f"conv:tc:{turn_id}.{call_id}.notice" if (turn_id and call_id) else "",
                 "text": json.dumps(payload, ensure_ascii=False, indent=2),
             }
             if call_id:

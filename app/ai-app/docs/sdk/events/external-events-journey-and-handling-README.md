@@ -145,7 +145,7 @@ chat-ingress process
         | 2. validates auth/session/conversation
         | 3. resolves lane identity:
         |      tenant + project + user_id + conversation_id + agent_id
-        | 4. normalizes event ids, timestamps, logical ev: paths,
+        | 4. normalizes event ids, timestamps, logical conv:ev: paths,
         |    semantic event_source_id, and task_payload
         |
         +-------------------------------+
@@ -306,7 +306,7 @@ client submits one ordered batch
         |
         v
 ingress accepts each occurrence
-  assigns/normalizes event_id, logical ev: path, target agent_id, reactive flag
+  assigns/normalizes event_id, logical conv:ev: path, target agent_id, reactive flag
   publishes occurrences to the id_card Redis lane in order
         |
         v
@@ -439,7 +439,7 @@ the lane cursor without creating durable ReAct blocks.
 The structural default is still useful for ordinary generic/domain, snapshot,
 and canvas events. When no source-specific block-production policy is
 registered for those event types, the produced ReAct block uses the event's
-`ev:` path. Built-in user events have their own defaults that project to
+`conv:ev:` path. Built-in user events have their own defaults that project to
 `user.prompt`, `user.attachment.*`, `user.followup`, and `user.steer`. A
 registered source can override either default, including by intentionally
 producing zero timeline blocks.
@@ -465,7 +465,7 @@ also becomes model-visible or recoverable ReAct timeline material.
 When a policy does share file-related material with ReAct, it may share only
 metadata and refs. File rows such as `artifact_rows`, `declared_file_items`, or
 `hosted_artifacts` preserve logical paths and hosted refs; they do not require
-the event source to inline the file body. ReAct can use the visible `fi:` ref
+the event source to inline the file body. ReAct can use the visible `conv:fi:` ref
 with `react.read` when it needs text content, or `react.pull` when an owner
 namespace ref such as `nmsp:`, `cnv:`, or `mem:` must be materialized first.
 Named-service namespaces should materialize through provider `object.get` and

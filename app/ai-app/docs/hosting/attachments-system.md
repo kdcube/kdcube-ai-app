@@ -116,8 +116,8 @@ payload as a declared file result:
         "visibility": "external",
         "filename": "invoice.pdf",
         "mime_type": "application/pdf",
-        "physical_path": "turn_123/outputs/email-attachments/invoice.pdf",
-        "logical_path": "fi:turn_123.outputs/email-attachments/invoice.pdf"
+        "physical_path": "turn_123/files/email-attachments/invoice.pdf",
+        "logical_path": "conv:fi:turn_123.files/email-attachments/invoice.pdf"
       }
     ]
   }

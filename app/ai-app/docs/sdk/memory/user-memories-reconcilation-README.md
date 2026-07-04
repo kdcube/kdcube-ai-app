@@ -292,12 +292,12 @@ register snapshot in user_memory_maintenance_artifacts
 Suggested artifact layout:
 
 ```text
-memory/snapshots/YYYY/MM/DD/<snapshot_id>/status.json
-memory/snapshots/YYYY/MM/DD/<snapshot_id>/memories.json
-memory/snapshots/YYYY/MM/DD/<snapshot_id>/memories.md
-memory/snapshots/YYYY/MM/DD/<snapshot_id>/memories.csv
-memory/snapshots/YYYY/MM/DD/<snapshot_id>/restore-preview.json      # only after preview
-memory/snapshots/YYYY/MM/DD/<snapshot_id>/restore.json              # only after restore
+memory/git/snapshots/YYYY/MM/DD/<snapshot_id>/status.json
+memory/git/snapshots/YYYY/MM/DD/<snapshot_id>/memories.json
+memory/git/snapshots/YYYY/MM/DD/<snapshot_id>/memories.md
+memory/git/snapshots/YYYY/MM/DD/<snapshot_id>/memories.csv
+memory/git/snapshots/YYYY/MM/DD/<snapshot_id>/restore-preview.json      # only after preview
+memory/git/snapshots/YYYY/MM/DD/<snapshot_id>/restore.json              # only after restore
 ```
 
 Current retention keeps the last few snapshots per user/scope as recovery
@@ -343,7 +343,7 @@ Every reconciliation job must reference a snapshot:
 {
   "job_id": "memrec_...",
   "snapshot_id": "memsnap_...",
-  "snapshot_artifact": "memory/snapshots/memsnap_.../memories.json"
+  "snapshot_artifact": "memory/git/snapshots/memsnap_.../memories.json"
 }
 ```
 
