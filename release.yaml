@@ -1,52 +1,68 @@
 platform:
   repo: "kdcube-ai-app"
-  ref: "2026.7.3.2030"
+  ref: "2026.7.4.310"
   description: |
-    This release follows 2026.7.3.243 and adds the first platform slice of
-    public, crawlable application content.
+    This release follows 2026.7.3.2030 and finalizes two pieces that were
+    needed for the Connection Hub and public-content work to be usable without
+    local compatibility overlays.
 
-    The core addition is the SDK public-content backbone. Applications can now
-    expose selected published content through a registry-backed public surface
-    with stable item routes, canonical metadata, sitemap support, structured
-    page rendering, and retract semantics. The platform owns the public serving
-    path while the application owns the publish/update/retract lifecycle.
+    The main runtime change is that conversation export is now owned by the
+    conversation solution instead of the delegated OAuth adapter. The
+    kdcube-services conversations MCP surface now calls the conversation SDK
+    export path, and the reusable export-record shaping logic lives under
+    sdk/solutions/conversation. Delegated OAuth remains responsible for
+    delegated credential protocol, consent, token, and MCP guard behavior, but
+    it no longer contains conversation-domain export adapters.
 
-    The release also tightens the documentation around the new content surface.
-    The public-content docs are now split between platform solution docs,
-    application-surface docs, and recipes so application builders can understand
-    where to declare content, where it is indexed, and how it is made
-    discoverable without running application code on the crawler-facing path.
+    The release also tightens managed MCP policy handling. The MCP guard now
+    prefers Connection Hub resource policy for tool/grant checks, so resource
+    and tool capability configuration can live in Connection Hub instead of
+    being duplicated by each protected service surface. The related docs and
+    kdcube-services references were updated to describe the cleaned separation
+    of responsibility.
 
-    Finally, the generated public article renderer no longer duplicates a
-    headline over authored bodies that already carry their own article heading.
-    This keeps public pages cleaner while preserving metadata and structured
-    content for search engines, AI crawlers, and direct readers.
+    Finally, the public-content registry can publish many seed records under a
+    single critical section. This keeps batch public-content publication
+    consistent and avoids repeated lock/flush work when an application publishes
+    a group of records at once.
 
     Highlights
 
-    - Adds the SDK public-content registry and serving backbone.
-    - Supports public item pages, sitemap entries, canonical metadata, and
-      retract/gone behavior for application-published content.
-    - Separates public-content documentation into solution, application-surface,
-      and recipe layers.
-    - Documents the platform/application split for public content: applications
-      publish the content record; the platform serves the public artifact.
-    - Avoids duplicate rendered headlines when the authored public body already
-      includes its own heading.
+    - Moves conversation export implementation into
+      sdk/solutions/conversation.
+    - Removes conversation export adapter/tool shims from the delegated OAuth
+      delegated-credential package.
+    - Keeps delegated OAuth focused on credential protocol, consent, token
+      issuance, and managed MCP guard behavior.
+    - Makes kdcube-services conversations MCP use the conversation solution
+      export path directly.
+    - Lets managed MCP guard checks use Connection Hub resource tool policies
+      as the source of truth.
+    - Adds public-content batch publication through one registry critical
+      section.
 
     Operational impact
 
-    - Applications that opt into public content should define explicit aliases,
-      metadata, canonical bases, and publish/retract behavior.
-    - Deployment owners should verify any public-content route is intentionally
-      exposed and backed by the expected application registry records.
-    - Crawlers and direct readers can consume public content without loading the
-      application's iframe/widget runtime.
+    - Deployments using kdcube-services conversations MCP should no longer need
+      a local patch for delegated-OAuth conversation export.
+    - Connection Hub descriptors should define MCP resource/tool/grant policy;
+      service surface auth blocks should stay minimal and only select managed
+      delegated credential enforcement.
+    - External clients such as Claude should connect to the concrete
+      kdcube-services MCP endpoints for conversations and named services, then
+      consent through Connection Hub.
+    - Applications publishing public content in batches should use the registry
+      batch helper to keep publication atomic and efficient.
 
     Changelog
 
-    - Added the public-content SDK backbone.
-    - Added and reorganized public-content documentation and recipes.
-    - Updated public article body rendering to avoid duplicate title injection.
+    - Refactored conversation export into
+      sdk/solutions/conversation/export_records.py and mcp_export.py.
+    - Removed delegated OAuth conversation export adapter/tool files and tests.
+    - Updated kdcube-services conversations MCP to call the conversation SDK
+      export implementation.
+    - Updated delegated OAuth tests around resource policy and tool grant
+      enforcement.
+    - Added public-content registry batch seeding support and tests.
 config:
-  version: "2026.7.3.2030"
+  version: "2026.7.4.310"
