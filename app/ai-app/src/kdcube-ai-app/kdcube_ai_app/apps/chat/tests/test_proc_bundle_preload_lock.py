@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 from types import SimpleNamespace
 
@@ -29,6 +30,9 @@ class _FakeRedis:
 
     async def set(self, key, value, ex=None, nx=None):
         self.calls.append(("set", key, value, ex, nx))
+        if not nx:
+            self.values[key] = value
+            return True
         is_bundle_preload_lock = str(key).count(":") > 5
         acquire = self.acquire_bundle if is_bundle_preload_lock and self.acquire_bundle is not None else self.acquire
         if not acquire:
@@ -44,6 +48,10 @@ class _FakeRedis:
         self.calls.append(("delete", key))
         self.values.pop(key, None)
         return 1
+
+    async def expire(self, key, seconds):
+        self.calls.append(("expire", key, seconds))
+        return 1 if key in self.values else 0
 
 
 def _app(redis: _FakeRedis) -> SimpleNamespace:
@@ -188,8 +196,80 @@ async def test_preload_bundles_loop_skips_bundle_when_bundle_lock_is_held(monkey
     assert app.state.bundles_preload_ready is True
     assert app.state.bundles_preload_errors == {}
     assert app.state.bundles_preload_skipped_locked == 2
-    assert app.state.bundles_preload_status["bundle.a"]["status"] == "skipped_locked"
-    assert app.state.bundles_preload_status["bundle.b"]["status"] == "skipped_locked"
+    assert app.state.bundles_preload_skipped_claimed == 2
+    assert app.state.bundles_preload_status["bundle.a"]["status"] == "skipped_claimed"
+    assert app.state.bundles_preload_status["bundle.b"]["status"] == "skipped_claimed"
+
+
+@pytest.mark.asyncio
+async def test_preload_bundles_loop_skips_bundle_when_generation_done(monkeypatch):
+    redis = _FakeRedis(acquire=True)
+    app = _app(redis)
+    preload_calls: list[str] = []
+    entry = bundle_store.BundleEntry(id="bundle.demo", path="/tmp/demo", module="entrypoint", singleton=False)
+    generation = web_app._bundle_preload_generation("bundle.demo", entry)
+    done_key = web_app.CONFIG.BUNDLES.PRELOAD_BUNDLE_DONE_FMT.format(
+        tenant="tenant-a",
+        project="project-a",
+        bundle_id="bundle.demo",
+        generation=generation,
+    )
+    redis.values[done_key] = generation
+
+    async def _fake_preload(spec, bundle_spec, **kwargs):
+        del spec, kwargs
+        preload_calls.append(bundle_spec.id)
+
+    async def _load_runtime_registry(redis_arg, tenant, project):
+        del redis_arg, tenant, project
+        return bundle_store.BundlesRegistry(
+            default_bundle_id="bundle.demo",
+            bundles={"bundle.demo": entry},
+        )
+
+    monkeypatch.setattr(web_app, "get_settings", _settings)
+    monkeypatch.setattr(web_app, "load_bundle_runtime_registry", _load_runtime_registry)
+    monkeypatch.setattr(bundle_loader, "preload_bundle_async", _fake_preload)
+    monkeypatch.setattr(bundle_loader, "load_bundle_manifest", lambda *args, **kwargs: _manifest())
+
+    await web_app._preload_bundles_loop(app)
+
+    assert preload_calls == []
+    assert app.state.bundles_preload_ready is True
+    assert app.state.bundles_preload_errors == {}
+    assert app.state.bundles_preload_skipped_done == 1
+    assert app.state.bundles_preload_status["bundle.demo"]["status"] == "skipped_done"
+
+
+@pytest.mark.asyncio
+async def test_preload_bundles_loop_heartbeats_long_bundle_claim(monkeypatch):
+    redis = _FakeRedis(acquire=True)
+    app = _app(redis)
+
+    async def _fake_preload(spec, bundle_spec, **kwargs):
+        del spec, bundle_spec, kwargs
+        await asyncio.sleep(0.45)
+
+    async def _load_runtime_registry(redis_arg, tenant, project):
+        del redis_arg, tenant, project
+        return _registry({"bundle.demo": {"path": "/tmp/demo", "module": "entrypoint", "singleton": False}})
+
+    monkeypatch.setattr(web_app, "get_settings", _settings)
+    monkeypatch.setattr(web_app, "_bundle_preload_lock_ttl_seconds", lambda: 1)
+    monkeypatch.setattr(web_app, "_bundle_preload_bundle_lock_ttl_seconds", lambda: 1)
+    monkeypatch.setattr(web_app, "load_bundle_runtime_registry", _load_runtime_registry)
+    monkeypatch.setattr(bundle_loader, "preload_bundle_async", _fake_preload)
+    monkeypatch.setattr(bundle_loader, "load_bundle_manifest", lambda *args, **kwargs: _manifest())
+
+    await web_app._preload_bundles_loop(app)
+
+    bundle_lock_key = web_app.CONFIG.BUNDLES.PRELOAD_BUNDLE_LOCK_FMT.format(
+        tenant="tenant-a",
+        project="project-a",
+        bundle_id="bundle.demo",
+    )
+    assert any(call == ("expire", bundle_lock_key, 1) for call in redis.calls)
+    assert app.state.bundles_preload_status["bundle.demo"]["status"] == "succeeded"
 
 
 @pytest.mark.asyncio

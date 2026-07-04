@@ -4,7 +4,7 @@ title: "UI Components Lifecycle"
 summary: "How KDCube discovers, builds, caches, serves, and reloads bundle UI components in single-process and concurrent proc deployments."
 tags: ["sdk", "bundle", "ui", "widget", "main-view", "lifecycle", "preload", "concurrency", "efs", "iframe"]
 keywords: ["bundle ui lifecycle", "bundle widget lifecycle", "ui.widgets", "ui.main_view", "ui_widget decorator", "shared storage ui build", "bundle ui preload", "request triggered widget build", "bundle ui locks", "bundle ui signatures", "static widget route", "concurrent proc workers", "ui source edit auto-rebuild", "signature aware coalescing"]
-updated_at: 2026-05-23
+updated_at: 2026-07-04
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/how-to-integrate-with-kdcube-apps-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-widget-integration-README.md
@@ -259,21 +259,34 @@ the copied temporary source tree.
 
 ## Startup Preload
 
-When bundle preload is enabled, each proc worker starts a preload task during
-lifespan startup.
+When app preload is enabled, each proc worker starts a preload task during
+lifespan startup. All workers see the same registry, but they coordinate the
+shared work through Redis so startup can be collaborative instead of duplicated.
 
 Preload does this per worker:
 
 1. Wait for git bundle prefetch to finish.
 2. Load the active bundle registry.
-3. For each configured bundle with a path, import the bundle.
-4. Run the bundle's `on_bundle_load()` hook.
-5. Validate the discovered bundle manifest.
-6. Record per-bundle failures without making the whole proc fail.
+3. Compute a stable preload generation for each configured app from its
+   descriptor-resolved id, path, module, singleton flag, repo/ref/subdir, and
+   git commit.
+4. Skip the app if the Redis `preload-done` key already exists for that
+   generation.
+5. Claim one not-yet-done app generation with a Redis `SET NX` lock.
+6. Import the app, run `on_bundle_load()`, and validate the discovered
+   interface manifest.
+7. Mark that app generation done in Redis after success.
+8. Record per-app failures without making the whole proc fail.
 
 Bundles that build UI in `on_bundle_load()` will build during this preload pass.
-Shared-storage signatures and locks prevent duplicate final output, but every
-worker still needs to load the bundle and validate its own in-process manifest.
+The Redis app-generation claim decides which worker should run the preload for
+that app. Shared-storage signatures and locks remain as the final guard around
+actual UI artifact writes under EFS or any other shared filesystem.
+
+Claim keys are heartbeat-renewed while the worker is alive. If the worker or ECS
+task dies mid-preload, the claim expires and another worker can retry. The
+generation-specific done key prevents workers that start later from repeating
+the same already completed preload.
 
 For entrypoints that subclass `BaseEntrypoint` or one of its memory/economics
 variants, the default `on_bundle_load()` refreshes effective bundle props and
@@ -301,15 +314,17 @@ those widget assets. The first live widget request then has to build them.
 sequenceDiagram
   participant W1 as proc worker pid=65
   participant W2 as proc worker pid=66
+  participant R as Redis coordination
   participant S as shared bundle storage
 
-  W1->>S: check signature for ui-widget-x
-  W1->>S: acquire ui-widget-x.lock
-  W2->>S: check signature for ui-widget-x
-  W2->>S: wait for ui-widget-x.lock
-  W1->>S: build temp output and swap final output
-  W1->>S: write signature and release lock
-  W2->>S: "signature became current, skip build"
+  W1->>R: claim app generation A
+  W2->>R: claim app generation B
+  W1->>S: build app A widget assets under shared-storage lock
+  W2->>S: build app B widget assets under shared-storage lock
+  W1->>R: mark app generation A done
+  W2->>R: mark app generation B done
+  W2->>R: sees app generation A done, skip
+  W1->>R: sees app generation B done, skip
 ```
 
 Preload is an optimization and a readiness signal. Serving code still has a
@@ -483,6 +498,12 @@ Correct behavior depends on these rules:
 - every worker can import the authoritative bundle path
 - every worker can discover the same decorators for the same bundle version
 - every worker computes the same UI build signature for the same bundle version
+- startup preload uses Redis app-generation claims so workers take different
+  app preload items instead of all rebuilding the same item
+- successful startup preload writes a generation-specific done marker so later
+  workers skip the same completed app generation
+- preload claims are heartbeat-renewed; if a worker dies, the claim expires and
+  another worker can retry
 - only one worker holds a given shared-storage build lock at a time
 - waiting workers re-check the signature while waiting
 - completed builds write a signature only after `index.html` exists
@@ -557,10 +578,17 @@ first. Do not patch the temporary source directory.
 ## Logs To Read
 
 UI build logs are emitted by the bundle entrypoint logger with `[bundle.ui]`.
+Startup preload coordination logs are emitted by the proc service with
+`[Bundles]`.
 
 Important lines:
 
 ```text
+[Bundles] Collaborative preload already active; joining work scan: ...
+[Bundles] Preload skip (bundle claimed by another worker): id=...
+[Bundles] Preload skip (generation already done): id=...
+[Bundles] Preload start: id=... owner={'instance_id': ..., 'pid': ..., 'generation': ...}
+[Bundles] Preload succeeded: id=... duration_ms=...
 [bundle.ui] lock acquired op=ui-widget-<alias> storage=...
 [bundle.ui] waiting for lock op=ui-widget-<alias> ... owner=host=...,pid=...
 [bundle.ui] widget:<alias> materialized shared source ...

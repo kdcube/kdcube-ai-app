@@ -4,7 +4,7 @@ title: "Bundle Widget Integration"
 summary: "Bundle widget UI contract: source-folder widget apps, runtime config handshake, operation URL construction, Data Bus publishing, auth propagation, and the recommended pattern when a capability is both widget and operation."
 tags: ["sdk", "bundle", "widget", "iframe", "frontend", "integrations", "telegram", "memory", "data-bus"]
 keywords: ["bundle widget contract", "iframe widget contract", "widget source folder", "static widget build", "runtime config handshake", "operation url construction", "data bus publishing", "auth propagation to widget", "widget and operation dual pattern", "shared sdk widget source", "telegram widget components", "memory widget component", "bundle widget integration"]
-updated_at: 2026-06-06
+updated_at: 2026-07-04
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/how-to-integrate-with-kdcube-apps-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-interfaces-README.md
@@ -523,10 +523,12 @@ triggers a full rebuild via `build_command`.
   `rm <bundle_storage_root>/.ui.widgets/<safe_alias>.signature`
 - bump the bundle id (rarely useful for local development)
 
-**Concurrency**: the build runs inside a shared-storage lock keyed by the
-bundle storage root, so concurrent loads from multiple workers do not run
-the same `build_command` twice. Workers that arrive after the signature was
-written hit the cache and skip the build.
+**Concurrency**: startup preload is coordinated through Redis app-generation
+claims, so workers on ECS can divide app preload work instead of all taking the
+same app. The UI build itself still runs inside a shared-storage lock keyed by
+the bundle storage root, so request-time fallback and any missed preload case
+remain safe on EFS. Workers that arrive after the signature was written hit the
+cache and skip the build.
 
 The widget route serves the built app and supports SPA subpath fallback:
 

@@ -7,6 +7,8 @@ Processor service: runs the queue processor and exposes minimal integrations API
 """
 import asyncio
 import faulthandler
+import hashlib
+import json
 import logging
 import os
 import signal
@@ -250,8 +252,68 @@ def _bundle_preload_bundle_lock_ttl_seconds() -> int:
     return int(get_settings().PLATFORM.APPLICATIONS.BUNDLES_PRELOAD_BUNDLE_LOCK_TTL_SECONDS)
 
 
+def _bundle_preload_done_ttl_seconds() -> int:
+    return max(_bundle_preload_lock_ttl_seconds(), _bundle_preload_bundle_lock_ttl_seconds()) * 4
+
+
 def _utc_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _bundle_preload_generation(bundle_id: str, entry) -> str:
+    """
+    Stable app-preload generation. Any descriptor-resolved source change must
+    move workers to a new done key so old successful preloads do not suppress
+    new work.
+    """
+    payload = {
+        "id": str(bundle_id or ""),
+        "path": str(getattr(entry, "path", "") or ""),
+        "module": str(getattr(entry, "module", "") or ""),
+        "singleton": bool(getattr(entry, "singleton", False)),
+        "repo": str(getattr(entry, "repo", "") or ""),
+        "ref": str(getattr(entry, "ref", "") or ""),
+        "subdir": str(getattr(entry, "subdir", "") or ""),
+        "git_commit": str(getattr(entry, "git_commit", "") or ""),
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()[:24]
+
+
+async def _redis_get_text(redis, key: str) -> str | None:
+    value = await redis.get(key)
+    if isinstance(value, bytes):
+        return value.decode("utf-8", "ignore")
+    if value is None:
+        return None
+    return str(value)
+
+
+async def _release_redis_claim(redis, *, key: str, token: str) -> bool:
+    try:
+        current_val = await _redis_get_text(redis, key)
+        if current_val == token:
+            await redis.delete(key)
+            return True
+    except Exception:
+        logger.exception("[Bundles] Failed to release preload claim: key=%s", key)
+    return False
+
+
+async def _heartbeat_redis_claim(redis, *, key: str, token: str, ttl_seconds: int) -> None:
+    ttl = max(1, int(ttl_seconds))
+    interval = min(max(0.1, ttl / 3.0), 10.0)
+    while True:
+        await asyncio.sleep(interval)
+        try:
+            current_val = await _redis_get_text(redis, key)
+            if current_val != token:
+                return
+            await redis.expire(key, ttl)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.warning("[Bundles] Failed to heartbeat preload claim: key=%s", key, exc_info=True)
 
 
 def _set_bundle_preload_state(app, bundle_id: str, **updates) -> None:
@@ -436,12 +498,13 @@ async def _initial_git_bundle_prefetch(app) -> None:
 
 async def _preload_bundles_loop(app) -> None:
     """
-    Eagerly load all configured bundle modules and run on_bundle_load hooks.
-    Runs after git prefetch (modules must exist on disk before import).
-    Attempts every loadable configured bundle and records per-bundle failures.
-    A broken bundle must not make the whole proc unhealthy.
-    Every proc still performs local bundle preload; storage-scoped once locks
-    inside bundle UI/index builders prevent duplicate shared build work.
+    Eagerly load configured app modules and run on_bundle_load hooks.
+
+    Runs after git prefetch (modules must exist on disk before import). All
+    proc workers see the same work list, but Redis claim/done keys make app
+    preload collaborative: a worker claims one not-yet-done app generation,
+    runs it, and marks it done for the cluster. Filesystem once locks inside
+    UI/index builders remain the final guard for shared storage writes.
     """
     from kdcube_ai_app.infra.plugin.bundle_loader import preload_bundle_async
     from kdcube_ai_app.infra.plugin.bundle_registry import ADMIN_BUNDLE_ID
@@ -462,6 +525,7 @@ async def _preload_bundles_loop(app) -> None:
     )
     lock_token = f"{INSTANCE_ID}:{uuid.uuid4().hex}"
     lock_acquired = False
+    lock_heartbeat_task: asyncio.Task | None = None
 
     if redis is not None:
         try:
@@ -478,8 +542,18 @@ async def _preload_bundles_loop(app) -> None:
             lock_acquired = False
         if not lock_acquired:
             logger.info(
-                "[Bundles] Preload lock held by another instance; continuing local preload: %s",
+                "[Bundles] Collaborative preload already active; joining work scan: %s",
                 lock_key,
+            )
+        else:
+            lock_heartbeat_task = asyncio.create_task(
+                _heartbeat_redis_claim(
+                    redis,
+                    key=lock_key,
+                    token=lock_token,
+                    ttl_seconds=_bundle_preload_lock_ttl_seconds(),
+                ),
+                name="bundle-preload-global-claim-heartbeat",
             )
     else:
         logger.info("[Bundles] Redis not configured; running preload without lock")
@@ -497,6 +571,7 @@ async def _preload_bundles_loop(app) -> None:
     total = 0
     ok = 0
     skipped_locked = 0
+    skipped_done = 0
     errors: dict[str, str] = {}
     try:
         for bid, entry in registry_bundles.items():
@@ -536,22 +611,53 @@ async def _preload_bundles_loop(app) -> None:
                 project=settings.PROJECT,
                 bundle_id=bid,
             )
+            generation = _bundle_preload_generation(bid, entry)
+            bundle_done_key = CONFIG.BUNDLES.PRELOAD_BUNDLE_DONE_FMT.format(
+                tenant=settings.TENANT,
+                project=settings.PROJECT,
+                bundle_id=bid,
+                generation=generation,
+            )
             bundle_lock_token = f"{INSTANCE_ID}:{os.getpid()}:{uuid.uuid4().hex}"
             bundle_lock_acquired = False
+            bundle_lock_heartbeat_task: asyncio.Task | None = None
             owner = {
                 "instance_id": INSTANCE_ID,
                 "pid": os.getpid(),
+                "generation": generation,
             }
             _set_bundle_preload_state(
                 app,
                 bid,
                 status="claiming",
                 lock_key=bundle_lock_key,
+                done_key=bundle_done_key,
+                generation=generation,
                 owner=owner,
                 updated_at=_utc_iso(),
             )
             if redis is not None:
                 try:
+                    done_val = await _redis_get_text(redis, bundle_done_key)
+                    if done_val == generation:
+                        skipped_done += 1
+                        logger.info(
+                            "[Bundles] Preload skip (generation already done): id=%s key=%s generation=%s",
+                            bid,
+                            bundle_done_key,
+                            generation,
+                        )
+                        _set_bundle_preload_state(
+                            app,
+                            bid,
+                            status="skipped_done",
+                            done_key=bundle_done_key,
+                            generation=generation,
+                            skipped_at=_utc_iso(),
+                            updated_at=_utc_iso(),
+                            retryable=False,
+                        )
+                        continue
                     bundle_lock_acquired = bool(
                         await redis.set(
                             bundle_lock_key,
@@ -564,29 +670,66 @@ async def _preload_bundles_loop(app) -> None:
                     logger.exception("[Bundles] Failed to acquire bundle preload lock: id=%s key=%s", bid, bundle_lock_key)
                     bundle_lock_acquired = False
                 if not bundle_lock_acquired:
+                    try:
+                        done_val = await _redis_get_text(redis, bundle_done_key)
+                    except Exception:
+                        done_val = None
+                    if done_val == generation:
+                        skipped_done += 1
+                        logger.info(
+                            "[Bundles] Preload skip (generation completed while claiming): id=%s key=%s generation=%s",
+                            bid,
+                            bundle_done_key,
+                            generation,
+                        )
+                        _set_bundle_preload_state(
+                            app,
+                            bid,
+                            status="skipped_done",
+                            done_key=bundle_done_key,
+                            generation=generation,
+                            skipped_at=_utc_iso(),
+                            updated_at=_utc_iso(),
+                            retryable=False,
+                        )
+                        continue
                     skipped_locked += 1
                     logger.info(
-                        "[Bundles] Preload skip (bundle lock held): id=%s key=%s owner=%s",
+                        "[Bundles] Preload skip (bundle claimed by another worker): id=%s key=%s done_key=%s owner=%s",
                         bid,
                         bundle_lock_key,
+                        bundle_done_key,
                         owner,
                     )
                     _set_bundle_preload_state(
                         app,
                         bid,
-                        status="skipped_locked",
+                        status="skipped_claimed",
                         lock_key=bundle_lock_key,
+                        done_key=bundle_done_key,
+                        generation=generation,
                         skipped_at=_utc_iso(),
                         updated_at=_utc_iso(),
                         retryable=True,
                     )
                     continue
+                bundle_lock_heartbeat_task = asyncio.create_task(
+                    _heartbeat_redis_claim(
+                        redis,
+                        key=bundle_lock_key,
+                        token=bundle_lock_token,
+                        ttl_seconds=_bundle_preload_bundle_lock_ttl_seconds(),
+                    ),
+                    name=f"bundle-preload-claim-heartbeat:{bid}",
+                )
             started = time.time()
             _set_bundle_preload_state(
                 app,
                 bid,
                 status="running",
                 lock_key=bundle_lock_key if redis is not None else None,
+                done_key=bundle_done_key if redis is not None else None,
+                generation=generation,
                 owner=owner,
                 started_at=_utc_iso(),
                 updated_at=_utc_iso(),
@@ -617,6 +760,21 @@ async def _preload_bundles_loop(app) -> None:
                 ok += 1
                 duration_ms = int((time.time() - started) * 1000)
                 logger.info("[Bundles] Preload succeeded: id=%s path=%s duration_ms=%s", bid, path, duration_ms)
+                if redis is not None:
+                    try:
+                        await redis.set(
+                            bundle_done_key,
+                            generation,
+                            ex=_bundle_preload_done_ttl_seconds(),
+                        )
+                    except Exception:
+                        logger.warning(
+                            "[Bundles] Failed to mark preload generation done: id=%s key=%s generation=%s",
+                            bid,
+                            bundle_done_key,
+                            generation,
+                            exc_info=True,
+                        )
                 _set_bundle_preload_state(
                     app,
                     bid,
@@ -641,45 +799,47 @@ async def _preload_bundles_loop(app) -> None:
                     retryable=True,
                 )
             finally:
-                if bundle_lock_acquired and redis is not None:
+                if bundle_lock_heartbeat_task is not None:
+                    bundle_lock_heartbeat_task.cancel()
                     try:
-                        current_val = await redis.get(bundle_lock_key)
-                        if isinstance(current_val, bytes):
-                            current_val = current_val.decode("utf-8", "ignore")
-                        if current_val == bundle_lock_token:
-                            await redis.delete(bundle_lock_key)
-                            logger.info("[Bundles] Preload bundle lock released: id=%s key=%s", bid, bundle_lock_key)
-                    except Exception:
-                        logger.exception("[Bundles] Failed to release bundle preload lock: id=%s key=%s", bid, bundle_lock_key)
+                        await bundle_lock_heartbeat_task
+                    except asyncio.CancelledError:
+                        pass
+                if bundle_lock_acquired and redis is not None:
+                    released = await _release_redis_claim(redis, key=bundle_lock_key, token=bundle_lock_token)
+                    if released:
+                        logger.info("[Bundles] Preload bundle claim released: id=%s key=%s", bid, bundle_lock_key)
 
         logger.info(
-            "[Bundles] Preload complete: total=%s ok=%s skipped_locked=%s failed=%s",
-            total, ok, skipped_locked, len(errors),
+            "[Bundles] Preload complete: total=%s ok=%s skipped_claimed=%s skipped_done=%s failed=%s",
+            total, ok, skipped_locked, skipped_done, len(errors),
         )
         app.state.bundles_preload_ready = True
         app.state.bundles_preload_errors = errors
         app.state.bundles_preload_skipped_locked = skipped_locked
+        app.state.bundles_preload_skipped_claimed = skipped_locked
+        app.state.bundles_preload_skipped_done = skipped_done
         app.state.bundles_preload_finished_at = _utc_iso()
     except asyncio.CancelledError:
         logger.warning(
-            "[Bundles] Preload cancelled: total=%s ok=%s skipped_locked=%s failed=%s",
+            "[Bundles] Preload cancelled: total=%s ok=%s skipped_claimed=%s skipped_done=%s failed=%s",
             total,
             ok,
             skipped_locked,
+            skipped_done,
             len(errors),
         )
         app.state.bundles_preload_finished_at = _utc_iso()
         raise
     finally:
-        if lock_acquired and redis is not None:
+        if lock_heartbeat_task is not None:
+            lock_heartbeat_task.cancel()
             try:
-                current_val = await redis.get(lock_key)
-                if isinstance(current_val, bytes):
-                    current_val = current_val.decode("utf-8", "ignore")
-                if current_val == lock_token:
-                    await redis.delete(lock_key)
-            except Exception:
-                logger.exception("[Bundles] Failed to release preload lock %s", lock_key)
+                await lock_heartbeat_task
+            except asyncio.CancelledError:
+                pass
+        if lock_acquired and redis is not None:
+            await _release_redis_claim(redis, key=lock_key, token=lock_token)
 
 
 async def _safe_shutdown_step(name: str, coro, timeout: float = 5.0) -> None:
@@ -1066,6 +1226,8 @@ async def lifespan(app: FastAPI):
         app.state.bundles_preload_ready = True
         app.state.bundles_preload_errors = {}
         app.state.bundles_preload_skipped_locked = 0
+        app.state.bundles_preload_skipped_claimed = 0
+        app.state.bundles_preload_skipped_done = 0
         app.state.bundles_preload_status = {}
         app.state.bundles_preload_started_at = None
         app.state.bundles_preload_finished_at = None
@@ -1243,6 +1405,10 @@ async def health():
     bundles_preload_ready = getattr(app.state, "bundles_preload_ready", True)
     bundles_preload_errors = getattr(app.state, "bundles_preload_errors", {}) or {}
     bundles_preload_skipped_locked = int(getattr(app.state, "bundles_preload_skipped_locked", 0) or 0)
+    bundles_preload_skipped_claimed = int(
+        getattr(app.state, "bundles_preload_skipped_claimed", bundles_preload_skipped_locked) or 0
+    )
+    bundles_preload_skipped_done = int(getattr(app.state, "bundles_preload_skipped_done", 0) or 0)
     bundles_preload_status = getattr(app.state, "bundles_preload_status", {}) or {}
     ready = bundles_git_ready and bundles_preload_ready
     payload = {
@@ -1255,6 +1421,8 @@ async def health():
         "bundles_preload_ready": bundles_preload_ready,
         "bundles_preload_errors": bundles_preload_errors,
         "bundles_preload_skipped_locked": bundles_preload_skipped_locked,
+        "bundles_preload_skipped_claimed": bundles_preload_skipped_claimed,
+        "bundles_preload_skipped_done": bundles_preload_skipped_done,
         "bundles_preload_started_at": getattr(app.state, "bundles_preload_started_at", None),
         "bundles_preload_finished_at": getattr(app.state, "bundles_preload_finished_at", None),
         "bundles_preload_status": bundles_preload_status,
