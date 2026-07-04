@@ -755,6 +755,19 @@ class BaseWorkflow():
     def _resolve_mcp_services_config(self) -> Any:
         props = self.bundle_props or {}
 
+        raw = self.get_prop_path(props, "surfaces.as_consumer.mcp.services", default=None)
+        if isinstance(raw, dict) and raw:
+            return copy.deepcopy(raw)
+        if isinstance(raw, str) and raw.strip():
+            return raw
+
+        mcp_block = self.get_prop_path(props, "surfaces.as_consumer.mcp", default=None)
+        if isinstance(mcp_block, dict):
+            if isinstance(mcp_block.get("mcpServers"), dict) and mcp_block.get("mcpServers"):
+                return {"mcpServers": copy.deepcopy(mcp_block["mcpServers"])}
+            if isinstance(mcp_block.get("servers"), dict) and mcp_block.get("servers"):
+                return {"servers": copy.deepcopy(mcp_block["servers"])}
+
         raw = self.get_prop_path(props, "mcp.services", default=None)
         if isinstance(raw, dict) and raw:
             return copy.deepcopy(raw)

@@ -245,7 +245,7 @@ Reserved bundle prop paths such as:
 - `embedding`
 - `economics.reservation_amount_dollars`
 - `execution.runtime`
-- `mcp.services`
+- `surfaces.as_consumer.mcp.services`
 
 are still stored as deployment-scoped bundle props.
 

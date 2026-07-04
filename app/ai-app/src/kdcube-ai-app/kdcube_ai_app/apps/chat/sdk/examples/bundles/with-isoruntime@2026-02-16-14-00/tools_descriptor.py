@@ -11,7 +11,7 @@
 #      - "use_sk": True means tools are SK @kernel_function decorated
 #
 #   2. MCP_TOOL_SPECS — MCP (Model Context Protocol) server connections
-#      - "server_id": matches server config in bundle props mcp.services
+#      - "server_id": matches server config in surfaces.as_consumer.mcp.services
 #      - "tools": ["*"] = all tools, or explicit allowlist
 #      - Tool IDs namespaced as "mcp.<alias>.<tool_id>"
 #

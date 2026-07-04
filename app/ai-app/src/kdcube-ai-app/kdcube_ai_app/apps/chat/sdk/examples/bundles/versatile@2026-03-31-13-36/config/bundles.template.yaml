@@ -52,6 +52,8 @@ bundles:
           revision_retention: 80
         surfaces:
           as_consumer:
+            mcp:
+              services: {}
             default_agent: main
             agents:
               main:
@@ -455,5 +457,3 @@ bundles:
                 components_core_canvas:
                   src_folder: npm://components-core/src/canvas
                   target: _shared/components-core/canvas
-        mcp:
-          services: {}

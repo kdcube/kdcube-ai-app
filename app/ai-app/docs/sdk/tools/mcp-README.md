@@ -1,7 +1,7 @@
 ---
 id: repo:kdcube-ai-app/app/ai-app/docs/sdk/tools/mcp-README.md
 title: "MCP"
-summary: "MCP tool integration: agent-scoped allow-lists, bundle-props MCP service config, named-secret auth, and runtime execution flow (host + isolated)."
+summary: "MCP tool integration: agent-scoped allow-lists, consumer-surface MCP service config, named-secret auth, and runtime execution flow (host + isolated)."
 tags: ["sdk", "tools", "mcp", "runtime", "transport", "auth"]
 keywords: ["surfaces.as_consumer", "MCP_SERVICES", "MCPToolsSubsystem", "mcp.<alias>.<tool>", "stdio", "http", "streamable-http", "sse", "oauth_gui", "tool_call"]
 see_also:
@@ -26,12 +26,12 @@ For shared tool-subsystem behavior (agent-scoped config, alias resolution, isola
 
 ## What you configure
 
-You configure MCP in two places:
-1. `surfaces.as_consumer.agents.<agent_id>.tools` in bundle props (what is visible/exposed to that agent).
-2. Bundle props `mcp.services` (how to connect and authenticate).
+You configure MCP in the consumer surface:
+1. `surfaces.as_consumer.agents.<agent_id>.tools` in app props (what is visible/exposed to that agent).
+2. `surfaces.as_consumer.mcp.services` in app props (how to connect and authenticate).
 
-`MCP_SERVICES` env JSON is still supported as a legacy / local-dev fallback, but
-it is not the preferred platform contract.
+Top-level `mcp.services` and `MCP_SERVICES` env JSON are still supported as
+legacy / local-dev fallbacks, but they are not the preferred platform contract.
 
 ### 1) Agent tool connection
 
@@ -65,7 +65,8 @@ surfaces:
 ```
 
 Rules:
-- `server_id` must match an entry in bundle props `mcp.services` (or legacy `MCP_SERVICES` fallback).
+- `server_id` must match an entry in `surfaces.as_consumer.mcp.services`
+  (or a legacy fallback).
 - `alias` is used in tool IDs: `mcp.<alias>.<tool_id>`.
 - `allowed` omitted or `["*"]` exposes all server tools.
 - A concrete list is an allow-list.
@@ -78,29 +79,31 @@ The runtime resolves MCP entries from `surfaces.as_consumer` into MCP tool specs
 with `agent_tool_config_from_bundle_props(...)`. `tools.agents` is a legacy
 fallback for old bundles.
 
-### 2) Bundle props: `mcp.services`
+### 2) Consumer MCP service config
 
-Supported top-level keys:
+Supported service keys:
 - `mcpServers` (preferred)
 - `servers` (also supported)
 
 ```yaml
-mcp:
-  services:
-    mcpServers:
-      stack:
-        transport: stdio
-        command: npx
-        args: ["mcp-remote", "mcp.stackoverflow.com"]
-      docs:
-        transport: http
-        url: https://mcp.example.com
-        auth:
-          type: bearer
-          secret: b:docs.token
-      local:
-        transport: sse
-        url: http://127.0.0.1:8787/sse
+surfaces:
+  as_consumer:
+    mcp:
+      services:
+        mcpServers:
+          stack:
+            transport: stdio
+            command: npx
+            args: ["mcp-remote", "mcp.stackoverflow.com"]
+          docs:
+            transport: http
+            url: https://mcp.example.com
+            auth:
+              type: bearer
+              secret: b:docs.token
+          local:
+            transport: sse
+            url: http://127.0.0.1:8787/sse
 ```
 
 Legacy/dev fallback:
@@ -126,8 +129,9 @@ schemas, output size, and retry behavior.
 
 Minimum checklist:
 
-- the server is configured in bundle props `mcp.services` or in a generated MCP
-  client config owned by the caller
+- the server is configured in app props
+  `surfaces.as_consumer.mcp.services` or in a generated MCP client config owned
+  by the caller
 - the visible tools are allow-listed through
   `surfaces.as_consumer.agents.<agent_id>.tools` or the client runtime's
   equivalent allow-list
@@ -154,8 +158,9 @@ For bundle-served MCP endpoints exposed with `@mcp(...)`, read:
 - [Bundle Transports](../bundle/bundle-transports-README.md)
 - [Bundle Agent Integration](../bundle/bundle-agent-integration-README.md)
 
-For Claude Code consumers, remember that KDCube `mcp.services` does not
-configure Claude Code. The bundle must write Claude-compatible MCP config into
+For Claude Code consumers, remember that KDCube
+`surfaces.as_consumer.mcp.services` does not configure Claude Code. The app
+must write Claude-compatible MCP config into
 the Claude workspace, usually `.mcp.json`, and the configured URL must be
 reachable from the process/container that runs `claude`.
 Use `ClaudeCodeWorkspaceConfig` / `prepare_claude_code_workspace(...)` from the
@@ -332,9 +337,10 @@ needs a corresponding alias in `_SECRET_ALIASES` (e.g.,
 **CLI deploy:** the CLI reads `secrets.yaml` / `bundles.secrets.yaml` and
 injects values into the secrets-service sidecar or AWS Secrets Manager.
 
-Bundle-props `mcp.services` is preferred because it is bundle-scoped and can
-use named bundle secrets. `MCP_SERVICES` remains useful for process-wide local
-dev experiments only.
+Consumer-surface `surfaces.as_consumer.mcp.services` is preferred because it is
+app-scoped, sits next to the agent MCP tool declarations, and can use named app
+secrets. `MCP_SERVICES` remains useful for process-wide local dev experiments
+only.
 
 ## Runtime execution flow
 
@@ -382,24 +388,26 @@ python -m kdcube_ai_app.apps.chat.sdk.tools.mcp.web_search.web_search_server --t
 Client config example:
 
 ```yaml
-mcp:
-  services:
-    mcpServers:
-      web_search:
-        transport: stdio
-        command: python
-        args:
-          - -m
-          - kdcube_ai_app.apps.chat.sdk.tools.mcp.web_search.web_search_server
-          - --transport
-          - stdio
+surfaces:
+  as_consumer:
+    mcp:
+      services:
+        mcpServers:
+          web_search:
+            transport: stdio
+            command: python
+            args:
+              - -m
+              - kdcube_ai_app.apps.chat.sdk.tools.mcp.web_search.web_search_server
+              - --transport
+              - stdio
 ```
 
 ## Troubleshooting
 
 - No MCP tools in catalog:
   - check `surfaces.as_consumer.agents.<agent>.tools` has the server alias entry.
-  - check bundle props `mcp.services` has a matching `server_id` (or legacy `MCP_SERVICES` fallback).
+  - check `surfaces.as_consumer.mcp.services` has a matching `server_id` (or a legacy fallback).
   - validate transport fields (`command` for stdio, `url` for http/sse).
   - verify auth is not interactive (`oauth_gui`).
 - MCP call fails at runtime:

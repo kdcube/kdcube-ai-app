@@ -90,7 +90,7 @@ different:
 | secrets | API keys, auth signing keys, OAuth client secrets | deployment/admin/user secret store | `await get_secret(...)`, including `await get_secret("u:...")` for user-scoped secrets |
 | custom instructions | product-specific operating rules | bundle code/config | React `additional_instructions`, Claude `CLAUDE.md` |
 | tools | callable capabilities | bundle descriptors or Claude config | React tool subsystem, Claude allowed tools/MCP |
-| MCP connectivity | how to reach MCP servers and authenticate | bundle config/code | `mcp.services`, resolved MCP tool specs, `ClaudeCodeWorkspaceConfig` |
+| MCP connectivity | how to reach MCP servers and authenticate | app config/code | `surfaces.as_consumer.mcp.services`, resolved MCP tool specs, `ClaudeCodeWorkspaceConfig` |
 | MCP server exposure | MCP server implemented by the bundle | bundle entrypoint | `@mcp(...)` plus bundle-owned auth |
 | streaming | progress, deltas, steps, subsystem events | agent runtime | communicator |
 | persistence | durable state, artifacts, workspace/session files | bundle/runtime | bundle storage, conversation store, Claude workspace/session store |
@@ -445,7 +445,7 @@ namespace rehosters. If the model should not call it, pass it through
 | named-service tools | `surfaces.as_consumer.agents.<agent>.tools` with `kind: named_service` | exposes only allowed generic namespace operations; catalog shows the namespaces applicable to each tool |
 | namespace rehosters | loaded tool/event modules with `@artifact_namespace_rehoster` | lets `react.pull` import owner-domain refs such as `mem:` or `cnv:` into the ReAct workspace |
 | event policies | loaded tool/event modules with policy decorators plus event source declarations | renders external events, tool results, and reader results into timeline/ANNOUNCE/compaction |
-| MCP server connection config | bundle props `config.mcp.services` | controls server URLs, transports, and auth |
+| MCP server connection config | app props `config.surfaces.as_consumer.mcp.services` | controls server URLs, transports, and auth |
 | skills | `surfaces.as_consumer.agents.<agent>.skills` | exposes bundle skill roots and consumer visibility rules |
 | skill-tool mapping | skill `tools.yaml` | tells the agent which tool ids belong to a skill; `required: true` gates the skill on active tool availability |
 | custom instructions | `additional_instructions` argument | should combine product defaults with bundle-configured instructions |
@@ -939,7 +939,7 @@ React configuration sources:
   knows which namespaces support each generic `named_services.*` tool; provider
   operation ids stay in config and provider protocol, not in ReAct prompt data
 - `surfaces.as_consumer.agents.<agent>.skills` controls skill roots and visibility
-- bundle props such as `mcp.services` control MCP connection details
+- app props such as `surfaces.as_consumer.mcp.services` control MCP connection details
 - bundle props may add product-specific instructions, for example
   `react.default_agent.additional_instructions`
 - platform config selects the React runtime version; bundle code should call
@@ -999,11 +999,11 @@ Do not collapse these concepts:
 
 | Concept | Config/code | Consumer |
 | --- | --- | --- |
-| MCP client config for React/KDCube tools | `config.mcp.services` plus `surfaces.as_consumer` MCP entries | KDCube `ToolSubsystem` |
+| MCP client config for React/KDCube tools | `config.surfaces.as_consumer.mcp.services` plus agent MCP entries under `surfaces.as_consumer` | KDCube `ToolSubsystem` |
 | Bundle-served MCP endpoint | `@mcp(...)` on the bundle entrypoint | external MCP clients, Claude Code, other services |
 | Claude Code MCP config | `.mcp.json` in the Claude workspace | the `claude` CLI subprocess |
 
-`config.mcp.services` does not configure Claude Code.
+`config.surfaces.as_consumer.mcp.services` does not configure Claude Code.
 
 Claude Code sees an MCP server only if the bundle writes Claude-compatible MCP
 configuration into the workspace that Claude runs from.
@@ -1016,15 +1016,17 @@ For React/KDCube tools, configure the external server in bundle props:
 
 ```yaml
 config:
-  mcp:
-    services:
-      mcpServers:
-        docs:
-          transport: http
-          url: https://mcp.internal.example.com
-          auth:
-            type: bearer
-            secret: b:docs.token
+  surfaces:
+    as_consumer:
+      mcp:
+        services:
+          mcpServers:
+            docs:
+              transport: http
+              url: https://mcp.internal.example.com
+              auth:
+                type: bearer
+                secret: b:docs.token
 ```
 
 Then expose only the needed tools in `surfaces.as_consumer`:

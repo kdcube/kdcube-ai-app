@@ -204,7 +204,7 @@ Merge semantics:
 - descriptor/admin values override code defaults at the same path
 - scalar values and lists replace the default value at that path
 - reserved platform paths such as `enabled.*`, `role_models`, `embedding`,
-  `ui.widgets.*`, `execution.runtime`, and `mcp.services` are still stored in
+  `ui.widgets.*`, `execution.runtime`, and `surfaces.as_consumer.mcp.services` are still stored in
   the same bundle props layer; they are special only because platform code
   interprets them
 

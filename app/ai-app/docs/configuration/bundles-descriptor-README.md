@@ -420,7 +420,7 @@ Rules:
   from provider code.
 - `kind: python` loads a platform module or bundle-local `ref`; `allowed`
   names are Python callable names.
-- `kind: mcp` connects a server declared under `mcp.services`; `allowed`
+- `kind: mcp` connects a server declared under `surfaces.as_consumer.mcp.services`; `allowed`
   names are MCP tool names, or `["*"]`.
 - `tool_traits` is keyed by the callable names for that connection. The
   `strategy` trait is used by ReAct multi-action policy and may be

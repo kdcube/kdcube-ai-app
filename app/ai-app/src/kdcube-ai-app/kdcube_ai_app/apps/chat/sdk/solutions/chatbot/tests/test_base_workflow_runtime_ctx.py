@@ -289,6 +289,49 @@ def test_resolve_mcp_services_config_prefers_bundle_props_over_env(monkeypatch):
     }
 
 
+def test_resolve_mcp_services_config_prefers_as_consumer_surface(monkeypatch):
+    monkeypatch.setenv("MCP_SERVICES", '{"mcpServers":{"env_only":{"transport":"stdio","command":"python"}}}')
+
+    wf = BaseWorkflow.__new__(BaseWorkflow)
+    wf.bundle_props = {
+        "surfaces": {
+            "as_consumer": {
+                "mcp": {
+                    "services": {
+                        "mcpServers": {
+                            "knowledge": {
+                                "transport": "streamable-http",
+                                "url": "https://mcp.example.com/knowledge",
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "mcp": {
+            "services": {
+                "mcpServers": {
+                    "legacy": {
+                        "transport": "http",
+                        "url": "https://legacy.example.com",
+                    }
+                }
+            }
+        },
+    }
+
+    resolved = wf._resolve_mcp_services_config()
+
+    assert resolved == {
+        "mcpServers": {
+            "knowledge": {
+                "transport": "streamable-http",
+                "url": "https://mcp.example.com/knowledge",
+            }
+        }
+    }
+
+
 def test_runtime_ctx_carries_workspace_git_repo(monkeypatch, tmp_path):
     resolved_storage = tmp_path / "bundle-storage" / "tenant-a" / "project-a" / "kdcube.copilot__main"
 

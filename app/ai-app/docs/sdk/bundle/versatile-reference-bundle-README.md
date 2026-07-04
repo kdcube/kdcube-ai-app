@@ -111,7 +111,7 @@ Non-secret props demonstrated here include:
 - `ui.widgets.versatile_chat.build_command`
 - `ui.widgets.memories.src_folder`
 - `ui.widgets.memories.build_command`
-- `mcp.services`
+- `surfaces.as_consumer.mcp.services`
 
 Secret props demonstrated here include:
 

@@ -122,7 +122,7 @@ This bundle reads effective props with `self.bundle_prop(...)`.
 Concrete examples already used by `versatile`:
 
 - `self.bundle_prop("execution.runtime")` in `entrypoint.py`
-- `self.bundle_prop("mcp.services")` in `entrypoint.py`
+- `self.bundle_prop("surfaces.as_consumer.mcp.services")` for MCP consumer endpoints
 
 Those effective props come from the normal platform merge:
 
@@ -160,12 +160,14 @@ bundles:
                 send_responses: true
                 stream_activity: true
               web_app_auth_max_age_seconds: 86400
-        mcp:
-          services:
-            mcpServers:
-              docs:
-                transport: http
-                url: https://mcp.internal.example.com
+        surfaces:
+          as_consumer:
+            mcp:
+              services:
+                mcpServers:
+                  docs:
+                    transport: http
+                    url: https://mcp.internal.example.com
 ```
 
 This snippet is intentionally sparse. Bundle config is an override over code
