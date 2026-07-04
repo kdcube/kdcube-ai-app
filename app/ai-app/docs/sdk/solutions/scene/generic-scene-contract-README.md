@@ -377,18 +377,19 @@ code. A selector match never authorizes an action and never replaces
 
 ### Namespace Presentation Config
 
-Namespace presentation is the shared visual map keyed by provider metadata.
-Consumers look up exact `object_kind` first, then root `namespace`, then a
-neutral unknown fallback. These keys are supplied by the source component or by
-the provider resolver; scene/canvas/chat must not parse `object_ref` to invent
-them.
+Namespace presentation is the shared visual map keyed by provider metadata and
+canonical object-ref families. Consumers use the common presentation resolver:
+exact `object_kind` first, then a ref-derived owner key such as `conv:fi`, then
+root `namespace`, then a neutral unknown fallback. Scene, canvas, chat, and host
+pages should share this resolver rather than each inventing its own namespace
+parsing.
 
 ```json
 {
   "task:attachment": { "label": "Task file", "color": "#0f766e" },
   "mem": { "label": "Memory", "color": "#16a34a" },
   "task": { "label": "Task", "color": "#2563eb" },
-  "fi": { "label": "File", "color": "#ca8a04" },
+  "conv:fi": { "label": "File", "color": "#ca8a04" },
   "cnv": { "label": "Canvas", "color": "#7c3aed" }
 }
 ```

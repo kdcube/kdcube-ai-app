@@ -487,7 +487,7 @@ presentation metadata:
   "mem": { "label": "Memory", "color": "#16a34a", "border": "#16a34a", "focus": "#22c55e" },
   "task": { "label": "Task", "color": "#2563eb", "border": "#2563eb", "focus": "#60a5fa" },
   "task:attachment": { "label": "Task file", "color": "#0f766e" },
-  "fi": { "label": "File", "color": "#ca8a04", "border": "#ca8a04", "focus": "#facc15" },
+  "conv:fi": { "label": "File", "color": "#ca8a04", "border": "#ca8a04", "focus": "#facc15" },
   "cnv": { "label": "Canvas", "color": "#7c3aed", "border": "#7c3aed", "focus": "#a78bfa" }
 }
 ```
@@ -495,8 +495,10 @@ presentation metadata:
 Every surface that renders context chips/cards should receive the same map from
 the runtime namespace presentation config. The style is not owned by canvas,
 chat, memory, task, or a host page. Consumers look up `object_kind` first,
-then `namespace`, then use a neutral unknown fallback. They must not infer
-visual identity by parsing the URI.
+then a ref-derived owner key such as `conv:fi`, then `namespace`, then use a
+neutral unknown fallback. They must use the shared presentation resolver for
+that derivation so chat, canvas, scene, and website drag overlays stay visually
+consistent.
 
 The server-owned presentation map is exposed by the hosting app through:
 

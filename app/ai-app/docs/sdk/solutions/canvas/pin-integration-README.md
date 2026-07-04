@@ -263,7 +263,7 @@ object ref and asks the namespace resolver to download.
 For a ReAct artifact:
 
 ```text
-pin.object_ref = conv:fi:conv_....turn_...files/problem_statement.md
+pin.object_ref = conv:fi:conv_<conversation_id>.turn_<id>.files/problem_statement.md
 click Download
  -> object_action(action=download, object_ref=conv:fi:...)
     current compatible alias: canvas_object_action
