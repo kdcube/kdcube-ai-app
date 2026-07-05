@@ -75,6 +75,7 @@ body {
 .tabs {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 4px;
   border-bottom: 1px solid var(--line);
   margin: 0 0 16px;
@@ -217,6 +218,46 @@ h2 {
 .account-sub {
   color: var(--muted);
   font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.integration-provider-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.integration-provider {
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surface-3);
+  padding: 10px 12px;
+}
+
+.integration-provider-head {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.55fr) minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.capability-list {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.capability-chip {
+  border: 1px solid rgba(1, 190, 178, 0.22);
+  background: rgba(198, 243, 241, 0.45);
+  color: var(--teal-dark);
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 600;
   overflow-wrap: anywhere;
 }
 
@@ -711,6 +752,14 @@ code {
 @media (max-width: 760px) {
   .auth-grid {
     grid-template-columns: 1fr;
+  }
+
+  .integration-provider-head {
+    grid-template-columns: 1fr;
+  }
+
+  .capability-list {
+    justify-content: flex-start;
   }
 
   .auth-row {

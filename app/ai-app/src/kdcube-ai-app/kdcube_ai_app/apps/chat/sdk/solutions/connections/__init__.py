@@ -94,6 +94,20 @@ _EXPORTS: dict[str, str] = {
     "ConnectionHubAuthenticationSurface": "kdcube_ai_app.apps.chat.sdk.solutions.connections.authentication_surface",
     "connection_hub_auth_enabled": "kdcube_ai_app.apps.chat.sdk.solutions.connections.authentication_surface",
     "maybe_install_connection_hub_authentication_surface": "kdcube_ai_app.apps.chat.sdk.solutions.connections.authentication_surface",
+    "UserIntegrationsClient": "kdcube_ai_app.apps.chat.sdk.solutions.connections.user_integrations",
+    "UserIntegrationBroker": "kdcube_ai_app.apps.chat.sdk.solutions.connections.user_integrations",
+    "UserIntegrationStore": "kdcube_ai_app.apps.chat.sdk.solutions.connections.user_integrations",
+    "OAuthStateStore": "kdcube_ai_app.apps.chat.sdk.solutions.connections.user_integrations",
+    "MemoryOAuthStateStore": "kdcube_ai_app.apps.chat.sdk.solutions.connections.user_integrations",
+    "RedisOAuthStateStore": "kdcube_ai_app.apps.chat.sdk.solutions.connections.user_integrations",
+    "UserIntegrationsConfig": "kdcube_ai_app.apps.chat.sdk.solutions.connections.user_integrations",
+    "UserIntegrationsOperations": "kdcube_ai_app.apps.chat.sdk.solutions.connections.user_integrations",
+    "ConnectedAccount": "kdcube_ai_app.apps.chat.sdk.solutions.connections.user_integrations",
+    "CapabilityResolution": "kdcube_ai_app.apps.chat.sdk.solutions.connections.user_integrations",
+    "CredentialHandle": "kdcube_ai_app.apps.chat.sdk.solutions.connections.user_integrations",
+    "user_integrations_config": "kdcube_ai_app.apps.chat.sdk.solutions.connections.user_integrations",
+    "user_integrations_config_from_entrypoint": "kdcube_ai_app.apps.chat.sdk.solutions.connections.user_integrations",
+    "operations_for_user": "kdcube_ai_app.apps.chat.sdk.solutions.connections.user_integrations",
 }
 
 __all__ = list(_EXPORTS)

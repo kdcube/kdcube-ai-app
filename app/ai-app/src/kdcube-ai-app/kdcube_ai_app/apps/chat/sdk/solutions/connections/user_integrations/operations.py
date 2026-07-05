@@ -1,0 +1,338 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Elena Viter
+
+"""Connection Hub operations for user-connected integrations.
+
+This module contains the application-independent operation layer. Bundle
+entrypoints should expose thin routes over these methods instead of reading
+Connection Hub user props/secrets directly.
+"""
+
+from __future__ import annotations
+
+import inspect
+from typing import Any, Callable, Mapping
+from urllib.parse import urlencode
+
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.user_integrations.adapters import resolve_adapter
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.user_integrations.broker import UserIntegrationBroker
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.user_integrations.models import (
+    CONNECTION_HUB_BUNDLE_ID,
+    ConnectedAccount,
+    IntegrationProvider,
+    UserIntegrationsConfig,
+    as_dict,
+    as_str,
+    as_str_list,
+)
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.user_integrations.oauth import (
+    OAuthStateStore,
+    consume_oauth_state,
+    create_oauth_state,
+    state_digest,
+)
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.user_integrations.store import (
+    UserIntegrationStore,
+    credential_id_for,
+)
+
+
+SECRET_INPUT_KEYS = {
+    "access_token",
+    "refresh_token",
+    "id_token",
+    "app_password",
+    "password",
+    "api_key",
+    "token",
+    "secret",
+}
+
+
+def _clean_capabilities(provider: IntegrationProvider, connector_app_id: str, raw: Any) -> tuple[str, ...]:
+    requested = set(as_str_list(raw))
+    if not requested:
+        app = provider.connector_apps.get(as_str(connector_app_id))
+        requested = set(app.capability_ceiling) if app and app.capability_ceiling else set(provider.capabilities)
+    known = set(provider.capabilities)
+    selected = tuple(sorted(item for item in requested if item in known))
+    unknown = sorted(item for item in requested if item not in known)
+    if unknown:
+        raise ValueError(f"unknown provider capability: {', '.join(unknown)}")
+    app = provider.connector_apps.get(as_str(connector_app_id))
+    if app and app.capability_ceiling:
+        outside = sorted(item for item in selected if item not in set(app.capability_ceiling))
+        if outside:
+            raise ValueError(f"capability is outside connector app ceiling: {', '.join(outside)}")
+    return selected
+
+
+def _credential_from_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
+    raw = as_dict(payload.get("credential"))
+    for key in SECRET_INPUT_KEYS:
+        value = payload.get(key)
+        if as_str(value):
+            raw[key] = value
+    return {str(key): value for key, value in raw.items() if value not in (None, "")}
+
+
+def _build_url(base_url: str, params: Mapping[str, Any]) -> str:
+    separator = "&" if "?" in base_url else "?"
+    return f"{base_url}{separator}{urlencode({k: v for k, v in params.items() if v not in (None, '')})}"
+
+
+async def _resolve_client_secret(
+    resolver: Callable[..., Any],
+    *,
+    provider_id: str,
+    connector_app_id: str,
+    connector_app: Any,
+) -> str:
+    value = resolver(provider_id=provider_id, connector_app_id=connector_app_id, connector_app=connector_app)
+    if inspect.isawaitable(value):
+        value = await value
+    return as_str(value)
+
+
+class UserIntegrationsOperations:
+    """Operation facade used by Connection Hub routes and tests."""
+
+    def __init__(self, *, config: UserIntegrationsConfig, store: UserIntegrationStore) -> None:
+        self.config = config
+        self.store = store
+
+    async def catalog(self, *, provider_id: str = "") -> dict[str, Any]:
+        accounts = await self.store.list_accounts(provider_id=provider_id)
+        return {
+            "ok": True,
+            "enabled": self.config.enabled,
+            "providers": self.config.to_dict(include_client_ids=True)["providers"],
+            "accounts": [account.public_dict() for account in accounts],
+        }
+
+    async def connect_credential(self, payload: Mapping[str, Any]) -> dict[str, Any]:
+        provider_id = as_str(payload.get("provider_id") or payload.get("provider"))
+        connector_app_id = as_str(payload.get("connector_app_id") or payload.get("app_id"))
+        provider = self.config.provider(provider_id)
+        if not self.config.enabled:
+            raise ValueError("user integrations are not enabled")
+        if provider is None or not provider.enabled:
+            raise ValueError(f"provider is not enabled: {provider_id or '<missing>'}")
+        if connector_app_id and connector_app_id not in provider.connector_apps:
+            raise ValueError(f"connector app is not configured: {connector_app_id}")
+        credential = _credential_from_payload(payload)
+        if not credential:
+            raise ValueError("credential is required")
+        capabilities = _clean_capabilities(provider, connector_app_id, payload.get("capabilities"))
+        if not capabilities:
+            raise ValueError("at least one provider capability is required")
+
+        account = ConnectedAccount(
+            account_id=as_str(payload.get("account_id")),
+            provider_id=provider_id,
+            connector_app_id=connector_app_id,
+            external_subject=as_str(payload.get("external_subject") or payload.get("external_user_id")),
+            display_name=as_str(payload.get("display_name") or payload.get("label")),
+            email=as_str(payload.get("email")),
+            workspace=as_str(payload.get("workspace") or payload.get("team") or payload.get("tenant")),
+            capabilities=capabilities,
+            credential_id=as_str(payload.get("credential_id")),
+            metadata=as_dict(payload.get("metadata")),
+        )
+        stored = await self.store.upsert_account(account)
+        credential_id = stored.credential_id or credential_id_for(stored.account_id)
+        credential_with_metadata = {
+            "provider_id": provider_id,
+            "connector_app_id": connector_app_id,
+            "capabilities": list(capabilities),
+            **credential,
+        }
+        await self.store.set_credential(credential_id, credential_with_metadata)
+        if credential_id != stored.credential_id:
+            stored = await self.store.upsert_account(
+                ConnectedAccount(
+                    account_id=stored.account_id,
+                    provider_id=stored.provider_id,
+                    connector_app_id=stored.connector_app_id,
+                    external_subject=stored.external_subject,
+                    display_name=stored.display_name,
+                    email=stored.email,
+                    workspace=stored.workspace,
+                    capabilities=stored.capabilities,
+                    credential_id=credential_id,
+                    status=stored.status,
+                    connected_at=stored.connected_at,
+                    metadata=stored.metadata,
+                )
+            )
+        return {"ok": True, "account": stored.public_dict()}
+
+    async def start_oauth(
+        self,
+        payload: Mapping[str, Any],
+        *,
+        user_id: str,
+        callback_url: str,
+        state_store: OAuthStateStore,
+        state_secret: str,
+        ttl_seconds: int = 900,
+        source: str = "connection_hub_widget",
+    ) -> dict[str, Any]:
+        provider_id = as_str(payload.get("provider_id") or payload.get("provider"))
+        connector_app_id = as_str(payload.get("connector_app_id") or payload.get("app_id"))
+        provider = self.config.provider(provider_id)
+        if not self.config.enabled:
+            raise ValueError("user integrations are not enabled")
+        if provider is None or not provider.enabled:
+            raise ValueError(f"provider is not enabled: {provider_id or '<missing>'}")
+        if not connector_app_id:
+            raise ValueError("connector app is required")
+        connector_app = provider.connector_apps.get(connector_app_id)
+        if connector_app is None or not connector_app.enabled:
+            raise ValueError(f"connector app is not enabled: {connector_app_id}")
+        if not connector_app.client_id:
+            raise ValueError(f"OAuth client id is not configured for connector app: {connector_app_id}")
+        adapter = resolve_adapter(provider.adapter)
+        if not adapter.oauth_enabled:
+            raise ValueError(f"provider adapter does not support OAuth: {provider.adapter}")
+        capabilities = _clean_capabilities(provider, connector_app_id, payload.get("capabilities"))
+        if not capabilities:
+            raise ValueError("at least one provider capability is required")
+        redirect_uri = connector_app.redirect_uri or as_str(callback_url)
+        if not redirect_uri:
+            raise ValueError("OAuth callback URL is not available")
+        scopes = adapter.provider_scopes_for_capabilities(list(capabilities), provider.capabilities)
+        state = await create_oauth_state(
+            state_store,
+            secret=state_secret,
+            user_id=user_id,
+            provider_id=provider_id,
+            connector_app_id=connector_app_id,
+            capabilities=capabilities,
+            return_hint=as_str(payload.get("return_hint") or payload.get("return_to")),
+            source=source,
+            ttl_seconds=ttl_seconds,
+        )
+        params = {
+            "response_type": "code",
+            "client_id": connector_app.client_id,
+            "redirect_uri": redirect_uri,
+            "state": state["state"],
+        }
+        scope_param = adapter.authorize_scope_param()
+        if scopes:
+            params[scope_param] = " ".join(scopes)
+        for key, value in adapter.authorize_extra_params().items():
+            params.setdefault(key, value)
+        return {
+            "ok": True,
+            "provider_id": provider_id,
+            "connector_app_id": connector_app_id,
+            "app_id": connector_app_id,
+            "authorize_url": _build_url(adapter.authorize_url, params),
+            "state_id": state["state_id"],
+            "redirect_uri": redirect_uri,
+            "capabilities": list(capabilities),
+            "provider_scopes": scopes,
+        }
+
+    async def complete_oauth(
+        self,
+        *,
+        code: str,
+        state: str,
+        callback_url: str,
+        state_store: OAuthStateStore,
+        state_secret: str,
+        client_secret_resolver: Callable[..., Any],
+    ) -> dict[str, Any]:
+        payload = await consume_oauth_state(state_store, state=state, secret=state_secret)
+        user_id = as_str(payload.get("user_id"))
+        if user_id != self.store.user_id:
+            raise ValueError("OAuth state user does not match integration store")
+        provider_id = as_str(payload.get("provider_id"))
+        connector_app_id = as_str(payload.get("connector_app_id"))
+        provider = self.config.provider(provider_id)
+        if provider is None or not provider.enabled:
+            raise ValueError(f"provider is not enabled: {provider_id or '<missing>'}")
+        connector_app = provider.connector_apps.get(connector_app_id)
+        if connector_app is None or not connector_app.enabled:
+            raise ValueError(f"connector app is not enabled: {connector_app_id}")
+        adapter = resolve_adapter(provider.adapter)
+        client_secret = await _resolve_client_secret(
+            client_secret_resolver,
+            provider_id=provider_id,
+            connector_app_id=connector_app_id,
+            connector_app=connector_app,
+        )
+        redirect_uri = connector_app.redirect_uri or as_str(callback_url)
+        token = await adapter.exchange_code(
+            code=code,
+            redirect_uri=redirect_uri,
+            client_id=connector_app.client_id,
+            client_secret=client_secret,
+        )
+        access_token = as_str(token.get("access_token"))
+        if not access_token:
+            raise ValueError("OAuth token response did not include access_token")
+        profile = await adapter.fetch_profile(access_token=access_token, token=token)
+        if not profile:
+            profile = await adapter.normalize_profile(token)
+        capabilities = tuple(as_str_list(payload.get("capabilities")))
+        credential = {
+            "oauth": True,
+            **token,
+        }
+        connected = await self.connect_credential(
+            {
+                "provider": provider_id,
+                "app_id": connector_app_id,
+                "external_subject": profile.get("external_subject") or profile.get("sub") or profile.get("id"),
+                "email": profile.get("email"),
+                "display_name": profile.get("display_name") or profile.get("name"),
+                "workspace": profile.get("workspace"),
+                "capabilities": capabilities,
+                "credential": credential,
+                "metadata": {
+                    "oauth_source": payload.get("source"),
+                    "oauth_state_id": state_digest(state),
+                    "workspace_label": profile.get("workspace_label"),
+                },
+            }
+        )
+        return {
+            "ok": True,
+            "provider_id": provider_id,
+            "connector_app_id": connector_app_id,
+            "app_id": connector_app_id,
+            "user_id": user_id,
+            "account": connected.get("account"),
+            "return_hint": as_str(payload.get("return_hint")),
+        }
+
+    async def disconnect(self, *, account_id: str) -> dict[str, Any]:
+        removed = await self.store.disconnect_account(account_id)
+        return {"ok": removed, "removed": removed, "account_id": as_str(account_id)}
+
+    async def resolve(self, *, provider_id: str, capability: str, account_id: str = "") -> dict[str, Any]:
+        broker = UserIntegrationBroker(config=self.config, store=self.store)
+        result = await broker.ensure_capability(
+            provider_id=provider_id,
+            capability=capability,
+            account_id=account_id,
+        )
+        return result.to_dict(include_credential=False)
+
+
+def operations_for_user(
+    *,
+    user_id: str,
+    config: UserIntegrationsConfig,
+    bundle_id: str = CONNECTION_HUB_BUNDLE_ID,
+    store: UserIntegrationStore | None = None,
+) -> UserIntegrationsOperations:
+    resolved_store = store or UserIntegrationStore(user_id=user_id, bundle_id=bundle_id)
+    return UserIntegrationsOperations(config=config, store=resolved_store)
+
+
+__all__ = ["UserIntegrationsOperations", "operations_for_user"]

@@ -14,6 +14,8 @@ import { ConnectionEdgesPanel } from './features/identity/ConnectionEdgesPanel';
 import { clearIdentityError, loadConnectionEdges } from './features/identity/identitySlice';
 import { TelegramClaimPage } from './features/identity/TelegramClaimPage';
 import { TelegramMiniAppLinkPanel } from './features/identity/TelegramMiniAppLinkPanel';
+import { UserIntegrationsPanel } from './features/userIntegrations/UserIntegrationsPanel';
+import { clearUserIntegrationsError, loadUserIntegrations } from './features/userIntegrations/userIntegrationsSlice';
 
 function claimChallengeFromLocation(): string {
   const params = new URLSearchParams(window.location.search);
@@ -31,6 +33,7 @@ function tabFromLocation(): ConnectionsTab {
   const params = new URLSearchParams(window.location.search);
   const value = (params.get('tab') || window.location.hash.replace(/^#/, '') || '').toLowerCase();
   if (value === 'accounts' || value === 'authenticators' || value === 'identity') return value;
+  if (value === 'userintegrations' || value === 'user-integrations' || value === 'user_integrations') return 'userIntegrations';
   if (value === 'delegatedaccess' || value === 'delegated-access' || value === 'delegated_access') return 'delegatedAccess';
   return 'identity';
 }
@@ -48,11 +51,13 @@ export default function App() {
   const delegatedAccessLoading = useAppSelector((s) => s.delegatedAccess.loading);
   const emailLoading = useAppSelector((s) => s.email.loading);
   const identityLoading = useAppSelector((s) => s.identity.loading);
+  const userIntegrationsLoading = useAppSelector((s) => s.userIntegrations.loading);
   const connectionsError = useAppSelector((s) => s.connections.error);
   const authenticatorsError = useAppSelector((s) => s.authenticators.error);
   const delegatedAccessError = useAppSelector((s) => s.delegatedAccess.error);
   const emailError = useAppSelector((s) => s.email.error);
   const identityError = useAppSelector((s) => s.identity.error);
+  const userIntegrationsError = useAppSelector((s) => s.userIntegrations.error);
 
   useEffect(() => {
     void settings.setupParentListener().then(async () => {
@@ -63,12 +68,13 @@ export default function App() {
       void dispatch(loadCatalog());
       void dispatch(loadDelegatedAccess());
       void dispatch(loadEmailStatus());
+      void dispatch(loadUserIntegrations());
     });
   }, [claimChallengeId, dispatch, telegramMiniAppMode]);
 
   const [refreshing, setRefreshing] = useState(false);
-  const loading = identityLoading || authenticatorsLoading || connectionsLoading || delegatedAccessLoading || emailLoading;
-  const errors = [identityError, authenticatorsError, connectionsError, delegatedAccessError, emailError].filter(Boolean) as string[];
+  const loading = identityLoading || authenticatorsLoading || connectionsLoading || delegatedAccessLoading || emailLoading || userIntegrationsLoading;
+  const errors = [identityError, authenticatorsError, connectionsError, delegatedAccessError, emailError, userIntegrationsError].filter(Boolean) as string[];
 
   const dismissErrors = () => {
     dispatch(clearIdentityError());
@@ -76,6 +82,7 @@ export default function App() {
     dispatch(clearConnectionsError());
     dispatch(clearDelegatedAccessError());
     dispatch(clearEmailError());
+    dispatch(clearUserIntegrationsError());
   };
 
   // Re-fetch the catalog + iCloud status (e.g. after finishing OAuth in the other
@@ -89,6 +96,7 @@ export default function App() {
         dispatch(loadCatalog()).unwrap().catch(() => undefined),
         dispatch(loadDelegatedAccess()).unwrap().catch(() => undefined),
         dispatch(loadEmailStatus()).unwrap().catch(() => undefined),
+        dispatch(loadUserIntegrations()).unwrap().catch(() => undefined),
       ]);
     } finally {
       setRefreshing(false);
@@ -150,6 +158,7 @@ export default function App() {
       {activeTab === 'identity' ? <ConnectionEdgesPanel telegramConnectStatus={telegramConnectStatus} /> : null}
       {activeTab === 'authenticators' ? <AuthenticatorsPanel /> : null}
       {activeTab === 'delegatedAccess' ? <DelegatedAccessPanel /> : null}
+      {activeTab === 'userIntegrations' ? <UserIntegrationsPanel /> : null}
       {activeTab === 'accounts' ? (
         <>
           <ConnectionsList />

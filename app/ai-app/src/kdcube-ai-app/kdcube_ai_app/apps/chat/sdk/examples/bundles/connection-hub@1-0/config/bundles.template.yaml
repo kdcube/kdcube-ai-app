@@ -43,6 +43,22 @@ bundles:
                   visibility: *default_visibility
                 delegated_identity_scope_resolve:
                   visibility: *default_visibility
+                delegated_access_list:
+                  visibility: *default_visibility
+                delegated_access_create:
+                  visibility: *default_visibility
+                delegated_access_revoke:
+                  visibility: *default_visibility
+                user_integrations_catalog:
+                  visibility: *default_visibility
+                user_integrations_start_oauth:
+                  visibility: *default_visibility
+                user_integrations_connect_credential:
+                  visibility: *default_visibility
+                user_integrations_disconnect:
+                  visibility: *default_visibility
+                user_integrations_resolve:
+                  visibility: *default_visibility
                 email_accounts_status:
                   visibility: *default_visibility
                 email_connect_app_password:
@@ -200,6 +216,86 @@ bundles:
                     - "https://www.googleapis.com/auth/gmail.readonly"
                     - "https://www.googleapis.com/auth/gmail.send"
                   enabled: true
+
+        user_integrations:
+          enabled: false
+          oauth:
+            # Public base for the user_integrations_oauth_callback route.
+            # Empty -> derived from the request host at runtime.
+            public_base_url: "https://<PUBLIC_HOST>"
+          providers:
+            google:
+              label: "Google"
+              adapter: "google.oauth"
+              enabled: true
+              capabilities:
+                gmail:read:
+                  label: "Read Gmail"
+                  description: "Search and read Gmail messages for the approving user."
+                  provider_scopes:
+                    - "openid"
+                    - "email"
+                    - "profile"
+                    - "https://www.googleapis.com/auth/gmail.readonly"
+                gmail:send:
+                  label: "Send Gmail"
+                  description: "Send email through the approving user's Gmail account."
+                  provider_scopes:
+                    - "openid"
+                    - "email"
+                    - "profile"
+                    - "https://www.googleapis.com/auth/gmail.send"
+              connector_apps:
+                gmail_default:
+                  label: "KDCube Gmail connector"
+                  enabled: true
+                  client_id: "<GOOGLE_OAUTH_CLIENT_ID>"
+                  client_secret_ref: "user_integrations.providers.google.connector_apps.gmail_default.client_secret"
+                  capability_ceiling:
+                    - "gmail:read"
+                    - "gmail:send"
+            slack:
+              label: "Slack"
+              adapter: "slack.oauth_user_token"
+              enabled: true
+              capabilities:
+                slack:search:
+                  label: "Search Slack"
+                  description: "Search Slack content visible to the approving user."
+                  provider_scopes:
+                    - "search:read"
+                slack:post:
+                  label: "Post to Slack"
+                  description: "Post messages into Slack destinations allowed by the approving user."
+                  provider_scopes:
+                    - "chat:write"
+              connector_apps:
+                slack_default:
+                  label: "KDCube Slack connector"
+                  enabled: true
+                  client_id: "<SLACK_OAUTH_CLIENT_ID>"
+                  client_secret_ref: "user_integrations.providers.slack.connector_apps.slack_default.client_secret"
+                  capability_ceiling:
+                    - "slack:search"
+                    - "slack:post"
+            icloud_mail:
+              label: "iCloud Mail"
+              adapter: "email.imap_smtp_app_password"
+              enabled: true
+              capabilities:
+                email:read:
+                  label: "Read mail"
+                  description: "Read mail through IMAP for the connected mailbox."
+                email:send:
+                  label: "Send mail"
+                  description: "Send mail through SMTP for the connected mailbox."
+              connector_apps:
+                app_password:
+                  label: "iCloud app-specific password"
+                  enabled: true
+                  capability_ceiling:
+                    - "email:read"
+                    - "email:send"
 
         identity:
           enabled: true

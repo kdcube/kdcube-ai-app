@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 
-export type ConnectionsTab = 'identity' | 'accounts' | 'delegatedAccess' | 'authenticators';
+export type ConnectionsTab = 'identity' | 'accounts' | 'userIntegrations' | 'delegatedAccess' | 'authenticators';
 
 export interface AppShellProps {
   errors: string[];
@@ -51,6 +51,13 @@ export function AppShell({
           onClick={() => onTabChange('accounts')}
         >
           Accounts
+        </button>
+        <button
+          type="button"
+          className={`tab ${activeTab === 'userIntegrations' ? 'active' : ''}`}
+          onClick={() => onTabChange('userIntegrations')}
+        >
+          User Integrations
         </button>
         <button
           type="button"

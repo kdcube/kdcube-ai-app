@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import logging
+import html
 import json
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import Any, Dict, Mapping, Optional
 from urllib.parse import urlencode, urlsplit, urlunsplit
 
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 
 from kdcube_ai_app.apps.chat.sdk.solutions.connections.federated_tokens.data_bus import issue_federated_data_bus_token
 from kdcube_ai_app.apps.chat.emitters import ChatRelayCommunicator
@@ -58,6 +59,14 @@ from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oau
 from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.automation_access import (
     AutomationAccessService,
 )
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.user_integrations import (
+    RedisOAuthStateStore,
+    UserIntegrationStore,
+    operations_for_user,
+    peek_state_payload,
+    user_integrations_config,
+)
+import kdcube_ai_app.apps.chat.sdk.solutions.connections.user_integrations.providers  # noqa: F401
 from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oauth.metadata import (
     authorization_server_metadata,
     protected_resource_metadata,
@@ -485,6 +494,84 @@ def _automation_access_service(entrypoint: Any, request: Any) -> AutomationAcces
         project=project,
         config=_delegated_oauth_config_from_entrypoint(entrypoint, request),
     )
+
+
+def _user_integrations_operations(entrypoint: Any, platform_user_id: str) -> Any:
+    return operations_for_user(
+        user_id=platform_user_id,
+        config=user_integrations_config(entrypoint.bundle_prop("user_integrations", {}) or {}),
+        bundle_id=BUNDLE_ID,
+        store=UserIntegrationStore(user_id=platform_user_id, bundle_id=BUNDLE_ID),
+    )
+
+
+def _user_integrations_oauth_state_store(entrypoint: Any) -> RedisOAuthStateStore:
+    tenant, project = _runtime_tenant_project(entrypoint)
+    redis = getattr(entrypoint, "redis", None) or get_async_redis_client(get_settings().REDIS_URL)
+    return RedisOAuthStateStore(
+        redis,
+        prefix=f"kdcube:connection-hub:{tenant}:{project}:user-integrations:oauth-state",
+    )
+
+
+async def _user_integrations_oauth_state_secret(entrypoint: Any) -> str:
+    return await _bundle_secret_value(
+        entrypoint,
+        secret_path="user_integrations.oauth_state_secret",
+        trace_scope="user_integrations.oauth_state",
+        warn_missing=True,
+    )
+
+
+def _user_integrations_oauth_callback_url(entrypoint: Any, request: Any) -> str:
+    raw = entrypoint.bundle_prop("user_integrations", {}) or {}
+    cfg = dict(raw) if isinstance(raw, Mapping) else {}
+    oauth = cfg.get("oauth") if isinstance(cfg.get("oauth"), Mapping) else {}
+    base = str(oauth.get("public_base_url") or "").strip().rstrip("/")
+    if not base:
+        base = _request_origin(request).rstrip("/")
+    tenant, project = _runtime_tenant_project(entrypoint)
+    return (
+        f"{base}/api/integrations/bundles/{tenant}/{project}/"
+        f"{BUNDLE_ID}/public/user_integrations_oauth_callback"
+    )
+
+
+async def _user_integrations_client_secret(
+    entrypoint: Any,
+    *,
+    provider_id: str,
+    connector_app_id: str,
+    connector_app: Any,
+) -> str:
+    configured_ref = str(getattr(connector_app, "client_secret_ref", "") or "").strip()
+    secret_ref = configured_ref or f"user_integrations.providers.{provider_id}.connector_apps.{connector_app_id}.client_secret"
+    return await _bundle_secret_value(
+        entrypoint,
+        secret_path=secret_ref,
+        trace_scope=f"user_integrations.{provider_id}.{connector_app_id}.client_secret",
+        warn_missing=True,
+    )
+
+
+def _user_integrations_html_done(*, title: str, body: str, link: str = "") -> HTMLResponse:
+    safe_title = html.escape(str(title or ""))
+    safe_body = html.escape(str(body or ""))
+    safe_link = html.escape(str(link or ""), quote=True)
+    link_html = f'<p><a href="{safe_link}">Return</a></p>' if safe_link else ""
+    content = (
+        "<!doctype html><html><head><meta charset=\"utf-8\">"
+        "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
+        f"<title>{safe_title}</title>"
+        "<style>"
+        "body{font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;"
+        "margin:32px;line-height:1.45;max-width:680px;color:#0f172a}"
+        "h1{font-size:24px;margin:0 0 12px}p{color:#475569}"
+        "a{color:#0f766e;font-weight:700;text-decoration:none}"
+        "</style></head><body>"
+        f"<h1>{safe_title}</h1><p>{safe_body}</p>{link_html}</body></html>"
+    )
+    return HTMLResponse(content=content)
 
 
 def _delegated_client_capability_payload(request: Any, *, resource: str | None = None) -> list[dict[str, Any]]:
@@ -1123,6 +1210,11 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
                             "delegated_access_list": {"visibility": {"user_types": []}},
                             "delegated_access_create": {"visibility": {"user_types": []}},
                             "delegated_access_revoke": {"visibility": {"user_types": []}},
+                            "user_integrations_catalog": {"visibility": {"user_types": []}},
+                            "user_integrations_start_oauth": {"visibility": {"user_types": []}},
+                            "user_integrations_connect_credential": {"visibility": {"user_types": []}},
+                            "user_integrations_disconnect": {"visibility": {"user_types": []}},
+                            "user_integrations_resolve": {"visibility": {"user_types": []}},
                             "identity_resolve": {"visibility": {"user_types": []}},
                             "authenticators_list": {"visibility": {"user_types": []}},
                             "authenticators_upsert": {"visibility": {"user_types": []}},
@@ -1282,6 +1374,33 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
                 },
                 # Deploy config populates this per provider (see comment above).
                 "providers": {},
+            },
+            "user_integrations": {
+                "enabled": False,
+                "oauth": {
+                    # Public base for user integration OAuth callbacks. Empty
+                    # means derive from the inbound request.
+                    "public_base_url": "",
+                },
+                "providers": {
+                    # Example:
+                    # google:
+                    #   label: Google
+                    #   adapter: google.oauth
+                    #   enabled: true
+                    #   capabilities:
+                    #     gmail:read:
+                    #       label: Read Gmail
+                    #       provider_scopes:
+                    #         - https://www.googleapis.com/auth/gmail.readonly
+                    #   connector_apps:
+                    #     gmail_default:
+                    #       label: KDCube Gmail connector
+                    #       client_id: ""
+                    #       client_secret_ref: user_integrations.providers.google.connector_apps.gmail_default.client_secret
+                    #       capability_ceiling:
+                    #         - gmail:read
+                },
             },
             "identity": {
                 "enabled": True,
@@ -1552,6 +1671,174 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
         return await _automation_access_service(self, request).revoke_access(
             user,
             access_id=str(payload.get("access_id") or "").strip(),
+        )
+
+    # ── user-connected integrations (KDCube -> external provider for user) ──
+
+    @api(method="GET", alias="user_integrations_catalog", route="operations", **_api_visibility("user_integrations_catalog"))
+    async def user_integrations_catalog(
+        self,
+        provider: str = "",
+        user_id: Optional[str] = None,
+        fingerprint: Optional[str] = None,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+        del fingerprint, kwargs
+        platform_user_id = _platform_user_id(self, user_id=user_id)
+        if not platform_user_id:
+            return {"ok": False, "error": "user_integrations_requires_authenticated_user"}
+        return await _user_integrations_operations(self, platform_user_id).catalog(provider_id=provider)
+
+    @api(method="POST", alias="user_integrations_start_oauth", route="operations", **_api_visibility("user_integrations_start_oauth"))
+    async def user_integrations_start_oauth(
+        self,
+        data: Optional[Dict[str, Any]] = None,
+        request: Any = None,
+        provider: str = "",
+        user_id: Optional[str] = None,
+        fingerprint: Optional[str] = None,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+        del fingerprint
+        platform_user_id = _platform_user_id(self, user_id=user_id)
+        if not platform_user_id:
+            return {"ok": False, "error": "user_integrations_requires_authenticated_user"}
+        payload = _payload(data, **kwargs)
+        if provider and "provider" not in payload and "provider_id" not in payload:
+            payload["provider"] = provider
+        try:
+            return await _user_integrations_operations(self, platform_user_id).start_oauth(
+                payload,
+                user_id=platform_user_id,
+                callback_url=_user_integrations_oauth_callback_url(self, request),
+                state_store=_user_integrations_oauth_state_store(self),
+                state_secret=await _user_integrations_oauth_state_secret(self),
+            )
+        except Exception as exc:
+            LOGGER.warning("[connection-hub.user_integrations] start OAuth failed: %s", exc)
+            return {"ok": False, "error": "invalid_user_integration_oauth_request", "message": str(exc)}
+
+    @api(method="GET", alias="user_integrations_oauth_callback", route="public")
+    async def user_integrations_oauth_callback(
+        self,
+        request: Any = None,
+        code: str = "",
+        state: str = "",
+        error: str = "",
+        **kwargs: Any,
+    ):
+        del kwargs
+        if error:
+            return _user_integrations_html_done(
+                title="Connection failed",
+                body=f"OAuth provider returned: {error}",
+            )
+        if not code or not state:
+            return _user_integrations_html_done(
+                title="Connection failed",
+                body="The OAuth callback is missing code or state.",
+            )
+        try:
+            preview = peek_state_payload(state)
+            platform_user_id = str(preview.get("user_id") or "").strip()
+            if not platform_user_id:
+                raise ValueError("OAuth state is missing user_id")
+
+            async def _client_secret_resolver(*, provider_id: str, connector_app_id: str, connector_app: Any) -> str:
+                return await _user_integrations_client_secret(
+                    self,
+                    provider_id=provider_id,
+                    connector_app_id=connector_app_id,
+                    connector_app=connector_app,
+                )
+
+            result = await _user_integrations_operations(self, platform_user_id).complete_oauth(
+                code=code,
+                state=state,
+                callback_url=_user_integrations_oauth_callback_url(self, request),
+                state_store=_user_integrations_oauth_state_store(self),
+                state_secret=await _user_integrations_oauth_state_secret(self),
+                client_secret_resolver=_client_secret_resolver,
+            )
+            account = result.get("account") or {}
+            label = account.get("display_name") or account.get("email") or account.get("workspace") or account.get("account_id") or "account"
+            origin = _request_origin(request)
+            return_link = str(result.get("return_hint") or "").strip()
+            if origin and return_link and not return_link.startswith(origin):
+                return_link = origin
+            return _user_integrations_html_done(
+                title="Connection complete",
+                body=f"Connected {label}. You can return to KDCube.",
+                link=return_link or origin,
+            )
+        except Exception as exc:
+            LOGGER.warning("[connection-hub.user_integrations] OAuth callback failed", exc_info=True)
+            return _user_integrations_html_done(
+                title="Connection failed",
+                body=str(exc),
+                link=_request_origin(request),
+            )
+
+    @api(method="POST", alias="user_integrations_connect_credential", route="operations", **_api_visibility("user_integrations_connect_credential"))
+    async def user_integrations_connect_credential(
+        self,
+        data: Optional[Dict[str, Any]] = None,
+        provider: str = "",
+        user_id: Optional[str] = None,
+        fingerprint: Optional[str] = None,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+        del fingerprint
+        platform_user_id = _platform_user_id(self, user_id=user_id)
+        if not platform_user_id:
+            return {"ok": False, "error": "user_integrations_requires_authenticated_user"}
+        payload = _payload(data, **kwargs)
+        if provider and "provider" not in payload and "provider_id" not in payload:
+            payload["provider"] = provider
+        try:
+            return await _user_integrations_operations(self, platform_user_id).connect_credential(payload)
+        except ValueError as exc:
+            return {"ok": False, "error": "invalid_user_integration_request", "message": str(exc)}
+
+    @api(method="POST", alias="user_integrations_disconnect", route="operations", **_api_visibility("user_integrations_disconnect"))
+    async def user_integrations_disconnect(
+        self,
+        data: Optional[Dict[str, Any]] = None,
+        account_id: str = "",
+        user_id: Optional[str] = None,
+        fingerprint: Optional[str] = None,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+        del fingerprint
+        platform_user_id = _platform_user_id(self, user_id=user_id)
+        if not platform_user_id:
+            return {"ok": False, "error": "user_integrations_requires_authenticated_user"}
+        payload = _payload(data, **kwargs)
+        resolved_account_id = str(account_id or payload.get("account_id") or "").strip()
+        if not resolved_account_id:
+            return {"ok": False, "error": "account_id_required"}
+        return await _user_integrations_operations(self, platform_user_id).disconnect(account_id=resolved_account_id)
+
+    @api(method="POST", alias="user_integrations_resolve", route="operations", **_api_visibility("user_integrations_resolve"))
+    async def user_integrations_resolve(
+        self,
+        data: Optional[Dict[str, Any]] = None,
+        provider: str = "",
+        capability: str = "",
+        account_id: str = "",
+        user_id: Optional[str] = None,
+        fingerprint: Optional[str] = None,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+        del fingerprint
+        platform_user_id = _platform_user_id(self, user_id=user_id)
+        if not platform_user_id:
+            return {"ok": False, "error": "user_integrations_requires_authenticated_user"}
+        payload = _payload(data, **kwargs)
+        return await _user_integrations_operations(self, platform_user_id).resolve(
+            provider_id=str(provider or payload.get("provider") or payload.get("provider_id") or "").strip(),
+            capability=str(capability or payload.get("capability") or "").strip(),
+            account_id=str(account_id or payload.get("account_id") or "").strip(),
         )
 
     # ── thin widget helper ops (Settings UI) ─────────────────────────────────

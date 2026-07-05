@@ -4,6 +4,7 @@ import connectionsReducer from '../features/connections/connectionsSlice';
 import delegatedAccessReducer from '../features/delegatedAccess/delegatedAccessSlice';
 import emailReducer from '../features/email/emailSlice';
 import identityReducer from '../features/identity/identitySlice';
+import userIntegrationsReducer from '../features/userIntegrations/userIntegrationsSlice';
 
 export const store = configureStore({
   reducer: {
@@ -12,6 +13,7 @@ export const store = configureStore({
     delegatedAccess: delegatedAccessReducer,
     email: emailReducer,
     identity: identityReducer,
+    userIntegrations: userIntegrationsReducer,
   },
 });
 

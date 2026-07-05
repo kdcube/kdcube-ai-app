@@ -235,3 +235,74 @@ export interface AuthenticatorMutationResult {
   error?: string;
   message?: string;
 }
+
+export interface UserIntegrationCapability {
+  capability_id: string;
+  label?: string;
+  description?: string;
+  provider_scopes?: string[];
+}
+
+export interface UserIntegrationConnectorApp {
+  app_id: string;
+  provider_id: string;
+  label?: string;
+  enabled?: boolean;
+  client_id?: string;
+  redirect_uri?: string;
+  capability_ceiling?: string[];
+}
+
+export interface UserIntegrationProvider {
+  provider_id: string;
+  label?: string;
+  adapter?: string;
+  enabled?: boolean;
+  capabilities?: Record<string, UserIntegrationCapability>;
+  connector_apps?: Record<string, UserIntegrationConnectorApp>;
+}
+
+export interface UserIntegrationAccount {
+  account_id: string;
+  provider_id: string;
+  connector_app_id?: string;
+  external_subject?: string;
+  display_name?: string;
+  email?: string;
+  workspace?: string;
+  capabilities?: string[];
+  status?: string;
+  has_credential?: boolean;
+}
+
+export interface UserIntegrationsCatalogResult {
+  ok?: boolean;
+  enabled?: boolean;
+  providers?: Record<string, UserIntegrationProvider>;
+  accounts?: UserIntegrationAccount[];
+  error?: string;
+  message?: string;
+}
+
+export interface UserIntegrationsMutationResult {
+  ok?: boolean;
+  account?: UserIntegrationAccount;
+  removed?: boolean;
+  account_id?: string;
+  error?: string;
+  message?: string;
+}
+
+export interface UserIntegrationsOAuthStartResult {
+  ok?: boolean;
+  provider_id?: string;
+  connector_app_id?: string;
+  app_id?: string;
+  authorize_url?: string;
+  state_id?: string;
+  redirect_uri?: string;
+  capabilities?: string[];
+  provider_scopes?: string[];
+  error?: string;
+  message?: string;
+}
