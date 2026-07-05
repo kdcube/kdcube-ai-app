@@ -4,7 +4,7 @@ title: "Connection Hub Storage Model"
 summary: "Storage map for Connection Hub data: descriptors, secrets, request-authenticator metadata, connection edges, link challenges, delegated account tokens, and runtime caches."
 status: active
 tags: ["sdk", "connections", "connection-hub", "storage", "postgres", "secrets", "connection-edges"]
-updated_at: 2026-07-01
+updated_at: 2026-07-05
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/connection-hub-solution-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-properties-and-secrets-lifecycle-README.md
@@ -24,13 +24,18 @@ bundles.secrets.yaml / secrets service
 Postgres
   request-authenticator metadata
 
-bundle-local state today
+bundle-local filesystem state today
   connection edges
   connection-edge challenges
-  delegated account connection state
+  connected-account metadata
 
 Redis/cache
   discovery, event delivery, runtime caches
+  bundle-session records
+  delegated credential grant records
+
+user-scoped secrets
+  connected external-provider tokens
 ```
 
 ## Matrix
@@ -44,8 +49,37 @@ Redis/cache
 | Connection edge | bundle-local JSON today | no | Delegates one authority identity to another authority identity. |
 | Identity family | derived from connection edges | no | Resolver output for product aggregation; not persisted separately. |
 | Connection-edge challenge | bundle-local JSON today | no | Short-lived proof state for writing an edge. |
-| Delegated account token | connections/email stores | yes, user token | OAuth token or app password for automation. |
+| Connected account metadata | `ConnectionStore` under `bundle_storage_root()/connections/<user>/accounts.json` | no | Provider, account id, app id, display name, scope, and `has_token`; no raw tokens. |
+| Connected external-provider token | user-scoped secrets, key `connections.accounts.<account_id>.tokens` | yes, user token | OAuth access/refresh token, app password, or equivalent provider credential for Gmail/Slack/LinkedIn-style integrations. |
+| Connected account OAuth state | `bundle_storage_root()/connections/_oauth_states/<sha256(state)>.json` | no raw secret | Short-lived anti-CSRF state for provider OAuth callbacks. |
+| Delegated OAuth code/CSRF/access grant | Redis `GrantStore`, keys `{tenant}:{project}:kdcube:oauth:{code,csrf,agrant}:...` | sensitive auth state | Access grant is keyed by `sha256(access_token)` and carries credential envelope, grantor authority, delegation edges, selected operations, and `resource_grants`. |
+| Delegated OAuth refresh token / dynamic client registration | Redis `GrantStore`, keys `{tenant}:{project}:kdcube:oauth:{refresh,client}:...` | yes, auth token | Current implementation is Redis-backed; durable production backing is a strengthening target. |
+| Delegated automation access listing | Redis, keys `{tenant}:{project}:kdcube:delegated-access:automation:*` | sensitive metadata | UI-visible records contain label, expiry, last four chars, session id, and `resource_grants`; raw token is shown only at creation. |
+| Bundle-session record | Redis, keys `{tenant}:{project}:kdcube:auth:bundle-session:*` | sensitive auth state | Backs `kst1` platform/bundle-session tokens and delegated-client access tokens. |
 | Live link update | Data Bus / event delivery | no | Signals original iframe after browser claim completes. |
+
+## Bundle Storage Root Is Filesystem
+
+`bundle_storage_root()` is a filesystem root selected by the runtime. It is not
+S3.
+
+```text
+local Docker / CLI:
+  local mounted filesystem under the runtime data directory
+
+ECS / cloud:
+  shared filesystem, normally EFS
+
+shape:
+  <BUNDLE_STORAGE_ROOT>/<tenant>/<project>/<safe(bundle_id)>
+```
+
+Use it for bundle-managed filesystem state such as UI builds, local indexes,
+connection-edge JSON today, and connected-account metadata. Do not store raw
+provider tokens there.
+
+S3-backed or localfs-backed artifact storage is the separate
+`BundleArtifactStorage` API. Bundle code should not confuse these two surfaces.
 
 ## Request-Authenticator Metadata
 
@@ -182,6 +216,60 @@ grantor authority facts
 delegation edges
 nested named-service namespace catalog
 ```
+
+Delegated automation access uses the same delegated-client credential model.
+Creation mints a `kst1` delegated-client access token and writes two server-side
+records:
+
+```text
+Bundle-session authority record:
+  Redis
+  {tenant}:{project}:kdcube:auth:bundle-session:session:<session_id>
+  validates the opaque kst1 token and integration subject
+
+Access grant record:
+  Redis GrantStore
+  {tenant}:{project}:kdcube:oauth:agrant:<sha256(access_token)>
+  carries resource_grants and grantor/delegation authority facts
+```
+
+The bearer token itself is not the source of authority. Guards read the
+server-side grant record and compute grants from matching `resource_grants`
+entries for the current request resource.
+
+The Connection Hub Delegated Access widget also stores a UI listing record:
+
+```text
+{tenant}:{project}:kdcube:delegated-access:automation:<access_id>
+{tenant}:{project}:kdcube:delegated-access:automation-by-grantor:<subject_hash>
+```
+
+This record is for listing/revocation UX. It does not contain the raw access
+token; the raw token is returned only once, at creation.
+
+## Connected Account Token Storage Today
+
+User-connected provider accounts, such as Gmail, Slack, LinkedIn, iCloud, or a
+future provider, split metadata from secrets:
+
+```text
+metadata:
+  <bundle_storage_root>/connections/<safe_user_id>/accounts.json
+
+provider tokens:
+  user-scoped secrets
+  connections.accounts.<safe_account_id>.tokens
+```
+
+The metadata document records the provider, external user id, app id, scope,
+workspace, display name, status, and `has_token`. It must not contain access
+tokens, refresh tokens, app passwords, client secrets, or provider signing
+secrets.
+
+The provider token is read through the user-secret API. By default,
+`ConnectionStore` uses shared user scope (`bundle_id=None`) so another
+application acting for the same platform user can resolve the connected account
+through Connection Hub without copying tokens into its own bundle storage.
 
 MCP connector presentation metadata is not persisted as authority state. Server
 icons, `website_url`, server instructions, and `ToolAnnotations` are advertised
