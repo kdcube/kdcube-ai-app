@@ -28,6 +28,7 @@ def _session() -> SimpleNamespace:
         user_type=SimpleNamespace(value="registered"),
         user_id="user-1",
         username="elena",
+        email=None,
         fingerprint="fp-1",
         roles=["registered"],
         permissions=["chat.use"],

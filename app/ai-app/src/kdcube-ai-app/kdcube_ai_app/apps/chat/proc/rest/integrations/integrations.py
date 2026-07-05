@@ -3046,7 +3046,11 @@ async def call_bundle_op(
         bundle_id: str,
         operation: str,
         request: Request,
-        session: UserSession = Depends(auth_without_pressure()),
+        # Operations require an authenticated registered user; role requirements
+        # come ONLY from the operation's declared visibility (enforced in
+        # _call_bundle_op_inner). Undeclared visibility means no role
+        # restriction, so no admin default is injected here.
+        session: UserSession = Depends(auth_without_pressure([RequireUser()])),
 ):
     """
     Load (or reuse singleton) bundle instance and call its operation (e.g. suggestions()).
@@ -3072,7 +3076,7 @@ async def call_bundle_op_default(
         project: str,
         operation: str,
         request: Request,
-        session: UserSession = Depends(auth_without_pressure()),
+        session: UserSession = Depends(auth_without_pressure([RequireUser()])),
 ):
     payload, uploaded_files = await _parse_bundle_request_payload(request)
     return await _call_bundle_op_limited(
@@ -4402,7 +4406,7 @@ async def call_bundle_op_get(
         bundle_id: str,
         operation: str,
         request: Request,
-        session: UserSession = Depends(auth_without_pressure()),
+        session: UserSession = Depends(auth_without_pressure([RequireUser()])),
 ):
     payload = BundleSuggestionsRequest()
     return await _call_bundle_op_limited(

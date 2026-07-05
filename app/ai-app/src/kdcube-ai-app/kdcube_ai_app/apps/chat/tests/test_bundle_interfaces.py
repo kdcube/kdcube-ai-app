@@ -67,7 +67,9 @@ def _session(*, user_type: str = "registered", roles: list[str] | None = None) -
         username="elena",
         email="elena@example.com",
         fingerprint="fp-1",
-        roles=roles or [],
+        # Registered users always carry at least one role; operations dispatch
+        # rejects sessions with no roles assigned.
+        roles=roles or ["registered"],
         permissions=["chat.use"],
         request_context=SimpleNamespace(user_timezone="Europe/Berlin", user_utc_offset_min=120),
     )
