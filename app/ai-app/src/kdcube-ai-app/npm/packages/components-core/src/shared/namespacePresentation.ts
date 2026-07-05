@@ -85,9 +85,15 @@ export function namespacePresentationCandidates(value: unknown): string[] {
   add(text(item.objectKind))
   add(text(data.object_kind))
   add(text(data.objectKind))
-  addNamespace(namespaceStyleKeyFromObjectRef(objectRefFromContext(item)))
-  addNamespace(text(item.namespace))
-  addNamespace(text(data.namespace))
+  // Explicit metadata wins and is preserved verbatim: a declared namespace such
+  // as `task:attachment` stays a full candidate key (style lookup falls back
+  // exact -> style key -> root on its own). The object-ref-derived namespace is
+  // only a fallback for items that carry no explicit namespace at all.
+  const explicitNamespaces = [text(item.namespace), text(data.namespace)].filter(Boolean)
+  for (const namespace of explicitNamespaces) add(namespace)
+  if (!explicitNamespaces.length) {
+    addNamespace(namespaceStyleKeyFromObjectRef(objectRefFromContext(item)))
+  }
 
   return out
 }
