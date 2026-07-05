@@ -214,6 +214,42 @@ assembly.yaml / bundles.yaml / ...       --path / --upstream / --latest / --rele
 env/compose files, and optionally builds images. It refuses to silently reuse an
 already initialized workdir.
 
+### Infra Topology: Bundled Vs Host-Managed Postgres/Redis
+
+The descriptor `assembly.yaml` decides whether the CLI stack starts its own
+Postgres/Redis containers or expects them to already run on the host:
+
+```yaml
+# bundled: the CLI compose stack starts and owns Postgres + Redis
+infra:
+  postgres: { host: postgres-db }
+  redis:    { host: redis }
+
+# host-managed: Postgres + Redis run outside the CLI stack
+infra:
+  postgres: { host: localhost }     # or host.docker.internal / managed endpoint
+  redis:    { host: localhost }
+```
+
+With `localhost` / `host.docker.internal` / a managed endpoint, `kdcube init`
+stages the `custom-ui-managed-infra` topology and does not start `postgres-db`
+or `redis` itself.
+
+For the host-managed option, the platform ships a ready-made infra compose
+stack — **use it instead of hand-rolling Postgres/Redis**:
+
+```text
+app/ai-app/deployment/docker/local-infra-stack/   (see its README.md)
+```
+
+It runs infra services only (Postgres, Redis, ClamAV, proxylogin) with a
+one-shot `postgres-setup` schema bootstrap keyed by `TENANT_ID`/`PROJECT_ID`.
+Quick shape: copy `sample_env/.env*`, fill `POSTGRES_*` + `REDIS_PASSWORD`
+(and tenant/project in `.env.postgres.setup`), `mkdir -p ./data/{postgres,redis,clamav-db}`,
+`docker compose up -d`. Keep the credentials in the stack's `.env` consistent
+with the runtime's `secrets.yaml`, and remember the schema bootstrap is
+per-tenant/project — rerun it when you init a runtime with different names.
+
 ### Refresh Platform Runtime
 
 Use `refresh` for an already initialized runtime. It preserves staged
