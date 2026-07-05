@@ -178,12 +178,12 @@ def register_configured_named_service_canvas_resolvers(
     log = logger or logging.getLogger(__name__)
     if namespaces is None:
         return 0
-        if not isinstance(namespaces, Mapping):
-            log.warning(
-                "[canvas.named_service_resolver] named service resolver config must be an object; got %s",
-                type(namespaces).__name__,
-            )
-            return 0
+    if not isinstance(namespaces, Mapping):
+        log.warning(
+            "[canvas.named_service_resolver] named service resolver config must be an object; got %s",
+            type(namespaces).__name__,
+        )
+        return 0
 
     registered = 0
     for raw_namespace, raw_config in namespaces.items():
