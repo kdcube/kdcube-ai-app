@@ -2482,8 +2482,21 @@ class BaseWorkflow():
                 return [str(item) for item in value if str(item or "").strip()]
             return [str(value)]
 
+        # Config-declared agent-admin customization is always honored: it seeds
+        # the instructions when the caller passed none, and composes (appends)
+        # when the bundle already built its own — a bundle's composed blocks
+        # must not shadow what the administrator declared in bundles.yaml.
+        config_additional_instructions = str(
+            _first_react_prop("additional_instructions") or ""
+        ).strip()
         if additional_instructions is None:
-            additional_instructions = _first_react_prop("additional_instructions")
+            additional_instructions = config_additional_instructions or None
+        elif config_additional_instructions and (
+            config_additional_instructions not in str(additional_instructions)
+        ):
+            additional_instructions = (
+                f"{str(additional_instructions).strip()}\n\n{config_additional_instructions}"
+            )
         raw_instructions = _first_react_prop("instructions")
         if instruction_body is None:
             if isinstance(raw_instructions, str):
