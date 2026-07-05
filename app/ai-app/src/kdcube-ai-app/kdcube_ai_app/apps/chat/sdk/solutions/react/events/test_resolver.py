@@ -21,13 +21,13 @@ async def test_resolve_event_ref_action_downloads_canonical_fi_artifact(tmp_path
         fingerprint=None,
         conversation_id="conversation",
         turn_id="turn_1",
-        relpath="turn_1/outputs/problem.md",
+        relpath="turn_1/files/problem.md",
         data=b"# Problem\n",
         mime="text/markdown",
     )
     ref = build_logical_artifact_path(
         turn_id="turn_1",
-        namespace="outputs",
+        namespace="files",
         relpath="problem.md",
         conversation_id="conversation",
     )
@@ -47,7 +47,7 @@ async def test_resolve_event_ref_action_downloads_canonical_fi_artifact(tmp_path
     assert result["mime"] == "text/markdown"
     assert "content_base64" not in result
     assert result["download_url"] == (
-        "/api/cb/resources/tenant/project/conv/user/conversation/turn/turn_1/attachment/turn_1/outputs/problem.md/download"
+        "/api/cb/resources/tenant/project/conv/user/conversation/turn/turn_1/attachment/turn_1/files/problem.md/download"
     )
 
 
@@ -66,8 +66,27 @@ async def test_resolve_event_ref_action_reports_unknown_namespace():
 
 
 @pytest.mark.asyncio
+async def test_resolve_event_ref_action_treats_bare_fi_refs_as_unregistered():
+    """`conv:fi:` is the only React file ref form; a bare `fi:` ref is an
+    unregistered namespace and reports the explicit unsupported result."""
+    result = await resolve_event_ref_action(
+        {"object_ref": "fi:conv_abc.turn_1.files/report.md", "action": "capabilities"},
+        tenant="tenant",
+        project="project",
+        user_id="user",
+        require_embedded_conversation=True,
+    )
+
+    assert result["ok"] is False
+    assert result["namespace"] == "fi"
+    assert result["resolver_status"] == "unsupported_namespace"
+    assert result["error"] == "event_ref_resolver_not_registered"
+    assert result["status"] == 404
+
+
+@pytest.mark.asyncio
 async def test_resolve_event_ref_action_can_require_cross_conversation_fi_refs():
-    ref = "fi:turn_2026-06-07.outputs/problem.md"
+    ref = "conv:fi:turn_2026-06-07.files/problem.md"
     result = await resolve_event_ref_action(
         {"object_ref": ref, "action": "download"},
         tenant="tenant",
@@ -83,7 +102,7 @@ async def test_resolve_event_ref_action_can_require_cross_conversation_fi_refs()
 
 @pytest.mark.asyncio
 async def test_resolve_event_ref_action_allows_current_turn_fi_refs_when_not_required():
-    ref = "fi:turn_2026-06-07.outputs/problem.md"
+    ref = "conv:fi:turn_2026-06-07.files/problem.md"
     result = await resolve_event_ref_action(
         {"object_ref": ref, "action": "capabilities"},
         tenant="tenant",
@@ -93,17 +112,23 @@ async def test_resolve_event_ref_action_allows_current_turn_fi_refs_when_not_req
 
     assert result["ok"] is True
     assert result["object_ref"] == ref
+    assert result["namespace"] == "conv:fi"
     assert result["capabilities"]["download"] is True
     assert result["default_open_effect_action"] == "download"
 
 
 def test_canonicalize_event_ref_for_context_adds_conversation_to_current_turn_fi_refs():
     assert canonicalize_event_ref_for_context(
-        "fi:turn_2026-06-07.outputs/problem.md",
+        "conv:fi:turn_2026-06-07.files/problem.md",
         conversation_id="abc",
-    ) == "fi:conv_abc.turn_2026-06-07.outputs/problem.md"
+    ) == "conv:fi:conv_abc.turn_2026-06-07.files/problem.md"
+
+
+def test_canonicalize_event_ref_for_context_leaves_other_namespaces_unchanged():
+    ref = "fi:turn_2026-06-07.files/problem.md"
+    assert canonicalize_event_ref_for_context(ref, conversation_id="abc") == ref
 
 
 def test_canonicalize_event_ref_for_context_preserves_existing_cross_conversation_fi_refs():
-    ref = "fi:conv_other.turn_2026-06-07.outputs/problem.md"
+    ref = "conv:fi:conv_other.turn_2026-06-07.files/problem.md"
     assert canonicalize_event_ref_for_context(ref, conversation_id="abc") == ref

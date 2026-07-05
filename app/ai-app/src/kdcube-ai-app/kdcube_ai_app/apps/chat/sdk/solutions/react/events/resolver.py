@@ -269,7 +269,7 @@ async def _resolve_fi_action(
         "ref": ref,
         "event_ref": ref,
         "object_ref": ref,
-        "namespace": "fi",
+        "namespace": "conv:fi",
         "resolver": "react.event_ref",
         "resolver_status": "implemented",
         "capabilities": {"preview": False, "open": False, "download": True, "rehost": False},

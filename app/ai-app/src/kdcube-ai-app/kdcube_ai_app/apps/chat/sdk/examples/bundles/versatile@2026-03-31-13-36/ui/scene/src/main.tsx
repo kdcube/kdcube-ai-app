@@ -1693,7 +1693,13 @@ function App() {
       error: response.error,
     })
     if (!response.ok) {
-      setNotice(response.error || response.message || `Canvas object ${action} failed.`)
+      // `capabilities`/`describe` run as background probes for every pinned
+      // card at board load; a pin whose object has no resolver stays on the
+      // board as a neutral card (same contract as the standalone pinboard
+      // widget). Only user-invoked effect actions surface a scene notice.
+      if (action !== 'capabilities' && action !== 'describe') {
+        setNotice(response.error || response.message || `Canvas object ${action} failed.`)
+      }
       return response
     }
     if (action === 'open') {
