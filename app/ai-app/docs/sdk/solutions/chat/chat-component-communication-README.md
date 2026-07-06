@@ -4,7 +4,7 @@ title: "Chat Component Communication"
 summary: "Schematic map of the reusable KDCube chat component, including the headless engine, React widget, iframe host bridge, chat ingress/stream, app operations, and the boundary between conversation events and Data Bus."
 status: draft
 tags: ["sdk", "solutions", "chat", "component", "widget", "communication", "event-bus", "external-events", "iframe", "sse"]
-updated_at: 2026-06-23
+updated_at: 2026-07-06
 keywords:
   [
     "chat component communication",
@@ -224,6 +224,40 @@ surface:
 
 `chat_step` carries completed structured steps such as citations, files,
 accounting, followups, and service-level notices.
+
+### Connected-Account Consent Banners
+
+The chat component has a user-facing recovery path for tools that need external
+accounts delegated to KDCube.
+
+```text
+agent/tool needs Gmail, Slack, etc.
+  |
+  | Connection Hub claim preflight fails
+  | or provider rejects stored credential during the tool call
+  v
+chat_step / tool-result payload contains:
+  error.code = needs_connected_account_consent
+  consent.url = Connection Hub connected-account screen
+  |
+  v
+chat reducer adds a composer banner
+  |
+  v
+user opens Connection Hub, connects/reapproves the account, and retries
+```
+
+The reusable reducer searches `env.data` recursively for
+`needs_connected_account_consent`. When found, it adds a warning banner with the
+provided action label and URL. This is intentionally handled in the chat
+component, not in individual tool UIs, so any SDK integration tool can use the
+same consent loop.
+
+Tools should return the standard envelope from
+`sdk.integrations.connected_accounts` when they need user action. Providers
+should also convert 401/403 credential failures into that envelope; otherwise
+the assistant sees only a generic provider error and the user has no direct
+authorization path.
 
 ## Stored Conversation Reload
 

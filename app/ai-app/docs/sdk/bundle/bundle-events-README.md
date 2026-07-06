@@ -4,7 +4,7 @@ title: "Bundle Events"
 summary: "Bundle-facing guide for authored UI events, tool-backed event sources, ReAct policies, story-aware widgets, snapshots, and custom artifact namespace rehosters."
 status: draft
 tags: ["sdk", "bundle", "events", "react", "tools", "ui", "snapshots"]
-updated_at: 2026-06-23
+updated_at: 2026-07-06
 keywords:
   [
     "bundle events",
@@ -94,6 +94,38 @@ tool exposure, such as a Semantic Kernel `@kernel_function` loaded through the
 tool subsystem. Event-source declarations only attach policy identity. Exact
 external owner content is imported with `react.pull` through a namespace
 rehoster; source ids such as `canvas.read` are not callable model tools.
+
+## Tool Claims And Connection Hub Consent
+
+Some tool-backed event sources need credentials from external user accounts,
+for example Gmail or Slack accounts delegated to KDCube. Those tools should
+declare provider claims in the agent/tool configuration and resolve credentials
+through Connection Hub at runtime.
+
+```text
+agent tool config
+  declares connected-account claims
+        |
+        v
+base workflow preflight
+  checks current user's delegated-to-KDCube accounts
+        |
+        +-- missing/insufficient -> emits chat_step with
+        |    error.code = needs_connected_account_consent
+        |    consent.url = Connection Hub widget
+        |
+        v
+tool execution
+  resolves credential through sdk.integrations.connected_accounts
+        |
+        +-- provider rejects stored credential -> returns the same
+             needs_connected_account_consent envelope
+```
+
+App and SDK tool authors should not invent separate consent events for each
+integration. Use the standard connected-account envelope so the reusable chat
+component can render the consent banner and so non-browser adapters can reduce
+the same payload into a channel-specific link.
 
 ## Where Events Fit In A Bundle
 

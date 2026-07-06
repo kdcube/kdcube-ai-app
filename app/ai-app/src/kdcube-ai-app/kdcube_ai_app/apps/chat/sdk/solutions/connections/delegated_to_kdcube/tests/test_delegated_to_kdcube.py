@@ -8,33 +8,35 @@ from typing import Any
 import pytest
 
 from kdcube_ai_app.apps.chat.sdk.solutions import connections
-from kdcube_ai_app.apps.chat.sdk.solutions.connections.user_integrations import (
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube import (
     ConnectedAccount,
     MemoryOAuthStateStore,
-    UserIntegrationBroker,
-    UserIntegrationStore,
+    DelegatedToKdcubeBroker,
+    DelegatedToKdcubeStore,
+    ToolClaimPolicy,
+    preflight_tool_claim_policies,
     operations_for_user,
-    user_integrations_config,
+    delegated_to_kdcube_config,
 )
-from kdcube_ai_app.apps.chat.sdk.solutions.connections.user_integrations.adapters import (
-    UserIntegrationAdapter,
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube.adapters import (
+    DelegatedToKdcubeAdapter,
     register_adapter,
     resolve_adapter,
 )
-from kdcube_ai_app.apps.chat.sdk.solutions.connections.user_integrations.store import credential_id_for
-from kdcube_ai_app.apps.chat.sdk.solutions.connections.user_integrations import store as ui_store
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube.store import credential_id_for
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube import store as ui_store
 
 
 def _sample_config():
-    return user_integrations_config(
+    return delegated_to_kdcube_config(
         {
-            "user_integrations": {
+            "delegated_to_kdcube": {
                 "enabled": True,
                 "providers": {
                     "google": {
                         "label": "Google",
                         "adapter": "google.oauth",
-                        "capabilities": {
+                        "claims": {
                             "gmail:read": {
                                 "label": "Read Gmail",
                                 "description": "Read Gmail messages for this user.",
@@ -49,8 +51,8 @@ def _sample_config():
                             "gmail": {
                                 "label": "Gmail connector",
                                 "client_id": "client-id",
-                                "client_secret_ref": "integrations.google.gmail.client_secret",
-                                "capability_ceiling": ["gmail:read", "gmail:send"],
+                                "client_secret_ref": "connections.delegated_to_kdcube.providers.google.connector_apps.gmail.client_secret",
+                                "allowed_claims": ["gmail:read", "gmail:send"],
                             }
                         },
                     }
@@ -60,7 +62,7 @@ def _sample_config():
     )
 
 
-class _FakeOAuthAdapter(UserIntegrationAdapter):
+class _FakeOAuthAdapter(DelegatedToKdcubeAdapter):
     adapter_id = "test.oauth"
     label = "Test OAuth"
     kind = "oauth2"
@@ -77,6 +79,7 @@ class _FakeOAuthAdapter(UserIntegrationAdapter):
             "refresh_token": "refresh-1",
             "scope": "provider.read",
             "expires_in": 3600,
+            "expires_at": 4_000_000_000,
         }
 
     async def fetch_profile(self, *, access_token: str, token: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -87,20 +90,35 @@ class _FakeOAuthAdapter(UserIntegrationAdapter):
             "display_name": "User Example",
         }
 
+    async def refresh_credential(self, credential: dict[str, Any], *, client_id: str, client_secret: str) -> dict[str, Any]:
+        assert credential["refresh_token"] == "refresh-1"
+        assert client_id == "test-client"
+        assert client_secret == "test-secret"
+        refreshed = dict(credential)
+        refreshed.update(
+            {
+                "access_token": "token-refreshed",
+                "expires_at": 4_000_000_000,
+                "refresh_token": credential["refresh_token"],
+                "refreshed": True,
+            }
+        )
+        return refreshed
+
     async def normalize_profile(self, credential: dict[str, Any]) -> dict[str, Any]:
         return {"external_subject": "fallback-user"}
 
 
 def _oauth_sample_config():
     register_adapter(_FakeOAuthAdapter())
-    return user_integrations_config(
+    return delegated_to_kdcube_config(
         {
             "enabled": True,
             "providers": {
                 "test": {
                     "label": "Test Provider",
                     "adapter": "test.oauth",
-                    "capabilities": {
+                    "claims": {
                         "test:read": {
                             "label": "Read test data",
                             "provider_scopes": ["provider.read"],
@@ -110,8 +128,8 @@ def _oauth_sample_config():
                         "default": {
                             "label": "Default OAuth app",
                             "client_id": "test-client",
-                            "client_secret_ref": "user_integrations.providers.test.connector_apps.default.client_secret",
-                            "capability_ceiling": ["test:read"],
+                            "client_secret_ref": "connections.delegated_to_kdcube.providers.test.connector_apps.default.client_secret",
+                            "allowed_claims": ["test:read"],
                         }
                     },
                 }
@@ -158,33 +176,34 @@ def _install_fake_storage(monkeypatch):
     return props, secrets
 
 
-def test_config_parses_provider_capabilities_and_connector_apps():
+def test_config_parses_provider_claims_and_connector_apps():
     config = _sample_config()
 
     provider = config.provider("google")
     assert config.enabled is True
     assert provider is not None
     assert provider.adapter == "google.oauth"
-    assert provider.capabilities["gmail:read"].provider_scopes == (
+    assert provider.claims["gmail:read"].provider_scopes == (
         "https://www.googleapis.com/auth/gmail.readonly",
     )
     assert provider.connector_apps["gmail"].client_id == "client-id"
-    assert provider.connector_apps["gmail"].capability_ceiling == ("gmail:read", "gmail:send")
+    assert provider.connector_apps["gmail"].allowed_claims == ("gmail:read", "gmail:send")
     public = config.to_dict(include_client_ids=True)
     assert public["providers"]["google"]["connector_apps"]["gmail"]["client_id"] == "client-id"
     assert "client_secret_ref" not in public["providers"]["google"]["connector_apps"]["gmail"]
 
 
-def test_connections_lazy_surface_exposes_user_integrations():
-    assert connections.UserIntegrationsClient.__name__ == "UserIntegrationsClient"
-    assert connections.UserIntegrationStore.__name__ == "UserIntegrationStore"
-    assert connections.UserIntegrationsOperations.__name__ == "UserIntegrationsOperations"
+def test_connections_lazy_surface_exposes_delegated_to_kdcube():
+    assert connections.DelegatedToKdcubeClient.__name__ == "DelegatedToKdcubeClient"
+    assert connections.DelegatedToKdcubeStore.__name__ == "DelegatedToKdcubeStore"
+    assert connections.DelegatedToKdcubeOperations.__name__ == "DelegatedToKdcubeOperations"
+    assert connections.preflight_tool_claim_policies.__name__ == "preflight_tool_claim_policies"
 
 
 @pytest.mark.asyncio
 async def test_store_persists_metadata_in_user_props_and_credentials_in_user_secrets(monkeypatch):
     props, secrets = _install_fake_storage(monkeypatch)
-    store = UserIntegrationStore(user_id="user-1")
+    store = DelegatedToKdcubeStore(user_id="user-1")
 
     stored = await store.upsert_account(
         ConnectedAccount(
@@ -194,7 +213,7 @@ async def test_store_persists_metadata_in_user_props_and_credentials_in_user_sec
             external_subject="google-sub-1",
             email="user@example.test",
             display_name="User Example",
-            capabilities=("gmail:read",),
+            claims=("gmail:read",),
         )
     )
     await store.set_credential(stored.credential_id, {"access_token": "token-1", "refresh_token": "refresh-1"})
@@ -206,8 +225,8 @@ async def test_store_persists_metadata_in_user_props_and_credentials_in_user_sec
     assert accounts[0].public_dict()["has_credential"] is True
     assert "credential_id" not in accounts[0].public_dict()
     assert credential["access_token"] == "token-1"
-    assert any(key[-1].startswith("user_integrations.accounts.") for key in props)
-    assert any(key[-1].startswith("user_integrations.credentials.") for key in secrets)
+    assert any(key[-1].startswith("delegated_to_kdcube.accounts.") for key in props)
+    assert any(key[-1].startswith("delegated_to_kdcube.credentials.") for key in secrets)
 
     assert await store.disconnect_account(stored.account_id) is True
     assert await store.list_accounts() == []
@@ -215,10 +234,10 @@ async def test_store_persists_metadata_in_user_props_and_credentials_in_user_sec
 
 
 @pytest.mark.asyncio
-async def test_broker_returns_credential_when_capability_and_credential_exist(monkeypatch):
+async def test_broker_returns_credential_when_claim_and_credential_exist(monkeypatch):
     _install_fake_storage(monkeypatch)
     config = _sample_config()
-    store = UserIntegrationStore(user_id="user-1")
+    store = DelegatedToKdcubeStore(user_id="user-1")
     credential_id = credential_id_for("acct-1")
     await store.upsert_account(
         ConnectedAccount(
@@ -226,15 +245,15 @@ async def test_broker_returns_credential_when_capability_and_credential_exist(mo
             provider_id="google",
             connector_app_id="gmail",
             external_subject="google-sub-1",
-            capabilities=("gmail:read",),
+            claims=("gmail:read",),
             credential_id=credential_id,
         )
     )
     await store.set_credential(credential_id, {"access_token": "token-1"})
 
-    result = await UserIntegrationBroker(config=config, store=store).ensure_capability(
+    result = await DelegatedToKdcubeBroker(config=config, store=store).ensure_claim(
         provider_id="google",
-        capability="gmail:read",
+        claim="gmail:read",
     )
 
     assert result.ok is True
@@ -249,11 +268,11 @@ async def test_broker_returns_credential_when_capability_and_credential_exist(mo
 async def test_broker_requires_consent_when_account_missing(monkeypatch):
     _install_fake_storage(monkeypatch)
     config = _sample_config()
-    store = UserIntegrationStore(user_id="user-1")
+    store = DelegatedToKdcubeStore(user_id="user-1")
 
-    result = await UserIntegrationBroker(config=config, store=store).ensure_capability(
+    result = await DelegatedToKdcubeBroker(config=config, store=store).ensure_claim(
         provider_id="google",
-        capability="gmail:read",
+        claim="gmail:read",
     )
 
     assert result.ok is False
@@ -262,10 +281,10 @@ async def test_broker_requires_consent_when_account_missing(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_broker_requires_account_id_when_multiple_accounts_can_satisfy_capability(monkeypatch):
+async def test_broker_requires_account_id_when_multiple_accounts_can_satisfy_claim(monkeypatch):
     _install_fake_storage(monkeypatch)
     config = _sample_config()
-    store = UserIntegrationStore(user_id="user-1")
+    store = DelegatedToKdcubeStore(user_id="user-1")
     for account_id in ("acct-1", "acct-2"):
         credential_id = credential_id_for(account_id)
         await store.upsert_account(
@@ -274,19 +293,19 @@ async def test_broker_requires_account_id_when_multiple_accounts_can_satisfy_cap
                 provider_id="google",
                 connector_app_id="gmail",
                 external_subject=f"sub-{account_id}",
-                capabilities=("gmail:read",),
+                claims=("gmail:read",),
                 credential_id=credential_id,
             )
         )
         await store.set_credential(credential_id, {"access_token": f"token-{account_id}"})
 
-    ambiguous = await UserIntegrationBroker(config=config, store=store).ensure_capability(
+    ambiguous = await DelegatedToKdcubeBroker(config=config, store=store).ensure_claim(
         provider_id="google",
-        capability="gmail:read",
+        claim="gmail:read",
     )
-    selected = await UserIntegrationBroker(config=config, store=store).ensure_capability(
+    selected = await DelegatedToKdcubeBroker(config=config, store=store).ensure_claim(
         provider_id="google",
-        capability="gmail:read",
+        claim="gmail:read",
         account_id="acct-2",
     )
 
@@ -298,14 +317,141 @@ async def test_broker_requires_account_id_when_multiple_accounts_can_satisfy_cap
 
 
 @pytest.mark.asyncio
+async def test_broker_resolves_tool_claim_policy_supplied_by_application(monkeypatch):
+    _install_fake_storage(monkeypatch)
+    config = _sample_config()
+    store = DelegatedToKdcubeStore(user_id="user-1")
+    credential_id = credential_id_for("acct-1")
+    await store.upsert_account(
+        ConnectedAccount(
+            account_id="acct-1",
+            provider_id="google",
+            connector_app_id="gmail",
+            external_subject="google-sub-1",
+            claims=("gmail:read",),
+            credential_id=credential_id,
+        )
+    )
+    await store.set_credential(credential_id, {"access_token": "token-1"})
+    policy = ToolClaimPolicy.from_config(
+        "mailbox.search",
+        {
+            "connected_accounts": [
+                {
+                    "provider_id": "google",
+                    "connector_app_id": "gmail",
+                    "claims": ["gmail:read"],
+                }
+            ]
+        },
+    )
+
+    result = await DelegatedToKdcubeBroker(config=config, store=store).ensure_tool_claims(policy=policy)
+
+    assert result["ok"] is True
+    assert result["tool_name"] == "mailbox.search"
+    assert result["resolved"][0]["provider_id"] == "google"
+    assert result["resolved"][0]["claim"] == "gmail:read"
+
+
+def test_tool_claim_policy_parses_application_tool_config():
+    policy = ToolClaimPolicy.from_tool_config(
+        "report.post_to_slack",
+        {
+            "label": "Post report to Slack",
+            "connections": {
+                "delegated_to_kdcube": {
+                    "connected_accounts": [
+                        {
+                            "provider_id": "slack",
+                            "connector_app_id": "demo",
+                            "claims": ["slack:post"],
+                        }
+                    ]
+                }
+            },
+        },
+    )
+
+    assert policy.tool_name == "report.post_to_slack"
+    assert policy.connected_accounts[0].provider_id == "slack"
+    assert policy.connected_accounts[0].connector_app_id == "demo"
+
+
+@pytest.mark.asyncio
+async def test_preflight_returns_connection_hub_consent_payload_when_account_missing(monkeypatch):
+    _install_fake_storage(monkeypatch)
+
+    class _Entrypoint:
+        redis = None
+        bundle_props = {
+            "connections": {
+                "delegated_to_kdcube": {
+                    "enabled": True,
+                    "providers": {
+                        "google": {
+                            "label": "Google",
+                            "claims": {
+                                "gmail:send": {
+                                    "label": "Send Gmail",
+                                    "provider_scopes": ["https://www.googleapis.com/auth/gmail.send"],
+                                }
+                            },
+                            "connector_apps": {
+                                "gmail": {
+                                    "label": "Gmail connector",
+                                    "allowed_claims": ["gmail:send"],
+                                }
+                            },
+                        }
+                    },
+                }
+            }
+        }
+
+        def runtime_identity(self):
+            return {"tenant": "demo-tenant", "project": "demo-project"}
+
+    policy = ToolClaimPolicy.from_config(
+        "mailbox.send",
+        {
+            "connected_accounts": [
+                {
+                    "provider_id": "google",
+                    "connector_app_id": "gmail",
+                    "claims": ["gmail:send"],
+                }
+            ]
+        },
+    )
+
+    result = await preflight_tool_claim_policies(
+        entrypoint=_Entrypoint(),
+        user_id="user-1",
+        policies=[policy],
+        tenant="demo-tenant",
+        project="demo-project",
+    )
+
+    assert result["ok"] is False
+    assert result["error"]["code"] == "needs_connected_account_consent"
+    assert result["consent"]["provider_id"] == "google"
+    assert result["consent"]["connector_app_id"] == "gmail"
+    assert result["consent"]["claims"] == ["gmail:send"]
+    assert result["consent"]["url"].startswith(
+        "/api/integrations/bundles/demo-tenant/demo-project/connection-hub%401-0/widgets/connections_settings?"
+    )
+
+
+@pytest.mark.asyncio
 async def test_builtin_adapters_register_and_normalize_profiles():
-    import kdcube_ai_app.apps.chat.sdk.solutions.connections.user_integrations.providers  # noqa: F401
+    import kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube.providers  # noqa: F401
 
     google = resolve_adapter("google.oauth")
     normalized = await google.normalize_profile({"sub": "s-1", "email": "a@example.test", "name": "A User"})
-    scopes = google.provider_scopes_for_capabilities(
+    scopes = google.provider_scopes_for_claims(
         ["gmail:read"],
-        _sample_config().provider("google").capabilities,
+        _sample_config().provider("google").claims,
     )
 
     assert normalized == {
@@ -323,18 +469,18 @@ async def test_operations_connect_credential_catalog_and_disconnect(monkeypatch)
 
     connected = await ops.connect_credential(
         {
-            "provider": "google",
-            "app_id": "gmail",
+            "provider_id": "google",
+            "connector_app_id": "gmail",
             "external_subject": "google-sub-1",
             "email": "user@example.test",
             "display_name": "User Example",
-            "capabilities": ["gmail:read"],
+            "claims": ["gmail:read"],
             "credential": {"access_token": "token-1", "refresh_token": "refresh-1"},
         }
     )
     account_id = connected["account"]["account_id"]
     catalog = await ops.catalog(provider_id="google")
-    resolved = await ops.resolve(provider_id="google", capability="gmail:read", account_id=account_id)
+    resolved = await ops.resolve(provider_id="google", claim="gmail:read", account_id=account_id)
     disconnected = await ops.disconnect(account_id=account_id)
 
     assert connected["ok"] is True
@@ -348,17 +494,144 @@ async def test_operations_connect_credential_catalog_and_disconnect(monkeypatch)
 
 
 @pytest.mark.asyncio
-async def test_operations_reject_unknown_capability(monkeypatch):
+async def test_broker_refreshes_expired_oauth_credential_before_returning_it(monkeypatch):
+    _install_fake_storage(monkeypatch)
+    config = _oauth_sample_config()
+    store = DelegatedToKdcubeStore(user_id="user-1")
+    credential_id = credential_id_for("acct-1")
+    await store.upsert_account(
+        ConnectedAccount(
+            account_id="acct-1",
+            provider_id="test",
+            connector_app_id="default",
+            external_subject="external-user-1",
+            claims=("test:read",),
+            credential_id=credential_id,
+        )
+    )
+    await store.set_credential(
+        credential_id,
+        {
+            "oauth": True,
+            "access_token": "token-expired",
+            "refresh_token": "refresh-1",
+            "expires_at": 1,
+            "claims": ["test:read"],
+        },
+    )
+
+    broker = DelegatedToKdcubeBroker(
+        config=config,
+        store=store,
+        client_secret_resolver=lambda **kwargs: "test-secret",
+    )
+    result = await broker.ensure_claim(
+        provider_id="test",
+        connector_app_id="default",
+        claim="test:read",
+        account_id="acct-1",
+    )
+    stored = await store.get_credential(credential_id)
+
+    assert result.ok is True
+    assert result.credential is not None
+    assert result.credential.credential["access_token"] == "token-refreshed"
+    assert stored["access_token"] == "token-refreshed"
+    assert stored["refresh_token"] == "refresh-1"
+
+
+@pytest.mark.asyncio
+async def test_broker_refreshes_oauth_credential_with_refresh_token_but_no_expiry(monkeypatch):
+    _install_fake_storage(monkeypatch)
+    config = _oauth_sample_config()
+    store = DelegatedToKdcubeStore(user_id="user-1")
+    credential_id = credential_id_for("acct-1")
+    await store.upsert_account(
+        ConnectedAccount(
+            account_id="acct-1",
+            provider_id="test",
+            connector_app_id="default",
+            external_subject="external-user-1",
+            claims=("test:read",),
+            credential_id=credential_id,
+        )
+    )
+    await store.set_credential(
+        credential_id,
+        {
+            "oauth": True,
+            "access_token": "token-without-expiry",
+            "refresh_token": "refresh-1",
+            "claims": ["test:read"],
+        },
+    )
+
+    result = await DelegatedToKdcubeBroker(
+        config=config,
+        store=store,
+        client_secret_resolver=lambda **kwargs: "test-secret",
+    ).ensure_claim(
+        provider_id="test",
+        connector_app_id="default",
+        claim="test:read",
+        account_id="acct-1",
+    )
+
+    assert result.ok is True
+    assert result.credential is not None
+    assert result.credential.credential["access_token"] == "token-refreshed"
+
+
+@pytest.mark.asyncio
+async def test_broker_requires_reconnect_for_expired_oauth_without_refresh_token(monkeypatch):
+    _install_fake_storage(monkeypatch)
+    config = _oauth_sample_config()
+    store = DelegatedToKdcubeStore(user_id="user-1")
+    credential_id = credential_id_for("acct-1")
+    await store.upsert_account(
+        ConnectedAccount(
+            account_id="acct-1",
+            provider_id="test",
+            connector_app_id="default",
+            external_subject="external-user-1",
+            claims=("test:read",),
+            credential_id=credential_id,
+        )
+    )
+    await store.set_credential(
+        credential_id,
+        {
+            "oauth": True,
+            "access_token": "token-expired",
+            "expires_at": 1,
+            "claims": ["test:read"],
+        },
+    )
+
+    result = await DelegatedToKdcubeBroker(config=config, store=store).ensure_claim(
+        provider_id="test",
+        connector_app_id="default",
+        claim="test:read",
+        account_id="acct-1",
+    )
+
+    assert result.ok is False
+    assert result.consent_required is True
+    assert "Reconnect" in result.message
+
+
+@pytest.mark.asyncio
+async def test_operations_reject_unknown_claim(monkeypatch):
     _install_fake_storage(monkeypatch)
     ops = operations_for_user(user_id="user-1", config=_sample_config())
 
-    with pytest.raises(ValueError, match="unknown provider capability"):
+    with pytest.raises(ValueError, match="unknown provider claim"):
         await ops.connect_credential(
             {
-                "provider": "google",
-                "app_id": "gmail",
+                "provider_id": "google",
+                "connector_app_id": "gmail",
                 "external_subject": "google-sub-1",
-                "capabilities": ["gmail:delete"],
+                "claims": ["gmail:delete"],
                 "credential": {"access_token": "token-1"},
             }
         )
@@ -372,9 +645,9 @@ async def test_operations_start_and_complete_oauth_stores_user_credential(monkey
 
     started = await ops.start_oauth(
         {
-            "provider": "test",
-            "app_id": "default",
-            "capabilities": ["test:read"],
+            "provider_id": "test",
+            "connector_app_id": "default",
+            "claims": ["test:read"],
         },
         user_id="user-1",
         callback_url="https://kdcube.example.test/oauth/callback",
@@ -398,7 +671,7 @@ async def test_operations_start_and_complete_oauth_stores_user_credential(monkey
     catalog = await ops.catalog(provider_id="test")
     resolved = await ops.resolve(
         provider_id="test",
-        capability="test:read",
+        claim="test:read",
         account_id=completed["account"]["account_id"],
     )
 

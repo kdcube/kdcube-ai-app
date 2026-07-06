@@ -1,0 +1,360 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Elena Viter
+
+"""Credential broker for delegated to KDCube."""
+
+from __future__ import annotations
+
+from typing import Any, Callable
+
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube.adapters import (
+    resolve_adapter,
+)
+
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube.models import (
+    ClaimResolution,
+    CredentialHandle,
+    DelegatedToKdcubeConfig,
+    ToolClaimPolicy,
+    as_str,
+    as_str_list,
+)
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube.store import DelegatedToKdcubeStore
+
+
+class DelegatedToKdcubeBroker:
+    """Resolve provider claims for one platform user."""
+
+    def __init__(
+        self,
+        *,
+        config: DelegatedToKdcubeConfig,
+        store: DelegatedToKdcubeStore,
+        client_secret_resolver: Callable[..., Any] | None = None,
+        refresh_skew_seconds: int = 120,
+    ) -> None:
+        self.config = config
+        self.store = store
+        self.client_secret_resolver = client_secret_resolver
+        self.refresh_skew_seconds = max(0, int(refresh_skew_seconds or 0))
+
+    async def ensure_claim(
+        self,
+        *,
+        provider_id: str,
+        claim: str,
+        connector_app_id: str | None = None,
+        account_id: str | None = None,
+        purpose: str = "",
+    ) -> ClaimResolution:
+        del purpose
+        provider_key = as_str(provider_id)
+        claim_key = as_str(claim)
+        connector_key = as_str(connector_app_id)
+        account_key = as_str(account_id)
+        provider = self.config.provider(provider_key)
+        if not self.config.enabled or provider is None or not provider.enabled:
+            return self._consent_required(
+                provider_id=provider_key,
+                claim=claim_key,
+                connector_app_id=connector_key,
+                account_id=account_key,
+                message=f"Provider {provider_key or '<missing>'} is not enabled in Connection Hub.",
+            )
+        if claim_key not in provider.claims:
+            return ClaimResolution(
+                ok=False,
+                provider_id=provider_key,
+                claim=claim_key,
+                connector_app_id=connector_key,
+                account_id=account_key,
+                error="claim_not_configured",
+                message=f"Claim {claim_key or '<missing>'} is not configured for provider {provider_key}.",
+            )
+        if connector_key:
+            connector_app = provider.connector_apps.get(connector_key)
+            if connector_app is None or not connector_app.enabled:
+                return ClaimResolution(
+                    ok=False,
+                    provider_id=provider_key,
+                    claim=claim_key,
+                    connector_app_id=connector_key,
+                    account_id=account_key,
+                    error="connector_app_not_configured",
+                    message=f"Connector app {connector_key} is not configured for provider {provider_key}.",
+                )
+            if connector_app.allowed_claims and claim_key not in set(connector_app.allowed_claims):
+                return ClaimResolution(
+                    ok=False,
+                    provider_id=provider_key,
+                    claim=claim_key,
+                    connector_app_id=connector_key,
+                    account_id=account_key,
+                    error="claim_outside_connector_app",
+                    message=f"Claim {claim_key} is outside connector app {connector_key}.",
+                )
+
+        accounts = await self.store.list_accounts(provider_id=provider_key)
+        if account_key:
+            account = next(
+                (
+                    item for item in accounts
+                    if item.account_id == account_key and (not connector_key or item.connector_app_id == connector_key)
+                ),
+                None,
+            )
+            if account is None:
+                return self._consent_required(
+                    provider_id=provider_key,
+                    claim=claim_key,
+                    connector_app_id=connector_key,
+                    account_id=account_key,
+                    message=f"Connected account {account_key} is not available.",
+                )
+        else:
+            candidates = [
+                item for item in accounts
+                if item.connected and item.allows(claim_key) and (not connector_key or item.connector_app_id == connector_key)
+            ]
+            if not candidates:
+                return self._consent_required(
+                    provider_id=provider_key,
+                    claim=claim_key,
+                    connector_app_id=connector_key,
+                    message=f"Connect {provider.label or provider.provider_id} and approve {claim_key}.",
+                    candidates=tuple(item.account_id for item in accounts),
+                )
+            if len(candidates) > 1:
+                return ClaimResolution(
+                    ok=False,
+                    provider_id=provider_key,
+                    claim=claim_key,
+                    connector_app_id=connector_key,
+                    error="account_required",
+                    message="Several connected accounts can satisfy this claim; choose an account_id.",
+                    candidates=tuple(item.account_id for item in candidates),
+                )
+            account = candidates[0]
+
+        if not account.connected:
+            return self._consent_required(
+                provider_id=provider_key,
+                claim=claim_key,
+                connector_app_id=connector_key,
+                account_id=account.account_id,
+                message="The connected account has no usable credential.",
+            )
+        if not account.allows(claim_key):
+            return self._consent_required(
+                provider_id=provider_key,
+                claim=claim_key,
+                connector_app_id=connector_key,
+                account_id=account.account_id,
+                message=f"The connected account has not approved {claim_key}.",
+            )
+        credential = await self.store.get_credential(account.credential_id)
+        if not credential:
+            return self._consent_required(
+                provider_id=provider_key,
+                claim=claim_key,
+                connector_app_id=connector_key,
+                account_id=account.account_id,
+                message="The connected account credential is missing or expired.",
+            )
+        credential = await self._refresh_credential_if_needed(
+            provider_id=provider_key,
+            claim=claim_key,
+            connector_app_id=account.connector_app_id or connector_key,
+            account_id=account.account_id,
+            credential_id=account.credential_id,
+            credential=credential,
+        )
+        if credential is None:
+            return self._consent_required(
+                provider_id=provider_key,
+                claim=claim_key,
+                connector_app_id=account.connector_app_id or connector_key,
+                account_id=account.account_id,
+                message=(
+                    "The connected account authorization expired and could not "
+                    "be refreshed. Reconnect the account in Connection Hub."
+                ),
+            )
+        handle = CredentialHandle(
+            provider_id=provider_key,
+            account_id=account.account_id,
+            credential_id=account.credential_id,
+            claims=account.claims,
+            credential=credential,
+        )
+        return ClaimResolution(
+            ok=True,
+            provider_id=provider_key,
+            claim=claim_key,
+            connector_app_id=connector_key,
+            account_id=account.account_id,
+            credential=handle,
+        )
+
+    async def _resolve_client_secret(self, *, provider_id: str, connector_app_id: str, connector_app: Any) -> str:
+        if self.client_secret_resolver is None:
+            return ""
+        value = self.client_secret_resolver(
+            provider_id=provider_id,
+            connector_app_id=connector_app_id,
+            connector_app=connector_app,
+        )
+        if hasattr(value, "__await__"):
+            value = await value
+        return as_str(value)
+
+    async def _refresh_credential_if_needed(
+        self,
+        *,
+        provider_id: str,
+        claim: str,
+        connector_app_id: str,
+        account_id: str,
+        credential_id: str,
+        credential: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        provider = self.config.provider(provider_id)
+        if provider is None or not provider.adapter:
+            return credential
+        try:
+            adapter = resolve_adapter(provider.adapter)
+        except Exception:
+            return credential
+        if not adapter.credential_refresh_needed(credential, skew_seconds=self.refresh_skew_seconds):
+            return credential
+        if not adapter.credential_refreshable(credential):
+            return None
+        connector_app = provider.connector_apps.get(connector_app_id)
+        if connector_app is None:
+            return None
+        client_secret = await self._resolve_client_secret(
+            provider_id=provider_id,
+            connector_app_id=connector_app_id,
+            connector_app=connector_app,
+        )
+        if not client_secret:
+            return None
+        try:
+            refreshed = await adapter.refresh_credential(
+                credential,
+                client_id=connector_app.client_id,
+                client_secret=client_secret,
+            )
+        except Exception:
+            return None
+        refreshed.update(
+            {
+                "provider_id": provider_id,
+                "connector_app_id": connector_app_id,
+                "claims": list(as_str_list(credential.get("claims")) or (claim,)),
+                "account_id": account_id,
+            }
+        )
+        await self.store.set_credential(credential_id, refreshed)
+        return refreshed
+
+    async def ensure_tool_claims(
+        self,
+        *,
+        policy: ToolClaimPolicy,
+        account_ids: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        """Resolve all connected-account claims declared by application code."""
+        tool_key = as_str(policy.tool_name)
+        if not tool_key:
+            return {
+                "ok": False,
+                "tool_name": tool_key,
+                "error": "tool_policy_required",
+                "message": "A tool claim policy is required.",
+            }
+        selections = account_ids or {}
+        resolved: list[dict[str, Any]] = []
+        failures: list[dict[str, Any]] = []
+        for index, requirement in enumerate(policy.connected_accounts):
+            selection_key = (
+                requirement.account_id
+                or selections.get(requirement.provider_id)
+                or selections.get(f"{requirement.provider_id}:{requirement.connector_app_id}")
+                or ""
+            )
+            for claim in requirement.claims:
+                result = await self.ensure_claim(
+                    provider_id=requirement.provider_id,
+                    connector_app_id=requirement.connector_app_id,
+                    claim=claim,
+                    account_id=selection_key,
+                )
+                item = {
+                    "requirement_index": index,
+                    **result.to_dict(include_credential=False),
+                }
+                if result.ok:
+                    resolved.append(item)
+                else:
+                    failures.append(item)
+        if failures:
+            return {
+                "ok": False,
+                "tool_name": tool_key,
+                "error": "connection_required",
+                "requirements": [item.to_dict() for item in policy.connected_accounts],
+                "resolved": resolved,
+                "failures": failures,
+            }
+        return {
+            "ok": True,
+            "tool_name": tool_key,
+            "requirements": [item.to_dict() for item in policy.connected_accounts],
+            "resolved": resolved,
+        }
+
+    def _consent_required(
+        self,
+        *,
+        provider_id: str,
+        claim: str,
+        connector_app_id: str = "",
+        account_id: str = "",
+        message: str = "",
+        candidates: tuple[str, ...] = (),
+    ) -> ClaimResolution:
+        return ClaimResolution(
+            ok=False,
+            provider_id=provider_id,
+            claim=claim,
+            connector_app_id=connector_app_id,
+            account_id=account_id,
+            error="consent_required",
+            message=message,
+            candidates=candidates,
+        )
+
+
+def broker_for_user(
+    *,
+    user_id: str,
+    config: DelegatedToKdcubeConfig,
+    bundle_id: str = "",
+    store: DelegatedToKdcubeStore | None = None,
+    client_secret_resolver: Callable[..., Any] | None = None,
+) -> DelegatedToKdcubeBroker:
+    from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube.models import CONNECTION_HUB_BUNDLE_ID
+
+    resolved_store = store or DelegatedToKdcubeStore(
+        user_id=user_id,
+        bundle_id=as_str(bundle_id) or CONNECTION_HUB_BUNDLE_ID,
+    )
+    return DelegatedToKdcubeBroker(
+        config=config,
+        store=resolved_store,
+        client_secret_resolver=client_secret_resolver,
+    )
+
+
+__all__ = ["DelegatedToKdcubeBroker", "broker_for_user"]

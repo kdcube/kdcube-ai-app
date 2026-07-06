@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Elena Viter
 
-"""OAuth helpers for Connection Hub user-connected integrations."""
+"""OAuth helpers for Connection Hub delegated to KDCube."""
 
 from __future__ import annotations
 
@@ -88,7 +88,7 @@ class MemoryOAuthStateStore(OAuthStateStore):
 class RedisOAuthStateStore(OAuthStateStore):
     def __init__(self, redis: Any, *, prefix: str) -> None:
         self.redis = redis
-        self.prefix = str(prefix or "kdcube:connection-hub:user-integrations:oauth-state").strip(":")
+        self.prefix = str(prefix or "kdcube:connection-hub:delegated-to-kdcube:oauth-state").strip(":")
 
     def key(self, state: str) -> str:
         return f"{self.prefix}:{state_digest(state)}"
@@ -118,7 +118,7 @@ async def create_oauth_state(
     user_id: str,
     provider_id: str,
     connector_app_id: str,
-    capabilities: tuple[str, ...],
+    claims: tuple[str, ...],
     return_hint: str = "",
     source: str = "connection_hub_widget",
     ttl_seconds: int = 900,
@@ -129,7 +129,7 @@ async def create_oauth_state(
         "user_id": str(user_id or "").strip(),
         "provider_id": str(provider_id or "").strip(),
         "connector_app_id": str(connector_app_id or "").strip(),
-        "capabilities": [str(item) for item in capabilities],
+        "claims": [str(item) for item in claims],
         "nonce": uuid.uuid4().hex,
         "source": str(source or "").strip() or "connection_hub_widget",
         "return_hint": str(return_hint or "").strip(),

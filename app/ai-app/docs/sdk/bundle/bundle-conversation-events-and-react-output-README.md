@@ -4,7 +4,7 @@ title: "App Conversation Events And ReAct Output"
 summary: "App contract for submitting conversation events into the platform event lane and consuming ReAct output from timeline/turn-log blocks instead of private runtime state."
 status: active
 tags: ["sdk", "app", "bundle-legacy-path", "events", "react", "timeline", "telegram", "webhooks", "integration"]
-updated_at: 2026-06-23
+updated_at: 2026-07-06
 keywords:
   [
     "app conversation events",
@@ -252,6 +252,39 @@ for block in turn_log.get("blocks", []):
 
 The browser chat widget already consumes stream envelopes. Non-browser
 integrations such as Telegram should use a channel-specific reducer.
+
+### Connected-Account Consent Output
+
+When a ReAct tool cannot proceed because the user must connect, reconnect, or
+approve an external account in Connection Hub, the tool/runtime should expose a
+structured payload with:
+
+```json
+{
+  "error": {
+    "code": "needs_connected_account_consent",
+    "message": "Connect or approve the required external account in Connection Hub.",
+    "action_label": "Open Connection Hub",
+    "action_url": "/api/integrations/bundles/.../connection-hub%401-0/widgets/connections_settings?tab=delegated_to_kdcube"
+  },
+  "consent": {
+    "kind": "delegated_to_kdcube.connected_account",
+    "provider_id": "google",
+    "connector_app_id": "gmail",
+    "claims": ["gmail:read"],
+    "url": "/api/integrations/bundles/.../connection-hub%401-0/widgets/connections_settings?tab=delegated_to_kdcube",
+    "action_label": "Open Connection Hub"
+  },
+  "action_label": "Open Connection Hub",
+  "action_url": "/api/integrations/bundles/.../connection-hub%401-0/widgets/connections_settings?tab=delegated_to_kdcube"
+}
+```
+
+Browser chat reduces this to a composer banner. A non-browser delivery adapter
+should reduce the same payload to a channel-native action, for example a message
+with the provider name, required claim, and a link from `action_url` or
+`consent.url`. It should not turn this into a generic assistant failure such as
+"try again later".
 
 ## Existing Reducers And Examples
 

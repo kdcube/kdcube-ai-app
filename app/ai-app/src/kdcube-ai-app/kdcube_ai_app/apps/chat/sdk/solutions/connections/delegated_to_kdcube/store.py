@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Elena Viter
 
-"""Connection Hub-owned user integration storage.
+"""Connection Hub-owned delegated to KDCube storage.
 
 Connected account metadata lives in user properties. Provider credentials live
 in user secrets. Callers should use the broker/client, not these keys directly.
@@ -16,7 +16,7 @@ import uuid
 from typing import Any, Iterable
 
 from kdcube_ai_app.apps.chat.sdk import config as sdk_config
-from kdcube_ai_app.apps.chat.sdk.solutions.connections.user_integrations.models import (
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube.models import (
     CONNECTION_HUB_BUNDLE_ID,
     STATUS_REVOKED,
     ConnectedAccount,
@@ -24,9 +24,9 @@ from kdcube_ai_app.apps.chat.sdk.solutions.connections.user_integrations.models 
     utc_now,
 )
 
-ACCOUNT_INDEX_KEY = "user_integrations.account_index"
-ACCOUNT_KEY_PREFIX = "user_integrations.accounts"
-CREDENTIAL_KEY_PREFIX = "user_integrations.credentials"
+ACCOUNT_INDEX_KEY = "delegated_to_kdcube.account_index"
+ACCOUNT_KEY_PREFIX = "delegated_to_kdcube.accounts"
+CREDENTIAL_KEY_PREFIX = "delegated_to_kdcube.credentials"
 
 
 def safe_segment(raw: str, *, fallback: str = "item") -> str:
@@ -44,11 +44,11 @@ def credential_id_for(account_id: str) -> str:
     return f"cred_{hashlib.sha256(as_str(account_id).encode('utf-8')).hexdigest()[:24]}"
 
 
-class UserIntegrationStore:
+class DelegatedToKdcubeStore:
     def __init__(self, *, user_id: str, bundle_id: str = CONNECTION_HUB_BUNDLE_ID) -> None:
         self.user_id = as_str(user_id)
         if not self.user_id:
-            raise ValueError("user_id is required for user integration storage")
+            raise ValueError("user_id is required for delegated to KDCube storage")
         self.bundle_id = as_str(bundle_id) or CONNECTION_HUB_BUNDLE_ID
 
     # ── user prop helpers ───────────────────────────────────────────────────
@@ -138,7 +138,7 @@ class UserIntegrationStore:
             display_name=account.display_name,
             email=account.email,
             workspace=account.workspace,
-            capabilities=account.capabilities,
+            claims=account.claims,
             credential_id=account.credential_id or credential_id_for(account_id),
             status=account.status,
             connected_at=account.connected_at or now,
@@ -171,7 +171,7 @@ class UserIntegrationStore:
             display_name=existing.display_name,
             email=existing.email,
             workspace=existing.workspace,
-            capabilities=existing.capabilities,
+            claims=existing.claims,
             credential_id=existing.credential_id,
             status=STATUS_REVOKED,
             connected_at=existing.connected_at,
@@ -223,7 +223,7 @@ __all__ = [
     "ACCOUNT_INDEX_KEY",
     "ACCOUNT_KEY_PREFIX",
     "CREDENTIAL_KEY_PREFIX",
-    "UserIntegrationStore",
+    "DelegatedToKdcubeStore",
     "account_id_for",
     "credential_id_for",
     "safe_segment",

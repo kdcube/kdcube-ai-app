@@ -4,7 +4,7 @@ title: "Chat Stream Events"
 summary: "Reference catalog for the client-visible chat stream: shared event envelope and lifecycle across SSE and Socket.IO, plus continuation acknowledgements, rate limits, backpressure, ReAct progress, and app-emitted events."
 tags: ["sdk", "solutions", "chat", "sse", "socketio", "protocol", "events", "streaming"]
 keywords: ["chat stream event catalog", "socketio event catalog", "sse event catalog", "client visible event lifecycle", "continuation acknowledgements", "chat step events", "rate limit events", "backpressure events", "app emitted events", "stream protocol reference"]
-updated_at: 2026-06-23
+updated_at: 2026-07-06
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/ecosystem-component/components-ecosystem-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/how-to-integrate-with-kdcube-apps-README.md
@@ -267,7 +267,60 @@ These are produced by the base workflow. Clients should treat them as `chat_step
 | `chat.followups`                   | `followups`           | Suggested follow‑ups.                  | `data.items[]`                                                                                                                   |
 | `accounting.usage`                 | `accounting`          | Cost breakdown.                        | `data.breakdown`, `data.cost_total_usd`, `event.markdown`                                                                        |
 | `solver.react.decision`            | `react(<n>).decision` | ReAct decision node.                   | `data` is full decision JSON                                                                                                     |
+| `chat.step`                        | `delegated_to_kdcube.preflight` | Connected-account consent preflight. | `data.error.code = "needs_connected_account_consent"`, `data.consent.url` opens Connection Hub.                                  |
 | `chat.step`                        | varies                | Internal steps (persist, graph, etc.). | `event.step` values include `conversation.persist.user_message`, `conversation.persist.assistant_message`, `context.graph`, etc. |
+
+---
+
+**Connected-Account Consent Events**
+
+Some tools require a user-delegated external account, such as Gmail or Slack.
+When the current platform user has not connected the needed account, has not
+approved the needed claim, or the provider rejects the stored credential, the
+runtime surfaces a structured consent envelope instead of leaving the model to
+invent recovery instructions.
+
+Preferred envelope shape inside `env.data`:
+
+```json
+{
+  "ok": false,
+  "schema": "connection_hub.delegated_to_kdcube.tool_claim_preflight.v1",
+  "error": {
+    "code": "needs_connected_account_consent",
+    "message": "Connect or approve the required external account in Connection Hub.",
+    "action_label": "Open Connection Hub",
+    "action_url": "/api/integrations/bundles/demo-tenant/demo-project/connection-hub%401-0/widgets/connections_settings?tab=delegated_to_kdcube&provider_id=google&connector_app_id=gmail&claims=gmail%3Aread"
+  },
+  "consent": {
+    "kind": "delegated_to_kdcube.connected_account",
+    "provider_id": "google",
+    "connector_app_id": "gmail",
+    "claims": ["gmail:read"],
+    "tool_id": "gmail.read_gmail_message",
+    "tool_label": "gmail.read_gmail_message",
+    "url": "/api/integrations/bundles/demo-tenant/demo-project/connection-hub%401-0/widgets/connections_settings?tab=delegated_to_kdcube&provider_id=google&connector_app_id=gmail&claims=gmail%3Aread",
+    "action_label": "Open Connection Hub"
+  },
+  "action_label": "Open Connection Hub",
+  "action_url": "/api/integrations/bundles/demo-tenant/demo-project/connection-hub%401-0/widgets/connections_settings?tab=delegated_to_kdcube&provider_id=google&connector_app_id=gmail&claims=gmail%3Aread"
+}
+```
+
+Client behavior:
+
+- If `data.error.code` or a nested tool result error code is
+  `needs_connected_account_consent`, render a visible user action instead of
+  treating it as a plain tool failure.
+- Use `action_url`, `error.action_url`, or `consent.url` as the action target
+  and open it in a new tab/window. They should point to the same Connection Hub
+  action.
+- After the user completes Connection Hub approval, the next tool run should
+  resolve credentials through Connection Hub again. Do not cache provider tokens
+  in the chat client.
+- The envelope may arrive as a preflight `chat.step` before the tool is called,
+  or as a tool-result payload when the provider rejects an existing credential
+  during the call.
 
 ---
 

@@ -53,8 +53,8 @@ export function ConnectionEdgesPanel({ telegramConnectStatus = 'idle' }: Connect
 
       <p className="muted">
         Record external identities that may represent this platform user, with
-        explicit delegated grants. Connected accounts below are for delegated
-        access to external providers.
+        explicit delegated grants. External provider accounts live under
+        Delegated to KDCube; automation credentials live under Delegated by KDCube.
       </p>
 
       <div className="proof-link">

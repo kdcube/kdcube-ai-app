@@ -1,14 +1,14 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Elena Viter
 
-"""Google/Gmail adapter registration for user-connected integrations."""
+"""Google/Gmail adapter registration for delegated to KDCube."""
 
 from __future__ import annotations
 
 import httpx
 
-from kdcube_ai_app.apps.chat.sdk.solutions.connections.user_integrations.adapters import (
-    UserIntegrationAdapter,
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube.adapters import (
+    DelegatedToKdcubeAdapter,
     adapter,
 )
 
@@ -16,7 +16,7 @@ GOOGLE_USERINFO_URL = "https://openidconnect.googleapis.com/v1/userinfo"
 
 
 @adapter("google.oauth")
-class GoogleOAuthAdapter(UserIntegrationAdapter):
+class GoogleOAuthAdapter(DelegatedToKdcubeAdapter):
     label = "Google"
     kind = "oauth2"
     authorize_url = "https://accounts.google.com/o/oauth2/v2/auth"

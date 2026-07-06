@@ -65,14 +65,103 @@ export function addBanner(
   tone: BannerTone,
   text: string,
   placement: 'top' | 'composer' = 'top',
+  action?: { label?: string; url?: string } | null,
 ): ChatState {
   const trimmed = text.trim()
   if (!trimmed) return state
   if (state.banners.some((banner) => banner.text === trimmed && banner.tone === tone)) {
     return state
   }
-  const banners = [{ id: createLocalId('banner'), tone, text: trimmed, placement }, ...state.banners].slice(0, 4)
+  const actionLabel = typeof action?.label === 'string' ? action.label.trim() : ''
+  const actionUrl = typeof action?.url === 'string' ? action.url.trim() : ''
+  const banners = [{
+    id: createLocalId('banner'),
+    tone,
+    text: trimmed,
+    placement,
+    ...(actionLabel && actionUrl ? { actionLabel, actionUrl } : {}),
+  }, ...state.banners].slice(0, 4)
   return { ...state, banners }
+}
+
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null
+}
+
+function stringValue(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function consentActionUrl(value: unknown): string {
+  const raw = stringValue(value)
+  if (!raw) return ''
+  if (raw.startsWith('/') || raw.startsWith('http://') || raw.startsWith('https://')) return raw
+  return ''
+}
+
+function findConnectedAccountConsentPayload(value: unknown, depth = 0): Record<string, unknown> | null {
+  if (depth > 5 || value == null) return null
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findConnectedAccountConsentPayload(item, depth + 1)
+      if (found) return found
+    }
+    return null
+  }
+  const record = recordValue(value)
+  if (!record) return null
+  const error = recordValue(record.error)
+  const code = stringValue(record.code || record.error_code || error?.code || error?.error)
+  if (code === 'needs_connected_account_consent' || code === 'needs_connected_account') {
+    return record
+  }
+  for (const key of ['consent', 'connected_account', 'result', 'items', 'data']) {
+    const found = findConnectedAccountConsentPayload(record[key], depth + 1)
+    if (found) return found
+  }
+  return null
+}
+
+function connectedAccountConsentBanner(data: Record<string, unknown> | undefined): {
+  text: string
+  actionLabel: string
+  actionUrl: string
+} | null {
+  const payload = findConnectedAccountConsentPayload(data)
+  if (!payload) return null
+  const error = recordValue(payload.error) || {}
+  const consent = recordValue(payload.consent)
+    || recordValue(payload.connected_account)
+    || recordValue(error.consent)
+    || {}
+  const provider = stringValue(consent.provider_label || consent.provider_id)
+  const connector = stringValue(consent.connector_app_label || consent.connector_app_id)
+  const tool = stringValue(consent.tool_label || consent.tool_id)
+  const claims = Array.isArray(consent.claims)
+    ? consent.claims.map((item) => stringValue(item)).filter(Boolean)
+    : []
+  const url = consentActionUrl(
+    consent.url
+    || consent.consent_url
+    || consent.connect_url
+    || consent.action_url
+    || payload.url
+    || payload.consent_url
+    || payload.connect_url
+    || payload.action_url,
+  )
+  const message = stringValue(error.message || payload.message)
+  const subject = [provider, connector].filter(Boolean).join(' / ')
+  const claimText = claims.length ? ` (${claims.join(', ')})` : ''
+  const text = message
+    || `Connect or approve ${subject || 'an external account'}${claimText}${tool ? ` for ${tool}` : ''}.`
+  return {
+    text,
+    actionLabel: stringValue(consent.action_label || payload.action_label) || 'Open Connection Hub',
+    actionUrl: url,
+  }
 }
 
 function canonicalPayloadRef(
@@ -1024,7 +1113,17 @@ export function applyChatStep(state: ChatState, env: ChatStepEnvelope): ChatStat
     ensureTurn(state, env.conversation.turn_id, timestampValue(env.timestamp)),
     env,
   )
-  return updateTurn(syncedState, env.conversation.turn_id, (turn) => {
+  const consentBanner = connectedAccountConsentBanner(env.data)
+  const stateWithBanner = consentBanner
+    ? addBanner(
+        syncedState,
+        'warning',
+        consentBanner.text,
+        'composer',
+        consentBanner.actionUrl ? { label: consentBanner.actionLabel, url: consentBanner.actionUrl } : null,
+      )
+    : syncedState
+  return updateTurn(stateWithBanner, env.conversation.turn_id, (turn) => {
     const timestamp = timestampValue(env.timestamp)
     /* Turn accounting for the status line: cost from the `accounting.usage`
      * event (step "accounting"), wall time from `chat.turn.summary` (step

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Elena Viter
 
-"""User-connected integration data models.
+"""Delegated-to-KDCube data models.
 
 These models are intentionally storage- and transport-neutral. They describe the
 Connection Hub-owned contract for external provider accounts connected by a
@@ -57,37 +57,37 @@ def as_dict(value: Any) -> dict[str, Any]:
 
 
 @dataclass(frozen=True)
-class ProviderCapability:
-    """One KDCube-normalized capability exposed by an external provider account."""
+class ProviderClaim:
+    """One KDCube-normalized claim exposed by an external provider account."""
 
-    capability_id: str
+    claim_id: str
     label: str = ""
     description: str = ""
     provider_scopes: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "capability_id": self.capability_id,
+            "claim_id": self.claim_id,
             "label": self.label,
             "description": self.description,
             "provider_scopes": list(self.provider_scopes),
         }
 
     @classmethod
-    def from_config(cls, capability_id: str, value: Any) -> "ProviderCapability":
+    def from_config(cls, claim_id: str, value: Any) -> "ProviderClaim":
         data = as_dict(value)
         return cls(
-            capability_id=as_str(capability_id),
+            claim_id=as_str(claim_id),
             label=as_str(data.get("label")),
             description=as_str(data.get("description")),
             provider_scopes=as_str_list(data.get("provider_scopes") or data.get("scopes")),
         )
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> "ProviderCapability":
+    def from_dict(cls, value: Mapping[str, Any]) -> "ProviderClaim":
         data = dict(value or {})
         return cls(
-            capability_id=as_str(data.get("capability_id") or data.get("id")),
+            claim_id=as_str(data.get("claim_id") or data.get("id")),
             label=as_str(data.get("label")),
             description=as_str(data.get("description")),
             provider_scopes=as_str_list(data.get("provider_scopes") or data.get("scopes")),
@@ -98,23 +98,23 @@ class ProviderCapability:
 class ConnectorApp:
     """Admin-configured connector application for one provider."""
 
-    app_id: str
+    connector_app_id: str
     provider_id: str
     label: str = ""
     enabled: bool = True
     client_id: str = ""
     client_secret_ref: str = ""
     redirect_uri: str = ""
-    capability_ceiling: tuple[str, ...] = ()
+    allowed_claims: tuple[str, ...] = ()
 
     def to_dict(self, *, include_client_id: bool = False, include_secret_refs: bool = False) -> dict[str, Any]:
         data: dict[str, Any] = {
-            "app_id": self.app_id,
+            "connector_app_id": self.connector_app_id,
             "provider_id": self.provider_id,
             "label": self.label,
             "enabled": self.enabled,
             "redirect_uri": self.redirect_uri,
-            "capability_ceiling": list(self.capability_ceiling),
+            "allowed_claims": list(self.allowed_claims),
         }
         if include_client_id:
             data["client_id"] = self.client_id
@@ -123,31 +123,31 @@ class ConnectorApp:
         return data
 
     @classmethod
-    def from_config(cls, provider_id: str, app_id: str, value: Any) -> "ConnectorApp":
+    def from_config(cls, provider_id: str, connector_app_id: str, value: Any) -> "ConnectorApp":
         data = as_dict(value)
         return cls(
-            app_id=as_str(app_id),
+            connector_app_id=as_str(connector_app_id),
             provider_id=as_str(provider_id),
             label=as_str(data.get("label")),
             enabled=as_bool(data.get("enabled"), default=True),
             client_id=as_str(data.get("client_id")),
             client_secret_ref=as_str(data.get("client_secret_ref")),
             redirect_uri=as_str(data.get("redirect_uri")),
-            capability_ceiling=as_str_list(data.get("capability_ceiling") or data.get("capabilities")),
+            allowed_claims=as_str_list(data.get("allowed_claims") or data.get("claims")),
         )
 
     @classmethod
     def from_dict(cls, value: Mapping[str, Any]) -> "ConnectorApp":
         data = dict(value or {})
         return cls(
-            app_id=as_str(data.get("app_id")),
-            provider_id=as_str(data.get("provider_id") or data.get("provider")),
+            connector_app_id=as_str(data.get("connector_app_id")),
+            provider_id=as_str(data.get("provider_id")),
             label=as_str(data.get("label")),
             enabled=as_bool(data.get("enabled"), default=True),
             client_id=as_str(data.get("client_id")),
             client_secret_ref=as_str(data.get("client_secret_ref")),
             redirect_uri=as_str(data.get("redirect_uri")),
-            capability_ceiling=as_str_list(data.get("capability_ceiling") or data.get("capabilities")),
+            allowed_claims=as_str_list(data.get("allowed_claims") or data.get("claims")),
         )
 
 
@@ -159,7 +159,7 @@ class IntegrationProvider:
     label: str = ""
     adapter: str = ""
     enabled: bool = True
-    capabilities: dict[str, ProviderCapability] = field(default_factory=dict)
+    claims: dict[str, ProviderClaim] = field(default_factory=dict)
     connector_apps: dict[str, ConnectorApp] = field(default_factory=dict)
 
     def to_dict(self, *, include_client_ids: bool = False, include_secret_refs: bool = False) -> dict[str, Any]:
@@ -168,8 +168,8 @@ class IntegrationProvider:
             "label": self.label,
             "adapter": self.adapter,
             "enabled": self.enabled,
-            "capabilities": {
-                key: value.to_dict() for key, value in sorted(self.capabilities.items())
+            "claims": {
+                key: value.to_dict() for key, value in sorted(self.claims.items())
             },
             "connector_apps": {
                 key: value.to_dict(include_client_id=include_client_ids, include_secret_refs=include_secret_refs)
@@ -180,14 +180,14 @@ class IntegrationProvider:
     @classmethod
     def from_config(cls, provider_id: str, value: Any) -> "IntegrationProvider":
         data = as_dict(value)
-        capabilities = {
-            as_str(key): ProviderCapability.from_config(as_str(key), raw)
-            for key, raw in as_dict(data.get("capabilities")).items()
+        claims = {
+            as_str(key): ProviderClaim.from_config(as_str(key), raw)
+            for key, raw in as_dict(data.get("claims")).items()
             if as_str(key)
         }
         apps = {
             as_str(key): ConnectorApp.from_config(provider_id, as_str(key), raw)
-            for key, raw in as_dict(data.get("connector_apps") or data.get("apps")).items()
+            for key, raw in as_dict(data.get("connector_apps")).items()
             if as_str(key)
         }
         return cls(
@@ -195,14 +195,92 @@ class IntegrationProvider:
             label=as_str(data.get("label")),
             adapter=as_str(data.get("adapter") or data.get("adapter_id")),
             enabled=as_bool(data.get("enabled"), default=True),
-            capabilities=capabilities,
+            claims=claims,
             connector_apps=apps,
         )
 
 
 @dataclass(frozen=True)
-class UserIntegrationsConfig:
-    """Parsed Connection Hub user-integrations config."""
+class ToolClaimRequirement:
+    """Provider claims one KDCube tool needs from a connected account."""
+
+    provider_id: str
+    connector_app_id: str = ""
+    claims: tuple[str, ...] = ()
+    account_id: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        data: dict[str, Any] = {
+            "provider_id": self.provider_id,
+            "claims": list(self.claims),
+        }
+        if self.connector_app_id:
+            data["connector_app_id"] = self.connector_app_id
+        if self.account_id:
+            data["account_id"] = self.account_id
+        return data
+
+    @classmethod
+    def from_config(cls, value: Any) -> "ToolClaimRequirement":
+        data = as_dict(value)
+        return cls(
+            provider_id=as_str(data.get("provider_id")),
+            connector_app_id=as_str(data.get("connector_app_id")),
+            claims=as_str_list(data.get("claims")),
+            account_id=as_str(data.get("account_id")),
+        )
+
+
+@dataclass(frozen=True)
+class ToolClaimPolicy:
+    """Configured connected-account claim requirements for one KDCube tool."""
+
+    tool_name: str
+    label: str = ""
+    description: str = ""
+    connected_accounts: tuple[ToolClaimRequirement, ...] = ()
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "tool_name": self.tool_name,
+            "label": self.label,
+            "description": self.description,
+            "connected_accounts": [item.to_dict() for item in self.connected_accounts],
+        }
+
+    @classmethod
+    def from_config(cls, tool_name: str, value: Any) -> "ToolClaimPolicy":
+        data = as_dict(value)
+        raw_requirements = data.get("connected_accounts") or []
+        if not isinstance(raw_requirements, (list, tuple)):
+            raw_requirements = []
+        requirements = tuple(
+            item
+            for item in (
+                ToolClaimRequirement.from_config(raw)
+                for raw in raw_requirements
+            )
+            if item.provider_id and item.claims
+        )
+        return cls(
+            tool_name=as_str(tool_name),
+            label=as_str(data.get("label")),
+            description=as_str(data.get("description")),
+            connected_accounts=requirements,
+        )
+
+    @classmethod
+    def from_tool_config(cls, tool_name: str, value: Any) -> "ToolClaimPolicy":
+        """Parse a whole application tool config or its delegated-to-KDCube block."""
+        data = as_dict(value)
+        connections = as_dict(data.get("connections"))
+        delegated = as_dict(connections.get("delegated_to_kdcube"))
+        return cls.from_config(tool_name, delegated or data)
+
+
+@dataclass(frozen=True)
+class DelegatedToKdcubeConfig:
+    """Parsed Connection Hub delegated-to-kdcube config."""
 
     enabled: bool = False
     providers: dict[str, IntegrationProvider] = field(default_factory=dict)
@@ -220,7 +298,7 @@ class UserIntegrationsConfig:
         }
 
     @classmethod
-    def from_config(cls, value: Any) -> "UserIntegrationsConfig":
+    def from_config(cls, value: Any) -> "DelegatedToKdcubeConfig":
         data = as_dict(value)
         providers = {
             as_str(key): IntegrationProvider.from_config(as_str(key), raw)
@@ -241,7 +319,7 @@ class ConnectedAccount:
     display_name: str = ""
     email: str = ""
     workspace: str = ""
-    capabilities: tuple[str, ...] = ()
+    claims: tuple[str, ...] = ()
     credential_id: str = ""
     status: str = STATUS_CONNECTED
     connected_at: str = ""
@@ -252,8 +330,8 @@ class ConnectedAccount:
     def connected(self) -> bool:
         return self.status == STATUS_CONNECTED and bool(self.credential_id)
 
-    def allows(self, capability: str) -> bool:
-        return as_str(capability) in set(self.capabilities)
+    def allows(self, claim: str) -> bool:
+        return as_str(claim) in set(self.claims)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -264,7 +342,7 @@ class ConnectedAccount:
             "display_name": self.display_name,
             "email": self.email,
             "workspace": self.workspace,
-            "capabilities": list(self.capabilities),
+            "claims": list(self.claims),
             "credential_id": self.credential_id,
             "status": self.status,
             "connected_at": self.connected_at,
@@ -283,12 +361,12 @@ class ConnectedAccount:
         return cls(
             account_id=as_str(data.get("account_id")),
             provider_id=as_str(data.get("provider_id") or data.get("provider")),
-            connector_app_id=as_str(data.get("connector_app_id") or data.get("app_id")),
-            external_subject=as_str(data.get("external_subject") or data.get("external_user_id")),
+            connector_app_id=as_str(data.get("connector_app_id")),
+            external_subject=as_str(data.get("external_subject")),
             display_name=as_str(data.get("display_name")),
             email=as_str(data.get("email")),
             workspace=as_str(data.get("workspace")),
-            capabilities=as_str_list(data.get("capabilities") or data.get("scope")),
+            claims=as_str_list(data.get("claims")),
             credential_id=as_str(data.get("credential_id")),
             status=as_str(data.get("status")) or STATUS_CONNECTED,
             connected_at=as_str(data.get("connected_at")),
@@ -304,7 +382,7 @@ class CredentialHandle:
     provider_id: str
     account_id: str
     credential_id: str
-    capabilities: tuple[str, ...]
+    claims: tuple[str, ...]
     credential: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self, *, include_credential: bool = False) -> dict[str, Any]:
@@ -312,7 +390,7 @@ class CredentialHandle:
             "provider_id": self.provider_id,
             "account_id": self.account_id,
             "credential_id": self.credential_id,
-            "capabilities": list(self.capabilities),
+            "claims": list(self.claims),
             "has_credential": bool(self.credential),
         }
         if include_credential:
@@ -321,12 +399,13 @@ class CredentialHandle:
 
 
 @dataclass(frozen=True)
-class CapabilityResolution:
-    """Result of broker.ensure_capability."""
+class ClaimResolution:
+    """Result of broker.ensure_claim."""
 
     ok: bool
     provider_id: str
-    capability: str
+    claim: str
+    connector_app_id: str = ""
     account_id: str = ""
     credential: CredentialHandle | None = None
     error: str = ""
@@ -342,7 +421,8 @@ class CapabilityResolution:
         data: dict[str, Any] = {
             "ok": self.ok,
             "provider_id": self.provider_id,
-            "capability": self.capability,
+            "claim": self.claim,
+            "connector_app_id": self.connector_app_id,
             "account_id": self.account_id,
         }
         if self.credential is not None:
@@ -362,13 +442,15 @@ __all__ = [
     "CONNECTION_HUB_BUNDLE_ID",
     "STATUS_CONNECTED",
     "STATUS_REVOKED",
-    "ProviderCapability",
+    "ProviderClaim",
     "ConnectorApp",
     "IntegrationProvider",
-    "UserIntegrationsConfig",
+    "ToolClaimRequirement",
+    "ToolClaimPolicy",
+    "DelegatedToKdcubeConfig",
     "ConnectedAccount",
     "CredentialHandle",
-    "CapabilityResolution",
+    "ClaimResolution",
     "as_bool",
     "as_dict",
     "as_str",

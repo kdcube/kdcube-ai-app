@@ -1,14 +1,14 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Elena Viter
 
-"""Slack user-token adapter registration for user-connected integrations."""
+"""Slack user-token adapter registration for delegated to KDCube."""
 
 from __future__ import annotations
 
 import httpx
 
-from kdcube_ai_app.apps.chat.sdk.solutions.connections.user_integrations.adapters import (
-    UserIntegrationAdapter,
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube.adapters import (
+    DelegatedToKdcubeAdapter,
     adapter,
 )
 
@@ -16,7 +16,7 @@ SLACK_AUTH_TEST_URL = "https://slack.com/api/auth.test"
 
 
 @adapter("slack.oauth_user_token")
-class SlackUserTokenAdapter(UserIntegrationAdapter):
+class SlackUserTokenAdapter(DelegatedToKdcubeAdapter):
     label = "Slack"
     kind = "oauth2"
     authorize_url = "https://slack.com/oauth/v2/authorize"

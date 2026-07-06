@@ -1,23 +1,23 @@
 import { createAsyncThunk, createSlice, type PayloadAction } from '@reduxjs/toolkit';
 import { getOp, postOp } from '../../api/client';
 import type {
-  UserIntegrationAccount,
-  UserIntegrationProvider,
-  UserIntegrationsCatalogResult,
-  UserIntegrationsMutationResult,
-  UserIntegrationsOAuthStartResult,
+  DelegatedToKdcubeAccount,
+  DelegatedToKdcubeProvider,
+  DelegatedToKdcubeCatalogResult,
+  DelegatedToKdcubeMutationResult,
+  DelegatedToKdcubeOAuthStartResult,
 } from '../../api/types';
 
-export interface UserIntegrationsState {
+export interface DelegatedToKdcubeState {
   enabled: boolean;
-  providers: Record<string, UserIntegrationProvider>;
-  accounts: UserIntegrationAccount[];
+  providers: Record<string, DelegatedToKdcubeProvider>;
+  accounts: DelegatedToKdcubeAccount[];
   loading: boolean;
   busy: boolean;
   error: string;
 }
 
-const initialState: UserIntegrationsState = {
+const initialState: DelegatedToKdcubeState = {
   enabled: false,
   providers: {},
   accounts: [],
@@ -34,12 +34,12 @@ function resultError(result: { error?: string; message?: string } | null | undef
   return result?.message || result?.error || fallback;
 }
 
-export const loadUserIntegrations = createAsyncThunk<UserIntegrationsCatalogResult, void, { rejectValue: string }>(
-  'userIntegrations/load',
+export const loadDelegatedToKdcube = createAsyncThunk<DelegatedToKdcubeCatalogResult, void, { rejectValue: string }>(
+  'delegatedToKdcube/load',
   async (_arg, { rejectWithValue }) => {
     try {
-      const res = await getOp<UserIntegrationsCatalogResult>('user_integrations_catalog');
-      if (res?.ok === false) return rejectWithValue(resultError(res, 'Failed to load user integrations'));
+      const res = await getOp<DelegatedToKdcubeCatalogResult>('delegated_to_kdcube_catalog');
+      if (res?.ok === false) return rejectWithValue(resultError(res, 'Failed to load delegated to KDCube'));
       return res || {};
     } catch (e) {
       return rejectWithValue(message(e));
@@ -48,33 +48,33 @@ export const loadUserIntegrations = createAsyncThunk<UserIntegrationsCatalogResu
 );
 
 export interface ConnectCredentialArgs {
-  provider: string;
-  appId?: string;
+  providerId: string;
+  connectorAppId: string;
   externalSubject?: string;
   email?: string;
   displayName?: string;
   workspace?: string;
-  capabilities: string[];
+  claims: string[];
   secretKind: 'app_password' | 'access_token' | 'api_key' | 'secret';
   secretValue: string;
 }
 
-export const connectUserIntegrationCredential = createAsyncThunk<
-  UserIntegrationsMutationResult,
+export const connectDelegatedToKdcubeCredential = createAsyncThunk<
+  DelegatedToKdcubeMutationResult,
   ConnectCredentialArgs,
   { rejectValue: string }
 >(
-  'userIntegrations/connectCredential',
+  'delegatedToKdcube/connectCredential',
   async (args, { rejectWithValue }) => {
     try {
-      const res = await postOp<UserIntegrationsMutationResult>('user_integrations_connect_credential', {
-        provider: args.provider,
-        app_id: args.appId || undefined,
+      const res = await postOp<DelegatedToKdcubeMutationResult>('delegated_to_kdcube_connect_credential', {
+        provider_id: args.providerId,
+        connector_app_id: args.connectorAppId,
         external_subject: args.externalSubject || undefined,
         email: args.email || undefined,
         display_name: args.displayName || undefined,
         workspace: args.workspace || undefined,
-        capabilities: args.capabilities,
+        claims: args.claims,
         [args.secretKind]: args.secretValue,
       });
       if (res?.ok === false) return rejectWithValue(resultError(res, 'Failed to connect integration'));
@@ -86,24 +86,24 @@ export const connectUserIntegrationCredential = createAsyncThunk<
 );
 
 export interface StartOAuthArgs {
-  provider: string;
-  appId?: string;
-  capabilities: string[];
+  providerId: string;
+  connectorAppId: string;
+  claims: string[];
   returnHint?: string;
 }
 
-export const startUserIntegrationOAuth = createAsyncThunk<
-  UserIntegrationsOAuthStartResult,
+export const startDelegatedToKdcubeOAuth = createAsyncThunk<
+  DelegatedToKdcubeOAuthStartResult,
   StartOAuthArgs,
   { rejectValue: string }
 >(
-  'userIntegrations/startOAuth',
+  'delegatedToKdcube/startOAuth',
   async (args, { rejectWithValue }) => {
     try {
-      const res = await postOp<UserIntegrationsOAuthStartResult>('user_integrations_start_oauth', {
-        provider: args.provider,
-        app_id: args.appId || undefined,
-        capabilities: args.capabilities,
+      const res = await postOp<DelegatedToKdcubeOAuthStartResult>('delegated_to_kdcube_start_oauth', {
+        provider_id: args.providerId,
+        connector_app_id: args.connectorAppId,
+        claims: args.claims,
         return_hint: args.returnHint || window.location.href,
       });
       if (res?.ok === false) return rejectWithValue(resultError(res, 'Failed to start OAuth connection'));
@@ -114,15 +114,15 @@ export const startUserIntegrationOAuth = createAsyncThunk<
   },
 );
 
-export const disconnectUserIntegration = createAsyncThunk<
-  UserIntegrationsMutationResult,
+export const disconnectDelegatedToKdcube = createAsyncThunk<
+  DelegatedToKdcubeMutationResult,
   { accountId: string },
   { rejectValue: string }
 >(
-  'userIntegrations/disconnect',
+  'delegatedToKdcube/disconnect',
   async ({ accountId }, { rejectWithValue }) => {
     try {
-      const res = await postOp<UserIntegrationsMutationResult>('user_integrations_disconnect', {
+      const res = await postOp<DelegatedToKdcubeMutationResult>('delegated_to_kdcube_disconnect', {
         account_id: accountId,
       });
       if (res?.ok === false) return rejectWithValue(resultError(res, 'Failed to disconnect integration'));
@@ -133,69 +133,69 @@ export const disconnectUserIntegration = createAsyncThunk<
   },
 );
 
-const userIntegrationsSlice = createSlice({
-  name: 'userIntegrations',
+const delegatedToKdcubeSlice = createSlice({
+  name: 'delegatedToKdcube',
   initialState,
   reducers: {
-    clearUserIntegrationsError(state) {
+    clearDelegatedToKdcubeError(state) {
       state.error = '';
     },
   },
   extraReducers: (builder) => {
     builder
-      .addCase(loadUserIntegrations.fulfilled, (state, action: PayloadAction<UserIntegrationsCatalogResult>) => {
+      .addCase(loadDelegatedToKdcube.fulfilled, (state, action: PayloadAction<DelegatedToKdcubeCatalogResult>) => {
         state.loading = false;
         state.enabled = Boolean(action.payload.enabled);
         state.providers = action.payload.providers || {};
         state.accounts = action.payload.accounts || [];
       })
-      .addCase(loadUserIntegrations.rejected, (state, action) => {
+      .addCase(loadDelegatedToKdcube.rejected, (state, action) => {
         state.loading = false;
-        state.error = action.payload ?? 'Failed to load user integrations';
+        state.error = action.payload ?? 'Failed to load delegated to KDCube';
       });
 
     builder
-      .addCase(connectUserIntegrationCredential.pending, (state) => {
+      .addCase(connectDelegatedToKdcubeCredential.pending, (state) => {
         state.busy = true;
         state.error = '';
       })
-      .addCase(connectUserIntegrationCredential.fulfilled, (state, action) => {
+      .addCase(connectDelegatedToKdcubeCredential.fulfilled, (state, action) => {
         state.busy = false;
         if (action.payload.account) {
           const next = action.payload.account;
           state.accounts = [next, ...state.accounts.filter((account) => account.account_id !== next.account_id)];
         }
       })
-      .addCase(connectUserIntegrationCredential.rejected, (state, action) => {
+      .addCase(connectDelegatedToKdcubeCredential.rejected, (state, action) => {
         state.busy = false;
         state.error = action.payload ?? 'Failed to connect integration';
       })
-      .addCase(startUserIntegrationOAuth.pending, (state) => {
+      .addCase(startDelegatedToKdcubeOAuth.pending, (state) => {
         state.busy = true;
         state.error = '';
       })
-      .addCase(startUserIntegrationOAuth.fulfilled, (state) => {
+      .addCase(startDelegatedToKdcubeOAuth.fulfilled, (state) => {
         state.busy = false;
       })
-      .addCase(startUserIntegrationOAuth.rejected, (state, action) => {
+      .addCase(startDelegatedToKdcubeOAuth.rejected, (state, action) => {
         state.busy = false;
         state.error = action.payload ?? 'Failed to start OAuth connection';
       })
-      .addCase(disconnectUserIntegration.pending, (state) => {
+      .addCase(disconnectDelegatedToKdcube.pending, (state) => {
         state.busy = true;
         state.error = '';
       })
-      .addCase(disconnectUserIntegration.fulfilled, (state, action) => {
+      .addCase(disconnectDelegatedToKdcube.fulfilled, (state, action) => {
         state.busy = false;
         const accountId = action.payload.account_id || action.meta.arg.accountId;
         state.accounts = state.accounts.filter((account) => account.account_id !== accountId);
       })
-      .addCase(disconnectUserIntegration.rejected, (state, action) => {
+      .addCase(disconnectDelegatedToKdcube.rejected, (state, action) => {
         state.busy = false;
         state.error = action.payload ?? 'Failed to disconnect integration';
       });
   },
 });
 
-export const { clearUserIntegrationsError } = userIntegrationsSlice.actions;
-export default userIntegrationsSlice.reducer;
+export const { clearDelegatedToKdcubeError } = delegatedToKdcubeSlice.actions;
+export default delegatedToKdcubeSlice.reducer;

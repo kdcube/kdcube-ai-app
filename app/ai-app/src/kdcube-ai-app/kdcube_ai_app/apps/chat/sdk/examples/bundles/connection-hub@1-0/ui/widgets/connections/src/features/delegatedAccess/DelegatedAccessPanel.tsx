@@ -78,14 +78,14 @@ export function DelegatedAccessPanel() {
     <section className="card">
       <div className="card-head">
         <div>
-          <h2>Delegated access</h2>
+          <h2>Delegated by KDCube</h2>
           {platformUserId ? <p className="muted">Platform user: <code>{platformUserId}</code></p> : null}
         </div>
       </div>
 
       <p className="muted">
-        Create bounded bearer credentials for automations that need to represent
-        this KDCube user. Each credential receives only the selected resource grants.
+        Create bounded bearer credentials that KDCube delegates to external
+        automations so they can represent this user on selected KDCube resources.
       </p>
 
       {resources.length ? (

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Elena Viter
 
-"""Connection Hub operations for user-connected integrations.
+"""Connection Hub operations for delegated to KDCube.
 
 This module contains the application-independent operation layer. Bundle
 entrypoints should expose thin routes over these methods instead of reading
@@ -11,28 +11,29 @@ Connection Hub user props/secrets directly.
 from __future__ import annotations
 
 import inspect
+import time
 from typing import Any, Callable, Mapping
 from urllib.parse import urlencode
 
-from kdcube_ai_app.apps.chat.sdk.solutions.connections.user_integrations.adapters import resolve_adapter
-from kdcube_ai_app.apps.chat.sdk.solutions.connections.user_integrations.broker import UserIntegrationBroker
-from kdcube_ai_app.apps.chat.sdk.solutions.connections.user_integrations.models import (
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube.adapters import resolve_adapter
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube.broker import DelegatedToKdcubeBroker
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube.models import (
     CONNECTION_HUB_BUNDLE_ID,
     ConnectedAccount,
     IntegrationProvider,
-    UserIntegrationsConfig,
+    DelegatedToKdcubeConfig,
     as_dict,
     as_str,
     as_str_list,
 )
-from kdcube_ai_app.apps.chat.sdk.solutions.connections.user_integrations.oauth import (
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube.oauth import (
     OAuthStateStore,
     consume_oauth_state,
     create_oauth_state,
     state_digest,
 )
-from kdcube_ai_app.apps.chat.sdk.solutions.connections.user_integrations.store import (
-    UserIntegrationStore,
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube.store import (
+    DelegatedToKdcubeStore,
     credential_id_for,
 )
 
@@ -49,21 +50,21 @@ SECRET_INPUT_KEYS = {
 }
 
 
-def _clean_capabilities(provider: IntegrationProvider, connector_app_id: str, raw: Any) -> tuple[str, ...]:
+def _clean_claims(provider: IntegrationProvider, connector_app_id: str, raw: Any) -> tuple[str, ...]:
     requested = set(as_str_list(raw))
     if not requested:
         app = provider.connector_apps.get(as_str(connector_app_id))
-        requested = set(app.capability_ceiling) if app and app.capability_ceiling else set(provider.capabilities)
-    known = set(provider.capabilities)
+        requested = set(app.allowed_claims) if app and app.allowed_claims else set(provider.claims)
+    known = set(provider.claims)
     selected = tuple(sorted(item for item in requested if item in known))
     unknown = sorted(item for item in requested if item not in known)
     if unknown:
-        raise ValueError(f"unknown provider capability: {', '.join(unknown)}")
+        raise ValueError(f"unknown provider claim: {', '.join(unknown)}")
     app = provider.connector_apps.get(as_str(connector_app_id))
-    if app and app.capability_ceiling:
-        outside = sorted(item for item in selected if item not in set(app.capability_ceiling))
+    if app and app.allowed_claims:
+        outside = sorted(item for item in selected if item not in set(app.allowed_claims))
         if outside:
-            raise ValueError(f"capability is outside connector app ceiling: {', '.join(outside)}")
+            raise ValueError(f"claim is outside connector app ceiling: {', '.join(outside)}")
     return selected
 
 
@@ -94,10 +95,10 @@ async def _resolve_client_secret(
     return as_str(value)
 
 
-class UserIntegrationsOperations:
+class DelegatedToKdcubeOperations:
     """Operation facade used by Connection Hub routes and tests."""
 
-    def __init__(self, *, config: UserIntegrationsConfig, store: UserIntegrationStore) -> None:
+    def __init__(self, *, config: DelegatedToKdcubeConfig, store: DelegatedToKdcubeStore) -> None:
         self.config = config
         self.store = store
 
@@ -107,35 +108,137 @@ class UserIntegrationsOperations:
             "ok": True,
             "enabled": self.config.enabled,
             "providers": self.config.to_dict(include_client_ids=True)["providers"],
-            "accounts": [account.public_dict() for account in accounts],
+            "accounts": [await self._public_account(account) for account in accounts],
+        }
+
+    async def _public_account(self, account: ConnectedAccount) -> dict[str, Any]:
+        data = account.public_dict()
+        credential = await self.store.get_credential(account.credential_id)
+        health = self._credential_health(account, credential)
+        data.update(health)
+        return data
+
+    def _credential_health(self, account: ConnectedAccount, credential: dict[str, Any]) -> dict[str, Any]:
+        if not credential:
+            return {
+                "credential_status": "missing",
+                "credential_kind": "missing",
+                "credential_refreshable": False,
+                "credential_expires_at": 0,
+                "reconnect_required": True,
+                "credential_message": "Credential is missing. Reconnect this account.",
+            }
+        provider = self.config.provider(account.provider_id)
+        adapter = None
+        if provider and provider.adapter:
+            try:
+                adapter = resolve_adapter(provider.adapter)
+            except Exception:
+                adapter = None
+        oauth = bool(credential.get("oauth") or credential.get("access_token"))
+        expires_at = 0
+        refreshable = False
+        if adapter is not None:
+            expires_at = adapter.credential_expires_at(credential)
+            refreshable = adapter.credential_refreshable(credential)
+        else:
+            try:
+                expires_at = int(credential.get("expires_at") or 0)
+            except Exception:
+                expires_at = 0
+            refreshable = bool(str(credential.get("refresh_token") or "").strip())
+        if not oauth:
+            return {
+                "credential_status": "active",
+                "credential_kind": "static_secret",
+                "credential_refreshable": False,
+                "credential_expires_at": 0,
+                "reconnect_required": False,
+                "credential_message": "Credential is stored.",
+            }
+        if not expires_at:
+            if refreshable:
+                return {
+                    "credential_status": "refreshable",
+                    "credential_kind": "oauth",
+                    "credential_refreshable": True,
+                    "credential_expires_at": 0,
+                    "reconnect_required": False,
+                    "credential_message": "OAuth credential has a refresh token; KDCube will refresh it on next use.",
+                }
+            return {
+                "credential_status": "active",
+                "credential_kind": "oauth",
+                "credential_refreshable": refreshable,
+                "credential_expires_at": 0,
+                "reconnect_required": False,
+                "credential_message": "OAuth credential is stored.",
+            }
+        now = int(time.time())
+        if expires_at <= now and not refreshable:
+            return {
+                "credential_status": "reconnect_required",
+                "credential_kind": "oauth",
+                "credential_refreshable": False,
+                "credential_expires_at": expires_at,
+                "reconnect_required": True,
+                "credential_message": "OAuth access expired and no refresh token is stored. Reconnect this account.",
+            }
+        if expires_at <= now:
+            return {
+                "credential_status": "refreshable",
+                "credential_kind": "oauth",
+                "credential_refreshable": True,
+                "credential_expires_at": expires_at,
+                "reconnect_required": False,
+                "credential_message": "OAuth access expired; KDCube will refresh it on next use.",
+            }
+        if expires_at <= now + 300:
+            return {
+                "credential_status": "expires_soon",
+                "credential_kind": "oauth",
+                "credential_refreshable": refreshable,
+                "credential_expires_at": expires_at,
+                "reconnect_required": False,
+                "credential_message": "OAuth access expires soon.",
+            }
+        return {
+            "credential_status": "active",
+            "credential_kind": "oauth",
+            "credential_refreshable": refreshable,
+            "credential_expires_at": expires_at,
+            "reconnect_required": False,
+            "credential_message": "OAuth credential is active.",
         }
 
     async def connect_credential(self, payload: Mapping[str, Any]) -> dict[str, Any]:
-        provider_id = as_str(payload.get("provider_id") or payload.get("provider"))
-        connector_app_id = as_str(payload.get("connector_app_id") or payload.get("app_id"))
+        provider_id = as_str(payload.get("provider_id"))
+        connector_app_id = as_str(payload.get("connector_app_id"))
         provider = self.config.provider(provider_id)
         if not self.config.enabled:
-            raise ValueError("user integrations are not enabled")
+            raise ValueError("delegated-to-KDCube connections are not enabled")
         if provider is None or not provider.enabled:
             raise ValueError(f"provider is not enabled: {provider_id or '<missing>'}")
-        if connector_app_id and connector_app_id not in provider.connector_apps:
+        if not connector_app_id:
+            raise ValueError("connector app is required")
+        if connector_app_id not in provider.connector_apps:
             raise ValueError(f"connector app is not configured: {connector_app_id}")
         credential = _credential_from_payload(payload)
         if not credential:
             raise ValueError("credential is required")
-        capabilities = _clean_capabilities(provider, connector_app_id, payload.get("capabilities"))
-        if not capabilities:
-            raise ValueError("at least one provider capability is required")
+        claims = _clean_claims(provider, connector_app_id, payload.get("claims"))
+        if not claims:
+            raise ValueError("at least one provider claim is required")
 
         account = ConnectedAccount(
             account_id=as_str(payload.get("account_id")),
             provider_id=provider_id,
             connector_app_id=connector_app_id,
-            external_subject=as_str(payload.get("external_subject") or payload.get("external_user_id")),
+            external_subject=as_str(payload.get("external_subject")),
             display_name=as_str(payload.get("display_name") or payload.get("label")),
             email=as_str(payload.get("email")),
             workspace=as_str(payload.get("workspace") or payload.get("team") or payload.get("tenant")),
-            capabilities=capabilities,
+            claims=claims,
             credential_id=as_str(payload.get("credential_id")),
             metadata=as_dict(payload.get("metadata")),
         )
@@ -144,7 +247,7 @@ class UserIntegrationsOperations:
         credential_with_metadata = {
             "provider_id": provider_id,
             "connector_app_id": connector_app_id,
-            "capabilities": list(capabilities),
+            "claims": list(claims),
             **credential,
         }
         await self.store.set_credential(credential_id, credential_with_metadata)
@@ -158,7 +261,7 @@ class UserIntegrationsOperations:
                     display_name=stored.display_name,
                     email=stored.email,
                     workspace=stored.workspace,
-                    capabilities=stored.capabilities,
+                    claims=stored.claims,
                     credential_id=credential_id,
                     status=stored.status,
                     connected_at=stored.connected_at,
@@ -178,11 +281,11 @@ class UserIntegrationsOperations:
         ttl_seconds: int = 900,
         source: str = "connection_hub_widget",
     ) -> dict[str, Any]:
-        provider_id = as_str(payload.get("provider_id") or payload.get("provider"))
-        connector_app_id = as_str(payload.get("connector_app_id") or payload.get("app_id"))
+        provider_id = as_str(payload.get("provider_id"))
+        connector_app_id = as_str(payload.get("connector_app_id"))
         provider = self.config.provider(provider_id)
         if not self.config.enabled:
-            raise ValueError("user integrations are not enabled")
+            raise ValueError("delegated-to-KDCube connections are not enabled")
         if provider is None or not provider.enabled:
             raise ValueError(f"provider is not enabled: {provider_id or '<missing>'}")
         if not connector_app_id:
@@ -195,20 +298,20 @@ class UserIntegrationsOperations:
         adapter = resolve_adapter(provider.adapter)
         if not adapter.oauth_enabled:
             raise ValueError(f"provider adapter does not support OAuth: {provider.adapter}")
-        capabilities = _clean_capabilities(provider, connector_app_id, payload.get("capabilities"))
-        if not capabilities:
-            raise ValueError("at least one provider capability is required")
+        claims = _clean_claims(provider, connector_app_id, payload.get("claims"))
+        if not claims:
+            raise ValueError("at least one provider claim is required")
         redirect_uri = connector_app.redirect_uri or as_str(callback_url)
         if not redirect_uri:
             raise ValueError("OAuth callback URL is not available")
-        scopes = adapter.provider_scopes_for_capabilities(list(capabilities), provider.capabilities)
+        scopes = adapter.provider_scopes_for_claims(list(claims), provider.claims)
         state = await create_oauth_state(
             state_store,
             secret=state_secret,
             user_id=user_id,
             provider_id=provider_id,
             connector_app_id=connector_app_id,
-            capabilities=capabilities,
+            claims=claims,
             return_hint=as_str(payload.get("return_hint") or payload.get("return_to")),
             source=source,
             ttl_seconds=ttl_seconds,
@@ -228,11 +331,10 @@ class UserIntegrationsOperations:
             "ok": True,
             "provider_id": provider_id,
             "connector_app_id": connector_app_id,
-            "app_id": connector_app_id,
             "authorize_url": _build_url(adapter.authorize_url, params),
             "state_id": state["state_id"],
             "redirect_uri": redirect_uri,
-            "capabilities": list(capabilities),
+            "claims": list(claims),
             "provider_scopes": scopes,
         }
 
@@ -278,20 +380,20 @@ class UserIntegrationsOperations:
         profile = await adapter.fetch_profile(access_token=access_token, token=token)
         if not profile:
             profile = await adapter.normalize_profile(token)
-        capabilities = tuple(as_str_list(payload.get("capabilities")))
+        claims = tuple(as_str_list(payload.get("claims")))
         credential = {
             "oauth": True,
             **token,
         }
         connected = await self.connect_credential(
             {
-                "provider": provider_id,
-                "app_id": connector_app_id,
+                "provider_id": provider_id,
+                "connector_app_id": connector_app_id,
                 "external_subject": profile.get("external_subject") or profile.get("sub") or profile.get("id"),
                 "email": profile.get("email"),
                 "display_name": profile.get("display_name") or profile.get("name"),
                 "workspace": profile.get("workspace"),
-                "capabilities": capabilities,
+                "claims": claims,
                 "credential": credential,
                 "metadata": {
                     "oauth_source": payload.get("source"),
@@ -304,7 +406,6 @@ class UserIntegrationsOperations:
             "ok": True,
             "provider_id": provider_id,
             "connector_app_id": connector_app_id,
-            "app_id": connector_app_id,
             "user_id": user_id,
             "account": connected.get("account"),
             "return_hint": as_str(payload.get("return_hint")),
@@ -314,11 +415,19 @@ class UserIntegrationsOperations:
         removed = await self.store.disconnect_account(account_id)
         return {"ok": removed, "removed": removed, "account_id": as_str(account_id)}
 
-    async def resolve(self, *, provider_id: str, capability: str, account_id: str = "") -> dict[str, Any]:
-        broker = UserIntegrationBroker(config=self.config, store=self.store)
-        result = await broker.ensure_capability(
+    async def resolve(
+        self,
+        *,
+        provider_id: str = "",
+        claim: str = "",
+        connector_app_id: str = "",
+        account_id: str = "",
+    ) -> dict[str, Any]:
+        broker = DelegatedToKdcubeBroker(config=self.config, store=self.store)
+        result = await broker.ensure_claim(
             provider_id=provider_id,
-            capability=capability,
+            connector_app_id=connector_app_id,
+            claim=claim,
             account_id=account_id,
         )
         return result.to_dict(include_credential=False)
@@ -327,12 +436,12 @@ class UserIntegrationsOperations:
 def operations_for_user(
     *,
     user_id: str,
-    config: UserIntegrationsConfig,
+    config: DelegatedToKdcubeConfig,
     bundle_id: str = CONNECTION_HUB_BUNDLE_ID,
-    store: UserIntegrationStore | None = None,
-) -> UserIntegrationsOperations:
-    resolved_store = store or UserIntegrationStore(user_id=user_id, bundle_id=bundle_id)
-    return UserIntegrationsOperations(config=config, store=resolved_store)
+    store: DelegatedToKdcubeStore | None = None,
+) -> DelegatedToKdcubeOperations:
+    resolved_store = store or DelegatedToKdcubeStore(user_id=user_id, bundle_id=bundle_id)
+    return DelegatedToKdcubeOperations(config=config, store=resolved_store)
 
 
-__all__ = ["UserIntegrationsOperations", "operations_for_user"]
+__all__ = ["DelegatedToKdcubeOperations", "operations_for_user"]

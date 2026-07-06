@@ -1,18 +1,18 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Elena Viter
 
-"""Email/app-password adapter registration for user-connected integrations."""
+"""Email/app-password adapter registration for delegated to KDCube."""
 
 from __future__ import annotations
 
-from kdcube_ai_app.apps.chat.sdk.solutions.connections.user_integrations.adapters import (
-    UserIntegrationAdapter,
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube.adapters import (
+    DelegatedToKdcubeAdapter,
     adapter,
 )
 
 
 @adapter("email.imap_smtp_app_password")
-class EmailAppPasswordAdapter(UserIntegrationAdapter):
+class EmailAppPasswordAdapter(DelegatedToKdcubeAdapter):
     label = "Email"
     kind = "app_password"
 
