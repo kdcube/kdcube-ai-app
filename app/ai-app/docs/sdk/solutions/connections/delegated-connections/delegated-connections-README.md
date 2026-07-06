@@ -4,7 +4,7 @@ title: "Delegated Connections"
 summary: "Connection Hub role for consented connections where a credential/proof is verified by an authenticator, linked to a principal or grant, and constrained by allowed actions."
 status: active
 tags: ["sdk", "solutions", "connections", "connection-hub", "delegated-connections", "oauth", "mcp", "consent", "grants"]
-updated_at: 2026-06-28
+updated_at: 2026-07-06
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/connection-hub-solution-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/authority-providers/authority-provider-runtime-README.md
@@ -349,6 +349,47 @@ Read the durability design note before relying on long-lived external
 connectors:
 
 - [Grant Storage Durability](design/grant-storage-durability-README.md)
+
+## User-Visible Grant Registry And Revocation
+
+Every delegated credential a user hands out is registered per user
+(`AutomationAccessService`), so the Connection Hub **Delegated by KDCube**
+tab can show it and revoke it. Two sources land in one registry:
+
+```text
+source=manual
+  bounded bearer token the user creates in the Hub form
+  (label, resource->grants selection, TTL, token shown once)
+
+source=oauth
+  an external client (for example an MCP client) approved through the
+  delegated OAuth flow; registered automatically on EVERY token issuance —
+  initial consent and refresh rotations alike
+```
+
+OAuth rows follow these rules:
+
+- one row per `(grantor, client, resource)` — reconsent widens the same row
+  and keeps the first-approval timestamp; refresh rotation updates the row's
+  live token material;
+- the row's label is the client's DCR registration name, so users see
+  "Claude", not a `dcr-…` id;
+- the row expires with the refresh-token TTL, so a connection whose refresh
+  token can no longer be used disappears on its own;
+- registry writes never fail token issuance.
+
+Revocation is immediate for both sources:
+
+```text
+manual  -> the bound platform session is logged out
+oauth   -> the refresh token is deleted (no new access tokens)
+           AND the current access-grant binding is deleted
+           (managed guards reject the bearer in flight)
+```
+
+Public listings never expose token material — only metadata (label, source,
+resource grants, created/approved and expiry times, token last-four for
+manual rows).
 
 ## Current KDCube Services MCP Example
 

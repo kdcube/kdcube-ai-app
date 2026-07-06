@@ -138,26 +138,128 @@ provider credential handle returned to app-side integration code
 The app should not ask delegated provider accounts for platform roles. Roles
 come from platform authority projection.
 
-## Credential Health And Refresh
+## Credential Health
 
 Provider credentials stay in user secrets. Public account records expose only
 metadata and health fields:
 
 ```text
-credential_status
-credential_kind
+credential_status        active | expires_soon | refreshable |
+                         reconnect_required | missing | revoked
+credential_kind          oauth | static_secret | missing
 credential_expires_at
 credential_refreshable
 reconnect_required
 credential_message
+credential_status_at     when the persisted status last changed
+last_error               most recent provider symptom, verbatim
+last_error_at
 ```
 
-OAuth access tokens are short-lived. If a stored credential has a refresh token,
-the delegated-account broker refreshes the access token before returning a
-credential handle to application code. The refreshed token is written back to
-user secrets.
+Two health signals combine on account listings:
 
-If an OAuth credential is expired and has no refresh token, broker resolution
-returns `consent_required`. The UI should present that as **Reconnect required**.
-This avoids the misleading state where an account looks connected while provider
-API calls fail with invalid credentials.
+- **timestamp-derived** — computed from the stored credential's expiry and
+  refreshability on every listing;
+- **persisted** — written on health transitions (`store.set_account_status`)
+  by the broker and the tool-side facade, together with `last_error`.
+
+A persisted `reconnect_required` / `missing` / `revoked` outranks the
+timestamp view: a provider may reject a token whose stored expiry still looks
+valid, and Connection Hub must show that truth. A later successful refresh
+writes the persisted status back to `active`.
+
+OAuth access tokens are short-lived. If a stored credential has a refresh
+token, the delegated-account broker refreshes the access token before
+returning a credential handle to application code and writes the refreshed
+token back to user secrets.
+
+## Resolution Reasons
+
+`broker.ensure_claim()` returns a `ClaimResolution` whose `error` names WHY
+the claim did not resolve. The reason flows verbatim through the consent
+payload into tool envelopes, named-service errors, and MCP results:
+
+| reason | meaning | user action | retry_hint |
+| --- | --- | --- | --- |
+| `connect_required` | no eligible connected account | connect the provider | true |
+| `claim_upgrade_required` | account exists, claim not approved | approve the claim | true |
+| `reconnect_required` | credential missing / unrefreshable / provider rejected it | reconnect the account | true |
+| `account_required` | several eligible accounts | pick an `account_id` and resend | true |
+| `claim_not_configured`, `connector_app_not_configured`, `claim_outside_connector_app` | operator configuration errors | admin action | false |
+
+`retry_hint` says whether retrying the same operation after the user
+completes the Connection Hub action should succeed.
+
+## Multiple Accounts
+
+A user can connect several accounts of one provider (two Slack workspaces,
+two Gmail addresses). Resolution never picks one silently: with no
+`account_id` and several eligible accounts it returns `account_required`
+with **labeled candidates**:
+
+```text
+candidates: [{account_id, label, email, workspace, status, claims}]
+```
+
+Chat, named services, and MCP clients render this as a real choice list and
+resend with the chosen `account_id`. Every provider tool accepts an optional
+`account_id` parameter, and successful results carry the `account_id` they
+used so multi-account output stays attributable.
+
+## Consent Payload And Hub Deep-Link
+
+Failed resolutions become one consent block
+(`connected_account_consent_payload`, envelope code
+`needs_connected_account_consent`). The block names ONE provider action:
+
+```text
+consent:
+  reason           the resolution reason, verbatim
+  retry_hint
+  provider_id / connector_app_id
+  claims           scoped to the named provider only
+  account_id       when the failure targets an existing account
+  candidates       labeled, for account_required
+  url              Connection Hub widget deep-link
+  action_label     Connect account / Approve access / Reconnect account /
+                   Choose account
+```
+
+The `url` carries `tab=delegated_to_kdcube`, `provider_id`,
+`connector_app_id`, `claims`, and `account_id` query parameters. The
+Connection Hub widget turns them into a consent plan: a step list (account
+connected → access working → requested approvals as per-claim chips) with a
+single primary button for the first unmet step, and highlights the affected
+account card. Failures of other providers stay in the payload's raw
+`missing` list and surface on the next turn.
+
+## Live Provider Rejection (Refresh-Retry-Once)
+
+A provider can reject a token mid-call even when stored timestamps look
+valid. Tool code follows one contract, packaged by
+`kdcube_ai_app.apps.chat.sdk.integrations.connected_accounts`:
+
+```text
+run_with_connected_account_retry(source, where=..., run=tool_body)
+
+tool body:
+  resolves its own credentials (resolve_connected_account_claim)
+  on provider auth rejection returns
+    connected_account_auth_failure(credential, provider_error)
+
+runner:
+  1. run once
+  2. on the failure marker: force-refresh THAT credential
+     (refresh_connected_account_claim -> broker force_refresh=True;
+     the refreshed token lands in user secrets)
+  3. re-run once (the body re-resolves and picks up the fresh token)
+  4. second rejection: provider_auth_failed() marks the account
+     reconnect_required (+ last_error) and returns the reconnect envelope
+```
+
+The marker carries the failing credential, so tools that use several
+credentials in one operation (for example Gmail forward = read + send)
+refresh exactly the one the provider rejected. The Gmail and Slack tool
+suites run entirely under this runner; auth-class provider errors
+(HTTP 401/403, Slack `invalid_auth`/`token_revoked`/…) never reach users as
+raw API errors.
