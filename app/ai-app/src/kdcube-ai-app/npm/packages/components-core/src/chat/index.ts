@@ -23,6 +23,7 @@ export { activateContextPin, contextPinActionNotice, ContextPinActionError } fro
 export type { ActionableContext } from './contextPinActions.ts'
 export { buildExternalEventBatch, contextRef, isCanvasContext } from './eventBatch.ts'
 export { projectServiceEventToChatStep } from './serviceSteps.ts'
+export * from './capabilities.ts'
 
 export type * from './state.ts'
 export type * from './protocol.ts'

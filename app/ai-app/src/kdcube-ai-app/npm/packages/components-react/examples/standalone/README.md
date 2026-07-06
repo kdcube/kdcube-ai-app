@@ -25,3 +25,9 @@ npm run dev
   prebuilt stylesheet shipped with the package.
 - **Packages resolve from source** via the `vite.config.ts` aliases — no build or
   publish needed for local dev.
+- **Composer "+" menu mock mode**: add `?mock=1` to run the per-user tools &
+  skills menu against canned `agent_capabilities` / `agent_selection_update`
+  responses — no backend needed. The mock keeps the deny-list in memory with the
+  real merge semantics (`applySelectionPatch`), so toggles persist across menu
+  reopens and every debounced save is logged to the console. `?agent=<id>`
+  selects the engine's `agentId` (default `main`).

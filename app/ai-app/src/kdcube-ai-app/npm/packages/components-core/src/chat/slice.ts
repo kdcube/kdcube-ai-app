@@ -48,6 +48,12 @@ import {
   applyConvStatus,
   hydrateHistoricalConversation,
 } from './reducers.ts'
+import { applySelectionPatch } from './capabilities.ts'
+import type {
+  AgentCapabilitiesInventory,
+  AgentSelectionDisabled,
+  AgentSelectionPatch,
+} from './capabilities.ts'
 
 function contextStringData(context: AttachedContext, key: string): string {
   const value = context.data?.[key]
@@ -281,6 +287,49 @@ const slice = createSlice({
         (conv as unknown as { conversation_title?: string | null }).conversation_title
         ?? (conv as unknown as { title?: string | null }).title
         ?? null
+    },
+
+    // --- Per-user agent capabilities (composer "+" menu) ---
+    capabilitiesLoading(state) {
+      state.capabilities.status = 'loading'
+      state.capabilities.error = null
+    },
+    capabilitiesLoaded(
+      state,
+      action: PayloadAction<{
+        agent: string
+        inventory: AgentCapabilitiesInventory
+        disabled: AgentSelectionDisabled
+      }>,
+    ) {
+      state.capabilities.status = 'ready'
+      state.capabilities.error = null
+      state.capabilities.agent = action.payload.agent
+      state.capabilities.inventory = action.payload.inventory
+      state.capabilities.disabled = action.payload.disabled
+    },
+    capabilitiesLoadError(state, action: PayloadAction<string>) {
+      state.capabilities.status = 'error'
+      state.capabilities.error = action.payload
+    },
+    /** Optimistic: apply a toggle patch to the local deny-list immediately; the
+     *  engine debounces the matching `agent_selection_update` merge-write. */
+    capabilitiesPatchApplied(state, action: PayloadAction<AgentSelectionPatch>) {
+      state.capabilities.disabled = applySelectionPatch(state.capabilities.disabled, action.payload)
+      state.capabilities.saveError = null
+    },
+    capabilitiesSaving(state, action: PayloadAction<boolean>) {
+      state.capabilities.saving = action.payload
+    },
+    /** Reconcile with the server's clamped record after a save round-trips. */
+    capabilitiesSelectionSaved(state, action: PayloadAction<AgentSelectionDisabled>) {
+      state.capabilities.disabled = action.payload
+      state.capabilities.saving = false
+      state.capabilities.saveError = null
+    },
+    capabilitiesSaveError(state, action: PayloadAction<string>) {
+      state.capabilities.saving = false
+      state.capabilities.saveError = action.payload
     },
 
     // --- Reset (used on disconnect / hard-reset) ---

@@ -10,9 +10,13 @@
 import { createRoot } from 'react-dom/client'
 import { ChatStoreProvider, Chat } from '@kdcube/components-react/chat'
 import type { EngineConfig } from '@kdcube/components-core'
+import { installCapabilitiesMock } from './mockCapabilities.ts'
 import './chat-ui.css'
 
 const params = new URLSearchParams(window.location.search)
+// `?mock=1` — exercise the composer "+" menu against canned agent_capabilities /
+// agent_selection_update responses, no backend needed.
+if (params.get('mock')) installCapabilitiesMock()
 const config: EngineConfig = {
   connection: {
     baseUrl: params.get('baseUrl') || 'http://localhost:8000',
@@ -20,6 +24,7 @@ const config: EngineConfig = {
     project: params.get('project') || 'demo-project',
     bundleId: params.get('bundle') || 'versatile@2026-03-31-13-36',
   },
+  agentId: params.get('agent') || undefined,
   auth: { mode: 'cookie' },
 }
 

@@ -52,6 +52,14 @@ export interface EngineConfig {
    *  (e.g. 'compact' for an embedded iframe tile, 'expanded' standalone). The
    *  engine just carries the value — it never detects the host. Default 'expanded'. */
   initialHostView?: 'compact' | 'expanded'
+  /** The bundle agent this chat drives (`surfaces.as_consumer.agents.<id>`).
+   *  Rides on every message target/event batch and scopes the per-user
+   *  capability selection ops. Default 'main'. */
+  agentId?: string
+}
+
+export function resolveAgentId(config: EngineConfig): string {
+  return config.agentId?.trim() || 'main'
 }
 
 export function resolveAuthMode(config: EngineConfig): AuthMode {

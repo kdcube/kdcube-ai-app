@@ -9,7 +9,7 @@
  * behavioural change: it follows the cookie/token model (login stays external).
  */
 import type { EngineConfig } from '../shared/index.ts'
-import { resolveAuthMode, resolveIdTokenHeader } from '../shared/index.ts'
+import { resolveAgentId, resolveAuthMode, resolveIdTokenHeader } from '../shared/index.ts'
 
 export interface ResolvedTokens {
   accessToken: string | null
@@ -21,6 +21,8 @@ export interface EngineRuntime {
   readonly tenant: string
   readonly project: string
   readonly bundleId: string
+  /** The bundle agent this engine drives (config `agentId`, default 'main'). */
+  readonly agentId: string
   /** Header name the id token is sent under (token mode). */
   readonly idTokenHeader: string
   /** Fetch credentials mode — `'include'` so an external session cookie rides along. */
@@ -57,6 +59,7 @@ export function getClientTimezone(): { tz?: string; utcOffsetMin: number } {
 
 export function buildRuntime(config: EngineConfig): EngineRuntime {
   const { baseUrl, tenant, project, bundleId } = config.connection
+  const agentId = resolveAgentId(config)
   const mode = resolveAuthMode(config)
   const idTokenHeader = resolveIdTokenHeader(config)
 
@@ -72,6 +75,7 @@ export function buildRuntime(config: EngineConfig): EngineRuntime {
     tenant,
     project,
     bundleId,
+    agentId,
     idTokenHeader,
     credentials: 'include',
     getTokens,

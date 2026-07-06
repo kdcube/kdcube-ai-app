@@ -15,6 +15,7 @@ export default defineConfig({
       { find: '@kdcube/components-react/chat', replacement: resolve(PKGS, 'components-react/src/chat/index.tsx') },
       { find: '@kdcube/components-react', replacement: resolve(PKGS, 'components-react/src/index.ts') },
       { find: '@kdcube/components-core/chat', replacement: resolve(PKGS, 'components-core/src/chat/index.ts') },
+      { find: '@kdcube/components-core/canvas', replacement: resolve(PKGS, 'components-core/src/canvas/index.ts') },
       { find: '@kdcube/components-core', replacement: resolve(PKGS, 'components-core/src/index.ts') },
     ],
     dedupe: ['react', 'react-dom', 'react-redux', '@reduxjs/toolkit'],

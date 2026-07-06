@@ -10,6 +10,7 @@
  * (e.g. `setHostView` drops the host-bridge `opts`).
  */
 import type {
+  AgentCapabilitiesState,
   ChatEngine,
   ChatState,
   HostView,
@@ -28,6 +29,8 @@ export interface ChatViewModel {
   bootError: string | null
   hostView: HostView
   bundleId: string
+  /** The bundle agent this chat drives (engine config `agentId`, default 'main'). */
+  agentId: string
   /** True when rendered inside a same-origin dev preview frame; hosts may set it. */
   kdcubePreview: boolean
 
@@ -62,5 +65,13 @@ export interface ChatViewModel {
     error: string | null
     setEnabled: ChatEngine['setDryRunEnabled']
     clearPreview: ChatEngine['clearDryRunPreview']
+  }
+
+  /** Per-user agent capabilities (the composer "+" menu): the state branch plus
+   *  the engine's lazy load + optimistic/debounced toggle. Registered users
+   *  only — the menu hides when `authed` is false. */
+  capabilities: AgentCapabilitiesState & {
+    load: ChatEngine['loadAgentCapabilities']
+    toggle: ChatEngine['updateAgentSelection']
   }
 }

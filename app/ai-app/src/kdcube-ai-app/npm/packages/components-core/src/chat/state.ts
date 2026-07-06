@@ -12,6 +12,8 @@ import type {
   StepStatus,
   TurnReaction,
 } from './protocol.ts'
+import type { AgentCapabilitiesState } from './capabilities.ts'
+import { initialCapabilitiesState } from './capabilities.ts'
 
 export type ConnectionState = 'booting' | 'connecting' | 'connected' | 'disconnected'
 export type TurnState = 'pending' | 'running' | 'completed' | 'error'
@@ -297,6 +299,9 @@ export interface ChatState {
   conversationsError: string | null
   conversationLoadingId: string | null
   conversationDeletingId: string | null
+  /** Per-user agent capability inventory + selection (the composer "+" menu).
+   *  Lazy: loaded on first menu open; `disabled` is the user's deny-list. */
+  capabilities: AgentCapabilitiesState
 }
 
 export const initialState: ChatState = {
@@ -317,4 +322,5 @@ export const initialState: ChatState = {
   conversationsError: null,
   conversationLoadingId: null,
   conversationDeletingId: null,
+  capabilities: initialCapabilitiesState,
 }

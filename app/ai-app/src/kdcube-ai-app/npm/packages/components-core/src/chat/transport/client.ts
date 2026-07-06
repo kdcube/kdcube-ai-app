@@ -7,6 +7,7 @@
  * by an explicit `EngineRuntime` first argument; behaviour is otherwise verbatim.
  */
 import type { EngineRuntime } from '../runtime.ts'
+import type { AgentCapabilitiesInventory, AgentSelectionDisabled, AgentSelectionPatch } from '../capabilities.ts'
 import { buildRequestHeaders, downloadBlobAsFile, requireScope } from './http.ts'
 import type {
   ConversationDTO,
@@ -351,6 +352,76 @@ export async function previewReactContext(runtime: EngineRuntime, params: ReactC
     ? (payload as Record<string, unknown>).react_context_preview
     : payload
   return (body && typeof body === 'object' ? body : { ok: false, error: 'Invalid preview response.' }) as ReactContextPreviewResponse
+}
+
+function unwrapOperationBody(payload: unknown, alias: string): unknown {
+  return payload && typeof payload === 'object' && alias in (payload as Record<string, unknown>)
+    ? (payload as Record<string, unknown>)[alias]
+    : payload
+}
+
+export interface AgentCapabilitiesResponse {
+  ok: boolean
+  agent: string
+  capabilities: AgentCapabilitiesInventory
+  selection: { schema_version?: number; disabled?: AgentSelectionDisabled }
+  error?: string
+  message?: string
+}
+
+export interface AgentSelectionUpdateResponse {
+  ok: boolean
+  agent: string
+  selection: { schema_version?: number; disabled?: AgentSelectionDisabled; updated_at?: string }
+  error?: string
+  message?: string
+}
+
+/** The agent's configured inventory + the caller's saved selection (deny-list). */
+export async function fetchAgentCapabilities(
+  runtime: EngineRuntime,
+  agentId: string,
+): Promise<AgentCapabilitiesResponse> {
+  const { tenant, project } = requireScope(runtime)
+  const response = await fetch(operationsUrl(runtime, 'agent_capabilities', runtime.bundleId, tenant, project), {
+    method: 'POST',
+    credentials: runtime.credentials,
+    headers: await buildRequestHeaders(runtime, { 'Content-Type': 'application/json', Accept: 'application/json' }),
+    body: JSON.stringify({ data: { agent: agentId } }),
+  })
+  const payload = await response.json().catch(() => null)
+  const body = unwrapOperationBody(payload, 'agent_capabilities') as AgentCapabilitiesResponse | null
+  if (!response.ok || !body || body.ok === false) {
+    const detail = body && typeof body === 'object'
+      ? String(body.message || body.error || response.statusText)
+      : response.statusText
+    throw new Error(`agent_capabilities failed (${response.status}): ${detail}`)
+  }
+  return body
+}
+
+/** Merge-write partial selection toggles (deny-list; clamped server-side). */
+export async function submitAgentSelectionUpdate(
+  runtime: EngineRuntime,
+  agentId: string,
+  disabled: AgentSelectionPatch,
+): Promise<AgentSelectionUpdateResponse> {
+  const { tenant, project } = requireScope(runtime)
+  const response = await fetch(operationsUrl(runtime, 'agent_selection_update', runtime.bundleId, tenant, project), {
+    method: 'POST',
+    credentials: runtime.credentials,
+    headers: await buildRequestHeaders(runtime, { 'Content-Type': 'application/json', Accept: 'application/json' }),
+    body: JSON.stringify({ data: { agent: agentId, disabled } }),
+  })
+  const payload = await response.json().catch(() => null)
+  const body = unwrapOperationBody(payload, 'agent_selection_update') as AgentSelectionUpdateResponse | null
+  if (!response.ok || !body || body.ok === false) {
+    const detail = body && typeof body === 'object'
+      ? String(body.message || body.error || response.statusText)
+      : response.statusText
+    throw new Error(`agent_selection_update failed (${response.status}): ${detail}`)
+  }
+  return body
 }
 
 function base64ToBlob(value: string, mime: string): Blob {

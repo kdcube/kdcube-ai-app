@@ -22,7 +22,7 @@ export type {
   TransportKind,
   EngineConfig,
 } from './config.ts'
-export { resolveAuthMode, resolveIdTokenHeader } from './config.ts'
+export { resolveAgentId, resolveAuthMode, resolveIdTokenHeader } from './config.ts'
 
 export type { ContextItem, ContextDragEnvelope } from './contextPin.ts'
 export {

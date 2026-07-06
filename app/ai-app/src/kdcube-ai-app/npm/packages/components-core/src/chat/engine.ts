@@ -30,6 +30,7 @@ import { messageForError } from './util.ts'
 import {
   deleteConversationById,
   downloadObjectRef,
+  fetchAgentCapabilities,
   fetchObjectRefBlob,
   fetchConversationById,
   fetchProfile,
@@ -38,9 +39,12 @@ import {
   openChatStream,
   previewReactContext,
   requestConversationStatus,
+  submitAgentSelectionUpdate,
   submitChatMessage,
   submitTurnFeedback,
 } from './transport/index.ts'
+import { mergeSelectionPatches } from './capabilities.ts'
+import type { AgentSelectionPatch } from './capabilities.ts'
 import type { AttachedContext } from './state.ts'
 import type {
   ConversationSummary,
@@ -136,9 +140,9 @@ function storyIdFromContexts(contexts: AttachedContext[]): string | undefined {
   return undefined
 }
 
-function chatTarget(storyId?: string): Record<string, unknown> {
+function chatTarget(agentId: string, storyId?: string): Record<string, unknown> {
   const target: Record<string, unknown> = {
-    agent_id: 'main',
+    agent_id: agentId,
     surface: CHAT_SURFACE,
     story_kind: 'general_chat',
     conversation_role: 'main',
@@ -472,6 +476,10 @@ export function createChatEngine(config: EngineConfig): ChatEngine {
       promptLogin()
       return
     }
+    /* A capability toggle still sitting in the debounce window should reach the
+     * server before the turn it is meant to apply to — flush it now (not
+     * awaited; the backend reads the selection when the turn's agent builds). */
+    void flushAgentSelection()
     const previousTail = sendQueue
     let resolveOurs!: () => void
     const ours = new Promise<void>((res) => { resolveOurs = res })
@@ -502,9 +510,9 @@ export function createChatEngine(config: EngineConfig): ChatEngine {
       const draftFiles = isSteer || textOverride !== undefined ? [] : snapshot.composerFiles
       const draftContexts = isSteer || textOverride !== undefined ? [] : snapshot.composerContexts
       const visibleDraftText = messageWithContextChips(draftText, draftContexts)
-      const target = chatTarget(storyIdFromContexts(draftContexts))
+      const target = chatTarget(runtime.agentId, storyIdFromContexts(draftContexts))
       const externalEvents = buildExternalEventBatch(draftContexts, {
-        agentId: 'main',
+        agentId: runtime.agentId,
         eventId: (prefix) => runtime.createLocalId(prefix),
         text: draftText,
         files: draftFiles,
@@ -626,6 +634,65 @@ export function createChatEngine(config: EngineConfig): ChatEngine {
     }
   }
 
+  // --- Per-user agent capabilities (composer "+" menu) ---
+  // Lazy-loaded on first menu open; toggles apply optimistically and save via a
+  // debounced agent_selection_update merge-write carrying only what changed.
+  // Toggles take effect from the NEXT message (the backend reads per turn).
+  const SELECTION_SAVE_DEBOUNCE_MS = 600
+  let selectionSaveTimer: number | null = null
+  let pendingSelectionPatch: AgentSelectionPatch | null = null
+
+  const loadAgentCapabilities = async (opts?: { force?: boolean }) => {
+    if (!authedRef) return
+    const current = getChat().capabilities
+    if (current.status === 'loading') return
+    if (current.status === 'ready' && !opts?.force) return
+    dispatch(chatActions.capabilitiesLoading())
+    try {
+      const response = await fetchAgentCapabilities(runtime, runtime.agentId)
+      dispatch(chatActions.capabilitiesLoaded({
+        agent: response.agent || runtime.agentId,
+        inventory: response.capabilities,
+        disabled: response.selection?.disabled ?? {},
+      }))
+    } catch (error) {
+      dispatch(chatActions.capabilitiesLoadError(messageForError(error)))
+    }
+  }
+
+  const flushAgentSelection = async () => {
+    if (selectionSaveTimer !== null) {
+      clearTimeout(selectionSaveTimer)
+      selectionSaveTimer = null
+    }
+    const patch = pendingSelectionPatch
+    pendingSelectionPatch = null
+    if (!patch || !authedRef) return
+    dispatch(chatActions.capabilitiesSaving(true))
+    try {
+      const response = await submitAgentSelectionUpdate(runtime, runtime.agentId, patch)
+      dispatch(chatActions.capabilitiesSelectionSaved(response.selection?.disabled ?? {}))
+      /* Toggles queued while this save was in flight stay optimistic on top of
+       * the server's clamped record; their own flush reconciles them. */
+      if (pendingSelectionPatch) {
+        dispatch(chatActions.capabilitiesPatchApplied(pendingSelectionPatch))
+      }
+    } catch (error) {
+      dispatch(chatActions.capabilitiesSaveError(messageForError(error)))
+    }
+  }
+
+  const updateAgentSelection = (patch: AgentSelectionPatch) => {
+    if (!authedRef) return
+    dispatch(chatActions.capabilitiesPatchApplied(patch))
+    pendingSelectionPatch = mergeSelectionPatches(pendingSelectionPatch ?? {}, patch)
+    if (selectionSaveTimer !== null) clearTimeout(selectionSaveTimer)
+    selectionSaveTimer = setTimeout(() => {
+      selectionSaveTimer = null
+      void flushAgentSelection()
+    }, SELECTION_SAVE_DEBOUNCE_MS) as unknown as number
+  }
+
   const handleReconnect = async () => {
     resetTransport()
     reconnectAttempt = 0
@@ -646,7 +713,7 @@ export function createChatEngine(config: EngineConfig): ChatEngine {
       project: runtime.project,
       userId: profileUserId,
       bundleId: runtime.bundleId,
-      agent: 'main',
+      agent: runtime.agentId,
       conversationId,
       title,
     })
@@ -709,6 +776,7 @@ export function createChatEngine(config: EngineConfig): ChatEngine {
   const engine: ChatEngine = {
     store,
     bundleId,
+    agentId: runtime.agentId,
     getState: getChat,
     subscribe(listener) {
       return store.subscribe(listener)
@@ -795,9 +863,15 @@ export function createChatEngine(config: EngineConfig): ChatEngine {
     clearDryRunPreview() {
       setDryRun({ preview: null, error: null })
     },
+    loadAgentCapabilities(opts) {
+      void loadAgentCapabilities(opts)
+    },
+    updateAgentSelection,
     dispose() {
       disposed = true
       resetTransport()
+      /* Push any toggle still in the debounce window before tearing down. */
+      void flushAgentSelection()
       statusListeners.clear()
     },
   }

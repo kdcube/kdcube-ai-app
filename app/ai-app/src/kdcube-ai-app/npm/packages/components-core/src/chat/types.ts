@@ -4,6 +4,7 @@ import type { ContextChip } from './contextChips.ts'
 import type { ReactContextPreviewResponse, TurnReaction } from './protocol.ts'
 import type { ConversationSummary } from './protocol.ts'
 import type { ChatStore } from './store.ts'
+import type { AgentSelectionPatch } from './capabilities.ts'
 
 /** Input accepted by attachContext — the structured context object a host drops
  *  or pins into chat. */
@@ -52,6 +53,8 @@ export interface ChatEngine extends Pick<HostEventEmitter, 'on'> {
    *  should prefer getState()/subscribe(). */
   readonly store: ChatStore
   readonly bundleId: string
+  /** The bundle agent this engine drives (config `agentId`, default 'main'). */
+  readonly agentId: string
 
   getState(): ChatState
   subscribe(listener: () => void): () => void
@@ -89,6 +92,15 @@ export interface ChatEngine extends Pick<HostEventEmitter, 'on'> {
   setBootError(value: string | null): void
   setDryRunEnabled(value: boolean): void
   clearDryRunPreview(): void
+
+  /** Load the agent's capability inventory + the user's saved selection into
+   *  `state.capabilities`. Lazy: call on first menu open; no-op when already
+   *  loaded unless `force`. */
+  loadAgentCapabilities(opts?: { force?: boolean }): void
+  /** Apply a selection toggle patch optimistically and queue the debounced
+   *  `agent_selection_update` merge-write (only the changed toggles are sent).
+   *  Takes effect from the next message. */
+  updateAgentSelection(patch: AgentSelectionPatch): void
 
   /** Tear down transport + timers. */
   dispose(): void

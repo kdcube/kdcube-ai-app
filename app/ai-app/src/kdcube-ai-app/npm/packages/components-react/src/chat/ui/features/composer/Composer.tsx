@@ -16,6 +16,7 @@ import {
 // Activating a context chip is engine-bound; it goes through the view-model and
 // the engine surfaces any failure as a service-notice on its event bus.
 import { useChatViewModel } from '../../context.tsx'
+import { ComposerMenu, type ComposerMenuSectionDescriptor } from './ComposerMenu.tsx'
 
 const CONTEXT_DROP_MIME_TYPES = [
   KDCUBE_CONTEXT_MIME_TYPE,
@@ -67,6 +68,7 @@ function ComposerImpl({
   onSubmit,
   onStop,
   namespaceStyles = {},
+  menuSections = [],
 }: {
   text: string
   files: File[]
@@ -84,6 +86,8 @@ function ComposerImpl({
   onSubmit: () => void
   onStop: () => void
   namespaceStyles?: NamespaceStyleMap
+  /** Extra composer-menu sections (registry extension point). */
+  menuSections?: ComposerMenuSectionDescriptor[]
 }) {
   const vm = useChatViewModel()
   const composerRef = useRef<HTMLDivElement | null>(null)
@@ -245,6 +249,11 @@ function ComposerImpl({
 
         <div className="k-composer-bar">
           <div className="left">
+            <ComposerMenu
+              disabled={disabled}
+              namespaceStyles={namespaceStyles}
+              extraSections={menuSections}
+            />
             <label className="k-iconbtn cursor-pointer" title="Attach files">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M21.4 11.05 12.5 19.95a5 5 0 1 1-7-7l9-9a3.5 3.5 0 1 1 5 5l-9 9a2 2 0 1 1-3-3l8.5-8.5" />

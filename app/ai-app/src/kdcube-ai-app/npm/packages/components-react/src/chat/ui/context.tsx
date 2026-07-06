@@ -40,6 +40,7 @@ export function ChatViewModelProvider({ children, kdcubePreview = false }: ChatV
     bootError: status.bootError,
     hostView: status.hostView,
     bundleId: engine.bundleId,
+    agentId: engine.agentId,
     kdcubePreview,
 
     setBootError: engine.setBootError,
@@ -72,6 +73,12 @@ export function ChatViewModelProvider({ children, kdcubePreview = false }: ChatV
       error: status.dryRun.error,
       setEnabled: engine.setDryRunEnabled,
       clearPreview: engine.clearDryRunPreview,
+    },
+
+    capabilities: {
+      ...state.capabilities,
+      load: engine.loadAgentCapabilities,
+      toggle: engine.updateAgentSelection,
     },
   }), [engine, state, status, kdcubePreview])
 
