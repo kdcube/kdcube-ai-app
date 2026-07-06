@@ -1,3 +1,5 @@
+import type { ReactNode } from 'react';
+
 export type AccountStatusTone = 'ok' | 'warn' | 'error';
 
 export function ConnectedBadge({ label = 'connected', tone = 'ok' }: { label?: string; tone?: AccountStatusTone }) {
@@ -11,23 +13,41 @@ export interface AccountRowProps {
   statusLabel?: string;
   statusTone?: AccountStatusTone;
   detail?: string;
+  lastError?: string;
+  highlighted?: boolean;
   busy: boolean;
+  actions?: ReactNode;
   onDisconnect: () => void;
 }
 
-export function AccountRow({ title, subtitle, statusLabel, statusTone, detail, busy, onDisconnect }: AccountRowProps) {
+export function AccountRow({
+  title,
+  subtitle,
+  statusLabel,
+  statusTone,
+  detail,
+  lastError,
+  highlighted,
+  busy,
+  actions,
+  onDisconnect,
+}: AccountRowProps) {
   return (
-    <li className="account">
+    <li className={`account${highlighted ? ' account-highlight' : ''}`}>
       <div className="account-info">
         <div className="account-title">
           {title} <ConnectedBadge label={statusLabel || 'connected'} tone={statusTone || 'ok'} />
         </div>
         {subtitle ? <div className="account-sub">{subtitle}</div> : null}
         {detail ? <div className="account-detail">{detail}</div> : null}
+        {lastError ? <div className="account-error">{lastError}</div> : null}
       </div>
-      <button className="btn btn-ghost" onClick={onDisconnect} disabled={busy}>
-        Disconnect
-      </button>
+      <div className="account-actions">
+        {actions}
+        <button className="btn btn-ghost" onClick={onDisconnect} disabled={busy}>
+          Disconnect
+        </button>
+      </div>
     </li>
   );
 }

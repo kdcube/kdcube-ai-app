@@ -224,6 +224,9 @@ export interface DelegatedToKdcubeAccount {
   credential_expires_at?: number;
   reconnect_required?: boolean;
   credential_message?: string;
+  credential_status_at?: string;
+  last_error?: string;
+  last_error_at?: string;
 }
 
 export interface DelegatedToKdcubeCatalogResult {

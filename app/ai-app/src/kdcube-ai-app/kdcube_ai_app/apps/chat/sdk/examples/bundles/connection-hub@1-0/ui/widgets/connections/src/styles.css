@@ -228,6 +228,27 @@ h2 {
   overflow-wrap: anywhere;
 }
 
+.account-error {
+  color: var(--red-dark);
+  font-size: 12px;
+  margin-top: 2px;
+  overflow-wrap: anywhere;
+}
+
+.account-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+/* Deep-linked from a chat consent card: draw the eye to the account the
+   tool complained about. */
+.account-highlight {
+  border-color: var(--teal);
+  box-shadow: 0 0 0 2px var(--focus);
+}
+
 .integration-provider-list {
   display: flex;
   flex-direction: column;
