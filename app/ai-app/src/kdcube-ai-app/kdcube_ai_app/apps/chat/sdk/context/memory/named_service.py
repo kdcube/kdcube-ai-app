@@ -1136,6 +1136,10 @@ class MemoryNamedServiceProvider(NamedServiceProvider):
             store=store,
             scope=self._scope(ctx),
             scope_filter=self._scope_filter(request, default="all_user_memories"),
+            # Same identity-family read scope object.get applies: preview/open
+            # must resolve every memory the family read exposes (e.g. records
+            # created under a linked identity), never a single-actor subset.
+            user_ids=await self._read_user_ids(ctx),
         )
         if not raw.get("ok", True):
             return NamedServiceResponse.error_response(

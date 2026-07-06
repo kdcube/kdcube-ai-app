@@ -2,7 +2,7 @@
 # Copyright (c) 2026 Elena Viter
 from __future__ import annotations
 
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 
 from ..models import MemoryRecord, MemoryScope, normalize_scope_filter
 from ..store import UserMemoryStore
@@ -101,6 +101,7 @@ async def resolve_memory_ref_action(
     store: UserMemoryStore,
     scope: MemoryScope,
     scope_filter: str = "current_bundle",
+    user_ids: Sequence[str] | None = None,
 ) -> dict[str, Any]:
     """
     Resolve an object action for `mem:` refs.
@@ -128,11 +129,18 @@ async def resolve_memory_ref_action(
     if not memory_id:
         return {**base, "ok": False, "error": "object_ref_required", "status": 400}
 
+    # Read with the SAME semantics as the provider's object.get: the
+    # identity-family read scope (`user_ids`) must apply here too. A memory
+    # created under a linked identity (e.g. a messenger-linked account) is
+    # visible in every family read — resolving its preview/open through a
+    # single-actor lookup would answer memory_not_found for a record the
+    # user demonstrably sees.
     record = await store.get_memory(
         scope=scope,
         memory_id=memory_id,
         visible_to_user=True,
         scope_filter=normalize_scope_filter(scope_filter),
+        user_ids=user_ids,
     )
     if record is None:
         return {**base, "ok": False, "error": "memory_not_found", "status": 404}
