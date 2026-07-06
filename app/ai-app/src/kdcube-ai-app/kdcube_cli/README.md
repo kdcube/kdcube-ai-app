@@ -154,6 +154,25 @@ kdcube init --tenant acme --project staging
 kdcube start --tenant acme --project staging
 ```
 
+A plain init stages the **configured base complectation**: Connection Hub
+(identity, consent, delegated credentials), KDCube Services (managed MCP +
+named services), User Memories, and the workspace showcase app — as a pure
+config overlay on the bundles shipped in the image. Default identity is the
+bundle-session flavor (Google sign-in validated by the workspace app,
+KDCube session issued by Connection Hub). Two env inputs are substituted
+into the staged defaults when set:
+
+```bash
+export KDCUBE_PUBLIC_HOST="kdcube.example.com"   # OAuth redirects, webhooks
+export KDCUBE_ADMIN_EMAIL="admin@example.com"    # bootstrapped as super-admin
+```
+
+Init ends with a **first-run checklist** of placeholders still unfilled;
+features backed by an unfilled slot stay inactive, everything else runs.
+Step-by-step recipes: [clean install](../../../docs/recipes/operations/install-clean-README.md) ·
+[from a descriptor set](../../../docs/recipes/operations/install-from-descriptors-README.md) ·
+[daily operations](../../../docs/recipes/operations/operate-runtime-README.md).
+
 To fill common service secrets during init:
 
 ```bash

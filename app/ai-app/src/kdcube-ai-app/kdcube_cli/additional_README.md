@@ -7,6 +7,11 @@ repository (if needed) and launches the guided setup wizard.
 
 This README describes the current implemented CLI behavior.
 
+Task-shaped recipes live under `docs/recipes/operations/`:
+[clean install](../../../docs/recipes/operations/install-clean-README.md) ·
+[install from a descriptor set](../../../docs/recipes/operations/install-from-descriptors-README.md) ·
+[operate a runtime](../../../docs/recipes/operations/operate-runtime-README.md).
+
 Short version of the current model:
 
 - the CLI bootstraps or reuses a concrete runtime snapshot under a namespaced

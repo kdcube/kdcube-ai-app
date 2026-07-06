@@ -26,6 +26,12 @@ This document defines the **initial CLI surface** and behavior. The CLI is for:
 
 CLI root (code): `src/kdcube-ai-app/kdcube_cli`
 
+Task-shaped recipes (install clean, install from descriptors, daily
+operations): `docs/recipes/operations/`. A plain `kdcube init` stages the
+configured base complectation (Connection Hub, KDCube Services, User
+Memories, workspace) with the bundle-session identity flavor and ends with
+a first-run checklist of unfilled placeholder slots.
+
 ---
 
 ## Current vs Planned
