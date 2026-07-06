@@ -177,6 +177,13 @@ export function DelegatedToKdcubePanel() {
       returnHint: window.location.href,
     })).unwrap().catch(() => undefined);
     if (result?.authorize_url) {
+      // Arms the one-shot focus refresh in App: when the user returns from
+      // the provider tab, the widget re-fetches once (no standing polling).
+      try {
+        sessionStorage.setItem('kdc-oauth-pending', '1');
+      } catch {
+        // Storage unavailable: the BroadcastChannel push still covers it.
+      }
       window.open(result.authorize_url, '_blank', 'noopener,noreferrer');
     }
   };

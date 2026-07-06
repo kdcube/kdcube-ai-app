@@ -102,15 +102,21 @@ export default function App() {
     }
   }, [dispatch]);
 
-  // The OAuth approval happens in another tab. Two ways the widget learns
-  // it finished: the callback page pushes a same-origin BroadcastChannel
-  // message the moment it loads (instant, even while this tab is in the
-  // background), and re-fetch on focus covers browsers/contexts where the
-  // channel is unavailable.
+  // The OAuth approval happens in another tab. Primary completion signal:
+  // the callback page pushes a same-origin BroadcastChannel message the
+  // moment it loads (instant, even while this tab is backgrounded).
+  // Fallback: a ONE-SHOT focus refresh, armed only while an approval is in
+  // flight (sessionStorage flag set when the approval tab is opened) — no
+  // standing focus/visibility polling.
   useEffect(() => {
     if (telegramMiniAppMode || claimChallengeId || !runtimeReady) return;
+    const consumePending = () => {
+      if (sessionStorage.getItem('kdc-oauth-pending') !== '1') return false;
+      sessionStorage.removeItem('kdc-oauth-pending');
+      return true;
+    };
     const onReturn = () => {
-      if (document.visibilityState === 'visible') void refresh();
+      if (document.visibilityState === 'visible' && consumePending()) void refresh();
     };
     window.addEventListener('focus', onReturn);
     document.addEventListener('visibilitychange', onReturn);
@@ -119,11 +125,13 @@ export default function App() {
       channel = new BroadcastChannel('kdcube-connection-hub');
       channel.onmessage = (event) => {
         if (String((event.data as { type?: string } | null)?.type || '').startsWith('delegated_to_kdcube.')) {
+          sessionStorage.removeItem('kdc-oauth-pending');
           void refresh();
         }
       };
     } catch {
-      // BroadcastChannel unavailable (very old browser); focus refresh covers it.
+      // BroadcastChannel unavailable (very old browser); the armed focus
+      // refresh covers it.
     }
     return () => {
       window.removeEventListener('focus', onReturn);
