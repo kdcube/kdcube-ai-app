@@ -12,10 +12,17 @@ from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube.adapt
 )
 
 from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube.models import (
+    CREDENTIAL_MISSING,
+    CREDENTIAL_RECONNECT_REQUIRED,
+    REASON_ACCOUNT_REQUIRED,
+    REASON_CLAIM_UPGRADE_REQUIRED,
+    REASON_CONNECT_REQUIRED,
+    REASON_RECONNECT_REQUIRED,
     ClaimResolution,
     CredentialHandle,
     DelegatedToKdcubeConfig,
     ToolClaimPolicy,
+    account_choice,
     as_str,
     as_str_list,
 )
@@ -46,7 +53,14 @@ class DelegatedToKdcubeBroker:
         connector_app_id: str | None = None,
         account_id: str | None = None,
         purpose: str = "",
+        force_refresh: bool = False,
     ) -> ClaimResolution:
+        """Resolve one provider claim.
+
+        ``force_refresh`` refreshes the credential even when its timestamps
+        look valid — the live-401 retry path uses it when the provider
+        rejected a token the timestamps still trust.
+        """
         del purpose
         provider_key = as_str(provider_id)
         claim_key = as_str(claim)
@@ -54,7 +68,8 @@ class DelegatedToKdcubeBroker:
         account_key = as_str(account_id)
         provider = self.config.provider(provider_key)
         if not self.config.enabled or provider is None or not provider.enabled:
-            return self._consent_required(
+            return self._needs_user_action(
+                reason=REASON_CONNECT_REQUIRED,
                 provider_id=provider_key,
                 claim=claim_key,
                 connector_app_id=connector_key,
@@ -104,7 +119,8 @@ class DelegatedToKdcubeBroker:
                 None,
             )
             if account is None:
-                return self._consent_required(
+                return self._needs_user_action(
+                    reason=REASON_CONNECT_REQUIRED,
                     provider_id=provider_key,
                     claim=claim_key,
                     connector_app_id=connector_key,
@@ -117,35 +133,52 @@ class DelegatedToKdcubeBroker:
                 if item.connected and item.allows(claim_key) and (not connector_key or item.connector_app_id == connector_key)
             ]
             if not candidates:
-                return self._consent_required(
+                connected = [
+                    item for item in accounts
+                    if item.connected and (not connector_key or item.connector_app_id == connector_key)
+                ]
+                if connected:
+                    # Accounts exist but none has approved this claim: the fix
+                    # is a claim upgrade on one of them, not a new connection.
+                    return self._needs_user_action(
+                        reason=REASON_CLAIM_UPGRADE_REQUIRED,
+                        provider_id=provider_key,
+                        claim=claim_key,
+                        connector_app_id=connector_key,
+                        message=f"Approve {claim_key} for your connected {provider.label or provider.provider_id} account.",
+                        candidates=tuple(account_choice(item) for item in connected),
+                    )
+                return self._needs_user_action(
+                    reason=REASON_CONNECT_REQUIRED,
                     provider_id=provider_key,
                     claim=claim_key,
                     connector_app_id=connector_key,
                     message=f"Connect {provider.label or provider.provider_id} and approve {claim_key}.",
-                    candidates=tuple(item.account_id for item in accounts),
+                    candidates=tuple(account_choice(item) for item in accounts),
                 )
             if len(candidates) > 1:
-                return ClaimResolution(
-                    ok=False,
+                return self._needs_user_action(
+                    reason=REASON_ACCOUNT_REQUIRED,
                     provider_id=provider_key,
                     claim=claim_key,
                     connector_app_id=connector_key,
-                    error="account_required",
                     message="Several connected accounts can satisfy this claim; choose an account_id.",
-                    candidates=tuple(item.account_id for item in candidates),
+                    candidates=tuple(account_choice(item) for item in candidates),
                 )
             account = candidates[0]
 
         if not account.connected:
-            return self._consent_required(
+            return self._needs_user_action(
+                reason=REASON_RECONNECT_REQUIRED,
                 provider_id=provider_key,
                 claim=claim_key,
                 connector_app_id=connector_key,
                 account_id=account.account_id,
-                message="The connected account has no usable credential.",
+                message="The connected account has no usable credential. Reconnect it in Connection Hub.",
             )
         if not account.allows(claim_key):
-            return self._consent_required(
+            return self._needs_user_action(
+                reason=REASON_CLAIM_UPGRADE_REQUIRED,
                 provider_id=provider_key,
                 claim=claim_key,
                 connector_app_id=connector_key,
@@ -154,12 +187,19 @@ class DelegatedToKdcubeBroker:
             )
         credential = await self.store.get_credential(account.credential_id)
         if not credential:
-            return self._consent_required(
+            await self.store.set_account_status(
+                account.account_id,
+                account.status,
+                credential_status=CREDENTIAL_MISSING,
+                last_error="credential record is missing",
+            )
+            return self._needs_user_action(
+                reason=REASON_RECONNECT_REQUIRED,
                 provider_id=provider_key,
                 claim=claim_key,
                 connector_app_id=connector_key,
                 account_id=account.account_id,
-                message="The connected account credential is missing or expired.",
+                message="The connected account credential is missing. Reconnect the account in Connection Hub.",
             )
         credential = await self._refresh_credential_if_needed(
             provider_id=provider_key,
@@ -168,9 +208,19 @@ class DelegatedToKdcubeBroker:
             account_id=account.account_id,
             credential_id=account.credential_id,
             credential=credential,
+            force=force_refresh,
         )
         if credential is None:
-            return self._consent_required(
+            # Health transition is user-visible: Connection Hub must stop
+            # showing this account as healthy.
+            await self.store.set_account_status(
+                account.account_id,
+                account.status,
+                credential_status=CREDENTIAL_RECONNECT_REQUIRED,
+                last_error="credential expired and could not be refreshed",
+            )
+            return self._needs_user_action(
+                reason=REASON_RECONNECT_REQUIRED,
                 provider_id=provider_key,
                 claim=claim_key,
                 connector_app_id=account.connector_app_id or connector_key,
@@ -217,15 +267,16 @@ class DelegatedToKdcubeBroker:
         account_id: str,
         credential_id: str,
         credential: dict[str, Any],
+        force: bool = False,
     ) -> dict[str, Any] | None:
         provider = self.config.provider(provider_id)
         if provider is None or not provider.adapter:
-            return credential
+            return None if force else credential
         try:
             adapter = resolve_adapter(provider.adapter)
         except Exception:
-            return credential
-        if not adapter.credential_refresh_needed(credential, skew_seconds=self.refresh_skew_seconds):
+            return None if force else credential
+        if not force and not adapter.credential_refresh_needed(credential, skew_seconds=self.refresh_skew_seconds):
             return credential
         if not adapter.credential_refreshable(credential):
             return None
@@ -314,25 +365,30 @@ class DelegatedToKdcubeBroker:
             "resolved": resolved,
         }
 
-    def _consent_required(
+    def _needs_user_action(
         self,
         *,
+        reason: str,
         provider_id: str,
         claim: str,
         connector_app_id: str = "",
         account_id: str = "",
         message: str = "",
-        candidates: tuple[str, ...] = (),
+        candidates: tuple[dict[str, Any], ...] = (),
     ) -> ClaimResolution:
+        """One user-fixable resolution failure. ``reason`` is a REASON_*
+        constant; retrying after the Connection Hub action should succeed,
+        hence retry_hint=True."""
         return ClaimResolution(
             ok=False,
             provider_id=provider_id,
             claim=claim,
             connector_app_id=connector_app_id,
             account_id=account_id,
-            error="consent_required",
+            error=reason,
             message=message,
             candidates=candidates,
+            retry_hint=True,
         )
 
 

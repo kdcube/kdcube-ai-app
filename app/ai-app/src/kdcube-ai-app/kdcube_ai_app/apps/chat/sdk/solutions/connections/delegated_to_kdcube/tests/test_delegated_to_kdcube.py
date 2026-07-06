@@ -277,7 +277,8 @@ async def test_broker_requires_consent_when_account_missing(monkeypatch):
 
     assert result.ok is False
     assert result.consent_required is True
-    assert result.error == "consent_required"
+    assert result.error == "connect_required"
+    assert result.retry_hint is True
 
 
 @pytest.mark.asyncio
@@ -311,7 +312,11 @@ async def test_broker_requires_account_id_when_multiple_accounts_can_satisfy_cla
 
     assert ambiguous.ok is False
     assert ambiguous.error == "account_required"
-    assert ambiguous.candidates == ("acct-1", "acct-2")
+    assert ambiguous.retry_hint is True
+    # Candidates are LABELED account summaries, never bare ids — chat/MCP
+    # clients render a real choice list from them.
+    assert [item["account_id"] for item in ambiguous.candidates] == ["acct-1", "acct-2"]
+    assert all(item["label"] for item in ambiguous.candidates)
     assert selected.ok is True
     assert selected.account_id == "acct-2"
 
@@ -691,3 +696,152 @@ async def test_operations_start_and_complete_oauth_stores_user_credential(monkey
             state_secret="state-secret",
             client_secret_resolver=lambda **kwargs: "test-secret",
         )
+
+
+# ── Reason vocabulary + credential health matrix ────────────────────────────
+# The broker mints DISTINCT user-actionable reasons; each is a different fix
+# in Connection Hub. These tests pin the vocabulary end-to-end.
+
+
+@pytest.mark.asyncio
+async def test_broker_distinguishes_claim_upgrade_from_connect(monkeypatch):
+    """Account connected, claim not approved -> claim_upgrade_required (with
+    labeled candidates), NOT connect_required."""
+    _install_fake_storage(monkeypatch)
+    config = _sample_config()
+    store = DelegatedToKdcubeStore(user_id="user-1")
+    credential_id = credential_id_for("acct-1")
+    await store.upsert_account(
+        ConnectedAccount(
+            account_id="acct-1",
+            provider_id="google",
+            connector_app_id="gmail",
+            external_subject="sub-1",
+            display_name="Work Gmail",
+            claims=("gmail:read",),          # gmail:send NOT approved
+            credential_id=credential_id,
+        )
+    )
+    await store.set_credential(credential_id, {"access_token": "token-1"})
+
+    result = await DelegatedToKdcubeBroker(config=config, store=store).ensure_claim(
+        provider_id="google",
+        claim="gmail:send",
+    )
+
+    assert result.ok is False
+    assert result.error == "claim_upgrade_required"
+    assert result.retry_hint is True
+    assert result.consent_required is True
+    assert [item["account_id"] for item in result.candidates] == ["acct-1"]
+    assert result.candidates[0]["label"] == "Work Gmail"
+
+
+@pytest.mark.asyncio
+async def test_broker_missing_credential_is_reconnect_and_marks_account(monkeypatch):
+    """Credential record gone -> reconnect_required, and the account's health
+    metadata flips to credential_status=missing so Connection Hub shows it."""
+    _install_fake_storage(monkeypatch)
+    config = _sample_config()
+    store = DelegatedToKdcubeStore(user_id="user-1")
+    await store.upsert_account(
+        ConnectedAccount(
+            account_id="acct-1",
+            provider_id="google",
+            connector_app_id="gmail",
+            external_subject="sub-1",
+            claims=("gmail:read",),
+            credential_id=credential_id_for("acct-1"),
+        )
+    )
+    # no set_credential: the record is missing
+
+    result = await DelegatedToKdcubeBroker(config=config, store=store).ensure_claim(
+        provider_id="google",
+        claim="gmail:read",
+    )
+
+    assert result.ok is False
+    assert result.error == "reconnect_required"
+    assert result.retry_hint is True
+    account = await store.get_account("acct-1")
+    assert account.metadata.get("credential_status") == "missing"
+    assert account.metadata.get("last_error")
+
+
+@pytest.mark.asyncio
+async def test_broker_unrefreshable_expiry_is_reconnect_and_marks_account(monkeypatch):
+    """Expired credential without a refresh token -> reconnect_required and a
+    persisted credential_status=reconnect_required health transition."""
+    _install_fake_storage(monkeypatch)
+    config = _oauth_sample_config()
+    store = DelegatedToKdcubeStore(user_id="user-1")
+    credential_id = credential_id_for("acct-t")
+    await store.upsert_account(
+        ConnectedAccount(
+            account_id="acct-t",
+            provider_id="test",
+            connector_app_id="default",
+            external_subject="sub-t",
+            claims=("test:read",),
+            credential_id=credential_id,
+        )
+    )
+    await store.set_credential(
+        credential_id,
+        {"access_token": "stale", "expires_at": 1},  # long expired, no refresh_token
+    )
+
+    result = await DelegatedToKdcubeBroker(config=config, store=store).ensure_claim(
+        provider_id="test",
+        claim="test:read",
+    )
+
+    assert result.ok is False
+    assert result.error == "reconnect_required"
+    assert result.retry_hint is True
+    account = await store.get_account("acct-t")
+    assert account.metadata.get("credential_status") == "reconnect_required"
+
+
+@pytest.mark.asyncio
+async def test_broker_force_refresh_refreshes_valid_looking_credential(monkeypatch):
+    """force_refresh is the live-401 retry lever: the provider rejected a
+    token whose timestamps still look valid, so the broker must refresh
+    anyway instead of trusting expires_at."""
+    _install_fake_storage(monkeypatch)
+    config = _oauth_sample_config()
+    store = DelegatedToKdcubeStore(user_id="user-1")
+    credential_id = credential_id_for("acct-t")
+    await store.upsert_account(
+        ConnectedAccount(
+            account_id="acct-t",
+            provider_id="test",
+            connector_app_id="default",
+            external_subject="sub-t",
+            claims=("test:read",),
+            credential_id=credential_id,
+        )
+    )
+    await store.set_credential(
+        credential_id,
+        {"access_token": "rejected-by-provider", "refresh_token": "refresh-1", "expires_at": 4_000_000_000},
+    )
+
+    broker = DelegatedToKdcubeBroker(
+        config=config,
+        store=store,
+        client_secret_resolver=lambda **_kw: "test-secret",
+    )
+    result = await broker.ensure_claim(
+        provider_id="test",
+        claim="test:read",
+        force_refresh=True,
+    )
+
+    assert result.ok is True
+    assert result.credential is not None
+    assert result.credential.credential.get("access_token") == "token-refreshed"
+    # And the refreshed credential is persisted for subsequent calls.
+    stored = await store.get_credential(credential_id)
+    assert stored.get("access_token") == "token-refreshed"

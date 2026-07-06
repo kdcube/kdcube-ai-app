@@ -20,6 +20,38 @@ CONNECTION_HUB_BUNDLE_ID = "connection-hub@1-0"
 STATUS_CONNECTED = "connected"
 STATUS_REVOKED = "revoked"
 
+# ── Resolution reasons ──────────────────────────────────────────────────────
+# Minted by the broker and carried VERBATIM through consent payloads into tool
+# envelopes and named-service errors. Each is a distinct user situation with a
+# distinct fix; do not collapse them.
+REASON_CONNECT_REQUIRED = "connect_required"          # no eligible connected account
+REASON_CLAIM_UPGRADE_REQUIRED = "claim_upgrade_required"  # account exists, claim not approved
+REASON_RECONNECT_REQUIRED = "reconnect_required"      # credential missing/unrefreshable/rejected
+REASON_ACCOUNT_REQUIRED = "account_required"          # several eligible accounts; pick one
+
+# Reasons a USER can fix in Connection Hub (retryable after the fix). Operator
+# config errors (claim_not_configured, connector_app_not_configured,
+# claim_outside_connector_app) are deliberately not in this set.
+USER_ACTIONABLE_REASONS = frozenset(
+    {
+        REASON_CONNECT_REQUIRED,
+        REASON_CLAIM_UPGRADE_REQUIRED,
+        REASON_RECONNECT_REQUIRED,
+        REASON_ACCOUNT_REQUIRED,
+    }
+)
+
+# ── Credential health vocabulary ────────────────────────────────────────────
+# Shown by Connection Hub per connected account; persisted on transitions
+# (refresh failure, live provider rejection) and computed from credential
+# expiry otherwise.
+CREDENTIAL_ACTIVE = "active"
+CREDENTIAL_EXPIRES_SOON = "expires_soon"
+CREDENTIAL_REFRESHABLE = "refreshable"
+CREDENTIAL_RECONNECT_REQUIRED = "reconnect_required"
+CREDENTIAL_MISSING = "missing"
+CREDENTIAL_REVOKED = "revoked"
+
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -375,6 +407,22 @@ class ConnectedAccount:
         )
 
 
+def account_choice(account: "ConnectedAccount") -> dict[str, Any]:
+    """Public, labeled summary of one account for choice lists.
+
+    This is what `account_required` candidates carry so chat/MCP clients can
+    render a real selection ("NestLogic — T2AH06VEC"), never bare ids.
+    """
+    return {
+        "account_id": account.account_id,
+        "label": account.display_name or account.email or account.workspace or account.account_id,
+        "email": account.email,
+        "workspace": account.workspace,
+        "status": account.status,
+        "claims": list(account.claims),
+    }
+
+
 @dataclass(frozen=True)
 class CredentialHandle:
     """Server-side result that authorizes provider use for one connected account."""
@@ -400,7 +448,14 @@ class CredentialHandle:
 
 @dataclass(frozen=True)
 class ClaimResolution:
-    """Result of broker.ensure_claim."""
+    """Result of broker.ensure_claim.
+
+    ``error`` carries one of the REASON_* constants (or an operator config
+    error). ``candidates`` carries labeled account summaries (see
+    ``account_choice``), never bare ids. ``retry_hint`` says whether retrying
+    the same operation after the user completes the Connection Hub action
+    should succeed.
+    """
 
     ok: bool
     provider_id: str
@@ -411,11 +466,12 @@ class ClaimResolution:
     error: str = ""
     message: str = ""
     connect_url: str = ""
-    candidates: tuple[str, ...] = ()
+    candidates: tuple[dict[str, Any], ...] = ()
+    retry_hint: bool = False
 
     @property
     def consent_required(self) -> bool:
-        return self.error == "consent_required"
+        return self.error in USER_ACTIONABLE_REASONS
 
     def to_dict(self, *, include_credential: bool = False) -> dict[str, Any]:
         data: dict[str, Any] = {
@@ -434,7 +490,8 @@ class ClaimResolution:
         if self.connect_url:
             data["connect_url"] = self.connect_url
         if self.candidates:
-            data["candidates"] = list(self.candidates)
+            data["candidates"] = [dict(item) for item in self.candidates]
+        data["retry_hint"] = self.retry_hint
         return data
 
 
@@ -442,6 +499,18 @@ __all__ = [
     "CONNECTION_HUB_BUNDLE_ID",
     "STATUS_CONNECTED",
     "STATUS_REVOKED",
+    "REASON_CONNECT_REQUIRED",
+    "REASON_CLAIM_UPGRADE_REQUIRED",
+    "REASON_RECONNECT_REQUIRED",
+    "REASON_ACCOUNT_REQUIRED",
+    "USER_ACTIONABLE_REASONS",
+    "CREDENTIAL_ACTIVE",
+    "CREDENTIAL_EXPIRES_SOON",
+    "CREDENTIAL_REFRESHABLE",
+    "CREDENTIAL_RECONNECT_REQUIRED",
+    "CREDENTIAL_MISSING",
+    "CREDENTIAL_REVOKED",
+    "account_choice",
     "ProviderClaim",
     "ConnectorApp",
     "IntegrationProvider",

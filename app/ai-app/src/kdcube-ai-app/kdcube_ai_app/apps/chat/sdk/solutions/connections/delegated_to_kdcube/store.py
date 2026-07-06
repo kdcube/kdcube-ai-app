@@ -159,11 +159,32 @@ class DelegatedToKdcubeStore:
             await self.delete_credential(existing.credential_id)
         return True
 
-    async def mark_revoked(self, account_id: str) -> ConnectedAccount | None:
+    async def set_account_status(
+        self,
+        account_id: str,
+        status: str,
+        *,
+        credential_status: str = "",
+        last_error: str = "",
+    ) -> ConnectedAccount | None:
+        """Persist a health transition on one account.
+
+        ``status`` is the account lifecycle status (connected/revoked).
+        ``credential_status`` and ``last_error`` land in metadata so
+        Connection Hub can show truthful health (reconnect_required, missing,
+        …) and the most recent provider symptom without a separate probe.
+        """
         existing = await self.get_account(account_id)
         if existing is None:
             return None
-        revoked = ConnectedAccount(
+        metadata = dict(existing.metadata or {})
+        if credential_status:
+            metadata["credential_status"] = as_str(credential_status)
+            metadata["credential_status_at"] = utc_now()
+        if last_error:
+            metadata["last_error"] = as_str(last_error)
+            metadata["last_error_at"] = utc_now()
+        updated = ConnectedAccount(
             account_id=existing.account_id,
             provider_id=existing.provider_id,
             connector_app_id=existing.connector_app_id,
@@ -173,13 +194,20 @@ class DelegatedToKdcubeStore:
             workspace=existing.workspace,
             claims=existing.claims,
             credential_id=existing.credential_id,
-            status=STATUS_REVOKED,
+            status=as_str(status) or existing.status,
             connected_at=existing.connected_at,
             updated_at=utc_now(),
-            metadata=dict(existing.metadata or {}),
+            metadata=metadata,
         )
-        self._set_prop(self.account_prop_key(account_id), revoked.to_dict())
-        return revoked
+        self._set_prop(self.account_prop_key(account_id), updated.to_dict())
+        return updated
+
+    async def mark_revoked(self, account_id: str) -> ConnectedAccount | None:
+        return await self.set_account_status(
+            account_id,
+            STATUS_REVOKED,
+            credential_status="revoked",
+        )
 
     # ── credentials ─────────────────────────────────────────────────────────
 
