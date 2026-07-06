@@ -114,9 +114,12 @@ Layer 2: KDCube -> external mail provider
 ```
 
 If Claude has `mail:read` but the current KDCube user has not connected Gmail
-with `gmail:read`, the provider returns a connected-account consent-required
-payload. The fix is not to reconnect Claude; the user must connect or upgrade
-the Gmail account in Connection Hub.
+with `gmail:read`, the provider returns the structured consent error
+(`needs_connected_account_consent` with `reason`, `retry_hint`, labeled
+`candidates`, and `connection_hub_url` — see
+[the consent-error story](../../kdcube_for_agents/named-services-mcp-README.md#the-consent-error-story)).
+The fix is not to reconnect Claude; the user must connect or upgrade the Gmail
+account in Connection Hub.
 
 If the user already connected Gmail but the provider token expired, KDCube tries
 to refresh the Google access token before the Gmail transport is called. The
@@ -320,5 +323,7 @@ Gmail transport live in SDK integration modules:
 9. Test send or forward.
 
 If the MCP call is accepted but the provider returns
-`connected_account_consent_required`, Connection Hub delegated MCP consent is
-working; the missing piece is the user-to-provider connected account claim.
+`needs_connected_account_consent`, Connection Hub delegated MCP consent is
+working; the missing piece is the user-to-provider connected account claim, and
+`error.details.reason` says whether to connect, approve a claim, reconnect, or
+pick an account.

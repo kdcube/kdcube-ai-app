@@ -12,6 +12,7 @@ provider packages such as ``integrations.google.gmail_tools``.
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any, Mapping
 
@@ -24,14 +25,33 @@ from kdcube_ai_app.apps.chat.sdk.integrations.google.gmail_tools import (
     bind_integrations as bind_gmail_integrations,
     bind_service as bind_gmail_service,
 )
+from kdcube_ai_app.apps.chat.sdk.integrations.file_staging import (
+    delete_staged,
+    staging_root,
+)
+from kdcube_ai_app.apps.chat.sdk.integrations.inline_files import (
+    InlineFileError,
+    inline_files_workspace,
+    materialize_inline_files,
+    resolve_payload_file_entries,
+)
+from kdcube_ai_app.apps.chat.sdk.integrations.named_service_consent import (
+    ACCOUNT_SELECTION_CONTRACT,
+    CONSENT_ERROR_CONTRACT,
+    account_credential_status,
+    consent_error_response,
+    resolution_consent_payload,
+    tool_error_response,
+)
 from kdcube_ai_app.apps.chat.sdk.solutions.connections.connection_edges import (
     DEFAULT_CONNECTION_HUB_BUNDLE_ID,
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube import (
     DelegatedToKdcubeClient,
-    connected_account_consent_payload,
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube.models import (
+    REASON_CONNECT_REQUIRED,
+    ClaimResolution,
     ConnectedAccount,
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers import (
@@ -68,6 +88,7 @@ MAIL_TRANSPORTS = (TRANSPORT_LOCAL, TRANSPORT_API)
 ACTION_DOWNLOAD_ATTACHMENTS = "download_attachments"
 ACTION_SEND = "send"
 ACTION_FORWARD = "forward"
+ACTION_REQUEST_UPLOAD = "request_upload"
 
 MAIL_GRANT_HINTS = {
     "object.list": ["mail:read"],
@@ -147,40 +168,76 @@ MAIL_SCHEMA = {
     "refs": {
         "account": "mail:<provider>:<account_id>",
         "message": "mail:<provider>:<account_id>:message:<message_id>",
-        "attachment": "mail:<provider>:<account_id>:attachment:<message_id>:<attachment_id>",
+        "attachment": (
+            "mail:<provider>:<account_id>:attachment:<message_id>:<part_id> — "
+            "the part id is stable across reads (Gmail attachment ids rotate per fetch)"
+        ),
     },
     "object_kinds": {
         MAIL_ACCOUNT_KIND: {
             "description": "One connected mail account belonging to the current KDCube user.",
-            "fields": ["ref", "provider", "provider_id", "connector_app_id", "account_id", "label", "email", "claims"],
+            "fields": ["ref", "provider", "provider_id", "connector_app_id", "account_id", "label", "email", "claims", "credential_status"],
         },
         MAIL_MESSAGE_KIND: {
             "description": "One mail message found or read from a connected account.",
-            "fields": ["ref", "provider", "account_id", "message_id", "thread_id", "subject", "from", "date", "snippet"],
+            "fields": ["ref", "provider", "account_id", "account_label", "message_id", "thread_id", "subject", "from", "date", "snippet"],
         },
         MAIL_ATTACHMENT_KIND: {
             "description": "One attachment on a mail message.",
-            "fields": ["attachment_id", "filename", "mime_type", "size_bytes", "logical_path"],
+            "fields": ["ref", "account_id", "message_id", "attachment_id", "filename", "mime_type", "size_bytes", "download"],
         },
+    },
+    "files": {
+        "get": (
+            "object.get on an attachment ref returns its metadata plus download "
+            "{encoding, url, expires_at}. encoding=url means fetch the short-lived "
+            "url over plain HTTP out-of-band — bytes never ride in the tool result. "
+            "encoding=none means no delivery path is configured; ask in chat instead."
+        ),
     },
     "search": {"filters": MAIL_SEARCH_FILTERS},
     "actions": {
         ACTION_DOWNLOAD_ATTACHMENTS: {
-            "description": "Download message attachments into KDCube files.",
+            "description": (
+                "Download message attachments. In chat they land as KDCube files; "
+                "on transports without a chat turn (MCP) the action returns one "
+                "short-lived download url per attachment instead."
+            ),
             "object_ref": "mail:<provider>:<account_id>:message:<message_id>",
             "payload": ["attachment_ids", "include_inline", "max_attachments", "visibility"],
         },
+        ACTION_REQUEST_UPLOAD: {
+            "description": (
+                "Reserve an upload slot for one outbound attachment. Returns "
+                "{upload_url, staged_ref, expires_at}: PUT/POST the raw file bytes to "
+                "upload_url over plain HTTP, then reference the staged_ref in a send/"
+                "forward attachments entry. This is THE way to attach files — bytes "
+                "never ride inside tool calls."
+            ),
+            "object_ref": "mail:<provider>:<account_id> (any connected account ref)",
+            "payload": ["filename", "mime"],
+        },
         ACTION_SEND: {
-            "description": "Send a new email from a connected mail account.",
+            "description": (
+                "Send a new email from a connected mail account. Attach files via "
+                "attachments=[{staged_ref}] after request_upload (preferred); tiny "
+                "files may ride inline as {filename, content_base64} (10MB/file, 25MB total)."
+            ),
             "object_ref": "mail:<provider>:<account_id> or omit account_id in payload when only one account can send",
-            "payload": ["to", "subject", "body_markdown", "cc", "bcc", "body_html", "attachment_paths", "account_id"],
+            "payload": ["to", "subject", "body_markdown", "cc", "bcc", "body_html", "attachments", "attachment_paths", "account_id"],
         },
         ACTION_FORWARD: {
-            "description": "Forward an existing message.",
+            "description": (
+                "Forward an existing message. include_original_attachments=true carries "
+                "the original files on any transport; extra files ride via "
+                "attachments=[{staged_ref}] (after request_upload) or tiny inline entries."
+            ),
             "object_ref": "mail:<provider>:<account_id>:message:<message_id>",
-            "payload": ["to", "note_markdown", "cc", "bcc", "include_original_attachments", "attachment_paths"],
+            "payload": ["to", "note_markdown", "cc", "bcc", "include_original_attachments", "attachments", "attachment_paths"],
         },
     },
+    "account_selection": ACCOUNT_SELECTION_CONTRACT,
+    "consent_errors": CONSENT_ERROR_CONTRACT,
     "grant_hints": MAIL_GRANT_HINTS,
     "connected_account_claims": {
         "gmail": {
@@ -288,13 +345,20 @@ def _account_object(account: ConnectedAccount, *, provider_key: str = "gmail") -
         "claims": list(account.claims or ()),
         "connected": account.connected,
         "status": account.status,
+        "credential_status": account_credential_status(account),
         "connected_at": account.connected_at,
         "updated_at": account.updated_at,
         "metadata": dict(account.metadata or {}),
     }
 
 
-def _message_object(row: Mapping[str, Any], *, provider_key: str = "gmail", account_id: str = "") -> dict[str, Any]:
+def _message_object(
+    row: Mapping[str, Any],
+    *,
+    provider_key: str = "gmail",
+    account_id: str = "",
+    account_label: str = "",
+) -> dict[str, Any]:
     message_id = _text(row.get("id") or row.get("message_id"))
     headers = row.get("headers") if isinstance(row.get("headers"), Mapping) else {}
     subject = _text(row.get("subject") or headers.get("subject"))
@@ -310,6 +374,7 @@ def _message_object(row: Mapping[str, Any], *, provider_key: str = "gmail", acco
         "thread_id": _text(row.get("thread_id")),
         "provider": provider_key,
         "account_id": account_id,
+        "account_label": _text(account_label) or account_id,
         "subject": subject,
         "from": sender,
         "date": date,
@@ -323,17 +388,13 @@ def _message_object(row: Mapping[str, Any], *, provider_key: str = "gmail", acco
 
 
 def _error_from_tool(result: Mapping[str, Any], *, request: NamedServiceRequest, default_code: str = "mail_operation_failed") -> NamedServiceResponse:
-    error = result.get("error")
-    error = error if isinstance(error, Mapping) else {}
-    ret = result.get("ret")
-    return NamedServiceResponse.error_response(
-        code=_text(error.get("code")) or _text(result.get("error")) or default_code,
-        message=_text(error.get("message")) or _text(result.get("message")) or "Mail operation failed.",
-        status=400,
-        details={"ret": ret} if ret is not None else {},
-        provider={"provider_id": PROVIDER_ID},
-        namespace=request.namespace or MAIL_NAMESPACE,
-        object_ref=request.object_ref,
+    return tool_error_response(
+        result,
+        request=request,
+        namespace=MAIL_NAMESPACE,
+        provider_identity={"provider_id": PROVIDER_ID},
+        default_code=default_code,
+        fallback_message="Mail operation failed.",
     )
 
 
@@ -356,10 +417,14 @@ class MailNamedServiceProvider(NamedServiceProvider):
         entrypoint: Any = None,
         bundle_id: str | None = None,
         connection_hub_bundle_id: str = DEFAULT_CONNECTION_HUB_BUNDLE_ID,
+        file_url_factory: Any = None,
+        upload_slot_factory: Any = None,
     ) -> None:
         super().__init__(mail_named_service_spec(bundle_id=bundle_id))
         self._entrypoint = entrypoint
         self._connection_hub_bundle_id = connection_hub_bundle_id
+        self._file_url_factory = file_url_factory
+        self._upload_slot_factory = upload_slot_factory
         self._gmail = GmailTools()
         if entrypoint is not None:
             bind_gmail_service(entrypoint)
@@ -367,6 +432,155 @@ class MailNamedServiceProvider(NamedServiceProvider):
 
     def _provider_identity(self) -> dict[str, Any]:
         return {"provider_id": PROVIDER_ID, "bundle_id": self.spec.bundle_id}
+
+    async def _download_url(self, ctx: NamedServiceContext, *, ref: str) -> dict[str, Any] | None:
+        """Short-lived signed download URL for one attachment ref, or None when
+        the hosting bundle provides no delivery path (no factory / no secret /
+        unknown public origin)."""
+        if self._file_url_factory is None:
+            return None
+        try:
+            out = self._file_url_factory(ctx, {"ref": ref})
+            if hasattr(out, "__await__"):
+                out = await out
+        except Exception:
+            LOGGER.exception("mail download url factory failed for %s", ref)
+            return None
+        return dict(out) if isinstance(out, Mapping) and out.get("url") else None
+
+    def _attachment_download_field(self, url_info: dict[str, Any] | None) -> dict[str, Any]:
+        if url_info:
+            return {"encoding": "url", **url_info}
+        return {
+            "encoding": "none",
+            "note": "No out-of-band delivery is configured; download attachments in chat instead.",
+        }
+
+    def _staging_root(self):
+        storage = str(getattr(getattr(self._entrypoint, "settings", None), "STORAGE_PATH", "") or "")
+        try:
+            return staging_root(storage)
+        except OSError:
+            return None
+
+    async def _request_upload(self, ctx: NamedServiceContext, request: NamedServiceRequest) -> NamedServiceResponse:
+        payload = dict(request.payload or {})
+        filename = _text(payload.get("filename"))
+        if not filename:
+            return NamedServiceResponse.error_response(
+                code="filename_required",
+                message="request_upload needs payload.filename.",
+                status=400,
+                provider=self._provider_identity(),
+                namespace=request.namespace or MAIL_NAMESPACE,
+                object_ref=request.object_ref,
+            )
+        slot = None
+        if self._upload_slot_factory is not None:
+            try:
+                slot = self._upload_slot_factory(ctx, {"filename": filename, "mime": _text(payload.get("mime"))})
+                if hasattr(slot, "__await__"):
+                    slot = await slot
+            except Exception:
+                LOGGER.exception("mail upload slot factory failed")
+                slot = None
+        if not isinstance(slot, Mapping) or not slot.get("upload_url"):
+            return NamedServiceResponse.error_response(
+                code="upload_not_configured",
+                message="This deployment has no upload path configured; use tiny inline content_base64 attachments instead.",
+                status=503,
+                provider=self._provider_identity(),
+                namespace=request.namespace or MAIL_NAMESPACE,
+                object_ref=request.object_ref,
+            )
+        return NamedServiceResponse.ok_response(
+            provider=self._provider_identity(),
+            namespace=request.namespace or MAIL_NAMESPACE,
+            object_ref=request.object_ref,
+            extra={
+                "action": ACTION_REQUEST_UPLOAD,
+                **dict(slot),
+                "how": (
+                    "POST the raw file bytes to upload_url (body = file, no form encoding), "
+                    "then pass {\"staged_ref\": ...} in the attachments list of send/forward."
+                ),
+            },
+        )
+
+    def _inline_error(self, request: NamedServiceRequest, exc: InlineFileError) -> NamedServiceResponse:
+        return NamedServiceResponse.error_response(
+            code="mail_inline_files_invalid",
+            message=str(exc),
+            status=400,
+            provider=self._provider_identity(),
+            namespace=request.namespace or MAIL_NAMESPACE,
+            object_ref=request.object_ref,
+        )
+
+    @staticmethod
+    def _merged_attachment_paths(payload: Mapping[str, Any], staged: list[dict[str, Any]]) -> str:
+        paths = [_text(item) for item in _as_list(payload.get("attachment_paths")) if _text(item)]
+        paths.extend(item["relpath"] for item in staged)
+        return json.dumps(paths)
+
+    async def _download_attachments_as_urls(
+        self,
+        ctx: NamedServiceContext,
+        request: NamedServiceRequest,
+        *,
+        parsed: Mapping[str, str],
+        payload: Mapping[str, Any],
+    ) -> NamedServiceResponse:
+        """URL delivery for download_attachments on turn-less transports."""
+        result = await self._gmail.read_gmail_message(
+            message_id=parsed["message_id"],
+            include_html=False,
+            max_body_chars=1,
+            account_id=parsed["account_id"],
+        )
+        if not isinstance(result, Mapping) or not result.get("ok"):
+            return _error_from_tool(result if isinstance(result, Mapping) else {}, request=request, default_code="gmail_download_failed")
+        ret = result.get("ret") if isinstance(result.get("ret"), Mapping) else {}
+        selected = {_text(item) for item in _as_list(payload.get("attachment_ids")) if _text(item)}
+        rows = list(ret.get("attachments") or [])
+        if bool(payload.get("include_inline")):
+            rows.extend(ret.get("inline_attachments") or [])
+        if selected:
+            rows = [row for row in rows if isinstance(row, Mapping) and _text(row.get("attachment_id")) in selected]
+        rows = rows[: _int(payload.get("max_attachments"), default=10, maximum=20)]
+        files: list[dict[str, Any]] = []
+        for row in rows:
+            if not isinstance(row, Mapping):
+                continue
+            # Mint refs on the stable part id — Gmail attachment ids rotate
+            # per fetch, so an id-bearing ref would be dead by download time.
+            selector = _text(row.get("part_id")) or _text(row.get("attachment_id"))
+            ref = attachment_ref("gmail", parsed["account_id"], parsed["message_id"], selector)
+            url_info = await self._download_url(ctx, ref=ref)
+            files.append(
+                {
+                    "ref": ref,
+                    "object_kind": MAIL_ATTACHMENT_KIND,
+                    "part_id": _text(row.get("part_id")),
+                    "attachment_id": _text(row.get("attachment_id")),
+                    "filename": _text(row.get("filename")) or "attachment.bin",
+                    "mime_type": _text(row.get("mime_type")),
+                    "size_bytes": row.get("size_bytes", 0),
+                    "download": self._attachment_download_field(url_info),
+                }
+            )
+        return NamedServiceResponse.ok_response(
+            provider=self._provider_identity(),
+            namespace=request.namespace or MAIL_NAMESPACE,
+            object_ref=request.object_ref,
+            items=files,
+            extra={
+                "action": ACTION_DOWNLOAD_ATTACHMENTS,
+                "delivery": "url",
+                "count": len(files),
+                "note": "No chat turn on this transport; fetch each download.url over HTTP out-of-band.",
+            },
+        )
 
     async def _client(self, ctx: NamedServiceContext) -> DelegatedToKdcubeClient | None:
         user_id = _text(ctx.user_id)
@@ -393,48 +607,114 @@ class MailNamedServiceProvider(NamedServiceProvider):
         ]
         return out
 
-    def _consent_required(
+    async def _resolve_claim(
+        self,
+        ctx: NamedServiceContext,
+        *,
+        claim: str,
+        account_id: str = "",
+    ) -> ClaimResolution:
+        """Resolve one Gmail claim through the broker.
+
+        The broker mints the distinct resolution reason (connect vs upgrade vs
+        reconnect vs account choice) with labeled candidates; this adapter
+        never re-derives that. Without a platform user or entrypoint the only
+        honest answer is connect_required.
+        """
+        client = await self._client(ctx)
+        if client is None:
+            return ClaimResolution(
+                ok=False,
+                provider_id=GMAIL_PROVIDER_ID,
+                claim=claim,
+                connector_app_id=GMAIL_CONNECTOR_APP_ID,
+                account_id=account_id,
+                error=REASON_CONNECT_REQUIRED,
+                message="Connect a mail account in Connection Hub.",
+                retry_hint=True,
+            )
+        return await client.ensure_claim(
+            provider_id=GMAIL_PROVIDER_ID,
+            connector_app_id=GMAIL_CONNECTOR_APP_ID,
+            claim=claim,
+            account_id=account_id or None,
+        )
+
+    def _consent_error(
         self,
         *,
         ctx: NamedServiceContext,
         request: NamedServiceRequest,
-        provider_id: str,
-        connector_app_id: str,
-        claim: str,
-        message: str,
-        account_id: str = "",
+        resolution: ClaimResolution,
     ) -> NamedServiceResponse:
-        payload = connected_account_consent_payload(
-            tenant=ctx.tenant,
-            project=ctx.project,
+        return consent_error_response(
+            resolution=resolution,
+            ctx=ctx,
+            request=request,
+            namespace=MAIL_NAMESPACE,
+            provider_identity=self._provider_identity(),
             connection_hub_bundle_id=self._connection_hub_bundle_id,
-            missing=[
-                {
-                    "ok": False,
-                    "tool_name": f"named_services.{MAIL_NAMESPACE}.{request.operation}",
-                    "failures": [
-                        {
-                            "ok": False,
-                            "provider_id": provider_id,
-                            "connector_app_id": connector_app_id,
-                            "claim": claim,
-                            "account_id": account_id,
-                            "error": "consent_required",
-                            "message": message,
-                        }
-                    ],
-                }
-            ],
+            tool_name=f"named_services.{MAIL_NAMESPACE}.{request.operation}",
         )
-        return NamedServiceResponse.error_response(
-            code="connected_account_consent_required",
-            message=message,
-            status=403,
-            details={"consent": payload.get("consent"), "payload": payload},
-            provider=self._provider_identity(),
-            namespace=request.namespace or MAIL_NAMESPACE,
-            object_ref=request.object_ref,
+
+    def _connect_hint(self, ctx: NamedServiceContext, request: NamedServiceRequest) -> dict[str, Any]:
+        """Consent block shipped with an EMPTY account list, so clients learn
+        where to connect without treating the empty list as an error."""
+        payload = resolution_consent_payload(
+            resolution=ClaimResolution(
+                ok=False,
+                provider_id=GMAIL_PROVIDER_ID,
+                claim="",
+                connector_app_id=GMAIL_CONNECTOR_APP_ID,
+                error=REASON_CONNECT_REQUIRED,
+                message="Connect a mail account in Connection Hub.",
+                retry_hint=True,
+            ),
+            ctx=ctx,
+            connection_hub_bundle_id=self._connection_hub_bundle_id,
+            tool_name=f"named_services.{MAIL_NAMESPACE}.{request.operation}",
         )
+        return dict(payload.get("consent") or {})
+
+    async def _accounts_for_claim(
+        self,
+        ctx: NamedServiceContext,
+        request: NamedServiceRequest,
+        *,
+        claim: str,
+        account_id: str = "",
+    ) -> tuple[list[ConnectedAccount], NamedServiceResponse | None]:
+        """Accounts to operate on, or the structured consent error.
+
+        Explicit ``account_id`` pins one account (broker explains any failure);
+        otherwise every account holding the claim participates. Empty means
+        the broker minted connect/upgrade/reconnect — never a silent guess.
+        """
+        eligible = await self._gmail_accounts(ctx, claim=claim)
+        if account_id:
+            account = next((item for item in eligible if item.account_id == account_id), None)
+            if account is None:
+                resolution = await self._resolve_claim(ctx, claim=claim, account_id=account_id)
+                if not resolution.ok:
+                    return [], self._consent_error(ctx=ctx, request=request, resolution=resolution)
+                account = ConnectedAccount(
+                    account_id=account_id,
+                    provider_id=GMAIL_PROVIDER_ID,
+                    connector_app_id=GMAIL_CONNECTOR_APP_ID,
+                )
+            return [account], None
+        if not eligible:
+            resolution = await self._resolve_claim(ctx, claim=claim)
+            if not resolution.ok:
+                return [], self._consent_error(ctx=ctx, request=request, resolution=resolution)
+            return [
+                ConnectedAccount(
+                    account_id=resolution.account_id,
+                    provider_id=GMAIL_PROVIDER_ID,
+                    connector_app_id=GMAIL_CONNECTOR_APP_ID,
+                )
+            ], None
+        return eligible, None
 
     async def provider_about(self, ctx: NamedServiceContext, request: NamedServiceRequest) -> NamedServiceResponse:
         del ctx
@@ -469,7 +749,7 @@ class MailNamedServiceProvider(NamedServiceProvider):
                 "get": True,
                 "upsert": False,
                 "delete": False,
-                "actions": [ACTION_DOWNLOAD_ATTACHMENTS, ACTION_SEND, ACTION_FORWARD],
+                "actions": [ACTION_DOWNLOAD_ATTACHMENTS, ACTION_SEND, ACTION_FORWARD, ACTION_REQUEST_UPLOAD],
                 "providers": MAIL_PROVIDER_CATALOG,
                 "grant_hints": MAIL_GRANT_HINTS,
                 "connected_account_claims": MAIL_SCHEMA["connected_account_claims"],
@@ -491,11 +771,14 @@ class MailNamedServiceProvider(NamedServiceProvider):
         if not provider_filter or provider_filter == "gmail":
             for account in await self._gmail_accounts(ctx):
                 items.append(_account_object(account, provider_key="gmail"))
+        extra: dict[str, Any] = {"count": len(items), "providers": ["gmail"]}
+        if not items:
+            extra["consent"] = self._connect_hint(ctx, request)
         return NamedServiceResponse.ok_response(
             provider=self._provider_identity(),
             namespace=request.namespace or MAIL_NAMESPACE,
             items=items,
-            extra={"count": len(items), "providers": ["gmail"]},
+            extra=extra,
         )
 
     async def object_search(self, ctx: NamedServiceContext, request: NamedServiceRequest) -> NamedServiceResponse:
@@ -512,22 +795,17 @@ class MailNamedServiceProvider(NamedServiceProvider):
         query = _text(filters.get("gmail_query") or request.query)
         account_id = _text(filters.get("account_id") or request.payload.get("account_id"))
         limit = _int(request.limit, default=5, maximum=10)
-        accounts = [ConnectedAccount(account_id=account_id, provider_id=GMAIL_PROVIDER_ID, connector_app_id=GMAIL_CONNECTOR_APP_ID)] if account_id else await self._gmail_accounts(ctx, claim=GMAIL_READ_CLAIM)
-        if not accounts:
-            return self._consent_required(
-                ctx=ctx,
-                request=request,
-                provider_id=GMAIL_PROVIDER_ID,
-                connector_app_id=GMAIL_CONNECTOR_APP_ID,
-                claim=GMAIL_READ_CLAIM,
-                account_id=account_id,
-                message="Connect a Gmail account and approve Gmail read access.",
-            )
+        accounts, consent = await self._accounts_for_claim(
+            ctx, request, claim=GMAIL_READ_CLAIM, account_id=account_id
+        )
+        if consent is not None:
+            return consent
 
         items: list[dict[str, Any]] = []
         errors: list[dict[str, Any]] = []
         per_account_limit = max(1, min(limit, 10))
         for account in accounts:
+            account_label = account.display_name or account.email or account.account_id
             result = await self._gmail.search_gmail(
                 query=query,
                 max_results=per_account_limit,
@@ -536,6 +814,7 @@ class MailNamedServiceProvider(NamedServiceProvider):
             if not isinstance(result, Mapping) or not result.get("ok"):
                 errors.append({
                     "account_id": account.account_id,
+                    "account_label": account_label,
                     "error": result.get("error") if isinstance(result, Mapping) else "gmail_search_failed",
                     "ret": result.get("ret") if isinstance(result, Mapping) else None,
                 })
@@ -544,18 +823,25 @@ class MailNamedServiceProvider(NamedServiceProvider):
             resolved_account_id = _text(ret.get("account_id") or account.account_id)
             for row in ret.get("messages") or []:
                 if isinstance(row, Mapping):
-                    items.append(_message_object(row, provider_key="gmail", account_id=resolved_account_id))
+                    items.append(
+                        _message_object(
+                            row,
+                            provider_key="gmail",
+                            account_id=resolved_account_id,
+                            account_label=account_label,
+                        )
+                    )
 
         if not items and errors:
             first = errors[0]
-            err = first.get("error") if isinstance(first.get("error"), Mapping) else {}
-            return NamedServiceResponse.error_response(
-                code=_text(err.get("code")) or "gmail_search_failed",
-                message=_text(err.get("message")) or "Gmail search failed.",
-                status=400,
-                details={"errors": errors},
-                provider=self._provider_identity(),
-                namespace=request.namespace or MAIL_NAMESPACE,
+            return tool_error_response(
+                {"error": first.get("error"), "ret": first.get("ret")},
+                request=request,
+                namespace=MAIL_NAMESPACE,
+                provider_identity=self._provider_identity(),
+                default_code="gmail_search_failed",
+                fallback_message="Gmail search failed.",
+                extra_details={"account_errors": errors},
             )
         return NamedServiceResponse.ok_response(
             provider=self._provider_identity(),
@@ -585,6 +871,55 @@ class MailNamedServiceProvider(NamedServiceProvider):
                 object_ref=request.object_ref,
                 object=_account_object(account, provider_key=parsed.get("provider") or "gmail"),
             )
+        if parsed.get("kind") == "attachment" and parsed.get("provider") == "gmail":
+            result = await self._gmail.read_gmail_message(
+                message_id=parsed["message_id"],
+                include_html=False,
+                max_body_chars=1,
+                account_id=parsed["account_id"],
+            )
+            if not isinstance(result, Mapping) or not result.get("ok"):
+                return _error_from_tool(result if isinstance(result, Mapping) else {}, request=request, default_code="gmail_read_failed")
+            ret = result.get("ret") if isinstance(result.get("ret"), Mapping) else {}
+            rows = [*(ret.get("attachments") or []), *(ret.get("inline_attachments") or [])]
+            # Refs carry the stable part id; accept a same-fetch attachment id too.
+            row = next(
+                (item for item in rows if isinstance(item, Mapping) and _text(item.get("part_id")) == parsed["attachment_id"]),
+                None,
+            ) or next(
+                (item for item in rows if isinstance(item, Mapping) and _text(item.get("attachment_id")) == parsed["attachment_id"]),
+                None,
+            )
+            if row is None:
+                return NamedServiceResponse.error_response(
+                    code="mail_attachment_not_found",
+                    message="The message does not carry the requested attachment.",
+                    status=404,
+                    provider=self._provider_identity(),
+                    namespace=request.namespace or MAIL_NAMESPACE,
+                    object_ref=request.object_ref,
+                )
+            url_info = await self._download_url(ctx, ref=request.object_ref)
+            obj = {
+                "ref": request.object_ref,
+                "object_ref": request.object_ref,
+                "object_kind": MAIL_ATTACHMENT_KIND,
+                "provider": "gmail",
+                "account_id": parsed["account_id"],
+                "message_id": parsed["message_id"],
+                "attachment_id": parsed["attachment_id"],
+                "filename": _text(row.get("filename")) or "attachment.bin",
+                "mime_type": _text(row.get("mime_type")),
+                "size_bytes": row.get("size_bytes", 0),
+                "inline": bool(row.get("inline")),
+                "download": self._attachment_download_field(url_info),
+            }
+            return NamedServiceResponse.ok_response(
+                provider=self._provider_identity(),
+                namespace=request.namespace or MAIL_NAMESPACE,
+                object_ref=request.object_ref,
+                object=obj,
+            )
         if parsed.get("kind") != "message" or parsed.get("provider") != "gmail":
             return NamedServiceResponse.error_response(
                 code="mail_message_ref_required",
@@ -605,7 +940,18 @@ class MailNamedServiceProvider(NamedServiceProvider):
         if not isinstance(result, Mapping) or not result.get("ok"):
             return _error_from_tool(result if isinstance(result, Mapping) else {}, request=request, default_code="gmail_read_failed")
         ret = result.get("ret") if isinstance(result.get("ret"), Mapping) else {}
-        obj = _message_object(ret, provider_key="gmail", account_id=_text(ret.get("account_id") or parsed["account_id"]))
+        resolved_account_id = _text(ret.get("account_id") or parsed["account_id"])
+        known = next(
+            (item for item in await self._gmail_accounts(ctx) if item.account_id == resolved_account_id),
+            None,
+        )
+        account_label = (known.display_name or known.email) if known else ""
+        obj = _message_object(
+            ret,
+            provider_key="gmail",
+            account_id=resolved_account_id,
+            account_label=account_label,
+        )
         obj.update(
             {
                 "body_text": ret.get("body_text", ""),
@@ -618,7 +964,8 @@ class MailNamedServiceProvider(NamedServiceProvider):
             obj["body_html_truncated"] = bool(ret.get("body_html_truncated"))
         for row in obj.get("attachments") or []:
             if isinstance(row, dict):
-                row.setdefault("ref", attachment_ref("gmail", obj["account_id"], obj["message_id"], _text(row.get("attachment_id"))))
+                selector = _text(row.get("part_id")) or _text(row.get("attachment_id"))
+                row.setdefault("ref", attachment_ref("gmail", obj["account_id"], obj["message_id"], selector))
         return NamedServiceResponse.ok_response(
             provider=self._provider_identity(),
             namespace=request.namespace or MAIL_NAMESPACE,
@@ -627,7 +974,6 @@ class MailNamedServiceProvider(NamedServiceProvider):
         )
 
     async def object_action(self, ctx: NamedServiceContext, request: NamedServiceRequest) -> NamedServiceResponse:
-        del ctx
         action = _text(request.action or request.payload.get("action")).lower()
         payload = dict(request.payload or {})
         parsed = parse_mail_ref(request.object_ref or "")
@@ -650,6 +996,12 @@ class MailNamedServiceProvider(NamedServiceProvider):
                 visibility=_text(payload.get("visibility") or "external"),
                 account_id=parsed["account_id"],
             )
+            if isinstance(result, Mapping) and not result.get("ok"):
+                error = result.get("error") if isinstance(result.get("error"), Mapping) else {}
+                if _text(error.get("code")) == "artifact_workspace_unavailable":
+                    # Transports without a chat turn (MCP) cannot host KDCube
+                    # files; deliver every requested attachment as a signed URL.
+                    return await self._download_attachments_as_urls(ctx, request, parsed=parsed, payload=payload)
             if not isinstance(result, Mapping) or not result.get("ok"):
                 return _error_from_tool(result if isinstance(result, Mapping) else {}, request=request, default_code="gmail_download_failed")
             return NamedServiceResponse.ok_response(
@@ -660,18 +1012,39 @@ class MailNamedServiceProvider(NamedServiceProvider):
                 ret={"attrs": {"action": action}, "extra": result.get("ret") or result},
             )
 
+        if action == ACTION_REQUEST_UPLOAD:
+            return await self._request_upload(ctx, request)
+
         if action == ACTION_SEND:
             account_id = _text(payload.get("account_id") or parsed.get("account_id"))
-            result = await self._gmail.send_gmail(
-                to=_text(payload.get("to")),
-                subject=_text(payload.get("subject") or "KDCube message"),
-                body_markdown=_text(payload.get("body_markdown") or payload.get("body")),
-                cc=_text(payload.get("cc")),
-                bcc=_text(payload.get("bcc")),
-                body_html=_text(payload.get("body_html")),
-                attachment_paths=payload.get("attachment_paths") or "",
-                account_id=account_id,
-            )
+            entries = [item for item in _as_list(payload.get("attachments")) if isinstance(item, Mapping)]
+
+            async def _send(attachment_paths: Any) -> Any:
+                return await self._gmail.send_gmail(
+                    to=_text(payload.get("to")),
+                    subject=_text(payload.get("subject") or "KDCube message"),
+                    body_markdown=_text(payload.get("body_markdown") or payload.get("body")),
+                    cc=_text(payload.get("cc")),
+                    bcc=_text(payload.get("bcc")),
+                    body_html=_text(payload.get("body_html")),
+                    attachment_paths=attachment_paths,
+                    account_id=account_id,
+                )
+
+            if entries:
+                try:
+                    resolved, consumed = resolve_payload_file_entries(entries, staging_root=self._staging_root())
+                    with inline_files_workspace() as artifact_root:
+                        staged = materialize_inline_files(artifact_root, resolved)
+                        result = await _send(self._merged_attachment_paths(payload, staged))
+                except InlineFileError as exc:
+                    return self._inline_error(request, exc)
+                if isinstance(result, Mapping) and result.get("ok"):
+                    root = self._staging_root()
+                    for ref in consumed if root is not None else []:
+                        delete_staged(root, ref)
+            else:
+                result = await _send(payload.get("attachment_paths") or "")
             if not isinstance(result, Mapping) or not result.get("ok"):
                 return _error_from_tool(result if isinstance(result, Mapping) else {}, request=request, default_code="gmail_send_failed")
             ret = result.get("ret") if isinstance(result.get("ret"), Mapping) else {}
@@ -694,16 +1067,34 @@ class MailNamedServiceProvider(NamedServiceProvider):
                     namespace=request.namespace or MAIL_NAMESPACE,
                     object_ref=request.object_ref,
                 )
-            result = await self._gmail.forward_gmail_message(
-                message_id=parsed["message_id"],
-                to=_text(payload.get("to")),
-                note_markdown=_text(payload.get("note_markdown") or payload.get("note")),
-                cc=_text(payload.get("cc")),
-                bcc=_text(payload.get("bcc")),
-                include_original_attachments=bool(payload.get("include_original_attachments")),
-                attachment_paths=payload.get("attachment_paths") or "",
-                account_id=parsed["account_id"],
-            )
+            entries = [item for item in _as_list(payload.get("attachments")) if isinstance(item, Mapping)]
+
+            async def _forward(attachment_paths: Any) -> Any:
+                return await self._gmail.forward_gmail_message(
+                    message_id=parsed["message_id"],
+                    to=_text(payload.get("to")),
+                    note_markdown=_text(payload.get("note_markdown") or payload.get("note")),
+                    cc=_text(payload.get("cc")),
+                    bcc=_text(payload.get("bcc")),
+                    include_original_attachments=bool(payload.get("include_original_attachments")),
+                    attachment_paths=attachment_paths,
+                    account_id=parsed["account_id"],
+                )
+
+            if entries:
+                try:
+                    resolved, consumed = resolve_payload_file_entries(entries, staging_root=self._staging_root())
+                    with inline_files_workspace() as artifact_root:
+                        staged = materialize_inline_files(artifact_root, resolved)
+                        result = await _forward(self._merged_attachment_paths(payload, staged))
+                except InlineFileError as exc:
+                    return self._inline_error(request, exc)
+                if isinstance(result, Mapping) and result.get("ok"):
+                    root = self._staging_root()
+                    for ref in consumed if root is not None else []:
+                        delete_staged(root, ref)
+            else:
+                result = await _forward(payload.get("attachment_paths") or "")
             if not isinstance(result, Mapping) or not result.get("ok"):
                 return _error_from_tool(result if isinstance(result, Mapping) else {}, request=request, default_code="gmail_forward_failed")
             ret = result.get("ret") if isinstance(result.get("ret"), Mapping) else {}
@@ -731,17 +1122,22 @@ def make_mail_named_service_provider(
     entrypoint: Any = None,
     bundle_id: str | None = None,
     connection_hub_bundle_id: str = DEFAULT_CONNECTION_HUB_BUNDLE_ID,
+    file_url_factory: Any = None,
+    upload_slot_factory: Any = None,
 ) -> MailNamedServiceProvider:
     return MailNamedServiceProvider(
         entrypoint=entrypoint,
         bundle_id=bundle_id,
         connection_hub_bundle_id=connection_hub_bundle_id,
+        file_url_factory=file_url_factory,
+        upload_slot_factory=upload_slot_factory,
     )
 
 
 __all__ = [
     "ACTION_DOWNLOAD_ATTACHMENTS",
     "ACTION_FORWARD",
+    "ACTION_REQUEST_UPLOAD",
     "ACTION_SEND",
     "MAIL_ACCOUNT_KIND",
     "MAIL_ATTACHMENT_KIND",

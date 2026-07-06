@@ -353,9 +353,45 @@ Connected-account provider claims:
   authorize KDCube to call Slack for the current platform user.
 ```
 
-If the agent has the MCP grant but the user has not connected Slack, or the
-connected account lacks the provider claim, the provider returns a Connection
-Hub consent payload instead of guessing or retrying.
+## The Consent-Error Story
+
+If the agent has the MCP grant but the user-to-provider side cannot satisfy the
+call, integration namespaces answer with one structured consent error instead of
+guessing, retrying, or a vague server error:
+
+```text
+error.code = needs_connected_account_consent            (status 403)
+error.details:
+  reason               connect_required | claim_upgrade_required |
+                       reconnect_required | account_required
+  retry_hint           true -> the same call succeeds after the user acts
+                       (for account_required: when resent with account_id)
+  provider_id / connector_app_id / claims / account_id
+  candidates           labeled account summaries
+                       [{account_id, label, email, workspace, status, claims}]
+  connection_hub_url   open this to connect / approve / reconnect
+  consent              the full Connection Hub consent block (action_label, ...)
+```
+
+How the agent acts on `reason`:
+
+```text
+connect_required        no eligible account — the user connects the provider at
+                        connection_hub_url
+claim_upgrade_required  an account exists — the user approves the listed claims
+reconnect_required      the stored credential no longer works — the user
+                        reconnects that account
+account_required        several accounts match — resend the SAME call with
+                        account_id set to one of candidates[].account_id
+```
+
+Account selection is symmetric across integration namespaces (`mail`, `slack`):
+`object.list` returns every connected account with its label, approved claims,
+and `credential_status`; search with no `account_id` fans out across eligible
+accounts and stamps every hit with `account_id` + `account_label`; actions use
+the ref-embedded or payload account and never pick one silently. An empty
+account list is not an error — it rides with an `extra.consent` block pointing
+at Connection Hub.
 
 ## Agent-Friendly Checklist
 

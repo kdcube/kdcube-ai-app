@@ -29,14 +29,33 @@ from kdcube_ai_app.apps.chat.sdk.integrations.slack.tools import (
     bind_integrations as bind_slack_integrations,
     bind_service as bind_slack_service,
 )
+from kdcube_ai_app.apps.chat.sdk.integrations.file_staging import (
+    delete_staged,
+    staging_root,
+)
+from kdcube_ai_app.apps.chat.sdk.integrations.inline_files import (
+    InlineFileError,
+    inline_files_workspace,
+    materialize_inline_files,
+    resolve_payload_file_entries,
+)
+from kdcube_ai_app.apps.chat.sdk.integrations.named_service_consent import (
+    ACCOUNT_SELECTION_CONTRACT,
+    CONSENT_ERROR_CONTRACT,
+    account_credential_status,
+    consent_error_response,
+    resolution_consent_payload,
+    tool_error_response,
+)
 from kdcube_ai_app.apps.chat.sdk.solutions.connections.connection_edges import (
     DEFAULT_CONNECTION_HUB_BUNDLE_ID,
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube import (
     DelegatedToKdcubeClient,
-    connected_account_consent_payload,
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube.models import (
+    REASON_CONNECT_REQUIRED,
+    ClaimResolution,
     ConnectedAccount,
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers import (
@@ -76,6 +95,7 @@ ACTION_POST_MESSAGE = "post_message"
 ACTION_UPLOAD_FILE = "upload_file"
 ACTION_DOWNLOAD_FILE = "download_file"
 ACTION_ASSISTANT_SEARCH_INFO = "assistant_search_info"
+ACTION_REQUEST_UPLOAD = "request_upload"
 
 SLACK_GRANT_HINTS = {
     "object.list": ["slack:read"],
@@ -151,24 +171,33 @@ SLACK_SCHEMA = {
     "object_kinds": {
         SLACK_ACCOUNT_KIND: {
             "description": "One Slack workspace/account connected by the current KDCube user.",
-            "fields": ["ref", "account_id", "label", "workspace", "email", "claims"],
+            "fields": ["ref", "account_id", "label", "workspace", "email", "claims", "credential_status"],
         },
         SLACK_CHANNEL_KIND: {
             "description": "One Slack conversation/channel visible to the connected account.",
-            "fields": ["ref", "channel_id", "name", "is_private", "is_member", "topic", "purpose"],
+            "fields": ["ref", "account_id", "account_label", "channel_id", "name", "is_private", "is_member", "topic", "purpose"],
         },
         SLACK_MESSAGE_KIND: {
             "description": "One Slack message returned from channel history.",
-            "fields": ["ref", "channel_id", "timestamp", "user", "text", "files"],
+            "fields": ["ref", "account_id", "channel_id", "timestamp", "user", "text", "files"],
         },
         SLACK_FILE_KIND: {
-            "description": "One Slack file metadata object, optionally materialized to a KDCube artifact.",
-            "fields": ["ref", "file_id", "name", "mime_type", "size_bytes", "artifact_path"],
+            "description": "One Slack file metadata object, materialized to a KDCube artifact in chat or delivered as a short-lived download url on turn-less transports.",
+            "fields": ["ref", "account_id", "file_id", "name", "mime_type", "size_bytes", "artifact_path", "download"],
         },
         SLACK_SEARCH_RESULT_KIND: {
             "description": "One Slack search result from message search or Slack AI assistant search.",
-            "fields": ["ref", "account_id", "text", "channel_id", "timestamp", "permalink", "raw"],
+            "fields": ["ref", "account_id", "account_label", "text", "channel_id", "timestamp", "permalink", "raw"],
         },
+    },
+    "account_selection": ACCOUNT_SELECTION_CONTRACT,
+    "consent_errors": CONSENT_ERROR_CONTRACT,
+    "files": {
+        "get": (
+            "object.get on a file ref materializes the file as a KDCube artifact in chat; "
+            "on transports without a chat turn it returns download {encoding, url, expires_at} — "
+            "fetch the short-lived url over plain HTTP out-of-band."
+        ),
     },
     "search": {"filters": SLACK_SEARCH_FILTERS},
     "actions": {
@@ -177,10 +206,24 @@ SLACK_SCHEMA = {
             "object_ref": "slack:<account_id>:channel:<channel_id> or omit and pass payload.channel",
             "payload": ["channel", "text", "thread_ts", "account_id"],
         },
+        ACTION_REQUEST_UPLOAD: {
+            "description": (
+                "Reserve an upload slot for one file destined for Slack. Returns "
+                "{upload_url, staged_ref, expires_at}: PUT/POST the raw file bytes to "
+                "upload_url over plain HTTP, then pass the staged_ref to upload_file. "
+                "This is THE way to bring files in — bytes never ride inside tool calls."
+            ),
+            "object_ref": "slack:<account_id> (any connected account ref)",
+            "payload": ["filename", "mime"],
+        },
         ACTION_UPLOAD_FILE: {
-            "description": "Upload a KDCube artifact file to Slack.",
+            "description": (
+                "Upload a file to Slack. In chat pass a KDCube artifact file_path; "
+                "elsewhere pass staged_ref from request_upload (preferred) or tiny "
+                "inline content_base64 with a filename (10MB limit)."
+            ),
             "object_ref": "slack:<account_id>:channel:<channel_id> or omit and pass payload.channel",
-            "payload": ["channel", "file_path", "title", "initial_comment", "thread_ts", "filename", "account_id"],
+            "payload": ["channel", "file_path", "staged_ref", "content_base64", "title", "initial_comment", "thread_ts", "filename", "account_id"],
         },
         ACTION_DOWNLOAD_FILE: {
             "description": "Download a Slack file into KDCube artifacts.",
@@ -309,13 +352,14 @@ def _account_object(account: ConnectedAccount) -> dict[str, Any]:
         "claims": list(account.claims or ()),
         "connected": account.connected,
         "status": account.status,
+        "credential_status": account_credential_status(account),
         "connected_at": account.connected_at,
         "updated_at": account.updated_at,
         "metadata": dict(account.metadata or {}),
     }
 
 
-def _channel_object(row: Mapping[str, Any], *, account_id: str) -> dict[str, Any]:
+def _channel_object(row: Mapping[str, Any], *, account_id: str, account_label: str = "") -> dict[str, Any]:
     channel_id = _text(row.get("id") or row.get("channel_id"))
     ref = channel_ref(account_id, channel_id) if account_id and channel_id else ""
     return {
@@ -325,6 +369,7 @@ def _channel_object(row: Mapping[str, Any], *, account_id: str) -> dict[str, Any
         "id": channel_id,
         "channel_id": channel_id,
         "account_id": account_id,
+        "account_label": _text(account_label) or account_id,
         "name": _text(row.get("name")),
         "is_channel": bool(row.get("is_channel")),
         "is_group": bool(row.get("is_group")),
@@ -386,7 +431,7 @@ def _message_object(row: Mapping[str, Any], *, account_id: str, channel_id: str 
     }
 
 
-def _search_result_object(row: Mapping[str, Any], *, account_id: str, index: int) -> dict[str, Any]:
+def _search_result_object(row: Mapping[str, Any], *, account_id: str, index: int, account_label: str = "") -> dict[str, Any]:
     channel_id = _text(row.get("channel_id") or row.get("channel"))
     timestamp = _text(row.get("timestamp") or row.get("ts"))
     file_id = _text(row.get("file_id") or row.get("id")) if _text(row.get("type")).lower() == "file" else ""
@@ -403,6 +448,7 @@ def _search_result_object(row: Mapping[str, Any], *, account_id: str, index: int
         "object_kind": SLACK_SEARCH_RESULT_KIND,
         "id": _text(row.get("id") or timestamp or index),
         "account_id": account_id,
+        "account_label": _text(account_label) or account_id,
         "channel_id": channel_id,
         "channel_name": _text(row.get("channel_name")),
         "timestamp": timestamp,
@@ -419,23 +465,13 @@ def _error_from_tool(
     request: NamedServiceRequest,
     default_code: str = "slack_operation_failed",
 ) -> NamedServiceResponse:
-    error = result.get("error")
-    error = error if isinstance(error, Mapping) else {}
-    ret = result.get("ret") if result.get("ret") is not None else {}
-    code = _text(error.get("code") or result.get("error") or default_code)
-    status = 403 if code in {"needs_connected_account_consent", "connected_account_consent_required"} else 400
-    details: dict[str, Any] = {"ret": ret}
-    consent = result.get("consent") or (ret.get("consent") if isinstance(ret, Mapping) else None)
-    if consent:
-        details["consent"] = consent
-    return NamedServiceResponse.error_response(
-        code=code,
-        message=_text(error.get("message")) or _text(result.get("message")) or "Slack operation failed.",
-        status=status,
-        details=details,
-        provider={"provider_id": PROVIDER_ID},
-        namespace=request.namespace or SLACK_NAMESPACE,
-        object_ref=request.object_ref,
+    return tool_error_response(
+        result,
+        request=request,
+        namespace=SLACK_NAMESPACE,
+        provider_identity={"provider_id": PROVIDER_ID},
+        default_code=default_code,
+        fallback_message="Slack operation failed.",
     )
 
 
@@ -464,10 +500,14 @@ class SlackNamedServiceProvider(NamedServiceProvider):
         entrypoint: Any = None,
         bundle_id: str | None = None,
         connection_hub_bundle_id: str = DEFAULT_CONNECTION_HUB_BUNDLE_ID,
+        file_url_factory: Any = None,
+        upload_slot_factory: Any = None,
     ) -> None:
         super().__init__(slack_named_service_spec(bundle_id=bundle_id))
         self._entrypoint = entrypoint
         self._connection_hub_bundle_id = connection_hub_bundle_id
+        self._file_url_factory = file_url_factory
+        self._upload_slot_factory = upload_slot_factory
         self._slack = SlackTools()
         if entrypoint is not None:
             bind_slack_service(entrypoint)
@@ -475,6 +515,113 @@ class SlackNamedServiceProvider(NamedServiceProvider):
 
     def _provider_identity(self) -> dict[str, Any]:
         return {"provider_id": PROVIDER_ID, "bundle_id": self.spec.bundle_id}
+
+    async def _download_url(self, ctx: NamedServiceContext, *, ref: str) -> dict[str, Any] | None:
+        """Short-lived signed download URL for one file ref, or None when the
+        hosting bundle provides no delivery path (no factory / no secret /
+        unknown public origin)."""
+        if self._file_url_factory is None:
+            return None
+        try:
+            out = self._file_url_factory(ctx, {"ref": ref})
+            if hasattr(out, "__await__"):
+                out = await out
+        except Exception:
+            LOGGER.exception("slack download url factory failed for %s", ref)
+            return None
+        return dict(out) if isinstance(out, Mapping) and out.get("url") else None
+
+    async def _file_as_url_object(
+        self,
+        ctx: NamedServiceContext,
+        request: NamedServiceRequest,
+        *,
+        account_id: str,
+        file_id: str,
+        tool_result: Mapping[str, Any],
+    ) -> NamedServiceResponse:
+        """URL delivery for a Slack file on turn-less transports.
+
+        Falls back to the original tool error when no delivery path exists."""
+        ref = file_ref(account_id, file_id)
+        url_info = await self._download_url(ctx, ref=ref)
+        if url_info is None:
+            return _error_from_tool(dict(tool_result), request=request, default_code="slack_file_download_failed")
+        obj = {
+            "ref": ref,
+            "object_ref": ref,
+            "object_kind": SLACK_FILE_KIND,
+            "id": file_id,
+            "file_id": file_id,
+            "account_id": account_id,
+            "download": {"encoding": "url", **url_info},
+        }
+        return NamedServiceResponse.ok_response(
+            provider=self._provider_identity(),
+            namespace=request.namespace or SLACK_NAMESPACE,
+            object_ref=ref,
+            object=obj,
+            extra={
+                "delivery": "url",
+                "note": "No chat turn on this transport; fetch download.url over HTTP out-of-band.",
+            },
+        )
+
+    def _staging_root(self):
+        storage = str(getattr(getattr(self._entrypoint, "settings", None), "STORAGE_PATH", "") or "")
+        try:
+            return staging_root(storage)
+        except OSError:
+            return None
+
+    async def _request_upload(self, ctx: NamedServiceContext, request: NamedServiceRequest) -> NamedServiceResponse:
+        payload = dict(request.payload or {})
+        filename = _text(payload.get("filename"))
+        if not filename:
+            return NamedServiceResponse.error_response(
+                code="filename_required",
+                message="request_upload needs payload.filename.",
+                status=400,
+                provider=self._provider_identity(),
+                namespace=request.namespace or SLACK_NAMESPACE,
+                object_ref=request.object_ref,
+            )
+        slot = None
+        if self._upload_slot_factory is not None:
+            try:
+                slot = self._upload_slot_factory(ctx, {"filename": filename, "mime": _text(payload.get("mime"))})
+                if hasattr(slot, "__await__"):
+                    slot = await slot
+            except Exception:
+                LOGGER.exception("slack upload slot factory failed")
+                slot = None
+        if not isinstance(slot, Mapping) or not slot.get("upload_url"):
+            return NamedServiceResponse.error_response(
+                code="upload_not_configured",
+                message="This deployment has no upload path configured; use tiny inline content_base64 instead.",
+                status=503,
+                provider=self._provider_identity(),
+                namespace=request.namespace or SLACK_NAMESPACE,
+                object_ref=request.object_ref,
+            )
+        return NamedServiceResponse.ok_response(
+            provider=self._provider_identity(),
+            namespace=request.namespace or SLACK_NAMESPACE,
+            object_ref=request.object_ref,
+            extra={
+                "action": ACTION_REQUEST_UPLOAD,
+                **dict(slot),
+                "how": (
+                    "POST the raw file bytes to upload_url (body = file, no form encoding), "
+                    "then pass staged_ref to the upload_file action."
+                ),
+            },
+        )
+
+    @staticmethod
+    def _workspace_unavailable(result: Any) -> bool:
+        error = result.get("error") if isinstance(result, Mapping) else None
+        return isinstance(error, Mapping) and _text(error.get("code")) == "artifact_workspace_unavailable"
 
     async def _client(self, ctx: NamedServiceContext) -> DelegatedToKdcubeClient | None:
         user_id = _text(ctx.user_id)
@@ -500,46 +647,114 @@ class SlackNamedServiceProvider(NamedServiceProvider):
             and (not claim or account.allows(claim))
         ]
 
-    def _consent_required(
+    async def _resolve_claim(
+        self,
+        ctx: NamedServiceContext,
+        *,
+        claim: str,
+        account_id: str = "",
+    ) -> ClaimResolution:
+        """Resolve one Slack claim through the broker.
+
+        The broker mints the distinct resolution reason (connect vs upgrade vs
+        reconnect vs account choice) with labeled candidates; this adapter
+        never re-derives that. Without a platform user or entrypoint the only
+        honest answer is connect_required.
+        """
+        client = await self._client(ctx)
+        if client is None:
+            return ClaimResolution(
+                ok=False,
+                provider_id=SLACK_PROVIDER_ID,
+                claim=claim,
+                connector_app_id=SLACK_CONNECTOR_APP_ID,
+                account_id=account_id,
+                error=REASON_CONNECT_REQUIRED,
+                message="Connect a Slack account in Connection Hub.",
+                retry_hint=True,
+            )
+        return await client.ensure_claim(
+            provider_id=SLACK_PROVIDER_ID,
+            connector_app_id=SLACK_CONNECTOR_APP_ID,
+            claim=claim,
+            account_id=account_id or None,
+        )
+
+    def _consent_error(
         self,
         *,
         ctx: NamedServiceContext,
         request: NamedServiceRequest,
-        claim: str,
-        message: str,
-        account_id: str = "",
+        resolution: ClaimResolution,
     ) -> NamedServiceResponse:
-        payload = connected_account_consent_payload(
-            tenant=ctx.tenant,
-            project=ctx.project,
+        return consent_error_response(
+            resolution=resolution,
+            ctx=ctx,
+            request=request,
+            namespace=SLACK_NAMESPACE,
+            provider_identity=self._provider_identity(),
             connection_hub_bundle_id=self._connection_hub_bundle_id,
-            missing=[
-                {
-                    "ok": False,
-                    "tool_name": f"named_services.{SLACK_NAMESPACE}.{request.operation}",
-                    "failures": [
-                        {
-                            "ok": False,
-                            "provider_id": SLACK_PROVIDER_ID,
-                            "connector_app_id": SLACK_CONNECTOR_APP_ID,
-                            "claim": claim,
-                            "account_id": account_id,
-                            "error": "consent_required",
-                            "message": message,
-                        }
-                    ],
-                }
-            ],
+            tool_name=f"named_services.{SLACK_NAMESPACE}.{request.operation}",
         )
-        return NamedServiceResponse.error_response(
-            code="connected_account_consent_required",
-            message=message,
-            status=403,
-            details={"consent": payload.get("consent"), "payload": payload},
-            provider=self._provider_identity(),
-            namespace=request.namespace or SLACK_NAMESPACE,
-            object_ref=request.object_ref,
+
+    def _connect_hint(self, ctx: NamedServiceContext, request: NamedServiceRequest) -> dict[str, Any]:
+        """Consent block shipped with an EMPTY account list, so clients learn
+        where to connect without treating the empty list as an error."""
+        payload = resolution_consent_payload(
+            resolution=ClaimResolution(
+                ok=False,
+                provider_id=SLACK_PROVIDER_ID,
+                claim="",
+                connector_app_id=SLACK_CONNECTOR_APP_ID,
+                error=REASON_CONNECT_REQUIRED,
+                message="Connect a Slack account in Connection Hub.",
+                retry_hint=True,
+            ),
+            ctx=ctx,
+            connection_hub_bundle_id=self._connection_hub_bundle_id,
+            tool_name=f"named_services.{SLACK_NAMESPACE}.{request.operation}",
         )
+        return dict(payload.get("consent") or {})
+
+    async def _accounts_for_claim(
+        self,
+        ctx: NamedServiceContext,
+        request: NamedServiceRequest,
+        *,
+        claim: str,
+        account_id: str = "",
+    ) -> tuple[list[ConnectedAccount], NamedServiceResponse | None]:
+        """Accounts to operate on, or the structured consent error.
+
+        Explicit ``account_id`` pins one account (broker explains any failure);
+        otherwise every account holding the claim participates. Empty means
+        the broker minted connect/upgrade/reconnect — never a silent guess.
+        """
+        eligible = await self._slack_accounts(ctx, claim=claim)
+        if account_id:
+            account = next((item for item in eligible if item.account_id == account_id), None)
+            if account is None:
+                resolution = await self._resolve_claim(ctx, claim=claim, account_id=account_id)
+                if not resolution.ok:
+                    return [], self._consent_error(ctx=ctx, request=request, resolution=resolution)
+                account = ConnectedAccount(
+                    account_id=account_id,
+                    provider_id=SLACK_PROVIDER_ID,
+                    connector_app_id=SLACK_CONNECTOR_APP_ID,
+                )
+            return [account], None
+        if not eligible:
+            resolution = await self._resolve_claim(ctx, claim=claim)
+            if not resolution.ok:
+                return [], self._consent_error(ctx=ctx, request=request, resolution=resolution)
+            return [
+                ConnectedAccount(
+                    account_id=resolution.account_id,
+                    provider_id=SLACK_PROVIDER_ID,
+                    connector_app_id=SLACK_CONNECTOR_APP_ID,
+                )
+            ], None
+        return eligible, None
 
     async def provider_about(self, ctx: NamedServiceContext, request: NamedServiceRequest) -> NamedServiceResponse:
         del ctx
@@ -577,6 +792,7 @@ class SlackNamedServiceProvider(NamedServiceProvider):
                     ACTION_UPLOAD_FILE,
                     ACTION_DOWNLOAD_FILE,
                     ACTION_ASSISTANT_SEARCH_INFO,
+                    ACTION_REQUEST_UPLOAD,
                 ],
                 "grant_hints": SLACK_GRANT_HINTS,
                 "connected_account_claims": SLACK_CONNECTED_ACCOUNT_CLAIMS,
@@ -596,20 +812,15 @@ class SlackNamedServiceProvider(NamedServiceProvider):
         kind = _text(filters.get("kind") or request.collection or "accounts").lower()
         if kind in {"channel", "channels", "conversation", "conversations"}:
             account_id = _text(filters.get("account_id") or request.payload.get("account_id"))
-            accounts = [
-                ConnectedAccount(account_id=account_id, provider_id=SLACK_PROVIDER_ID, connector_app_id=SLACK_CONNECTOR_APP_ID)
-            ] if account_id else await self._slack_accounts(ctx, claim=SLACK_CHANNELS_CLAIM)
-            if not accounts:
-                return self._consent_required(
-                    ctx=ctx,
-                    request=request,
-                    claim=SLACK_CHANNELS_CLAIM,
-                    account_id=account_id,
-                    message="Connect Slack and approve channel listing access.",
-                )
+            accounts, consent = await self._accounts_for_claim(
+                ctx, request, claim=SLACK_CHANNELS_CLAIM, account_id=account_id
+            )
+            if consent is not None:
+                return consent
             items: list[dict[str, Any]] = []
             next_cursors: dict[str, str] = {}
             for account in accounts:
+                account_label = account.display_name or account.workspace or account.account_id
                 result = await self._slack.list_slack_channels(
                     types=_text(filters.get("types") or "public_channel,private_channel"),
                     limit=_int(request.limit or filters.get("limit"), default=50, maximum=200),
@@ -622,7 +833,7 @@ class SlackNamedServiceProvider(NamedServiceProvider):
                 ret = result.get("ret") if isinstance(result.get("ret"), Mapping) else {}
                 next_cursors[account.account_id] = _text(ret.get("next_cursor"))
                 items.extend(
-                    _channel_object(row, account_id=account.account_id)
+                    _channel_object(row, account_id=account.account_id, account_label=account_label)
                     for row in ret.get("channels") or []
                     if isinstance(row, Mapping)
                 )
@@ -634,11 +845,14 @@ class SlackNamedServiceProvider(NamedServiceProvider):
             )
 
         accounts = await self._slack_accounts(ctx)
+        extra: dict[str, Any] = {"kind": "accounts", "count": len(accounts)}
+        if not accounts:
+            extra["consent"] = self._connect_hint(ctx, request)
         return NamedServiceResponse.ok_response(
             provider=self._provider_identity(),
             namespace=request.namespace or SLACK_NAMESPACE,
             items=[_account_object(account) for account in accounts],
-            extra={"kind": "accounts", "count": len(accounts)},
+            extra=extra,
         )
 
     async def object_search(self, ctx: NamedServiceContext, request: NamedServiceRequest) -> NamedServiceResponse:
@@ -655,20 +869,14 @@ class SlackNamedServiceProvider(NamedServiceProvider):
         account_id = _text(filters.get("account_id") or request.payload.get("account_id"))
         search_api = _text(filters.get("search_api") or filters.get("mode") or "messages").lower()
         if search_api in {"assistant", "ai", "semantic"}:
-            claim = SLACK_ASSISTANT_SEARCH_CLAIM
-            accounts = [
-                ConnectedAccount(account_id=account_id, provider_id=SLACK_PROVIDER_ID, connector_app_id=SLACK_CONNECTOR_APP_ID)
-            ] if account_id else await self._slack_accounts(ctx, claim=claim)
-            if not accounts:
-                return self._consent_required(
-                    ctx=ctx,
-                    request=request,
-                    claim=claim,
-                    account_id=account_id,
-                    message="Connect Slack and approve Slack assistant search access.",
-                )
+            accounts, consent = await self._accounts_for_claim(
+                ctx, request, claim=SLACK_ASSISTANT_SEARCH_CLAIM, account_id=account_id
+            )
+            if consent is not None:
+                return consent
             items: list[dict[str, Any]] = []
             for account in accounts:
+                account_label = account.display_name or account.workspace or account.account_id
                 result = await self._slack.slack_assistant_search(
                     query=query,
                     content_types=_text(filters.get("content_types") or "messages,files"),
@@ -686,7 +894,7 @@ class SlackNamedServiceProvider(NamedServiceProvider):
                 ret = result.get("ret") if isinstance(result.get("ret"), Mapping) else {}
                 rows = ret.get("results") or []
                 items.extend(
-                    _search_result_object(row, account_id=account.account_id, index=index)
+                    _search_result_object(row, account_id=account.account_id, index=index, account_label=account_label)
                     for index, row in enumerate(rows)
                     if isinstance(row, Mapping)
                 )
@@ -697,20 +905,14 @@ class SlackNamedServiceProvider(NamedServiceProvider):
                 extra={"query": query, "search_api": "assistant", "count": len(items)},
             )
 
-        claim = SLACK_SEARCH_CLAIM
-        accounts = [
-            ConnectedAccount(account_id=account_id, provider_id=SLACK_PROVIDER_ID, connector_app_id=SLACK_CONNECTOR_APP_ID)
-        ] if account_id else await self._slack_accounts(ctx, claim=claim)
-        if not accounts:
-            return self._consent_required(
-                ctx=ctx,
-                request=request,
-                claim=claim,
-                account_id=account_id,
-                message="Connect Slack and approve Slack search access.",
-            )
+        accounts, consent = await self._accounts_for_claim(
+            ctx, request, claim=SLACK_SEARCH_CLAIM, account_id=account_id
+        )
+        if consent is not None:
+            return consent
         items = []
         for account in accounts:
+            account_label = account.display_name or account.workspace or account.account_id
             result = await self._slack.search_slack(
                 query=query,
                 count=_int(request.limit, default=10, maximum=20),
@@ -720,7 +922,7 @@ class SlackNamedServiceProvider(NamedServiceProvider):
                 return _error_from_tool(result if isinstance(result, Mapping) else {}, request=request, default_code="slack_search_failed")
             ret = result.get("ret") if isinstance(result.get("ret"), Mapping) else {}
             items.extend(
-                _search_result_object(row, account_id=account.account_id, index=index)
+                _search_result_object(row, account_id=account.account_id, index=index, account_label=account_label)
                 for index, row in enumerate(ret.get("messages") or [])
                 if isinstance(row, Mapping)
             )
@@ -794,6 +996,14 @@ class SlackNamedServiceProvider(NamedServiceProvider):
                 max_bytes=_int(request.filters.get("max_bytes"), default=25 * 1024 * 1024, maximum=25 * 1024 * 1024),
                 account_id=parsed["account_id"],
             )
+            if self._workspace_unavailable(result):
+                return await self._file_as_url_object(
+                    ctx,
+                    request,
+                    account_id=parsed["account_id"],
+                    file_id=parsed["file_id"],
+                    tool_result=result,
+                )
             if not isinstance(result, Mapping) or not result.get("ok"):
                 return _error_from_tool(result if isinstance(result, Mapping) else {}, request=request, default_code="slack_file_download_failed")
             ret = result.get("ret") if isinstance(result.get("ret"), Mapping) else {}
@@ -819,7 +1029,6 @@ class SlackNamedServiceProvider(NamedServiceProvider):
         )
 
     async def object_action(self, ctx: NamedServiceContext, request: NamedServiceRequest) -> NamedServiceResponse:
-        del ctx
         action = _text(request.action or request.payload.get("action")).lower()
         payload = dict(request.payload or {})
         parsed = parse_slack_ref(request.object_ref or "")
@@ -845,16 +1054,56 @@ class SlackNamedServiceProvider(NamedServiceProvider):
                 extra={"action": action, "result": ret},
             )
 
+        if action == ACTION_REQUEST_UPLOAD:
+            return await self._request_upload(ctx, request)
+
         if action == ACTION_UPLOAD_FILE:
-            result = await self._slack.upload_slack_file(
-                channel=channel_id,
-                file_path=_text(payload.get("file_path") or payload.get("path")),
-                title=_text(payload.get("title")),
-                initial_comment=_text(payload.get("initial_comment") or payload.get("comment")),
-                thread_ts=_text(payload.get("thread_ts")),
-                filename=_text(payload.get("filename")),
-                account_id=account_id,
-            )
+            staged_ref = _text(payload.get("staged_ref"))
+            inline_content = _text(payload.get("content_base64"))
+
+            async def _upload(file_path: str, filename: str) -> Any:
+                return await self._slack.upload_slack_file(
+                    channel=channel_id,
+                    file_path=file_path,
+                    title=_text(payload.get("title")),
+                    initial_comment=_text(payload.get("initial_comment") or payload.get("comment")),
+                    thread_ts=_text(payload.get("thread_ts")),
+                    filename=filename,
+                    account_id=account_id,
+                )
+
+            if staged_ref or inline_content:
+                entry: dict[str, Any] = {
+                    "filename": _text(payload.get("filename") or payload.get("title")),
+                    "mime": _text(payload.get("mime") or payload.get("mime_type")),
+                }
+                if staged_ref:
+                    entry["staged_ref"] = staged_ref
+                else:
+                    entry["content_base64"] = inline_content
+                try:
+                    resolved, consumed = resolve_payload_file_entries([entry], staging_root=self._staging_root())
+                    with inline_files_workspace() as artifact_root:
+                        staged = materialize_inline_files(artifact_root, resolved)
+                        result = await _upload(staged[0]["relpath"], staged[0]["filename"])
+                except InlineFileError as exc:
+                    return NamedServiceResponse.error_response(
+                        code="slack_inline_file_invalid",
+                        message=str(exc),
+                        status=400,
+                        provider=self._provider_identity(),
+                        namespace=request.namespace or SLACK_NAMESPACE,
+                        object_ref=request.object_ref,
+                    )
+                if isinstance(result, Mapping) and result.get("ok"):
+                    root = self._staging_root()
+                    for ref in consumed if root is not None else []:
+                        delete_staged(root, ref)
+            else:
+                result = await _upload(
+                    _text(payload.get("file_path") or payload.get("path")),
+                    _text(payload.get("filename")),
+                )
             if not isinstance(result, Mapping) or not result.get("ok"):
                 return _error_from_tool(result if isinstance(result, Mapping) else {}, request=request, default_code="slack_upload_failed")
             ret = result.get("ret") if isinstance(result.get("ret"), Mapping) else {}
@@ -875,6 +1124,14 @@ class SlackNamedServiceProvider(NamedServiceProvider):
                 max_bytes=_int(payload.get("max_bytes"), default=25 * 1024 * 1024, maximum=25 * 1024 * 1024),
                 account_id=account_id,
             )
+            if self._workspace_unavailable(result):
+                return await self._file_as_url_object(
+                    ctx,
+                    request,
+                    account_id=account_id,
+                    file_id=file_id,
+                    tool_result=result,
+                )
             if not isinstance(result, Mapping) or not result.get("ok"):
                 return _error_from_tool(result if isinstance(result, Mapping) else {}, request=request, default_code="slack_file_download_failed")
             ret = result.get("ret") if isinstance(result.get("ret"), Mapping) else {}
@@ -915,11 +1172,15 @@ def make_slack_named_service_provider(
     entrypoint: Any = None,
     bundle_id: str | None = None,
     connection_hub_bundle_id: str = DEFAULT_CONNECTION_HUB_BUNDLE_ID,
+    file_url_factory: Any = None,
+    upload_slot_factory: Any = None,
 ) -> SlackNamedServiceProvider:
     return SlackNamedServiceProvider(
         entrypoint=entrypoint,
         bundle_id=bundle_id,
         connection_hub_bundle_id=connection_hub_bundle_id,
+        file_url_factory=file_url_factory,
+        upload_slot_factory=upload_slot_factory,
     )
 
 
@@ -927,6 +1188,7 @@ __all__ = [
     "ACTION_ASSISTANT_SEARCH_INFO",
     "ACTION_DOWNLOAD_FILE",
     "ACTION_POST_MESSAGE",
+    "ACTION_REQUEST_UPLOAD",
     "ACTION_UPLOAD_FILE",
     "SLACK_ACCOUNT_KIND",
     "SLACK_CHANNEL_KIND",
