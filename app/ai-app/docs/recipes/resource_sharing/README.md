@@ -7,6 +7,7 @@ tags: ["recipes", "resource-sharing", "static", "public", "bundle", "storage", "
 updated_at: 2026-06-29
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/recipes/resource_sharing/share-static-resources-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/recipes/resource_sharing/hosting-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-interfaces-README.md
 ---
 # Resource Sharing Recipes
@@ -20,6 +21,7 @@ SDK architecture docs.
 | Recipe | Use when |
 | --- | --- |
 | [Share Static Resources](share-static-resources-README.md) | You want to hand someone a plain URL that opens an app-hosted page or file with no sign-in — a rendered page (HTML/PDF), a stored artifact (FS/S3), or, by pointer, a whole built UI. |
+| [Move Files In And Out Over MCP](hosting-README.md) | An external agent needs real file bytes to cross the MCP boundary — attach a file to outgoing mail, upload to Slack, or pull a mail attachment / Slack file — via signed upload slots and download URLs. |
 
 ## Canonical SDK Docs
 
