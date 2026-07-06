@@ -304,7 +304,8 @@ advertised for that object kind.
 `named_services.host_file` is the reverse of pull materialization. Pull brings a
 namespace ref into ReAct as an `conv:fi:` artifact. Host-file sends an agent-owned
 runtime file/ref to a namespace service so the service can create or register a
-namespace ref.
+namespace ref. Delivering a file to the user's Files tab is a separate contract:
+[Custom Tools §4.2](./custom-tools-README.md#42-declaring-files-for-react-hosting).
 
 Clean flow:
 

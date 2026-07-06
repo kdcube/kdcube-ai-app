@@ -378,7 +378,10 @@ the file declaration belongs inside `ret`:
 
 React v2 and v3 unwrap `{ok, error, ret}` before result handling. If
 `ret.artifact_type == "files"`, each declared file is hosted into the
-conversation store and emitted as normal artifact metadata.
+conversation store and emitted as normal artifact metadata. The full
+declared-file contract — row fields, the user-delivery guarantee, and the
+`delivery_failed.file_hosting` failure notice — lives in
+[Custom Tools §4.2](./custom-tools-README.md#42-declaring-files-for-react-hosting).
 
 The declared `path` / `physical_path` must refer to a file accessible from the
 current React `OUT_DIR`, typically under `turn_<id>/files/...`.

@@ -88,7 +88,9 @@ Critical Python import rule:
 
 If a bundle tool produces user-visible files, read
 [bundle-agent-integration-README.md](bundle-agent-integration-README.md) and
-[../tools/custom-tools-README.md](../tools/custom-tools-README.md). The bundle
+[Custom Tools §4.2](../tools/custom-tools-README.md#42-declaring-files-for-react-hosting)
+for the full declared-file contract (row fields, delivery guarantee, failure
+notice). The bundle
 tool should either return `ret.artifact_type: "files"` with `ret.files[]`, or
 host the files from trusted tool code through `bundle_tool_context.host_files(...)`.
 That helper is available in normal tool execution and in isolated

@@ -466,11 +466,39 @@ body:
 }
 ```
 
-The `react.block_production.declared_file_items` policy recognizes this exact
-shape on the result body. Each declared file is copied into the conversation
-store and receives hosted artifact metadata for transport. User-facing object
-identity should remain the logical artifact ref (`conv:fi:...`), not transport
-handles such as renderer names or download URLs.
+Canonical placement rule: the `artifact_type: "files"` marker and the `files[]`
+container live together on the result body — inside `ret` for the managed
+wrapper, at the top level for a plain result. The declared-file scanner also
+resolves a marker carried on the wrapper itself when the rows sit under
+`ret.files[]`, so integration envelopes such as
+`{"ok": true, "artifact_type": "files", "ret": {"files": [...]}}` deliver too.
+New tools should use the canonical placement.
+
+File row fields:
+
+| Field | Meaning |
+| --- | --- |
+| `visibility` | `"external"` = deliver to the user; `"internal"` = host for later turn use only, no user delivery |
+| `path` / `physical_path` | OUT_DIR-relative location of the written file (`turn_<id>/files/...`) |
+| `logical_path` / `artifact_path` | logical artifact ref (`conv:fi:turn_<id>.files/...`); the runtime derives it from the physical path when omitted |
+| `filename` | user-facing file name |
+| `mime` / `mime_type` | content type for transport and preview |
+| `size` / `size_bytes` | byte size shown to the user |
+| `description` | short human-readable summary carried into the file artifact |
+
+What the ReAct runtime guarantees for a correctly declared row with
+`visibility: "external"`: the declared-file scan turns it into a file artifact,
+the file bytes are hosted into the conversation attachments store, a
+`chat.files` event is emitted, and the file appears in the user's per-turn
+Files tab. User-facing object identity should remain the logical artifact ref
+(`conv:fi:...`), not transport handles such as renderer names or download URLs.
+
+Delivery is verified, not assumed. When hosting an external declared file
+fails, the runtime places a `delivery_failed.file_hosting` notice on the
+timeline: the file is not in the user's Files tab, and the agent must report
+the failure or retry instead of claiming delivery. A successful tool result
+alone is a declaration; the hosted artifact and the `chat.files` event are the
+delivery.
 
 This contract works for one file or many files. The marker and container are
 strict: use `artifact_type: "files"` and `files[]` on the result body.
@@ -482,6 +510,10 @@ hosting. A tool that merely returns message metadata should not do so.
 Do not use this shape for a tool that has several independent result surfaces
 such as files plus search rows plus snapshot refs. For that case, use a
 composite result and declare the event-source policies that consume each field.
+
+Reference implementations:
+- [browser tools](../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/tools/browser_tools.py) — declared files inside the managed `ret` wrapper
+- [gmail attachment download](../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/integrations/google/gmail_tools.py) — integration tool materializing provider files into `turn_<id>/files/...` and declaring them for delivery
 
 ### File vs Artifact Surfaces
 

@@ -1120,7 +1120,8 @@ Important current rule:
   directly. Return serializable data or write files for the trusted catalog tool
   that called the helper; that catalog tool can then declare
   `ret.artifact_type: "files"` or call `host_files(...)` from the prepared tool
-  context.
+  context. The declared-file contract is specified in
+  [Custom Tools §4.2](../tools/custom-tools-README.md#42-declaring-files-for-react-hosting).
 - changing bundle Python source still requires the normal proc-side bundle reload path; `@venv(...)` only controls the helper execution environment
 
 The proc-side reload path evicts the target bundle from loader caches and

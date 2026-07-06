@@ -1877,7 +1877,9 @@ Tool signature rule:
   identifiers and fields the model should reuse in the `ret` shape.
 - if a tool returns user-visible files, return the standard envelope
   `{"ok": true, "ret": {"artifact_type": "files", "files": [...]}}` or use
-  `host_files(...)` to host the files inside the tool before returning
+  `host_files(...)` to host the files inside the tool before returning; the full
+  declared-file contract is in
+  [Custom Tools §4.2](../../tools/custom-tools-README.md#42-declaring-files-for-react-hosting)
 - `host_files(...)` works only after the runtime has prepared the trusted tool
   context: active `ToolSubsystem`, hosting service, tenant/project/user/
   conversation/turn scope, conversation storage, and output directory. Normal

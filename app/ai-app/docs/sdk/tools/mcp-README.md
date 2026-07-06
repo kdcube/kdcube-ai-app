@@ -204,7 +204,10 @@ React v2 and v3 unwrap the envelope and host declared files only when
 the React runtime, usually as an `OUT_DIR`-relative path under
 `turn_<id>/files/...`. Remote MCP services that cannot write to that workspace
 should return data or already-hosted references through an explicit product tool
-contract instead of relying on automatic local hosting.
+contract instead of relying on automatic local hosting. The full declared-file
+contract — row fields, the user-delivery guarantee, and the
+`delivery_failed.file_hosting` failure notice — lives in
+[Custom Tools §4.2](./custom-tools-README.md#42-declaring-files-for-react-hosting).
 
 Bundle-local tools that call MCP internally may also host files themselves with
 `bundle_tool_context.host_files(...)` after materializing the files. That helper

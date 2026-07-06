@@ -151,7 +151,9 @@ output directory. Normal React workflows prepare this through
 error such as `tool hosting service is unavailable` or
 `tool communicator is unavailable`.
 
-For full authoring guidance, see [Custom Tools](./custom-tools-README.md).
+The full declared-file contract — row fields, the user-delivery guarantee, and
+the `delivery_failed.file_hosting` failure notice — lives in
+[Custom Tools §4.2](./custom-tools-README.md#42-declaring-files-for-react-hosting).
 
 ## ReAct Event-Source Policy Pipeline
 
