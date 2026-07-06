@@ -12,6 +12,8 @@
 #
 # Placeholders:
 #   <TENANT>, <PROJECT>       substituted by the installer at init
+#   <ADMIN_EMAIL>             substituted from KDCUBE_ADMIN_EMAIL when set —
+#                             the Google account bootstrapped as super-admin
 #   <PUBLIC_HOST>             substituted from KDCUBE_PUBLIC_HOST when set,
 #                             otherwise left for the operator (OAuth redirect
 #                             URIs and webhooks need the real public host)
@@ -57,7 +59,7 @@ bundles:
               label: Read your conversations
               description: Read the approving user's own KDCube conversations through delegated named-service tools.
               delegable_roles:
-              - kdcube:role:chat-user
+              - kdcube:role:registered
               - kdcube:role:paid
               - kdcube:role:privileged
               - kdcube:role:super-admin
@@ -74,7 +76,7 @@ bundles:
               label: Read KDCube memories
               description: Read the user's KDCube memory notes through delegated MCP tools.
               delegable_roles:
-              - kdcube:role:chat-user
+              - kdcube:role:registered
               - kdcube:role:paid
               - kdcube:role:privileged
               - kdcube:role:super-admin
@@ -84,7 +86,7 @@ bundles:
               label: Write KDCube memories
               description: Create or update the user's KDCube memory notes through delegated named-service tools.
               delegable_roles:
-              - kdcube:role:chat-user
+              - kdcube:role:registered
               - kdcube:role:paid
               - kdcube:role:privileged
               - kdcube:role:super-admin
@@ -94,7 +96,7 @@ bundles:
               label: Read KDCube tasks
               description: Read task objects through delegated named-service tools.
               delegable_roles:
-              - kdcube:role:chat-user
+              - kdcube:role:registered
               - kdcube:role:paid
               - kdcube:role:privileged
               - kdcube:role:super-admin
@@ -104,7 +106,7 @@ bundles:
               label: Write KDCube tasks
               description: Create or update task objects through delegated named-service tools.
               delegable_roles:
-              - kdcube:role:chat-user
+              - kdcube:role:registered
               - kdcube:role:paid
               - kdcube:role:privileged
               - kdcube:role:super-admin
@@ -114,7 +116,7 @@ bundles:
               label: Read KDCube canvas
               description: Read canvas objects through delegated named-service tools.
               delegable_roles:
-              - kdcube:role:chat-user
+              - kdcube:role:registered
               - kdcube:role:paid
               - kdcube:role:privileged
               - kdcube:role:super-admin
@@ -124,7 +126,7 @@ bundles:
               label: Write KDCube canvas
               description: Create or update canvas objects through delegated named-service tools.
               delegable_roles:
-              - kdcube:role:chat-user
+              - kdcube:role:registered
               - kdcube:role:paid
               - kdcube:role:privileged
               - kdcube:role:super-admin
@@ -134,7 +136,7 @@ bundles:
               label: Read KDCube knowledge
               description: Read KDCube knowledge notes through delegated MCP tools.
               delegable_roles:
-              - kdcube:role:chat-user
+              - kdcube:role:registered
               - kdcube:role:paid
               - kdcube:role:privileged
               - kdcube:role:super-admin
@@ -144,7 +146,7 @@ bundles:
               label: Use KDCube named services
               description: Discover and call configured KDCube named-service namespaces through delegated MCP tools.
               delegable_roles:
-              - kdcube:role:chat-user
+              - kdcube:role:registered
               - kdcube:role:paid
               - kdcube:role:privileged
               - kdcube:role:super-admin
@@ -154,7 +156,7 @@ bundles:
               label: Read connected mail
               description: Search and read messages and attachments from mail accounts connected to KDCube.
               delegable_roles:
-              - kdcube:role:chat-user
+              - kdcube:role:registered
               - kdcube:role:paid
               - kdcube:role:privileged
               - kdcube:role:super-admin
@@ -164,7 +166,7 @@ bundles:
               label: Send connected mail
               description: Send or forward messages through mail accounts connected to KDCube.
               delegable_roles:
-              - kdcube:role:chat-user
+              - kdcube:role:registered
               - kdcube:role:paid
               - kdcube:role:privileged
               - kdcube:role:super-admin
@@ -175,7 +177,7 @@ bundles:
               description: List channels, search messages/files, read channel history, and download files through Slack accounts
                 connected to KDCube.
               delegable_roles:
-              - kdcube:role:chat-user
+              - kdcube:role:registered
               - kdcube:role:paid
               - kdcube:role:privileged
               - kdcube:role:super-admin
@@ -185,7 +187,7 @@ bundles:
               label: Write connected Slack
               description: Post messages and upload files through Slack accounts connected to KDCube.
               delegable_roles:
-              - kdcube:role:chat-user
+              - kdcube:role:registered
               - kdcube:role:paid
               - kdcube:role:privileged
               - kdcube:role:super-admin
@@ -812,6 +814,11 @@ bundles:
                   description: Read exact knowledge or source references returned by search.
                   grants:
                   - knowledge:read
+            consent_ui:
+              mode: authority_provider
+              authority_id: kdcube.platform
+              provider_id: workspace_google_session
+              entrypoint: consent
         providers: {}
         delegated_to_kdcube:
           enabled: true
@@ -959,29 +966,80 @@ bundles:
           kdcube.platform:
             label: KDCube platform authority
             platform: true
+            grants:
+              subjects: {}
+              bootstrap_rules:
+              - id: bootstrap_admin_by_google_email
+                when:
+                  provider: google
+                  claims:
+                    email: <ADMIN_EMAIL>
+                    email_verified: true
+                roles:
+                - kdcube:role:super-admin
+                permissions:
+                - kdcube:*:*:*
             providers:
-              cognito:
-                type: multi_cognito
+              workspace_google_session:
+                type: bundle_session_login
                 enabled: true
-                label: KDCube Cognito platform session
-                authenticator:
-                  type: cognito_id_token
-                  id_token_header_name: X-ID-Token
-                  region: <FILL_ME>
-                  user_pool_id: <FILL_ME>
-                  app_client_id: <FILL_ME>
-                  service_client_id: <FILL_ME>
-                  jwks_cache_ttl_seconds: 86400
+                label: Workspace Google platform session
+                input:
+                  authenticator_ref:
+                    authority_id: google.accounts
+                    provider_id: google_oidc
+                issuer:
+                  type: kdcube_session_token
+                  ttl_seconds: 43200
                   cookie:
+                    secure: true
+                    same_site: lax
                     auth_token_cookie_name: __Secure-LATC
                     id_token_cookie_name: __Secure-LITC
                     masqueraded_token_cookie_name: __Secure-LMTC
-                  trusted_providers:
-                  - alias: <FILL_ME>
-                    kind: cognito
-                    region: <FILL_ME>
-                    user_pool_id: <FILL_ME>
-                    app_client_id: <FILL_ME>
+                grants:
+                  default:
+                    roles:
+                    - kdcube:role:registered
+                    permissions: []
+                  assignable:
+                    roles:
+                    - kdcube:role:registered
+                    - kdcube:role:super-admin
+                    permissions:
+                    - kdcube:*:chat:*;read;write
+                    - kdcube:*:*:*
+                entrypoints:
+                  login:
+                    bundle_id: workspace@2026-03-31-13-36
+                    route: public
+                    operation: platform_login
+                  session_issue:
+                    bundle_id: workspace@2026-03-31-13-36
+                    route: public
+                    operation: auth_google_session
+                  consent:
+                    bundle_id: workspace@2026-03-31-13-36
+                    route: public
+                    operation: delegated_consent
+          google.accounts:
+            label: Google Accounts
+            platform: false
+            providers:
+              google_oidc:
+                type: google_id_token
+                enabled: true
+                authenticator:
+                  client_id: <FILL_ME>
+          telegram.kdcube_ref:
+            label: KDCube Ref Telegram identity
+            platform: false
+            providers:
+              telegram_bot_init_data:
+                type: telegram_init_data
+                enabled: true
+                authenticator:
+                  secret_ref: identity.authenticators.telegram_kdcube_ref.bot_token
       ui:
         widgets:
           connections_settings:

@@ -1241,6 +1241,7 @@ def parameterize_default_bundle_descriptors(
     tenant: Optional[str],
     project: Optional[str],
     public_host: Optional[str] = None,
+    admin_email: Optional[str] = None,
 ) -> List[str]:
     """Fill install-scoped placeholders in the DEFAULT-staged bundle descriptors.
 
@@ -1257,6 +1258,8 @@ def parameterize_default_bundle_descriptors(
         replacements["<PROJECT>"] = str(project)
     if public_host:
         replacements["<PUBLIC_HOST>"] = str(public_host).replace("https://", "").replace("http://", "").strip("/")
+    if admin_email:
+        replacements["<ADMIN_EMAIL>"] = str(admin_email).strip()
     remaining: Set[str] = set()
     for name in ("bundles.yaml", "bundles.secrets.yaml"):
         path = config_dir / name
@@ -4685,6 +4688,7 @@ def run_setup(
                 tenant=install_tenant,
                 project=install_project,
                 public_host=os.getenv("KDCUBE_PUBLIC_HOST", "").strip() or None,
+                admin_email=os.getenv("KDCUBE_ADMIN_EMAIL", "").strip() or None,
             )
             report_unfilled_descriptor_slots(config_dir, unfilled)
         meta = {
