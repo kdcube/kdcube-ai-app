@@ -654,6 +654,7 @@ export function createChatEngine(config: EngineConfig): ChatEngine {
         agent: response.agent || runtime.agentId,
         inventory: response.capabilities,
         disabled: response.selection?.disabled ?? {},
+        model: response.selection?.model ?? null,
       }))
     } catch (error) {
       dispatch(chatActions.capabilitiesLoadError(messageForError(error)))
@@ -671,7 +672,10 @@ export function createChatEngine(config: EngineConfig): ChatEngine {
     dispatch(chatActions.capabilitiesSaving(true))
     try {
       const response = await submitAgentSelectionUpdate(runtime, runtime.agentId, patch)
-      dispatch(chatActions.capabilitiesSelectionSaved(response.selection?.disabled ?? {}))
+      dispatch(chatActions.capabilitiesSelectionSaved({
+        disabled: response.selection?.disabled ?? {},
+        model: response.selection?.model ?? null,
+      }))
       /* Toggles queued while this save was in flight stay optimistic on top of
        * the server's clamped record; their own flush reconciles them. */
       if (pendingSelectionPatch) {

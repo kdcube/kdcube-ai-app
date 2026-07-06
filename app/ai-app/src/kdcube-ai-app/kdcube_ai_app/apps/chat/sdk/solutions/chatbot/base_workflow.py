@@ -2525,7 +2525,11 @@ class BaseWorkflow():
         bundle config grants; system tool groups stay locked on. FAILS OPEN:
         no row, missing pool, store error — anything — returns the configs
         unchanged. Also installs the per-turn named-service namespace deny-set
-        so denied namespaces vanish from the roster and from dispatch.
+        so denied namespaces vanish from the roster and from dispatch, and
+        applies the user's MODEL pick (validated against the agent's
+        ``supported_models`` list) to the strong decision role for this turn
+        via ``runtime_ctx.agent_role_models`` — the channel the ReAct runtimes
+        bind into the request role_models the model router overlays.
         """
         try:
             from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers.client_tools import (
@@ -2545,8 +2549,11 @@ class BaseWorkflow():
                 return tool_config, skill_config
 
             from kdcube_ai_app.apps.chat.sdk.runtime.agent_inventory import (
+                USER_MODEL_TARGET_ROLE,
+                match_supported_model,
                 narrow_agent_skill_config,
                 narrow_agent_tool_config,
+                react_supported_models,
                 selection_deltas,
             )
             from kdcube_ai_app.apps.chat.sdk.runtime.user_selection_store import (
@@ -2564,28 +2571,58 @@ class BaseWorkflow():
                 agent_id=agent_id,
             )
             disabled = (selection or {}).get("disabled") or {}
-            if not disabled:
+            bundle_props = self.bundle_props if isinstance(self.bundle_props, Mapping) else {}
+
+            # ── model pick (independent of the deny-list) ─────────────────────
+            # Turn-local: rebase agent_role_models from config FIRST so a
+            # cleared/stale pick on a reused workflow falls back to the
+            # configured default, then overlay the validated pick.
+            applied_model: Dict[str, str] | None = None
+            if runtime_ctx is not None:
+                try:
+                    runtime_ctx.agent_role_models = _react_role_models(bundle_props, agent_id=agent_id)
+                    matched = match_supported_model(
+                        (selection or {}).get("model"),
+                        react_supported_models(bundle_props, agent_id),
+                    )
+                    if matched:
+                        runtime_ctx.agent_role_models = {
+                            **runtime_ctx.agent_role_models,
+                            USER_MODEL_TARGET_ROLE: dict(matched),
+                        }
+                        applied_model = matched
+                except Exception:
+                    # Fail OPEN to the configured role model.
+                    self.logger.log(
+                        "[agent_selection] model pick apply failed; configured role model stays\n"
+                        + traceback.format_exc(),
+                        level="WARNING",
+                    )
+
+            if not disabled and not applied_model:
                 return tool_config, skill_config
 
-            bundle_props = self.bundle_props if isinstance(self.bundle_props, Mapping) else {}
-            narrowed_tools = narrow_agent_tool_config(
-                tool_config,
-                disabled,
-                bundle_props=bundle_props,
-                agent_id=agent_id,
-            )
-            narrowed_skills = narrow_agent_skill_config(
-                skill_config,
-                disabled.get("skills") or [],
-            )
+            narrowed_tools = tool_config
+            narrowed_skills = skill_config
+            if disabled:
+                narrowed_tools = narrow_agent_tool_config(
+                    tool_config,
+                    disabled,
+                    bundle_props=bundle_props,
+                    agent_id=agent_id,
+                )
+                narrowed_skills = narrow_agent_skill_config(
+                    skill_config,
+                    disabled.get("skills") or [],
+                )
 
-            denied_namespaces = {
-                str(ns or "").strip().lower().rstrip(":")
-                for ns, flag in (disabled.get("named_services") or {}).items()
-                if flag and str(ns or "").strip()
-            }
-            if denied_namespaces:
-                set_denied_named_service_namespaces(denied_namespaces)
+                denied_namespaces = {
+                    str(ns or "").strip().lower().rstrip(":")
+                    for ns, flag in (disabled.get("named_services") or {}).items()
+                    if flag and str(ns or "").strip()
+                }
+                if denied_namespaces:
+                    set_denied_named_service_namespaces(denied_namespaces)
 
             try:
                 self.logger.log(
@@ -2595,6 +2632,7 @@ class BaseWorkflow():
                             "user_id": user_id,
                             "bundle_id": bundle_id,
                             "agent_id": agent_id,
+                            "model_pick": applied_model,
                             **selection_deltas(disabled),
                         },
                         ensure_ascii=False,

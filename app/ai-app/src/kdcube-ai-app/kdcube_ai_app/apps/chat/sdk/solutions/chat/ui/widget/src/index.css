@@ -2166,3 +2166,18 @@ button.k-menu-status:hover { background: var(--surface-2); }
   font-size: 10.5px;
   color: var(--muted);
 }
+
+/* Composer-menu inline tag (e.g. the "default" model marker). */
+.k-menu-tag {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  background: var(--surface-2);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  vertical-align: 1px;
+}

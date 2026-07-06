@@ -463,12 +463,22 @@ class BaseEntrypoint:
         "mcp": {}, "named_services": {}, "skills": [...]}}}``. Per-key toggles:
         ``true``/name-list disables, ``false`` re-enables; keys absent from the
         patch keep their state. ``replace: true`` swaps the whole record.
+
+        The single model pick rides the same body: ``"model": {"provider": …,
+        "model": …}`` sets it (clamped to the agent's ``supported_models``),
+        ``"model": null`` clears it back to the configured default; omitted
+        keeps the stored pick.
         """
         payload = self._agent_selection_payload(data, kwargs)
         agent_id = self._agent_selection_agent_id(payload)
         patch = payload.get("disabled")
-        if not isinstance(patch, Mapping):
-            return {"ok": False, "error": "invalid_patch", "message": "body.data.disabled must be an object"}
+        has_model = "model" in payload
+        if not isinstance(patch, Mapping) and not has_model:
+            return {
+                "ok": False,
+                "error": "invalid_patch",
+                "message": "body.data needs a disabled object and/or a model field",
+            }
         identity = self._agent_selection_identity()
         if self.pg_pool is None or not identity.get("bundle_id"):
             return {"ok": False, "error": "storage_unavailable"}
@@ -482,9 +492,10 @@ class BaseEntrypoint:
                 user_id=identity["user_id"],
                 bundle_id=identity["bundle_id"],
                 agent_id=agent_id,
-                patch=patch,
+                patch=patch if isinstance(patch, Mapping) else None,
                 catalog=catalog,
                 replace=bool(payload.get("replace")),
+                **({"model": payload.get("model")} if has_model else {}),
             )
         except Exception as exc:
             self.logger.log(f"[agent_selection_update] failed: {traceback.format_exc()}", "ERROR")

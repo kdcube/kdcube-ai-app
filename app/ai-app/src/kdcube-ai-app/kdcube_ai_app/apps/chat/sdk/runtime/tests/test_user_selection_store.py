@@ -240,3 +240,91 @@ async def test_selection_rows_are_per_agent():
     helper = await store.get_selection(user_id="u1", bundle_id="b", agent_id="helper")
     assert main["disabled"] == {"tools": {"a": True}}
     assert helper["disabled"] == {"tools": {"b": True}}
+
+
+# ── model pick in the same record ─────────────────────────────────────────────
+
+_MODEL_CATALOG = {
+    # The real op always passes the FULL live inventory; the clamp keeps only
+    # toggles inside it, so the fixture carries the toggled entries too.
+    "tools": [
+        {"alias": "gmail", "name": "gmail", "kind": "python", "system": False,
+         "tools": [{"name": "search_gmail", "description": ""}]},
+    ],
+    "mcp": [{"server_id": "knowledge", "alias": "knowledge", "name": "knowledge", "tools": ["*"]}],
+    "named_services": [],
+    "skills": [],
+    "supported_models": [
+        {"model": "claude-sonnet-4-6", "provider": "anthropic", "label": "Sonnet 4.6"},
+        {"model": "claude-haiku-4-5-20251001", "provider": "anthropic", "label": "Haiku 4.5"},
+    ],
+}
+
+
+@pytest.mark.asyncio
+async def test_model_pick_round_trip_preserves_toggles():
+    store = _store(_FakePool())
+    await store.set_selection(
+        user_id="u1", bundle_id="b", agent_id="main",
+        patch={"tools": {"gmail": True}},
+    )
+    picked = await store.set_selection(
+        user_id="u1", bundle_id="b", agent_id="main",
+        patch=None,
+        model={"provider": "anthropic", "model": "claude-haiku-4-5-20251001"},
+        catalog=_MODEL_CATALOG,
+    )
+    # The pick lands; the earlier toggle survives untouched.
+    assert picked["model"] == {"provider": "anthropic", "model": "claude-haiku-4-5-20251001"}
+    assert picked["disabled"] == {"tools": {"gmail": True}}
+
+    stored = await store.get_selection(user_id="u1", bundle_id="b", agent_id="main")
+    assert stored["model"]["model"] == "claude-haiku-4-5-20251001"
+
+    # A later toggle-only write keeps the pick.
+    toggled = await store.set_selection(
+        user_id="u1", bundle_id="b", agent_id="main",
+        patch={"mcp": {"knowledge": True}},
+        catalog=None,
+    )
+    assert toggled["model"]["model"] == "claude-haiku-4-5-20251001"
+    assert toggled["disabled"] == {"tools": {"gmail": True}, "mcp": {"knowledge": True}}
+
+
+@pytest.mark.asyncio
+async def test_model_pick_clamped_to_supported_list():
+    store = _store(_FakePool())
+    await store.set_selection(
+        user_id="u1", bundle_id="b", agent_id="main",
+        patch=None,
+        model={"provider": "anthropic", "model": "claude-sonnet-4-6"},
+        catalog=_MODEL_CATALOG,
+    )
+    # An out-of-list pick is ignored: the stored pick stays.
+    kept = await store.set_selection(
+        user_id="u1", bundle_id="b", agent_id="main",
+        patch=None,
+        model={"provider": "openai", "model": "gpt-4o"},
+        catalog=_MODEL_CATALOG,
+    )
+    assert kept["model"] == {"provider": "anthropic", "model": "claude-sonnet-4-6"}
+
+
+@pytest.mark.asyncio
+async def test_model_none_clears_back_to_default():
+    store = _store(_FakePool())
+    await store.set_selection(
+        user_id="u1", bundle_id="b", agent_id="main",
+        patch=None,
+        model={"provider": "anthropic", "model": "claude-sonnet-4-6"},
+        catalog=_MODEL_CATALOG,
+    )
+    cleared = await store.set_selection(
+        user_id="u1", bundle_id="b", agent_id="main",
+        patch=None,
+        model=None,
+        catalog=_MODEL_CATALOG,
+    )
+    assert cleared["model"] is None
+    stored = await store.get_selection(user_id="u1", bundle_id="b", agent_id="main")
+    assert stored["model"] is None

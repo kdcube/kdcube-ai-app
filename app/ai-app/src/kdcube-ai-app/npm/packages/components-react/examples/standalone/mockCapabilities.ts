@@ -10,7 +10,7 @@
  * banner appears, which does not affect menu verification.
  */
 import { applySelectionPatch } from '@kdcube/components-core/chat'
-import type { AgentSelectionDisabled, AgentSelectionPatch } from '@kdcube/components-core/chat'
+import type { AgentModelPick, AgentSelectionDisabled, AgentSelectionPatch } from '@kdcube/components-core/chat'
 
 const MOCK_INVENTORY = {
   agent: 'main',
@@ -51,6 +51,11 @@ const MOCK_INVENTORY = {
       ],
     },
   ],
+  supported_models: [
+    { model: 'claude-sonnet-4-6', provider: 'anthropic', label: 'Sonnet 4.6' },
+    { model: 'claude-haiku-4-5-20251001', provider: 'anthropic', label: 'Haiku 4.5' },
+  ],
+  default_model: { provider: 'anthropic', model: 'claude-sonnet-4-6' },
   named_services: [
     { namespace: 'mem', alias: 'named_services', operations: ['provider.about', 'object.list'], tools: ['provider_about', 'list_objects'] },
     { namespace: 'task', alias: 'named_services', operations: ['provider.about', 'object.upsert'], tools: ['provider_about', 'upsert_object'] },
@@ -72,6 +77,7 @@ const MOCK_INVENTORY = {
 
 export function installCapabilitiesMock(): void {
   let disabled: AgentSelectionDisabled = {}
+  let model: AgentModelPick | null = null
   const realFetch = window.fetch.bind(window)
 
   const json = (body: unknown, status = 200) =>
@@ -86,13 +92,18 @@ export function installCapabilitiesMock(): void {
       return json({ items: [] })
     }
     if (url.includes('/operations/agent_capabilities')) {
-      return json({ ok: true, agent: 'main', capabilities: MOCK_INVENTORY, selection: { schema_version: 1, disabled } })
+      return json({ ok: true, agent: 'main', capabilities: MOCK_INVENTORY, selection: { schema_version: 1, disabled, model } })
     }
     if (url.includes('/operations/agent_selection_update')) {
-      const body = JSON.parse(String(init?.body ?? '{}')) as { data?: { disabled?: AgentSelectionPatch } }
+      const body = JSON.parse(String(init?.body ?? '{}')) as {
+        data?: { disabled?: AgentSelectionPatch; model?: AgentModelPick | null }
+      }
       disabled = applySelectionPatch(disabled, body.data?.disabled ?? {})
-      console.info('[mock] agent_selection_update ->', JSON.stringify(disabled))
-      return json({ ok: true, agent: 'main', selection: { schema_version: 1, disabled } })
+      if (body.data && 'model' in body.data) {
+        model = body.data.model ?? null
+      }
+      console.info('[mock] agent_selection_update ->', JSON.stringify({ disabled, model }))
+      return json({ ok: true, agent: 'main', selection: { schema_version: 1, disabled, model } })
     }
     return realFetch(input as RequestInfo, init)
   }

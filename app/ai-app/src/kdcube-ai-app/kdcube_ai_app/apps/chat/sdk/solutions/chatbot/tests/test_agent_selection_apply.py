@@ -157,3 +157,105 @@ async def test_apply_resets_stale_namespace_deny():
     stub = _workflow_stub(pg_pool=_FakePool())
     await BaseWorkflow.apply_user_agent_selection(stub, _tool_cfg(), AgentSkillConfig())
     assert denied_named_service_namespaces() == frozenset()
+
+
+# ── per-user model pick → strong decision role override ──────────────────────
+
+from kdcube_ai_app.apps.chat.sdk.runtime.agent_inventory import (  # noqa: E402
+    USER_MODEL_TARGET_ROLE,
+)
+
+_MODEL_PROPS = {
+    "react": {
+        "default_agent": {
+            "supported_models": [
+                {"model": "claude-sonnet-4-6", "provider": "anthropic", "label": "Sonnet 4.6"},
+                {"model": "claude-haiku-4-5-20251001", "provider": "anthropic", "label": "Haiku 4.5"},
+            ],
+        },
+    },
+    "role_models": {
+        USER_MODEL_TARGET_ROLE: {"provider": "anthropic", "model": "claude-sonnet-4-6"},
+    },
+}
+
+
+def _selection_row_with_model(model, disabled=None) -> dict:
+    return {
+        "value_json": json.dumps({"schema_version": 1, "disabled": disabled or {}, "model": model}),
+        "created_at": "",
+        "updated_at": "",
+    }
+
+
+def _model_stub(rows):
+    stub = _workflow_stub(pg_pool=_FakePool(rows), bundle_props=_MODEL_PROPS)
+    stub.runtime_ctx.agent_role_models = {"seeded": {"provider": "x", "model": "y"}}
+    return stub
+
+
+@pytest.mark.asyncio
+async def test_model_pick_overrides_strong_decision_role():
+    rows = {
+        ("u1", "bundle@1-0", agent_selection_key("main")): _selection_row_with_model(
+            {"provider": "anthropic", "model": "claude-haiku-4-5-20251001"},
+        ),
+    }
+    stub = _model_stub(rows)
+    tool_cfg, skill_cfg = _tool_cfg(), AgentSkillConfig()
+    out_tools, out_skills = await BaseWorkflow.apply_user_agent_selection(stub, tool_cfg, skill_cfg)
+
+    # Configs untouched (no deny-list), yet the role override landed on the
+    # channel the ReAct runtimes bind into the request role_models.
+    assert out_tools is tool_cfg and out_skills is skill_cfg
+    assert stub.runtime_ctx.agent_role_models[USER_MODEL_TARGET_ROLE] == {
+        "provider": "anthropic", "model": "claude-haiku-4-5-20251001",
+    }
+    assert any("agent_selection.applied" in line for _, line in stub.logger.lines)
+
+
+@pytest.mark.asyncio
+async def test_stale_model_pick_falls_back_to_configured_default():
+    rows = {
+        ("u1", "bundle@1-0", agent_selection_key("main")): _selection_row_with_model(
+            {"provider": "anthropic", "model": "claude-3-retired"},
+        ),
+    }
+    stub = _model_stub(rows)
+    await BaseWorkflow.apply_user_agent_selection(stub, _tool_cfg(), AgentSkillConfig())
+    # Rebased from config; the stale pick added no override (and the stale
+    # seeded map from a previous turn is gone).
+    assert USER_MODEL_TARGET_ROLE not in stub.runtime_ctx.agent_role_models
+    assert "seeded" not in stub.runtime_ctx.agent_role_models
+
+
+@pytest.mark.asyncio
+async def test_no_pick_resets_agent_role_models_to_config_base():
+    stub = _model_stub({})
+    await BaseWorkflow.apply_user_agent_selection(stub, _tool_cfg(), AgentSkillConfig())
+    assert stub.runtime_ctx.agent_role_models == {}
+
+
+@pytest.mark.asyncio
+async def test_model_pick_applies_alongside_deny_list():
+    rows = {
+        ("u1", "bundle@1-0", agent_selection_key("main")): _selection_row_with_model(
+            {"provider": "anthropic", "model": "claude-haiku-4-5-20251001"},
+            disabled={"tools": {"gmail": True}},
+        ),
+    }
+    stub = _model_stub(rows)
+    out_tools, _ = await BaseWorkflow.apply_user_agent_selection(stub, _tool_cfg(), AgentSkillConfig())
+    assert "gmail" not in out_tools.allowed_plugins
+    assert stub.runtime_ctx.agent_role_models[USER_MODEL_TARGET_ROLE]["model"] == "claude-haiku-4-5-20251001"
+
+
+@pytest.mark.asyncio
+async def test_model_store_error_fails_open_to_configured_role():
+    stub = _workflow_stub(pg_pool=_BrokenPool(), bundle_props=_MODEL_PROPS)
+    stub.runtime_ctx.agent_role_models = {"seeded": {"provider": "x", "model": "y"}}
+    tool_cfg, skill_cfg = _tool_cfg(), AgentSkillConfig()
+    out_tools, out_skills = await BaseWorkflow.apply_user_agent_selection(stub, tool_cfg, skill_cfg)
+    assert out_tools is tool_cfg and out_skills is skill_cfg
+    # No override was written; the router keeps resolving the configured spec.
+    assert USER_MODEL_TARGET_ROLE not in (stub.runtime_ctx.agent_role_models or {})

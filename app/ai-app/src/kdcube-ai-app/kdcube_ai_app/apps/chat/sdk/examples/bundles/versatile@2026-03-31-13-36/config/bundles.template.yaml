@@ -488,6 +488,24 @@ bundles:
                         label: task editor
                         expanded: true
                         command_from_open: provider_surface_open
+        # react:
+        #   default_agent:            # or a per-agent key (e.g. main)
+        #     # Per-user model choice for the strong decision role
+        #     # (solver.react.v2.decision.v2.strong). Users pick ONE of these
+        #     # in the chat composer menu; the pick overrides role_models for
+        #     # their turns. Entries mirror the economics price-table rows, so
+        #     # every allowed model is one the platform accounts for. Absent
+        #     # list keeps the model choice invisible.
+        #     supported_models:
+        #       - model: claude-sonnet-4-6
+        #         provider: anthropic
+        #         label: Sonnet 4.6
+        #       - model: claude-opus-4-6
+        #         provider: anthropic
+        #         label: Opus 4.6
+        #       - model: claude-haiku-4-5-20251001
+        #         provider: anthropic
+        #         label: Haiku 4.5
         execution:
           runtime:
             mode: docker

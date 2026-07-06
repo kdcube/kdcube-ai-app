@@ -22,6 +22,7 @@ import type {
 } from '@kdcube/components-core/chat'
 import {
   isMcpToolDisabled,
+  isModelPicked,
   isNamespaceDisabled,
   isSkillDisabled,
   isToolDisabled,
@@ -135,6 +136,49 @@ interface CapabilityRowsProps {
   disabled: AgentSelectionDisabled
   toggle: (patch: AgentSelectionPatch) => void
   namespaceStyles: NamespaceStyleMap
+}
+
+/** Radio-style single model pick from the admin-allowed `supported_models`
+ *  list. The active row is the user's pick, else the configured default (which
+ *  carries a "default" tag); choosing the default row clears the pick. Hidden
+ *  entirely when the admin declared no list. */
+function ModelsSection({ vm }: ComposerMenuSectionContext) {
+  const { inventory, model: pick, toggle } = vm.capabilities
+  const supported = inventory?.supported_models ?? []
+  if (!supported.length) return null
+  const defaultModel = inventory?.default_model ?? null
+  return (
+    <div>
+      <SectionTitle>Model</SectionTitle>
+      {supported.map((row) => {
+        const isDefaultRow = Boolean(
+          defaultModel
+          && defaultModel.model === row.model
+          && (!defaultModel.provider || !row.provider || defaultModel.provider === row.provider),
+        )
+        const active = pick ? isModelPicked(pick, row) : isDefaultRow
+        return (
+          <MenuRow
+            key={`${row.provider}:${row.model}`}
+            label={
+              <>
+                {row.label}
+                {isDefaultRow ? <span className="k-menu-tag">default</span> : null}
+              </>
+            }
+            sub={`${row.provider} · ${row.model}`}
+            checked={active ? 'on' : 'off'}
+            onToggle={() => {
+              if (active) return
+              toggle({
+                model: isDefaultRow ? null : { provider: row.provider, model: row.model },
+              })
+            }}
+          />
+        )
+      })}
+    </div>
+  )
 }
 
 function SkillsSection({ inventory, disabled, toggle }: CapabilityRowsProps) {
@@ -309,6 +353,11 @@ function builtInSections(namespaceStyles: NamespaceStyleMap): ComposerMenuSectio
     },
   })
   return [
+    {
+      id: 'model',
+      order: 5,
+      render: (ctx: ComposerMenuSectionContext) => <ModelsSection {...ctx} />,
+    },
     capabilitySection('skills', 10, SkillsSection),
     capabilitySection('tools', 20, ToolGroupsSection),
     capabilitySection('mcp', 30, McpSection),

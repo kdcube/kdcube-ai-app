@@ -57,12 +57,29 @@ export interface AgentCapabilitySkill {
   namespace: string
 }
 
+/** An admin-allowed model row (mirrors the economics price-table naming). */
+export interface AgentSupportedModel {
+  model: string
+  provider: string
+  label: string
+}
+
+/** The user's single model pick (applies to the strong decision role). */
+export interface AgentModelPick {
+  provider: string
+  model: string
+}
+
 export interface AgentCapabilitiesInventory {
   agent: string
   tools: AgentCapabilityToolGroup[]
   mcp: AgentCapabilityMcpServer[]
   named_services: AgentCapabilityNamespace[]
   skills: AgentCapabilitySkill[]
+  /** Admin-allowed model list; empty/absent keeps the model choice invisible. */
+  supported_models?: AgentSupportedModel[]
+  /** The configured default for the strong decision role (what runs with no pick). */
+  default_model?: AgentModelPick | null
 }
 
 /** The saved deny-list. Absent key/entry = enabled (full configured set). */
@@ -81,6 +98,9 @@ export interface AgentSelectionPatch {
   mcp?: Record<string, boolean | string[]>
   named_services?: Record<string, boolean>
   skills?: Record<string, boolean>
+  /** The single model PICK: a `{provider, model}` sets it, `null` clears back
+   *  to the configured default; omitted keeps the stored pick. */
+  model?: AgentModelPick | null
 }
 
 export type AgentCapabilitiesLoadStatus = 'idle' | 'loading' | 'ready' | 'error'
@@ -92,6 +112,8 @@ export interface AgentCapabilitiesState {
   agent: string | null
   inventory: AgentCapabilitiesInventory | null
   disabled: AgentSelectionDisabled
+  /** The user's model pick; null = the configured default runs. */
+  model: AgentModelPick | null
   saving: boolean
   saveError: string | null
 }
@@ -102,6 +124,7 @@ export const initialCapabilitiesState: AgentCapabilitiesState = {
   agent: null,
   inventory: null,
   disabled: {},
+  model: null,
   saving: false,
   saveError: null,
 }
@@ -163,7 +186,16 @@ export function mergeSelectionPatches(
   }
   const skills = { ...(base.skills ?? {}), ...(next.skills ?? {}) }
   if (Object.keys(skills).length > 0) out.skills = skills
+  if (next.model !== undefined) out.model = next.model
+  else if (base.model !== undefined) out.model = base.model
   return out
+}
+
+/** True when `pick` selects `row` (model id; provider when both carry one). */
+export function isModelPicked(pick: AgentModelPick | null, row: AgentSupportedModel): boolean {
+  if (!pick) return false
+  if (pick.model !== row.model) return false
+  return !pick.provider || !row.provider || pick.provider === row.provider
 }
 
 export function isToolDisabled(disabled: AgentSelectionDisabled, alias: string, name: string): boolean {

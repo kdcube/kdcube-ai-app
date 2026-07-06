@@ -7,7 +7,12 @@
  * by an explicit `EngineRuntime` first argument; behaviour is otherwise verbatim.
  */
 import type { EngineRuntime } from '../runtime.ts'
-import type { AgentCapabilitiesInventory, AgentSelectionDisabled, AgentSelectionPatch } from '../capabilities.ts'
+import type {
+  AgentCapabilitiesInventory,
+  AgentModelPick,
+  AgentSelectionDisabled,
+  AgentSelectionPatch,
+} from '../capabilities.ts'
 import { buildRequestHeaders, downloadBlobAsFile, requireScope } from './http.ts'
 import type {
   ConversationDTO,
@@ -364,7 +369,7 @@ export interface AgentCapabilitiesResponse {
   ok: boolean
   agent: string
   capabilities: AgentCapabilitiesInventory
-  selection: { schema_version?: number; disabled?: AgentSelectionDisabled }
+  selection: { schema_version?: number; disabled?: AgentSelectionDisabled; model?: AgentModelPick | null }
   error?: string
   message?: string
 }
@@ -372,7 +377,12 @@ export interface AgentCapabilitiesResponse {
 export interface AgentSelectionUpdateResponse {
   ok: boolean
   agent: string
-  selection: { schema_version?: number; disabled?: AgentSelectionDisabled; updated_at?: string }
+  selection: {
+    schema_version?: number
+    disabled?: AgentSelectionDisabled
+    model?: AgentModelPick | null
+    updated_at?: string
+  }
   error?: string
   message?: string
 }
@@ -400,18 +410,27 @@ export async function fetchAgentCapabilities(
   return body
 }
 
-/** Merge-write partial selection toggles (deny-list; clamped server-side). */
+/** Merge-write partial selection toggles (deny-list; clamped server-side).
+ *  A `model` key in the patch rides the body as its own field (a PICK, not a
+ *  denial): `{provider, model}` sets, `null` clears; omitted keeps. */
 export async function submitAgentSelectionUpdate(
   runtime: EngineRuntime,
   agentId: string,
-  disabled: AgentSelectionPatch,
+  patch: AgentSelectionPatch,
 ): Promise<AgentSelectionUpdateResponse> {
   const { tenant, project } = requireScope(runtime)
+  const { model, ...disabled } = patch
   const response = await fetch(operationsUrl(runtime, 'agent_selection_update', runtime.bundleId, tenant, project), {
     method: 'POST',
     credentials: runtime.credentials,
     headers: await buildRequestHeaders(runtime, { 'Content-Type': 'application/json', Accept: 'application/json' }),
-    body: JSON.stringify({ data: { agent: agentId, disabled } }),
+    body: JSON.stringify({
+      data: {
+        agent: agentId,
+        disabled,
+        ...(model !== undefined ? { model } : {}),
+      },
+    }),
   })
   const payload = await response.json().catch(() => null)
   const body = unwrapOperationBody(payload, 'agent_selection_update') as AgentSelectionUpdateResponse | null

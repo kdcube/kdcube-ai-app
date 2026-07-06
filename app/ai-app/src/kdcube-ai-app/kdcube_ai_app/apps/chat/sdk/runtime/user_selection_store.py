@@ -14,12 +14,18 @@ One row per (user, REAL bundle_id, agent): ``subsystem='agents'``,
         "named_services": {"<namespace>": true},
         "skills": ["<namespace>.<skill_id>", ...]
       },
+      "model": {"provider": "<provider>", "model": "<model_id>"},
       "updated_at": "<iso>"
     }
 
 Absent row = full configured set (nothing disabled). Writes are merge-writes
 of partial toggles, clamped against the live inventory catalog when one is
 provided, so the selection can only ever narrow the configured set.
+
+``model`` is the one PICK in the record (a choice from the admin-declared
+``supported_models`` list, applied to the strong decision role for the user's
+turns): absent/None = the configured default; writes clamp against
+``supported_models`` so a pick can never leave the admin-allowed list.
 """
 
 from __future__ import annotations
@@ -33,10 +39,17 @@ from kdcube_ai_app.apps.chat.sdk.context.memory.store import (
     _safe_identifier,
     _schema_from_scope,
 )
-from kdcube_ai_app.apps.chat.sdk.runtime.agent_inventory import clamp_selection
+from kdcube_ai_app.apps.chat.sdk.runtime.agent_inventory import (
+    clamp_selection,
+    match_supported_model,
+    normalize_model_pick,
+)
 
 AGENT_SELECTION_SUBSYSTEM = "agents"
 AGENT_SELECTION_KEY_PREFIX = "agent_selection:"
+
+# set_selection sentinel: "model not in this patch" (None means CLEAR the pick).
+_MODEL_UNSET = object()
 
 _DICT_CATEGORIES = ("tools", "mcp", "named_services")
 
@@ -198,13 +211,23 @@ class UserAgentSelectionStore:
             )
         if not row:
             now = _utc_now_iso()
-            return {"schema_version": 1, "disabled": {}, "created_at": now, "updated_at": now}
+            return {
+                "schema_version": 1,
+                "disabled": {},
+                "model": None,
+                "created_at": now,
+                "updated_at": now,
+            }
         data = dict(row)
         value = _json(data.get("value_json"))
         disabled = value.get("disabled") if isinstance(value, Mapping) else {}
+        model = value.get("model") if isinstance(value, Mapping) else None
         return {
             "schema_version": 1,
             "disabled": dict(disabled) if isinstance(disabled, Mapping) else {},
+            # Single PICK (absent/None = the configured default model), riding
+            # the same record as the deny-list toggles.
+            "model": normalize_model_pick(model),
             "created_at": str(data.get("created_at") or ""),
             "updated_at": str(data.get("updated_at") or ""),
         }
@@ -216,6 +239,7 @@ class UserAgentSelectionStore:
         bundle_id: str,
         agent_id: str,
         patch: Mapping[str, Any] | None,
+        model: Any = _MODEL_UNSET,
         catalog: Optional[Mapping[str, Any]] = None,
         replace: bool = False,
     ) -> dict[str, Any]:
@@ -224,20 +248,41 @@ class UserAgentSelectionStore:
         When ``catalog`` (the live inventory) is provided the merged result is
         clamped against it: anything outside the inventory is stripped, and
         system tool aliases are always stripped (locked on).
+
+        ``model`` is the single model pick: omitted keeps the stored pick,
+        ``None`` clears it (back to the configured default), a ``{provider,
+        model}`` mapping sets it — clamped against the catalog's
+        ``supported_models`` when the catalog is provided (an out-of-list pick
+        keeps the stored value).
         """
         current: Mapping[str, Any] = {}
+        current_model: Any = None
         if not replace:
-            current = (await self.get_selection(
+            stored = await self.get_selection(
                 user_id=user_id,
                 bundle_id=bundle_id,
                 agent_id=agent_id,
-            )).get("disabled") or {}
+            )
+            current = stored.get("disabled") or {}
+            current_model = stored.get("model")
         merged = merge_selection_patch(current, patch)
         if catalog is not None:
             merged = clamp_selection(merged, catalog)
 
+        merged_model = normalize_model_pick(current_model)
+        if model is None:
+            merged_model = None
+        elif model is not _MODEL_UNSET:
+            candidate = normalize_model_pick(model)
+            if catalog is not None:
+                candidate = match_supported_model(candidate, catalog.get("supported_models"))
+            if candidate:
+                merged_model = candidate
+
         now = _utc_now_iso()
-        value = {"schema_version": 1, "disabled": merged, "updated_at": now}
+        value: dict[str, Any] = {"schema_version": 1, "disabled": merged, "updated_at": now}
+        if merged_model:
+            value["model"] = merged_model
         pool = self._require_pool()
         async with pool.acquire() as con:
             await con.execute(
@@ -257,7 +302,7 @@ class UserAgentSelectionStore:
                 json.dumps(value, ensure_ascii=False, sort_keys=True),
                 AGENT_SELECTION_SUBSYSTEM,
             )
-        return {"schema_version": 1, "disabled": merged, "updated_at": now}
+        return {"schema_version": 1, "disabled": merged, "model": merged_model, "updated_at": now}
 
 
 __all__ = [

@@ -27,8 +27,10 @@ from __future__ import annotations
 
 import importlib
 import pathlib
+import re
 from typing import Any, Mapping, Sequence
 
+from kdcube_ai_app.apps.chat.sdk.event_identity import normalize_agent_id
 from kdcube_ai_app.apps.chat.sdk.runtime.skill_config import AgentSkillConfig
 from kdcube_ai_app.apps.chat.sdk.runtime.tool_config import (
     _NAMED_SERVICE_OPERATION_TO_TOOL,
@@ -47,6 +49,11 @@ from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers.client_tools
 # cannot act. Config `name:` forms included so denials keyed either way are
 # stripped.
 SYSTEM_TOOL_ALIASES = frozenset({"io_tools", "ctx_tools", "io", "context"})
+
+# The per-user model pick targets the ReAct strong decision role: it overrides
+# what bundle-level `role_models` or the agent's react block configures for it,
+# for that user's turns only.
+USER_MODEL_TARGET_ROLE = "solver.react.v2.decision.v2.strong"
 
 
 def _norm(value: Any) -> str:
@@ -79,6 +86,147 @@ def _first_para(text: str) -> str:
 
 def is_system_tool_alias(alias: Any) -> bool:
     return _norm(alias) in SYSTEM_TOOL_ALIASES
+
+
+# ── per-user model choice (admin-allowed list) ───────────────────────────────
+
+
+def _react_agent_config_blocks(
+    bundle_props: Mapping[str, Any] | None,
+    agent_id: str | None,
+) -> list[Mapping[str, Any]]:
+    """React config blocks in agent-key precedence — parity with the
+    BaseWorkflow `_react_config_lookup` chain (agent key → `default_agent` →
+    `default` → the react root), over both `react` and `config.react` roots."""
+
+    def _get(data: Mapping[str, Any], path: str) -> Any:
+        cur: Any = data
+        for part in path.split("."):
+            if not isinstance(cur, Mapping) or part not in cur:
+                return None
+            cur = cur[part]
+        return cur
+
+    normalized = normalize_agent_id(agent_id)
+    safe = re.sub(r"[^A-Za-z0-9_]+", "_", normalized).strip("_")
+    keys: list[str] = []
+    for key in (normalized, safe, "default_agent", "default"):
+        if key and key not in keys:
+            keys.append(key)
+
+    blocks: list[Mapping[str, Any]] = []
+    for root_path in ("react", "config.react"):
+        root = _get(bundle_props or {}, root_path)
+        if not isinstance(root, Mapping):
+            continue
+        agents = root.get("agents")
+        for key in keys:
+            direct = root.get(key)
+            if isinstance(direct, Mapping):
+                blocks.append(direct)
+            if isinstance(agents, Mapping) and isinstance(agents.get(key), Mapping):
+                blocks.append(agents[key])
+        blocks.append(root)
+    return blocks
+
+
+def react_supported_models(
+    bundle_props: Mapping[str, Any] | None,
+    agent_id: str | None,
+) -> list[dict[str, str]]:
+    """The admin-allowed model list for this agent's react block.
+
+    Config shape mirrors the economics price-table rows::
+
+        react:
+          default_agent:            # or a per-agent key
+            supported_models:
+              - model: claude-sonnet-4-6
+                provider: anthropic
+                label: Sonnet 4.6
+
+    Empty/absent list means the per-user model choice stays invisible.
+    """
+    for block in _react_agent_config_blocks(bundle_props, agent_id):
+        raw = block.get("supported_models")
+        if not isinstance(raw, list):
+            continue
+        out: list[dict[str, str]] = []
+        for row in raw:
+            if not isinstance(row, Mapping):
+                continue
+            model = _norm(row.get("model"))
+            if not model:
+                continue
+            out.append({
+                "model": model,
+                "provider": _norm(row.get("provider")) or "anthropic",
+                "label": _norm(row.get("label")) or model,
+            })
+        return out
+    return []
+
+
+def configured_strong_model(
+    bundle_props: Mapping[str, Any] | None,
+    agent_id: str | None,
+) -> dict[str, str] | None:
+    """The configured default for the strong decision role: the agent react
+    block's `role_models` first, else the bundle-level `role_models` prop."""
+    for block in _react_agent_config_blocks(bundle_props, agent_id):
+        role_models = block.get("role_models")
+        if isinstance(role_models, Mapping):
+            spec = role_models.get(USER_MODEL_TARGET_ROLE)
+            if isinstance(spec, Mapping) and _norm(spec.get("model")):
+                return {
+                    "provider": _norm(spec.get("provider")) or "anthropic",
+                    "model": _norm(spec.get("model")),
+                }
+    role_models = (bundle_props or {}).get("role_models")
+    if isinstance(role_models, Mapping):
+        spec = role_models.get(USER_MODEL_TARGET_ROLE)
+        if isinstance(spec, Mapping) and _norm(spec.get("model")):
+            return {
+                "provider": _norm(spec.get("provider")) or "anthropic",
+                "model": _norm(spec.get("model")),
+            }
+    return None
+
+
+def normalize_model_pick(pick: Any) -> dict[str, str] | None:
+    """`{provider, model}` from a stored/submitted pick; None when shapeless."""
+    if not isinstance(pick, Mapping):
+        return None
+    model = _norm(pick.get("model"))
+    if not model:
+        return None
+    return {"provider": _norm(pick.get("provider")), "model": model}
+
+
+def match_supported_model(
+    pick: Any,
+    supported: Sequence[Mapping[str, Any]] | None,
+) -> dict[str, str] | None:
+    """The supported row a pick refers to, or None (stale/foreign pick).
+
+    Matches on model id; when both sides carry a provider it must match too.
+    """
+    normalized = normalize_model_pick(pick)
+    if not normalized:
+        return None
+    for row in supported or []:
+        if not isinstance(row, Mapping):
+            continue
+        if _norm(row.get("model")) != normalized["model"]:
+            continue
+        row_provider = _norm(row.get("provider"))
+        if normalized["provider"] and row_provider and normalized["provider"] != row_provider:
+            continue
+        return {
+            "provider": row_provider or normalized["provider"] or "anthropic",
+            "model": normalized["model"],
+        }
+    return None
 
 
 # ── catalog (the pickable inventory) ─────────────────────────────────────────
@@ -245,6 +393,11 @@ def agent_capabilities_catalog(
         "mcp": mcp_out,
         "named_services": namespaces_out,
         "skills": skills_out,
+        # Per-user model choice: the admin-allowed list (empty = the feature
+        # stays invisible) and the configured default for the strong decision
+        # role the pick overrides.
+        "supported_models": react_supported_models(bundle_props, agent_id),
+        "default_model": configured_strong_model(bundle_props, agent_id),
     }
 
 
@@ -793,12 +946,17 @@ module_tool_docs = _module_tool_docs
 
 __all__ = [
     "SYSTEM_TOOL_ALIASES",
+    "USER_MODEL_TARGET_ROLE",
     "agent_capabilities_catalog",
     "clamp_selection",
+    "configured_strong_model",
     "enrich_catalog_mcp_tools",
     "is_system_tool_alias",
+    "match_supported_model",
     "module_tool_docs",
     "narrow_agent_skill_config",
     "narrow_agent_tool_config",
+    "normalize_model_pick",
+    "react_supported_models",
     "selection_deltas",
 ]

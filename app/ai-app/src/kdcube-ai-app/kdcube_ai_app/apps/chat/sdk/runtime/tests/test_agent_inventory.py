@@ -440,3 +440,84 @@ def test_narrow_mcp_per_tool_wildcard_uses_denied_tools():
     assert spec["tools"] == ["*"]
     assert spec["denied_tools"] == ["kb_fetch"]
     assert "knowledge" in narrowed.allowed_plugins
+
+
+# ── per-user model choice (admin-allowed list) ────────────────────────────────
+
+from kdcube_ai_app.apps.chat.sdk.runtime.agent_inventory import (  # noqa: E402
+    USER_MODEL_TARGET_ROLE,
+    configured_strong_model,
+    match_supported_model,
+    react_supported_models,
+)
+
+_SUPPORTED = [
+    {"model": "claude-sonnet-4-6", "provider": "anthropic", "label": "Sonnet 4.6"},
+    {"model": "claude-haiku-4-5-20251001", "provider": "anthropic", "label": "Haiku 4.5"},
+]
+
+
+def _props_with_models(*, agent_level: bool) -> dict:
+    props = _props()
+    block = {"supported_models": [dict(row) for row in _SUPPORTED]}
+    props["react"] = {"main": block} if agent_level else {"default_agent": block}
+    props["role_models"] = {
+        USER_MODEL_TARGET_ROLE: {"provider": "anthropic", "model": "claude-sonnet-4-6"},
+    }
+    return props
+
+
+def test_supported_models_parse_agent_and_default_levels():
+    for agent_level in (True, False):
+        rows = react_supported_models(_props_with_models(agent_level=agent_level), "main")
+        assert [r["model"] for r in rows] == ["claude-sonnet-4-6", "claude-haiku-4-5-20251001"]
+        assert rows[0]["label"] == "Sonnet 4.6"
+    # Absent list => the feature stays invisible.
+    assert react_supported_models(_props(), "main") == []
+
+
+def test_supported_models_agent_key_wins_over_default():
+    props = _props_with_models(agent_level=False)
+    props["react"]["main"] = {"supported_models": [{"model": "claude-opus-4-6", "label": "Opus"}]}
+    rows = react_supported_models(props, "main")
+    assert [r["model"] for r in rows] == ["claude-opus-4-6"]
+    assert rows[0]["provider"] == "anthropic"  # default provider fill
+
+
+def test_configured_strong_model_resolution():
+    props = _props_with_models(agent_level=False)
+    assert configured_strong_model(props, "main") == {
+        "provider": "anthropic", "model": "claude-sonnet-4-6",
+    }
+    # The react block's role_models beats the bundle-level prop.
+    props["react"]["default_agent"]["role_models"] = {
+        USER_MODEL_TARGET_ROLE: {"provider": "anthropic", "model": "claude-opus-4-6"},
+    }
+    assert configured_strong_model(props, "main")["model"] == "claude-opus-4-6"
+    assert configured_strong_model(_props(), "main") is None
+
+
+def test_match_supported_model_validates_the_pick():
+    assert match_supported_model({"provider": "anthropic", "model": "claude-haiku-4-5-20251001"}, _SUPPORTED) == {
+        "provider": "anthropic", "model": "claude-haiku-4-5-20251001",
+    }
+    # Provider omitted -> matches on model id and fills the row's provider.
+    assert match_supported_model({"model": "claude-sonnet-4-6"}, _SUPPORTED)["provider"] == "anthropic"
+    # Stale/foreign picks resolve to None (=> configured default).
+    assert match_supported_model({"model": "claude-3-opus"}, _SUPPORTED) is None
+    assert match_supported_model({"provider": "openai", "model": "claude-sonnet-4-6"}, _SUPPORTED) is None
+    assert match_supported_model(None, _SUPPORTED) is None
+    assert match_supported_model({"model": "claude-sonnet-4-6"}, []) is None
+
+
+def test_catalog_carries_supported_models_and_default():
+    props = _props_with_models(agent_level=False)
+    catalog = agent_capabilities_catalog(props, "main")
+    assert [r["model"] for r in catalog["supported_models"]] == [
+        "claude-sonnet-4-6", "claude-haiku-4-5-20251001",
+    ]
+    assert catalog["default_model"] == {"provider": "anthropic", "model": "claude-sonnet-4-6"}
+
+    plain = agent_capabilities_catalog(_props(), "main")
+    assert plain["supported_models"] == []
+    assert plain["default_model"] is None

@@ -51,6 +51,7 @@ import {
 import { applySelectionPatch } from './capabilities.ts'
 import type {
   AgentCapabilitiesInventory,
+  AgentModelPick,
   AgentSelectionDisabled,
   AgentSelectionPatch,
 } from './capabilities.ts'
@@ -300,6 +301,7 @@ const slice = createSlice({
         agent: string
         inventory: AgentCapabilitiesInventory
         disabled: AgentSelectionDisabled
+        model?: AgentModelPick | null
       }>,
     ) {
       state.capabilities.status = 'ready'
@@ -307,23 +309,32 @@ const slice = createSlice({
       state.capabilities.agent = action.payload.agent
       state.capabilities.inventory = action.payload.inventory
       state.capabilities.disabled = action.payload.disabled
+      state.capabilities.model = action.payload.model ?? null
     },
     capabilitiesLoadError(state, action: PayloadAction<string>) {
       state.capabilities.status = 'error'
       state.capabilities.error = action.payload
     },
-    /** Optimistic: apply a toggle patch to the local deny-list immediately; the
-     *  engine debounces the matching `agent_selection_update` merge-write. */
+    /** Optimistic: apply a toggle patch to the local deny-list (and the model
+     *  pick) immediately; the engine debounces the matching
+     *  `agent_selection_update` merge-write. */
     capabilitiesPatchApplied(state, action: PayloadAction<AgentSelectionPatch>) {
       state.capabilities.disabled = applySelectionPatch(state.capabilities.disabled, action.payload)
+      if (action.payload.model !== undefined) {
+        state.capabilities.model = action.payload.model
+      }
       state.capabilities.saveError = null
     },
     capabilitiesSaving(state, action: PayloadAction<boolean>) {
       state.capabilities.saving = action.payload
     },
     /** Reconcile with the server's clamped record after a save round-trips. */
-    capabilitiesSelectionSaved(state, action: PayloadAction<AgentSelectionDisabled>) {
-      state.capabilities.disabled = action.payload
+    capabilitiesSelectionSaved(
+      state,
+      action: PayloadAction<{ disabled: AgentSelectionDisabled; model?: AgentModelPick | null }>,
+    ) {
+      state.capabilities.disabled = action.payload.disabled
+      state.capabilities.model = action.payload.model ?? null
       state.capabilities.saving = false
       state.capabilities.saveError = null
     },
