@@ -2132,3 +2132,16 @@ button.k-menu-status:hover { background: var(--surface-2); }
   color: var(--muted);
   vertical-align: 1px;
 }
+
+/* Composer-menu soft info notice (e.g. cache-cost hints). Non-blocking,
+   info tone — never an error treatment. */
+.k-menu-notice {
+  margin: 4px 8px 2px;
+  padding: 6px 9px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--accent-soft);
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: var(--ink);
+}

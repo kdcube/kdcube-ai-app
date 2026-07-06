@@ -252,10 +252,15 @@ differ sharply by category:
   the inactive-tools notice and the memory hotset) changes nothing in the
   cached slice — that is precisely why the lifecycle rule in section 3 exists.
 
-Two platform behaviors build on this: the chat surface will warn the user
-before a cache-destroying switch (model change, tool/skill toggles), and a
-configurable **cold-cache policy** — letting an operator bound how often users
-may force cold turns — is the planned next enforcement step.
+Two platform behaviors build on this. The first ships with the composer menu:
+picking a different model shows an inline, non-blocking cost notice
+("Switching the model starts a fresh context cache — the next turn is billed
+at full input rates while the cache rebuilds."), and the first tool/skill
+toggle per menu-open shows the milder equivalent ("Changing tools or skills
+re-caches part of the context at full input cost on the next turn."); both are
+suppressed while the conversation has no turns yet, where nothing is cached.
+The second — a configurable **cold-cache policy**, letting an operator bound
+how often users may force cold turns — is the planned next enforcement step.
 
 ## 6. How the chat component connects
 

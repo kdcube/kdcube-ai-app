@@ -89,7 +89,15 @@ export function installCapabilitiesMock(): void {
       return json({ session_id: 'mock-session', user_id: 'mock-user', user_type: 'registered', roles: [] })
     }
     if (url.includes('/api/cb/conversations/')) {
-      return json({ items: [] })
+      // One loadable conversation with one (empty) turn, so the harness can
+      // exercise turn-gated behavior such as the cache-cost notices.
+      if (url.endsWith('/mock-conv-1/fetch')) {
+        return json({ conversation_id: 'mock-conv-1', title: 'Mock conversation', turns: [{ turn_id: 'turn-1', artifacts: [] }] })
+      }
+      if (url.includes('/turns-with-feedbacks')) {
+        return json({ items: [] })
+      }
+      return json({ items: [{ conversation_id: 'mock-conv-1', title: 'Mock conversation', started_at: new Date().toISOString(), last_activity_at: new Date().toISOString() }] })
     }
     if (url.includes('/operations/agent_capabilities')) {
       return json({ ok: true, agent: 'main', capabilities: MOCK_INVENTORY, selection: { schema_version: 1, disabled, model } })

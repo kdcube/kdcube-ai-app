@@ -42,6 +42,17 @@ export interface ComposerMenuSectionContext {
   close: () => void
 }
 
+/** Cache-cost notice shown when the user picks a DIFFERENT model: provider
+ *  prompt caches are per model, so the next turn rebuilds the cache. Exported
+ *  so hosts and tests reference the shipped copy. */
+export const MODEL_SWITCH_CACHE_NOTICE =
+  'Switching the model starts a fresh context cache — the next turn is billed at full input rates while the cache rebuilds.'
+
+/** Milder cache-cost notice for the first tool/skill/MCP/namespace toggle in
+ *  one menu-open: the tool catalog renders inside the cached prompt slice. */
+export const CAPABILITY_TOGGLE_CACHE_NOTICE =
+  'Changing tools or skills re-caches part of the context at full input cost on the next turn.'
+
 /** One menu section. Ordered ascending by `order`; each renders its own rows
  *  (or null to stay hidden). Extension point: new capability surfaces slot in
  *  as descriptors without touching the menu shell. */
@@ -370,6 +381,10 @@ function builtInSections(namespaceStyles: NamespaceStyleMap): ComposerMenuSectio
   ]
 }
 
+function modelKey(pick: { provider?: string; model?: string } | null | undefined): string {
+  return pick?.model ? `${pick.provider ?? ''}:${pick.model}` : ''
+}
+
 export function ComposerMenu({
   disabled = false,
   namespaceStyles = {},
@@ -384,9 +399,43 @@ export function ComposerMenu({
   const anchorRef = useRef<HTMLDivElement | null>(null)
   const capabilities = vm.capabilities
 
+  /* Cache-cost notices. A fresh conversation has nothing cached yet, so the
+   * notices would be noise there — suppressed via the already-exposed turn
+   * list. Both reset per menu-open: the model notice tracks the pick that was
+   * active when the menu opened (returning to it clears the notice); the
+   * toggle notice shows once after the first capability toggle. */
+  const conversationHasTurns = vm.state.turns.length > 0
+  const openInitialModelRef = useRef<string | null>(null)
+  const [toggledThisOpen, setToggledThisOpen] = useState(false)
+
   useEffect(() => {
     if (open) capabilities.load()
+    if (!open) {
+      openInitialModelRef.current = null
+      setToggledThisOpen(false)
+    }
   }, [open, capabilities])
+
+  useEffect(() => {
+    if (open && capabilities.status === 'ready' && openInitialModelRef.current === null) {
+      openInitialModelRef.current = modelKey(capabilities.model)
+    }
+  }, [open, capabilities.status, capabilities.model])
+
+  const noticingToggle = (patch: Parameters<typeof capabilities.toggle>[0]) => {
+    if (patch.model === undefined) setToggledThisOpen(true)
+    capabilities.toggle(patch)
+  }
+  const vmForSections: ChatViewModel = {
+    ...vm,
+    capabilities: { ...vm.capabilities, toggle: noticingToggle },
+  }
+
+  const modelNoticeVisible =
+    conversationHasTurns
+    && openInitialModelRef.current !== null
+    && modelKey(capabilities.model) !== openInitialModelRef.current
+  const toggleNoticeVisible = conversationHasTurns && toggledThisOpen
 
   useEffect(() => {
     if (!open) return
@@ -423,7 +472,7 @@ export function ComposerMenu({
     )
   } else {
     const rendered = sections
-      .map((section) => ({ id: section.id, node: section.render({ vm, close }) }))
+      .map((section) => ({ id: section.id, node: section.render({ vm: vmForSections, close }) }))
       .filter((section) => section.node !== null && section.node !== undefined && section.node !== false)
     body = rendered.length ? (
       <>
@@ -431,8 +480,14 @@ export function ComposerMenu({
           <div key={section.id}>
             {index > 0 ? <div className="k-menu-divider" role="separator" /> : null}
             {section.node}
+            {section.id === 'model' && modelNoticeVisible ? (
+              <div className="k-menu-notice" role="note">{MODEL_SWITCH_CACHE_NOTICE}</div>
+            ) : null}
           </div>
         ))}
+        {toggleNoticeVisible ? (
+          <div className="k-menu-notice" role="note">{CAPABILITY_TOGGLE_CACHE_NOTICE}</div>
+        ) : null}
         <div className="k-menu-foot">
           {capabilities.saveError
             ? 'Changes couldn’t be saved. They’ll retry with your next change.'
