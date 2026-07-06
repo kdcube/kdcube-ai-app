@@ -12,7 +12,7 @@ import logging
 from typing import Annotated, Optional, List, Dict, Any
 
 from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import delta as emit_delta, get_comm
-from kdcube_ai_app.apps.chat.sdk.streaming.versatile_streamer import ChannelSpec, stream_with_channels
+from kdcube_ai_app.apps.chat.sdk.streaming.workspace_streamer import ChannelSpec, stream_with_channels
 from kdcube_ai_app.apps.chat.sdk.tools import citations as citations_module
 from kdcube_ai_app.apps.chat.sdk.tools.text_proc_utils import (
     _format_ok,

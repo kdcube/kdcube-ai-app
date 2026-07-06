@@ -1,13 +1,13 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2025 Elena Viter
 #
-# Tests and usage examples for the versatile channeled streamer.
+# Tests and usage examples for the workspace channeled streamer.
 
 import json
 
 import pytest
 
-from kdcube_ai_app.apps.chat.sdk.streaming.versatile_streamer import ChannelSpec, stream_with_channels
+from kdcube_ai_app.apps.chat.sdk.streaming.workspace_streamer import ChannelSpec, stream_with_channels
 from kdcube_ai_app.apps.chat.sdk.solutions.widgets.exec import DecisionExecCodeStreamer
 
 
@@ -271,7 +271,7 @@ async def test_stream_with_channels_captures_realistic_exec_code_payload():
         f"<channel:ReactDecisionOutV2>```json\n{json.dumps(payload, ensure_ascii=False, indent=2)}\n```</channel:ReactDecisionOutV2>\n"
         f"<channel:code>\n{code_text}</channel:code>"
     )
-    from kdcube_ai_app.apps.chat.sdk.streaming.versatile_streamer import ChannelSubscribers
+    from kdcube_ai_app.apps.chat.sdk.streaming.workspace_streamer import ChannelSubscribers
 
     for chunk_size in HISTORICAL_EXEC_CODE_MISS_CHUNK_SIZES:
         svc = _FakeService([text[i:i + chunk_size] for i in range(0, len(text), chunk_size)])
@@ -343,7 +343,7 @@ async def test_stream_with_channels_code_channel_survives_trailing_repeated_thin
         f"<channel:code>{code_text}</channel:code>\n"
         "<channel:thinking>Extra diagnostic after code.</channel:thinking>"
     )
-    from kdcube_ai_app.apps.chat.sdk.streaming.versatile_streamer import ChannelSubscribers
+    from kdcube_ai_app.apps.chat.sdk.streaming.workspace_streamer import ChannelSubscribers
 
     for chunk_size in [7, 19, 64]:
         svc = _FakeService([text[i:i + chunk_size] for i in range(0, len(text), chunk_size)])

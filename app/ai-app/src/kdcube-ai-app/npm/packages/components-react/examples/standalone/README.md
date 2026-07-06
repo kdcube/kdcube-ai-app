@@ -9,7 +9,7 @@ cd app/ai-app/src/kdcube-ai-app/npm/packages/components-react/examples/standalon
 npm install
 npm run dev
 # open the printed URL, optionally with connection query params:
-#   ?baseUrl=http://localhost:8000&tenant=demo-tenant&project=demo-project&bundle=versatile@2026-03-31-13-36
+#   ?baseUrl=http://localhost:8000&tenant=demo-tenant&project=demo-project&bundle=workspace@2026-03-31-13-36
 ```
 
 - **Engine vs UI**: `<ChatStoreProvider config>` creates the headless engine

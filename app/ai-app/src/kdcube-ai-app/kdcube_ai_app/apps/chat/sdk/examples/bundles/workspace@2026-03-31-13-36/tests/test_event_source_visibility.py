@@ -19,7 +19,7 @@ def _template_bundle_props() -> dict:
     bundle = next(
         item
         for item in template["bundles"]["items"]
-        if item.get("id") == "versatile@2026-03-31-13-36"
+        if item.get("id") == "workspace@2026-03-31-13-36"
     )
     return bundle["config"]
 

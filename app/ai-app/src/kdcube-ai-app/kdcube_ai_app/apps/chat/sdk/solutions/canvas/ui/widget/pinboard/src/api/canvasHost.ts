@@ -3,7 +3,7 @@
  * scene, or this standalone Pin Board widget) talk to the bundle's canvas
  * operations and the Data Bus.
  *
- * It is a faithful lift of the canvas plumbing the versatile scene runs
+ * It is a faithful lift of the canvas plumbing the workspace scene runs
  * inline: REST `operations/<alias>` calls for read / list / object-action /
  * attachment-upload, and a Socket.IO Data Bus publish-and-wait for the
  * `canvas.patch` write path. Nothing here touches React — callers own state

@@ -10,7 +10,7 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-assemble-bundle-with-sdk-building-blocks-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/configuration/bundle-runtime-configuration-and-secrets-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-subsystem-integration-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/versatile-reference-bundle-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/workspace-reference-bundle-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-entrypoint-classes-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-properties-and-secrets-lifecycle-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-agent-integration-README.md
@@ -33,7 +33,7 @@ Use it together with:
 - [build/how-to-configure-and-run-bundle-README.md](build/how-to-configure-and-run-bundle-README.md)
 - [build/how-to-assemble-bundle-with-sdk-building-blocks-README.md](build/how-to-assemble-bundle-with-sdk-building-blocks-README.md)
 - [bundle-subsystem-integration-README.md](bundle-subsystem-integration-README.md)
-- [versatile-reference-bundle-README.md](versatile-reference-bundle-README.md)
+- [workspace-reference-bundle-README.md](workspace-reference-bundle-README.md)
 - [bundle-entrypoint-classes-README.md](bundle-entrypoint-classes-README.md)
 - [bundle-properties-and-secrets-lifecycle-README.md](bundle-properties-and-secrets-lifecycle-README.md)
 - [bundle-agent-integration-README.md](bundle-agent-integration-README.md)
@@ -46,13 +46,13 @@ Use it together with:
 
 Primary reference bundle:
 
-`src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36`
+`src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/workspace@2026-03-31-13-36`
 
 Read in this order:
 
 1. this guide
 2. [build/how-to-assemble-bundle-with-sdk-building-blocks-README.md](build/how-to-assemble-bundle-with-sdk-building-blocks-README.md)
-3. the versatile reference doc
+3. the workspace reference doc
 4. [bundle-entrypoint-classes-README.md](bundle-entrypoint-classes-README.md)
 5. [bundle-properties-and-secrets-lifecycle-README.md](bundle-properties-and-secrets-lifecycle-README.md)
 6. `entrypoint.py`
@@ -663,7 +663,7 @@ If you need the deployment-side details and registry behavior, use:
 
 ## Reference Bundle Scope
 
-The reference bundle is `versatile@2026-03-31-13-36`.
+The reference bundle is `workspace@2026-03-31-13-36`.
 
 It intentionally demonstrates:
 

@@ -1,9 +1,9 @@
 /**
- * Versatile scene — a config-driven scene host with the same look and
+ * Workspace scene — a config-driven scene host with the same look and
  * behavior as the website scene host.
  *
  * Every component is an iframe-mounted served widget from its owning app
- * (pin board = this bundle's `pinboard` widget, chat = `versatile_chat`,
+ * (pin board = this bundle's `pinboard` widget, chat = `workspace_chat`,
  * memories = the user-memories app, usage = `usage_card`, tasks = the
  * configured external panel; more via `scene_surface_config`). The scene
  * itself only composes: right-edge summon rail, floating windows, the
@@ -238,13 +238,66 @@ function App() {
     }
   }, [ctx, ready])
 
+  // ------------------------------------------------- raise on activation
+  // Standard window-manager focus semantics: activating a window anywhere —
+  // chrome OR content — raises it. Two mechanisms, because iframe surfaces
+  // split the input paths and the scene may itself be an iframe of an outer
+  // host (so the scene window cannot rely on ever holding focus):
+  //
+  // 1. A transparent "raise veil" over every BURIED floating window
+  //    (parent-owned, so the pointer-down always reaches the scene). The
+  //    veil raises on pointerdown and unmounts as the window becomes top,
+  //    letting the follow-up pointerup/click fall through to the iframe.
+  //    Deterministic in every nesting.
+  // 2. A `focus` listener on each frame's contentWindow, armed on EVERY
+  //    iframe load (same-origin scene widgets): any focus entering a frame
+  //    — click, keyboard, programmatic — raises its window and logs
+  //    `[kdc-scene:focus]`.
+  const armFrameFocusRaise = useCallback((alias: string) => {
+    const frame = frameRefs.current[alias]
+    try {
+      const target = frame?.contentWindow
+      if (!target) return
+      target.addEventListener('focus', () => {
+        managerRef.current.front(alias)
+        console.info('[kdc-scene:focus] raise on frame focus', { alias })
+      })
+      console.info('[kdc-scene:focus] frame focus raise armed', { alias })
+    } catch (error) {
+      console.info('[kdc-scene:focus] frame focus arm unavailable', {
+        alias,
+        error: String(error),
+      })
+    }
+  }, [])
+
+  const raiseVeilFor = useCallback((alias: string) => {
+    return (
+      <button
+        type="button"
+        className="kdc-raise-veil"
+        title="Bring window to front"
+        aria-label="Bring window to front"
+        onPointerDown={() => {
+          managerRef.current.front(alias)
+          console.info('[kdc-scene:focus] raise via veil', { alias })
+          try {
+            frameRefs.current[alias]?.contentWindow?.focus()
+          } catch {
+            /* focus hand-off is best-effort */
+          }
+        }}
+      />
+    )
+  }, [])
+
   // ---------------------------------------------------------------- auth
   // Event-driven: probe /profile at boot AND re-probe whenever the host
   // broadcasts an auth change (DOM event when the scene is the top window,
   // postMessage when it is embedded). Never a one-time mount snapshot.
   const probeIdentity = useCallback((reason: string) => {
     void fetchProfileIdentity(ctxRef.current).then((next) => {
-      console.info('[versatile-scene] auth probe', { reason, userType: next.userType })
+      console.info('[workspace-scene] auth probe', { reason, userType: next.userType })
       setIdentity(next)
     })
   }, [])
@@ -482,7 +535,7 @@ function App() {
         ? spec.targetSurfaces.find((surface) => surface.endsWith('.viewer')) || spec.targetSurfaces[0] || ''
         : spec.targetSurfaces[0] || '')
     return {
-      surfaceRef: `versatile.${spec.alias}`,
+      surfaceRef: `workspace.${spec.alias}`,
       targetSurface,
       dropEffect: spec.drop.effect,
       accepts: { [spec.drop.effect]: spec.drop.patterns },
@@ -494,7 +547,7 @@ function App() {
     const targetSurface = firstExternalTargetSurface(externalPanel)
     if (!targetSurface) return null
     return {
-      surfaceRef: externalPanel?.id || 'versatile.external',
+      surfaceRef: externalPanel?.id || 'workspace.external',
       targetSurface,
       dropEffect: 'open',
       label: externalPanel?.label || 'external surface',
@@ -593,7 +646,7 @@ function App() {
         scene: {
           embedded: true,
           configSource: 'host',
-          surface_ref: `versatile.${sourceAlias}`,
+          surface_ref: `workspace.${sourceAlias}`,
           target_surfaces: spec?.targetSurfaces ?? [],
           alias: sourceAlias,
         },
@@ -745,7 +798,7 @@ function App() {
       if (type === SCENE_SURFACE_COMMAND) {
         const targetSurface = asString(data.target_surface) || asString(data.targetSurface)
         const result = sceneRuntime.queueSurfaceCommand(targetSurface, data)
-        console.info('[versatile:scene] surface command request', {
+        console.info('[workspace:scene] surface command request', {
           target_surface: targetSurface,
           action: asString(data.action),
           object_ref: asString(data.object_ref),
@@ -851,10 +904,16 @@ function App() {
 
   // ------------------------------------------------------------- render
   if (!ready) {
-    return <div className="boot">Loading versatile scene...</div>
+    return <div className="boot">Loading workspace scene...</div>
   }
 
   const scope = `${ctx.tenant} / ${ctx.project}`
+
+  // Highest z among open floating windows: a rail tap on a BURIED open
+  // window raises it; only a tap on the topmost one closes/docks it.
+  const topFloatingZ = Object.values(manager.wins)
+    .filter((win) => win.open && win.floating)
+    .reduce((top, win) => Math.max(top, win.z), 0)
 
   const railEntries: RailEntry[] = []
   components.forEach((spec) => {
@@ -883,12 +942,17 @@ function App() {
       pulse: compatible && !docked && !manager.isOpen(spec.alias),
       onToggle: () => {
         if (docked) {
-          if (state?.floating) dockComponent(spec.alias)
-          else promoteComponent(spec.alias)
+          if (state?.floating) {
+            if (state.z < topFloatingZ) managerRef.current.front(spec.alias)
+            else dockComponent(spec.alias)
+          } else {
+            promoteComponent(spec.alias)
+          }
           return
         }
-        if (manager.isOpen(spec.alias)) {
-          managerRef.current.close(spec.alias)
+        if (state?.open) {
+          if (state.z < topFloatingZ) managerRef.current.front(spec.alias)
+          else managerRef.current.close(spec.alias)
         } else {
           managerRef.current.open(spec.alias, windowSizing(spec))
         }
@@ -907,8 +971,13 @@ function App() {
       icon: <TasksIcon />,
       open: manager.isOpen(externalAlias),
       onToggle: () => {
-        if (manager.isOpen(externalAlias)) managerRef.current.close(externalAlias)
-        else managerRef.current.open(externalAlias, externalSizing())
+        const state = manager.get(externalAlias)
+        if (state?.open) {
+          if (state.z < topFloatingZ) managerRef.current.front(externalAlias)
+          else managerRef.current.close(externalAlias)
+        } else {
+          managerRef.current.open(externalAlias, externalSizing())
+        }
       },
     }
     if (usageIndex >= 0) railEntries.splice(usageIndex, 0, entry)
@@ -922,7 +991,7 @@ function App() {
           <span className="brand-mark" aria-hidden="true" />
           <div>
             <span className="eyebrow">KDCube</span>
-            <span className="title">Versatile Scene</span>
+            <span className="title">Workspace Scene</span>
           </div>
         </div>
         <div className="status" title={scope}>
@@ -945,6 +1014,7 @@ function App() {
           const state = manager.get(spec.alias)
           if (!state?.everOpened) return null
           const docked = spec.placement === 'docked'
+          const buried = state.open && state.floating && state.z < topFloatingZ
           const params = spec.alias === 'chat' && spec.widgetAlias === CHAT_WIDGET_ALIAS
             ? { ...chatWidgetParams(ctx), ...(spec.params ?? {}) }
             : spec.params
@@ -983,7 +1053,12 @@ function App() {
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
                 </button>
               ) : undefined}
-              dropOverlay={dropOverlayFor(spec.alias)}
+              dropOverlay={(
+                <>
+                  {buried ? raiseVeilFor(spec.alias) : null}
+                  {dropOverlayFor(spec.alias)}
+                </>
+              )}
             >
               <iframe
                 ref={(el) => { frameRefs.current[spec.alias] = el }}
@@ -992,6 +1067,7 @@ function App() {
                 src={src}
                 allow="clipboard-write"
                 onLoad={() => {
+                  armFrameFocusRaise(spec.alias)
                   statusReadyRef.current[spec.alias] = false
                   const win = managerRef.current.get(spec.alias)
                   if (spec.views) syncWidgetView(spec.alias, win?.expanded ? 'expanded' : 'compact')
@@ -1062,7 +1138,17 @@ function App() {
           manager={manager}
           sizing={externalSizing()}
           onViewChange={(view) => syncWidgetView(externalAlias, view)}
-          dropOverlay={dropOverlayFor(externalAlias)}
+          dropOverlay={(
+            <>
+              {(() => {
+                const state = manager.get(externalAlias)
+                return state?.open && state.floating && state.z < topFloatingZ
+                  ? raiseVeilFor(externalAlias)
+                  : null
+              })()}
+              {dropOverlayFor(externalAlias)}
+            </>
+          )}
         >
           <iframe
             ref={(el) => { frameRefs.current[externalAlias] = el }}
@@ -1071,6 +1157,7 @@ function App() {
             src={externalWidgetUrl(ctx, externalPanel, false)}
             allow="clipboard-write"
             onLoad={() => {
+              armFrameFocusRaise(externalAlias)
               const win = managerRef.current.get(externalAlias)
               syncWidgetView(externalAlias, win?.expanded ? 'expanded' : 'compact')
               Object.keys(externalPanel.surfaces || {}).forEach((surface) => sceneRuntime.flushSurface(surface))

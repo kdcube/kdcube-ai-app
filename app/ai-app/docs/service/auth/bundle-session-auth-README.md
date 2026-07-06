@@ -77,7 +77,7 @@ auth:
   connection_hub:
     bundle_id: connection-hub@1-0
     authority_id: kdcube.platform
-    provider_id: versatile_google_session
+    provider_id: workspace_google_session
     entrypoint: login
 ```
 

@@ -7,7 +7,7 @@ from typing import Any, Callable, Literal, Optional, Sequence
 
 from pydantic import BaseModel, Field
 
-from kdcube_ai_app.apps.chat.sdk.streaming.versatile_streamer import ChannelSpec, stream_with_channels
+from kdcube_ai_app.apps.chat.sdk.streaming.workspace_streamer import ChannelSpec, stream_with_channels
 from kdcube_ai_app.infra.service_hub.errors import ServiceError, ServiceException
 from kdcube_ai_app.infra.service_hub.inventory import (
     ModelServiceBase,
@@ -353,7 +353,7 @@ async def memory_reconciler_stream(
     max_tokens: int = 1800,
     temperature: float = 0.1,
 ) -> tuple[MemoryReconciliationOut, dict[str, str], dict[str, Any]]:
-    """Run the versatile-streamer memory reconciler.
+    """Run the workspace-streamer memory reconciler.
 
     Returns `(validated_output, channel_dump, meta)`. The returned output is a
     proposal only; callers must apply it in a separate transactional service.

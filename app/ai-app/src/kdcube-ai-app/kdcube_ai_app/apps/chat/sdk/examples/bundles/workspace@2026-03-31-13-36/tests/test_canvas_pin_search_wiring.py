@@ -6,13 +6,13 @@ from types import SimpleNamespace
 import pytest
 
 # The pin search/index/clear ops live in the generic CanvasPinSearch service now;
-# VersatileCanvasService delegates to it. Patch the ops there to observe wiring.
+# WorkspaceCanvasService delegates to it. Patch the ops there to observe wiring.
 from kdcube_ai_app.apps.chat.sdk.solutions.canvas.search import service as pin_search_service
 
 
 def _load_canvas_service_module():
     path = Path(__file__).resolve().parents[1] / "services" / "canvas.py"
-    spec = importlib.util.spec_from_file_location("versatile_canvas_service_test_module", path)
+    spec = importlib.util.spec_from_file_location("workspace_canvas_service_test_module", path)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
@@ -82,10 +82,10 @@ class _Entrypoint:
 
 def _service(monkeypatch, *, bundle_props=None):
     entrypoint = _Entrypoint(bundle_props=bundle_props)
-    service = canvas_service.VersatileCanvasService(
+    service = canvas_service.WorkspaceCanvasService(
         entrypoint,
         config=canvas_service.CanvasRuntimeConfig(
-            bundle_id="versatile@test",
+            bundle_id="workspace@test",
             artifact_prefix="canvas",
             origin_prefix="canvas",
             state_event_source_id="canvas.state",

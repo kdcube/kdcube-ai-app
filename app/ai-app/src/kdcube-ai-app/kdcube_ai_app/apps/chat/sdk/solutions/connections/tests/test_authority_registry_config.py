@@ -47,21 +47,21 @@ def _registry():
                             },
                         },
                     },
-                    "versatile_google_session": {
+                    "workspace_google_session": {
                         "type": "bundle_session_login",
                         "entrypoints": {
                             "login": {
-                                "bundle_id": "versatile@2026-03-31-13-36",
+                                "bundle_id": "workspace@2026-03-31-13-36",
                                 "route": "public",
                                 "operation": "platform_login",
                             },
                             "session_issue": {
-                                "bundle_id": "versatile@2026-03-31-13-36",
+                                "bundle_id": "workspace@2026-03-31-13-36",
                                 "route": "public",
                                 "operation": "auth_google_session",
                             },
                             "consent": {
-                                "bundle_id": "versatile@2026-03-31-13-36",
+                                "bundle_id": "workspace@2026-03-31-13-36",
                                 "route": "public",
                                 "operation": "delegated_consent",
                             },
@@ -118,7 +118,7 @@ def test_authority_provider_instances_flatten_configured_instances():
         for row in rows
     ] == [
         ("kdcube.platform", "cognito", "multi-cognito", True),
-        ("kdcube.platform", "versatile_google_session", "bundle_session_login", True),
+        ("kdcube.platform", "workspace_google_session", "bundle_session_login", True),
         ("telegram.kdcube_ref", "telegram_bot_init_data", "telegram_init_data", False),
         ("google.accounts", "google_oidc", "google_id_token", False),
     ]
@@ -128,14 +128,14 @@ def test_resolve_authority_provider_instance_by_host_operation():
     result = resolve_authority_provider_instance(
         _registry(),
         provider_type="bundle_session_login",
-        host_bundle_id="versatile@2026-03-31-13-36",
+        host_bundle_id="workspace@2026-03-31-13-36",
         host_route="public",
         host_operation="auth_google_session",
     )
 
     assert result["ok"] is True
     assert result["authority_id"] == "kdcube.platform"
-    assert result["provider_id"] == "versatile_google_session"
+    assert result["provider_id"] == "workspace_google_session"
     assert result["entrypoints"]["login"]["operation"] == "platform_login"
     assert result["entrypoints"]["consent"]["operation"] == "delegated_consent"
     assert result["provider"]["issuer"]["ttl_seconds"] == 43200
@@ -165,7 +165,7 @@ def test_platform_authority_auth_config_normalizes_bundle_session_provider():
     resolved = resolve_platform_authority_provider(
         _registry(),
         authority_id="kdcube.platform",
-        provider_id="versatile_google_session",
+        provider_id="workspace_google_session",
     )
 
     config = platform_authority_auth_config(resolved)
@@ -181,14 +181,14 @@ def test_resolve_authority_provider_instance_by_consent_entrypoint():
     result = resolve_authority_provider_instance(
         _registry(),
         provider_type="bundle_session_login",
-        host_bundle_id="versatile@2026-03-31-13-36",
+        host_bundle_id="workspace@2026-03-31-13-36",
         host_route="public",
         host_operation="delegated_consent",
     )
 
     assert result["ok"] is True
     assert result["authority_id"] == "kdcube.platform"
-    assert result["provider_id"] == "versatile_google_session"
+    assert result["provider_id"] == "workspace_google_session"
 
 
 def test_resolve_authority_provider_instance_by_authority_and_provider_id():
@@ -207,7 +207,7 @@ def test_resolve_authority_provider_instance_fails_closed_when_missing():
     result = resolve_authority_provider_instance(
         _registry(),
         provider_type="bundle_session_login",
-        host_bundle_id="versatile@2026-03-31-13-36",
+        host_bundle_id="workspace@2026-03-31-13-36",
         host_route="public",
         host_operation="missing",
     )

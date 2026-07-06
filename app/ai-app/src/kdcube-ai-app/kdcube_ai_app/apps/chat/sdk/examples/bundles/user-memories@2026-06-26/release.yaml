@@ -15,6 +15,6 @@ bundle:
 
     Known follow-ups
 
-    - versatile: stop embedding the memory module; consume `mem` as a named
+    - workspace: stop embedding the memory module; consume `mem` as a named
       service and iframe this app's widget (including the Telegram web app).
     - Site scene (website): point the memory component at this app.

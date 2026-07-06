@@ -30,7 +30,7 @@ export interface EconomicUsageResponse extends PanelResponse {
     economic_usage: string[];
 }
 
-export interface VersatilePreferencesResponse extends PanelResponse {
+export interface WorkspacePreferencesResponse extends PanelResponse {
     preferences_widget: string[];
 }
 

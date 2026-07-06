@@ -1,11 +1,11 @@
 ---
-title: Versatile Scene SDK Components
+title: Workspace Scene SDK Components
 kind: design-note
-bundle_id: versatile@2026-03-31-13-36
+bundle_id: workspace@2026-03-31-13-36
 updated_at: 2026-06-23
 ---
 
-# Versatile Scene SDK Components
+# Workspace Scene SDK Components
 
 The active main view is `ui/scene`. It is a scene: an app-owned UX composition
 layer that connects multiple subsystem surfaces into one workspace. It is not a
@@ -25,7 +25,7 @@ Read these words first:
 
 ## Current Composition
 
-The versatile scene uses both integration modes:
+The workspace scene uses both integration modes:
 
 ```text
 ui/scene host page
@@ -34,7 +34,7 @@ ui/scene host page
   |     public import: @kdcube/components-react/canvas
   |     current source: sdk://solutions/canvas/ui/component
   |
-  +-- iframe widget: versatile_chat
+  +-- iframe widget: workspace_chat
   |     source: sdk://solutions/chat/ui/widget
   |
   +-- iframe widget: memories
@@ -142,7 +142,7 @@ served separately:
 ```yaml
 ui:
   widgets:
-    versatile_chat:
+    workspace_chat:
       src_folder: sdk://solutions/chat/ui/widget
     memories:
       src_folder: sdk://context/memory/ui/widget/memories
@@ -160,7 +160,7 @@ ui:
 ```
 
 The `pinboard` widget is the canvas-as-iframe path. It reuses the same canvas
-React component, but hosts it inside its own widget. The versatile main scene
+React component, but hosts it inside its own widget. The workspace main scene
 does not use that path for the primary canvas; it uses direct React embedding.
 
 Scene surface composition is declared in server-side app config:
@@ -198,7 +198,7 @@ The scene mounts chat as an iframe widget:
 
 ```text
 scene host
-  -> widgetUrl(ctx, "versatile_chat", chat params)
+  -> widgetUrl(ctx, "workspace_chat", chat params)
   -> <iframe src=...>
 ```
 
@@ -312,7 +312,7 @@ semantics. The target surface owns how it loads and renders the object.
 
 Canvas has two supported host shapes:
 
-| Shape | Used by versatile main scene? | Description |
+| Shape | Used by workspace main scene? | Description |
 | --- | --- | --- |
 | Direct React component | Yes | `CanvasBoard` is imported into `ui/scene` and rendered in the same React tree. |
 | Iframe widget | Available, not primary | `pinboard` widget hosts `CanvasBoard` in an iframe and brokers events to its parent. |
@@ -349,7 +349,7 @@ brokers context messages.
 memory widget drag
   -> kdcube-context-focus / kdcube-context-attach
   -> scene broker
-  -> versatile_chat iframe
+  -> workspace_chat iframe
 ```
 
 For object opens, the scene registers `sdk.memory.viewer`. The registration
@@ -437,7 +437,7 @@ server-side app config (bundles.yaml)
   |     -> npm://components-react/src/canvas
   |
   +-- ui.widgets
-  |     -> versatile_chat
+  |     -> workspace_chat
   |     -> memories
   |     -> usage_card
   |     -> pinboard

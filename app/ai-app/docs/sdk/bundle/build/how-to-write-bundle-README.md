@@ -19,7 +19,7 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-subsystem-integration-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/providers-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-developer-guide-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/versatile-reference-bundle-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/workspace-reference-bundle-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-entrypoint-classes-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-economics-integration-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-agent-integration-README.md
@@ -93,7 +93,7 @@ Primary references:
 
 - bundle docs under `docs/sdk/bundle/`
 - the reference bundle:
-  `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36`
+  `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/workspace@2026-03-31-13-36`
 
 Use this document together with:
 
@@ -103,7 +103,7 @@ Use this document together with:
 - [how-to-configure-and-run-bundle-README.md](how-to-configure-and-run-bundle-README.md)
 - [how-to-release-bundle-content-README.md](how-to-release-bundle-content-README.md)
 - [bundle-developer-guide-README.md](../bundle-developer-guide-README.md)
-- [versatile-reference-bundle-README.md](../versatile-reference-bundle-README.md)
+- [workspace-reference-bundle-README.md](../workspace-reference-bundle-README.md)
 - [bundle-platform-integration-README.md](../bundle-platform-integration-README.md)
 - [bundle-widget-integration-README.md](../bundle-widget-integration-README.md)
 - [bundle-events-README.md](../bundle-events-README.md)
@@ -121,7 +121,7 @@ Work in this order:
 2. read the SDK building-block map so you reuse existing integrations,
    solutions, tools, storage, widgets, and job helpers
 3. read the relevant bundle docs
-4. inspect the `versatile` reference bundle for the nearest working pattern
+4. inspect the `workspace` reference bundle for the nearest working pattern
 5. inspect the platform implementation only when docs/reference are not enough
 6. then write the bundle
 7. then run the shared bundle suite and bundle-local tests
@@ -131,7 +131,7 @@ Practical rule:
 
 - test expectations are part of requirements, not only post-build validation
 - docs define the intended contract
-- `versatile` shows the reference bundle shape
+- `workspace` shows the reference bundle shape
 - platform source is the last resort for unresolved edge cases
 - when live runtime behavior disagrees with tests or expectations, follow
   [how-to-test-bundle-README.md#1d-runtime-log-and-timeline-checks](how-to-test-bundle-README.md#1d-runtime-log-and-timeline-checks)
@@ -1011,15 +1011,15 @@ this no-op shape.
 
 ## 4. Copy The Right Reference Pattern
 
-Use `versatile` as the default reference bundle.
+Use `workspace` as the default reference bundle.
 
 Reference doc:
 
-- [versatile-reference-bundle-README.md](../versatile-reference-bundle-README.md)
+- [workspace-reference-bundle-README.md](../workspace-reference-bundle-README.md)
 
 Reference bundle root:
 
-- `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36`
+- `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/workspace@2026-03-31-13-36`
 
 Do not guess from older example bundles first.
 Start from this reference unless your task is specifically about a capability it
@@ -1037,7 +1037,7 @@ Study in this order:
 8. `ui/widgets/telegram_miniapp`
 9. `tests/`
 
-What `versatile` is good for:
+What `workspace` is good for:
 
 - entrypoint and graph bootstrap
 - workflow orchestration
@@ -1047,7 +1047,7 @@ What `versatile` is good for:
 - bundle main UI example
 - bundle storage usage
 
-What `versatile` is not the reference for:
+What `workspace` is not the reference for:
 
 - `@cron`
 - `@venv`
@@ -1069,7 +1069,7 @@ client config, and Claude Code subagents, read
 
 Canonical example:
 
-- `versatile@2026-03-31-13-36` for the general config-first workflow pattern
+- `workspace@2026-03-31-13-36` for the general config-first workflow pattern
 
 Minimal shape:
 
@@ -1259,7 +1259,7 @@ Gate rule:
 - for simple task/memory bundles, start with a deterministic prepare step plus
   the React solver
 
-Use the versatile reference bundle's `agents/main.py` as the agent/workflow
+Use the workspace reference bundle's `agents/main.py` as the agent/workflow
 shape when in doubt.
 
 ## 4.1 Copyable Feature Snippets

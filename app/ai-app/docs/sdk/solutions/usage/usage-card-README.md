@@ -15,13 +15,13 @@ keywords:
     "sdk://infra/economics/ui/widget/usage-card",
     "me/budget-breakdown",
     "bundle widget alias",
-    "versatile scene panel",
+    "workspace scene panel",
   ]
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-widget-integration-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/ui-components-lifecycle-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-client-ui-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/versatile-reference-bundle-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/workspace-reference-bundle-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/chat/chat-widget-solution-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/service/comm/conversation-event-bus-and-data-bus-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/service/comm/data-bus-README.md
@@ -219,7 +219,7 @@ the iframe behind a profile fetch on the host side (see *Scene Wiring*).
 
 ## Scene Wiring
 
-In the versatile reference bundle the host is `ui/scene`, and the wiring
+In the workspace reference bundle the host is `ui/scene`, and the wiring
 lives in `ui/scene/src/main.tsx`. The same shape applies to any scene that
 embeds the card.
 

@@ -125,21 +125,21 @@ authority_registry:
                 user_pool_id: eu-west-1_PEER
                 app_client_id: peer-client
 
-        versatile_google_session:
+        workspace_google_session:
           type: bundle_session_login
           enabled: true
-          label: Versatile Google platform session
+          label: Workspace Google platform session
           entrypoints:
             login:
-              bundle_id: versatile@2026-03-31-13-36
+              bundle_id: workspace@2026-03-31-13-36
               route: public
               operation: platform_login
             session_issue:
-              bundle_id: versatile@2026-03-31-13-36
+              bundle_id: workspace@2026-03-31-13-36
               route: public
               operation: auth_google_session
             consent:
-              bundle_id: versatile@2026-03-31-13-36
+              bundle_id: workspace@2026-03-31-13-36
               route: public
               operation: delegated_consent
           input:
@@ -223,7 +223,7 @@ connections:
       consent_ui:
         authority_ref:
           authority_id: kdcube.platform
-          provider_id: versatile_google_session
+          provider_id: workspace_google_session
           entrypoint: consent
 ```
 
@@ -249,9 +249,9 @@ example `cognito_admin` and `cognito_customer`. A provider instance may have:
 - `grants.assignable`: the maximum roles/permissions this provider may assign
   through authority-level subject grants.
 
-For example, `versatile_google_session` consumes a Google ID token verified by
+For example, `workspace_google_session` consumes a Google ID token verified by
 `google.accounts.providers.google_oidc`, then issues a KDCube bundle-session
-token for subject `google:<sub>`. The hosted UI may live in Versatile, but
+token for subject `google:<sub>`. The hosted UI may live in Workspace, but
 authority ids, grants, TTL, and subject assignments remain in Connection Hub.
 
 Telegram Mini App `initData` remains a channel/request authenticator in this
@@ -265,15 +265,15 @@ registered by provider entrypoints:
 ```yaml
 entrypoints:
   login:
-    bundle_id: versatile@2026-03-31-13-36
+    bundle_id: workspace@2026-03-31-13-36
     route: public
     operation: platform_login
   session_issue:
-    bundle_id: versatile@2026-03-31-13-36
+    bundle_id: workspace@2026-03-31-13-36
     route: public
     operation: auth_google_session
   consent:
-    bundle_id: versatile@2026-03-31-13-36
+    bundle_id: workspace@2026-03-31-13-36
     route: public
     operation: delegated_consent
 ```
@@ -287,7 +287,7 @@ auth:
   connection_hub:
     bundle_id: connection-hub@1-0
     authority_id: kdcube.platform
-    provider_id: versatile_google_session
+    provider_id: workspace_google_session
     entrypoint: login
 ```
 
@@ -302,19 +302,19 @@ authority_registry:
   authorities:
     kdcube.platform:
       providers:
-        versatile_google_session:
+        workspace_google_session:
           type: bundle_session_login
           entrypoints:
             login:
-              bundle_id: versatile@2026-03-31-13-36
+              bundle_id: workspace@2026-03-31-13-36
               route: public
               operation: platform_login
             session_issue:
-              bundle_id: versatile@2026-03-31-13-36
+              bundle_id: workspace@2026-03-31-13-36
               route: public
               operation: auth_google_session
             consent:
-              bundle_id: versatile@2026-03-31-13-36
+              bundle_id: workspace@2026-03-31-13-36
               route: public
               operation: delegated_consent
           input:

@@ -24,7 +24,7 @@ const config: EngineConfig = {
     baseUrl: params.get('baseUrl') || 'http://localhost:8000',
     tenant: params.get('tenant') || 'demo-tenant',
     project: params.get('project') || 'demo-project',
-    bundleId: params.get('bundle') || 'versatile@2026-03-31-13-36',
+    bundleId: params.get('bundle') || 'workspace@2026-03-31-13-36',
   },
   agentId: params.get('agent') || undefined,
   auth: { mode: 'cookie' },

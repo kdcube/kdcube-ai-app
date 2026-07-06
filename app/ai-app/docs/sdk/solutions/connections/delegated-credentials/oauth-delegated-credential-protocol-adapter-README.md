@@ -293,7 +293,7 @@ bundles:
               consent_ui:
                 authority_ref:
                   authority_id: "kdcube.platform"
-                  provider_id: "versatile_google_session"
+                  provider_id: "workspace_google_session"
                   entrypoint: "consent"
               issuer: ""
               public_clients:

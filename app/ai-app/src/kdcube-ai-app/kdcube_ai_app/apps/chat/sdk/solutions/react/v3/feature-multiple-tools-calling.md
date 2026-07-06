@@ -8,7 +8,7 @@ This note describes the `v3` implementation path for multi-action rounds and the
 |---|---|---|
 | Repeated `action` instances | Implemented | Parsed and routed as distinct action instances |
 | Repeated non-action protocol channels | Implemented | Repeated `thinking` and other declared channels are tolerated and emitted again |
-| Per-instance subscriber factory | Implemented | Done in `versatile_streamer_v3.py` |
+| Per-instance subscriber factory | Implemented | Done in `workspace_streamer_v3.py` |
 | Per-instance record/timeline streamers | Implemented | Spawned on `action` channel-open |
 | Safe multi-action bundle execution | Implemented | Sequential only |
 | Multi-action read/search tools | Implemented | `react.read`, `react.memsearch`, `react.rg`, `web_tools.*` |
@@ -22,7 +22,7 @@ This note describes the `v3` implementation path for multi-action rounds and the
 The old implementation was single-action by construction in several places:
 
 - `v2/agents/decision.py` assumed one `action`
-- `versatile_streamer.py` keyed streaming state by channel name only
+- `workspace_streamer.py` keyed streaming state by channel name only
 - `v2/runtime.py` wired one JSON subscriber set, one decision streamer set, one pending tool call
 - widget streamers were effectively single-instance per decision round
 
@@ -33,7 +33,7 @@ The old implementation was single-action by construction in several places:
 The new live routing model is:
 
 1. The model emits repeated `<channel:action>...</channel:action>` sections.
-2. `versatile_streamer_v3.py` detects each new protocol channel occurrence and assigns `channel_instance = 0, 1, 2, ...`.
+2. `workspace_streamer_v3.py` detects each new protocol channel occurrence and assigns `channel_instance = 0, 1, 2, ...`.
 3. A subscriber factory is invoked on channel-open.
 4. `v3/runtime.py` uses that factory to create per-instance streamers:
    - record/canvas streamers
@@ -84,7 +84,7 @@ The example below shows the desired end-state flow. Round 1 and Round 3 are supp
 ```mermaid
 sequenceDiagram
     participant M as Model
-    participant VS as versatile_streamer_v3
+    participant VS as workspace_streamer_v3
     participant RF as v3 runtime factory
     participant RT as v3 runtime
     participant TL as Timeline
@@ -226,7 +226,7 @@ Artifacts/streaming:
 
 ## What the New Streamer Actually Adds
 
-`versatile_streamer_v3.py` adds two important capabilities:
+`workspace_streamer_v3.py` adds two important capabilities:
 
 1. `channel_instance`
    - every repeated protocol channel occurrence is identified as `(channel_name, instance_idx)`

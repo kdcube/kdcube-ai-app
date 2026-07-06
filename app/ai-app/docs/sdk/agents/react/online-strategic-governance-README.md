@@ -59,7 +59,7 @@ React decision model
   owns: streamed channel text
   emits: <channel:action> JSON, <channel:code>, thinking, summary
 
-versatile_streamer_v3.stream_with_channels
+workspace_streamer_v3.stream_with_channels
   owns: channel parsing and subscriber dispatch
 
 TimelineStreamer
@@ -375,4 +375,4 @@ callback when the stream itself reveals a forbidden move.
 - `solutions/react/v3/runtime.py`
 - `solutions/widgets/canvas.py::TimelineStreamer`
 - `streaming/stream_policy.py`
-- `streaming/versatile_streamer_v3.py`
+- `streaming/workspace_streamer_v3.py`

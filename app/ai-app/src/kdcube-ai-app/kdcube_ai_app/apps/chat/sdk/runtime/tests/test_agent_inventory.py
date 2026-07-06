@@ -64,7 +64,7 @@ def _reset_namespace_deny():
 
 
 def _props(*, web_allowed=("web_search", "web_fetch")) -> dict:
-    """Trimmed versatile-shaped inventory for agent `main`."""
+    """Trimmed workspace-shaped inventory for agent `main`."""
     web: dict = {
         "name": "web",
         "kind": "python",

@@ -230,7 +230,7 @@ React decision phase
 
 Implementation anchors:
 
-- `streaming/versatile_streamer_v3.py::stream_with_channels`
+- `streaming/workspace_streamer_v3.py::stream_with_channels`
 - `streaming/stream_policy.py::StreamPolicyViolation`
 - `solutions/widgets/canvas.py::TimelineStreamer`
 - `solutions/react/v3/action_overseer.py::RoundActionOverseer`

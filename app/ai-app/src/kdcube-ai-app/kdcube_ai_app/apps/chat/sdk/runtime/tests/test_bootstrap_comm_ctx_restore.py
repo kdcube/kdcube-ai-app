@@ -262,7 +262,7 @@ class TestToolSubsystemPortableContext:
 
         return ExternalEventPayload(
             routing=ExternalEventRouting(
-                bundle_id="versatile@2026-03-31-13-36",
+                bundle_id="workspace@2026-03-31-13-36",
                 session_id="session-1",
                 conversation_id="conversation-1",
                 turn_id="turn-1",
@@ -289,7 +289,7 @@ class TestToolSubsystemPortableContext:
             service=self._make_stub_svc(),
             comm=None,
             logger=None,
-            bundle_spec=BundleSpec(id="versatile@2026-03-31-13-36", path="", module=""),
+            bundle_spec=BundleSpec(id="workspace@2026-03-31-13-36", path="", module=""),
             context_rag_client=None,
             registry={
                 "bundle_props": bundle_props,

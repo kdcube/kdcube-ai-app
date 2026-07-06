@@ -1,18 +1,18 @@
 /**
- * Scene composition config for the versatile scene host.
+ * Scene composition config for the workspace scene host.
  *
  * The scene is a config-driven host: `scene_surface_config` (backed by the
  * bundle's `surfaces.as_consumer.ui.scene` section) names the components the
  * rail summons — each one an iframe-mounted served widget from its owning
  * app — plus the external panels and namespace styles. Built-in defaults
- * reproduce the standard versatile set (pin board, chat, memories, usage)
+ * reproduce the standard workspace set (pin board, chat, memories, usage)
  * when the config section is absent; config entries override or extend them.
  */
 
-export const BUNDLE_ID = 'versatile@2026-03-31-13-36'
-export const CONFIG_IDENTITY = 'BUNDLE_VERSATILE_MAIN_VIEW'
-export const CHAT_CONFIG_IDENTITY = 'BUNDLE_VERSATILE_CHAT_VIEW'
-export const CHAT_WIDGET_ALIAS = 'versatile_chat'
+export const BUNDLE_ID = 'workspace@2026-03-31-13-36'
+export const CONFIG_IDENTITY = 'BUNDLE_WORKSPACE_MAIN_VIEW'
+export const CHAT_CONFIG_IDENTITY = 'BUNDLE_WORKSPACE_CHAT_VIEW'
+export const CHAT_WIDGET_ALIAS = 'workspace_chat'
 export const MEMORY_WIDGET_BUNDLE_ID = 'user-memories@2026-06-26'
 
 export interface RouteContext {
@@ -226,12 +226,12 @@ export function chatWidgetParams(ctx: RouteContext): Record<string, string> {
     chat_embed_mode: 'host',
     chat_widget_id: CHAT_WIDGET_ALIAS,
     chat_config_identity: CHAT_CONFIG_IDENTITY,
-    chat_brand_label: 'Versatile',
-    chat_event_prefix: 'versatile',
-    chat_surface: 'versatile_chat',
-    chat_user_event_source_id: 'versatile.main.chat.user',
-    chat_attachment_event_source_id: 'versatile.main.chat.attachment',
-    chat_context_event_source_id: 'versatile.context.focus',
+    chat_brand_label: 'Workspace',
+    chat_event_prefix: 'workspace',
+    chat_surface: 'workspace_chat',
+    chat_user_event_source_id: 'workspace.main.chat.user',
+    chat_attachment_event_source_id: 'workspace.main.chat.attachment',
+    chat_context_event_source_id: 'workspace.context.focus',
     chat_canvas_state_event_source_id: 'canvas.state',
     chat_canvas_focus_event_source_id: 'canvas.focus',
     chat_canvas_surface: 'canvas',
@@ -394,7 +394,7 @@ export function normalizeExternalPanelConfig(value: unknown): SceneExternalPanel
 }
 
 /**
- * Built-in component defaults — the standard versatile scene. Sizes, accents
+ * Built-in component defaults — the standard workspace scene. Sizes, accents
  * and drop acceptance mirror the website scene host's component config so
  * both hosts present the same surfaces the same way.
  */
@@ -599,7 +599,7 @@ export async function loadSceneConfig(ctx: RouteContext): Promise<SceneConfig> {
       namespaceStyles,
     }
   } catch (error) {
-    console.warn('[versatile-scene] scene surface config unavailable', error)
+    console.warn('[workspace-scene] scene surface config unavailable', error)
     return { components: resolveComponentSpecs(undefined), external_panels: [], namespaceStyles: {} }
   }
 }

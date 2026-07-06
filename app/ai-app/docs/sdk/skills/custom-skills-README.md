@@ -195,4 +195,4 @@ rules into ReAct.
 ## References
 
 - Registry: `app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/skills/skills_registry.py`
-- Reference bundle config: `app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/config/bundles.template.yaml`
+- Reference bundle config: `app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/workspace@2026-03-31-13-36/config/bundles.template.yaml`

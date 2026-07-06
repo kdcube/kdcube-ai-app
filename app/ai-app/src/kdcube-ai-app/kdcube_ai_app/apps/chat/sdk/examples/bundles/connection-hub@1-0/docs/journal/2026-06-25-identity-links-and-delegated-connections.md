@@ -141,7 +141,7 @@ Connection Hub widget, normal KDCube session
   -> stores challenge_id -> platform_user_id server-side
   -> shows Telegram Mini App URL with link_challenge=<challenge_id>
 
-Versatile Telegram Mini App
+Workspace Telegram Mini App
   -> receives link_challenge
   -> sends link_challenge + X-Telegram-Init-Data
 

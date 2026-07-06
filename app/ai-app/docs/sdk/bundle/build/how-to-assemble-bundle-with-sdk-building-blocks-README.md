@@ -290,16 +290,16 @@ Telegram user message / attachment
   -> Telegram Bot API text/file delivery
 ```
 
-The reference implementation for this bot transport path is the versatile
+The reference implementation for this bot transport path is the workspace
 bundle:
-`src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36`.
+`src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/workspace@2026-03-31-13-36`.
 Task-specific Mini App screens can layer on top of the same Telegram SDK
 modules, but they are not required for the bot transport itself.
 
-The versatile reference bundle also demonstrates a Telegram Mini App style
+The workspace reference bundle also demonstrates a Telegram Mini App style
 source-folder widget with memory canvas, chat channel selection, and Telegram
 admin routes:
-`src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/ui/widgets/telegram_miniapp`.
+`src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/workspace@2026-03-31-13-36/ui/widgets/telegram_miniapp`.
 
 For shared Telegram UI, do not copy admin/channel panels into every bundle.
 Use `sdk://integrations/telegram/ui/widget.telegram` as a widget
@@ -404,8 +404,8 @@ The scene host does not own object semantics. It knows which iframe surface is
 mounted and how to deliver a command to it; the namespace owner's resolver
 decides what "open" or "preview" means.
 
-The working reference is the versatile bundle
-(`src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36`):
+The working reference is the workspace bundle
+(`src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/workspace@2026-03-31-13-36`):
 host at `ui/scene`, aliases and resolver registry in `entrypoint.py`, and the
 bundle-local design note `docs/design/scene-sdk-components.md`.
 

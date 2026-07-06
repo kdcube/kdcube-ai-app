@@ -99,7 +99,7 @@ configured as descriptor rows under `identity.authenticators[]` or as
 widget-managed Postgres metadata rows. Each row references a secret key in
 `bundles.secrets.yaml`; secret values are never stored in the metadata row.
 Each app/provider surface has stable non-secret authority/authenticator ids.
-Controlled app surfaces, such as the Versatile Telegram Mini App, read those ids
+Controlled app surfaces, such as the Workspace Telegram Mini App, read those ids
 from app config and send `X-KDCube-Auth-Authority-ID` and
 `X-KDCube-Auth-Authenticator-ID` beside the provider proof. If a request names
 an authenticator id, Connection Hub tries only that row and fails closed if it

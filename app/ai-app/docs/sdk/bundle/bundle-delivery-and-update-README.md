@@ -50,7 +50,7 @@ kdcube bundle reload <bundle_id> --workdir <runtime-workdir>
 Example:
 
 ```bash
-kdcube bundle reload versatile@2026-03-31-13-36 --workdir ~/.kdcube/kdcube-runtime
+kdcube bundle reload workspace@2026-03-31-13-36 --workdir ~/.kdcube/kdcube-runtime
 ```
 
 `kdcube bundle reload` is descriptor-authoritative:

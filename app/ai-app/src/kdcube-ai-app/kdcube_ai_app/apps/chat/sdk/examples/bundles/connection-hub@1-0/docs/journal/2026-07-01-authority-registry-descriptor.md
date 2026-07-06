@@ -49,21 +49,21 @@ authority_registry:
             roles: [kdcube:role:super-admin]
             permissions: [kdcube:*:*:*]
       providers:
-        versatile_google_session:
+        workspace_google_session:
           type: bundle_session_login
           enabled: true
-          label: Versatile Google platform session
+          label: Workspace Google platform session
           entrypoints:
             login:
-              bundle_id: versatile@2026-03-31-13-36
+              bundle_id: workspace@2026-03-31-13-36
               route: public
               operation: platform_login
             session_issue:
-              bundle_id: versatile@2026-03-31-13-36
+              bundle_id: workspace@2026-03-31-13-36
               route: public
               operation: auth_google_session
             consent:
-              bundle_id: versatile@2026-03-31-13-36
+              bundle_id: workspace@2026-03-31-13-36
               route: public
               operation: delegated_consent
           input:
@@ -117,19 +117,19 @@ authority_registry:
     kdcube.platform:
       platform: true
       providers:
-        versatile_google_session:
+        workspace_google_session:
           type: bundle_session_login
           entrypoints:
             login:
-              bundle_id: versatile@2026-03-31-13-36
+              bundle_id: workspace@2026-03-31-13-36
               route: public
               operation: platform_login
             session_issue:
-              bundle_id: versatile@2026-03-31-13-36
+              bundle_id: workspace@2026-03-31-13-36
               route: public
               operation: auth_google_session
             consent:
-              bundle_id: versatile@2026-03-31-13-36
+              bundle_id: workspace@2026-03-31-13-36
               route: public
               operation: delegated_consent
           input:
@@ -214,19 +214,19 @@ kdcube.platform:
         roles: [kdcube:role:super-admin]
         permissions: [kdcube:*:*:*]
   providers:
-    versatile_google_session:
+    workspace_google_session:
       type: bundle_session_login
       entrypoints:
         login:
-          bundle_id: versatile@2026-03-31-13-36
+          bundle_id: workspace@2026-03-31-13-36
           route: public
           operation: platform_login
         session_issue:
-          bundle_id: versatile@2026-03-31-13-36
+          bundle_id: workspace@2026-03-31-13-36
           route: public
           operation: auth_google_session
         consent:
-          bundle_id: versatile@2026-03-31-13-36
+          bundle_id: workspace@2026-03-31-13-36
           route: public
           operation: delegated_consent
       input:
@@ -245,7 +245,7 @@ kdcube.platform:
           permissions: [kdcube:*:chat:*;read;write, kdcube:*:*:*]
 ```
 
-Versatile can host the UI (`platform_login`) and exchange endpoint
+Workspace can host the UI (`platform_login`) and exchange endpoint
 (`auth_google_session`), but Connection Hub remains the owner of the authority
 registry and role policy.
 
@@ -270,7 +270,7 @@ The provider runtime is now SDK-owned:
 kdcube_ai_app.apps.chat.sdk.solutions.connections.authority_providers.bundle_session_login
 ```
 
-Versatile's `services/platform_session_issuer.py` is a thin hosted UI/operation
+Workspace's `services/platform_session_issuer.py` is a thin hosted UI/operation
 wrapper. It must not own the provider registry, provisioning rules, or
 bundle-session issuance semantics.
 
@@ -297,7 +297,7 @@ The same registry can describe:
   - `docs/sdk/solutions/connections/connection-hub-solution-README.md`
   - `docs/sdk/solutions/connections/authority-providers/authority-provider-runtime-README.md`
   - `docs/sdk/solutions/connections/storage-model/storage-model-README.md`
-  - `versatile@2026-03-31-13-36/docs/integrations/platform-session-issuer.md`
+  - `workspace@2026-03-31-13-36/docs/integrations/platform-session-issuer.md`
 
 ## Implementation Update
 
@@ -310,14 +310,14 @@ Implemented on 2026-07-01:
   bundle-props store; it does not call the Connection Hub bundle.
 - Connection Hub exposes `authority_provider_resolve` as a thin operations API
   facade for callers that only have HTTP/bundle-operation access.
-- Versatile's hosted Telegram session login resolves its platform-session
+- Workspace's hosted Telegram session login resolves its platform-session
   authority provider from Connection Hub instead of local bundle policy.
-- Versatile's hosted Google login resolves its Google upstream authenticator and
+- Workspace's hosted Google login resolves its Google upstream authenticator and
   platform provider policy from Connection Hub, then issues a standard
   bundle-session `kst1` token.
 - Bundle-session provider runtime moved into the Connection Hub SDK module
   `kdcube_ai_app.apps.chat.sdk.solutions.connections.authority_providers.bundle_session_login`.
-  Versatile now keeps only hosted UI/operation wrappers.
+  Workspace now keeps only hosted UI/operation wrappers.
 - SDK Google OIDC verification is available under
   `kdcube_ai_app.apps.chat.sdk.integrations.google`.
 - The custom-authority runtime uses bundle/session auth; the normal demo runtime
@@ -334,7 +334,7 @@ auth:
   connection_hub:
     bundle_id: connection-hub@1-0
     authority_id: kdcube.platform
-    provider_id: versatile_google_session
+    provider_id: workspace_google_session
     entrypoint: login
 ```
 
@@ -356,7 +356,7 @@ Input:
 {
   "data": {
     "authority_id": "kdcube.platform",
-    "provider_id": "versatile_google_session",
+    "provider_id": "workspace_google_session",
     "entrypoint": "login"
   }
 }
@@ -367,7 +367,7 @@ Output includes the concrete current-runtime URL:
 ```json
 {
   "ok": true,
-  "url": "/api/integrations/bundles/demo/custom-authority/versatile@2026-03-31-13-36/public/platform_login"
+  "url": "/api/integrations/bundles/demo/custom-authority/workspace@2026-03-31-13-36/public/platform_login"
 }
 ```
 
@@ -383,7 +383,7 @@ login URL.
 
 ## 2026-07-02: Reference Bundle-Hosted Consent Renderer
 
-Versatile now includes a reference `delegated_consent` public operation for
+Workspace now includes a reference `delegated_consent` public operation for
 `entrypoints.consent`. It renders a bundle-owned consent page using the payload
 provided by Connection Hub and posts approve/deny back to Connection Hub's
 `form_action`.

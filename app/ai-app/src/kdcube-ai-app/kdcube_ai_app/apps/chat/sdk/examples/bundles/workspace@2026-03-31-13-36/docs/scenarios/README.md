@@ -1,11 +1,11 @@
 ---
-title: Versatile Runtime Scenarios
+title: Workspace Runtime Scenarios
 kind: scenarios
-bundle_id: versatile@2026-03-31-13-36
+bundle_id: workspace@2026-03-31-13-36
 updated_at: 2026-06-23
 ---
 
-# Versatile Runtime Scenarios
+# Workspace Runtime Scenarios
 
 This page describes the main scenarios demonstrated by the reference bundle.
 It is not a product manual; it is a maintainer map for understanding which
@@ -17,7 +17,7 @@ bundle surfaces cooperate in each runtime flow.
 user message
   |
   v
-VersatileWorkflow.process_main_turn(...)
+WorkspaceWorkflow.process_main_turn(...)
   |
   v
 gate -> React solver
@@ -41,7 +41,7 @@ KDCube control plane
 iframe loads ui/scene
   |
   +-- reads scene_surface_config and namespace_presentation_config
-  +-- embeds widgets/versatile_chat
+  +-- embeds widgets/workspace_chat
   +-- embeds widgets/memories
   +-- embeds widgets/usage_card
   +-- renders SDK CanvasBoard
@@ -50,7 +50,7 @@ iframe loads ui/scene
   +-- canvas patches -> Data Bus subject canvas.patch
   +-- widgets post kdcube-scene-subscribe claims
   +-- service events -> scene event bus -> subscribed widgets
-  +-- context attach/focus -> versatile_chat iframe
+  +-- context attach/focus -> workspace_chat iframe
   +-- object open -> canvas_object_action -> provider ui_event.target_surface
 ```
 
@@ -77,7 +77,7 @@ telegram update idempotency claim
   |
   +-- registered/admin user:
         resolve KDCube user scope + conversation id
-        run normal VersatileWorkflow turn
+        run normal WorkspaceWorkflow turn
         deliver text/files back to Telegram
 ```
 
@@ -128,7 +128,7 @@ surfaces.as_consumer.agents.main.tools
   +-- event_sources/pull -> react.pull can materialize external refs
   +-- ui.canvas.resolvers -> canvas object cards delegate actions
   v
-VersatileWorkflow builds ReAct catalog and runtime event-source bridges
+WorkspaceWorkflow builds ReAct catalog and runtime event-source bridges
 ```
 
 This demonstrates the current consumer-side configuration surface. Tool

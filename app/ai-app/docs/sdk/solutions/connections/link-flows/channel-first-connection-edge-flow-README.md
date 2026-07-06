@@ -33,7 +33,7 @@ external channel first
      provides Telegram.WebApp.initData
           |
           v
-2. Versatile Telegram Mini App host
+2. Workspace Telegram Mini App host
      knows app config:
        authority_id = telegram.kdcube_ref
        authenticator_id = telegram.kdcube_ref.init_data

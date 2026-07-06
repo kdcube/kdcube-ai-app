@@ -123,7 +123,7 @@ def apply_chat_widget_engine(cfg: Mapping[str, Any]) -> dict[str, Any]:
     ``build_command`` (VITE env prefix) + ``npm://`` ``shared_sources`` — so a
     bundle config (e.g. ``bundles.yaml``) can say one field::
 
-        versatile_chat:
+        workspace_chat:
           src_folder: sdk://solutions/chat/ui/widget
           engine: package-ui        # local | package | package-ui
 

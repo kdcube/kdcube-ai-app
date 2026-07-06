@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2025 Elena Viter
 #
-# chat/sdk/streaming/versatile_streamer.py
+# chat/sdk/streaming/workspace_streamer.py
 
 from __future__ import annotations
 
@@ -279,7 +279,7 @@ async def stream_with_channels(
         return_full_raw: bool = False,
 ) -> Dict[str, ChannelResult] | Tuple[Dict[str, ChannelResult], Dict[str, Any]]:
     """
-    Versatile multi-channel streamer using namespaced tags.
+    Workspace multi-channel streamer using namespaced tags.
 
     Required output protocol (model must follow):
       <channel:thinking> ... </channel:thinking>
@@ -441,7 +441,7 @@ async def stream_with_channels(
             loop_guard += 1
             if loop_guard > 2000:
                 logger.warning(
-                    "versatile_streamer loop guard hit: current=%s cursor=%s buf_len=%s tail=%r",
+                    "workspace_streamer loop guard hit: current=%s cursor=%s buf_len=%s tail=%r",
                     current, cursor, len(buf), buf[max(0, cursor - 80): cursor + 80],
                 )
                 break

@@ -96,7 +96,7 @@ Recommended normalized shape:
   "timezone": "UTC",
   "source_kube": "kdcube-1",
   "source_component": "chat-proc",
-  "source_bundle": "versatile@2026-03-31-13-36",
+  "source_bundle": "workspace@2026-03-31-13-36",
   "user_type": "registered",
   "turn_id": "turn_123",
   "name": "tool.invoke",

@@ -129,19 +129,19 @@ connection-hub@1-0:
                 roles: [kdcube:role:super-admin]
                 permissions: [kdcube:*:*:*]
           providers:
-            versatile_google_session:
+            workspace_google_session:
               type: bundle_session_login
               entrypoints:
                 login:
-                  bundle_id: versatile@2026-03-31-13-36
+                  bundle_id: workspace@2026-03-31-13-36
                   route: public
                   operation: platform_login
                 session_issue:
-                  bundle_id: versatile@2026-03-31-13-36
+                  bundle_id: workspace@2026-03-31-13-36
                   route: public
                   operation: auth_google_session
                 consent:
-                  bundle_id: versatile@2026-03-31-13-36
+                  bundle_id: workspace@2026-03-31-13-36
                   route: public
                   operation: delegated_consent
               input:

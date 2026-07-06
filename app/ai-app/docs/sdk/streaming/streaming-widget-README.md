@@ -162,7 +162,7 @@ Payload shape:
 
 ```mermaid
 flowchart LR
-    LLM["LLM stream with 3 channels"] --> VS["versatile_streamer
+    LLM["LLM stream with 3 channels"] --> VS["workspace_streamer
 (channel parser)"]
 VS -->|ReactDecisionOutV2| EW["Exec widget
 feed_json"]

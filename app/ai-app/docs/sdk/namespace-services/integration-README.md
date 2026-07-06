@@ -1,9 +1,9 @@
 ---
 id: repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/integration-README.md
 title: "Namespace Services: Integration Flow"
-summary: "Visual host/client integration flow for namespace service providers, using task-tracker and versatile as the current reference path."
+summary: "Visual host/client integration flow for namespace service providers, using task-tracker and workspace as the current reference path."
 status: design
-tags: ["sdk", "namespace-services", "integration", "task-tracker", "versatile", "scene", "canvas", "chat"]
+tags: ["sdk", "namespace-services", "integration", "task-tracker", "workspace", "scene", "canvas", "chat"]
 updated_at: 2026-06-23
 keywords:
   [
@@ -11,7 +11,7 @@ keywords:
     "provider host",
     "client bundle",
     "task tracker provider",
-    "versatile client",
+    "workspace client",
     "object action",
     "canvas object resolver",
   ]
@@ -55,10 +55,10 @@ function owns URI interpretation. See
 
 ```text
 Provider host bundle                                      Consumer/composition bundle
-task-tracker@1-0                                          versatile@2026-03-31-13-36
+task-tracker@1-0                                          workspace@2026-03-31-13-36
 
 TaskProvider data and functions                           Consumer config and surfaces
-  TaskProvider.namespace = task                             Versatile.props.surfaces.as_consumer
+  TaskProvider.namespace = task                             Workspace.props.surfaces.as_consumer
   TaskProvider.provider_id = task.issue                       agents.main.tools.kind = named_service
   TaskProvider.refs = task:issue:*                           agents.main.event_sources.kind = named_service
   TaskProvider.object_kinds = task.issue/task.attachment       ui.canvas.resolvers.kind = named_service
@@ -67,7 +67,7 @@ TaskProvider data and functions                           Consumer config and su
   TaskProvider.object_get / object_action / block_produce
 
 Provider startup                                          Consumer startup
-  TaskProvider.entrypoint.on_bundle_load                    Versatile.entrypoint initializes:
+  TaskProvider.entrypoint.on_bundle_load                    Workspace.entrypoint initializes:
     -> Discovery.register(TaskProvider.spec)                   canvas resolver adapter
     -> Discovery.entry:                                        artifact rehoster
          tenant/project                                       event-source resolver bridge
@@ -116,7 +116,7 @@ TaskProvider.entrypoint.on_bundle_load
         v
 
 Consumer bundle startup
-  reads Versatile.props.surfaces.as_consumer
+  reads Workspace.props.surfaces.as_consumer
   registers local adapters:
     CanvasResolver(namespace=task) from ui.canvas.resolvers
     ArtifactRehoster(namespace=task) from agent event_sources pull policy
@@ -264,7 +264,7 @@ In this section:
 
 - **consumer app** means the app that mounted the canvas/chat/scene surface and
   configured `surfaces.as_consumer`; in the current reference this is
-  `versatile@2026-03-31-13-36`;
+  `workspace@2026-03-31-13-36`;
 - **consumer app operation** means an ordinary bundle/app object-action facade.
   The current compatible API alias is
   `@api(alias="canvas_object_action", route="operations")`;
@@ -296,8 +296,8 @@ In this section:
      payload.action = download
 
    Current reference:
-     ConsumerApp = versatile@2026-03-31-13-36
-     operation = VersatileEntrypoint.canvas_object_action(...)
+     ConsumerApp = workspace@2026-03-31-13-36
+     operation = WorkspaceEntrypoint.canvas_object_action(...)
 
         |
         v
@@ -983,12 +983,12 @@ applications/playground/bundles/task-tracker@1-0/tests/test_named_service_provid
    carry `event_source_id: named_services.<namespace>`.
 7. Route object open results through the scene surface registry.
 
-Current versatile reference points:
+Current workspace reference points:
 
 ```text
-src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/entrypoint.py
-src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/config/bundles.template.yaml
-src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/agents/main.py
+src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/workspace@2026-03-31-13-36/entrypoint.py
+src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/workspace@2026-03-31-13-36/config/bundles.template.yaml
+src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/workspace@2026-03-31-13-36/agents/main.py
 ```
 
 ## Resolution Scope

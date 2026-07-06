@@ -154,11 +154,11 @@ Target shape:
   },
   "components": {
     "chat": {
-      "app": "versatile@2026-03-31-13-36",
+      "app": "workspace@2026-03-31-13-36",
       "runtime": "demo",
       "surface_ref": "website.chat",
       "target_surfaces": ["sdk.chat.context"],
-      "route": "public/widgets/versatile_chat",
+      "route": "public/widgets/workspace_chat",
       "mount": { "mode": "inline" },
       "authRequired": true,
       "ready": { "type": "message", "messageType": "kdcube-chat-ready" },
@@ -181,7 +181,7 @@ Target shape:
       "contextDrag": { "source": true, "target": true }
     },
     "pinboard": {
-      "app": "versatile@2026-03-31-13-36",
+      "app": "workspace@2026-03-31-13-36",
       "runtime": "demo",
       "surface_ref": "website.pinboard",
       "target_surfaces": ["sdk.canvas.pinboard"],
@@ -260,8 +260,8 @@ scene profile
   runtimes.demo -> https://demo.kdcube.tech, tenant=demo, project=demo
   runtimes.dev  -> https://dev.kdcube.tech,  tenant=demo, project=demo-march
 
-component chat     -> runtime=demo, app=versatile@2026-03-31-13-36
-component pinboard -> runtime=demo, app=versatile@2026-03-31-13-36
+component chat     -> runtime=demo, app=workspace@2026-03-31-13-36
+component pinboard -> runtime=demo, app=workspace@2026-03-31-13-36
 component stats    -> runtime=dev, app=kdcube.stats@2026-05-20-12-05, dataScope=demo/demo
 
 scene-owned relay keys:

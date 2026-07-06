@@ -1,12 +1,12 @@
 ---
-id: ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/docs/integrations/telegram-setup.md
+id: ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/workspace@2026-03-31-13-36/docs/integrations/telegram-setup.md
 title: "KDCube Companion Telegram Setup"
 summary: "Compact operator commands for configuring the KDCube Companion Telegram bot webhook, Telegram Mini App menu button, bot commands, and Connection Hub link flow."
-tags: ["bundle", "versatile", "telegram", "webhook", "mini-app", "botfather", "operator-setup"]
+tags: ["bundle", "workspace", "telegram", "webhook", "mini-app", "botfather", "operator-setup"]
 keywords: ["kdcube companion telegram setup", "telegram webhook", "setWebhook", "secret_token", "getWebhookInfo", "setChatMenuButton", "setMyCommands", "telegram_miniapp", "connection hub", "telegram link"]
 updated_at: 2026-05-16
 see_also:
-  - ks:docs/sdk/bundle/versatile-reference-bundle-README.md
+  - ks:docs/sdk/bundle/workspace-reference-bundle-README.md
   - ks:docs/sdk/integrations/telegram/telegram-README.md
   - ks:docs/sdk/integrations/telegram/telegram-external-prereq-README.md
   - ks:docs/sdk/bundle/bundle-widget-integration-README.md
@@ -27,7 +27,7 @@ Set these variables:
 ```bash
 export TENANT="demo-tenant"
 export PROJECT="demo-project"
-export BUNDLE_ID="versatile@2026-03-31-13-36"
+export BUNDLE_ID="workspace@2026-03-31-13-36"
 export WIDGET_ALIAS="telegram_miniapp"
 export PUBLIC_HOST="https://YOUR_PUBLIC_HTTPS_HOST" # no trailing slash
 export PUBLIC_HOST="${PUBLIC_HOST%/}"

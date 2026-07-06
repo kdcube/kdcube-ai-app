@@ -405,7 +405,7 @@ The important integration rule is:
 Reference examples:
 - `src/kdcube-ai-app/kdcube_ai_app/apps/chat/proc/rest/integrations/AIBundleDashboard.tsx`
 - `src/kdcube-ai-app/kdcube_ai_app/journal/26/03/widgets/App.tsx`
-- `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/ui/PreferencesBrowser.tsx`
+- `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/workspace@2026-03-31-13-36/ui/PreferencesBrowser.tsx`
 
 This is not bundle-specific magic. Widget/frontend code is regular platform
 client code and should follow:

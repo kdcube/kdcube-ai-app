@@ -446,8 +446,8 @@ Recorded items are compact, privacy-filtered copies of comm envelope metadata:
   },
   "metadata": {
     "agent_id": "default.react.agent",
-    "app_bundle_id": "versatile@2026-03-31-13-36",
-    "bundle_id": "versatile@2026-03-31-13-36",
+    "app_bundle_id": "workspace@2026-03-31-13-36",
+    "bundle_id": "workspace@2026-03-31-13-36",
     "component": "chatbot"
   },
   "event": {
@@ -498,7 +498,7 @@ downstream analytics without treating it as the visible event actor:
   "meta": {
     "comm_metadata": {
       "agent_id": "default.react.agent",
-      "bundle_id": "versatile@2026-03-31-13-36"
+      "bundle_id": "workspace@2026-03-31-13-36"
     }
   }
 }

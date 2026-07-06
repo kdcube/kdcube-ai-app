@@ -44,7 +44,7 @@ Curated index of platform, service, and SDK documentation.
 * Configure And Run An App: [how-to-configure-and-run-bundle-README.md](sdk/bundle/build/how-to-configure-and-run-bundle-README.md)
 * Test An App: [how-to-test-bundle-README.md](sdk/bundle/build/how-to-test-bundle-README.md)
 * Release App Content: [how-to-release-bundle-content-README.md](sdk/bundle/build/how-to-release-bundle-content-README.md)
-* Versatile Reference App: [versatile-reference-bundle-README.md](sdk/bundle/versatile-reference-bundle-README.md)
+* Workspace Reference App: [workspace-reference-bundle-README.md](sdk/bundle/workspace-reference-bundle-README.md)
 * App Developer Guide: [bundle-developer-guide-README.md](sdk/bundle/bundle-developer-guide-README.md)
 * Component Recipes: [components/README.md](recipes/components/README.md)
 * Connection Recipes: [connections/README.md](recipes/connections/README.md)

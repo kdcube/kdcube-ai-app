@@ -29,11 +29,11 @@ def _registry() -> dict:
             "kdcube.platform": {
                 "platform": True,
                 "providers": {
-                    "versatile_google_session": {
+                    "workspace_google_session": {
                         "type": "bundle_session_login",
                         "entrypoints": {
                             "login": {
-                                "bundle_id": "versatile@2026-03-31-13-36",
+                                "bundle_id": "workspace@2026-03-31-13-36",
                                 "route": "public",
                                 "operation": "platform_login",
                             },
@@ -49,12 +49,12 @@ def _registry() -> dict:
 async def test_authority_registry_client_resolves_public_provider_entrypoint():
     result = await AuthorityRegistryClient(_Entrypoint(), registry=_registry()).resolve_provider_entrypoint(
         authority_id="kdcube.platform",
-        provider_id="versatile_google_session",
+        provider_id="workspace_google_session",
         entrypoint="login",
     )
 
     assert result["ok"] is True
-    assert result["url"] == "/api/integrations/bundles/t/p/versatile%402026-03-31-13-36/public/platform_login"
+    assert result["url"] == "/api/integrations/bundles/t/p/workspace%402026-03-31-13-36/public/platform_login"
     assert result["endpoint"]["operation"] == "platform_login"
 
 
@@ -77,7 +77,7 @@ async def test_authority_registry_client_loads_connection_hub_props_from_store(m
         connection_hub_bundle_id="connection-hub@test",
     ).resolve_provider(
         authority_id="kdcube.platform",
-        provider_id="versatile_google_session",
+        provider_id="workspace_google_session",
     )
 
     assert result["ok"] is True

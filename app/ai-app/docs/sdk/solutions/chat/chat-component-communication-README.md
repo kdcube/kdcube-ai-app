@@ -168,7 +168,7 @@ Schematic body:
 {
   "tenant": "demo-tenant",
   "project": "demo-project",
-  "bundle_id": "versatile@...",
+  "bundle_id": "workspace@...",
   "conversation_id": "optional-existing-conversation",
   "active_turn_id": "only for in-turn followup/steer",
   "target_turn_id": "only for in-turn followup/steer",

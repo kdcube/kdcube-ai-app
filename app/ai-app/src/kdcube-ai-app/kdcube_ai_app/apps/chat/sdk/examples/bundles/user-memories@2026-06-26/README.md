@@ -89,11 +89,11 @@ widget from the SDK source and serves it at the widget URL above.
 ## Roadmap (step by step)
 
 1. **This app** — serve the memories widget + `mem` named service. ✅
-2. **`versatile`** — stop embedding the memory module; consume `mem` as a named
+2. **`workspace`** — stop embedding the memory module; consume `mem` as a named
    service only, and embed this app's widget by iframe (incl. the Telegram web
    app) instead of republishing it.
 3. **Site scene** (`website/index.html` + `kdcube.config.json`) — point the
-   memories component at this app instead of `versatile`.
+   memories component at this app instead of `workspace`.
 
 > Terminology: this is an **app** (the platform calls the deployable unit a
 > "bundle" in code — `bundle_id`, `bundles.yaml`, `@bundle_entrypoint`). The two

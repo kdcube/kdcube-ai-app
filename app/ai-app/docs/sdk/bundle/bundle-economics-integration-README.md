@@ -34,7 +34,7 @@ this page shows how a bundle wires the engine through SDK building blocks.
 | Surface | Existing bundle/example | Enforcement shape | Runtime result |
 | --- | --- | --- | --- |
 | Chat or agent turn | any entrypoint derived from `BaseEntrypointWithEconomics` | `BaseEntrypointWithEconomics.run(...)` reserves, binds accounting, runs the turn, and settles usage | turn is admitted, denied, or charged at the chat-run boundary |
-| Memory named-service search | versatile memory provider, namespace `mem` | provider receives `entrypoint.search_model_service(flow="memory.search")`; query embedding calls `embed_search_query(...)` | inside a chat turn, the query embedding is verify-only and charged by the parent turn; as standalone UI/API search, it reserves and settles under a `memory_search_<id>` operation; denial returns no query vector and memory search ranks with lexical/text factors |
+| Memory named-service search | workspace memory provider, namespace `mem` | provider receives `entrypoint.search_model_service(flow="memory.search")`; query embedding calls `embed_search_query(...)` | inside a chat turn, the query embedding is verify-only and charged by the parent turn; as standalone UI/API search, it reserves and settles under a `memory_search_<id>` operation; denial returns no query vector and memory search ranks with lexical/text factors |
 | Memory reconciliation | memory mixin reconciliation jobs | `EconomicsGuard(flow="memory.reconciler")` around the reconciliation job | job starts only after economics admission; job usage settles under the reconciliation scope |
 | Canvas pin search | canvas solution `CanvasPinSearch` | search service receives `entrypoint.search_model_service(flow="canvas.pins.search")`; hybrid index calls `embed_search_query(...)` | standalone pinboard search reserves and settles under a `canvas_pins_search_<id>` operation; denial skips the semantic arm and keeps lexical/recency ranking |
 | Task issue search | task tracker named-service scope `task` / `task:issue` | issue service receives `entrypoint.search_model_service(flow="task_tracker.issue.search")`; issue search calls `embed_search_query(...)` | inside a chat turn, the query embedding is charged by the parent turn; standalone issue search settles under a `task_tracker.issue.search` operation; denial falls back to lexical/recency ranking |
@@ -232,7 +232,7 @@ python -m pytest \
   kdcube_ai_app/apps/chat/sdk/infra/economics/tests/test_enforcement_memory_search.py \
   kdcube_ai_app/infra/index/sqlite/tests/test_hybrid_index.py \
   kdcube_ai_app/apps/chat/sdk/context/memory/tests/test_named_service.py \
-  kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/tests/test_canvas_pin_search_wiring.py
+  kdcube_ai_app/apps/chat/sdk/examples/bundles/workspace@2026-03-31-13-36/tests/test_canvas_pin_search_wiring.py
 ```
 
 Bundle tests should prove the concrete surface:

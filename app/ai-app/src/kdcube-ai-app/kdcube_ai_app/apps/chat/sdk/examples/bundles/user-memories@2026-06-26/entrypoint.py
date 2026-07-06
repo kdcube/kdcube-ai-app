@@ -8,7 +8,7 @@
 #   Expose the user's memories ONCE, as a standalone surface (the SDK memories
 #   widget + the `mem` named service), so other apps/scenes embed it by iframe
 #   instead of each republishing the memory module. This is the cleaner paradigm
-#   than the current "embedded module" approach (e.g. in `versatile`).
+#   than the current "embedded module" approach (e.g. in `workspace`).
 #
 # How:
 #   The entrypoint derives BaseEntrypointWithEconomicsAndMemory, which already

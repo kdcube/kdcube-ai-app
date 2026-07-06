@@ -134,7 +134,7 @@ and provider-backed refs gain a live cross-app/object-owner bridge.
 | [Ontologic Tools](ontologic-tools-README.md) | The model-facing tool surface for operating any realm by satisfying schemas: how the nine tools compose, the schema `tools` block as affordance, and the per-field `update` strategy. |
 | [Providers](providers-README.md) | Provider contract, operation vocabulary, auth context, and transport adapters. |
 | [Clients](clients-README.md) | Client config, tool exposure, current resolver behavior, and client ids. |
-| [Integration](integration-README.md) | Visual provider-host/client-app flow using task-tracker and versatile. |
+| [Integration](integration-README.md) | Visual provider-host/client-app flow using task-tracker and workspace. |
 | [Discovery Registry](discovery-README.md) | The per-tenant/project Redis discovery table: the provider record, key schema, TTL/expiry, the registration write path, and the rule that reads go through the discovery module. |
 | [Object Refs, Presentation, And Actions](object-ref-presentation-and-actions-README.md) | Canonical UI/provider boundary: `object_ref` is opaque to components, visual identity comes from `namespace_presentation_config`, and actions come from provider resolvers. |
 | [ReAct Object Materialization](react-object-materialization-README.md) | Runtime-boundary diagram for `react.pull`, streamed `object.get`, `react.read`, owner `block.produce`, and prompt rendering. |

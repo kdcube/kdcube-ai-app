@@ -1,5 +1,5 @@
 /**
- * Floating-window layer for the versatile scene — one generic window chrome
+ * Floating-window layer for the workspace scene — one generic window chrome
  * (titlebar + drag + corner resize + expand/collapse + close) and one rail,
  * matching the website scene host's `.kdc-rail` / `.kdc-wbar` / `.kdc-wgrip`
  * look and behavior. Every scene component renders inside one of these
@@ -150,20 +150,26 @@ export function useWindowManager(): WindowManager {
       const win = current[id]
       if (!win) return current
       // Pop out from the tile's own place, like the website's floatTile:
-      // the titlebar appears above the tile, the box keeps its size.
-      const next: WindowState = rect
-        ? {
-            ...win,
-            open: true,
-            floating: true,
-            everOpened: true,
-            x: Math.max(8, Math.round(rect.x)),
-            y: Math.max(56, Math.round(rect.y - WINDOW_BAR_HEIGHT)),
-            w: Math.max(MIN_W, Math.round(rect.w)),
-            h: Math.max(MIN_H, Math.round(rect.h + WINDOW_BAR_HEIGHT)),
-            z,
-          }
-        : { ...win, open: true, floating: true, everOpened: true, z }
+      // the titlebar appears above the tile, the box keeps its size — then
+      // the rect is clamped inside the viewport with a clear margin so the
+      // bottom-right resize grip stays fully visible and grabbable. The top
+      // edge is kept; the bottom/right are pulled in.
+      let next: WindowState
+      if (rect) {
+        const margin = 28
+        const x = clamp(Math.round(rect.x), 8, Math.max(8, window.innerWidth - MIN_W - margin))
+        let y = Math.max(56, Math.round(rect.y - WINDOW_BAR_HEIGHT))
+        const w = clamp(Math.round(rect.w), MIN_W, Math.max(MIN_W, window.innerWidth - x - margin))
+        let h = clamp(Math.round(rect.h + WINDOW_BAR_HEIGHT), MIN_H, Math.max(MIN_H, window.innerHeight - y - margin))
+        if (y + h > window.innerHeight - margin) {
+          // Tiny viewport (height already at MIN_H): nudge the window up.
+          y = Math.max(56, window.innerHeight - margin - h)
+          h = Math.min(h, Math.max(MIN_H, window.innerHeight - y - margin))
+        }
+        next = { ...win, open: true, floating: true, everOpened: true, x, y, w, h, z }
+      } else {
+        next = { ...win, open: true, floating: true, everOpened: true, z }
+      }
       return { ...current, [id]: next }
     })
   }, [])

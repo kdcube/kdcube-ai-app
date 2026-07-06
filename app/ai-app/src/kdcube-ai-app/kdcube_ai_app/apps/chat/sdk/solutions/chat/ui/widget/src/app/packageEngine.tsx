@@ -174,7 +174,7 @@ function PackageEngineHost({ children }: { children: ReactNode }) {
           context: normalizedContext,
           contexts: contexts || (normalizedContext ? [normalizedContext] : undefined),
           object_ref: objectRef || undefined,
-          source_surface: 'versatile.chat',
+          source_surface: 'workspace.chat',
         }, '*')
       }),
       engine.on('canvas-patch', ({ event }) => {

@@ -242,7 +242,7 @@ integrations:
       bot_name: kdcube-ref
       bot_username: kdcube_doc_bot
       mini_apps:
-        versatile:
+        workspace:
           widget_alias: telegram_miniapp
 ```
 

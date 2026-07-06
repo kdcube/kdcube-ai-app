@@ -50,7 +50,7 @@ Use the helper for new app code:
 from kdcube_ai_app.apps.chat.sdk.solutions.chat import chat_widget_ui_config
 
 widgets = {
-    "versatile_chat": chat_widget_ui_config(),
+    "workspace_chat": chat_widget_ui_config(),
 }
 ```
 
@@ -61,7 +61,7 @@ the widget with the package-backed chat engine/UI.
 Inline config can express the same thing:
 
 ```yaml
-versatile_chat:
+workspace_chat:
   enabled: true
   src_folder: sdk://solutions/chat/ui/widget
   engine: package-ui

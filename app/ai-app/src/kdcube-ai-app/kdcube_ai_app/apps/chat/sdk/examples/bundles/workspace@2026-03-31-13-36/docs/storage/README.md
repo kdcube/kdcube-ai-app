@@ -1,11 +1,11 @@
 ---
-title: Versatile Bundle Storage
+title: Workspace Bundle Storage
 kind: storage-map
-bundle_id: versatile@2026-03-31-13-36
+bundle_id: workspace@2026-03-31-13-36
 updated_at: 2026-06-23
 ---
 
-# Versatile Bundle Storage
+# Workspace Bundle Storage
 
 This page explains which state the reference bundle owns, where it is stored,
 and which files are canonical versus rebuildable. It is written for bundle
@@ -18,7 +18,7 @@ The bundle uses the SDK `AIBundleStorage` backend. In local development the
 root usually looks like:
 
 ```sh
-B=/Users/elenaviter/.kdcube/dev-workspace/data/bundle-storage/demo-tenant/demo-project/versatile-2026-03-31-13-36
+B=/Users/elenaviter/.kdcube/dev-workspace/data/bundle-storage/demo-tenant/demo-project/workspace-2026-03-31-13-36
 ```
 
 Use the actual tenant, project, bundle id, and storage backend from the
@@ -50,7 +50,7 @@ $B/
 ### Durable memory
 
 Remembered user facts and preferences are stored by the SDK durable-memory
-subsystem, not by a bundle-local `preferences/` tree. Versatile configures the
+subsystem, not by a bundle-local `preferences/` tree. Workspace configures the
 SDK memory tools and widget as consumer surfaces; memory storage itself follows
 the SDK memory storage contract.
 
@@ -118,7 +118,7 @@ $B/
       index.html
       assets/...
     widgets/
-      versatile_chat/
+      workspace_chat/
         index.html
         assets/...
       memories/
@@ -159,7 +159,7 @@ The main view output is also rebuildable from source.
 
 ## Platform-Owned Conversation Data
 
-Versatile bot turns still use the normal KDCube conversation store. Those
+Workspace bot turns still use the normal KDCube conversation store. Those
 conversation records, uploaded files, generated artifacts, and turn logs are
 platform-owned, not bundle-storage-owned.
 
@@ -176,7 +176,7 @@ temporary execution workspaces are cleaned.
 | Telegram webhook update state | `$B/admin/telegram-updates/...` | Yes | Idempotency state for Bot API retries. |
 | Canvas state | `$B/canvas/users/<user_id>/canvases/...` | Yes | Versioned board state and canvas-owned objects for the active scene. |
 | Scene/resolver config | `bundles.yaml` effective app config | Yes, config-owned | Controls widgets, shared npm sources, external panels, presentation, and provider resolvers. |
-| Chat widget static output | `$B/ui/widgets/versatile_chat/...` | No | Built from `sdk://solutions/chat/ui/widget`. |
+| Chat widget static output | `$B/ui/widgets/workspace_chat/...` | No | Built from `sdk://solutions/chat/ui/widget`. |
 | Memory widget static output | `$B/ui/widgets/memories/...` | No | Built from `sdk://context/memory/ui/widget/memories`. |
 | Usage-card widget static output | `$B/ui/widgets/usage_card/...` | No | Built from `sdk://infra/economics/ui/widget/usage-card`. |
 | Telegram Mini App static output | `$B/ui/widgets/telegram_miniapp/...` | No | Built from `ui/widgets/telegram_miniapp`. |
@@ -189,7 +189,7 @@ temporary execution workspaces are cleaned.
 Set local roots:
 
 ```sh
-B=/Users/elenaviter/.kdcube/dev-workspace/data/bundle-storage/demo-tenant/demo-project/versatile-2026-03-31-13-36
+B=/Users/elenaviter/.kdcube/dev-workspace/data/bundle-storage/demo-tenant/demo-project/workspace-2026-03-31-13-36
 U=<user_id>
 ```
 

@@ -674,7 +674,7 @@ def test_announce_enabled_for_pure_consumer_without_memory_block(monkeypatch):
     monkeypatch.setattr(workflow_mod, "get_settings", _announce_settings_stub)
     wf = BaseWorkflow.__new__(BaseWorkflow)
     wf.bundle_props = {
-        # NO "memory" block at all — versatile is a pure consumer.
+        # NO "memory" block at all — workspace is a pure consumer.
         "surfaces": {
             "as_consumer": {
                 "agents": {
@@ -1599,7 +1599,7 @@ async def test_base_workflow_named_service_roster_uses_canonical_discovery_read(
         namespaces=("me", "mem"),
         label="User memories",
         intro="Durable user memory — facts, preferences …",
-        bundle_id="versatile@1-0",
+        bundle_id="workspace@1-0",
     )
     await _register_roster_provider(
         redis,

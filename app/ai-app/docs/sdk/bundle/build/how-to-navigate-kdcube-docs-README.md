@@ -34,7 +34,7 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-widget-integration-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-entrypoint-classes-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-economics-integration-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/versatile-reference-bundle-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/workspace-reference-bundle-README.md
 ---
 # How To Navigate KDCube Bundle Docs
 
@@ -156,7 +156,7 @@ Conditional additions:
 | How do authored external events render to timeline/ANNOUNCE? | [how-to-understand-conversation-events-and-react-turns-README.md](how-to-understand-conversation-events-and-react-turns-README.md), [../bundle-events-README.md](../bundle-events-README.md), [../../agents/react/event-source/event-source-README.md](../../agents/react/event-source/event-source-README.md) |
 | How do I route conversation events vs Data Bus messages? | [../../../service/comm/conversation-event-bus-and-data-bus-README.md](../../../service/comm/conversation-event-bus-and-data-bus-README.md), [../../../service/comm/bus-routing-and-partitioning-README.md](../../../service/comm/bus-routing-and-partitioning-README.md) |
 | How do I expose local KDCube through public HTTPS? | [../../../service/cicd/ngrok-README.md](../../../service/cicd/ngrok-README.md) |
-| How do I study a known-good reference bundle? | [../versatile-reference-bundle-README.md](../versatile-reference-bundle-README.md) |
+| How do I study a known-good reference bundle? | [../workspace-reference-bundle-README.md](../workspace-reference-bundle-README.md) |
 
 ## Role Paths
 

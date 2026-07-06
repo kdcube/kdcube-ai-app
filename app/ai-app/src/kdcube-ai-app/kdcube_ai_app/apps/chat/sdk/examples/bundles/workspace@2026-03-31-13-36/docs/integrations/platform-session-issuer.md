@@ -1,6 +1,6 @@
 # Platform Session Issuer Demo
 
-Versatile can demonstrate a bundle-owned login authority without making that
+Workspace can demonstrate a bundle-owned login authority without making that
 behavior a built-in default.
 
 The bundle hosts the user-facing operation/UI for an upstream proof, currently a
@@ -15,12 +15,12 @@ linked to an existing platform identity through a Connection Hub connection edge
 For the Google-backed platform authority demo, Telegram is a channel
 authenticator only; it is not configured as a platform-session provider.
 
-The platform issues and later verifies the `kst1` session token. Versatile is
+The platform issues and later verifies the `kst1` session token. Workspace is
 the issuer surface; ingress/proc remain the verifier.
 
-The authority policy is not owned by Versatile. Roles, permissions, subject
+The authority policy is not owned by Workspace. Roles, permissions, subject
 grants, TTL, authority id, and the `platform` flag are registered in
-Connection Hub under `authority_registry.authorities`. Versatile is discovered
+Connection Hub under `authority_registry.authorities`. Workspace is discovered
 by its registered host operation. Runtime mechanics live in the Connection Hub
 SDK module:
 
@@ -31,9 +31,9 @@ kdcube_ai_app.apps.chat.sdk.solutions.connections.authority_providers.bundle_ses
 ## Surfaces
 
 ```text
-GET  /api/integrations/bundles/{tenant}/{project}/versatile@2026-03-31-13-36/public/platform_login
-POST /api/integrations/bundles/{tenant}/{project}/versatile@2026-03-31-13-36/public/auth_google_session
-POST /api/integrations/bundles/{tenant}/{project}/versatile@2026-03-31-13-36/public/delegated_consent
+GET  /api/integrations/bundles/{tenant}/{project}/workspace@2026-03-31-13-36/public/platform_login
+POST /api/integrations/bundles/{tenant}/{project}/workspace@2026-03-31-13-36/public/auth_google_session
+POST /api/integrations/bundles/{tenant}/{project}/workspace@2026-03-31-13-36/public/delegated_consent
 ```
 
 `platform_login` is a bundle-owned UI. It renders Google Identity Services and
@@ -108,21 +108,21 @@ items:
                   permissions:
                     - kdcube:*:*:*
             providers:
-              versatile_google_session:
+              workspace_google_session:
                 type: bundle_session_login
                 enabled: true
-                label: Versatile Google platform session
+                label: Workspace Google platform session
                 entrypoints:
                   login:
-                    bundle_id: versatile@2026-03-31-13-36
+                    bundle_id: workspace@2026-03-31-13-36
                     route: public
                     operation: platform_login
                   session_issue:
-                    bundle_id: versatile@2026-03-31-13-36
+                    bundle_id: workspace@2026-03-31-13-36
                     route: public
                     operation: auth_google_session
                   consent:
-                    bundle_id: versatile@2026-03-31-13-36
+                    bundle_id: workspace@2026-03-31-13-36
                     route: public
                     operation: delegated_consent
                 input:
@@ -194,13 +194,13 @@ provider `grants.assignable`, the hosted operation fails closed.
 
 ## Bundle Descriptor
 
-`bundles.yaml` does not define platform-session policy for Versatile. It only
+`bundles.yaml` does not define platform-session policy for Workspace. It only
 needs the Connection Hub pointer and the Telegram integration config used by
 the hosted operation:
 
 ```yaml
 items:
-  - id: versatile@2026-03-31-13-36
+  - id: workspace@2026-03-31-13-36
     config:
       connections:
         connection_hub:
@@ -220,7 +220,7 @@ secrets verify the upstream Telegram proof. They do not define platform grants:
 
 ```yaml
 items:
-  - id: versatile@2026-03-31-13-36
+  - id: workspace@2026-03-31-13-36
     secrets:
       integrations:
         telegram_kdcube_ref:
@@ -233,7 +233,7 @@ items:
 
 | Responsibility | Owner |
 |---|---|
-| Verify Telegram `initData` | SDK `bundle_session_login` runtime via Versatile Telegram integration |
+| Verify Telegram `initData` | SDK `bundle_session_login` runtime via Workspace Telegram integration |
 | Verify Google ID token | SDK `bundle_session_login` runtime via SDK Google OIDC verifier |
 | Register platform authority and provider instance | Connection Hub `authority_registry` |
 | Default/assignable grants this provider may issue | Connection Hub provider instance |
@@ -243,7 +243,7 @@ items:
 | Store active sessions and users | platform Redis session registry |
 
 The bundle code must not hardcode issuer roles, permissions, bot identity, or
-deployment cookie names. Versatile's file
+deployment cookie names. Workspace's file
 `services/platform_session_issuer.py` is intentionally a thin UI/operation
 wrapper. It delegates registry lookup, proof handling, grant resolution, and
 session issuing to the Connection Hub SDK runtime, which resolves the provider
@@ -255,11 +255,11 @@ disabled, not platform-capable, or not hosted by this bundle.
 ```text
 Browser opens the normal platform UI route
   -> frontend fetches /api/cp-frontend-config
-  -> auth.connection_hub points to kdcube.platform.providers.versatile_google_session entrypoint=login
+  -> auth.connection_hub points to kdcube.platform.providers.workspace_google_session entrypoint=login
   -> frontend asks Connection Hub to resolve the login entrypoint URL
-  -> frontend redirects to Versatile platform_login when no valid platform session exists
-  -> Versatile hosts the page and calls SDK bundle_session_login runtime
-  -> SDK runtime resolves kdcube.platform.providers.versatile_google_session
+  -> frontend redirects to Workspace platform_login when no valid platform session exists
+  -> Workspace hosts the page and calls SDK bundle_session_login runtime
+  -> SDK runtime resolves kdcube.platform.providers.workspace_google_session
   -> SDK runtime resolves google.accounts.providers.google_oidc
   -> page renders Google Identity Services with descriptor client_id
   -> browser posts Google credential to auth_google_session

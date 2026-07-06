@@ -1,8 +1,8 @@
 ---
 id: repo:kdcube-ai-app/app/ai-app/docs/sdk/memory/user-memories-reconcilation-README.md
 title: "User Memories Reconciliation"
-summary: "Design contract and SDK agent for user-memory reconciliation: widget-triggered analysis, dry-run proposal jobs, export/review snapshots, versatile-streamer validation, and later transactional application/restore."
-tags: ["sdk", "memory", "reconciliation", "maintenance", "versatile-streamer", "postgres"]
+summary: "Design contract and SDK agent for user-memory reconciliation: widget-triggered analysis, dry-run proposal jobs, export/review snapshots, workspace-streamer validation, and later transactional application/restore."
+tags: ["sdk", "memory", "reconciliation", "maintenance", "workspace-streamer", "postgres"]
 keywords: ["memory reconciliation", "duplicate memories", "semantic merge", "stream_with_channels", "ChannelSpec", "structured output", "memory maintenance job"]
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/memory/user-memories-overview-README.md
@@ -21,7 +21,7 @@ The SDK agent lives in:
 kdcube_ai_app/apps/chat/sdk/context/memory/reconciler_agent.py
 ```
 
-It uses the versatile streamer and returns validated proposed actions. It does
+It uses the workspace streamer and returns validated proposed actions. It does
 not mutate Postgres; application remains a separate service phase.
 
 The first product surface should be user-controlled:
@@ -484,7 +484,7 @@ field contract.
 
 ## Agent Protocol
 
-When reconciliation requires reasoning, use the versatile streamer pattern used
+When reconciliation requires reasoning, use the workspace streamer pattern used
 by ReAct and the gate agent: one short thinking channel plus one structured
 output channel.
 

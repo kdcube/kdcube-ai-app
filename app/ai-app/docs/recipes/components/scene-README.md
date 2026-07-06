@@ -48,7 +48,7 @@ The scene config is data, not hardcoded widget logic. A scene profile should dec
     "tenant": "demo",
     "project": "demo",
     "apps": {
-      "versatile": "versatile@2026-03-31-13-36",
+      "workspace": "workspace@2026-03-31-13-36",
       "stats": "kdcube.stats@2026-05-20-12-05"
     },
     "appRuntimes": {
@@ -62,7 +62,7 @@ The scene config is data, not hardcoded widget logic. A scene profile should dec
     }
   },
   "contextDropTargets": {
-    "versatile": {
+    "workspace": {
       "surfaceRef": "website.chat",
       "accepts": "context",
       "dropEffect": "attach",

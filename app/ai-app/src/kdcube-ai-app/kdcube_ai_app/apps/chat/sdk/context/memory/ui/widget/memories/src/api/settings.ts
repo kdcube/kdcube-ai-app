@@ -153,9 +153,9 @@ class Settings {
       // The bundle this widget is SERVED from — parsed from the iframe URL into
       // `context.bundleId` — owns its operations endpoint, exactly like the task
       // widget (which reads its bundle from the URL and ignores any host hint).
-      // A host's `defaultAppBundleId` must NOT hijack it: the versatile scene
-      // forwards the outer host's default (versatile), which would redirect this
-      // user-memories widget's calls to versatile -> memory_disabled. Only fall
+      // A host's `defaultAppBundleId` must NOT hijack it: the workspace scene
+      // forwards the outer host's default (workspace), which would redirect this
+      // user-memories widget's calls to workspace -> memory_disabled. Only fall
       // back to the host hint when the served route carries no bundle at all.
       bundleId: isPlaceholder(context.bundleId)
         ? (config.defaultAppBundleId || this.values.bundleId)

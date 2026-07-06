@@ -293,7 +293,7 @@ One **Connections bundle** owns the lifecycle; other bundles consume.
                                  ▲
             reads (same user) ───┴───────────────┬───────────────┐
         ┌──────────────────┐       ┌──────────────────┐   ┌──────────────────┐
-        │ task-tracker     │       │ versatile scene  │   │ any other bundle │
+        │ task-tracker     │       │ workspace scene  │   │ any other bundle │
         │ get_token(slack) │       │ SlackContextProv │   │ get_token(...)   │
         └──────────────────┘       └──────────────────┘   └──────────────────┘
 ```

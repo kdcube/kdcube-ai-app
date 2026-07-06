@@ -20,7 +20,7 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-properties-and-secrets-lifecycle-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-subsystem-integration-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-economics-integration-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/versatile-reference-bundle-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/workspace-reference-bundle-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-widget-integration-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-events-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/integrations/telegram/telegram-README.md
@@ -89,7 +89,7 @@ Use this together with:
 - [how-to-avoid-common-bundle-integration-failures-README.md](how-to-avoid-common-bundle-integration-failures-README.md)
 - [how-to-configure-and-run-bundle-README.md](how-to-configure-and-run-bundle-README.md)
 - [how-to-release-bundle-content-README.md](how-to-release-bundle-content-README.md)
-- [versatile-reference-bundle-README.md](../versatile-reference-bundle-README.md)
+- [workspace-reference-bundle-README.md](../workspace-reference-bundle-README.md)
 - [bundle-widget-integration-README.md](../bundle-widget-integration-README.md)
 - [bundle-runtime-README.md](../bundle-runtime-README.md)
 - [bundle-delivery-and-update-README.md](../bundle-delivery-and-update-README.md)
@@ -282,7 +282,7 @@ connector/server wiring, and Claude Code subagent requirements.
 For a React-backed bundle, prove the agent surface before manual testing:
 
 - `entrypoint.py` instantiates the workflow in the same shape as
-  the versatile reference bundle
+  the workspace reference bundle
 - `agents/main.py` calls `BaseWorkflow.build_react(...)`
 - `surfaces.as_consumer` exposes only the tool aliases the bundle actually needs
 - bundle-local tool entries in `surfaces.as_consumer` use `ref` and the tool
@@ -936,9 +936,9 @@ Typical targets:
 - storage round-trips
 - bundle-local report export logic
 
-Use the `versatile` tests as the model:
+Use the `workspace` tests as the model:
 
-`src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/tests/test_preferences_canvas.py`
+`src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/workspace@2026-03-31-13-36/tests/test_preferences_canvas.py`
 
 That test file is useful because it checks:
 

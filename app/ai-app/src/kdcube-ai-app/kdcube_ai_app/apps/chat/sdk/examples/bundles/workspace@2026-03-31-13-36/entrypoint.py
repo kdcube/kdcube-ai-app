@@ -37,25 +37,25 @@ from kdcube_ai_app.infra.plugin.bundle_loader import bundle_entrypoint, api, on_
 from kdcube_ai_app.infra.service_hub.inventory import BundleState, Config
 
 from .event_filter import BundleEventFilter
-from .agents.main import VersatileWorkflow
+from .agents.main import WorkspaceWorkflow
 from .services import telemetry as telemetry_service
-from .services.canvas import CanvasRuntimeConfig, VersatileCanvasService, payload_from_call
+from .services.canvas import CanvasRuntimeConfig, WorkspaceCanvasService, payload_from_call
 from .services import platform_session_issuer
 
-BUNDLE_ID = "versatile@2026-03-31-13-36"
-WORKFLOW_NAME = "versatile"
+BUNDLE_ID = "workspace@2026-03-31-13-36"
+WORKFLOW_NAME = "workspace"
 TELEGRAM_ADMIN_ROLE = "kdcube:role:super-admin"
 TELEGRAM_WEBHOOK_SECRET_HEADER = "X-Telegram-Bot-Api-Secret-Token"
 TELEMETRY_SINK_TOKEN_SECRET = "b:telemetry_sink.auth.token"
 EVENT_RECORD_MAX = 200
-DATA_BUS_ECHO_SUBJECT = "versatile.echo"
+DATA_BUS_ECHO_SUBJECT = "workspace.echo"
 CANVAS_ARTIFACT_PREFIX = "canvas"
 CANVAS_ORIGIN_PREFIX = "canvas"
 CANVAS_STATE_EVENT_SOURCE_ID = "canvas.state"
 CANVAS_UI_EVENT_TYPE = "canvas.patch.applied"
 CANVAS_ARTIFACT_RESOLVER_NAME = "canvas.bundle_artifact_storage"
 CANVAS_DATA_BUS_SUBJECT = "canvas.patch"
-_log = logging.getLogger("kdcube.bundle.versatile")
+_log = logging.getLogger("kdcube.bundle.workspace")
 
 
 def _api_visibility(
@@ -115,7 +115,7 @@ def _telegram_user_admin_storage(entrypoint: Any) -> TelegramUserAdminStorage:
     return TelegramUserAdminStorage(_storage_root_or_error(entrypoint))
 
 
-class _VersatileAutomationWidgets:
+class _WorkspaceAutomationWidgets:
     @staticmethod
     async def payload(entrypoint: Any, **kwargs) -> Dict[str, Any]:
         del entrypoint, kwargs
@@ -125,12 +125,12 @@ class _VersatileAutomationWidgets:
             "count": 0,
             "supported_now": {
                 "automations": False,
-                "reason": "versatile reference webapp demonstrates memory, conversations, and Telegram admin.",
+                "reason": "workspace reference webapp demonstrates memory, conversations, and Telegram admin.",
             },
         }
 
 
-class _VersatileSettingsWidgets:
+class _WorkspaceSettingsWidgets:
     @staticmethod
     def payload(
         entrypoint: Any,
@@ -147,7 +147,7 @@ class _VersatileSettingsWidgets:
         }
 
 
-class _VersatileAutomationOperations:
+class _WorkspaceAutomationOperations:
     @staticmethod
     async def list_automations(*args, **kwargs) -> Dict[str, Any]:
         del args, kwargs
@@ -165,13 +165,13 @@ telegram_widget_auth.configure_telegram_widget_auth(
     bundle_id=BUNDLE_ID,
 )
 telegram_webapp.configure_telegram_webapp(
-    settings_widgets_module=_VersatileSettingsWidgets,
-    automation_widgets_module=_VersatileAutomationWidgets,
+    settings_widgets_module=_WorkspaceSettingsWidgets,
+    automation_widgets_module=_WorkspaceAutomationWidgets,
     telegram_user_admin_module=telegram_user_admin,
     bundle_id=BUNDLE_ID,
 )
 telegram_widget_ops.configure_telegram_widget_ops(
-    automation_operations_module=_VersatileAutomationOperations,
+    automation_operations_module=_WorkspaceAutomationOperations,
     telegram_user_admin_module=telegram_user_admin,
     telegram_widget_auth_module=telegram_widget_auth,
     webapp_module=telegram_webapp,
@@ -185,7 +185,7 @@ telegram_widget_ops.configure_telegram_widget_ops(
     priority=100,
     allowed_roles_config="surfaces.as_provider.bundle.visibility.allowed_roles",
 )
-class VersatileEntrypoint(BaseEntrypointWithEconomics):
+class WorkspaceEntrypoint(BaseEntrypointWithEconomics):
     """All-features reference bundle for bundle builders."""
 
     def __init__(
@@ -258,7 +258,7 @@ class VersatileEntrypoint(BaseEntrypointWithEconomics):
             )
 
             try:
-                orch = VersatileWorkflow(
+                orch = WorkspaceWorkflow(
                     conv_idx=conv_idx,
                     kb=kb,
                     store=store,
@@ -282,12 +282,12 @@ class VersatileEntrypoint(BaseEntrypointWithEconomics):
                     "turn_id": state["turn_id"],
                 }
 
-                async def _run_versatile_turn() -> Dict[str, Any]:
+                async def _run_workspace_turn() -> Dict[str, Any]:
                     return await orch.process(payload)
 
                 res = await telegram_user_admin.run_with_queued_telegram_delivery(
                     self,
-                    runner=_run_versatile_turn,
+                    runner=_run_workspace_turn,
                 )
                 if not isinstance(res, dict):
                     res = {}
@@ -372,10 +372,10 @@ class VersatileEntrypoint(BaseEntrypointWithEconomics):
         )
         return subsystem
 
-    def _canvas_service(self) -> VersatileCanvasService:
-        service = getattr(self, "_versatile_canvas_service", None)
+    def _canvas_service(self) -> WorkspaceCanvasService:
+        service = getattr(self, "_workspace_canvas_service", None)
         if service is None:
-            service = VersatileCanvasService(
+            service = WorkspaceCanvasService(
                 self,
                 config=CanvasRuntimeConfig(
                     bundle_id=self._bundle_id(),
@@ -388,7 +388,7 @@ class VersatileEntrypoint(BaseEntrypointWithEconomics):
                 ),
                 logger=_log,
             )
-            self._versatile_canvas_service = service
+            self._workspace_canvas_service = service
         return service
 
     def _canvas_store(self, payload: Mapping[str, Any], *, user_id: str | None = None):
@@ -451,23 +451,23 @@ class VersatileEntrypoint(BaseEntrypointWithEconomics):
         return await telemetry_service.send_recorded_events(self)
 
     @api(
-        alias="versatile_chat_widget",
+        alias="workspace_chat_widget",
         route="operations",
-        **_api_visibility("versatile_chat_widget"),
+        **_api_visibility("workspace_chat_widget"),
     )
     @ui_widget(
         icon={
             "tailwind": "heroicons-outline:chat-bubble-left-right",
             "lucide": "MessagesSquare",
         },
-        alias="versatile_chat",
-        **_widget_visibility("versatile_chat"),
+        alias="workspace_chat",
+        **_widget_visibility("workspace_chat"),
     )
-    def versatile_chat_widget(self, **kwargs):
+    def workspace_chat_widget(self, **kwargs):
         del kwargs
         return [
             "<div style=\"font-family:system-ui,sans-serif;padding:16px\">"
-            "Versatile chat is served from sdk://solutions/chat/ui/widget after build."
+            "Workspace chat is served from sdk://solutions/chat/ui/widget after build."
             "</div>"
         ]
 
@@ -1068,7 +1068,7 @@ class VersatileEntrypoint(BaseEntrypointWithEconomics):
         )
 
     def configuration_defaults(self) -> Dict[str, Any]:
-        versatile_defaults = {
+        workspace_defaults = {
             "surfaces": {
                 "as_provider": {
                     "bundle": {
@@ -1108,7 +1108,7 @@ class VersatileEntrypoint(BaseEntrypointWithEconomics):
                         "pinboard": {"visibility": {"user_types": [], "roles": []}},
                         "telegram_miniapp": {"visibility": {"user_types": [], "roles": []}},
                         "usage_card": {"visibility": {"user_types": [], "roles": []}},
-                        "versatile_chat": {"visibility": {"user_types": [], "roles": []}},
+                        "workspace_chat": {"visibility": {"user_types": [], "roles": []}},
                     },
                 },
             },
@@ -1131,7 +1131,7 @@ class VersatileEntrypoint(BaseEntrypointWithEconomics):
                 "endpoint_url": "",
                 "auth_header": "",
             },
-            # versatile CONSUMES durable user memory via the `mem` named service
+            # workspace CONSUMES durable user memory via the `mem` named service
             # (surfaces.as_consumer.agents.main.tools[mem]) plus the announce
             # declared on that namespace; it owns no memory widget/provider/
             # maintenance config. Every memory surface (including the Telegram
@@ -1163,9 +1163,9 @@ class VersatileEntrypoint(BaseEntrypointWithEconomics):
                 },
                 "widgets": {
                     # Engine selection is config-driven in the bundle config
-                    # (bundles.yaml `versatile_chat.engine: local|package|package-ui`),
+                    # (bundles.yaml `workspace_chat.engine: local|package|package-ui`),
                     # expanded by the build pipeline. This is just the code-side default.
-                    "versatile_chat": chat_widget_ui_config(),
+                    "workspace_chat": chat_widget_ui_config(),
                     "usage_card": {
                         "enabled": True,
                         "src_folder": "sdk://infra/economics/ui/widget/usage-card",
@@ -1212,7 +1212,7 @@ class VersatileEntrypoint(BaseEntrypointWithEconomics):
                 },
             },
         }
-        return self._deep_merge_props(super().configuration_defaults(), versatile_defaults)
+        return self._deep_merge_props(super().configuration_defaults(), workspace_defaults)
 
     @property
     def configuration(self) -> Dict[str, Any]:

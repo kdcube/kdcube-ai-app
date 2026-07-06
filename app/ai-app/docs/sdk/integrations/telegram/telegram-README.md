@@ -62,7 +62,7 @@ memory, or product logic.
 If the user asks for "Telegram integration" without mentioning a Mini App,
 start with the bot transport path: `telegram_webhook` plus
 `user_admin.handle_webhook(...)` and
-`user_admin.run_with_queued_telegram_delivery(...)`. The versatile reference
+`user_admin.run_with_queued_telegram_delivery(...)`. The workspace reference
 bundle demonstrates that bot transport and also includes a compact Mini App
 reference (`ui/widgets/telegram_miniapp`) for memory canvas, chat channel
 selection, and Telegram admin. Add Mini App APIs only when the product also
@@ -237,8 +237,8 @@ session that the public widget route uses.
 Reference implementation:
 
 ```text
-app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/entrypoint.py
-app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/ui/widgets/telegram_miniapp
+app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/workspace@2026-03-31-13-36/entrypoint.py
+app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/workspace@2026-03-31-13-36/ui/widgets/telegram_miniapp
 ```
 
 ### 6. Keep Admin Operations Separate

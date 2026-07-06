@@ -4,18 +4,18 @@
 
 bundles:
   version: "1"
-  default_bundle_id: versatile@2026-03-31-13-36
+  default_bundle_id: workspace@2026-03-31-13-36
   items:
-    - id: versatile@2026-03-31-13-36
-      name: Versatile
+    - id: workspace@2026-03-31-13-36
+      name: Workspace
       module: entrypoint
       singleton: false
       config:
         ui:
           widgets:
-            versatile_chat:
+            workspace_chat:
               surface: sdk.chat.context
-              route: public/widgets/versatile_chat
+              route: public/widgets/workspace_chat
             pinboard:
               surface: sdk.canvas.pinboard
               route: widgets/pinboard/

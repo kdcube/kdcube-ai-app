@@ -62,7 +62,7 @@ def log_agent_packet(agent_name: str, phase: str, packet: dict):
 
 def log_stream_channels(agent_name: str, phase: str, channels: dict):
     """
-    Log raw channel outputs from versatile multi-stream responses.
+    Log raw channel outputs from workspace multi-stream responses.
     channels: {name: raw_text}
     """
     if not isinstance(channels, dict):

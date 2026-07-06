@@ -17,16 +17,16 @@ class _EntryPoint:
                 "kdcube.platform": {
                     "platform": True,
                     "providers": {
-                        "versatile_google_session": {
+                        "workspace_google_session": {
                             "type": "bundle_session_login",
                             "entrypoints": {
                                 "login": {
-                                    "bundle_id": "versatile@2026-03-31-13-36",
+                                    "bundle_id": "workspace@2026-03-31-13-36",
                                     "route": "public",
                                     "operation": "platform_login",
                                 },
                                 "session_issue": {
-                                    "bundle_id": "versatile@2026-03-31-13-36",
+                                    "bundle_id": "workspace@2026-03-31-13-36",
                                     "route": "public",
                                     "operation": "auth_google_session",
                                 },
@@ -43,11 +43,11 @@ class _EntryPoint:
 async def test_bundle_session_login_provider_accepts_registered_entrypoint_without_host():
     result = await resolve_bundle_session_login_provider(
         _EntryPoint(),
-        bundle_id="versatile@2026-03-31-13-36",
+        bundle_id="workspace@2026-03-31-13-36",
         operation="platform_login",
     )
 
     assert result["ok"] is True
     assert result["authority_id"] == "kdcube.platform"
-    assert result["provider_id"] == "versatile_google_session"
+    assert result["provider_id"] == "workspace_google_session"
     assert result["entrypoints"]["login"]["operation"] == "platform_login"

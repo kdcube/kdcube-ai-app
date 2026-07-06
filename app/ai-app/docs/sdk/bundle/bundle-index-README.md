@@ -15,7 +15,7 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-avoid-common-bundle-integration-failures-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-understand-conversation-events-and-react-turns-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-test-bundle-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/versatile-reference-bundle-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/workspace-reference-bundle-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/configuration/bundle-runtime-configuration-and-secrets-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-delivery-and-update-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-agent-integration-README.md
@@ -35,7 +35,7 @@ This is the bundle-developer start page.
 
 The bundle docs now use one reference bundle only:
 
-- `versatile@2026-03-31-13-36`
+- `workspace@2026-03-31-13-36`
 
 Older `docs/sdk/example-bundle` sample docs are no longer part of the bundle path.
 
@@ -67,7 +67,7 @@ backend-only apps — start with
    - how to mount an existing SDK subsystem as one complete surface: entrypoint, config, widgets, APIs, tools, events, resolvers, storage, and tests
 8. [build/how-to-test-bundle-README.md](build/how-to-test-bundle-README.md)
    - builder playbook for validation and runtime checks
-9. [versatile-reference-bundle-README.md](versatile-reference-bundle-README.md)
+9. [workspace-reference-bundle-README.md](workspace-reference-bundle-README.md)
    - the concrete reference bundle to study
 10. [bundle-runtime-README.md](bundle-runtime-README.md)
    - runtime surfaces available to bundle code
@@ -106,7 +106,7 @@ backend-only apps — start with
 | Recurring bundle implementation recipes and failure modes | [build/how-to-avoid-common-bundle-integration-failures-README.md](build/how-to-avoid-common-bundle-integration-failures-README.md) |
 | Mount an existing SDK subsystem as a complete bundle surface | [bundle-subsystem-integration-README.md](bundle-subsystem-integration-README.md) |
 | Testing playbook | [build/how-to-test-bundle-README.md](build/how-to-test-bundle-README.md) |
-| Study the reference bundle | [versatile-reference-bundle-README.md](versatile-reference-bundle-README.md) |
+| Study the reference bundle | [workspace-reference-bundle-README.md](workspace-reference-bundle-README.md) |
 | Choose the SDK entrypoint base class | [bundle-entrypoint-classes-README.md](bundle-entrypoint-classes-README.md) |
 | Runtime surfaces | [bundle-runtime-README.md](bundle-runtime-README.md) |
 | Record and sink selected comm events | [bundle-event-recording-and-sinks-README.md](bundle-event-recording-and-sinks-README.md) |
@@ -155,14 +155,14 @@ Runnable sidecar details:
 
 Reference bundle root:
 
-`src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36`
+`src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/workspace@2026-03-31-13-36`
 
 Start with:
 
 - the reference doc:
-  [versatile-reference-bundle-README.md](versatile-reference-bundle-README.md)
+  [workspace-reference-bundle-README.md](workspace-reference-bundle-README.md)
 - then the actual bundle README:
-  `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/README.md`
+  `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/workspace@2026-03-31-13-36/README.md`
 
 ## Validation
 

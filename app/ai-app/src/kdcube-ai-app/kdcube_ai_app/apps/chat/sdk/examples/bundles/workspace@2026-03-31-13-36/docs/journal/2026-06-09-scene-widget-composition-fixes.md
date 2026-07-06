@@ -1,7 +1,7 @@
 ---
 title: Scene Widget Composition Fixes
 date: 2026-06-09
-bundle_id: versatile@2026-03-31-13-36
+bundle_id: workspace@2026-03-31-13-36
 topic: sdk component scene composition
 ---
 
@@ -9,7 +9,7 @@ topic: sdk component scene composition
 
 ## Context
 
-The active Versatile main view was moved to `ui/scene` so the reference bundle
+The active Workspace main view was moved to `ui/scene` so the reference bundle
 can compose reusable SDK components:
 
 - chat widget: `sdk://solutions/chat/ui/widget`
@@ -155,7 +155,7 @@ This keeps the default expanded view focused on:
 The memory detail/editor panel is now conditional. It is rendered only when a
 memory is selected or an editor is active. Without that guard, the shared memory
 widget reserved an empty right-side panel and made older workbench and
-Versatile expanded memory views look like they had a large dead area.
+Workspace expanded memory views look like they had a large dead area.
 
 The memory widget emits canonical context drag lifecycle events for scene
 coordination. For chat/context attachment it emits the generic context protocol
@@ -230,7 +230,7 @@ agent tool config -> model-callable tools
 event-source specs -> event sources, policies, readers, namespace rehosters
 ```
 
-This was needed because Versatile should understand canvas-owned `cnv:` refs
+This was needed because Workspace should understand canvas-owned `cnv:` refs
 for `react.pull`, but it should not expose `canvas.patch` as an agent tool. The
 canvas namespace rehoster now comes from
 `kdcube_ai_app.apps.chat.sdk.solutions.canvas.events.resolver` through
@@ -277,7 +277,7 @@ from another bundle.
 Canvas object actions now log both sides of the resolver path:
 
 ```text
-browser: [versatile:canvas] object action request/response
+browser: [workspace:canvas] object action request/response
 server:  [canvas.object_action] requested/resolved/failed
 ```
 
@@ -346,7 +346,7 @@ A scene that composes widgets should provide:
 Build checks run after the fixes:
 
 ```bash
-OUTDIR=/private/tmp/versatile-scene-build npm run build
+OUTDIR=/private/tmp/workspace-scene-build npm run build
 OUTDIR=/private/tmp/memory-widget-build npm run build
 ```
 
@@ -369,7 +369,7 @@ message:
 ```json
 {
   "type": "kdcube-widget-focus",
-  "widget": "versatile_chat"
+  "widget": "workspace_chat"
 }
 ```
 
@@ -419,11 +419,11 @@ iframe fills that rectangle.
 
 ### Landing Page Switch
 
-`website/index.html` now points the live versatile tile at the reusable chat
+`website/index.html` now points the live workspace tile at the reusable chat
 widget route:
 
 ```text
-public/widgets/versatile_chat?chat_embed_mode=host&...
+public/widgets/workspace_chat?chat_embed_mode=host&...
 ```
 
 The landing host keeps its existing iframe/drop overlay mechanics and sends
@@ -437,7 +437,7 @@ generic context messages:
 ```
 
 The route change means the landing page is no longer embedding the old
-versatile main UI for chat.
+workspace main UI for chat.
 
 ### Verification
 

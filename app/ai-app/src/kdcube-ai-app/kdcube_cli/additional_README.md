@@ -818,7 +818,7 @@ That first local bootstrap is descriptor-first and local-first:
 - `storage.claude_code_session.type=local`
 - `storage.kdcube=null`
 - `storage.bundles=null`
-- `bundles.default_bundle_id=versatile@2026-03-31-13-36`
+- `bundles.default_bundle_id=workspace@2026-03-31-13-36`
 
 For local seed descriptors, `null` or a missing value means CLI-managed storage
 under the tenant/project runtime namespace:

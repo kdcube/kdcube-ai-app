@@ -36,13 +36,13 @@
     "objectActions": {
       "gateway": {
         "runtime": "default",
-        "app": "versatile@2026-03-31-13-36",
+        "app": "workspace@2026-03-31-13-36",
         "operation": "canvas_object_action"
       }
     },
     "namespacePresentation": {
       "runtime": "default",
-      "app": "versatile@2026-03-31-13-36",
+      "app": "workspace@2026-03-31-13-36",
       "endpoint": "namespace_presentation_config",
       "delivery": "config-handshake"
     },
@@ -102,19 +102,19 @@
     "components": {
       "chat": {
         "alias": "chat",
-        "app": "versatile@2026-03-31-13-36",
+        "app": "workspace@2026-03-31-13-36",
         "runtime": "default",
         "surfaceRef": "website.chat",
         "targetSurfaces": ["sdk.chat.context", "sdk.chat.conversation"],
         "title": "Chat",
-        "identity": "BUNDLE_VERSATILE_CHAT_VIEW",
-        "route": "public/widgets/versatile_chat?chat_embed_mode=host&chat_widget_id=versatile_chat&chat_config_identity=BUNDLE_VERSATILE_CHAT_VIEW&chat_brand_label=Versatile&chat_event_prefix=versatile&chat_surface=versatile_chat&chat_canvas_state_event_source_id=canvas.state&chat_canvas_focus_event_source_id=canvas.focus&bundle_id=versatile%402026-03-31-13-36",
+        "identity": "BUNDLE_WORKSPACE_CHAT_VIEW",
+        "route": "public/widgets/workspace_chat?chat_embed_mode=host&chat_widget_id=workspace_chat&chat_config_identity=BUNDLE_WORKSPACE_CHAT_VIEW&chat_brand_label=Workspace&chat_event_prefix=workspace&chat_surface=workspace_chat&chat_canvas_state_event_source_id=canvas.state&chat_canvas_focus_event_source_id=canvas.focus&bundle_id=workspace%402026-03-31-13-36",
         "mount": { "mode": "summoned", "rail": "chat" },
         "commands": ["attach", "open", "load-conversation"]
       },
       "pinboard": {
         "alias": "pinboard",
-        "app": "versatile@2026-03-31-13-36",
+        "app": "workspace@2026-03-31-13-36",
         "runtime": "default",
         "surfaceRef": "website.pinboard",
         "targetSurfaces": ["sdk.canvas.pinboard"],
@@ -126,7 +126,7 @@
       },
       "memories": {
         "alias": "memories",
-        "app": "versatile@2026-03-31-13-36",
+        "app": "workspace@2026-03-31-13-36",
         "runtime": "default",
         "surfaceRef": "website.memories",
         "targetSurfaces": ["sdk.memory.list"],
@@ -138,7 +138,7 @@
       },
       "memory_item": {
         "alias": "memory_item",
-        "app": "versatile@2026-03-31-13-36",
+        "app": "workspace@2026-03-31-13-36",
         "runtime": "default",
         "surfaceRef": "website.memory_item",
         "targetSurfaces": ["sdk.memory.viewer"],
@@ -176,7 +176,7 @@
       },
       "usage_card": {
         "alias": "usage_card",
-        "app": "versatile@2026-03-31-13-36",
+        "app": "workspace@2026-03-31-13-36",
         "runtime": "default",
         "surfaceRef": "website.usage_card",
         "targetSurfaces": ["sdk.usage.card"],

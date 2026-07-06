@@ -1,5 +1,5 @@
 /* =========================================================================
-   Versatile scene — website scene host skin.
+   Workspace scene — website scene host skin.
 
    The rail (.kdc-rail), window chrome (.kdc-wbar / .kdc-wgrip), context-drag
    overlay (.kdc-drop) and accent palette are ported from the website scene
@@ -20,7 +20,7 @@
   --pink: #e0457b; --pink-dark: #c01f63; --pink-pale: #fde7ef;
   --r-sm: 4px; --r-md: 6px; --r-lg: 8px;
 
-  /* light surfaces (the versatile widgets render light) */
+  /* light surfaces (the workspace widgets render light) */
   --surface: #FFFFFF; --surface-2: #F6F8F8; --surface-3: #FAFBFB;
   --ink: #0D1E2C; --text-2: #3A5672; --muted: #7A99B0;
   --line: #E2E8E8; --line-soft: #ECF1F1;
@@ -249,10 +249,14 @@ body {
   border-radius: var(--r-lg);
 }
 
+/* Emptied slot placeholder. NO opacity on the slot: the promoted window is
+   still a DOM child of it (the same element is promoted in place), and CSS
+   opacity dims every descendant — position:fixed does not escape it. The
+   faded placeholder look is painted with translucent colors on the slot box
+   only, so the floating window renders at full contrast. */
 .kdc-dock-slot.floated {
-  border: 1px dashed var(--line);
-  background: var(--surface-2);
-  opacity: 0.5;
+  border: 1px dashed color-mix(in srgb, var(--line) 60%, transparent);
+  background: color-mix(in srgb, var(--surface-2) 45%, transparent);
 }
 
 @media (max-width: 940px) {
@@ -432,6 +436,23 @@ body {
   height: 8px;
   border-right: 2px solid var(--muted);
   border-bottom: 2px solid var(--muted);
+}
+
+/* grip discoverability: strengthen the corner strokes as the pointer nears */
+.kdc-win:hover .kdc-wgrip::after { border-color: var(--text-2); }
+.kdc-wgrip:hover::after { border-color: var(--ink); }
+
+/* Raise veil: transparent, parent-owned click catcher over a BURIED floating
+   window's body. Pointer-down raises the window; the veil unmounts as the
+   window becomes top, so the follow-up pointerup/click reaches the iframe. */
+.kdc-raise-veil {
+  position: absolute;
+  inset: 36px 0 0 0;
+  z-index: 8;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: default;
 }
 
 /* "where this widget is defined" hint chip, shown on titlebar hover */

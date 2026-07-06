@@ -293,7 +293,7 @@ with the provider name, required claim, and a link from `action_url` or
 | `repo:kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/integrations/telegram/user_admin.py` | Submitted Telegram path, inline fallback, and queued delivery boundary. |
 | `repo:kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/integrations/telegram` | Telegram timeline-to-message rendering helpers. |
 | `repo:kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/tasks/operations.py` | Task execution delivering ReAct results through Telegram rendering. |
-| `repo:kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/agents/main.py` | Normal app ReAct construction and workspace persistence; the path keeps the historical `bundles` directory name. |
+| `repo:kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/workspace@2026-03-31-13-36/agents/main.py` | Normal app ReAct construction and workspace persistence; the path keeps the historical `bundles` directory name. |
 
 ## Indexing Boundary
 

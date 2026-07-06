@@ -44,8 +44,8 @@ Adjacent shared modules:
   - canvas, timeline, and exec streamers
 - `sdk/streaming/`
   - channel stream parsing
-  - `versatile_streamer.py` for the current shared path
-  - `versatile_streamer_v3.py` for v3 multi-instance channel handling
+  - `workspace_streamer.py` for the current shared path
+  - `workspace_streamer_v3.py` for v3 multi-instance channel handling
 
 ## Shared Runtime Shape
 

@@ -1326,7 +1326,7 @@ void loadFrontendConfig().then((loaded) => {
 Use these as reference implementations for the runtime config handshake and
 operation-call shape:
 
-- [PreferencesBrowser.tsx](../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/ui/PreferencesBrowser.tsx)
+- [PreferencesBrowser.tsx](../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/workspace@2026-03-31-13-36/ui/PreferencesBrowser.tsx)
 
 Those examples are useful for runtime config and API calls. For new widgets,
 prefer the source-folder layout described above instead of embedding TSX/HTML in

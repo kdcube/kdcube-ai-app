@@ -69,7 +69,7 @@ export function routeContextFromLocation(): RouteContext {
     return {
       tenant: params.get('tenant') || '',
       project: params.get('project') || '',
-      bundleId: params.get('bundle_id') || params.get('bundleId') || 'versatile@2026-03-31-13-36',
+      bundleId: params.get('bundle_id') || params.get('bundleId') || 'workspace@2026-03-31-13-36',
       widgetAlias: params.get('widget') || 'telegram_miniapp',
       widgetPath: params.get('widget_path') || params.get('widgetPath') || '',
       publicRoute: params.get('public') === '1',
@@ -83,7 +83,7 @@ export function routeContextFromLocation(): RouteContext {
   return {
     tenant: parts[0] || '',
     project: parts[1] || '',
-    bundleId: parts[2] || 'versatile@2026-03-31-13-36',
+    bundleId: parts[2] || 'workspace@2026-03-31-13-36',
     widgetAlias: widgetAnchor >= 0 ? parts[widgetAnchor + 1] || 'telegram_miniapp' : 'telegram_miniapp',
     widgetPath: widgetAnchor >= 0 ? parts.slice(widgetAnchor + 2).join('/') : '',
     publicRoute: publicWidgetsIndex >= 0 && publicWidgetsIndex < widgetAnchor,
@@ -188,7 +188,7 @@ class SettingsManager {
 
   getBundleId(): string {
     return isPlaceholder(this.settings.defaultAppBundleId)
-      ? ROUTE_CONTEXT.bundleId || 'versatile@2026-03-31-13-36'
+      ? ROUTE_CONTEXT.bundleId || 'workspace@2026-03-31-13-36'
       : this.settings.defaultAppBundleId;
   }
 
@@ -305,7 +305,7 @@ class SettingsManager {
   }
 
   setupParentListener(): Promise<boolean> {
-    const identity = 'VERSATILE_WEBAPP';
+    const identity = 'WORKSPACE_WEBAPP';
     let resolved = false;
     let resolveReady: ((value: boolean) => void) | null = null;
     const finish = (value: boolean) => {

@@ -13,7 +13,7 @@ export function ConnectionsPage() {
     () => settings.widgetUrlForBundle(CONNECTION_HUB_BUNDLE_ID, CONNECTIONS_WIDGET_ALIAS, {
       mode: 'telegram-miniapp',
       surface: 'telegram_miniapp',
-      host: 'versatile',
+      host: 'workspace',
     }),
     [],
   );

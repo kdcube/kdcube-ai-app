@@ -1,7 +1,7 @@
 ---
 title: KDCube Companion Telegram Mini App Design
 kind: design-note
-bundle_id: versatile@2026-03-31-13-36
+bundle_id: workspace@2026-03-31-13-36
 updated_at: 2026-06-27
 ---
 
@@ -57,7 +57,7 @@ For the link journey, the Connection Hub iframe creates its own short-lived
 Socket.IO live channel by calling Connection Hub's `federated_data_bus_claim`
 public operation. When the user finishes the browser-side claim, Connection
 Hub emits `connection_hub.identity.link_changed` to that session. This avoids
-polling and keeps Versatile out of Connection Hub's server-to-widget lifecycle.
+polling and keeps Workspace out of Connection Hub's server-to-widget lifecycle.
 After a link or unlink event, the iframe claims a fresh token and reconnects so
 the backing `UserSession` carries the current projected authority.
 

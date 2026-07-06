@@ -1,1 +1,1 @@
-"""Service helpers for the versatile reference bundle."""
+"""Service helpers for the workspace reference bundle."""

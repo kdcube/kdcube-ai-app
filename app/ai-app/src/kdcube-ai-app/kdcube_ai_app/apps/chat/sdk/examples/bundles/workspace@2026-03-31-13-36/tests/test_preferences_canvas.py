@@ -55,7 +55,7 @@ def _comm() -> ChatCommunicator:
             "tenant": "tenant-a",
             "project": "project-a",
             "user": "user-1",
-            "bundle_id": "versatile@2026-03-31-13-36",
+            "bundle_id": "workspace@2026-03-31-13-36",
         },
         conversation={
             "session_id": "session-1",
@@ -67,7 +67,7 @@ def _comm() -> ChatCommunicator:
 
 def test_telegram_bot_transport_manifest_and_defaults():
     module = _load_entrypoint_module()
-    workflow = module.VersatileEntrypoint.__new__(module.VersatileEntrypoint)
+    workflow = module.WorkspaceEntrypoint.__new__(module.WorkspaceEntrypoint)
     bundle_loader = pytest.importorskip(
         "kdcube_ai_app.infra.plugin.bundle_loader",
         reason=(
@@ -76,7 +76,7 @@ def test_telegram_bot_transport_manifest_and_defaults():
         ),
     )
 
-    manifest = _discover_bundle_interface_manifest(workflow, bundle_id="versatile@2026-03-31-13-36")
+    manifest = _discover_bundle_interface_manifest(workflow, bundle_id="workspace@2026-03-31-13-36")
     assert manifest.allowed_roles_config == "surfaces.as_provider.bundle.visibility.allowed_roles"
 
     webhook = next(item for item in manifest.api_endpoints if item.alias == "telegram_webhook")
@@ -113,7 +113,7 @@ def test_telegram_bot_transport_manifest_and_defaults():
     assert admin_data.roles_config == "surfaces.as_provider.api.operations.telegram_user_admin_data.POST.visibility.roles"
     assert admin_data.user_types_config == "surfaces.as_provider.api.operations.telegram_user_admin_data.POST.visibility.user_types"
 
-    defaults = module.VersatileEntrypoint.configuration_defaults(workflow)
+    defaults = module.WorkspaceEntrypoint.configuration_defaults(workflow)
     enabled_api = defaults.get("enabled", {}).get("api", {})
     assert "telegram_webhook.POST" not in enabled_api
     assert "telegram_webapp_user_admin_data.POST" not in enabled_api
@@ -130,16 +130,16 @@ def test_telegram_bot_transport_manifest_and_defaults():
     assert defaults["connections"]["connection_hub"] == {"bundle_id": "connection-hub@1-0"}
     assert defaults["integrations"] == {}
     assert defaults["ui"]["widgets"]["telegram_miniapp"]["src_folder"] == "ui/widgets/telegram_miniapp"
-    assert "versatile_webapp" not in defaults["ui"]["widgets"]
+    assert "workspace_webapp" not in defaults["ui"]["widgets"]
 
 
 @pytest.mark.asyncio
 async def test_event_recording_configures_react_scope_from_endpoint_and_secret(monkeypatch):
     entrypoint_mod = _load_entrypoint_module()
-    entrypoint = object.__new__(entrypoint_mod.VersatileEntrypoint)
+    entrypoint = object.__new__(entrypoint_mod.WorkspaceEntrypoint)
     entrypoint._comm = _comm()
     entrypoint.logger = _Logger()
-    entrypoint.config = SimpleNamespace(ai_bundle_spec=SimpleNamespace(id="versatile@2026-03-31-13-36"))
+    entrypoint.config = SimpleNamespace(ai_bundle_spec=SimpleNamespace(id="workspace@2026-03-31-13-36"))
     entrypoint.bundle_props = {"events": {"record": {"telemetry": {"enabled": True}}}}
     entrypoint.bundle_prop = lambda key, default=None: (
         "http://stats.local/public/ingest" if key == "telemetry_sink.endpoint_url" else default
@@ -157,7 +157,7 @@ async def test_event_recording_configures_react_scope_from_endpoint_and_secret(m
     assert recording["enabled"] is True
     assert recording["scopes"][0]["scope"] == {
         "owner": "react",
-        "bundle": "versatile@2026-03-31-13-36",
+        "bundle": "workspace@2026-03-31-13-36",
         "runtime": "on_message",
     }
 
@@ -165,10 +165,10 @@ async def test_event_recording_configures_react_scope_from_endpoint_and_secret(m
 @pytest.mark.asyncio
 async def test_event_recording_sends_chat_message_and_turn_metrics(monkeypatch):
     entrypoint_mod = _load_entrypoint_module()
-    entrypoint = object.__new__(entrypoint_mod.VersatileEntrypoint)
+    entrypoint = object.__new__(entrypoint_mod.WorkspaceEntrypoint)
     entrypoint._comm = _comm()
     entrypoint.logger = _Logger()
-    entrypoint.config = SimpleNamespace(ai_bundle_spec=SimpleNamespace(id="versatile@2026-03-31-13-36"))
+    entrypoint.config = SimpleNamespace(ai_bundle_spec=SimpleNamespace(id="workspace@2026-03-31-13-36"))
     entrypoint.bundle_props = {"events": {"record": {"telemetry": {"enabled": True}}}}
     sent_batches = []
 

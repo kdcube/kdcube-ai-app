@@ -394,9 +394,9 @@ async def test_load_registry_file_authority_includes_examples_when_enabled_for_i
     redis = _FakeRedis()
     tenant = "demo"
     project = "demo-project"
-    bundle_id = "versatile@2026-03-31-13-36"
+    bundle_id = "workspace@2026-03-31-13-36"
 
-    _install_example_source(monkeypatch, tmp_path, bundle_id, declared_id="versatile")
+    _install_example_source(monkeypatch, tmp_path, bundle_id, declared_id="workspace")
     _install_example_settings(monkeypatch, include_examples=True, component="ingress")
 
     descriptor_path = tmp_path / "bundles.yaml"
@@ -425,10 +425,10 @@ async def test_load_registry_file_authority_ignores_example_descriptor_when_exam
     redis = _FakeRedis()
     tenant = "demo"
     project = "demo-project"
-    bundle_id = "versatile@2026-03-31-13-36"
+    bundle_id = "workspace@2026-03-31-13-36"
     props_key = bundle_store._props_key(tenant=tenant, project=project, bundle_id=bundle_id)
 
-    _install_example_source(monkeypatch, tmp_path, bundle_id, declared_id="versatile")
+    _install_example_source(monkeypatch, tmp_path, bundle_id, declared_id="workspace")
     _install_example_settings(monkeypatch, include_examples=False, component="proc")
 
     descriptor_path = tmp_path / "bundles.yaml"
@@ -464,9 +464,9 @@ async def test_reset_registry_from_env_ignores_example_items_when_examples_disab
     redis = _FakeRedis()
     tenant = "demo"
     project = "demo-project"
-    bundle_id = "versatile@2026-03-31-13-36"
+    bundle_id = "workspace@2026-03-31-13-36"
 
-    _install_example_source(monkeypatch, tmp_path, bundle_id, declared_id="versatile")
+    _install_example_source(monkeypatch, tmp_path, bundle_id, declared_id="workspace")
     _install_example_settings(monkeypatch, include_examples=False, component="proc")
 
     descriptor_path = tmp_path / "bundles.yaml"

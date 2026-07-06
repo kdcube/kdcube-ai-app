@@ -78,7 +78,7 @@ A scene should declare chat as a context drop target:
 ```json
 {
   "contextDropTargets": {
-    "versatile": {
+    "workspace": {
       "surfaceRef": "website.chat",
       "accepts": "context",
       "dropEffect": "attach",

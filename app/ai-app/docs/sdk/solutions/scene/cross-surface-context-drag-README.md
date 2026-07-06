@@ -4,7 +4,7 @@ title: "Cross-Surface Context Drag"
 summary: "Concrete design for generic object drag/drop between scene surfaces: source drag lifecycle, scene broker state, selector-based candidate targets, provider open resolution, target-surface command dispatch, and current migration gaps."
 status: implementation
 tags: ["sdk", "solutions", "scene", "drag-drop", "context-drag", "surfaces", "named-services", "canvas", "chat"]
-updated_at: 2026-06-23
+updated_at: 2026-07-06
 keywords:
   [
     "cross surface drag",
@@ -211,7 +211,7 @@ scene host stamps provenance from its surface registry:
   "source": {
     "surface_ref": "website.chat",
     "component": "chat",
-    "app": "versatile@2026-03-31-13-36",
+    "app": "workspace@2026-03-31-13-36",
     "runtime": "default"
   }
 }
@@ -262,8 +262,8 @@ Concrete current examples:
   `website/scene-context-drag.js`.
 - Pinboard parses `data.ingress` and creates a generic card in
   `canvas/ui/widget/pinboard/src/App.tsx`.
-- Versatile's embedded scene follows the same protocol in
-  `examples/bundles/versatile.../ui/scene/src/main.tsx`.
+- Workspace's embedded scene follows the same protocol in
+  `examples/bundles/workspace.../ui/scene/src/main.tsx`.
 
 No task/memory/file-specific card constructor is required for this path. A
 canvas card is a generic container plus preserved `object_ref`; the provider
@@ -274,8 +274,8 @@ realm supplies object actions and richer metadata.
 | Target type | Host representation | Match key | Drop effect | Delivery |
 | --- | --- | --- | --- | --- |
 | Mounted chat | Transparent overlay over chat iframe | `*` | `attach` | `postMessage({ type: "kdcube.context.attach", context })`; conversation refs may load the conversation. |
-| Mounted canvas/pinboard | Transparent overlay over pinboard iframe | `*` or ingress-only path | `pin` | `postMessage({ type: "kdcube-pinboard-drop-context", context, x, y })` or ingress payload equivalent. |
-| Mounted memory surface | Transparent overlay over memory iframe | `mem:*` | `open` | Provider-backed open to `sdk.memory.viewer`, then local memory command. |
+| Mounted canvas/pinboard | Transparent overlay over pinboard iframe | `*` or ingress-only path | `pin` | `kdcube.surface.command` with `action: "pin"`, `context`, and drop-point `x`/`y`, or ingress payload equivalent. |
+| Mounted memory surface | Transparent overlay over memory iframe | `mem:*` | `open` | Provider-backed open to `sdk.memory.viewer` — the memory-ITEM editor surface (`memory_item` component), distinct from the `sdk.memory.list` surface the memories list registers. |
 | Mounted task surface | Transparent overlay over task iframe | `task:*` or a narrower provider claim | `open` | Provider-backed open to task target surface, then local task command. |
 | Unmounted compatible surface | Rail pulse on summon button | Same selector policy match | Target-specific | Open/summon first, then deliver after readiness/short delay. |
 
@@ -401,6 +401,28 @@ Required scene behavior:
 
 The scene may keep temporary active drag state because browser drag state itself
 is temporary UI state. It must not persist that state.
+
+### Drag-Source Pointer Events
+
+While a context drag is active, hosts suppress pointer events on their iframes
+so `dragover`/`drop` reach the host's overlay elements instead of vanishing
+into the frames. The **drag source frame is the exception**: it must keep
+`pointer-events: auto` for the whole drag.
+
+The reason is in-surface drops. A canvas card reposition is a native browser
+drag that starts AND ends inside the same iframe; card drags also emit
+`kdcube-context-drag-start` to the host (that is the cross-surface contract).
+If the host strips pointer events from the source frame too, drag hit-testing
+skips that iframe, the board's own drop handler never fires, and cards can
+never be moved while the scene is mounted. Both shipped hosts implement the
+exception the same way: on drag-start the host tags the sender iframe (class
+`kdc-drag-source`, cleared on drag-end) and the stylesheet keeps that frame
+interactive:
+
+```css
+body.kdc-ctxdrag iframe { pointer-events: none !important; }
+body.kdc-ctxdrag iframe.kdc-drag-source { pointer-events: auto !important; }
+```
 
 ## Provider Contract
 
@@ -582,7 +604,7 @@ Presentation colors remain server-owned namespace presentation data.
 
 Current consumers:
 
-- The versatile scene imports `@kdcube/components-core/scene`, which currently
+- The workspace scene imports `@kdcube/components-core/scene`, which currently
   resolves to the materialized SDK source during bundle builds.
 - Plain-script host pages can use the same contract through a local adapter
   around `KDCScene.createContextDragBroker()` until they consume the ESM package
@@ -595,10 +617,9 @@ Current consumers:
 | Area | Current state | Gap |
 | --- | --- | --- |
 | Chat/search result source surfaces | Emit or carry canonical context payloads in current paths. | Continue replacing remaining local helpers with package helpers as chat package becomes default. |
-| Standalone pinboard source surface | Emits `kdcube-context-drag-start/end` when cards are dragged. | Needs to stay aligned when canvas moves into npm packages. |
-| Embedded canvas board in versatile scene | `onDragCard` now feeds the scene context-drag broker. | Continue validating canvas-card -> owning-widget drops across mounted external panels. |
+| Standalone pinboard source surface | Emits `kdcube-context-drag-start/end` when cards are dragged; the workspace scene mounts this widget as its board surface. | Needs to stay aligned when canvas moves into npm packages. |
 | Plain-script host scene | Uses the scene broker contract for context normalization, selector matching, provider-backed open drops, and config-driven target maps. | Host-local adapter remains until that host can import the ESM package. |
-| Versatile scene | Uses `createSceneRuntime()` for target-surface dispatch and `createContextDragBroker()` for owning-surface drops. | Canvas pinning remains a host-provided `pin` effect, by design. |
+| Workspace scene | Uses `createSceneRuntime()` for target-surface dispatch and `createContextDragBroker()` for owning-surface drops. | Canvas pinning remains a host-provided `pin` effect, by design. |
 | Memory widget | Has both host-command open and native drop parsing. | Native drop parser is convenience only; host-command open is the generic path. |
 | Task widget | Has target-surface command handling for issue list/editor paths. | Needs reliable broker input from all source surfaces. |
 | Providers | `mem` and `task` resolve `open` through named-service/canvas resolver paths. | New namespaces must advertise and implement `object.action open`. |
@@ -637,7 +658,7 @@ specific code in the target widget:
    - readiness/queue policy.
 6. Keep provider `open` as the only authority for final target-surface routing.
 7. Add the acceptance matrix as browser/integration tests for host scenes that
-   embed multiple iframe surfaces, including the versatile scene.
+   embed multiple iframe surfaces, including the workspace scene.
 
 ## Failure Modes To Surface
 

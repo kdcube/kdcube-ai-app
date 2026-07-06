@@ -305,7 +305,7 @@ def test_settings_reads_bundle_session_transport_from_connection_hub(monkeypatch
                     "connection_hub": {
                         "bundle_id": "connection-hub@1-0",
                         "authority_id": "kdcube.platform",
-                        "provider_id": "versatile_google_session",
+                        "provider_id": "workspace_google_session",
                     },
                 },
             },
@@ -325,7 +325,7 @@ def test_settings_reads_bundle_session_transport_from_connection_hub(monkeypatch
                                         "kdcube.platform": {
                                             "platform": True,
                                             "providers": {
-                                                "versatile_google_session": {
+                                                "workspace_google_session": {
                                                     "type": "bundle_session_login",
                                                     "issuer": {
                                                         "type": "kdcube_session_token",

@@ -1911,7 +1911,7 @@ class ReactSolverV2:
 
         async def _decision_agent(*, blocks: List[Dict[str, Any]]) -> Dict[str, Any]:
             self._begin_active_generation_capture(iteration=iteration)
-            from kdcube_ai_app.apps.chat.sdk.streaming.versatile_streamer import ChannelSubscribers
+            from kdcube_ai_app.apps.chat.sdk.streaming.workspace_streamer import ChannelSubscribers
             subs = ChannelSubscribers().subscribe("action", _hub_on_json)
             if exec_streamer_widget is not None:
                 subs = subs.subscribe("action", exec_streamer_widget.feed_json)

@@ -841,7 +841,7 @@ Built-in example bundles are governed by the deployment switch in `assembly.yaml
 SDK example apps under `apps/chat/sdk/examples/bundles/` are registered **by
 `id` alone** — no `path`, no `module`. They auto-resolve from the examples dir,
 so the `bundles.yaml` item carries only `id`, `singleton`, and optional `config`
-(the `versatile@2026-03-31-13-36` and `user-memories@2026-06-26` items follow
+(the `workspace@2026-03-31-13-36` and `user-memories@2026-06-26` items follow
 this shape). Local/playground apps still use the `path` + `module` shape.
 
 ```yaml

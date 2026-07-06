@@ -139,7 +139,7 @@ setattr(
     UI_WIDGET_ATTR,
     UIWidgetSpec(
         method_name="old_widget_method",
-        alias="versatile_webapp",
+        alias="workspace_webapp",
         icon={"name": "PanelsTopLeft"},
         user_types=("registered",),
         roles=("operator",),
@@ -186,7 +186,7 @@ def test_manifest_discovery_accepts_reloaded_decorator_dataclasses():
     assert len(manifest.ui_widgets) == 1
     assert isinstance(manifest.ui_widgets[0], CurrentUIWidgetSpec)
     assert manifest.ui_widgets[0].method_name == "widget_method"
-    assert manifest.ui_widgets[0].alias == "versatile_webapp"
+    assert manifest.ui_widgets[0].alias == "workspace_webapp"
     assert manifest.ui_widgets[0].icon == {"name": "PanelsTopLeft"}
 
     assert manifest.ui_main and manifest.ui_main.method_name == "ui_main_method"

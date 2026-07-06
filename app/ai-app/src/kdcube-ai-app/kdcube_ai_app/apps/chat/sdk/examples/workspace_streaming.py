@@ -2,7 +2,7 @@
 # Copyright (c) 2025 Elena Viter
 
 """
-Minimal local test for versatile_streamer.
+Minimal local test for workspace_streamer.
 Run similar to multimodal_streaming_with_accounting.py (see that file for env prerequisites).
 """
 
@@ -12,7 +12,7 @@ import asyncio
 from typing import Dict, Any, List
 
 from kdcube_ai_app.apps.chat.sdk.config import get_settings
-from kdcube_ai_app.apps.chat.sdk.streaming.versatile_streamer import ChannelSpec, stream_with_channels
+from kdcube_ai_app.apps.chat.sdk.streaming.workspace_streamer import ChannelSpec, stream_with_channels
 from kdcube_ai_app.infra.service_hub.errors import ServiceException, ServiceError
 from kdcube_ai_app.infra.service_hub.inventory import (
     ConfigRequest,
@@ -94,7 +94,7 @@ async def main():
         agent = kwargs.get("agent")
         print(f"[delta] idx={kwargs.get('index')} marker={kwargs.get('marker')} agent={agent} channel={channel} :: {kwargs.get('text')}")
 
-    print("[step] versatile_streaming started")
+    print("[step] workspace_streaming started")
 
     results, meta = await stream_with_channels(
         model_service,
@@ -113,7 +113,7 @@ async def main():
     if service_error:
         raise ServiceException(ServiceError.model_validate(service_error))
 
-    print("[step] versatile_streaming completed")
+    print("[step] workspace_streaming completed")
 
     print("\n--- RESULTS ---")
     for k, v in results.items():

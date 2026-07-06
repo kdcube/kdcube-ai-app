@@ -28,7 +28,7 @@ from kdcube_ai_app.infra.service_hub.inventory import (
     create_cached_human_message,
 )
 from pydantic import BaseModel, Field
-from kdcube_ai_app.apps.chat.sdk.streaming.versatile_streamer import ChannelSpec, stream_with_channels
+from kdcube_ai_app.apps.chat.sdk.streaming.workspace_streamer import ChannelSpec, stream_with_channels
 from kdcube_ai_app.infra.service_hub.errors import ServiceException, ServiceError
 from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.agent_retry import retry_with_compaction
 from kdcube_ai_app.apps.chat.sdk.util import token_count

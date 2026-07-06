@@ -213,9 +213,9 @@ def delegated_consent_page(
   <main>
     <section class="card">
       <header>
-        <span class="badge">Versatile custom consent</span>
+        <span class="badge">Workspace custom consent</span>
         <h1>Authorize this external client</h1>
-        <p>This page is rendered by the Versatile bundle. Connection Hub still validates CSRF, narrows grants, and issues the delegated credential.</p>
+        <p>This page is rendered by the Workspace bundle. Connection Hub still validates CSRF, narrows grants, and issues the delegated credential.</p>
       </header>
       <div class="body">
         <section class="details">

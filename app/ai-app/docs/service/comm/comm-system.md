@@ -161,8 +161,8 @@ derived from the communicator service context:
   "type": "accounting.usage",
   "metadata": {
     "agent_id": "default.react.agent",
-    "app_bundle_id": "versatile@2026-03-31-13-36",
-    "bundle_id": "versatile@2026-03-31-13-36",
+    "app_bundle_id": "workspace@2026-03-31-13-36",
+    "bundle_id": "workspace@2026-03-31-13-36",
     "component": "chatbot"
   },
   "event": {

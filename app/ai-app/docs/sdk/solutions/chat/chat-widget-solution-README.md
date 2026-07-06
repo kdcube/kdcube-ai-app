@@ -229,10 +229,10 @@ Runtime query parameters are useful when a scene app embeds the same built
 widget with a different profile, for example:
 
 ```text
-/widgets/versatile_chat
-  ?chat_widget_id=versatile_chat
-  &chat_brand_label=Versatile
-  &chat_event_prefix=versatile
+/widgets/workspace_chat
+  ?chat_widget_id=workspace_chat
+  &chat_brand_label=Workspace
+  &chat_event_prefix=workspace
 ```
 
 ## Event Source Profile

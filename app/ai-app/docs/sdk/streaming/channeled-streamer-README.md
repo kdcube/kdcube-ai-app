@@ -1,19 +1,19 @@
 ---
 id: repo:kdcube-ai-app/app/ai-app/docs/sdk/streaming/channeled-streamer-README.md
 title: "Channeled Streamer"
-summary: "Channeled streaming protocol used by the SDK (versatile_streamer) and how to emit channelized output."
+summary: "Channeled streaming protocol used by the SDK (workspace_streamer) and how to emit channelized output."
 tags: ["sdk", "streaming", "channels", "protocol", "communicator"]
-keywords: ["versatile_streamer.py", "channel schema", "delta", "answer", "status", "event routing"]
+keywords: ["workspace_streamer.py", "channel schema", "delta", "answer", "status", "event routing"]
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/streaming/governed-streaming-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/streaming/streaming-widget-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/event-blocks-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/external-exec-README.md
 ---
-# Channeled Streamer (Versatile Streamer)
+# Channeled Streamer (Workspace Streamer)
 
 This document describes the SDK channeled streamer implemented in
-`kdcube_ai_app/apps/chat/sdk/streaming/versatile_streamer.py` and how to use it.
+`kdcube_ai_app/apps/chat/sdk/streaming/workspace_streamer.py` and how to use it.
 
 ## Motivation
 
@@ -47,7 +47,7 @@ The model must wrap each channel in XML-like tags:
 - The streamer ignores any content outside a channel tag.
 - Repeated channel blocks are tolerated. In the legacy streamer their raw
   bodies are concatenated into the same `ChannelResult`; in
-  `versatile_streamer_v3.py` each occurrence also carries a
+  `workspace_streamer_v3.py` each occurrence also carries a
   `channel_instance` index so subscribers can isolate live UI widgets.
 - The `code` channel is parsed as raw executable text, not markdown. Backticks
   inside generated Python/JavaScript/HTML do not hide `</channel:code>`, so
@@ -155,7 +155,7 @@ custom streamer for that channel in `stream_with_channels`.
 
 ```mermaid
 flowchart LR
-    LLM["LLM stream"] --> V["versatile_streamer<br/>channel parser"]
+    LLM["LLM stream"] --> V["workspace_streamer<br/>channel parser"]
     V -->|raw JSON chunks| J["JSON attribute streamer<br/>(CompositeJsonArtifactStreamer or custom)"]
     V -->|other channels| UI["Client channel stream"]
     J -->|per-attribute deltas| CANVAS["Client canvas/alt channel"]
@@ -164,7 +164,7 @@ flowchart LR
 ### Example (Pseudo-Code)
 
 ```python
-from kdcube_ai_app.apps.chat.sdk.streaming.versatile_streamer import ChannelSpec, stream_with_channels
+from kdcube_ai_app.apps.chat.sdk.streaming.workspace_streamer import ChannelSpec, stream_with_channels
 from kdcube_ai_app.apps.chat.sdk.streaming.artifacts_channeled_streaming import CompositeJsonArtifactStreamer
 
 channels = [
@@ -293,7 +293,7 @@ usage_raw = results["usage"].raw
 service_error = (meta or {}).get("service_error")
 ```
 
-See also: `test_versatile_streamer.py` for illustrative, executable examples.
+See also: `test_workspace_streamer.py` for illustrative, executable examples.
 
 ## Common Use Cases
 

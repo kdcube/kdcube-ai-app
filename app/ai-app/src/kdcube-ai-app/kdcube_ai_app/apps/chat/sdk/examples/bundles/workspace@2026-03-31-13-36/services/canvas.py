@@ -108,7 +108,7 @@ def protocol_string(payload: Mapping[str, Any], field: str, default: str = "") -
     return default
 
 
-class VersatileCanvasService:
+class WorkspaceCanvasService:
     def __init__(
         self,
         entrypoint: Any,

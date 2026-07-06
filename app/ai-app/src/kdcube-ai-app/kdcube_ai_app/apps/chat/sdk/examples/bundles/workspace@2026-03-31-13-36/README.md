@@ -1,13 +1,13 @@
 ---
-title: Versatile Reference Bundle
+title: Workspace Reference Bundle
 kind: reference-bundle
-bundle_id: versatile@2026-03-31-13-36
+bundle_id: workspace@2026-03-31-13-36
 updated_at: 2026-06-23
 ---
 
-# versatile bundle
+# workspace bundle
 
-`versatile@2026-03-31-13-36` is the full-feature reference bundle for bundle builders.
+`workspace@2026-03-31-13-36` is the full-feature reference bundle for bundle builders.
 
 It intentionally demonstrates the main SDK bundle surfaces together in one place, so a human or bundle-builder copilot can learn the platform from one concrete implementation before branching into narrower examples.
 
@@ -26,7 +26,7 @@ It intentionally demonstrates the main SDK bundle surfaces together in one place
 | Agent tool consumers                   | `surfaces.as_consumer.agents.main.tools`                                                   |
 | MCP tool consumers                     | `surfaces.as_consumer.agents.main.tools`                                                   |
 | Active iframe main view                | `ui/scene`, `entrypoint.py` main-view config                                               |
-| SDK chat widget mount                  | `versatile_chat`, backed by `sdk://solutions/chat/ui/widget`                               |
+| SDK chat widget mount                  | `workspace_chat`, backed by `sdk://solutions/chat/ui/widget`                               |
 | Memory tab (iframe)                    | Telegram Mini App Memory tab iframes the user-memories app                                  |
 | Bundle interface contract              | `interface/README.md`                                                                       |
 | Bundle config templates                | `config/bundles.template.yaml`, `config/bundles.secrets.template.yaml`                     |
@@ -63,7 +63,7 @@ documentation expected from real bundles:
 
 - The workflow is a normal gate → solver React loop.
 - The active main view is `ui/scene`. It is a small scene shell that embeds the
-  reusable SDK chat widget as `versatile_chat` and the shared SDK canvas
+  reusable SDK chat widget as `workspace_chat` and the shared SDK canvas
   component as a scene surface.
 - Memory is handled by the SDK durable-memory subsystem and widget.
 - The solver uses the SDK durable-memory tool surface configured under
@@ -86,7 +86,7 @@ documentation expected from real bundles:
   and no `sdk.memory` provider:
   - durable user memory (the widget, the `mem` named-service provider, snapshot
     and reconciliation maintenance) lives in the dedicated user-memories app
-  - versatile reads memory through the `mem` named service and the announce
+  - workspace reads memory through the `mem` named service and the announce
     hotset declared under `surfaces.as_consumer.agents.main.tools[mem]`
   - every memory surface, including the Telegram Mini App Memory tab, iframes
     the user-memories app rather than calling bundle-owned memory operations
@@ -99,10 +99,10 @@ admin screen. See `docs/integrations/telegram-setup.md`.
 
 ## Durable memory storage
 
-Versatile consumes durable user memory for remembered user facts, preferences,
+Workspace consumes durable user memory for remembered user facts, preferences,
 and corrections. The solver reaches that memory through the `mem` named service
 and the announce hotset; the records themselves are owned and stored by the
-dedicated user-memories app, which versatile iframes wherever a memory surface
+dedicated user-memories app, which workspace iframes wherever a memory surface
 is shown.
 
 The full storage map, including Telegram admin state, canvas state, and
@@ -119,7 +119,7 @@ This reference bundle intentionally demonstrates the real split between:
 
 This bundle reads effective props with `self.bundle_prop(...)`.
 
-Concrete examples already used by `versatile`:
+Concrete examples already used by `workspace`:
 
 - `self.bundle_prop("execution.runtime")` in `entrypoint.py`
 - `self.bundle_prop("surfaces.as_consumer.mcp.services")` for MCP consumer endpoints
@@ -136,7 +136,7 @@ Example `bundles.yaml` snippet:
 bundles:
   version: "1"
   items:
-    - id: "versatile@2026-03-31-13-36"
+    - id: "workspace@2026-03-31-13-36"
       config:
         execution:
           runtime:
@@ -156,7 +156,7 @@ bundles:
               bot_name: kdcube-ref
               bot_username: kdcube_doc_bot
               webhook:
-                url: "https://<PUBLIC_HOST>/api/integrations/bundles/<TENANT>/<PROJECT>/versatile@2026-03-31-13-36/public/telegram_webhook?integration_id=telegram.kdcube_ref"
+                url: "https://<PUBLIC_HOST>/api/integrations/bundles/<TENANT>/<PROJECT>/workspace@2026-03-31-13-36/public/telegram_webhook?integration_id=telegram.kdcube_ref"
                 send_responses: true
                 stream_activity: true
               web_app_auth_max_age_seconds: 86400
@@ -188,7 +188,7 @@ Example `bundles.secrets.yaml` snippet for CLI/CI provisioning:
 bundles:
   version: "1"
   items:
-    - id: "versatile@2026-03-31-13-36"
+    - id: "workspace@2026-03-31-13-36"
       secrets:
         telemetry_sink:
           auth:
@@ -273,7 +273,7 @@ This bundle also ships a standalone main UI configured through `ui.main_view`
 in `config/bundles.template.yaml`.
 
 The active source lives under `ui/scene/`. It is a scene shell that embeds the
-reusable SDK chat widget as `versatile_chat`, embeds the SDK memory widget as
+reusable SDK chat widget as `workspace_chat`, embeds the SDK memory widget as
 `memories`, and renders the SDK canvas component as the main work surface.
 
 The scene is configured from server-side app config:
@@ -384,7 +384,7 @@ Important request shape:
 
 ```json
 {
-  "bundle_id": "versatile@2026-03-31-13-36",
+  "bundle_id": "workspace@2026-03-31-13-36",
   "data": {
     "recency": 10,
     "kwords": "language timezone"
@@ -415,7 +415,7 @@ Runtime skills come from SDK skill roots. Durable-memory behavior is exposed
 through the SDK memory tools configured under
 `surfaces.as_consumer.agents.main.tools`.
 
-## Minimal vs versatile
+## Minimal vs workspace
 
 | Shape | Required to pass the basic suite | Demonstrated here |
 | --- | --- | --- |
@@ -434,7 +434,7 @@ through the SDK memory tools configured under
 ## Running the shared bundle test suite
 
 ```bash
-BUNDLE_UNDER_TEST=/abs/path/to/versatile@2026-03-31-13-36 \
+BUNDLE_UNDER_TEST=/abs/path/to/workspace@2026-03-31-13-36 \
 PYTHONPATH=app/ai-app/src/kdcube-ai-app \
 pytest -q app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/tests/bundle
 ```
@@ -449,7 +449,7 @@ Preferred combined validation command:
 ```bash
 PYTHONPATH=app/ai-app/src/kdcube-ai-app \
 python -m kdcube_ai_app.apps.chat.sdk.tests.bundle.run_bundle_suite \
-  --bundle-path /abs/path/to/versatile@2026-03-31-13-36 -v --tb=short
+  --bundle-path /abs/path/to/workspace@2026-03-31-13-36 -v --tb=short
 ```
 
 This runs:
@@ -464,4 +464,4 @@ This runs:
 - `docs/design/telegram-webapp.md`
 - `docs/sdk/bundle/bundle-index-README.md`
 - `docs/sdk/bundle/bundle-dev-README.md`
-- `docs/sdk/bundle/bundle-reference-versatile-README.md`
+- `docs/sdk/bundle/bundle-reference-workspace-README.md`

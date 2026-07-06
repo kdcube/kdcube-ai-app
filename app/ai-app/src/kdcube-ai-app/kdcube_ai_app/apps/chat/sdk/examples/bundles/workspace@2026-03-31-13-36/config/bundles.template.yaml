@@ -1,9 +1,9 @@
 bundles:
   version: "1"
   items:
-    - id: "versatile@2026-03-31-13-36"
+    - id: "workspace@2026-03-31-13-36"
       config:
-        # versatile CONSUMES durable user memory via the `mem` named service
+        # workspace CONSUMES durable user memory via the `mem` named service
         # (surfaces.as_consumer.agents.main.tools[mem]) and the announce there.
         # It owns no memory widget/provider config.
         namespace_styles:
@@ -563,7 +563,7 @@ bundles:
               bot_name: kdcube-ref
               bot_username: kdcube_doc_bot
               webhook:
-                url: "https://<PUBLIC_HOST>/api/integrations/bundles/<TENANT>/<PROJECT>/versatile@2026-03-31-13-36/public/telegram_webhook?integration_id=telegram.kdcube_ref"
+                url: "https://<PUBLIC_HOST>/api/integrations/bundles/<TENANT>/<PROJECT>/workspace@2026-03-31-13-36/public/telegram_webhook?integration_id=telegram.kdcube_ref"
                 send_responses: true
                 stream_activity: true
               web_app_auth_max_age_seconds: 86400
@@ -593,7 +593,7 @@ bundles:
             usage_card:
               user_types: []
               roles: []
-            versatile_chat:
+            workspace_chat:
               user_types: []
               roles: []
         ui:
@@ -616,7 +616,7 @@ bundles:
           widgets:
             # Chat is package-only — `engine` expands to the npm:// shared sources +
             # build env (solutions/chat/backend.apply_chat_widget_engine).
-            versatile_chat:
+            workspace_chat:
               src_folder: sdk://solutions/chat/ui/widget
               engine: package-ui
             usage_card:

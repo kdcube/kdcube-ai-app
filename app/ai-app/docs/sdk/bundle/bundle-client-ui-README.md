@@ -285,7 +285,7 @@ and the field contract in
 When an app UI is opened from another web application, for example:
 
 ```text
-https://dev.kdcube.tech/api/integrations/static/demo/demo-march/versatile@2026-03-31-13-36
+https://dev.kdcube.tech/api/integrations/static/demo/demo-march/workspace@2026-03-31-13-36
 ```
 
 the browser decides whether that document may be framed from the response
@@ -321,7 +321,7 @@ Start with a stable iframe box:
 ```html
 <iframe
   id="bundle-frame"
-  src="https://dev.kdcube.tech/api/integrations/static/demo/demo-march/versatile@2026-03-31-13-36"
+  src="https://dev.kdcube.tech/api/integrations/static/demo/demo-march/workspace@2026-03-31-13-36"
   style="display:block;width:100%;border:0"
 ></iframe>
 ```

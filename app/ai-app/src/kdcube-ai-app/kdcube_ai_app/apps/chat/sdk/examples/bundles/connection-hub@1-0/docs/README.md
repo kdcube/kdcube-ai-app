@@ -154,20 +154,20 @@ provider claims a tool needs.
 
 ## Telegram Mini App embedding
 
-Versatile hosts the Connection Hub widget in its Telegram Mini App Connect tab.
+Workspace hosts the Connection Hub widget in its Telegram Mini App Connect tab.
 This uses the same widget handshake as scene-hosted widgets:
 
 ```text
 Connection Hub iframe
   -> CONFIG_REQUEST(identity=CONNECTIONS_WIDGET)
-Versatile Telegram host
+Workspace Telegram host
   -> CONFIG_RESPONSE(config.authContext.headers)
 Connection Hub iframe
   -> public Connection Hub APIs with promoted authContext.headers
 ```
 
 The child iframe does not read `window.parent.Telegram`, does not know bot
-tokens, and does not call Versatile APIs for Connection Hub work. It receives
+tokens, and does not call Workspace APIs for Connection Hub work. It receives
 an opaque header map and promotes it onto its own requests. Connection Hub then
 validates the request through its authenticator modules.
 

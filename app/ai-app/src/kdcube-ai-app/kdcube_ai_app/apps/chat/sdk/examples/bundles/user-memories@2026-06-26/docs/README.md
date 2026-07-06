@@ -11,7 +11,7 @@ tags: ["design", "memory", "storages", "dataflows", "named-service"]
 ## Problem
 
 Several apps want to show the user's memories. Today each one **embeds the
-memory module** and republishes the widget (e.g. `versatile`). That duplicates
+memory module** and republishes the widget (e.g. `workspace`). That duplicates
 the widget build, the operations surface, and the wiring in every app, and makes
 "where do memories live" ambiguous.
 
@@ -65,5 +65,5 @@ rows.
 
 ## Migration (tracked in README "Roadmap")
 
-`versatile` → consume `mem` as a named service + iframe this widget; then the
+`workspace` → consume `mem` as a named service + iframe this widget; then the
 site scene points its memory component here. Done step by step, not at once.

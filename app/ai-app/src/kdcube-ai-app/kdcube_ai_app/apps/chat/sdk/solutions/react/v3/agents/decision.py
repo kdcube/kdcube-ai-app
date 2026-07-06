@@ -14,7 +14,7 @@ from kdcube_ai_app.infra.service_hub.inventory import (
     create_cached_human_message,
 )
 from kdcube_ai_app.infra.service_hub.errors import ServiceException, ServiceError, ServiceKind
-from kdcube_ai_app.apps.chat.sdk.streaming.versatile_streamer_v3 import (
+from kdcube_ai_app.apps.chat.sdk.streaming.workspace_streamer_v3 import (
     ChannelSpec,
     stream_with_channels,
 )

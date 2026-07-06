@@ -5,7 +5,7 @@ import {
     useLazyGetEconomicUsageWidgetQuery,
     useLazyGetGatewayWidgetQuery,
     useLazyGetRedisBrowserWidgetQuery,
-    useLazyGetVersatilePreferencesWidgetQuery
+    useLazyGetWorkspacePreferencesWidgetQuery
 } from "../widgetPanels/widgetPanels.ts";
 import {useMemo} from "react";
 import {GenericPanel, UrlFramePanel} from "./GenericPanel.tsx";
@@ -56,8 +56,8 @@ export const EconomicUsagePanel = ({visible, className}: WidgetPanelProps) => {
     }, [trigger, lastArg, visible, className]);
 }
 
-export const VersatilePreferencesPanel = ({visible, className}: WidgetPanelProps) => {
-    const [trigger, lastArg] = useLazyGetVersatilePreferencesWidgetQuery();
+export const WorkspacePreferencesPanel = ({visible, className}: WidgetPanelProps) => {
+    const [trigger, lastArg] = useLazyGetWorkspacePreferencesWidgetQuery();
 
     return useMemo(() => {
         return <GenericPanel trigger={trigger} lastArg={lastArg} visible={visible} className={className}/>

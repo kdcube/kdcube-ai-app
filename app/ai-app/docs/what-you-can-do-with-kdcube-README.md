@@ -18,7 +18,7 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-assemble-bundle-with-sdk-building-blocks-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-write-bundle-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/versatile-reference-bundle-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/workspace-reference-bundle-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/react-object-materialization-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/react-object-policy-bridge-README.md
@@ -337,7 +337,7 @@ Read:
 KDCube's flagship agent runtime is ReAct: a timeline-driven runtime model for
 agents that must work with tools, files, events, memory, external namespace
 objects, and long-running work. It is the reference runtime used by the
-`versatile@2026-03-31-13-36` app.
+`workspace@2026-03-31-13-36` app.
 
 ReAct is not a provider-native tool-calling wrapper. The runtime owns the
 protocol shape, timeline, workspace, recovery paths, budgets, and event-source
@@ -578,7 +578,7 @@ Read first:
 - docs/sdk/bundle/build/how-to-write-bundle-README.md
 - docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md
 
-Then inspect the versatile reference app for the nearest pattern.
+Then inspect the workspace reference app for the nearest pattern.
 
 Build the app as a thin KDCube adapter around product logic:
 - entrypoint.py exposes surfaces with decorators

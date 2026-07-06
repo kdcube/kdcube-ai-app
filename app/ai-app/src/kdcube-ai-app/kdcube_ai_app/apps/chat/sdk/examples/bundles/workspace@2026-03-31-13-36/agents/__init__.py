@@ -1,1 +1,1 @@
-"""Agent implementations for the versatile reference bundle."""
+"""Agent implementations for the workspace reference bundle."""

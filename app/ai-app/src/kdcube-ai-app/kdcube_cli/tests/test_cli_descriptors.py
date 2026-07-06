@@ -486,7 +486,7 @@ def test_write_frontend_config_derives_bundle_auth_type(tmp_path: Path):
             "auth": {
                 "type": "bundle",
                 "idp": "session",
-                "login_url": "/api/integrations/bundles/tenant-one/project-one/versatile@2026-03-31-13-36/public/platform_login",
+                "login_url": "/api/integrations/bundles/tenant-one/project-one/workspace@2026-03-31-13-36/public/platform_login",
                 "auth_token_cookie_name": "__Secure-APP",
                 "id_token_cookie_name": "__Secure-ID",
             },
@@ -495,7 +495,7 @@ def test_write_frontend_config_derives_bundle_auth_type(tmp_path: Path):
 
     config = json.loads(target.read_text())
     assert config["auth"]["authType"] == "bundle"
-    assert config["auth"]["loginUrl"] == "/api/integrations/bundles/tenant-one/project-one/versatile@2026-03-31-13-36/public/platform_login"
+    assert config["auth"]["loginUrl"] == "/api/integrations/bundles/tenant-one/project-one/workspace@2026-03-31-13-36/public/platform_login"
     assert config["auth"]["profileUrl"] == "/profile"
     assert config["auth"]["logoutUrl"] == "/api/platform/logout"
     assert config["auth"]["authTokenCookieName"] == "__Secure-APP"
@@ -519,7 +519,7 @@ def test_write_frontend_config_derives_bundle_auth_connection_hub_reference(tmp_
                 "connection_hub": {
                     "bundle_id": "connection-hub@1-0",
                     "authority_id": "kdcube.platform",
-                    "provider_id": "versatile_google_session",
+                    "provider_id": "workspace_google_session",
                     "entrypoint": "login",
                 },
             },
@@ -531,7 +531,7 @@ def test_write_frontend_config_derives_bundle_auth_connection_hub_reference(tmp_
     assert config["auth"]["connectionHub"] == {
         "bundleId": "connection-hub@1-0",
         "authorityId": "kdcube.platform",
-        "providerId": "versatile_google_session",
+        "providerId": "workspace_google_session",
         "entrypoint": "login",
     }
     assert config["auth"]["profileUrl"] == "/profile"
@@ -3252,7 +3252,7 @@ def test_gather_configuration_default_bootstrap_prompts_only_minimal_inputs(monk
     secrets_path = config_dir / "secrets.yaml"
     secrets_path.write_text("services: {}\n")
     bundles_path = config_dir / "bundles.yaml"
-    bundles_path.write_text("bundles:\n  version: '1'\n  default_bundle_id: versatile@2026-03-31-13-36\n  items: []\n")
+    bundles_path.write_text("bundles:\n  version: '1'\n  default_bundle_id: workspace@2026-03-31-13-36\n  items: []\n")
     bundles_secrets_path = config_dir / "bundles.secrets.yaml"
     bundles_secrets_path.write_text("bundles:\n  version: '1'\n  items: []\n")
 
@@ -3365,7 +3365,7 @@ def test_gather_configuration_default_bootstrap_prompts_only_minimal_inputs(monk
         secrets_descriptor_path=str(secrets_path),
         secrets_descriptor={"services": {}},
         bundles_descriptor_path=str(bundles_path),
-        bundles_descriptor={"bundles": {"version": "1", "default_bundle_id": "versatile@2026-03-31-13-36", "items": []}},
+        bundles_descriptor={"bundles": {"version": "1", "default_bundle_id": "workspace@2026-03-31-13-36", "items": []}},
         bundles_secrets_path=str(bundles_secrets_path),
         bundles_secrets_descriptor={"bundles": {"version": "1", "items": []}},
         gateway_descriptor={"gateway": {"tenant": "demo-tenant", "project": "demo-project"}},

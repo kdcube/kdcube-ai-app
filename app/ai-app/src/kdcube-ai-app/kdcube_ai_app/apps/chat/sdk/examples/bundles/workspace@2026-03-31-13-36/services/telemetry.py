@@ -76,4 +76,4 @@ async def send_recorded_events(entrypoint: Any) -> Dict[str, Any]:
         return await entrypoint.comm.send_recorded_events(selector)
     except Exception:
         entrypoint.logger.log(traceback.format_exc(), "WARNING")
-        return {"ok": False, "error": "Unable to flush recorded versatile events."}
+        return {"ok": False, "error": "Unable to flush recorded workspace events."}

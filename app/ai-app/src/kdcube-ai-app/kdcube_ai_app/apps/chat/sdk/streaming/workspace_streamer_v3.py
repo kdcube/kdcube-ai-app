@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2025 Elena Viter
 #
-# chat/sdk/streaming/versatile_streamer_v3.py
+# chat/sdk/streaming/workspace_streamer_v3.py
 
 from __future__ import annotations
 
@@ -97,7 +97,7 @@ class ChannelSubscribers:
                 created.extend(self._coerce_emits(factory(channel, int(channel_instance))))
             except Exception:
                 logger.exception(
-                    "versatile_streamer_v3 subscriber factory failed: channel=%s instance=%s",
+                    "workspace_streamer_v3 subscriber factory failed: channel=%s instance=%s",
                     channel,
                     channel_instance,
                 )
@@ -736,7 +736,7 @@ async def stream_with_channels(
             loop_guard += 1
             if loop_guard > 2000:
                 logger.warning(
-                    "versatile_streamer_v3 loop guard hit: current=%s cursor=%s buf_len=%s tail=%r",
+                    "workspace_streamer_v3 loop guard hit: current=%s cursor=%s buf_len=%s tail=%r",
                     current, cursor, len(buf), buf[max(0, cursor - 80): cursor + 80],
                 )
                 break

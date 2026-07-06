@@ -470,7 +470,7 @@ async def test_data_bus_publish_anonymous_threshold_handler_accepts_platform_reg
         data_bus_handlers=(
             DataBusHandlerSpec(
                 method_name="handle_echo",
-                subject="versatile.echo",
+                subject="workspace.echo",
                 idempotency="required",
                 user_types=("anonymous",),
             ),
@@ -488,7 +488,7 @@ async def test_data_bus_publish_anonymous_threshold_handler_accepts_platform_reg
             "messages": [
                 {
                     "message_id": "m1",
-                    "subject": "versatile.echo",
+                    "subject": "workspace.echo",
                     "object_ref": "probe:memory",
                     "idempotency_key": "echo-1",
                     "payload": {"source": "platform-widget"},

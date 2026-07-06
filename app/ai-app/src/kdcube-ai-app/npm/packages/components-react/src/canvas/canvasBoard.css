@@ -1,6 +1,6 @@
 /*
  * Canvas Pin Board styles — owned by the canvas component.
- * Extracted from the versatile scene stylesheet so the board renders
+ * Extracted from the workspace scene stylesheet so the board renders
  * identically whether hosted in the multi-widget scene or the
  * standalone `pinboard` widget. Tokens + reset are included so the
  * stylesheet is self-contained in an iframe.

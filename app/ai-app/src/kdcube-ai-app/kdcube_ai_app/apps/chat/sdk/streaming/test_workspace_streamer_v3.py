@@ -12,7 +12,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.widgets.canvas import (
 from kdcube_ai_app.apps.chat.sdk.solutions.widgets.exec import DecisionExecCodeStreamer
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v3.action_overseer import RoundActionOverseer
 from kdcube_ai_app.apps.chat.sdk.streaming.stream_policy import StreamPolicyViolation
-from kdcube_ai_app.apps.chat.sdk.streaming.versatile_streamer_v3 import (
+from kdcube_ai_app.apps.chat.sdk.streaming.workspace_streamer_v3 import (
     ChannelSpec,
     ChannelSubscribers,
     stream_with_channels,

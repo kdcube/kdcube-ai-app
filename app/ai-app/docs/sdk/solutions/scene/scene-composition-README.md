@@ -4,7 +4,7 @@ title: "Scene Composition"
 summary: "Canonical app-scene building guide: how an app assembles a host scene from configured UI surfaces, shared scene runtime sources, config handshakes, namespace presentation, local message routing, and optional Data Bus subscriptions."
 status: draft
 tags: ["sdk", "solutions", "scene", "surface", "widget", "iframe", "composition", "data-bus", "postmessage"]
-updated_at: 2026-06-23
+updated_at: 2026-07-06
 keywords:
   [
     "scene composition",
@@ -413,6 +413,42 @@ namespace (`mem`, `task`, `fi`, `cnv`, and so on) and should be passed by the
 host scene to every surface that renders context chips/cards. It must not be
 implemented separately by canvas, chat, or memory.
 
+## Docked And Floating Windows
+
+A scene host may give some surfaces a static home and keep the rest summonable.
+The shipped host model has two placements per component
+(config key `placement`, see [Scene Configuration Examples](config/README.md)):
+
+- **Docked**: the component owns a slot on the scene stage. The widget renders
+  its own chrome; the host adds a hover-revealed unpin control. The rail button
+  (or the unpin control) **promotes** the tile into a floating window; the
+  floating window's close control becomes "dock back".
+- **Floating**: the component is summoned from the rail into a floating window
+  (titlebar, drag, corner resize, optional compact/expanded views) and hides
+  instead of unmounting when closed, so the widget keeps its state.
+
+Two invariants make promotion safe for iframe surfaces:
+
+1. **The same element is promoted in place.** The window element stays a child
+   of its stage slot and switches to fixed positioning; the iframe is never
+   reparented, so a docked chat keeps its conversation and a docked board keeps
+   its cards across every pin/unpin cycle. The emptied slot paints a dashed
+   placeholder with translucent colors only — an ancestor `opacity` would dim
+   the promoted window itself, because fixed positioning still composites
+   under ancestor opacity.
+2. **The promoted rect is clamped.** The window adopts the tile's own rect
+   (titlebar above it), then keeps its top edge and pulls the bottom/right in
+   to a clear viewport margin so the corner resize grip stays visible and
+   grabbable.
+
+Raise-on-activate (pointer-down anywhere on a window brings it to the front,
+including clicks inside its iframe content) is part of the same host chrome;
+the mechanism lives in [Scene Surface Layering](surface-layering-README.md).
+
+Widget-initiated view changes map onto the same model: a widget's
+`kdcube-widget-view: expanded` promotes and maximizes its window; `compact`
+docks it back (docked components) or restores the compact size (floating ones).
+
 ## Data Bus Subscriptions
 
 Durable, ordered, cross-component state can flow over the Socket.IO Data Bus.
@@ -475,18 +511,27 @@ styles, and routes the provider-declared UI event to the registered surface.
 
 ## Reference Implementation
 
-The versatile app has a working host scene that imports the shared runtime and
-registers concrete surfaces chosen by that app:
+The workspace app has a working host scene that imports the shared runtime and
+mounts every surface as an iframe of a served widget from its owning app —
+its own pin board and chat widgets, the `user-memories@2026-06-26` memories and
+memory-item widgets, its usage card, and configured external panels. The
+component set is server-configured: `surfaces.as_consumer.ui.scene.components`
+served through the app's `scene_surface_config` operation (see
+[Scene Configuration Examples](config/README.md)).
 
 ```text
-src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36
-  ui/scene/src/main.tsx
+src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/workspace@2026-03-31-13-36
+  ui/scene/src/main.tsx         composition + message broker
+  ui/scene/src/sceneConfig.ts   component model, config load, CONFIG handshake
+  ui/scene/src/windows.tsx      rail + docked/floating window manager
+  ui/scene/src/dataBus.ts       scene event relay transport
   ui/scene/vite.config.js
   config/bundles.template.yaml
-  entrypoint.py
+  entrypoint.py                 scene_surface_config operation
 ```
 
 Use it as an implementation reference for the mechanics: shared source wiring,
-CONFIG relay, iframe refs, readiness, `createSceneRuntime()`, and
-`registerSurface(...)`. Do not copy its surface list as the definition of what a
-scene is.
+CONFIG relay (answered directly when the scene is the top window, forwarded to
+the embedding host otherwise), iframe refs, readiness, `createSceneRuntime()`,
+and `registerSurface(...)`. Do not copy its surface list as the definition of
+what a scene is.

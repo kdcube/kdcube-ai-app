@@ -74,7 +74,7 @@ def _resolve_react_ui_instructions(comm_context: ExternalEventPayload) -> str:
     """
     Return the UI-topology block that matches the inbound channel for this turn.
 
-    Telegram can reach Versatile through the platform ingress submitter or the
+    Telegram can reach Workspace through the platform ingress submitter or the
     direct webhook runner. Depending on that path, the channel can be visible on
     the event source, the request payload, or ingress metadata.
     """
@@ -120,7 +120,7 @@ def _resolve_react_additional_instructions(
     return "\n\n".join(block.strip() for block in blocks if str(block or "").strip())
 
 
-class VersatileWorkflow(BaseWorkflow):
+class WorkspaceWorkflow(BaseWorkflow):
     def __init__(
         self,
         *,

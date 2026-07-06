@@ -53,10 +53,10 @@ export async function dataBusSocketFor(ctx: RouteContext): Promise<Socket> {
     reconnection: false,
   })
   socket.on('connect_error', (error: Error) => {
-    console.warn('[versatile-scene:data-bus] connect_error', { message: error.message })
+    console.warn('[workspace-scene:data-bus] connect_error', { message: error.message })
   })
   socket.on('disconnect', (reason: string) => {
-    console.info('[versatile-scene:data-bus] disconnected', { reason })
+    console.info('[workspace-scene:data-bus] disconnected', { reason })
   })
   dataBusSocket = socket
   dataBusSocketKey = key

@@ -883,7 +883,7 @@ class ReactSolverV2:
 
     def _mk_mainstream(self, phase: str) -> Callable[..., Awaitable[None]]:
         # In multi-action rounds the model may emit several <channel:thinking>
-        # blocks interleaved with the actions. The versatile streamer assigns
+        # blocks interleaved with the actions. The workspace streamer assigns
         # each block a distinct channel_instance, but the wire delta strips
         # everything except (text, index, marker, agent, completed). To keep
         # the UI's per-agent aggregation from concatenating all instances into
@@ -3271,7 +3271,7 @@ class ReactSolverV2:
 
         async def _decision_agent(*, blocks: List[Dict[str, Any]]) -> Dict[str, Any]:
             self._begin_active_generation_capture(iteration=iteration)
-            from kdcube_ai_app.apps.chat.sdk.streaming.versatile_streamer_v3 import ChannelSubscribers
+            from kdcube_ai_app.apps.chat.sdk.streaming.workspace_streamer_v3 import ChannelSubscribers
             subs = ChannelSubscribers().subscribe_factory("action", _react_decision_subscriber_factory)
             subs = subs.subscribe("code", _hub_on_code)
             runtime_ctx = getattr(self.ctx_browser, "runtime_ctx", None)

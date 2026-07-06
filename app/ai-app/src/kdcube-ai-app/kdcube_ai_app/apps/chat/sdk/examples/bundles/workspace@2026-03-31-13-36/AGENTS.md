@@ -1,4 +1,4 @@
-# Versatile Reference Bundle Agent Notes
+# Workspace Reference Bundle Agent Notes
 
 This bundle is the current reference implementation for a full KDCube chat
 bundle. Treat it as a config-first bundle: consumer tool/event/canvas surfaces
@@ -17,7 +17,7 @@ Important files:
 - `config/bundles.secrets.template.yaml` - reference secret keys.
 - `ui/scene` - active main view.
 - `ui/widgets/telegram_miniapp` - Telegram Mini App widget source.
-- `interface/README.md` and `interface/versatile.openapi.yaml` - frontend/API contract.
+- `interface/README.md` and `interface/workspace.openapi.yaml` - frontend/API contract.
 
 ## Tool Wiring
 
@@ -50,7 +50,7 @@ component.
 
 The widgets currently configured by the reference bundle are:
 
-- `versatile_chat` from `sdk://solutions/chat/ui/widget`
+- `workspace_chat` from `sdk://solutions/chat/ui/widget`
 - `memories` from `sdk://context/memory/ui/widget/memories`
 - `usage_card` from `sdk://infra/economics/ui/widget/usage-card`
 - `pinboard` from `sdk://solutions/canvas/ui/widget/pinboard`
@@ -90,13 +90,13 @@ Run focused Python checks with:
 ```bash
 PYTHONPATH=app/ai-app/src/kdcube-ai-app \
 python -m pytest -q \
-  app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/tests
+  app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/workspace@2026-03-31-13-36/tests
 ```
 
 Run the Telegram Mini App build check from:
 
 ```bash
-cd app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/ui/widgets/telegram_miniapp
+cd app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/workspace@2026-03-31-13-36/ui/widgets/telegram_miniapp
 npm install --no-package-lock
 OUTDIR=/tmp/telegram-miniapp-build npm run build
 ```

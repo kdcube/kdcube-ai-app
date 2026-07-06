@@ -22,7 +22,7 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/service/comm/bus-routing-and-partitioning-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/service/comm/data-bus-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-index-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/versatile-reference-bundle-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/workspace-reference-bundle-README.md
 ---
 # Bundle Platform Integration
 
@@ -1347,7 +1347,7 @@ Example:
 
 ```json
 {
-  "bundle_id": "versatile@2026-03-31-13-36",
+  "bundle_id": "workspace@2026-03-31-13-36",
   "tenant": "demo-tenant",
   "project": "demo-project",
   "ui_widgets": [
@@ -1607,7 +1607,7 @@ Important current rule:
 
 Primary reference bundle:
 
-- `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36`
+- `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/workspace@2026-03-31-13-36`
 
 Smaller custom main-view example:
 

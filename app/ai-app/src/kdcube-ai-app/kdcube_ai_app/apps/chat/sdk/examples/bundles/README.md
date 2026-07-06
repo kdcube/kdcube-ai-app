@@ -9,11 +9,11 @@ This folder contains versioned, runnable bundle examples.
 - [node-backend-sidecar-README.md](../../../../../../../../docs/sdk/node/node-backend-sidecar-README.md)
 
 ## Examples
-- [Versatile Reference Bundle](versatile%402026-03-31-13-36): the primary all-features bundle reference for bundle builders. Demonstrates React workflow, economics, custom tools, custom skills, shared local storage, storage-backend export, MCP connectors, a TSX widget, a custom main UI, and direct isolated-exec usage. Start here for bundle authoring.
+- [Workspace Reference Bundle](workspace%402026-03-31-13-36): the primary all-features bundle reference for bundle builders. Demonstrates React workflow, economics, custom tools, custom skills, shared local storage, storage-backend export, MCP connectors, a TSX widget, a custom main UI, and direct isolated-exec usage. Start here for bundle authoring.
 - [Iso Runtime Demo](with-isoruntime%402026-02-16-14-00): specialized example for direct isolated-exec/runtime diagnostics.
 - [Node Bridge + MCP](node.bridge.mcp%402026-04-24): runnable example for keeping the public bundle surface in Python while delegating selected backend logic to a bundle-local Node/TS sidecar and exposing it through APIs and MCP.
 - [Node Backend Bridge Resources](../resources/node-backend-bridge): older raw template files for one-shot bridge experiments.
 - [ReAct Agent](react%402026-02-10-02-44): older focused React bundle example.
 - [ReAct + MCP](react.mcp%402026-03-09): older focused MCP example.
 - [App with economics](eco%402026-02-18-15-06): older focused economics example.
-- [Referent Bundle](versatile%402026-03-31-13-36): referent bundle demonstrating a wide variety of features, intended as a starting point for builders.
+- [Referent Bundle](workspace%402026-03-31-13-36): referent bundle demonstrating a wide variety of features, intended as a starting point for builders.

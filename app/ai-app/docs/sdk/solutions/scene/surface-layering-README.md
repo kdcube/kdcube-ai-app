@@ -85,6 +85,39 @@ created a stacking context with a lower `z-index`. Two safe patterns:
   context (no `transform` / `opacity < 1` / `filter` / positioned `z-index`).
 - Or hoist the modal to the scene root (portal) before applying the tier.
 
+## Raise on activation
+
+Within the floating-window band, hosts apply standard window-manager focus
+semantics: pointer-down anywhere on a window — titlebar OR content — raises it
+above the other floating windows (a monotonic z-counter inside the band; the
+rail, toasts, and drag overlays stay above, docked stage content stays below).
+
+Two mechanisms are required, because iframe surfaces split the input paths —
+and the raise must stay deterministic when the scene is ITSELF an iframe of an
+outer host, where the scene window may never hold focus (so focus/blur
+observation on the scene window is the wrong foundation):
+
+1. **Chrome clicks** — a capture-phase pointerdown handler on the window
+   container raises it. This covers the titlebar, grip, and any host chrome.
+2. **Clicks aimed at a buried window's content** — a transparent **raise
+   veil**: a parent-owned click catcher covering the body of every floating
+   window that is not on top. Because the veil lives in the scene document,
+   the pointer-down always reaches the scene regardless of nesting; the veil
+   raises the window and unmounts as it becomes top, so the follow-up
+   pointerup/click falls through to the iframe. The topmost window carries no
+   veil and interacts directly.
+
+As a complement, the host arms a `focus` listener on each frame's
+`contentWindow` on every iframe load (same-origin scene widgets; try/catch for
+opaque frames): focus entering a frame by any path — keyboard, programmatic —
+also raises its window.
+
+Raises also fire on drag-start, on unpin/promotion, and on a rail tap on a
+buried open window (only a tap on the topmost window closes or docks it).
+The workspace scene host (`ui/scene/src/windows.tsx` + `main.tsx`) is the
+reference implementation of this contract; its raise decisions log under the
+`[kdc-scene:focus]` console prefix.
+
 ## Reference implementation
 
 The task-tracker host app applies this scale: the expanded chat is `--z-overlay`,
@@ -92,6 +125,6 @@ its rail buttons `--z-overlay-rail`, and the issue wizard opened from inside the
 expanded chat is floated at `--z-overlay-modal` (a centered modal, with the chat
 dimmed behind). See its `ui/main/src/styles.css`.
 
-Other hosts (e.g. the versatile scene, which today uses an ad-hoc scale —
-expanded chat at `92`, panes at `70`) should adopt the same tokens so the
-behavior is consistent across every scene.
+The workspace scene host keeps one z-band for floating windows (raised
+monotonically as described above) below its rail/notice/drag-overlay tiers;
+hosts adopting the tier tokens should map that band inside `--z-overlay`.

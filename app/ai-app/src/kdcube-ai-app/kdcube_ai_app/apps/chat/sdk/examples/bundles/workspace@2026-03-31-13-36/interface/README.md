@@ -1,16 +1,16 @@
 ---
-id: versatile@2026-03-31-13-36-interface
-title: "Versatile Reference Bundle Interface Contract"
-summary: "Swagger-style REST contract and frontend integration notes for versatile@2026-03-31-13-36."
+id: workspace@2026-03-31-13-36-interface
+title: "Workspace Reference Bundle Interface Contract"
+summary: "Swagger-style REST contract and frontend integration notes for workspace@2026-03-31-13-36."
 status: "active"
 ---
 
-# Versatile Reference Bundle Interface Contract
+# Workspace Reference Bundle Interface Contract
 
-Use this directory as the frontend/API contract for the versatile reference
+Use this directory as the frontend/API contract for the workspace reference
 bundle.
 
-- OpenAPI contract: [versatile.openapi.yaml](./versatile.openapi.yaml)
+- OpenAPI contract: [workspace.openapi.yaml](./workspace.openapi.yaml)
 - Product/design notes: [../docs/design](../docs/design)
 - Bundle maintainer journal: [../docs/journal/journal.md](../docs/journal/journal.md)
 
@@ -19,37 +19,37 @@ bundle.
 The bundle is served by KDCube under:
 
 ```text
-/api/integrations/bundles/{tenant}/{project}/versatile@2026-03-31-13-36
+/api/integrations/bundles/{tenant}/{project}/workspace@2026-03-31-13-36
 ```
 
 KDCube control-plane widget APIs use:
 
 ```text
-/api/integrations/bundles/{tenant}/{project}/versatile@2026-03-31-13-36/operations/{alias}
+/api/integrations/bundles/{tenant}/{project}/workspace@2026-03-31-13-36/operations/{alias}
 ```
 
 The KDCube control-plane Telegram Mini App widget entrypoint is:
 
 ```text
-/api/integrations/bundles/{tenant}/{project}/versatile@2026-03-31-13-36/widgets/telegram_miniapp
+/api/integrations/bundles/{tenant}/{project}/workspace@2026-03-31-13-36/widgets/telegram_miniapp
 ```
 
 Telegram Mini App APIs use:
 
 ```text
-/api/integrations/bundles/{tenant}/{project}/versatile@2026-03-31-13-36/public/{telegram_alias}
+/api/integrations/bundles/{tenant}/{project}/workspace@2026-03-31-13-36/public/{telegram_alias}
 ```
 
 The Telegram Mini App React entrypoint is:
 
 ```text
-/api/integrations/bundles/{tenant}/{project}/versatile@2026-03-31-13-36/public/widgets/telegram_miniapp
+/api/integrations/bundles/{tenant}/{project}/workspace@2026-03-31-13-36/public/widgets/telegram_miniapp
 ```
 
 Subpaths are supported by the static widget route, for example:
 
 ```text
-/api/integrations/bundles/{tenant}/{project}/versatile@2026-03-31-13-36/public/widgets/telegram_miniapp/chats
+/api/integrations/bundles/{tenant}/{project}/workspace@2026-03-31-13-36/public/widgets/telegram_miniapp/chats
 ```
 
 ## Request Envelope
@@ -82,7 +82,7 @@ field named exactly like the alias:
   "status": "ok",
   "tenant": "demo-tenant",
   "project": "demo-project",
-  "bundle_id": "versatile@2026-03-31-13-36",
+  "bundle_id": "workspace@2026-03-31-13-36",
   "conversations_list": {
     "ok": true,
     "count": 1,
@@ -128,7 +128,7 @@ the signed Telegram user to have role `admin`.
 Use the same React app for KDCube and Telegram, but use different transports.
 
 ```ts
-const bundleId = "versatile@2026-03-31-13-36";
+const bundleId = "workspace@2026-03-31-13-36";
 const bundleBase =
   `/api/integrations/bundles/${tenant}/${project}/${bundleId}`;
 
@@ -335,7 +335,7 @@ In the Telegram Mini App, the same logical calls use signed Telegram initData.
 
 Durable user memory lives in the dedicated user-memories app, which owns the
 memory widget, the `mem` named-service provider, and all maintenance operations
-(reconciliation, snapshots). The versatile bundle is a memory consumer only: it
+(reconciliation, snapshots). The workspace bundle is a memory consumer only: it
 reads memory through the `mem` named service and the announce hotset, and every
 memory surface (including the Telegram Mini App Memory tab) iframes that app.
 This contract therefore exposes no `memories_widget_*` operations.

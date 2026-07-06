@@ -39,8 +39,8 @@ costs in prompt cache.
 
 ## 1. The construction pipeline
 
-The reference implementation is the versatile app's react node
-(`examples/bundles/versatile@2026-03-31-13-36/agents/main.py`); every app
+The reference implementation is the workspace app's react node
+(`examples/bundles/workspace@2026-03-31-13-36/agents/main.py`); every app
 workflow that subclasses `BaseWorkflow` follows the same shape:
 
 ```text

@@ -13,7 +13,7 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-lifecycle-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/service/comm/bus-routing-and-partitioning-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-reserved-platform-properties-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/versatile-reference-bundle-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/workspace-reference-bundle-README.md
 ---
 # Bundle Entrypoint Classes
 
@@ -231,7 +231,7 @@ bundle-specific `work_kind` dispatch runs.
 
 ## Reference Bundles
 
-- `versatile@2026-03-31-13-36` uses
+- `workspace@2026-03-31-13-36` uses
   `BaseEntrypointWithEconomicsAndMemory`.
 - simpler examples such as `react@2026-02-10-02-44`,
   `react.mcp@2026-03-09`, and `echo.ui@2026-03-30` use `BaseEntrypoint`.

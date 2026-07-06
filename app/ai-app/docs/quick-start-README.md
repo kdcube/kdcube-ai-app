@@ -15,7 +15,7 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-write-bundle-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-release-bundle-content-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/versatile-reference-bundle-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/workspace-reference-bundle-README.md
 ---
 # Quick Start: Local KDCube
 
@@ -274,7 +274,7 @@ Use the UI/admin surfaces and CLI to check:
 - MCP endpoints are listed and callable when the app exposes them
 - generated files and timeline artifacts appear with expected visibility
 
-For `versatile`, check that the chat route loads, configured widgets build, and
+For `workspace`, check that the chat route loads, configured widgets build, and
 any enabled namespace-service or MCP surfaces are listed and callable.
 
 ## 10. Coding-Agent Bootstrap Prompt
@@ -292,7 +292,7 @@ You are building a KDCube app. First read:
 - docs/sdk/bundle/build/how-to-write-bundle-README.md
 - docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md
 
-Use the versatile reference app for patterns. Keep product logic separate
+Use the workspace reference app for patterns. Keep product logic separate
 from the KDCube adapter. Expose surfaces through entrypoint.py decorators.
 Map config to bundles.yaml and secrets to bundles.secrets.yaml. Test locally
 with kdcube init/start and the current compatibility command `kdcube bundle reload`
@@ -308,7 +308,7 @@ using the active descriptor set.
 | descriptor semantics | [configuration/assembly-descriptor-README.md](configuration/assembly-descriptor-README.md), [configuration/bundles-descriptor-README.md](configuration/bundles-descriptor-README.md) |
 | app authoring | [sdk/bundle/build/how-to-navigate-kdcube-docs-README.md](sdk/bundle/build/how-to-navigate-kdcube-docs-README.md) |
 | release app content | [sdk/bundle/build/how-to-release-bundle-content-README.md](sdk/bundle/build/how-to-release-bundle-content-README.md) |
-| reference implementation | [sdk/bundle/versatile-reference-bundle-README.md](sdk/bundle/versatile-reference-bundle-README.md) |
+| reference implementation | [sdk/bundle/workspace-reference-bundle-README.md](sdk/bundle/workspace-reference-bundle-README.md) |
 | public HTTPS callbacks | [service/cicd/ngrok-README.md](service/cicd/ngrok-README.md) |
 
 ## 12. Common Pitfalls

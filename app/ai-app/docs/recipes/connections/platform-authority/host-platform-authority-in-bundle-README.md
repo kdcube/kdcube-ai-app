@@ -9,7 +9,7 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/recipes/connections/platform-authority/setup-platform-authority-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/connection-hub-solution-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/authority-providers/authority-provider-runtime-README.md
-  - repo:kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/docs/integrations/platform-session-issuer.md
+  - repo:kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/workspace@2026-03-31-13-36/docs/integrations/platform-session-issuer.md
   - repo:kdcube-ai-app/app/ai-app/docs/service/auth/bundle-session-auth-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/service/auth/auth-README.md
 ---
@@ -22,7 +22,7 @@ Examples:
 
 ```text
 A product app wants its own login page but standard KDCube sessions.
-Versatile demonstrates Google login and Telegram-to-session flows.
+Workspace demonstrates Google login and Telegram-to-session flows.
 ```
 
 The important rule:
@@ -113,7 +113,7 @@ auth:
   connection_hub:
     bundle_id: connection-hub@1-0
     authority_id: kdcube.platform
-    provider_id: versatile_google_session
+    provider_id: workspace_google_session
     entrypoint: login
   authenticators:
     platform:
@@ -194,7 +194,7 @@ items:
                   permissions:
                     - kdcube:*:*:*
             providers:
-              versatile_google_session:
+              workspace_google_session:
                 type: bundle_session_login
                 enabled: true
                 label: Google sign-in for KDCube
@@ -202,15 +202,15 @@ items:
                 login_description: Use your Google account to continue.
                 entrypoints:
                   login:
-                    bundle_id: versatile@2026-03-31-13-36
+                    bundle_id: workspace@2026-03-31-13-36
                     route: public
                     operation: platform_login
                   session_issue:
-                    bundle_id: versatile@2026-03-31-13-36
+                    bundle_id: workspace@2026-03-31-13-36
                     route: public
                     operation: auth_google_session
                   consent:
-                    bundle_id: versatile@2026-03-31-13-36
+                    bundle_id: workspace@2026-03-31-13-36
                     route: public
                     operation: delegated_consent
                 input:
@@ -253,7 +253,7 @@ items:
 : This authority may produce the platform subject used by platform surfaces,
   ownership projection, and economics.
 
-`providers.versatile_google_session.type: bundle_session_login`
+`providers.workspace_google_session.type: bundle_session_login`
 : This provider instance is implemented by the Connection Hub SDK
   bundle-session login runtime.
 
@@ -324,7 +324,7 @@ what the hosted operation needs to run, plus the Connection Hub pointer.
 
 ```yaml
 items:
-  - id: versatile@2026-03-31-13-36
+  - id: workspace@2026-03-31-13-36
     config:
       connections:
         connection_hub:
@@ -344,7 +344,7 @@ auth:
   connection_hub:
     bundle_id: connection-hub@1-0
     authority_id: kdcube.platform
-    provider_id: versatile_google_session
+    provider_id: workspace_google_session
     entrypoint: login
 ```
 
@@ -359,7 +359,7 @@ The SDK resolver/facade returns the concrete URL for the configured provider
 entrypoint, for example:
 
 ```text
-/api/integrations/bundles/{tenant}/{project}/versatile@2026-03-31-13-36/public/platform_login
+/api/integrations/bundles/{tenant}/{project}/workspace@2026-03-31-13-36/public/platform_login
 ```
 
 This keeps route construction under the Connection Hub SDK boundary and keeps
@@ -400,10 +400,10 @@ The reusable implementation lives in:
 kdcube_ai_app.apps.chat.sdk.solutions.connections.authority_providers.bundle_session_login
 ```
 
-The Versatile example wrapper lives in:
+The Workspace example wrapper lives in:
 
 ```text
-kdcube_ai_app.apps.chat.sdk.examples.bundles.versatile@2026-03-31-13-36.services.platform_session_issuer
+kdcube_ai_app.apps.chat.sdk.examples.bundles.workspace@2026-03-31-13-36.services.platform_session_issuer
 ```
 
 The bundle must not hardcode:
@@ -494,7 +494,7 @@ fields.
 
 The login page is bundle-owned UI and is registered at
 `authority_registry.authorities.<platform-authority>.providers.<provider>.entrypoints.login`.
-In the Versatile example, it renders Google Identity Services, posts the
+In the Workspace example, it renders Google Identity Services, posts the
 credential to `auth_google_session`, and relies on the SDK runtime to set the
 configured KDCube platform auth/session cookie.
 

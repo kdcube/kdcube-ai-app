@@ -521,13 +521,13 @@ async def test_discovery_ignores_provider_payload_kind_when_routing_object_upser
     await discovery.register_provider(
         NamedServiceProviderSpec(
             provider_id="sdk.memory",
-            bundle_id="versatile@1-0",
+            bundle_id="workspace@1-0",
             namespace="mem",
             refs=("mem:record:*",),
             object_kinds=("memory.record",),
             operations={"object.upsert": {"transports": ["local"]}},
         ),
-        bundle_id="versatile@1-0",
+        bundle_id="workspace@1-0",
     )
 
     entry = await discovery.resolve(
@@ -595,7 +595,7 @@ def test_discovery_reconstructs_from_restored_request_context(monkeypatch):
     redis = FakeDiscoveryRedis()
     request_context = ExternalEventPayload(
         meta=ExternalEventMeta(task_id="req-1", created_at=1.0),
-        routing=ExternalEventRouting(bundle_id="versatile@1-0", session_id="session-1"),
+        routing=ExternalEventRouting(bundle_id="workspace@1-0", session_id="session-1"),
         actor=ExternalEventActor(tenant_id="tenant-a", project_id="project-a"),
         user=ExternalEventUser(user_type="registered", user_id="user-1"),
     )
@@ -603,7 +603,7 @@ def test_discovery_reconstructs_from_restored_request_context(monkeypatch):
     try:
         comm_ctx_mod.restore_ctxvars({
             "REQUEST_CONTEXT": request_context.model_dump(),
-            "BUNDLE_ID": "versatile@1-0",
+            "BUNDLE_ID": "workspace@1-0",
             "BUNDLE_CALL_CONTEXT": {},
         })
         monkeypatch.setattr(discovery_mod, "_redis_client_from_settings", lambda: redis)
@@ -1144,7 +1144,7 @@ async def test_configured_artifact_rehoster_materializes_named_service_json_obje
     object_ref = "mem:record:mem_123"
 
     async def _stream_caller(call):
-        assert call.bundle_id == "versatile@2026-03-31-13-36"
+        assert call.bundle_id == "workspace@2026-03-31-13-36"
         assert call.operation == "named_service"
         assert call.data["operation"] == "object.get"
         assert call.data["response_mode"] == "stream"
@@ -1178,7 +1178,7 @@ async def test_configured_artifact_rehoster_materializes_named_service_json_obje
                 "providers": [
                     {
                         "transport": "bundle_operation",
-                        "bundle_id": "versatile@2026-03-31-13-36",
+                        "bundle_id": "workspace@2026-03-31-13-36",
                         "provider": "sdk.memory",
                         "operations": ["object.get"],
                     }
@@ -1243,7 +1243,7 @@ async def test_configured_artifact_rehoster_prefers_canonical_json_object_ref(tm
                 "providers": [
                     {
                         "transport": "bundle_operation",
-                        "bundle_id": "versatile@2026-03-31-13-36",
+                        "bundle_id": "workspace@2026-03-31-13-36",
                         "provider": "sdk.memory",
                         "operations": ["object.get"],
                     }
@@ -1498,7 +1498,7 @@ async def test_named_service_block_render_projection_fans_out_and_merges_owned_p
         event_sources,
         namespaces={
             "task": {"providers": [{"transport": "bundle_operation", "bundle_id": "task-tracker@1-0", "provider": "task.issue"}]},
-            "mem": {"providers": [{"transport": "bundle_operation", "bundle_id": "versatile@2026-03-31-13-36", "provider": "sdk.memory"}]},
+            "mem": {"providers": [{"transport": "bundle_operation", "bundle_id": "workspace@2026-03-31-13-36", "provider": "sdk.memory"}]},
         },
     )
     timeline = [
@@ -2672,24 +2672,24 @@ async def test_fetch_namespace_intros_reads_redis_discovery_keyed_by_base_namesp
     await discovery.register_provider(
         NamedServiceProviderSpec(
             provider_id="sdk.memory",
-            bundle_id="versatile@1-0",
+            bundle_id="workspace@1-0",
             namespaces=("me", "mem"),
             label="User memories",
             intro="Durable user memory — facts, preferences …",
             operations={"object.search": {"transports": ["bundle_registry"]}},
         ),
-        bundle_id="versatile@1-0",
+        bundle_id="workspace@1-0",
     )
     await discovery.register_provider(
         NamedServiceProviderSpec(
             provider_id="sdk.canvas.pins",
-            bundle_id="versatile@1-0",
+            bundle_id="workspace@1-0",
             namespace="cnv",
             label="Canvas",
             intro="Canvas (also called the pin board) — a board of pinned cards …",
             operations={"object.search": {"transports": ["bundle_registry"]}},
         ),
-        bundle_id="versatile@1-0",
+        bundle_id="workspace@1-0",
     )
     await discovery.register_provider(
         NamedServiceProviderSpec(
@@ -2732,24 +2732,24 @@ async def test_generic_roster_renders_redis_discovery_intros_for_connected_names
     await discovery.register_provider(
         NamedServiceProviderSpec(
             provider_id="sdk.memory",
-            bundle_id="versatile@1-0",
+            bundle_id="workspace@1-0",
             namespaces=("me", "mem"),
             label="User memories",
             intro="Durable user memory — facts, preferences …",
             operations={"object.search": {"transports": ["bundle_registry"]}},
         ),
-        bundle_id="versatile@1-0",
+        bundle_id="workspace@1-0",
     )
     await discovery.register_provider(
         NamedServiceProviderSpec(
             provider_id="sdk.canvas.pins",
-            bundle_id="versatile@1-0",
+            bundle_id="workspace@1-0",
             namespace="cnv",
             label="Canvas",
             intro="Canvas (also called the pin board) — a board of pinned cards …",
             operations={"object.search": {"transports": ["bundle_registry"]}},
         ),
-        bundle_id="versatile@1-0",
+        bundle_id="workspace@1-0",
     )
     await discovery.register_provider(
         NamedServiceProviderSpec(
@@ -2800,13 +2800,13 @@ async def test_redis_discovery_namespace_intros_is_the_canonical_read():
     await discovery.register_provider(
         NamedServiceProviderSpec(
             provider_id="sdk.memory",
-            bundle_id="versatile@1-0",
+            bundle_id="workspace@1-0",
             namespaces=("me", "mem"),
             label="User memories",
             intro="Durable user memory — facts …",
             operations={"object.search": {"transports": ["bundle_registry"]}},
         ),
-        bundle_id="versatile@1-0",
+        bundle_id="workspace@1-0",
     )
 
     # Canonical read methods live on the discovery object.
@@ -2829,7 +2829,7 @@ def test_intros_from_entries_maps_intro_to_every_owned_namespace():
     entry = NamedServiceDiscoveryEntry(
         spec=NamedServiceProviderSpec(
             provider_id="sdk.memory",
-            bundle_id="versatile@1-0",
+            bundle_id="workspace@1-0",
             namespaces=("me", "mem"),
             label="User memories",
             intro="Durable user memory — facts …",

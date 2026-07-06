@@ -1,7 +1,7 @@
 ---
-title: Versatile Bundle Journal
+title: Workspace Bundle Journal
 kind: bundle-journal
-bundle_id: versatile@2026-03-31-13-36
+bundle_id: workspace@2026-03-31-13-36
 updated_at: 2026-06-18
 ---
 
@@ -31,9 +31,9 @@ updated_at: 2026-06-18
   quota-lock handling, funding-flow-owned plan/paid reservation paths, paid
   lane fallback, zero-cost release behavior, and subscription/wallet settlement
   coverage now live in SDK code instead of bundle-specific handlers.
-- Kept `versatile` as the reference example bundle and did not restore removed
+- Kept `workspace` as the reference example bundle and did not restore removed
   copilot/react example bundles. The useful copilot-side addition was the
-  configurable telemetry ingest header; `versatile` now exposes
+  configurable telemetry ingest header; `workspace` now exposes
   `telemetry_sink.auth_header` in config and sends the sink token through that
   header when configured.
 - Updated the interface notes so deployers know when to use a non-
@@ -44,13 +44,13 @@ updated_at: 2026-06-18
 
 - Retargeted the active main view to `ui/scene` while keeping `ui/main` as a
   legacy comparison surface.
-- Mounted the reusable SDK chat widget as `versatile_chat`, the SDK memory
+- Mounted the reusable SDK chat widget as `workspace_chat`, the SDK memory
   widget as `memories`, and the SDK canvas component through the scene host.
 - Added generic canvas backend operations and Data Bus subject `canvas.patch`.
   The reference bundle intentionally uses `canvas.*` protocol names, not
   bundle-prefixed names.
 - Updated `config/bundles.template.yaml` to show the scene main view,
-  `versatile_chat`, `memories`, `telegram_miniapp`, and the shared SDK canvas
+  `workspace_chat`, `memories`, `telegram_miniapp`, and the shared SDK canvas
   component source.
 - Added `docs/design/scene-sdk-components.md` to document the component wiring.
 

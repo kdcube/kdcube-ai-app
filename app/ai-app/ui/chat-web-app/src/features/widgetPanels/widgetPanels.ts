@@ -7,7 +7,7 @@ import {
     EconomicUsageResponse,
     GatewayResponse,
     RedisBrowserResponse,
-    VersatilePreferencesResponse
+    WorkspacePreferencesResponse
 } from "./types.ts";
 import {appendDefaultHeaders} from "../../app/api/utils.ts";
 import {ChatScope} from "../chat/chatTypes.ts";
@@ -18,7 +18,7 @@ const GatewayTag = "gateway"
 const ConversationBrowserTag = "conversation_browser"
 const RedisBrowserTag = "redis_browser"
 const EconomicUsageTag = "economic_usage"
-const VersatilePreferencesTag = "versatile_preferences"
+const WorkspacePreferencesTag = "workspace_preferences"
 const BundleWidgetTag = "bundle_widget"
 
 export type GetWidgetParams = ChatScope
@@ -34,7 +34,7 @@ export const widgetPanelsApiSlice = createApi({
             return appendDefaultHeaders(headers) as Headers;
         }
     }),
-    tagTypes: [EconomicsTag, AIBundlesTag, GatewayTag, ConversationBrowserTag, RedisBrowserTag, EconomicUsageTag, VersatilePreferencesTag, BundleWidgetTag],
+    tagTypes: [EconomicsTag, AIBundlesTag, GatewayTag, ConversationBrowserTag, RedisBrowserTag, EconomicUsageTag, WorkspacePreferencesTag, BundleWidgetTag],
     endpoints: builder => ({
         getEconomicsWidget: builder.query<string, {
             tenant: string,
@@ -150,12 +150,12 @@ export const widgetPanelsApiSlice = createApi({
             },
             providesTags: [EconomicUsageTag],
         }),
-        getVersatilePreferencesWidget: builder.query<string, {
+        getWorkspacePreferencesWidget: builder.query<string, {
             tenant: string,
             project: string,
         }>({
             query: ({tenant, project}: GetWidgetParams) => {
-                const bundleId = "versatile@2026-03-31-13-36";
+                const bundleId = "workspace@2026-03-31-13-36";
                 return {
                     url: `/api/integrations/bundles/${tenant}/${project}/${bundleId}/operations/preferences_widget`,
                     method: 'POST',
@@ -165,10 +165,10 @@ export const widgetPanelsApiSlice = createApi({
                     body: "{}"
                 }
             },
-            transformResponse(res: VersatilePreferencesResponse) {
+            transformResponse(res: WorkspacePreferencesResponse) {
                 return res.preferences_widget[0]
             },
-            providesTags: [VersatilePreferencesTag],
+            providesTags: [WorkspacePreferencesTag],
         }),
         getBundleWidget: builder.query<string, GetBundleWidgetParams>({
             query: ({tenant, project, bundleId, widgetAlias}: GetBundleWidgetParams) => {
@@ -199,6 +199,6 @@ export const {
     useGetConversationBrowserWidgetQuery, useLazyGetConversationBrowserWidgetQuery,
     useGetRedisBrowserWidgetQuery, useLazyGetRedisBrowserWidgetQuery,
     useGetEconomicUsageWidgetQuery, useLazyGetEconomicUsageWidgetQuery,
-    useGetVersatilePreferencesWidgetQuery, useLazyGetVersatilePreferencesWidgetQuery,
+    useGetWorkspacePreferencesWidgetQuery, useLazyGetWorkspacePreferencesWidgetQuery,
     useGetBundleWidgetQuery, useLazyGetBundleWidgetQuery,
 } = widgetPanelsApiSlice
