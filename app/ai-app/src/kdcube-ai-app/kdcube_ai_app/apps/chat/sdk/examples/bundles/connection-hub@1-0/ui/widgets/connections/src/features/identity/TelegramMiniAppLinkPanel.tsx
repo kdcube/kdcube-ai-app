@@ -15,7 +15,14 @@ interface TelegramStatusResult extends ConnectionEdgeChallengeResult {
 }
 
 function textError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  const raw = error instanceof Error ? error.message : String(error);
+  // Telegram mints the signed initData only when the mini-app window opens
+  // and keeps suspended windows alive for days; once it ages past the
+  // server's limit only reopening the window produces a fresh proof.
+  if (/initdata is expired/i.test(raw)) {
+    return 'This Telegram window has been open too long to prove your identity. Close it and reopen the app from the bot, then try again.';
+  }
+  return raw;
 }
 
 function statusLinked(result: TelegramStatusResult | null): boolean {
