@@ -36,6 +36,7 @@ import {
   CHAT_CONTEXT_FOCUS_MESSAGE,
   CHAT_CONTEXT_REMOVE_MESSAGE,
   CHAT_WIDGET_ID,
+  settings,
 } from './settings.ts'
 import {
   recognizeContextMessageWithTypes,
@@ -98,42 +99,121 @@ export function requestAuthRequired(): void {
 }
 
 /**
- * Ask the host scene to open its connections surface (the Connection-Hub
- * settings widget). Contract:
+ * Open the user's connections surface (the Connection-Hub settings widget).
+ * The chain is honest — the entry point renders only when one of these can
+ * actually happen, and a click never silently lands nowhere:
  *
- *   widget -> host: { type: 'kdcube.surface.command',
- *                     target_surface: 'connection_hub.settings',
- *                     action: 'open', widget: '<chat-widget-id>', source }
- *
- * Hosts choose to handle it: a scene registers `connection_hub.settings` in
- * its surface registry (e.g. via `scene.external_panels` config mounting the
- * connection-hub bundle's `connections_settings` widget). Scenes without the
- * surface ignore the command. Returns false when there is no parent frame —
- * the caller (host-bridge) only registers the chat-side entry point when a
- * parent exists, so the menu row hides in standalone usage.
+ *   1. HOST PATH. With a parent frame, post
+ *      { type: 'kdcube.surface.command', target_surface: 'connection_hub.settings',
+ *        action: 'open', command_id, widget, source }
+ *      and wait briefly for the host's ack:
+ *      { type: 'kdcube.surface.command.ack', command_id, ok } — a host that
+ *      routes the surface (scene registry / external panel) replies ok:true
+ *      and owns the open.
+ *   2. DIRECT PATH. No ack (or ok:false): open the Connection-Hub bundle's
+ *      served `connections_settings` widget directly in a new tab — an
+ *      authenticated same-origin route built from the widget's own
+ *      baseUrl/tenant/project.
+ *   3. Neither possible (no parent AND no URL context): the caller hides the
+ *      entry point (`canOpenConnections()` is false).
  */
-export function requestHostConnectionsOpen(source: string = 'chat'): boolean {
+export const CONNECTION_HUB_SURFACE = 'connection_hub.settings'
+const CONNECTION_HUB_ACK_TIMEOUT_MS = 600
+const DEFAULT_CONNECTION_HUB_BUNDLE_ID = 'connection-hub@1-0'
+
+function connectionHubBundleId(): string {
   try {
-    if (typeof window === 'undefined' || window.parent === window) return false
-    window.parent.postMessage({
-      type: 'kdcube.surface.command',
-      target_surface: 'connection_hub.settings',
-      action: 'open',
-      widget: CHAT_WIDGET_ID,
-      source,
-    }, '*')
-    return true
+    const params = new URLSearchParams(window.location.search || '')
+    const fromQuery = (params.get('chat_connection_hub_bundle_id') || '').trim()
+    if (fromQuery) return fromQuery
+  } catch {
+    /* fall through to the default */
+  }
+  return DEFAULT_CONNECTION_HUB_BUNDLE_ID
+}
+
+/** The served Connection-Hub connections widget URL, or '' when the runtime
+ *  context (baseUrl/tenant/project) is not resolved yet. */
+export function connectionsWidgetUrl(): string {
+  try {
+    const base = (settings.getBaseUrl() || '').replace(/\/$/, '')
+    const tenant = settings.getTenant() || ''
+    const project = settings.getProject() || ''
+    if (!base || !tenant || !project) return ''
+    return (
+      `${base}/api/integrations/bundles/` +
+      `${encodeURIComponent(tenant)}/${encodeURIComponent(project)}/` +
+      `${encodeURIComponent(connectionHubBundleId())}/widgets/connections_settings` +
+      `?tab=delegated_to_kdcube`
+    )
+  } catch {
+    return ''
+  }
+}
+
+/** True when opening connections can actually do something (host path or
+ *  direct URL). Gates the composer-menu row. */
+export function canOpenConnections(): boolean {
+  try {
+    if (typeof window === 'undefined') return false
+    if (window.parent !== window) return true
+    return Boolean(connectionsWidgetUrl())
   } catch {
     return false
   }
 }
 
-export function hasHostConnectionsChannel(): boolean {
+function postConnectionsCommandAndAwaitAck(source: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const commandId = `connhub_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    let settled = false
+    const finish = (acked: boolean) => {
+      if (settled) return
+      settled = true
+      window.removeEventListener('message', onMessage)
+      window.clearTimeout(timer)
+      resolve(acked)
+    }
+    function onMessage(event: MessageEvent) {
+      const data = event.data
+      if (!data || typeof data !== 'object') return
+      if (data.type !== 'kdcube.surface.command.ack') return
+      if (String(data.command_id || '') !== commandId) return
+      finish(data.ok !== false)
+    }
+    window.addEventListener('message', onMessage)
+    const timer = window.setTimeout(() => finish(false), CONNECTION_HUB_ACK_TIMEOUT_MS)
+    try {
+      window.parent.postMessage({
+        type: 'kdcube.surface.command',
+        target_surface: CONNECTION_HUB_SURFACE,
+        action: 'open',
+        command_id: commandId,
+        widget: CHAT_WIDGET_ID,
+        source,
+      }, '*')
+    } catch {
+      finish(false)
+    }
+  })
+}
+
+/** Run the open-connections chain. Returns which path handled it. */
+export async function openConnectionsSurface(source: string = 'chat'): Promise<'host' | 'direct' | 'none'> {
   try {
-    return typeof window !== 'undefined' && window.parent !== window
+    if (typeof window !== 'undefined' && window.parent !== window) {
+      const acked = await postConnectionsCommandAndAwaitAck(source)
+      if (acked) return 'host'
+    }
+    const url = connectionsWidgetUrl()
+    if (url) {
+      window.open(url, '_blank', 'noopener')
+      return 'direct'
+    }
   } catch {
-    return false
+    /* fall through */
   }
+  return 'none'
 }
 
 export interface HostObjectOpenPayload {

@@ -1978,6 +1978,23 @@ function App() {
             ok: result.ok,
             code: result.code,
           })
+          /* Ack back to the requesting child when it tagged the command: the
+           * requester's fallback chain (e.g. the chat widget's Connection-Hub
+           * open) uses the ack to know whether this scene routes the surface. */
+          const commandId = asString(data.command_id)
+          if (commandId && event.source) {
+            try {
+              (event.source as Window).postMessage({
+                type: 'kdcube.surface.command.ack',
+                command_id: commandId,
+                target_surface: targetSurface,
+                ok: result.ok,
+                code: result.code || '',
+              }, '*')
+            } catch {
+              /* the requester falls back on its ack timeout */
+            }
+          }
           if (!result.ok) setNotice(result.message)
           return
         }
