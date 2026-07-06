@@ -1,19 +1,23 @@
-/* connection-hub connections widget — kdcube design language.
-   Tokens mirror the shared kdcube palette (memories / pinboard widgets):
-   teal accent, pale-green notice, warm-red error, Inter, kdcube surfaces. */
+/* connection-hub connections widget — kdcube design language, aligned with
+   the website architecture explorer (light theme): #EEF5F5 canvas, white
+   cards with kind-colored left accents and dots, JetBrains Mono entity
+   names, uppercase micro-labels, pill badges. Notice/error semantics keep
+   the kdcube green-tip / warm-red conventions. */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
+
 :root {
   color-scheme: light;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 
-  --bg:           #FCFDFD;
+  --bg:           #EEF5F5;
   --surface:      #FFFFFF;
-  --surface-2:    #F6F8F8;
-  --surface-3:    #FAFBFB;
+  --surface-2:    #F6FAFA;
+  --surface-3:    #FFFFFF;
   --ink:          #0D1E2C;
   --text-2:       #3A5672;
   --muted:        #7A99B0;
-  --line:         #E2E8E8;
-  --line-soft:    #ECF1F1;
+  --line:         #D8ECEB;
+  --line-soft:    #E6F1F0;
   --line-strong:  #D8ECEB;
 
   --teal:         #01BEB2;
@@ -21,6 +25,8 @@
   --teal-pale:    #C6F3F1;
   --blue:         #4372C3;
   --blue-dark:    #2B4B8A;
+  --purple:       #6B63FE;
+  --sky:          #38B8C8;
 
   --green:        #52B044;
   --green-dark:   #3A8030;
@@ -28,6 +34,8 @@
 
   --gold:         #F0BC2E;
   --gold-dark:    #9A6D05;
+  --gold-gate:    #B8860B;   /* governance gold, light theme */
+
   --gold-pale:    #FFF8DC;
 
   --pink:         #F7609A;
@@ -40,10 +48,24 @@
 
   --focus:        rgba(1, 190, 178, 0.40);
 
-  --r-sm: 4px;
-  --r-md: 6px;
-  --r-lg: 8px;
+  --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --shadow: 0 10px 30px rgba(13, 30, 44, 0.08);
+
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 12px;
+
+  /* Per-tab kind color (architecture-explorer kind mapping):
+     identity -> infra blue, delegated to KDCube -> platform teal,
+     delegated by KDCube -> app purple, authenticators -> governance gold. */
+  --kind:     var(--teal);
+  --kind-rgb: 1, 190, 178;
 }
+
+.page[data-tab='identity']          { --kind: var(--blue);      --kind-rgb: 67, 114, 195; }
+.page[data-tab='delegatedToKdcube'] { --kind: var(--teal);      --kind-rgb: 1, 190, 178; }
+.page[data-tab='delegatedAccess']   { --kind: var(--purple);    --kind-rgb: 107, 99, 254; }
+.page[data-tab='authenticators']    { --kind: var(--gold-gate); --kind-rgb: 184, 134, 11; }
 
 * { box-sizing: border-box; }
 
@@ -65,20 +87,29 @@ body {
 
 .page-head {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 12px;
 }
 .page-head h1 { margin: 0; }
 
+.eyebrow {
+  margin: 0 0 2px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--teal-dark);
+}
+
 .tabs {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 4px;
-  border-bottom: 1px solid var(--line);
-  margin: 0 0 16px;
+  border-bottom: 1px solid var(--line-soft);
+  margin: 0 0 14px;
 }
 
 .tab {
@@ -100,13 +131,13 @@ body {
 
 .tab.active {
   color: var(--ink);
-  border-bottom-color: var(--teal);
+  border-bottom-color: var(--kind);
 }
 
 h1 {
-  font-size: 16px;
+  font-size: 19px;
   font-weight: 700;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.02em;
   margin: 0 0 12px;
   color: var(--ink);
 }
@@ -156,13 +187,10 @@ h2 {
 .tab-guide-links {
   list-style: none;
   margin: 8px 0 0;
-  padding: 8px 12px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-lg);
-  background: var(--surface-3);
+  padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 
 .tab-guide-links li {
@@ -170,14 +198,37 @@ h2 {
   line-height: 1.5;
 }
 
+/* Doc rows, architecture "DOCS & GUIDES" style: bordered row + source tag. */
 .tab-guide-links a {
-  color: var(--blue);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-2);
   text-decoration: none;
-  border-bottom: 1px solid rgba(67, 114, 195, 0.28);
+  padding: 7px 10px;
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-sm);
+  transition: border-color 0.2s ease, background 0.2s ease;
 }
 
 .tab-guide-links a:hover {
-  border-bottom-color: var(--blue);
+  color: var(--ink);
+  border-color: var(--kind);
+  background: rgba(var(--kind-rgb), 0.05);
+}
+
+.tab-guide-links a::after {
+  content: 'GITHUB';
+  margin-left: auto;
+  flex: 0 0 auto;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 1px 5px;
 }
 
 .error {
@@ -220,7 +271,7 @@ h2 {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
-  padding: 12px;
+  padding: 14px;
   margin: 0 0 16px;
   box-shadow: 0 1px 2px rgba(13, 30, 44, 0.04);
 }
@@ -246,10 +297,17 @@ h2 {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  background: var(--surface-3);
+  background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: var(--r-lg);
+  border-left: 3px solid var(--kind);
+  border-radius: var(--r-md);
   padding: 10px 12px;
+  transition: transform 0.2s ease, border-color 0.2s ease;
+}
+
+.account:hover {
+  border-color: var(--line-strong);
+  transform: translateX(2px);
 }
 
 .account-compact {
@@ -257,6 +315,8 @@ h2 {
 }
 
 .account-title {
+  font-family: var(--mono);
+  font-size: 12.5px;
   font-weight: 600;
   display: flex;
   align-items: center;
@@ -264,6 +324,19 @@ h2 {
   color: var(--ink);
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+/* Kind dot with soft ring, architecture-card style. */
+.account > .account-info > .account-title::before,
+.integration-provider-head .account-title::before,
+.auth-row .account-title::before {
+  content: '';
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--kind);
+  box-shadow: 0 0 0 3px rgba(var(--kind-rgb), 0.18);
 }
 
 .account-sub {
@@ -296,8 +369,8 @@ h2 {
 /* Deep-linked from a chat consent card: draw the eye to the account the
    tool complained about. */
 .account-highlight {
-  border-color: var(--teal);
-  box-shadow: 0 0 0 2px var(--focus);
+  border-color: var(--kind);
+  box-shadow: 0 0 0 2px rgba(var(--kind-rgb), 0.35);
 }
 
 /* Consent plan — the roadmap a deep-linked user must complete. */
@@ -384,8 +457,9 @@ h2 {
 
 .integration-provider {
   border: 1px solid var(--line);
-  border-radius: var(--r-lg);
-  background: var(--surface-3);
+  border-left: 3px solid var(--kind);
+  border-radius: var(--r-md);
+  background: var(--surface);
   padding: 10px 12px;
 }
 
@@ -404,14 +478,15 @@ h2 {
   min-width: 0;
 }
 
+/* Key-term chips: mono, accent-tinted (architecture "KEY TERMS" style). */
 .claim-chip {
-  border: 1px solid rgba(1, 190, 178, 0.22);
-  background: rgba(198, 243, 241, 0.45);
-  color: var(--teal-dark);
-  border-radius: 999px;
-  padding: 2px 8px;
-  font-size: 12px;
-  font-weight: 600;
+  font-family: var(--mono);
+  border: 1px solid var(--line-soft);
+  background: rgba(1, 190, 178, 0.08);
+  color: var(--text-2);
+  border-radius: var(--r-sm);
+  padding: 2.5px 8px;
+  font-size: 11.5px;
   overflow-wrap: anywhere;
 }
 
@@ -440,36 +515,43 @@ h2 {
   background: var(--surface);
   color: var(--ink);
   padding: 8px 10px;
-  font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font: 12px/1.45 var(--mono);
 }
 
+/* Pill badges, architecture-inspector style: tinted bg + colored border. */
 .badge {
-  font-size: 11px;
-  font-weight: 600;
+  font-size: 10px;
+  font-weight: 700;
   border-radius: 999px;
-  padding: 2px 8px;
+  border: 1px solid transparent;
+  padding: 2.5px 9px;
   text-transform: uppercase;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
 }
 
 .badge-ok {
-  background: var(--teal-pale);
   color: var(--teal-dark);
+  background: rgba(1, 190, 178, 0.1);
+  border-color: rgba(1, 190, 178, 0.5);
 }
 
 .badge-warn {
-  background: var(--gold-pale);
   color: var(--gold-dark);
+  background: rgba(240, 188, 46, 0.14);
+  border-color: rgba(240, 188, 46, 0.5);
 }
 
 .badge-error {
-  background: #fee2e2;
-  color: #b42318;
+  color: var(--red-dark);
+  background: rgba(224, 73, 53, 0.1);
+  border-color: rgba(224, 73, 53, 0.45);
 }
 
 .badge-admin {
-  background: var(--gold-pale);
-  color: var(--gold-dark);
+  color: var(--gold-gate);
+  background: rgba(184, 134, 11, 0.1);
+  border-color: rgba(184, 134, 11, 0.5);
 }
 
 .btn {
@@ -527,9 +609,13 @@ h2 {
   padding-top: 16px;
 }
 
+/* Uppercase micro-label, architecture "ROLE / DOCS & GUIDES" style. */
 .form-title {
-  font-weight: 600;
-  color: var(--text-2);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
 }
 
 .proof-link {
@@ -657,11 +743,12 @@ h2 {
 }
 
 code {
-  background: var(--surface-2);
-  border: 1px solid var(--line);
+  font-family: var(--mono);
+  background: rgba(1, 190, 178, 0.08);
+  border: 1px solid var(--line-soft);
   border-radius: var(--r-sm);
   padding: 1px 5px;
-  font-size: 12px;
+  font-size: 11.5px;
   color: var(--text-2);
   overflow-wrap: anywhere;
 }
@@ -705,9 +792,10 @@ code {
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  background: var(--surface-3);
+  background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: var(--r-lg);
+  border-left: 3px solid var(--kind);
+  border-radius: var(--r-md);
   padding: 10px 12px;
 }
 
@@ -790,8 +878,9 @@ code {
   align-items: start;
   padding: 10px;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #fff;
+  border-left: 3px solid var(--kind);
+  border-radius: var(--r-md);
+  background: var(--surface);
 }
 
 .resource-option-stack {
@@ -814,7 +903,8 @@ code {
 
 .resource-option strong {
   color: var(--ink);
-  font-size: 13px;
+  font-family: var(--mono);
+  font-size: 12.5px;
 }
 
 .resource-option strong .badge {
@@ -855,13 +945,14 @@ code {
 }
 
 .grant-chip:hover {
-  border-color: var(--line-strong);
-  background: var(--surface);
+  border-color: var(--kind);
+  background: rgba(var(--kind-rgb), 0.05);
 }
 
 .grant-chip input {
   flex: 0 0 auto;
   margin: 0;
+  accent-color: var(--kind);
 }
 
 .grant-chip span {

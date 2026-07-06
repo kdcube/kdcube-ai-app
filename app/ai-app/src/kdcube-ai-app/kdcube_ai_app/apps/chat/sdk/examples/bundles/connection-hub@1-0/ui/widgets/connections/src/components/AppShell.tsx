@@ -31,9 +31,12 @@ export function AppShell({
   children,
 }: AppShellProps) {
   return (
-    <div className="page">
+    <div className="page" data-tab={activeTab}>
       <div className="page-head">
-        <h1>Connections</h1>
+        <div>
+          <p className="eyebrow">Connection Hub</p>
+          <h1>Connections</h1>
+        </div>
         <button className="btn btn-ghost" onClick={onRefresh} disabled={refreshing}>
           {refreshing ? 'Refreshing…' : '↻ Refresh'}
         </button>
