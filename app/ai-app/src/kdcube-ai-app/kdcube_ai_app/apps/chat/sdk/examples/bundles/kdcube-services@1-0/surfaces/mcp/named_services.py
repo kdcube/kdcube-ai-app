@@ -23,24 +23,28 @@ BridgeFactory = Callable[..., Any]
 _REGISTER_EXTENDED_NAMED_SERVICE_TOOLS = True
 
 NAMED_SERVICES_MCP_INSTRUCTIONS = """\
-This MCP server exposes configured KDCube named-service namespaces.
+This MCP server exposes configured KDCube named-service namespaces. The
+namespace set is deployment- and consent-specific: named_services_list is the
+only source of truth for what is available on this connection.
 
 Use this workflow:
 1. Call named_services_list first, unless the user explicitly named a namespace
    and operation.
-2. Use namespaces exactly as returned by named_services_list, for example mem,
-   task, cnv, conv, mail, or slack.
+2. Use namespaces exactly as returned by named_services_list.
 3. For an unfamiliar namespace, call named_services_capabilities and
-   named_services_schema before search/get/write operations.
+   named_services_schema before search/get/write operations; when a namespace
+   does not serve object.schema, provider.about carries the same guidance.
 4. Use named_services_search to find objects before named_services_get when the
    exact object ref is not known.
-5. Only use write, action, host-file, delete, or generic call tools when the user
-   clearly asks for that operation and the namespace capability allows it. For
-   mail, actions include download_attachments, send, and forward. For slack,
-   actions include post_message, upload_file, download_file, and
-   assistant_search_info.
+5. Only use write, action, host-file, delete, or generic call tools when the
+   user clearly asks for that operation and the namespace capability allows it.
+   Read the available actions from named_services_capabilities.
 6. If a call reports missing grants or a forbidden operation, explain which
-   namespace/tool needs additional consent instead of retrying blindly.
+   namespace/tool needs additional consent instead of retrying blindly. When
+   error details carry reason, candidates, and connection_hub_url, relay them:
+   connect_required, claim_upgrade_required, and reconnect_required are fixed
+   by the user at connection_hub_url; account_required is fixed by resending
+   the same call with account_id set from candidates.
 """
 
 NamedServiceOperation = Literal[

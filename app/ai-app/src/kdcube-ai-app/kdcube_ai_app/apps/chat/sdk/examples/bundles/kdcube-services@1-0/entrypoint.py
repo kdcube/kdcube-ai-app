@@ -18,8 +18,20 @@ from kdcube_ai_app.apps.chat.sdk.solutions.conversation import make_conversation
 from kdcube_ai_app.apps.chat.sdk.solutions.conversation.search_backend import (
     make_conversation_search_backend,
 )
+from kdcube_ai_app.apps.chat.sdk.integrations.file_delivery import (
+    fetch_mail_attachment,
+    fetch_slack_file,
+)
+from kdcube_ai_app.apps.chat.sdk.integrations.file_staging import (
+    MAX_STAGED_FILE_BYTES,
+    new_staged_ref,
+    save_staged,
+    staging_root,
+)
 from kdcube_ai_app.apps.chat.sdk.integrations.mail import make_mail_named_service_provider
+from kdcube_ai_app.apps.chat.sdk.integrations.mail.named_service import parse_mail_ref
 from kdcube_ai_app.apps.chat.sdk.integrations.slack import make_slack_named_service_provider
+from kdcube_ai_app.apps.chat.sdk.integrations.slack.named_service import parse_slack_ref
 from kdcube_ai_app.apps.chat.sdk.storage.conversation_store import ConversationStore
 from kdcube_ai_app.infra.plugin.bundle_loader import api, bundle_entrypoint, bundle_id, mcp, ui_widget
 from kdcube_ai_app.infra.service_hub.inventory import BundleState, Config
@@ -42,10 +54,25 @@ LOGGER = logging.getLogger("kdcube.bundles.kdcube-services")
 
 BUNDLE_ID = "kdcube-services@1-0"
 WORKFLOW_NAME = "kdcube_services"
-# Single descriptor key for the conv:fi: download-link signing secret. Configure it
+# Single descriptor key for the bundle's download-link signing secret. Configure it
 # in bundles.secrets.yaml under this bundle: conversations.file_download_secret.
+# One secret signs every out-of-band download this bundle serves (conv:fi:
+# artifacts, mail attachments, Slack files) — the token payload, not the key,
+# scopes each link to its exact object and requester.
 CONV_FILE_DOWNLOAD_SECRET_KEY = "conversations.file_download_secret"
 STORAGE_WIDGET_SRC = "sdk://solutions/storage/ui.widget.storage"
+
+
+def _content_disposition(filename: str) -> str:
+    """RFC 5987 Content-Disposition for arbitrary filenames.
+
+    HTTP headers are latin-1; real-world names carry characters outside it
+    (macOS screenshots embed U+202F before AM/PM). Ship an ASCII fallback plus
+    the UTF-8 `filename*` form so browsers restore the exact original name."""
+    from urllib.parse import quote
+
+    ascii_name = filename.encode("ascii", "replace").decode("ascii").replace('"', "'") or "file.bin"
+    return f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(filename)}"
 WIDGET_BUILD_COMMAND = (
     "npm install --no-package-lock && OUTDIR=<VI_BUILD_DEST_ABSOLUTE_PATH> npm run build"
 )
@@ -185,12 +212,16 @@ class KDCubeServicesEntrypoint(BaseEntrypoint):
             make_mail_named_service_provider(
                 entrypoint=self,
                 bundle_id=self._named_services_bundle_id(),
+                file_url_factory=self._integration_file_url,
+                upload_slot_factory=self._integration_upload_slot,
             )
         )
         providers.append(
             make_slack_named_service_provider(
                 entrypoint=self,
                 bundle_id=self._named_services_bundle_id(),
+                file_url_factory=self._integration_file_url,
+                upload_slot_factory=self._integration_upload_slot,
             )
         )
         return providers
@@ -278,6 +309,222 @@ class KDCubeServicesEntrypoint(BaseEntrypoint):
             return None
         return {"url": url, "expires_at": expires_at}
 
+    async def _integration_file_url(self, ns_ctx: Any, info: Any) -> Dict[str, Any] | None:
+        """Mint a short-lived absolute download URL for one integration binary
+        (mail attachment ref, Slack file ref).
+
+        Called by the mail/slack named-service providers on turn-less
+        transports. Same signing secret and token shape as conv:fi: downloads;
+        the token binds the exact object ref + requester, so the public route
+        trusts the signature, not the request. Returns None when the public
+        origin is unknown or the signing secret is not configured."""
+        base = get_public_base_url()
+        if not base:
+            return None
+        info = info if isinstance(info, dict) else {}
+        ref = str(info.get("ref") or "").strip()
+        if not ref:
+            return None
+        secret = await self._conv_download_secret()
+        if not secret:
+            LOGGER.warning(
+                "[kdcube-services] %s not configured in bundles.secrets.yaml for %s; "
+                "integration binaries will not get download URLs.",
+                CONV_FILE_DOWNLOAD_SECRET_KEY, self._named_services_bundle_id(),
+            )
+            return None
+        try:
+            token, expires_at = mint_file_download_token(
+                secret,
+                fi_ref=ref,
+                user_id=str(getattr(ns_ctx, "user_id", "") or ""),
+                tenant=str(getattr(ns_ctx, "tenant", "") or ""),
+                project=str(getattr(ns_ctx, "project", "") or ""),
+            )
+            url = bundle_operation_url(
+                tenant=str(getattr(ns_ctx, "tenant", "") or ""),
+                project=str(getattr(ns_ctx, "project", "") or ""),
+                bundle_id=self._named_services_bundle_id(),
+                operation="integration_file_download",
+                route="public",
+                query={"object_ref": ref, "download_token": token},
+                base_url=base,
+                strict=True,
+            )
+        except Exception:
+            return None
+        return {"url": url, "expires_at": expires_at}
+
+    async def _integration_upload_slot(self, ns_ctx: Any, info: Any) -> Dict[str, Any] | None:
+        """Mint a signed single-use upload slot for one inbound file.
+
+        Called by the mail/slack named services on ``request_upload``. The
+        client PUTs raw bytes to the returned URL over plain HTTP (never
+        through the model's context) and then references the returned
+        ``staged:`` ref in send/upload payloads. Same signing secret and
+        token shape as the download links."""
+        base = get_public_base_url()
+        if not base:
+            return None
+        info = info if isinstance(info, dict) else {}
+        filename = str(info.get("filename") or "").strip()
+        if not filename:
+            return None
+        secret = await self._conv_download_secret()
+        if not secret:
+            LOGGER.warning(
+                "[kdcube-services] %s not configured in bundles.secrets.yaml for %s; "
+                "integration uploads are unavailable.",
+                CONV_FILE_DOWNLOAD_SECRET_KEY, self._named_services_bundle_id(),
+            )
+            return None
+        try:
+            staged_ref = new_staged_ref(filename)
+            token, expires_at = mint_file_download_token(
+                secret,
+                fi_ref=staged_ref,
+                user_id=str(getattr(ns_ctx, "user_id", "") or ""),
+                tenant=str(getattr(ns_ctx, "tenant", "") or ""),
+                project=str(getattr(ns_ctx, "project", "") or ""),
+            )
+            url = bundle_operation_url(
+                tenant=str(getattr(ns_ctx, "tenant", "") or ""),
+                project=str(getattr(ns_ctx, "project", "") or ""),
+                bundle_id=self._named_services_bundle_id(),
+                operation="integration_file_upload",
+                route="public",
+                query={"object_ref": staged_ref, "upload_token": token},
+                base_url=base,
+                strict=True,
+            )
+        except Exception:
+            return None
+        return {
+            "upload_url": url,
+            "staged_ref": staged_ref,
+            "expires_at": expires_at,
+            "max_bytes": MAX_STAGED_FILE_BYTES,
+        }
+
+    @api(method="POST", alias="integration_file_upload", route="public")
+    async def integration_file_upload(self, request: Any = None, object_ref: str = "", upload_token: str = "", **kwargs):
+        """Session-less signed upload of one inbound integration file.
+
+        The token (minted by ``request_upload``) binds the staged ref +
+        requester; the raw request body is the file. Bytes land in the shared
+        staging area and are consumed (single-use) by the send/upload action
+        that references the staged ref."""
+        del kwargs
+        try:
+            from starlette.responses import JSONResponse
+        except Exception:  # pragma: no cover
+            from fastapi.responses import JSONResponse  # type: ignore
+
+        ref = str(object_ref or "").strip()
+        token = str(upload_token or "").strip()
+        if request is not None:
+            ref = ref or str(request.query_params.get("object_ref") or "").strip()
+            token = token or str(request.query_params.get("upload_token") or "").strip()
+        if not ref or not token or request is None:
+            return JSONResponse(status_code=400, content={"error": "upload_request_invalid"})
+        secret = await self._conv_download_secret()
+        if not secret:
+            return JSONResponse(status_code=503, content={"error": "upload_not_configured"})
+        try:
+            verify_file_download_token(secret, token, fi_ref=ref)
+        except ValueError as exc:
+            return JSONResponse(status_code=403, content={"error": "upload_token_rejected", "message": str(exc)})
+        data = await request.body()
+        if not data:
+            return JSONResponse(status_code=400, content={"error": "upload_body_empty"})
+        try:
+            save_staged(
+                staging_root(str(getattr(self.settings, "STORAGE_PATH", "") or "")),
+                ref,
+                data,
+            )
+        except ValueError as exc:
+            return JSONResponse(status_code=413, content={"error": "upload_too_large", "message": str(exc)})
+        return JSONResponse(
+            status_code=200,
+            content={"ok": True, "staged_ref": ref, "size_bytes": len(data)},
+        )
+
+    @api(method="GET", alias="integration_file_download", route="public")
+    async def integration_file_download(self, request: Any = None, object_ref: str = "", download_token: str = "", **kwargs):
+        """Session-less signed download for one integration binary.
+
+        The token (minted during object.get / download actions) binds
+        tenant/project/user + the exact object ref; this route re-resolves the
+        provider credential under the token's identity through the Connection
+        Hub facade and streams the bytes — no platform session, no chat turn."""
+        del kwargs
+        try:
+            from starlette.responses import JSONResponse, Response
+        except Exception:  # pragma: no cover
+            from fastapi.responses import JSONResponse, Response  # type: ignore
+
+        ref = str(object_ref or "").strip()
+        token = str(download_token or "").strip()
+        if request is not None:
+            ref = ref or str(request.query_params.get("object_ref") or "").strip()
+            token = token or str(request.query_params.get("download_token") or "").strip()
+        if not ref or not token:
+            return JSONResponse(status_code=400, content={"error": "download_request_invalid"})
+        secret = await self._conv_download_secret()
+        if not secret:
+            return JSONResponse(status_code=503, content={"error": "download_not_configured"})
+        try:
+            payload = verify_file_download_token(secret, token, fi_ref=ref)
+        except ValueError as exc:
+            return JSONResponse(status_code=403, content={"error": "download_token_rejected", "message": str(exc)})
+
+        user_id = str(payload.get("user_id") or "")
+        tenant = str(payload.get("tenant") or "")
+        project = str(payload.get("project") or "")
+        mail_parsed = parse_mail_ref(ref)
+        slack_parsed = parse_slack_ref(ref)
+        if mail_parsed.get("kind") == "attachment":
+            result = await fetch_mail_attachment(
+                self,
+                user_id=user_id,
+                tenant=tenant,
+                project=project,
+                account_id=mail_parsed["account_id"],
+                message_id=mail_parsed["message_id"],
+                attachment_id=mail_parsed["attachment_id"],
+            )
+        elif slack_parsed.get("kind") == "file":
+            result = await fetch_slack_file(
+                self,
+                user_id=user_id,
+                tenant=tenant,
+                project=project,
+                account_id=slack_parsed["account_id"],
+                file_id=slack_parsed["file_id"],
+            )
+        else:
+            return JSONResponse(status_code=400, content={"error": "download_ref_unsupported"})
+        if not result.get("ok"):
+            error = result.get("error") if isinstance(result.get("error"), dict) else {}
+            content = {"error": str(error.get("code") or "download_failed"), "message": str(error.get("message") or "")}
+            if isinstance(result.get("resolution"), dict):
+                content["resolution"] = result["resolution"]
+            return JSONResponse(status_code=int(result.get("status") or 500), content=content)
+
+        data = result.get("data") or b""
+        filename = str(result.get("filename") or "file.bin")
+        mime = str(result.get("mime_type") or "application/octet-stream")
+        return Response(
+            content=data,
+            media_type=mime,
+            headers={
+                "Content-Disposition": _content_disposition(filename),
+                "Content-Length": str(len(data)),
+                "Cache-Control": "private, no-store",
+            },
+        )
+
     @api(method="GET", alias="conv_file_download", route="public")
     async def conv_file_download(self, request: Any = None, object_ref: str = "", download_token: str = "", **kwargs):
         """Session-less signed download for a binary conv:fi: artifact.
@@ -332,7 +579,7 @@ class KDCubeServicesEntrypoint(BaseEntrypoint):
             content=data,
             media_type=mime,
             headers={
-                "Content-Disposition": f'attachment; filename="{filename}"',
+                "Content-Disposition": _content_disposition(filename),
                 "Content-Length": str(len(data)),
                 "Cache-Control": "private, no-store",
             },
