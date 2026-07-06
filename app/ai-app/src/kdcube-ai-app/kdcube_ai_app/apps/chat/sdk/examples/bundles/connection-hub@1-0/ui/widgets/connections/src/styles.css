@@ -1,7 +1,7 @@
 /* connection-hub connections widget — kdcube design language, aligned with
    the website architecture explorer (light theme): #EEF5F5 canvas, white
-   cards with kind-colored left accents and dots, JetBrains Mono entity
-   names, uppercase micro-labels, pill badges. Status colors come from the
+   cards with very subtle borders and kind-colored dots, JetBrains Mono
+   entity names, uppercase micro-labels, pill badges. Status colors come from the
    website status palette (success/warn/danger). */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
 
@@ -292,8 +292,7 @@ h2 {
   justify-content: space-between;
   gap: 12px;
   background: var(--surface);
-  border: 1px solid var(--line);
-  border-left: 3px solid var(--kind);
+  border: 1px solid var(--line-soft);
   border-radius: var(--r-md);
   padding: 10px 12px;
   transition: transform 0.2s ease, border-color 0.2s ease;
@@ -450,8 +449,7 @@ h2 {
 }
 
 .integration-provider {
-  border: 1px solid var(--line);
-  border-left: 3px solid var(--kind);
+  border: 1px solid var(--line-soft);
   border-radius: var(--r-md);
   background: var(--surface);
   padding: 10px 12px;
@@ -787,8 +785,7 @@ code {
   justify-content: space-between;
   gap: 12px;
   background: var(--surface);
-  border: 1px solid var(--line);
-  border-left: 3px solid var(--kind);
+  border: 1px solid var(--line-soft);
   border-radius: var(--r-md);
   padding: 10px 12px;
 }
@@ -871,8 +868,7 @@ code {
   gap: 10px;
   align-items: start;
   padding: 10px;
-  border: 1px solid var(--line);
-  border-left: 3px solid var(--kind);
+  border: 1px solid var(--line-soft);
   border-radius: var(--r-md);
   background: var(--surface);
 }
