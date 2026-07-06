@@ -1105,10 +1105,6 @@ bundles:
         default_agent:
           event_source_pipeline:
             enabled: true
-          # Per-user model choice for the strong decision role
-          # (solver.react.v2.decision.v2.strong): users pick ONE of these in
-          # the chat composer menu; the pick overrides role_models for their
-          # turns. Rows mirror the economics price-table models.
           supported_models:
           - model: claude-sonnet-4-6
             provider: anthropic
@@ -1148,8 +1144,7 @@ bundles:
           max_workspace_bytes: 50m
           workspace_monitor_interval_s: 0.5
       telemetry_sink:
-        # Telemetry ingest endpoint; served by the stats app when deployed.
-        endpoint_url: <FILL_ME>
+        endpoint_url: https://<PUBLIC_HOST>/api/integrations/bundles/<TENANT>/<PROJECT>/kdcube.stats@2026-05-20-12-05/public/ingest
         auth_header: X-Telemetry-Token
       surfaces:
         as_provider:
@@ -1197,7 +1192,6 @@ bundles:
           mcp:
             services:
               mcpServers:
-                # Served by the knowledge@1-0 app when deployed.
                 knowledge:
                   transport: streamable-http
                   url: https://<PUBLIC_HOST>/api/integrations/bundles/<TENANT>/<PROJECT>/knowledge@1-0/public/mcp/knowledge
@@ -1545,8 +1539,6 @@ bundles:
                     operation: object.get
           ui:
             scene:
-              # The Tasks panel and the task named-service namespace are served
-              # by the task-tracker@1-0 app when deployed.
               external_panels:
               - id: task_panel
                 label: Tasks
@@ -1569,6 +1561,20 @@ bundles:
                     label: task editor
                     expanded: true
                     command_from_open: provider_surface_open
+              components:
+                stats:
+                  enabled: false
+                  bundle_id: kdcube.stats@2026-05-20-12-05
+                  widget_alias: usage
+                  route: public/widgets/usage
+                  title: Stats
+                  accent: orange
+                  gated: false
+                  views: true
+                  size:
+                    w: 720
+                    h: 520
+                  order: 40
             canvas:
               resolvers:
               - kind: named_service
@@ -1623,6 +1629,9 @@ bundles:
             components_core_events:
               src_folder: npm://components-core/src/events
               target: _shared/components-core/events
+            components_react_scene:
+              src_folder: npm://components-react/src/scene
+              target: _shared/components-react/scene
         widgets:
           workspace_chat:
             enabled: true
