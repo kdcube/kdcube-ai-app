@@ -851,3 +851,69 @@ async def test_broker_force_refresh_refreshes_valid_looking_credential(monkeypat
     # And the refreshed credential is persisted for subsequent calls.
     stored = await store.get_credential(credential_id)
     assert stored.get("access_token") == "token-refreshed"
+
+
+def test_consent_payload_scopes_claims_to_the_named_provider():
+    """Regression: a Gmail connect banner must not list Slack claims.
+
+    One turn can fail preflight for several providers at once (Gmail not
+    connected + Slack missing claim approvals). The consent block names one
+    provider action; foreign-provider claims leaking into it poisoned both
+    the banner text and the Hub deep-link's OAuth claim selection
+    ("unknown provider claim: slack:...").
+    """
+    from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube import (
+        connected_account_consent_payload,
+    )
+
+    payload = connected_account_consent_payload(
+        tenant="demo-tenant",
+        project="demo-project",
+        connection_hub_bundle_id="connection-hub@1-0",
+        missing=[
+            {
+                "ok": False,
+                "tool_name": "gmail.search_gmail",
+                "failures": [
+                    {
+                        "ok": False,
+                        "provider_id": "google",
+                        "connector_app_id": "gmail",
+                        "claim": "gmail:read",
+                        "error": "connect_required",
+                        "retry_hint": True,
+                    },
+                    {
+                        "ok": False,
+                        "provider_id": "google",
+                        "connector_app_id": "gmail",
+                        "claim": "gmail:send",
+                        "error": "connect_required",
+                        "retry_hint": True,
+                    },
+                ],
+            },
+            {
+                "ok": False,
+                "tool_name": "slack.read_slack_channel_history",
+                "failures": [
+                    {
+                        "ok": False,
+                        "provider_id": "slack",
+                        "connector_app_id": "demo",
+                        "claim": "slack:history",
+                        "error": "claim_upgrade_required",
+                        "retry_hint": True,
+                    }
+                ],
+            },
+        ],
+    )
+
+    consent = payload["consent"]
+    assert consent["provider_id"] == "google"
+    assert consent["claims"] == ["gmail:read", "gmail:send"]
+    assert "slack:history" not in consent["url"]
+    assert "slack" not in payload["error"]["message"]
+    # The other provider's failure stays visible in the raw missing list.
+    assert any(item["tool_name"] == "slack.read_slack_channel_history" for item in payload["missing"])

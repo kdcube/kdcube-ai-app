@@ -199,15 +199,20 @@ def connected_account_consent_payload(
 ) -> dict[str, Any]:
     failure = _first_failure(missing)
     tool_names = _clean_list(item.get("tool_name") for item in missing)
-    claims = _clean_list(
-        failure.get("claim")
-        for tool_result in missing
-        for failure in (tool_result.get("failures") if isinstance(tool_result.get("failures"), list) else [])
-        if isinstance(failure, dict)
-    )
     provider_id = as_str(failure.get("provider_id"))
     connector_app_id = as_str(failure.get("connector_app_id"))
     tool_name = as_str(failure.get("tool_name"))
+    # One consent block names ONE provider action; claims from other failed
+    # providers must not leak into its claim list (they would poison the
+    # banner text and the Hub deep-link's OAuth claim selection).
+    claims = _clean_list(
+        item.get("claim")
+        for tool_result in missing
+        for item in (tool_result.get("failures") if isinstance(tool_result.get("failures"), list) else [])
+        if isinstance(item, dict)
+        and as_str(item.get("provider_id")) == provider_id
+        and (not connector_app_id or as_str(item.get("connector_app_id") or connector_app_id) == connector_app_id)
+    )
     reason = as_str(failure.get("reason") or failure.get("error")) or REASON_CONNECT_REQUIRED
     retry_hint = bool(failure.get("retry_hint"))
     account_id = as_str(failure.get("account_id"))

@@ -150,7 +150,14 @@ export function DelegatedToKdcubePanel() {
   const claimIds = Object.keys(selectedProvider?.claims || {});
   const suggestedClaims = defaultClaims(selectedProvider, selectedConnectorAppId);
   const [claims, setClaims] = useState<string[]>(deepLink.providerId ? deepLink.claims : []);
-  const selectedClaims = claims.length ? claims : suggestedClaims;
+  // Deep-links and prefills may carry claims of another provider; only
+  // claims this provider declares may reach the OAuth start. If nothing
+  // survives the filter, fall back to the provider's suggested claims.
+  const rawSelectedClaims = claims.length ? claims : suggestedClaims;
+  const providerScopedClaims = claimIds.length
+    ? rawSelectedClaims.filter((claimId) => claimIds.includes(claimId))
+    : rawSelectedClaims;
+  const selectedClaims = providerScopedClaims.length ? providerScopedClaims : suggestedClaims;
   const [email, setEmail] = useState('');
   const [externalSubject, setExternalSubject] = useState('');
   const [displayName, setDisplayName] = useState('');
