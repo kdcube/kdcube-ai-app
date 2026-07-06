@@ -1560,3 +1560,210 @@ async def test_external_exec_missing_code_adds_tool_result_error(tmp_path):
     ]
     assert result_blocks
     assert "exec_missing_code" in (result_blocks[-1].get("text") or "")
+
+
+def _gmail_style_files_envelope(turn_id: str) -> dict:
+    """Integration-tool result envelope: marker on the envelope, files under ret.
+
+    Mirrors gmail.download_gmail_attachments: {ok, artifact_type, error, ret:{files}}.
+    """
+    rel = f"gmail-attachments/acct/m1/invoice.pdf"
+    return {
+        "ok": True,
+        "artifact_type": "files",
+        "error": None,
+        "ret": {
+            "message_id": "m1",
+            "file_count": 1,
+            "files": [{
+                "type": "file",
+                "kind": "file",
+                "visibility": "external",
+                "artifact_path": f"conv:fi:{turn_id}.files/{rel}",
+                "logical_path": f"conv:fi:{turn_id}.files/{rel}",
+                "path": f"{turn_id}/files/{rel}",
+                "physical_path": f"{turn_id}/files/{rel}",
+                "filename": "invoice.pdf",
+                "mime": "application/pdf",
+                "mime_type": "application/pdf",
+                "size": 9,
+                "size_bytes": 9,
+                "description": "Gmail attachment",
+            }],
+            "errors": [],
+        },
+    }
+
+
+@pytest.mark.asyncio
+async def test_integration_ret_envelope_declared_files_are_hosted_and_emitted(monkeypatch, tmp_path):
+    """Regression: files declared via {ok, artifact_type:"files", ret:{files}} must be hosted + emitted.
+
+    Integration tools (gmail/email attachment downloads) return the declared-file
+    marker on the result envelope while the files list sits under `ret`. The
+    declared-file scanner must not lose the marker when unwrapping `ret`.
+    """
+    runtime = RuntimeCtx(turn_id="turn_exec", outdir=str(tmp_path), workdir=str(tmp_path), conversation_id="conv1")
+    ctx = FakeBrowser(runtime)
+    state = {
+        "last_decision": {
+            "tool_call": {
+                "tool_id": "gmail.download_gmail_attachments",
+                "params": {"message_id": "m1"},
+            }
+        },
+        "outdir": str(tmp_path),
+        "workdir": str(tmp_path),
+    }
+    target = tmp_path / "turn_exec" / "files" / "gmail-attachments" / "acct" / "m1" / "invoice.pdf"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(b"%PDF-1.4\n")
+
+    async def _fake_execute_tool(**kwargs):
+        return {"output": _gmail_style_files_envelope("turn_exec"), "summary": ""}
+
+    class _Comm:
+        user_id = "u1"
+        user_type = "admin"
+        service = {
+            "tenant": "tenant1",
+            "project": "project1",
+            "user": "u1",
+            "user_type": "admin",
+            "conversation_id": "conv1",
+            "request_id": "req1",
+        }
+
+    monkeypatch.setattr("kdcube_ai_app.apps.chat.sdk.solutions.react.v3.tools.external.execute_tool", _fake_execute_tool)
+
+    hosting = _HostingRecorder()
+    react = FakeReact(hosting_service=hosting, comm=_Comm())
+    react.tools_subsystem = None
+
+    out = await handle_external_tool(react=react, ctx_browser=ctx, state=state, tool_call_id="gmail_files")
+
+    assert len(hosting.host_calls) == 1
+    assert len(hosting.emit_calls) == 1
+    assert any(
+        b.get("type") == "react.tool.result"
+        and b.get("path") == "conv:fi:turn_exec.files/gmail-attachments/acct/m1/invoice.pdf"
+        and (b.get("meta") or {}).get("visibility") == "external"
+        for b in ctx.timeline.blocks
+    )
+
+
+@pytest.mark.asyncio
+async def test_integration_ret_envelope_declared_files_pipeline_hosted_and_emitted(monkeypatch, tmp_path):
+    """Same regression through the event-source policy pipeline path."""
+    runtime = RuntimeCtx(turn_id="turn_exec", outdir=str(tmp_path), workdir=str(tmp_path), conversation_id="conv1")
+    ctx = FakeBrowser(runtime)
+    state = {
+        "last_decision": {
+            "tool_call": {
+                "tool_id": "gmail.download_gmail_attachments",
+                "params": {"message_id": "m1"},
+            }
+        },
+        "outdir": str(tmp_path),
+        "workdir": str(tmp_path),
+    }
+    target = tmp_path / "turn_exec" / "files" / "gmail-attachments" / "acct" / "m1" / "invoice.pdf"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(b"%PDF-1.4\n")
+
+    async def _fake_execute_tool(**kwargs):
+        return {"output": _gmail_style_files_envelope("turn_exec"), "summary": ""}
+
+    class _Comm:
+        user_id = "u1"
+        user_type = "admin"
+        service = {
+            "tenant": "tenant1",
+            "project": "project1",
+            "user": "u1",
+            "user_type": "admin",
+            "conversation_id": "conv1",
+            "request_id": "req1",
+        }
+
+    monkeypatch.setattr("kdcube_ai_app.apps.chat.sdk.solutions.react.v3.tools.external.execute_tool", _fake_execute_tool)
+
+    hosting = _HostingRecorder()
+    react = FakeReact(hosting_service=hosting, comm=_Comm())
+    react.event_source_pipeline_enabled = True
+    react.tools_subsystem = SimpleNamespace(event_sources=EventSourceSubsystem(modules=[]))
+
+    await handle_external_tool(react=react, ctx_browser=ctx, state=state, tool_call_id="gmail_files_pipeline")
+
+    assert len(hosting.host_calls) == 1
+    assert len(hosting.emit_calls) == 1
+    assert any(
+        b.get("type") == "react.tool.result"
+        and b.get("path") == "conv:fi:turn_exec.files/gmail-attachments/acct/m1/invoice.pdf"
+        and (b.get("meta") or {}).get("visibility") == "external"
+        for b in ctx.timeline.blocks
+    )
+
+
+@pytest.mark.asyncio
+async def test_external_declared_file_hosting_failure_adds_delivery_failed_notice(monkeypatch, tmp_path):
+    """When hosting an external declared file fails, the failure must be loud.
+
+    A delivery_failed.file_hosting notice must land on the timeline so the
+    agent cannot report the file as delivered.
+    """
+    runtime = RuntimeCtx(turn_id="turn_exec", outdir=str(tmp_path), workdir=str(tmp_path), conversation_id="conv1")
+    ctx = FakeBrowser(runtime)
+    state = {
+        "last_decision": {
+            "tool_call": {
+                "tool_id": "gmail.download_gmail_attachments",
+                "params": {"message_id": "m1"},
+            }
+        },
+        "outdir": str(tmp_path),
+        "workdir": str(tmp_path),
+    }
+    target = tmp_path / "turn_exec" / "files" / "gmail-attachments" / "acct" / "m1" / "invoice.pdf"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(b"%PDF-1.4\n")
+
+    async def _fake_execute_tool(**kwargs):
+        return {"output": _gmail_style_files_envelope("turn_exec"), "summary": ""}
+
+    class _FailingHosting:
+        def __init__(self):
+            self.emit_calls = []
+
+        async def host_files_to_conversation(self, **kwargs):
+            return []
+
+        async def emit_solver_artifacts(self, *, files, citations):
+            self.emit_calls.append({"files": files, "citations": citations})
+
+    class _Comm:
+        user_id = "u1"
+        user_type = "admin"
+        service = {
+            "tenant": "tenant1",
+            "project": "project1",
+            "user": "u1",
+            "user_type": "admin",
+            "conversation_id": "conv1",
+            "request_id": "req1",
+        }
+
+    monkeypatch.setattr("kdcube_ai_app.apps.chat.sdk.solutions.react.v3.tools.external.execute_tool", _fake_execute_tool)
+
+    hosting = _FailingHosting()
+    react = FakeReact(hosting_service=hosting, comm=_Comm())
+    react.tools_subsystem = None
+
+    await handle_external_tool(react=react, ctx_browser=ctx, state=state, tool_call_id="gmail_files_fail")
+
+    assert hosting.emit_calls == []
+    notices = [
+        b for b in ctx.timeline.blocks
+        if b.get("type") == "react.notice" and "delivery_failed.file_hosting" in (b.get("text") or "")
+    ]
+    assert notices, "hosting failure must surface a delivery_failed.file_hosting notice"

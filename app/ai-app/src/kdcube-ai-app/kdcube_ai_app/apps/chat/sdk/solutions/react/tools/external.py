@@ -176,24 +176,33 @@ def _declared_file_rows(output: Any) -> List[Dict[str, Any]]:
       {"artifact_type": "files", "files": [...]}
 
     This marker is the file-hosting contract for external tool results.
+    The marker may sit on the result envelope itself or inside its `ret`
+    payload; integration tools commonly return
+    `{"ok": ..., "artifact_type": "files", "ret": {"files": [...]}}`,
+    so the marker level and the `files` list may be one level apart.
     """
     data = output
-    if isinstance(data, dict) and "ret" in data:
-        data = data.get("ret")
-    if isinstance(data, str):
-        try:
-            data = json.loads(data)
-        except Exception:
+    for _ in range(3):
+        if isinstance(data, str):
+            try:
+                data = json.loads(data)
+            except Exception:
+                return []
+        if not isinstance(data, dict):
             return []
-    if not isinstance(data, dict):
+        if str(data.get("artifact_type") or "").strip() == "files":
+            candidate = data.get("files")
+            if not isinstance(candidate, list):
+                ret = data.get("ret")
+                candidate = ret.get("files") if isinstance(ret, dict) else None
+            if not isinstance(candidate, list):
+                return []
+            return [dict(row) for row in candidate if _looks_like_declared_file(row)]
+        if "ret" in data:
+            data = data.get("ret")
+            continue
         return []
-
-    if str(data.get("artifact_type") or "").strip() != "files":
-        return []
-    candidate = data.get("files")
-    if not isinstance(candidate, list):
-        return []
-    return [dict(row) for row in candidate if _looks_like_declared_file(row)]
+    return []
 
 
 def _declared_files_to_tool_items(
@@ -1617,6 +1626,23 @@ async def _handle_external_tool_legacy(*,
                 hosted=hosted,
                 should_emit=bool(visibility == "external" and should_emit),
             )
+            if visibility == "external" and not hosted:
+                notice_block(
+                    ctx_browser=ctx_browser,
+                    tool_call_id=tool_call_id,
+                    code="delivery_failed.file_hosting",
+                    message=(
+                        f"External file '{artifact_view.filename or artifact_id}' could not be hosted as a "
+                        "conversation artifact; it was NOT delivered to the user. Do not claim delivery; "
+                        "retry or report the failure."
+                    ),
+                    extra={
+                        "tool_id": tool_id,
+                        "artifact_id": artifact_id,
+                        "filename": artifact_view.filename or "",
+                        "delivery_failed": True,
+                    },
+                )
 
         phys_path = ""
         rel_path = ""
@@ -1901,6 +1927,23 @@ async def _handle_external_tool_legacy(*,
                     hosted=hosted,
                     should_emit=bool(visibility == "external"),
                 )
+                if visibility == "external" and not hosted:
+                    notice_block(
+                        ctx_browser=ctx_browser,
+                        tool_call_id=tool_call_id,
+                        code="delivery_failed.file_hosting",
+                        message=(
+                            f"External file '{artifact_view.filename or artifact_id}' could not be hosted as a "
+                            "conversation artifact; it was NOT delivered to the user. Do not claim delivery; "
+                            "retry or report the failure."
+                        ),
+                        extra={
+                            "tool_id": tool_id,
+                            "artifact_id": artifact_id,
+                            "filename": artifact_view.filename or "",
+                            "delivery_failed": True,
+                        },
+                    )
 
         if already_hosted:
             artifact_path = str(

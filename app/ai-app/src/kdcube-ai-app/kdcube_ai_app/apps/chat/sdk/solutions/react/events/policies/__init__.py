@@ -801,22 +801,39 @@ def _looks_like_declared_file(row: Any) -> bool:
 
 
 def _declared_file_rows_from_result(value: Any) -> list[dict[str, Any]]:
+    """Extract `{artifact_type:"files", files:[...]}` rows from a tool result.
+
+    The marker may sit on the result envelope itself or inside its `ret`
+    payload; integration tools commonly return
+    `{"ok": ..., "artifact_type": "files", "ret": {"files": [...]}}`,
+    so the marker level and the `files` list may be one level apart. A raw
+    tool response wraps that envelope one level deeper under `output`.
+    """
     data = value
-    if isinstance(data, Mapping) and "ret" in data:
-        data = data.get("ret")
-    if isinstance(data, str):
-        try:
-            data = json.loads(data)
-        except Exception:
+    for _ in range(3):
+        if isinstance(data, str):
+            try:
+                data = json.loads(data)
+            except Exception:
+                return []
+        if not isinstance(data, Mapping):
             return []
-    if not isinstance(data, Mapping):
+        if str(data.get("artifact_type") or "").strip() == "files":
+            files = data.get("files")
+            if not isinstance(files, list):
+                ret = data.get("ret")
+                files = ret.get("files") if isinstance(ret, Mapping) else None
+            if not isinstance(files, list):
+                return []
+            return [dict(row) for row in files if _looks_like_declared_file(row)]
+        if "ret" in data:
+            data = data.get("ret")
+            continue
+        if "output" in data:
+            data = data.get("output")
+            continue
         return []
-    if str(data.get("artifact_type") or "").strip() != "files":
-        return []
-    files = data.get("files")
-    if not isinstance(files, list):
-        return []
-    return [dict(row) for row in files if _looks_like_declared_file(row)]
+    return []
 
 
 @block_production_policy(event_policy_id="react.block_production.declared_file_items")

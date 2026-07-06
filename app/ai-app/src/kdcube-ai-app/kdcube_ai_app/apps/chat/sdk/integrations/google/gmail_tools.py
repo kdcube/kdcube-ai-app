@@ -487,6 +487,9 @@ async def _download_gmail_attachments_for_message(
         "artifact_type": "files",
         "error": None,
         "ret": {
+            # The declared-file marker must survive `ret` unwrapping so the
+            # ReAct runtime hosts these files as conversation artifacts.
+            "artifact_type": "files",
             "message_id": message_id,
             "thread_id": parsed.get("thread_id") or "",
             "account_id": credential.account_id,

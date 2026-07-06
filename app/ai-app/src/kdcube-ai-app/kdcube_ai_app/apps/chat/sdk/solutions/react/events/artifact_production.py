@@ -198,7 +198,10 @@ async def emit_policy_artifact_blocks(
         tr_error = _strip_managed(tr.get("error")) if tr.get("error") else None
         policy_write_artifact = bool(tr.get("write_artifact"))
         policy_analyze_write_output = bool(tr.get("analyze_write_output"))
-        policy_emit_hosted_file = bool(tr.get("emit_hosted_file"))
+        # Declared-file rows are the tool's explicit deliverable contract:
+        # external declared files are emitted to the user exactly like the
+        # legacy declared-file loop did, without requiring an extra flag.
+        policy_emit_hosted_file = bool(tr.get("emit_hosted_file")) or is_declared
         policy_resolve_file_path = bool(tr.get("resolve_file_path"))
         already_hosted = bool(tr.get("already_hosted"))
         turn_id = ctx_browser.runtime_ctx.turn_id or ""
@@ -369,6 +372,23 @@ async def emit_policy_artifact_blocks(
                     hosted=hosted,
                     should_emit=bool(visibility == "external" and policy_emit_hosted_file),
                 )
+                if visibility == "external" and not hosted:
+                    notice_block(
+                        ctx_browser=ctx_browser,
+                        tool_call_id=tool_call_id,
+                        code="delivery_failed.file_hosting",
+                        message=(
+                            f"External file '{artifact_view.filename or artifact_id}' could not be hosted as a "
+                            "conversation artifact; it was NOT delivered to the user. Do not claim delivery; "
+                            "retry or report the failure."
+                        ),
+                        extra={
+                            "tool_id": tool_id,
+                            "artifact_id": artifact_id,
+                            "filename": artifact_view.filename or "",
+                            "delivery_failed": True,
+                        },
+                    )
 
         phys_path = ""
         rel_path = ""
