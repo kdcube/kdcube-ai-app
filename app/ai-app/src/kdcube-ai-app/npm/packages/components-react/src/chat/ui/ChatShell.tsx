@@ -388,9 +388,9 @@ export function ChatShell({
               : `min-h-screen lg:h-screen ${hostEmbedMode ? 'max-w-none' : 'max-w-[1320px]'} lg:overflow-hidden`
         }`}
       >
-        {(!compact && visibleTurns.length > 1) || showScrollDown ? (
+        {visibleTurns.length > 1 || showScrollDown ? (
           <div className={`k-turn-nav ${previewTile ? 'k-scroll-in-tile' : ''}`}>
-            {!compact && visibleTurns.length > 1 ? (
+            {visibleTurns.length > 1 ? (
               <>
                 <button type="button" className="k-turn-nav-btn" onClick={() => scrollToTurn('first')} aria-label="Jump to first message" title="First message">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 4h14M12 20V9M7 14l5-5 5 5" /></svg>
