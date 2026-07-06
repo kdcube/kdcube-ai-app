@@ -5,6 +5,7 @@ export default defineConfig({
     index: 'src/index.ts',
     'chat/index': 'src/chat/index.tsx',
     'canvas/index': 'src/canvas/index.ts',
+    'scene/index': 'src/scene/index.ts',
   },
   format: ['esm'],
   dts: true,

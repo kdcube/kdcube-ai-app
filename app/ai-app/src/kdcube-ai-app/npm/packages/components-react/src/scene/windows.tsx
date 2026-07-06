@@ -1,10 +1,15 @@
 /**
- * Floating-window layer for the workspace scene — one generic window chrome
- * (titlebar + drag + corner resize + expand/collapse + close) and one rail,
- * matching the website scene host's `.kdc-rail` / `.kdc-wbar` / `.kdc-wgrip`
- * look and behavior. Every scene component renders inside one of these
- * windows as an iframe; windows hide instead of unmounting so widgets keep
- * their state (conversation, board, list position) across summons.
+ * Scene-host window layer — one generic window chrome (titlebar + drag +
+ * corner resize + expand/collapse + close), the labeled accent rail, and the
+ * window manager: a shared z-band for docked AND floating windows,
+ * capture-phase raise on every window, same-element docked-tile promotion
+ * (the iframe is never reparented, so widget state survives) with
+ * visible-viewport clamps, re-clamp on host clip changes, and the
+ * `setViewportBottomClip` feed from the visible-viewport probe. Windows hide
+ * instead of unmounting so widgets keep their state across summons.
+ * Content-free: the host supplies the component registry, icons, iframes,
+ * and the raise-veil/drop overlays. Pair with the `sceneHost.css` stylesheet
+ * shipped next to this module.
  */
 
 import React, { useCallback, useRef, useState } from 'react'
@@ -30,6 +35,52 @@ export function setViewportBottomClip(clip: number): void {
 
 function visibleBottom(): number {
   return Math.max(260, window.innerHeight - viewportClipBottom)
+}
+
+export interface SceneWindowRect {
+  left: number
+  top: number
+  right: number
+  bottom: number
+}
+
+export function rectsIntersect(a: SceneWindowRect, b: SceneWindowRect): boolean {
+  return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top
+}
+
+/** Rect of a FLOATING window from its manager state (viewport coordinates). */
+export function windowRectFromState(state: WindowState): SceneWindowRect {
+  return { left: state.x, top: state.y, right: state.x + state.w, bottom: state.y + state.h }
+}
+
+/**
+ * Aliases of open windows overlapped by another OPEN window with a higher z
+ * — those windows show the raise veil (docked and floating alike). `rectOf`
+ * supplies each window's viewport rect: floating from state
+ * (`windowRectFromState`), docked from its tile element's bounding rect.
+ */
+export function buriedAliases(
+  wins: Record<string, WindowState>,
+  rectOf: (alias: string, state: WindowState) => SceneWindowRect | null,
+): Set<string> {
+  const open = Object.keys(wins).filter((id) => wins[id].open)
+  const rects = new Map<string, SceneWindowRect | null>()
+  open.forEach((id) => rects.set(id, rectOf(id, wins[id])))
+  const buried = new Set<string>()
+  open.forEach((id) => {
+    const rect = rects.get(id)
+    if (!rect) return
+    for (const other of open) {
+      if (other === id) continue
+      if (wins[other].z <= wins[id].z) continue
+      const orect = rects.get(other)
+      if (orect && rectsIntersect(rect, orect)) {
+        buried.add(id)
+        break
+      }
+    }
+  })
+  return buried
 }
 
 export interface WindowState {

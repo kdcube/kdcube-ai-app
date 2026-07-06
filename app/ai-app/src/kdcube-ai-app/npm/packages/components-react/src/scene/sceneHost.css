@@ -1,10 +1,9 @@
 /* =========================================================================
-   Workspace scene — website scene host skin.
-
-   The rail (.kdc-rail), window chrome (.kdc-wbar / .kdc-wgrip), context-drag
-   overlay (.kdc-drop) and accent palette are ported from the website scene
-   host so both hosts look and behave identically. The board/card styles live
-   in the pin board widget's own iframe now — no canvas CSS here.
+   Scene-host skin — kdcube tokens, the labeled accent rail (.kdc-rail,
+   mobile bottom bar), window chrome (.kdc-wbar / .kdc-wgrip / .kdc-win,
+   docked stage + slots), raise veil, context-drag overlays (.kdc-drop,
+   kdc-drag-source exception), and the --kdc-clip-bottom visible-viewport
+   inset. Import as @kdcube/components-react/scene/sceneHost.css.
    ========================================================================= */
 
 :root {

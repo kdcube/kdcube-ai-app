@@ -1,7 +1,7 @@
 {
   "name": "@kdcube/components-react",
   "version": "0.1.0",
-  "description": "React adapters for KDCube client components — thin provider/hook bindings over @kdcube/components-core (chat, canvas, …).",
+  "description": "React adapters for KDCube client components \u2014 thin provider/hook bindings over @kdcube/components-core (chat, canvas, \u2026).",
   "license": "UNLICENSED",
   "type": "module",
   "sideEffects": false,
@@ -20,12 +20,17 @@
     "./canvas": {
       "types": "./dist/canvas/index.d.ts",
       "import": "./dist/canvas/index.js"
+    },
+    "./scene": {
+      "types": "./dist/scene/index.d.ts",
+      "import": "./dist/scene/index.js"
     }
   },
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "npm run build && node --test tests/*.test.mjs"
   },
   "peerDependencies": {
     "react": ">=18",

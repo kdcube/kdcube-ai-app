@@ -50,7 +50,7 @@ import {
   type SceneExternalPanelConfig,
 } from './sceneConfig'
 import { dataBusSocketFor, ensureSocketConnected } from './dataBus'
-import { FloatingWindow, Rail, useWindowManager, type RailEntry, type WindowSizing } from './windows'
+import { FloatingWindow, Rail, setViewportBottomClip, useWindowManager, type RailEntry, type WindowSizing } from './windows'
 import { componentIcon, TasksIcon } from './icons'
 import './styles.css'
 
@@ -237,6 +237,52 @@ function App() {
       cancelled = true
     }
   }, [ctx, ready])
+
+  // ------------------------------------------- true visible viewport probe
+  // When the scene runs as an iframe of an outer host, the host may size the
+  // frame taller than the visible area — the scene's own viewport then
+  // extends below what the user can see and bottom-anchored layout (docked
+  // stage inset, window clamps) lands off-screen. An IntersectionObserver on
+  // a full-height sentinel measures how much of the scene's height is
+  // actually visible (it accounts for every clipping ancestor and the
+  // top-level viewport) and feeds the clip into layout:
+  //   - CSS var --kdc-clip-bottom (docked stage bottom inset)
+  //   - setViewportBottomClip (floating window clamps)
+  useEffect(() => {
+    const sentinel = document.createElement('div')
+    sentinel.setAttribute('data-kdc-viewport-sentinel', '')
+    sentinel.style.cssText = 'position:fixed;left:0;top:0;bottom:0;width:1px;pointer-events:none;visibility:hidden;'
+    document.body.appendChild(sentinel)
+    let lastClip = -1
+    const observer = new IntersectionObserver((entries) => {
+      const entry = entries[entries.length - 1]
+      if (!entry) return
+      const total = entry.boundingClientRect.height
+      const visible = entry.intersectionRect.height
+      const clip = Math.max(0, Math.round(total - visible))
+      if (clip === lastClip) return
+      lastClip = clip
+      document.documentElement.style.setProperty('--kdc-clip-bottom', `${clip}px`)
+      setViewportBottomClip(clip)
+      // Windows placed BEFORE this clip change (e.g. a board unpinned while
+      // the host frame still fit) must follow it — the docked stage tracks
+      // the CSS var automatically, floating windows re-clamp here.
+      managerRef.current.reclampToViewport()
+      console.info('[kdc-scene:viewport] visible-height probe', {
+        scene_height: Math.round(total),
+        visible_height: Math.round(visible),
+        clip_bottom: clip,
+      })
+    }, { threshold: Array.from({ length: 21 }, (_, i) => i / 20) })
+    observer.observe(sentinel)
+    const onResize = () => managerRef.current.reclampToViewport()
+    window.addEventListener('resize', onResize)
+    return () => {
+      observer.disconnect()
+      sentinel.remove()
+      window.removeEventListener('resize', onResize)
+    }
+  }, [])
 
   // ------------------------------------------------- raise on activation
   // Standard window-manager focus semantics: activating a window anywhere —
@@ -914,6 +960,34 @@ function App() {
     .filter((win) => win.open && win.floating)
     .reduce((top, win) => Math.max(top, win.z), 0)
 
+  // A window is "buried" when another open window with a higher z actually
+  // OVERLAPS its rect — that window gets the raise veil. This covers docked
+  // windows too: a docked tile under a floating window must raise on
+  // activation (all windows share one z band; docked tiles simply start low).
+  const windowRect = (alias: string): { left: number; top: number; right: number; bottom: number } | null => {
+    const st = manager.wins[alias]
+    if (!st?.open) return null
+    if (st.floating) return { left: st.x, top: st.y, right: st.x + st.w, bottom: st.y + st.h }
+    const tile = tileRefs.current[alias]
+    if (!tile) return null
+    const r = tile.getBoundingClientRect()
+    return { left: r.left, top: r.top, right: r.right, bottom: r.bottom }
+  }
+  const openWindowAliases = Object.keys(manager.wins).filter((id) => manager.wins[id].open)
+  const isBuried = (alias: string): boolean => {
+    const st = manager.wins[alias]
+    const rect = windowRect(alias)
+    if (!st?.open || !rect) return false
+    return openWindowAliases.some((other) => {
+      if (other === alias) return false
+      const o = manager.wins[other]
+      if (o.z <= st.z) return false
+      const orect = windowRect(other)
+      if (!orect) return false
+      return orect.left < rect.right && orect.right > rect.left && orect.top < rect.bottom && orect.bottom > rect.top
+    })
+  }
+
   const railEntries: RailEntry[] = []
   components.forEach((spec) => {
     if (!spec.rail) return
@@ -1013,7 +1087,7 @@ function App() {
           const state = manager.get(spec.alias)
           if (!state?.everOpened) return null
           const docked = spec.placement === 'docked'
-          const buried = state.open && state.floating && state.z < topFloatingZ
+          const buried = isBuried(spec.alias)
           const params = spec.alias === 'chat' && spec.widgetAlias === CHAT_WIDGET_ALIAS
             ? { ...chatWidgetParams(ctx), ...(spec.params ?? {}) }
             : spec.params
@@ -1139,12 +1213,7 @@ function App() {
           onViewChange={(view) => syncWidgetView(externalAlias, view)}
           dropOverlay={(
             <>
-              {(() => {
-                const state = manager.get(externalAlias)
-                return state?.open && state.floating && state.z < topFloatingZ
-                  ? raiseVeilFor(externalAlias)
-                  : null
-              })()}
+              {isBuried(externalAlias) ? raiseVeilFor(externalAlias) : null}
               {dropOverlayFor(externalAlias)}
             </>
           )}
