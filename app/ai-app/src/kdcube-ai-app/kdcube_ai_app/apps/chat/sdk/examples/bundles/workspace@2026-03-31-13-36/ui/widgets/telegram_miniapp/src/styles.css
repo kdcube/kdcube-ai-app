@@ -1,56 +1,53 @@
-/* KDCube Companion Telegram widget — restyle (May 2026)
-   Shares the same compact design system as the Copilot widget. Same
-   class names so the shared Telegram and Memory panels render identically. */
+/* KDCube Companion Telegram widget — website architecture-explorer
+   language (light theme): #EEF5F5 canvas, white cards on very subtle
+   borders, JetBrains Mono entity names, website status palette
+   (success/warn/danger tints). Same class names so the shared Telegram
+   and Memory panels render identically. */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
 
 :root {
   color-scheme: light;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  background: #FCFDFD;
+  background: #EEF5F5;
   color: #0D1E2C;
 
-  --bg:           #FCFDFD;
+  --bg:           #EEF5F5;
   --surface:      #FFFFFF;
-  --surface-2:    #F6F8F8;
-  --surface-3:    #FAFBFB;
+  --surface-2:    #F6FAFA;
+  --surface-3:    #FFFFFF;
   --ink:          #0D1E2C;
   --text-2:       #3A5672;
   --muted:        #7A99B0;
-  --line:         #E2E8E8;
-  --line-soft:    #ECF1F1;
+  --line:         #D8ECEB;
+  --line-soft:    #E6F1F0;
   --line-strong:  #D8ECEB;
 
   --teal:         #01BEB2;
   --teal-dark:    #009C92;
-  --teal-pale:    #C6F3F1;
 
   --blue:         #4372C3;
   --blue-dark:    #2B4B8A;
-  --blue-pale:    #DDEAFE;
-
   --purple:       #6B63FE;
-  --purple-pale:  #EBEBFF;
+  --sky:          #38B8C8;
 
-  --gold:         #F0BC2E;
-  --gold-dark:    #C89A10;
-  --gold-pale:    #FFF8DC;
+  /* Website status palette; darker text shades for light surfaces. */
+  --ok:           #22c55e;
+  --ok-rgb:       34, 197, 94;
+  --ok-text:      #15803D;
+  --warn:         #f59e0b;
+  --warn-rgb:     245, 158, 11;
+  --warn-text:    #B45309;
+  --danger:       #f87171;
+  --danger-rgb:   248, 113, 113;
+  --danger-text:  #B91C1C;
 
-  --green:        #52B044;
-  --green-dark:   #3A8030;
-  --green-pale:   #E8F7E5;
+  --focus:        rgba(1, 190, 178, 0.40);
 
-  --pink:         #F7609A;
-  --pink-dark:    #C03272;
-  --pink-pale:    #FFE0EF;
+  --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
-  --red:          #E04935;
-  --red-dark:     #B5331F;
-  --red-pale:     #FDE3DD;
-
-  --focus:        rgba(67, 114, 195, 0.45);
-
-  --r-sm: 4px;
-  --r-md: 6px;
-  --r-lg: 8px;
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 12px;
 }
 
 * { box-sizing: border-box; }
@@ -81,7 +78,7 @@ input, select, textarea {
 input, select { height: 30px; }
 textarea { min-height: 64px; padding: 8px 10px; resize: vertical; line-height: 1.55; }
 input:focus, select:focus, textarea:focus {
-  border-color: var(--blue);
+  border-color: var(--teal);
   box-shadow: 0 0 0 3px var(--focus);
 }
 
@@ -100,7 +97,7 @@ input:focus, select:focus, textarea:focus {
   width: min(100%, 1100px);
   margin: 0 auto 12px;
   padding: 4px 0 8px;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--line-soft);
 }
 
 .app-mark {
@@ -112,7 +109,8 @@ input:focus, select:focus, textarea:focus {
 
 .app-name {
   color: var(--ink);
-  font-size: 14px;
+  font-family: var(--mono);
+  font-size: 13.5px;
   font-weight: 600;
 }
 
@@ -221,13 +219,13 @@ input:focus, select:focus, textarea:focus {
 }
 
 .primary-button {
-  border: 1px solid var(--teal);
-  background: var(--teal);
+  border: 1px solid var(--blue);
+  background: var(--blue);
   color: #fff;
 }
 .primary-button:hover:not(:disabled) {
-  background: var(--teal-dark);
-  border-color: var(--teal-dark);
+  background: var(--blue-dark);
+  border-color: var(--blue-dark);
 }
 
 .link-button {
@@ -245,22 +243,20 @@ input:focus, select:focus, textarea:focus {
 .link-button:hover:not(:disabled) {
   background: var(--surface-2);
 }
-/* Outlined destructive action (e.g. Delete). Matches the Connect tab's
- * "Unlink" button (`.btn.btn-ghost` in the connections widget): transparent
- * background, pink text, a neutral line border at rest that turns pink on a
- * faint pink-pale hover. Every property is set explicitly (background, border,
- * color) so the later `.link-button` block (the link-card flow, ~line 623)
- * can't leak its blue fill / border through — this rule stays at 0-2-0
- * specificity to win over that plain `.link-button`. */
+/* Outlined destructive action (e.g. Delete) — website danger family.
+ * Every property is set explicitly (background, border, color) so the later
+ * `.link-button` block (the link-card flow) can't leak its blue fill /
+ * border through — this rule stays at 0-2-0 specificity to win over the
+ * plain `.link-button`. */
 .link-button.danger {
   border: 1px solid var(--line);
   background: transparent;
-  color: var(--pink-dark);
+  color: var(--danger-text);
 }
 .link-button.danger:hover:not(:disabled) {
-  border-color: rgba(192, 50, 114, 0.35);
-  background: var(--pink-pale);
-  color: var(--pink-dark);
+  border-color: rgba(var(--danger-rgb), 0.4);
+  background: rgba(var(--danger-rgb), 0.08);
+  color: var(--danger-text);
 }
 
 /* ─── New row composite (input + button) ─── */
@@ -292,15 +288,18 @@ input:focus, select:focus, textarea:focus {
   padding: 8px 12px;
   background: var(--surface);
 }
+
+/* Pills — tinted, uppercase, architecture-inspector style. */
 .list-row:last-child { border-bottom: 0; }
 .list-row:hover { background: var(--surface-2); }
-.list-row.active { background: rgba(198, 243, 241, 0.22); }
+.list-row.active { background: rgba(1, 190, 178, 0.06); }
 
 .row-main { min-width: 0; flex: 1; }
 .row-main strong {
   display: block;
   color: var(--ink);
-  font-size: 13px;
+  font-family: var(--mono);
+  font-size: 12.5px;
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -324,13 +323,15 @@ input:focus, select:focus, textarea:focus {
   display: inline-flex;
   align-items: center;
   height: 20px;
-  padding: 0 7px;
+  padding: 0 8px;
   border-radius: 999px;
   border: 1px solid var(--line);
   background: var(--surface);
   color: var(--text-2);
-  font-size: 11px;
-  font-weight: 500;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
   line-height: 1;
 }
 .pill.neutral {
@@ -490,15 +491,15 @@ input:focus, select:focus, textarea:focus {
 
 .notice.error,
 .error {
-  border-color: rgba(247, 96, 154, 0.35);
-  background: rgba(255, 224, 239, 0.5);
-  color: var(--pink-dark);
+  border-color: rgba(var(--danger-rgb), 0.4);
+  background: rgba(var(--danger-rgb), 0.1);
+  color: var(--danger-text);
 }
 
 .success {
-  border: 1px solid rgba(82, 176, 68, 0.32);
-  background: rgba(232, 247, 229, 0.55);
-  color: var(--green-dark);
+  border: 1px solid rgba(var(--ok-rgb), 0.35);
+  background: rgba(var(--ok-rgb), 0.08);
+  color: var(--ok-text);
 }
 
 .empty-state {
@@ -529,9 +530,9 @@ input:focus, select:focus, textarea:focus {
   display: inline-flex;
   align-items: center;
   width: fit-content;
-  border: 1px solid rgba(1, 190, 178, 0.26);
+  border: 1px solid rgba(1, 190, 178, 0.5);
   border-radius: 999px;
-  background: rgba(198, 243, 241, 0.55);
+  background: rgba(1, 190, 178, 0.1);
   color: var(--teal-dark);
   font-size: 11px;
   font-weight: 700;
@@ -559,14 +560,14 @@ input:focus, select:focus, textarea:focus {
 
 .link-steps li.active {
   border-color: rgba(67, 114, 195, 0.35);
-  background: var(--blue-pale);
+  background: rgba(67, 114, 195, 0.08);
   color: var(--blue-dark);
 }
 
 .link-steps li.done {
-  border-color: rgba(82, 176, 68, 0.28);
-  background: rgba(232, 247, 229, 0.6);
-  color: var(--green-dark);
+  border-color: rgba(var(--ok-rgb), 0.35);
+  background: rgba(var(--ok-rgb), 0.08);
+  color: var(--ok-text);
 }
 
 .link-steps strong,
@@ -589,9 +590,9 @@ input:focus, select:focus, textarea:focus {
 }
 
 .link-status-card.done {
-  border-color: rgba(82, 176, 68, 0.28);
-  background: rgba(232, 247, 229, 0.6);
-  color: var(--green-dark);
+  border-color: rgba(var(--ok-rgb), 0.35);
+  background: rgba(var(--ok-rgb), 0.08);
+  color: var(--ok-text);
 }
 
 .link-status-card strong,
@@ -663,13 +664,13 @@ input:focus, select:focus, textarea:focus {
 }
 
 .link-button.danger-button {
-  border-color: rgba(247, 96, 154, 0.4);
+  border-color: rgba(var(--danger-rgb), 0.4);
   background: var(--surface);
-  color: var(--pink-dark);
+  color: var(--danger-text);
 }
 
 .link-button.danger-button:hover:not(:disabled) {
-  background: var(--pink-pale);
+  background: rgba(var(--danger-rgb), 0.08);
 }
 
 .link-button:disabled {
@@ -693,11 +694,13 @@ input:focus, select:focus, textarea:focus {
   height: 20px;
   padding: 0 8px;
   border-radius: 999px;
-  border: 1px solid rgba(240, 188, 46, 0.45);
-  background: var(--gold-pale);
-  color: #76570e;
-  font-size: 11px;
-  font-weight: 500;
+  border: 1px solid rgba(var(--warn-rgb), 0.5);
+  background: rgba(var(--warn-rgb), 0.12);
+  color: var(--warn-text);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .telegram-pending-card h1 {
