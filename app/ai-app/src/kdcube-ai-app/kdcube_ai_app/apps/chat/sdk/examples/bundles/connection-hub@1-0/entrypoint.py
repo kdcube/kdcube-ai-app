@@ -558,11 +558,36 @@ async def _delegated_to_kdcube_client_secret(
     )
 
 
-def _delegated_to_kdcube_html_done(*, title: str, body: str, link: str = "") -> HTMLResponse:
+DELEGATED_TO_KDCUBE_BROADCAST_CHANNEL = "kdcube-connection-hub"
+
+
+def _delegated_to_kdcube_html_done(
+    *,
+    title: str,
+    body: str,
+    link: str = "",
+    notify: Mapping[str, Any] | None = None,
+) -> HTMLResponse:
     safe_title = html.escape(str(title or ""))
     safe_body = html.escape(str(body or ""))
     safe_link = html.escape(str(link or ""), quote=True)
     link_html = f'<p><a href="{safe_link}">Return</a></p>' if safe_link else ""
+    notify_html = ""
+    if notify:
+        # Same-origin push to the Connection Hub widget that opened this tab:
+        # it refreshes immediately, so by the time the user switches back the
+        # plan/account cards already reflect the approval. Closing is
+        # best-effort — browsers may refuse for a tab with history.
+        payload = json.dumps(dict(notify))
+        notify_html = (
+            "<script>"
+            "try{"
+            f"new BroadcastChannel({json.dumps(DELEGATED_TO_KDCUBE_BROADCAST_CHANNEL)})"
+            f".postMessage({payload});"
+            "}catch(e){}"
+            "setTimeout(function(){try{window.close()}catch(e){}},1200);"
+            "</script>"
+        )
     content = (
         "<!doctype html><html><head><meta charset=\"utf-8\">"
         "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
@@ -573,7 +598,7 @@ def _delegated_to_kdcube_html_done(*, title: str, body: str, link: str = "") -> 
         "h1{font-size:24px;margin:0 0 12px}p{color:#475569}"
         "a{color:#0f766e;font-weight:700;text-decoration:none}"
         "</style></head><body>"
-        f"<h1>{safe_title}</h1><p>{safe_body}</p>{link_html}</body></html>"
+        f"<h1>{safe_title}</h1><p>{safe_body}</p>{link_html}{notify_html}</body></html>"
     )
     return HTMLResponse(content=content)
 
@@ -1773,8 +1798,13 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
                 return_link = origin
             return _delegated_to_kdcube_html_done(
                 title="Connection complete",
-                body=f"Connected {label}. You can return to KDCube.",
+                body=f"Connected {label}. You can close this tab and return to KDCube.",
                 link=return_link or origin,
+                notify={
+                    "type": "delegated_to_kdcube.account.connected",
+                    "account_id": str(account.get("account_id") or ""),
+                    "provider_id": str(account.get("provider_id") or ""),
+                },
             )
         except Exception as exc:
             LOGGER.warning("[connection-hub.delegated_to_kdcube] OAuth callback failed", exc_info=True)

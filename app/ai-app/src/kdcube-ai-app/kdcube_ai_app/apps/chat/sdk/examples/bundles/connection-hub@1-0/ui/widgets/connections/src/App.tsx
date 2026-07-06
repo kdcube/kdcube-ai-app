@@ -101,9 +101,11 @@ export default function App() {
     }
   }, [dispatch]);
 
-  // The OAuth approval happens in another tab; when the user comes back,
-  // re-fetch so account cards and the consent plan reflect what they just
-  // approved without hunting for the manual refresh button.
+  // The OAuth approval happens in another tab. Two ways the widget learns
+  // it finished: the callback page pushes a same-origin BroadcastChannel
+  // message the moment it loads (instant, even while this tab is in the
+  // background), and re-fetch on focus covers browsers/contexts where the
+  // channel is unavailable.
   useEffect(() => {
     if (telegramMiniAppMode || claimChallengeId || !runtimeReady) return;
     const onReturn = () => {
@@ -111,9 +113,21 @@ export default function App() {
     };
     window.addEventListener('focus', onReturn);
     document.addEventListener('visibilitychange', onReturn);
+    let channel: BroadcastChannel | null = null;
+    try {
+      channel = new BroadcastChannel('kdcube-connection-hub');
+      channel.onmessage = (event) => {
+        if (String((event.data as { type?: string } | null)?.type || '').startsWith('delegated_to_kdcube.')) {
+          void refresh();
+        }
+      };
+    } catch {
+      // BroadcastChannel unavailable (very old browser); focus refresh covers it.
+    }
     return () => {
       window.removeEventListener('focus', onReturn);
       document.removeEventListener('visibilitychange', onReturn);
+      channel?.close();
     };
   }, [telegramMiniAppMode, claimChallengeId, runtimeReady, refresh]);
 
