@@ -142,7 +142,7 @@ class SlackConnection(ConnectionProvider):
     label         = "Slack"
     authorize_url = "https://slack.com/oauth/v2/authorize"
     token_url     = "https://slack.com/api/oauth.v2/access"
-    scopes        = ["search:read", "channels:history", "groups:history"]
+    scopes        = ["search:read"]
     # Non-secret config + secret keys, resolved through entrypoint.bundle_prop /
     # bundle-scoped secrets — same convention as email/linkedin.
     config_prefix = "integrations.slack"          # .enabled / .client_id / .oauth.redirect_uri

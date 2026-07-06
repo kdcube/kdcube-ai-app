@@ -221,6 +221,13 @@ h2 {
   overflow-wrap: anywhere;
 }
 
+.account-detail {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 2px;
+  overflow-wrap: anywhere;
+}
+
 .integration-provider-list {
   display: flex;
   flex-direction: column;
@@ -242,7 +249,7 @@ h2 {
   align-items: start;
 }
 
-.capability-list {
+.claim-list {
   display: flex;
   justify-content: flex-end;
   flex-wrap: wrap;
@@ -250,7 +257,7 @@ h2 {
   min-width: 0;
 }
 
-.capability-chip {
+.claim-chip {
   border: 1px solid rgba(1, 190, 178, 0.22);
   background: rgba(198, 243, 241, 0.45);
   color: var(--teal-dark);
@@ -301,6 +308,16 @@ h2 {
 .badge-ok {
   background: var(--teal-pale);
   color: var(--teal-dark);
+}
+
+.badge-warn {
+  background: var(--gold-pale);
+  color: var(--gold-dark);
+}
+
+.badge-error {
+  background: #fee2e2;
+  color: #b42318;
 }
 
 .badge-admin {
@@ -758,7 +775,7 @@ code {
     grid-template-columns: 1fr;
   }
 
-  .capability-list {
+  .claim-list {
     justify-content: flex-start;
   }
 

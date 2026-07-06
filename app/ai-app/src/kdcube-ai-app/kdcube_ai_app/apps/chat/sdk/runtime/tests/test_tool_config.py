@@ -106,6 +106,52 @@ def test_agent_tool_config_reads_as_consumer_surface_tools() -> None:
     }
 
 
+def test_agent_tool_config_reads_tool_connected_account_claims() -> None:
+    cfg = agent_tool_config_from_bundle_props(
+        {
+            "surfaces": {
+                "as_consumer": {
+                    "agents": {
+                        "main": {
+                            "tools": [
+                                {
+                                    "kind": "python",
+                                    "alias": "report",
+                                    "module": "demo.report_tools",
+                                    "allowed": ["post_to_slack"],
+                                    "tool_claims": {
+                                        "post_to_slack": {
+                                            "connections": {
+                                                "delegated_to_kdcube": {
+                                                    "connected_accounts": [
+                                                        {
+                                                            "provider_id": "slack",
+                                                            "connector_app_id": "demo",
+                                                            "claims": ["slack:post"],
+                                                        }
+                                                    ]
+                                                }
+                                            }
+                                        }
+                                    },
+                                },
+                            ],
+                        },
+                    },
+                },
+            },
+        },
+        "main",
+    )
+
+    assert len(cfg.tool_claim_policies) == 1
+    policy = cfg.tool_claim_policies[0]
+    assert policy.tool_name == "report.post_to_slack"
+    assert policy.connected_accounts[0].provider_id == "slack"
+    assert policy.connected_accounts[0].connector_app_id == "demo"
+    assert policy.connected_accounts[0].claims == ("slack:post",)
+
+
 def test_alias_tool_filter_keeps_exact_agent_surface() -> None:
     allowed = {
         "named_services": ["get_object"],

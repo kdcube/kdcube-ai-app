@@ -10,7 +10,7 @@ primary_surfaces:
   - "identity operations — link/resolve external identities to platform principal envelopes"
   - "request_authenticate public operation — verify provider/request proofs and return linked authority"
   - "named_service API (operations route) — serves the whole `connections` contract"
-  - "public OAuth callback route (connection_oauth_callback) — shared by all connections providers"
+  - "public OAuth callback route (delegated_to_kdcube_oauth_callback) — shared by delegated to KDCube OAuth providers"
   - "connections_settings widget (ui/widgets/connections)"
 links:
   config: config/bundles.template.yaml
@@ -39,7 +39,7 @@ Which user ids belong to the same linked identity family?
   -> Connection Hub resolver -> platform authority + provider identities
 
 Can automation use this user's external account?
-  -> connected account -> delegated token/capability
+  -> connected account -> delegated token/claim
 ```
 
 The app exposes request authenticators so ingress and app/channel handlers can
@@ -153,37 +153,39 @@ and the iframe refreshes its linked/unlinked state.
 ## Three-level connection model
 
 ```text
-provider            client app                       user account
-(OAuth mechanics)   (credentials, MANY per provider) (one user token, records app_id)
-  slack       ->      app_id=acme-search  ----------->  account_id (workspace) + token
-  slack       ->      app_id=other-app    ----------->  ...
+provider            connector app                    user account
+(OAuth mechanics)   (credentials, MANY per provider) (one user token, records connector_app_id)
+  slack       ->      connector_app_id=acme-search  --->  account_id (workspace) + token
+  slack       ->      connector_app_id=other-app    ---->  ...
 ```
 
 - **Provider** = OAuth mechanics only, no credentials. Providers are DYNAMIC —
   driven by the connection registry (any registered `ConnectionProvider`).
   Importing the providers package registers the built-ins (Slack, …).
-- **Client app** = the OAuth application client that carries credentials. Deploy
+- **Connector app** = the OAuth application client or credential class that carries credentials. Deploy
   config populates these, MANY per provider, under
-  `connections.providers.<provider>.apps: [{app_id, label, client_id, scopes,
-  enabled}, ...]`. Each app's `client_secret` is supplied separately as a deploy
-  secret.
-- **User account** = connected THROUGH one client app; the account record stores
-  its `app_id`. Tokens are user-scoped (`ConnectionStore`, shared-tokens), so any
+  `connections.delegated_to_kdcube.providers.<provider>.connector_apps`.
+  Each connector app's `client_secret` is supplied separately as a deploy secret
+  when the provider uses OAuth.
+- **User account** = connected THROUGH one connector app; the account record stores
+  its `connector_app_id`. Tokens are user-scoped, so any
   bundle acting for that user can resolve them.
 
 The OAuth callback is a single hub-level route shared by all providers/apps:
-`…/connection-hub@1-0/public/connection_oauth_callback`, signed by the hub-level
-`connections.oauth_state_secret`.
+`…/connection-hub@1-0/public/delegated_to_kdcube_oauth_callback`, signed by
+`connections.delegated_to_kdcube.oauth_state_secret`.
 
 ## Email integration
 
-**Gmail rides the connections framework** (OAuth) like Slack — `connections_*` ops
-+ the shared `connection_oauth_callback`. **iCloud** (app-specific password) is the
-only remaining `integrations/email` use, exposed as `email_*` ops (no OAuth).
+**Gmail and Slack ride delegated to KDCube** (OAuth) through
+`delegated_to_kdcube_start_oauth` + the shared
+`delegated_to_kdcube_oauth_callback`. **iCloud** uses the same delegated-to-KDCube
+broker through `delegated_to_kdcube_connect_credential`, because
+it is app-password based rather than OAuth based.
 
-A cross-app caller doing `connection.get_token("google")` resolves the user's
-Gmail token through the `connections` namespace (with refresh-on-expiry); it
-returns `email_connection_unavailable` only if that user hasn't connected Gmail.
+A server-side caller resolves the user's external credential through the
+delegated to KDCube broker. It returns an unavailable result if that user has
+not connected the requested provider/account.
 
 ## Layout
 

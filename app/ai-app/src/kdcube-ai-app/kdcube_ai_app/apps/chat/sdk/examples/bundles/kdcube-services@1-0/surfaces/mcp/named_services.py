@@ -29,13 +29,14 @@ Use this workflow:
 1. Call named_services_list first, unless the user explicitly named a namespace
    and operation.
 2. Use namespaces exactly as returned by named_services_list, for example mem,
-   task, or cnv.
+   task, cnv, conv, or mail.
 3. For an unfamiliar namespace, call named_services_capabilities and
    named_services_schema before search/get/write operations.
 4. Use named_services_search to find objects before named_services_get when the
    exact object ref is not known.
 5. Only use write, action, host-file, delete, or generic call tools when the user
-   clearly asks for that operation and the namespace capability allows it.
+   clearly asks for that operation and the namespace capability allows it. For
+   mail, actions include download_attachments, send, and forward.
 6. If a call reports missing grants or a forbidden operation, explain which
    namespace/tool needs additional consent instead of retrying blindly.
 """
@@ -117,7 +118,7 @@ def build_named_services_mcp_app(
     async def _named_services_about(
         namespace: Annotated[
             str,
-            Field(description="Configured named-service namespace, for example 'mem'."),
+            Field(description="Configured named-service namespace, for example 'mem' or 'mail'."),
         ],
         provider: Annotated[
             str,
@@ -139,7 +140,7 @@ def build_named_services_mcp_app(
     async def _named_services_capabilities(
         namespace: Annotated[
             str,
-            Field(description="Configured named-service namespace, for example 'mem', 'task', or 'cnv'."),
+            Field(description="Configured named-service namespace, for example 'mem', 'task', 'cnv', 'conv', or 'mail'."),
         ],
         provider: Annotated[
             str,
@@ -153,7 +154,7 @@ def build_named_services_mcp_app(
         title="Named service schema",
         description=(
             "Read the object schema for a configured named-service namespace. "
-            "For the memory namespace use namespace='mem'."
+            "For mail account/message refs use namespace='mail'."
         ),
         annotations=read_only_annotations(ToolAnnotations, title="Named service schema"),
         structured_output=False,
@@ -161,7 +162,7 @@ def build_named_services_mcp_app(
     async def _named_services_schema(
         namespace: Annotated[
             str,
-            Field(description="Configured named-service namespace, for example 'mem'."),
+            Field(description="Configured named-service namespace, for example 'mem' or 'mail'."),
         ],
         object_kind: Annotated[
             str,
@@ -190,7 +191,7 @@ def build_named_services_mcp_app(
     async def _named_services_search(
         namespace: Annotated[
             str,
-            Field(description="Configured named-service namespace, for example 'mem'."),
+            Field(description="Configured named-service namespace, for example 'mem' or 'mail'."),
         ],
         query: Annotated[
             str,
@@ -234,7 +235,7 @@ def build_named_services_mcp_app(
     async def _named_services_get(
         namespace: Annotated[
             str,
-            Field(description="Configured named-service namespace, for example 'mem'."),
+            Field(description="Configured named-service namespace, for example 'mem' or 'mail'."),
         ],
         object_ref: Annotated[
             str,
@@ -362,15 +363,15 @@ def build_named_services_mcp_app(
     async def _named_services_action(
         namespace: Annotated[
             str,
-            Field(description="Configured named-service namespace, for example 'mem'."),
+            Field(description="Configured named-service namespace, for example 'mem' or 'mail'."),
         ],
         object_ref: Annotated[
             str,
-            Field(description="Object ref to act on, for example mem:<id>."),
+            Field(description="Object ref to act on, for example mem:<id> or mail:gmail:<account_id>:message:<message_id>."),
         ],
         action: Annotated[
             str,
-            Field(description="Provider action, for example preview, open, download, or describe."),
+            Field(description="Provider action, for example preview, open, download, describe, download_attachments, send, or forward."),
         ] = "preview",
         payload_json: Annotated[str, Field(description="Optional JSON object with action parameters.")] = "{}",
         provider: Annotated[
@@ -450,13 +451,13 @@ def build_named_services_mcp_app(
         ],
         namespace: Annotated[
             str,
-            Field(description="Configured named-service namespace, for example 'mem'."),
+            Field(description="Configured named-service namespace, for example 'mem' or 'mail'."),
         ],
         provider: Annotated[
             str,
             Field(description="Optional provider id when a namespace has more than one provider."),
         ] = "",
-        object_ref: Annotated[str, Field(description="Optional object ref for a single object.get, for example mem:<id>.")] = "",
+        object_ref: Annotated[str, Field(description="Optional object ref for a single object.get, for example mem:<id> or mail:gmail:<account_id>:message:<message_id>.")] = "",
         object_id: Annotated[str, Field(description="Optional provider-local object id.")] = "",
         query: Annotated[str, Field(description="Optional search query for object.search.")] = "",
         action: Annotated[str, Field(description="Optional provider action for object.action.")] = "",

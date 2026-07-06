@@ -18,6 +18,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.conversation import make_conversation
 from kdcube_ai_app.apps.chat.sdk.solutions.conversation.search_backend import (
     make_conversation_search_backend,
 )
+from kdcube_ai_app.apps.chat.sdk.integrations.mail import make_mail_named_service_provider
 from kdcube_ai_app.apps.chat.sdk.storage.conversation_store import ConversationStore
 from kdcube_ai_app.infra.plugin.bundle_loader import api, bundle_entrypoint, bundle_id, mcp, ui_widget
 from kdcube_ai_app.infra.service_hub.inventory import BundleState, Config
@@ -177,6 +178,12 @@ class KDCubeServicesEntrypoint(BaseEntrypoint):
                 storage_path=str(getattr(self.settings, "STORAGE_PATH", "") or ""),
                 bundle_id=self._named_services_bundle_id(),
                 file_url_factory=self._conversation_file_url,
+            )
+        )
+        providers.append(
+            make_mail_named_service_provider(
+                entrypoint=self,
+                bundle_id=self._named_services_bundle_id(),
             )
         )
         return providers

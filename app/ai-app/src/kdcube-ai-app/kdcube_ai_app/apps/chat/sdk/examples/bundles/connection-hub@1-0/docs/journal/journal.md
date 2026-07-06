@@ -27,7 +27,7 @@ as dated files in this directory.
 
 Connection Hub started as the user-scoped third-party account connection hub:
 
-- provider -> client app -> user account;
+- provider -> connector app -> user account;
 - one shared `connection_oauth_callback` for OAuth providers;
 - user-scoped tokens in `ConnectionStore`;
 - Gmail and Slack through the `connections` framework;

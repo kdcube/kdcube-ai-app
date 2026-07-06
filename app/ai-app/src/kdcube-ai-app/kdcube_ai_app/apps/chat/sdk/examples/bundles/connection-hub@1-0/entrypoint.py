@@ -59,14 +59,14 @@ from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oau
 from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.automation_access import (
     AutomationAccessService,
 )
-from kdcube_ai_app.apps.chat.sdk.solutions.connections.user_integrations import (
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube import (
     RedisOAuthStateStore,
-    UserIntegrationStore,
+    DelegatedToKdcubeStore,
     operations_for_user,
     peek_state_payload,
-    user_integrations_config,
+    delegated_to_kdcube_config,
 )
-import kdcube_ai_app.apps.chat.sdk.solutions.connections.user_integrations.providers  # noqa: F401
+import kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube.providers  # noqa: F401
 from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oauth.metadata import (
     authorization_server_metadata,
     protected_resource_metadata,
@@ -496,35 +496,36 @@ def _automation_access_service(entrypoint: Any, request: Any) -> AutomationAcces
     )
 
 
-def _user_integrations_operations(entrypoint: Any, platform_user_id: str) -> Any:
+def _delegated_to_kdcube_operations(entrypoint: Any, platform_user_id: str) -> Any:
     return operations_for_user(
         user_id=platform_user_id,
-        config=user_integrations_config(entrypoint.bundle_prop("user_integrations", {}) or {}),
+        config=delegated_to_kdcube_config(getattr(entrypoint, "bundle_props", {}) or {}),
         bundle_id=BUNDLE_ID,
-        store=UserIntegrationStore(user_id=platform_user_id, bundle_id=BUNDLE_ID),
+        store=DelegatedToKdcubeStore(user_id=platform_user_id, bundle_id=BUNDLE_ID),
     )
 
 
-def _user_integrations_oauth_state_store(entrypoint: Any) -> RedisOAuthStateStore:
+def _delegated_to_kdcube_oauth_state_store(entrypoint: Any) -> RedisOAuthStateStore:
     tenant, project = _runtime_tenant_project(entrypoint)
     redis = getattr(entrypoint, "redis", None) or get_async_redis_client(get_settings().REDIS_URL)
     return RedisOAuthStateStore(
         redis,
-        prefix=f"kdcube:connection-hub:{tenant}:{project}:user-integrations:oauth-state",
+        prefix=f"kdcube:connection-hub:{tenant}:{project}:delegated-to-kdcube:oauth-state",
     )
 
 
-async def _user_integrations_oauth_state_secret(entrypoint: Any) -> str:
+async def _delegated_to_kdcube_oauth_state_secret(entrypoint: Any) -> str:
     return await _bundle_secret_value(
         entrypoint,
-        secret_path="user_integrations.oauth_state_secret",
-        trace_scope="user_integrations.oauth_state",
+        secret_path="connections.delegated_to_kdcube.oauth_state_secret",
+        trace_scope="delegated_to_kdcube.oauth_state",
         warn_missing=True,
     )
 
 
-def _user_integrations_oauth_callback_url(entrypoint: Any, request: Any) -> str:
-    raw = entrypoint.bundle_prop("user_integrations", {}) or {}
+def _delegated_to_kdcube_oauth_callback_url(entrypoint: Any, request: Any) -> str:
+    connections = entrypoint.bundle_prop("connections", {}) or {}
+    raw = connections.get("delegated_to_kdcube") if isinstance(connections, Mapping) else {}
     cfg = dict(raw) if isinstance(raw, Mapping) else {}
     oauth = cfg.get("oauth") if isinstance(cfg.get("oauth"), Mapping) else {}
     base = str(oauth.get("public_base_url") or "").strip().rstrip("/")
@@ -533,11 +534,11 @@ def _user_integrations_oauth_callback_url(entrypoint: Any, request: Any) -> str:
     tenant, project = _runtime_tenant_project(entrypoint)
     return (
         f"{base}/api/integrations/bundles/{tenant}/{project}/"
-        f"{BUNDLE_ID}/public/user_integrations_oauth_callback"
+        f"{BUNDLE_ID}/public/delegated_to_kdcube_oauth_callback"
     )
 
 
-async def _user_integrations_client_secret(
+async def _delegated_to_kdcube_client_secret(
     entrypoint: Any,
     *,
     provider_id: str,
@@ -545,16 +546,19 @@ async def _user_integrations_client_secret(
     connector_app: Any,
 ) -> str:
     configured_ref = str(getattr(connector_app, "client_secret_ref", "") or "").strip()
-    secret_ref = configured_ref or f"user_integrations.providers.{provider_id}.connector_apps.{connector_app_id}.client_secret"
+    secret_ref = configured_ref or (
+        f"connections.delegated_to_kdcube.providers.{provider_id}."
+        f"connector_apps.{connector_app_id}.client_secret"
+    )
     return await _bundle_secret_value(
         entrypoint,
         secret_path=secret_ref,
-        trace_scope=f"user_integrations.{provider_id}.{connector_app_id}.client_secret",
+        trace_scope=f"delegated_to_kdcube.{provider_id}.{connector_app_id}.client_secret",
         warn_missing=True,
     )
 
 
-def _user_integrations_html_done(*, title: str, body: str, link: str = "") -> HTMLResponse:
+def _delegated_to_kdcube_html_done(*, title: str, body: str, link: str = "") -> HTMLResponse:
     safe_title = html.escape(str(title or ""))
     safe_body = html.escape(str(body or ""))
     safe_link = html.escape(str(link or ""), quote=True)
@@ -1210,11 +1214,11 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
                             "delegated_access_list": {"visibility": {"user_types": []}},
                             "delegated_access_create": {"visibility": {"user_types": []}},
                             "delegated_access_revoke": {"visibility": {"user_types": []}},
-                            "user_integrations_catalog": {"visibility": {"user_types": []}},
-                            "user_integrations_start_oauth": {"visibility": {"user_types": []}},
-                            "user_integrations_connect_credential": {"visibility": {"user_types": []}},
-                            "user_integrations_disconnect": {"visibility": {"user_types": []}},
-                            "user_integrations_resolve": {"visibility": {"user_types": []}},
+                            "delegated_to_kdcube_catalog": {"visibility": {"user_types": []}},
+                            "delegated_to_kdcube_start_oauth": {"visibility": {"user_types": []}},
+                            "delegated_to_kdcube_connect_credential": {"visibility": {"user_types": []}},
+                            "delegated_to_kdcube_disconnect": {"visibility": {"user_types": []}},
+                            "delegated_to_kdcube_resolve": {"visibility": {"user_types": []}},
                             "identity_resolve": {"visibility": {"user_types": []}},
                             "authenticators_list": {"visibility": {"user_types": []}},
                             "authenticators_upsert": {"visibility": {"user_types": []}},
@@ -1236,22 +1240,21 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
             # DYNAMIC — driven by the connection registry (any registered
             # `ConnectionProvider` = OAuth mechanics, no credentials).
             #
-            # The middle level — CLIENT APPS (the OAuth application clients that
-            # carry credentials) — is populated by deploy config, MANY per
-            # provider:
-            #   connections.providers.<provider>.apps: [
-            #     {app_id, label, client_id, scopes, enabled}, ...
-            #   ]
+            # The middle level — CONNECTOR APPS (the OAuth clients or credential
+            # classes that carry operator credentials) — is populated by deploy
+            # config, MANY per provider:
+            #   connections.delegated_to_kdcube.providers.<provider>.connector_apps
             # with secrets supplied separately (never in config/metadata):
-            #   secret: connections.providers.<provider>.apps.<app_id>.client_secret
-            #   secret: connections.oauth_state_secret            (hub-level, signs state)
+            #   secret: connections.delegated_to_kdcube.providers.<provider>.connector_apps.<connector_app_id>.client_secret
+            #   secret: connections.delegated_to_kdcube.oauth_state_secret
             #
-            # A user account is connected THROUGH one client app and records its
-            # `app_id`. The OAuth callback is a single hub-level route shared by
-            # all providers/apps.
+            # A user account is connected THROUGH one connector app and records
+            # its `connector_app_id`. OAuth providers share the delegated
+            # integrations OAuth callback.
             "connections": {
                 "oauth": {
-                    # Public base for the shared connection_oauth_callback route.
+                    # Public base for Connection Hub browser callbacks when a
+                    # flow does not have a more specific public_base_url.
                     # Empty → derived from the request host at runtime.
                     "public_base_url": "",
                 },
@@ -1372,35 +1375,37 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
                         ],
                     },
                 },
-                # Deploy config populates this per provider (see comment above).
+                "delegated_to_kdcube": {
+                    "enabled": False,
+                    "oauth": {
+                        # Public base for delegated to KDCube OAuth callbacks.
+                        # Empty means derive from the inbound request.
+                        "public_base_url": "",
+                    },
+                    "providers": {
+                        # Example:
+                        # google:
+                        #   label: Google
+                        #   adapter: google.oauth
+                        #   enabled: true
+                        #   claims:
+                        #     gmail:read:
+                        #       label: Read Gmail
+                        #       provider_scopes:
+                        #         - https://www.googleapis.com/auth/gmail.readonly
+                        #   connector_apps:
+                        #     gmail:
+                        #       label: Gmail
+                        #       client_id: ""
+                        #       client_secret_ref: connections.delegated_to_kdcube.providers.google.connector_apps.gmail.client_secret
+                        #       allowed_claims:
+                        #         - gmail:read
+                    },
+                },
+                # Legacy deploy config for older integrations/connections
+                # providers. Delegated user account credentials are configured
+                # in connections.delegated_to_kdcube above.
                 "providers": {},
-            },
-            "user_integrations": {
-                "enabled": False,
-                "oauth": {
-                    # Public base for user integration OAuth callbacks. Empty
-                    # means derive from the inbound request.
-                    "public_base_url": "",
-                },
-                "providers": {
-                    # Example:
-                    # google:
-                    #   label: Google
-                    #   adapter: google.oauth
-                    #   enabled: true
-                    #   capabilities:
-                    #     gmail:read:
-                    #       label: Read Gmail
-                    #       provider_scopes:
-                    #         - https://www.googleapis.com/auth/gmail.readonly
-                    #   connector_apps:
-                    #     gmail_default:
-                    #       label: KDCube Gmail connector
-                    #       client_id: ""
-                    #       client_secret_ref: user_integrations.providers.google.connector_apps.gmail_default.client_secret
-                    #       capability_ceiling:
-                    #         - gmail:read
-                },
             },
             "identity": {
                 "enabled": True,
@@ -1673,10 +1678,10 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
             access_id=str(payload.get("access_id") or "").strip(),
         )
 
-    # ── user-connected integrations (KDCube -> external provider for user) ──
+    # ── delegated to KDCube (KDCube -> external provider for user) ──
 
-    @api(method="GET", alias="user_integrations_catalog", route="operations", **_api_visibility("user_integrations_catalog"))
-    async def user_integrations_catalog(
+    @api(method="GET", alias="delegated_to_kdcube_catalog", route="operations", **_api_visibility("delegated_to_kdcube_catalog"))
+    async def delegated_to_kdcube_catalog(
         self,
         provider: str = "",
         user_id: Optional[str] = None,
@@ -1686,11 +1691,11 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
         del fingerprint, kwargs
         platform_user_id = _platform_user_id(self, user_id=user_id)
         if not platform_user_id:
-            return {"ok": False, "error": "user_integrations_requires_authenticated_user"}
-        return await _user_integrations_operations(self, platform_user_id).catalog(provider_id=provider)
+            return {"ok": False, "error": "delegated_to_kdcube_requires_authenticated_user"}
+        return await _delegated_to_kdcube_operations(self, platform_user_id).catalog(provider_id=provider)
 
-    @api(method="POST", alias="user_integrations_start_oauth", route="operations", **_api_visibility("user_integrations_start_oauth"))
-    async def user_integrations_start_oauth(
+    @api(method="POST", alias="delegated_to_kdcube_start_oauth", route="operations", **_api_visibility("delegated_to_kdcube_start_oauth"))
+    async def delegated_to_kdcube_start_oauth(
         self,
         data: Optional[Dict[str, Any]] = None,
         request: Any = None,
@@ -1702,24 +1707,24 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
         del fingerprint
         platform_user_id = _platform_user_id(self, user_id=user_id)
         if not platform_user_id:
-            return {"ok": False, "error": "user_integrations_requires_authenticated_user"}
+            return {"ok": False, "error": "delegated_to_kdcube_requires_authenticated_user"}
         payload = _payload(data, **kwargs)
-        if provider and "provider" not in payload and "provider_id" not in payload:
-            payload["provider"] = provider
+        if provider and "provider_id" not in payload:
+            payload["provider_id"] = provider
         try:
-            return await _user_integrations_operations(self, platform_user_id).start_oauth(
+            return await _delegated_to_kdcube_operations(self, platform_user_id).start_oauth(
                 payload,
                 user_id=platform_user_id,
-                callback_url=_user_integrations_oauth_callback_url(self, request),
-                state_store=_user_integrations_oauth_state_store(self),
-                state_secret=await _user_integrations_oauth_state_secret(self),
+                callback_url=_delegated_to_kdcube_oauth_callback_url(self, request),
+                state_store=_delegated_to_kdcube_oauth_state_store(self),
+                state_secret=await _delegated_to_kdcube_oauth_state_secret(self),
             )
         except Exception as exc:
-            LOGGER.warning("[connection-hub.user_integrations] start OAuth failed: %s", exc)
-            return {"ok": False, "error": "invalid_user_integration_oauth_request", "message": str(exc)}
+            LOGGER.warning("[connection-hub.delegated_to_kdcube] start OAuth failed: %s", exc)
+            return {"ok": False, "error": "invalid_delegated_to_kdcube_oauth_request", "message": str(exc)}
 
-    @api(method="GET", alias="user_integrations_oauth_callback", route="public")
-    async def user_integrations_oauth_callback(
+    @api(method="GET", alias="delegated_to_kdcube_oauth_callback", route="public")
+    async def delegated_to_kdcube_oauth_callback(
         self,
         request: Any = None,
         code: str = "",
@@ -1729,12 +1734,12 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
     ):
         del kwargs
         if error:
-            return _user_integrations_html_done(
+            return _delegated_to_kdcube_html_done(
                 title="Connection failed",
                 body=f"OAuth provider returned: {error}",
             )
         if not code or not state:
-            return _user_integrations_html_done(
+            return _delegated_to_kdcube_html_done(
                 title="Connection failed",
                 body="The OAuth callback is missing code or state.",
             )
@@ -1745,19 +1750,19 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
                 raise ValueError("OAuth state is missing user_id")
 
             async def _client_secret_resolver(*, provider_id: str, connector_app_id: str, connector_app: Any) -> str:
-                return await _user_integrations_client_secret(
+                return await _delegated_to_kdcube_client_secret(
                     self,
                     provider_id=provider_id,
                     connector_app_id=connector_app_id,
                     connector_app=connector_app,
                 )
 
-            result = await _user_integrations_operations(self, platform_user_id).complete_oauth(
+            result = await _delegated_to_kdcube_operations(self, platform_user_id).complete_oauth(
                 code=code,
                 state=state,
-                callback_url=_user_integrations_oauth_callback_url(self, request),
-                state_store=_user_integrations_oauth_state_store(self),
-                state_secret=await _user_integrations_oauth_state_secret(self),
+                callback_url=_delegated_to_kdcube_oauth_callback_url(self, request),
+                state_store=_delegated_to_kdcube_oauth_state_store(self),
+                state_secret=await _delegated_to_kdcube_oauth_state_secret(self),
                 client_secret_resolver=_client_secret_resolver,
             )
             account = result.get("account") or {}
@@ -1766,21 +1771,21 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
             return_link = str(result.get("return_hint") or "").strip()
             if origin and return_link and not return_link.startswith(origin):
                 return_link = origin
-            return _user_integrations_html_done(
+            return _delegated_to_kdcube_html_done(
                 title="Connection complete",
                 body=f"Connected {label}. You can return to KDCube.",
                 link=return_link or origin,
             )
         except Exception as exc:
-            LOGGER.warning("[connection-hub.user_integrations] OAuth callback failed", exc_info=True)
-            return _user_integrations_html_done(
+            LOGGER.warning("[connection-hub.delegated_to_kdcube] OAuth callback failed", exc_info=True)
+            return _delegated_to_kdcube_html_done(
                 title="Connection failed",
                 body=str(exc),
                 link=_request_origin(request),
             )
 
-    @api(method="POST", alias="user_integrations_connect_credential", route="operations", **_api_visibility("user_integrations_connect_credential"))
-    async def user_integrations_connect_credential(
+    @api(method="POST", alias="delegated_to_kdcube_connect_credential", route="operations", **_api_visibility("delegated_to_kdcube_connect_credential"))
+    async def delegated_to_kdcube_connect_credential(
         self,
         data: Optional[Dict[str, Any]] = None,
         provider: str = "",
@@ -1791,17 +1796,17 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
         del fingerprint
         platform_user_id = _platform_user_id(self, user_id=user_id)
         if not platform_user_id:
-            return {"ok": False, "error": "user_integrations_requires_authenticated_user"}
+            return {"ok": False, "error": "delegated_to_kdcube_requires_authenticated_user"}
         payload = _payload(data, **kwargs)
-        if provider and "provider" not in payload and "provider_id" not in payload:
-            payload["provider"] = provider
+        if provider and "provider_id" not in payload:
+            payload["provider_id"] = provider
         try:
-            return await _user_integrations_operations(self, platform_user_id).connect_credential(payload)
+            return await _delegated_to_kdcube_operations(self, platform_user_id).connect_credential(payload)
         except ValueError as exc:
-            return {"ok": False, "error": "invalid_user_integration_request", "message": str(exc)}
+            return {"ok": False, "error": "invalid_delegated_to_kdcube_request", "message": str(exc)}
 
-    @api(method="POST", alias="user_integrations_disconnect", route="operations", **_api_visibility("user_integrations_disconnect"))
-    async def user_integrations_disconnect(
+    @api(method="POST", alias="delegated_to_kdcube_disconnect", route="operations", **_api_visibility("delegated_to_kdcube_disconnect"))
+    async def delegated_to_kdcube_disconnect(
         self,
         data: Optional[Dict[str, Any]] = None,
         account_id: str = "",
@@ -1812,19 +1817,20 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
         del fingerprint
         platform_user_id = _platform_user_id(self, user_id=user_id)
         if not platform_user_id:
-            return {"ok": False, "error": "user_integrations_requires_authenticated_user"}
+            return {"ok": False, "error": "delegated_to_kdcube_requires_authenticated_user"}
         payload = _payload(data, **kwargs)
         resolved_account_id = str(account_id or payload.get("account_id") or "").strip()
         if not resolved_account_id:
             return {"ok": False, "error": "account_id_required"}
-        return await _user_integrations_operations(self, platform_user_id).disconnect(account_id=resolved_account_id)
+        return await _delegated_to_kdcube_operations(self, platform_user_id).disconnect(account_id=resolved_account_id)
 
-    @api(method="POST", alias="user_integrations_resolve", route="operations", **_api_visibility("user_integrations_resolve"))
-    async def user_integrations_resolve(
+    @api(method="POST", alias="delegated_to_kdcube_resolve", route="operations", **_api_visibility("delegated_to_kdcube_resolve"))
+    async def delegated_to_kdcube_resolve(
         self,
         data: Optional[Dict[str, Any]] = None,
         provider: str = "",
-        capability: str = "",
+        claim: str = "",
+        connector_app_id: str = "",
         account_id: str = "",
         user_id: Optional[str] = None,
         fingerprint: Optional[str] = None,
@@ -1833,11 +1839,12 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
         del fingerprint
         platform_user_id = _platform_user_id(self, user_id=user_id)
         if not platform_user_id:
-            return {"ok": False, "error": "user_integrations_requires_authenticated_user"}
+            return {"ok": False, "error": "delegated_to_kdcube_requires_authenticated_user"}
         payload = _payload(data, **kwargs)
-        return await _user_integrations_operations(self, platform_user_id).resolve(
-            provider_id=str(provider or payload.get("provider") or payload.get("provider_id") or "").strip(),
-            capability=str(capability or payload.get("capability") or "").strip(),
+        return await _delegated_to_kdcube_operations(self, platform_user_id).resolve(
+            provider_id=str(provider or payload.get("provider_id") or "").strip(),
+            connector_app_id=str(connector_app_id or payload.get("connector_app_id") or "").strip(),
+            claim=str(claim or payload.get("claim") or "").strip(),
             account_id=str(account_id or payload.get("account_id") or "").strip(),
         )
 

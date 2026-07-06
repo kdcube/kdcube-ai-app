@@ -40,8 +40,8 @@ allowed actions
   scopes / tools / provider permissions / operation allowlist
       |
       v
-execution principal or capability
-  UserSession authority / provider capability / integration principal
+runtime projection
+  UserSession authority / connected-account credential / integration principal
 ```
 
 Provider accounts and external clients are not different conceptual systems.
@@ -50,8 +50,8 @@ connection model:
 
 | Case | Authenticator verifies | Linker/grant resolver returns |
 | --- | --- | --- |
-| Gmail delegated account | Gmail OAuth credential/account state. | Platform grantor + Gmail capability + allowed provider actions. |
-| iCloud delegated account | App-specific password/account state. | Platform grantor + iCloud capability + allowed provider actions. |
+| Gmail delegated account | Gmail OAuth credential/account state. | Platform grantor + connected-account credential satisfying declared Gmail claims. |
+| iCloud delegated account | App-specific password/account state. | Platform grantor + connected-account credential satisfying declared iCloud claims. |
 | Claude OAuth delegated credential connection | KDCube-issued access/refresh token through the OAuth delegated credential registry. | Integration principal + KDCube resource + selected tools. |
 | Telegram-linked request | Telegram initData or webhook proof. | Actor identity + linked platform principal + projected authority. |
 
@@ -84,7 +84,7 @@ The lifecycle has two phases. This is the real boundary to preserve.
    grantor proves authority
      -> user logs in / channel proof is verified / user or admin consents
      -> Connection Hub writes a connection edge and any protocol-specific grant state
-     -> credential/capability is issued or stored
+     -> credential, connection edge, or delegated grant is issued or stored
 
 
 2. Runtime use
@@ -92,7 +92,7 @@ The lifecycle has two phases. This is the real boundary to preserve.
    credential/proof arrives later
      -> registered authenticator verifies it
      -> linker/grant resolver finds the stored meaning
-     -> authority or capability is produced
+     -> authority, connected-account credential, or integration principal is produced
      -> allowed actions are enforced
 ```
 
@@ -101,7 +101,7 @@ Examples:
 | Provisioning / consent | Runtime use |
 | --- | --- |
 | Telegram user starts link, KDCube user claims it, connection edge is written. | Telegram `initData` arrives, Telegram authenticator verifies it, edge projection provides platform authority. |
-| User connects Gmail, OAuth callback stores provider grant. | Automation asks for Gmail capability, provider adapter resolves token and allowed provider actions. |
+| User connects Gmail, OAuth callback stores a user-scoped connected account. | A tool declares Gmail claims; the SDK checks the current user's connected account and resolves the credential only when those claims are present. |
 | User or admin approves Claude MCP access, OAuth delegated credential grant is written according to descriptor delegability. | Claude sends KDCube token, `delegated_client` authenticator resolves integration principal and selected tools. |
 
 ## Relationship To Connection Edges

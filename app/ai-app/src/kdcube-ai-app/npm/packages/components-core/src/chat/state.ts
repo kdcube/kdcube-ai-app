@@ -21,6 +21,8 @@ export interface Banner {
   id: string
   tone: BannerTone
   text: string
+  actionLabel?: string
+  actionUrl?: string
   /** Where the notice renders. `'composer'` = right above the chat input
    *  (chat-send / rate-limit / economic notices). `'top'` (default) =
    *  app-level strip at the top (boot/connection, list errors). */

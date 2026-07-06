@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 
-export type ConnectionsTab = 'identity' | 'accounts' | 'userIntegrations' | 'delegatedAccess' | 'authenticators';
+export type ConnectionsTab = 'identity' | 'delegatedToKdcube' | 'delegatedAccess' | 'authenticators';
 
 export interface AppShellProps {
   errors: string[];
@@ -34,8 +34,9 @@ export function AppShell({
         </button>
       </div>
       <p className="note">
-        Link alternate identities for login/routing, and connect accounts when
-        automation needs delegated access. OAuth connects open in a new tab.
+        Link identities for login/routing, delegate external accounts to KDCube,
+        or issue bounded KDCube credentials to automation. OAuth connects open in
+        a new tab.
       </p>
       <nav className="tabs" aria-label="Connection Hub sections">
         <button
@@ -47,24 +48,17 @@ export function AppShell({
         </button>
         <button
           type="button"
-          className={`tab ${activeTab === 'accounts' ? 'active' : ''}`}
-          onClick={() => onTabChange('accounts')}
+          className={`tab ${activeTab === 'delegatedToKdcube' ? 'active' : ''}`}
+          onClick={() => onTabChange('delegatedToKdcube')}
         >
-          Accounts
-        </button>
-        <button
-          type="button"
-          className={`tab ${activeTab === 'userIntegrations' ? 'active' : ''}`}
-          onClick={() => onTabChange('userIntegrations')}
-        >
-          User Integrations
+          Delegated to KDCube
         </button>
         <button
           type="button"
           className={`tab ${activeTab === 'delegatedAccess' ? 'active' : ''}`}
           onClick={() => onTabChange('delegatedAccess')}
         >
-          Delegated Access
+          Delegated by KDCube
         </button>
         <button
           type="button"

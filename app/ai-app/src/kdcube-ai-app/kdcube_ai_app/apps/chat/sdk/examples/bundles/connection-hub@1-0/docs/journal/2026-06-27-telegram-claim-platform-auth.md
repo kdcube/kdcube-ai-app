@@ -101,7 +101,7 @@ app client used by the platform frontend with:
 Examples:
 
 ```text
-https://broodier-maxie-uninferrably.ngrok-free.dev/platform/callback
+https://<LOCAL_PUBLIC_HOST>/platform/callback
 https://demo.kdcube.tech/platform/callback
 https://dev.kdcube.tech/platform/callback
 ```

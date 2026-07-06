@@ -1,60 +1,5 @@
 // Response shapes the Connections widget reads (only the fields it uses).
 
-export interface EmailAccount {
-  account_id: string;
-  provider: string; // "icloud" | ...  (Gmail is a connections provider, not here)
-  email: string;
-  display_name: string;
-  status?: string;
-  has_token?: boolean;
-}
-
-export interface EmailStatusResult {
-  ok: boolean;
-  accounts: EmailAccount[];
-}
-
-export interface ConnectionAccount {
-  account_id: string;
-  provider: string;
-  label?: string;
-  display_name?: string;
-  email?: string;
-  workspace?: string;
-  has_token?: boolean;
-  status?: string;
-}
-
-export interface ConnectionApp {
-  app_id: string;
-  provider: string;
-  label?: string;
-  enabled?: boolean;
-  scopes?: string[]; // the per-app scope ceiling; a connect may request a subset
-}
-
-export interface CatalogEntry {
-  provider: string;
-  label?: string;
-  enabled?: boolean;
-  configured?: boolean;
-  connected?: boolean;
-  apps?: ConnectionApp[];
-  accounts?: ConnectionAccount[];
-}
-
-export interface CatalogResult {
-  ok?: boolean;
-  providers?: CatalogEntry[];
-  entries?: CatalogEntry[];
-}
-
-export interface StartOAuthResult {
-  ok?: boolean;
-  authorize_url?: string;
-  error?: { message?: string } | null;
-}
-
 export interface ConnectionEdgeEndpoint {
   authority_id?: string;
   provider?: string;
@@ -236,33 +181,33 @@ export interface AuthenticatorMutationResult {
   message?: string;
 }
 
-export interface UserIntegrationCapability {
-  capability_id: string;
+export interface DelegatedToKdcubeClaim {
+  claim_id: string;
   label?: string;
   description?: string;
   provider_scopes?: string[];
 }
 
-export interface UserIntegrationConnectorApp {
-  app_id: string;
+export interface DelegatedToKdcubeConnectorApp {
+  connector_app_id: string;
   provider_id: string;
   label?: string;
   enabled?: boolean;
   client_id?: string;
   redirect_uri?: string;
-  capability_ceiling?: string[];
+  allowed_claims?: string[];
 }
 
-export interface UserIntegrationProvider {
+export interface DelegatedToKdcubeProvider {
   provider_id: string;
   label?: string;
   adapter?: string;
   enabled?: boolean;
-  capabilities?: Record<string, UserIntegrationCapability>;
-  connector_apps?: Record<string, UserIntegrationConnectorApp>;
+  claims?: Record<string, DelegatedToKdcubeClaim>;
+  connector_apps?: Record<string, DelegatedToKdcubeConnectorApp>;
 }
 
-export interface UserIntegrationAccount {
+export interface DelegatedToKdcubeAccount {
   account_id: string;
   provider_id: string;
   connector_app_id?: string;
@@ -270,38 +215,43 @@ export interface UserIntegrationAccount {
   display_name?: string;
   email?: string;
   workspace?: string;
-  capabilities?: string[];
+  claims?: string[];
   status?: string;
   has_credential?: boolean;
+  credential_status?: string;
+  credential_kind?: string;
+  credential_refreshable?: boolean;
+  credential_expires_at?: number;
+  reconnect_required?: boolean;
+  credential_message?: string;
 }
 
-export interface UserIntegrationsCatalogResult {
+export interface DelegatedToKdcubeCatalogResult {
   ok?: boolean;
   enabled?: boolean;
-  providers?: Record<string, UserIntegrationProvider>;
-  accounts?: UserIntegrationAccount[];
+  providers?: Record<string, DelegatedToKdcubeProvider>;
+  accounts?: DelegatedToKdcubeAccount[];
   error?: string;
   message?: string;
 }
 
-export interface UserIntegrationsMutationResult {
+export interface DelegatedToKdcubeMutationResult {
   ok?: boolean;
-  account?: UserIntegrationAccount;
+  account?: DelegatedToKdcubeAccount;
   removed?: boolean;
   account_id?: string;
   error?: string;
   message?: string;
 }
 
-export interface UserIntegrationsOAuthStartResult {
+export interface DelegatedToKdcubeOAuthStartResult {
   ok?: boolean;
   provider_id?: string;
   connector_app_id?: string;
-  app_id?: string;
   authorize_url?: string;
   state_id?: string;
   redirect_uri?: string;
-  capabilities?: string[];
+  claims?: string[];
   provider_scopes?: string[];
   error?: string;
   message?: string;

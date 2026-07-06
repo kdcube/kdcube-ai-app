@@ -1,10 +1,10 @@
 ---
 id: repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/delegated-accounts/delegated-accounts-README.md
 title: "Delegated Provider Accounts"
-summary: "Delegated Connections subtype where KDCube stores user-granted external provider capabilities such as Gmail, Slack, and iCloud for automation and app actions."
+summary: "Delegated Connections subtype where KDCube stores user-granted external provider claims such as Gmail, Slack, and iCloud for automation and app actions."
 status: active
 tags: ["sdk", "connections", "connection-hub", "delegated-connections", "delegated-accounts", "oauth", "gmail", "slack", "icloud"]
-updated_at: 2026-06-28
+updated_at: 2026-07-06
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/connection-hub-solution-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/delegated-connections/delegated-connections-README.md
@@ -40,7 +40,7 @@ delegated representative
   KDCube automation/app using provider account
       |
       v
-credential or capability
+credential plus approved claims
   Gmail OAuth token / Slack OAuth token / iCloud app password
       |
       v
@@ -50,8 +50,8 @@ resource surface
 
 ## Boundary
 
-Delegated provider account connections are capabilities. They are not identity
-proof and they are not platform roles.
+Delegated provider account connections are provider credentials plus approved
+claims. They are not identity proof and they are not platform roles.
 
 ```text
 Identity link:
@@ -67,9 +67,9 @@ Delegated external client:
 An app may use a delegated token only after normal platform/request authority is
 established for the current execution.
 
-Delegated accounts are outbound capabilities: KDCube uses a provider account on
+Delegated accounts are outbound claims: KDCube uses a provider account on
 behalf of the user. Managed delegated-client credentials are inbound
-capabilities: an external client calls a KDCube resource with a KDCube-issued
+delegations: an external client calls a KDCube resource with a KDCube-issued
 credential. Both are Connection Hub delegations, but they store and enforce
 different token directions.
 
@@ -80,24 +80,25 @@ provider
   OAuth mechanics, no credentials
       |
       v
-client app
-  app_id, client_id, scope ceiling, client_secret in secrets
+connector app
+  connector_app_id, client_id, allowed_claims ceiling, client_secret in secrets
       |
       v
 user account
-  account id, access/refresh token, connected through one app_id
+  account id, access/refresh token, connected through one connector_app_id,
+  approved claims for that external account/workspace
 ```
 
-Multiple client apps can exist for one provider.
+Multiple connector apps can exist for one provider.
 
 ```text
 google
-  -> app_id=gmail.personal
-  -> app_id=gmail.enterprise
+  -> connector_app_id=gmail.personal
+  -> connector_app_id=gmail.enterprise
 
 slack
-  -> app_id=slack.workspace_a
-  -> app_id=slack.workspace_b
+  -> connector_app_id=slack.workspace_a
+  -> connector_app_id=slack.workspace_b
 ```
 
 ## Current Providers
@@ -131,8 +132,32 @@ ConnectionsClient / named-service provider
 Connection Hub resolves user's delegated account
        |
        v
-provider token/capability returned to app-side integration code
+provider credential handle returned to app-side integration code
 ```
 
 The app should not ask delegated provider accounts for platform roles. Roles
 come from platform authority projection.
+
+## Credential Health And Refresh
+
+Provider credentials stay in user secrets. Public account records expose only
+metadata and health fields:
+
+```text
+credential_status
+credential_kind
+credential_expires_at
+credential_refreshable
+reconnect_required
+credential_message
+```
+
+OAuth access tokens are short-lived. If a stored credential has a refresh token,
+the delegated-account broker refreshes the access token before returning a
+credential handle to application code. The refreshed token is written back to
+user secrets.
+
+If an OAuth credential is expired and has no refresh token, broker resolution
+returns `consent_required`. The UI should present that as **Reconnect required**.
+This avoids the misleading state where an account looks connected while provider
+API calls fail with invalid credentials.

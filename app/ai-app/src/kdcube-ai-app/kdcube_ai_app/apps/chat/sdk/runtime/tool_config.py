@@ -13,6 +13,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers.client_tools
     NAMED_SERVICE_TOOLS_ALIAS,
     named_service_tool_spec,
 )
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube import ToolClaimPolicy
 
 
 DEFAULT_AGENT_ID = "default_agent"
@@ -43,6 +44,7 @@ class AgentToolConfig:
     tool_traits: ToolTraitsById = field(default_factory=dict)
     allowed_plugins: list[str] = field(default_factory=list)
     allowed_tool_names_by_alias: dict[str, list[str] | None] = field(default_factory=dict)
+    tool_claim_policies: list[ToolClaimPolicy] = field(default_factory=list)
 
 
 def _get_path(data: Mapping[str, Any] | None, path: str, default: Any = None) -> Any:
@@ -233,6 +235,47 @@ def _merge_tool_traits(
             target[full_id] = traits
 
 
+def _append_tool_claim_policy(
+    target: list[ToolClaimPolicy],
+    *,
+    tool_name: str,
+    raw: Any,
+) -> None:
+    name = str(tool_name or "").strip()
+    if not name:
+        return
+    policy = ToolClaimPolicy.from_tool_config(name, raw)
+    if policy.connected_accounts:
+        target.append(policy)
+
+
+def _merge_tool_claim_policies(
+    target: list[ToolClaimPolicy],
+    *,
+    alias: str,
+    kind: str,
+    connection: Mapping[str, Any],
+) -> None:
+    if not alias:
+        return
+
+    raw_by_tool = (
+        connection.get("tool_claims")
+        or connection.get("tool_claim_policies")
+        or connection.get("claims_by_tool")
+    )
+    if isinstance(raw_by_tool, Mapping):
+        for tool_name, raw in raw_by_tool.items():
+            full_id = _trait_tool_id(alias, str(tool_name or ""), kind=kind)
+            _append_tool_claim_policy(target, tool_name=full_id, raw=raw)
+
+    # A direct `connections.delegated_to_kdcube` block applies to this whole
+    # tool connection. This keeps the declaration next to the tool entry without
+    # inventing an intermediate capability registry.
+    if isinstance(connection.get("connections"), Mapping) or isinstance(connection.get("delegated_to_kdcube"), Mapping):
+        _append_tool_claim_policy(target, tool_name=alias, raw=connection)
+
+
 def _named_service_tools_for_connection(connection: Mapping[str, Any]) -> list[str]:
     namespaces = connection.get("namespaces")
     if not isinstance(namespaces, Mapping):
@@ -264,6 +307,7 @@ def agent_tool_config_from_bundle_props(
     mcp_tool_specs: list[dict[str, Any]] = []
     tool_runtime: dict[str, str] = {}
     tool_traits: dict[str, dict[str, Any]] = {}
+    tool_claim_policies: list[ToolClaimPolicy] = []
     allowed_plugins: list[str] = []
     allowed_tool_names_by_alias: dict[str, list[str] | None] = {}
 
@@ -300,6 +344,12 @@ def agent_tool_config_from_bundle_props(
                 kind="python",
                 raw=connection.get("tool_traits"),
             )
+            _merge_tool_claim_policies(
+                tool_claim_policies,
+                alias=alias,
+                kind="python",
+                connection=connection,
+            )
             continue
 
         if kind == "mcp":
@@ -323,6 +373,12 @@ def agent_tool_config_from_bundle_props(
                 kind="mcp",
                 raw=connection.get("tool_traits"),
             )
+            _merge_tool_claim_policies(
+                tool_claim_policies,
+                alias=alias,
+                kind="mcp",
+                connection=connection,
+            )
             continue
 
         if kind == "named_service":
@@ -341,6 +397,12 @@ def agent_tool_config_from_bundle_props(
                 kind="python",
                 raw=connection.get("tool_traits"),
             )
+            _merge_tool_claim_policies(
+                tool_claim_policies,
+                alias=alias,
+                kind="python",
+                connection=connection,
+            )
             continue
 
     return AgentToolConfig(
@@ -350,6 +412,7 @@ def agent_tool_config_from_bundle_props(
         tool_traits=tool_traits,
         allowed_plugins=allowed_plugins,
         allowed_tool_names_by_alias=allowed_tool_names_by_alias,
+        tool_claim_policies=tool_claim_policies,
     )
 
 

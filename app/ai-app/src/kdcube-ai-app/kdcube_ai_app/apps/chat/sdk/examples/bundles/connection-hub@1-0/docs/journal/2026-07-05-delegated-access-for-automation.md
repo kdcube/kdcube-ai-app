@@ -70,5 +70,5 @@ session by `session_id`.
   as `resource: "*"`, is visible only to platform admins, and requires the
   platform role grant `kdcube:role:super-admin`.
 - Platform roles are authority grants for delegated access.
-- Future user-connected provider integrations, such as Gmail or Slack, remain a
+- Future delegated provider integrations, such as Gmail or Slack, remain a
   separate subsystem.

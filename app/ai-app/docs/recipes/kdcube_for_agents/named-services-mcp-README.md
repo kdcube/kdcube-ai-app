@@ -7,6 +7,7 @@ tags: ["recipes", "kdcube-for-agents", "named-services", "mcp", "conv", "search"
 updated_at: 2026-07-02
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/recipes/connections/delegate-kdcube-service-to-external-client-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/recipes/connections/integrations/mail-named-service-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/recipes/components/named-service-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/providers-README.md
 ---

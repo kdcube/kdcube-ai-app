@@ -32,7 +32,7 @@ connection edge
   purpose: prove and route the platform principal
 
 delegated account connection
-  platform_user_id + provider account -> token/capability
+  platform_user_id + provider account -> token/claim
   purpose: let automation act for the user
 ```
 
@@ -65,30 +65,35 @@ All are authenticated (`PlatformAuth`) and visibility-gated by
 | `authenticators_list` | GET | operations | List Connection Hub authenticator modules/configured rows and secret-reference status. Secret values are never returned. |
 | `authenticators_upsert` | POST | operations | Create/update a Postgres-backed authenticator metadata row. Accepts authenticator selector metadata, `role_providing`, and `secret_ref`; rejects secret values. |
 | `authenticators_remove` | POST | operations | Soft-delete a Postgres-backed authenticator metadata row. Descriptor-defined rows are not removed through this API. |
-| `connections_catalog` | GET | operations | Catalog of providers → client apps → user accounts, with connected/configured flags. |
-| `connections_start_oauth` | POST | operations | Begin OAuth for `provider` + `app_id`; optional per-connect `scopes` subset (list or space/comma string). Returns an authorize URL. |
-| `connections_disconnect` | POST | operations | Disconnect a user account (`provider`, `account_id`). |
-| `email_accounts_status` | GET | operations | iCloud account status (the email integration serves iCloud only; Gmail is a connections provider). |
-| `email_connect_app_password` | POST | operations | Connect an **iCloud** app-password account (`provider="icloud"`, `email`, `app_password`, …). |
-| `email_disconnect_account` | POST | operations | Disconnect an iCloud account (`account_id`). |
+| `delegated_to_kdcube_catalog` | GET | operations | Catalog of providers → connector apps → user accounts, with connected/configured flags. |
+| `delegated_to_kdcube_start_oauth` | POST | operations | Begin OAuth for `provider` + `connector_app_id`; optional selected claims. Returns an authorize URL. |
+| `delegated_to_kdcube_connect_credential` | POST | operations | Store a non-OAuth credential, such as an iCloud app-specific password, as a user-scoped connected account delegated to KDCube. |
+| `delegated_to_kdcube_disconnect` | POST | operations | Disconnect a user account (`provider`, `account_id`). |
+| `delegated_to_kdcube_resolve` | POST | operations | Resolve a delegated-to-KDCube credential for code acting on behalf of the current authenticated user. Secret values are returned only to server-side callers. |
+| `email_accounts_status` | GET | operations | Older iCloud account status route retained only for the older email integration surface. |
+| `email_connect_app_password` | POST | operations | Older iCloud app-password route retained only for the older email integration surface. |
+| `email_disconnect_account` | POST | operations | Older iCloud disconnect route retained only for the older email integration surface. |
 | `connections_settings` | GET | operations | Thin widget data alias (also the `@ui_widget` alias). |
 
-> Gmail OAuth is **not** here — it rides the connections ops (`connections_start_oauth`
-> / `connection_oauth_callback`) like Slack. The email integration is iCloud-only
-> (app-password), so there is no email OAuth start/callback.
+> Gmail, Slack, and iCloud-style app-password accounts are now configured under
+> `connections.delegated_to_kdcube`. OAuth providers use
+> `delegated_to_kdcube_start_oauth` and the public
+> `delegated_to_kdcube_oauth_callback`; non-OAuth providers use
+> `delegated_to_kdcube_connect_credential`.
 
 ### Public callback route
 
 A browser redirect target, not a JSON op — reached by the external provider after
-the user authorizes. One shared callback for **all** OAuth providers (Gmail, Slack):
+the user authorizes. One delegated-to-KDCube callback is shared by OAuth
+providers such as Gmail and Slack:
 
 | Alias | Method | Route | Redirect URI to register |
 | --- | --- | --- | --- |
-| `connection_oauth_callback` | GET | public | `…/connection-hub@1-0/public/connection_oauth_callback` |
+| `delegated_to_kdcube_oauth_callback` | GET | public | `…/connection-hub@1-0/public/delegated_to_kdcube_oauth_callback` |
 
 It accepts `code`, `state`, `error` and completes the hub-owned flow, validating
-`state` with `connections.oauth_state_secret`. The provider + client app are read
-from the signed `state`.
+`state` with `connections.delegated_to_kdcube.oauth_state_secret`. The
+provider + connector app are read from the signed `state`.
 
 ### Public Telegram proof route
 
@@ -175,35 +180,100 @@ Example response:
 
 ## Request payload shapes
 
-`connections_start_oauth`:
+`delegated_to_kdcube_start_oauth`:
 
 ```json
 {
   "data": {
-    "provider": "slack",
-    "app_id": "acme-search",
-    "scopes": ["search:read", "channels:history", "groups:history"],
+    "provider_id": "slack",
+    "connector_app_id": "demo",
+    "claims": ["slack:search"],
     "return_hint": ""
   }
 }
 ```
 
-`connections_disconnect`:
+`delegated_to_kdcube_disconnect`:
 
 ```json
 { "data": { "provider": "slack", "account_id": "<workspace_account_id>" } }
 ```
 
-`email_connect_app_password` (iCloud):
+`delegated_to_kdcube_connect_credential` (iCloud):
 
 ```json
 {
   "data": {
-    "provider": "icloud",
+    "provider_id": "icloud_mail",
+    "connector_app_id": "app_password",
+    "claims": ["email:read", "email:send"],
     "email": "user@icloud.com",
-    "app_password": "<apple-app-specific-password>",
+    "external_subject": "user@icloud.com",
     "display_name": "User",
-    "username": "user@icloud.com"
+    "credential": {
+      "app_password": "<apple-app-specific-password>"
+    }
+  }
+}
+```
+
+Provider claim policy is configured on Connection Hub. Application tool claim
+policy is configured next to the tool that needs the external account. A tool
+references the provider and connector app directly; it does not need an
+intermediate capability id.
+
+```yaml
+connections:
+  delegated_to_kdcube:
+    providers:
+      slack:
+        claims:
+          slack:post:
+            label: Post to Slack
+            provider_scopes: [chat:write]
+        connector_apps:
+          demo:
+            allowed_claims: [slack:post]
+```
+
+Application bundle/tool config owns the tool boundary:
+
+```yaml
+tools:
+  report.post_to_slack:
+    label: Post report to Slack
+    connections:
+      delegated_to_kdcube:
+        connected_accounts:
+          - provider_id: slack
+            connector_app_id: demo
+            claims: [slack:post]
+```
+
+Server-side application code parses the local tool config and passes that policy
+to `DelegatedToKdcubeClient.ensure_tool_claims(...)`:
+
+```python
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube import (
+    ToolClaimPolicy,
+)
+
+policy = ToolClaimPolicy.from_tool_config("report.post_to_slack", tool_config)
+result = await delegated_to_kdcube_client.ensure_tool_claims(policy=policy)
+```
+
+Connection Hub can derive a "which tools ask for which provider claims" catalog
+by scanning bundle descriptors, but that catalog is derived metadata. The source
+of truth remains the application bundle/tool definition.
+
+`delegated_to_kdcube_resolve` resolves one explicit provider claim:
+
+```json
+{
+  "data": {
+    "provider_id": "slack",
+    "connector_app_id": "demo",
+    "claim": "slack:post"
   }
 }
 ```
@@ -474,27 +544,28 @@ Non-secret deploy props (see [../config/bundles.template.yaml](../config/bundles
 
 - `connections.oauth.public_base_url` — public base for the shared connection
   callback (empty → derived from request host).
-- `connections.providers.<provider>.apps` — client apps, MANY per provider:
-  `[{app_id, label, client_id, scopes, enabled}]`. This is the only place a
-  provider (incl. **Gmail** under `google` and **Slack** under `slack`) becomes
-  usable; with no enabled app the provider is unconfigured.
+- `connections.delegated_to_kdcube.providers.<provider>.connector_apps` —
+  connector apps, MANY per provider. This is the place where per-user external
+  accounts become connectable; with no enabled connector app the provider is
+  unconfigured.
 - `identity.role_resolver.mode` — usually `platform`; `configured` is only for
   local demos until a platform principal/role resolver is wired.
 - `identity.role_bindings` — optional local fixture used only when
   `identity.role_resolver.mode=configured`.
-- `integrations["email.connection_hub"].enabled` — turn the iCloud
-  (app-password) email ops on.
+- `connections.delegated_to_kdcube.providers.icloud_mail.connector_apps` —
+  configure app-password style mail connections such as iCloud.
 - `ui.widgets.connections_settings.{enabled, src_folder, build_command}` — the
   widget build.
 - `visibility.api.<alias>.*` / `visibility.widget.connections_settings.*` — access.
 
 Deploy secret KEYS (see [../config/bundles.secrets.template.yaml](../config/bundles.secrets.template.yaml)):
 
-- `connections.oauth_state_secret` — hub-level, signs the OAuth `state` for all
-  connections providers (Gmail, Slack).
-- `connections.providers.<provider>.apps.<app_id>.client_secret` — per client app
-  (e.g. `connections.providers.google.apps.gmail.client_secret`,
-  `connections.providers.slack.apps.<app_id>.client_secret`).
+- `connections.delegated_to_kdcube.oauth_state_secret` — signs the OAuth
+  `state` for delegated-to-KDCube providers such as Gmail and Slack.
+- `connections.delegated_to_kdcube.providers.<provider>.connector_apps.<connector_app_id>.client_secret`
+  — per connector app (e.g.
+  `connections.delegated_to_kdcube.providers.google.connector_apps.gmail.client_secret`,
+  `connections.delegated_to_kdcube.providers.slack.connector_apps.demo.client_secret`).
 - iCloud needs no deploy secret (the user's app-password is user-scoped state).
 
 No user credentials live in any descriptor: user OAuth tokens / app-passwords are
@@ -507,35 +578,38 @@ The hub requires external operator/user setup before a connection can work.
 [docs/integrations/](../docs/integrations/README.md) (one article per provider).**
 A summary follows:
 
-### Slack (connections provider)
+### Slack (delegated-to-KDCube provider)
 
 - A workspace admin creates an OAuth app in the Slack workspace.
-- Config the resulting client into a client app:
-  - Client ID → `connections.providers.slack.apps.<app_id>.client_id`
-  - Client Secret → secret `connections.providers.slack.apps.<app_id>.client_secret`
+- Configure the resulting OAuth client as a connector app:
+  - Client ID → `connections.delegated_to_kdcube.providers.slack.connector_apps.<connector_app_id>.client_id`
+  - Client Secret → secret `connections.delegated_to_kdcube.providers.slack.connector_apps.<connector_app_id>.client_secret`
 - Add the redirect URI to the Slack app:
-  `…/connection-hub@1-0/public/connection_oauth_callback`
-- Request scopes: `search:read`, `channels:history`, `groups:history`.
-- Set `connections.oauth_state_secret` (hub-level) so OAuth `state` can be signed.
+  `…/connection-hub@1-0/public/delegated_to_kdcube_oauth_callback`
+- Request scopes: `search:read`.
+- Set `connections.delegated_to_kdcube.oauth_state_secret` so OAuth `state` can be signed.
 
-### Gmail (connections provider)
+### Gmail (delegated-to-KDCube provider)
 
-Gmail rides the **connections framework** (Google OAuth), same as Slack — it gets
-per-connect scopes, token refresh, and cross-app `connection.get_token`.
+Gmail rides the **delegated-to-KDCube** framework (Google OAuth), same as Slack
+— it gets per-connect claims, token refresh, and brokered credential
+resolution for code acting on behalf of the current user.
 
-- The Google OAuth client must have the **shared** connections callback added as
-  an authorized redirect URI: `…/connection-hub@1-0/public/connection_oauth_callback`.
-- Config the client into a Google client app:
-  - Client ID → `connections.providers.google.apps.<app_id>.client_id`
-  - Client Secret → secret `connections.providers.google.apps.<app_id>.client_secret`
+- The Google OAuth client must have the delegated-to-KDCube callback added as
+  an authorized redirect URI:
+  `…/connection-hub@1-0/public/delegated_to_kdcube_oauth_callback`.
+- Configure the client as a Google connector app:
+  - Client ID → `connections.delegated_to_kdcube.providers.google.connector_apps.<connector_app_id>.client_id`
+  - Client Secret → secret `connections.delegated_to_kdcube.providers.google.connector_apps.<connector_app_id>.client_secret`
 - Scopes: `openid email profile gmail.readonly gmail.send` (send is needed for
-  task email delivery). `connections.oauth_state_secret` signs the state.
+  task email delivery). `connections.delegated_to_kdcube.oauth_state_secret`
+  signs the state.
 
-### iCloud (email integration — app-password)
+### iCloud Mail (delegated-to-KDCube — app-password)
 
 - No admin/OAuth setup. The user creates an Apple **app-specific password** and
-  enters it via `email_connect_app_password`. The hub's `integrations.email` now
-  serves iCloud only.
+  enters it via `delegated_to_kdcube_connect_credential` through the
+  `icloud_mail` provider and `app_password` connector app.
 
 ### Runtime
 

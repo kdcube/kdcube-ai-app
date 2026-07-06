@@ -411,8 +411,9 @@ Surface Guard
 KDCube app/API/runtime/ReAct/economics
 ```
 
-Delegated connections are the common abstraction for consented capability
-relationships. The token or proof is not meaningful by itself. A registered
+Delegated connections are the common abstraction for consented relationships
+where a proof, token, or credential lets one side act in a bounded way for
+another. The token or proof is not meaningful by itself. A registered
 authenticator interprets it, and a linker/grant resolver decides which
 principal, representative, resource, and actions it carries:
 
@@ -440,7 +441,8 @@ Telegram:
   initData -> telegram authenticator -> connection edge -> projected UserSession
 
 Gmail:
-  OAuth account credential -> google authenticator -> account grant -> Gmail capability
+  OAuth account credential -> google authenticator -> user connected account
+  tool-declared Gmail claims -> SDK broker -> refreshed/resolved credential
 
 OAuth delegated credential:
   KDCube-issued token -> delegated_client authenticator -> grant registry -> integration principal + tools

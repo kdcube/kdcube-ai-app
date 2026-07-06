@@ -31,6 +31,16 @@ function BannerStripImpl({
       {banners.map((banner) => (
         <div key={banner.id} className={noticeClass(banner.tone)}>
           <div className="min-w-0 flex-1">{banner.text}</div>
+          {banner.actionUrl ? (
+            <a
+              className="k-btn k-ghost k-notice-action"
+              href={banner.actionUrl}
+              target="_blank"
+              rel="noreferrer"
+            >
+              {banner.actionLabel || 'Open'}
+            </a>
+          ) : null}
           <button
             type="button"
             className="k-iconbtn k-borderless"

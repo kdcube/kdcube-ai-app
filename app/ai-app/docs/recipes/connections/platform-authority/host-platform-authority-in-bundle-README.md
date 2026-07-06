@@ -435,7 +435,7 @@ Examples:
 ```text
 https://demo.kdcube.tech
 https://kdcube.tech
-https://broodier-maxie-uninferrably.ngrok-free.dev
+https://<LOCAL_PUBLIC_HOST>
 http://localhost:5173
 ```
 
@@ -444,14 +444,14 @@ Use only the origin: scheme, host, and optional port. Do not include a path.
 Correct:
 
 ```text
-https://broodier-maxie-uninferrably.ngrok-free.dev
+https://<LOCAL_PUBLIC_HOST>
 ```
 
 Wrong:
 
 ```text
-https://broodier-maxie-uninferrably.ngrok-free.dev/platform/chat
-https://broodier-maxie-uninferrably.ngrok-free.dev/api/integrations/bundles/...
+https://<LOCAL_PUBLIC_HOST>/platform/chat
+https://<LOCAL_PUBLIC_HOST>/api/integrations/bundles/...
 ```
 
 If Google shows:

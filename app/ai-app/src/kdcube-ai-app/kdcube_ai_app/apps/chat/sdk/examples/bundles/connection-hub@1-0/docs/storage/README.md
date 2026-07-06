@@ -40,14 +40,13 @@ bundle secret lifecycle with `get_secret("b:<path>")`.
 
 | Object | Owner | Storage | Contains secrets? | Notes |
 | --- | --- | --- | ---: | --- |
-| Provider/app config | operator/admin | `bundles.yaml` effective app props | no | `connections.providers.<provider>.apps[]`, `identity.authenticators[]`, visibility config. |
-| OAuth client secret | operator/admin | `bundles.secrets.yaml` or configured bundle secrets provider | yes | `connections.providers.<provider>.apps.<app_id>.client_secret`. |
+| Delegated integration connector app config | operator/admin | `bundles.yaml` effective app props | no | `connections.delegated_to_kdcube.providers.<provider>.connector_apps`, `identity.authenticators[]`, visibility config. |
+| OAuth connector app secret | operator/admin | `bundles.secrets.yaml` or configured bundle secrets provider | yes | `connections.delegated_to_kdcube.providers.<provider>.connector_apps.<connector_app_id>.client_secret`. |
 | Telegram bot token | operator/admin | `bundles.secrets.yaml` or configured bundle secrets provider | yes | Referenced from `identity.authenticators[].secret_ref`, e.g. `identity.authenticators.telegram_kdcube_ref.bot_token`. |
 | Request-authenticator row | Connection Hub | Postgres | no | `connection_hub_request_authenticators`; stores metadata and `secret_ref` only. |
 | Identity link | Connection Hub | current bundle state | no | Maps `provider + provider_subject -> platform_user_id`. |
 | Identity-link challenge | Connection Hub | current bundle state | no | Short-lived challenge/proof state for link flows. |
-| Delegated OAuth token | Connection Hub connections framework | user-scoped bundle state | yes, user token | Used by automation to act on a connected external account. |
-| iCloud app password | Connection Hub email integration | user-scoped bundle state | yes, user token | iCloud is app-password based; Gmail uses the generic connections provider. |
+| Delegated-to-KDCube credential | Connection Hub delegated-to-KDCube | user-scoped bundle state | yes, user credential | Used by automation to act on a connected external account. OAuth tokens and app-password credentials use the same broker surface. |
 
 ## Request-Authenticator Metadata
 
@@ -195,9 +194,9 @@ platform user id
 These tokens let automation act on a user's connected account. They do not prove
 platform identity and must not grant platform roles.
 
-The generic connections framework stores OAuth/user token material in user-scoped
-bundle state. iCloud app passwords are handled by the email integration and are
-also user-scoped state. Deployment OAuth client secrets stay in bundle secrets.
+Delegated integrations store OAuth token material and non-OAuth credential
+material in user-scoped bundle state. Deployment OAuth connector app secrets
+stay in bundle secrets.
 
 ## Runtime Cache
 

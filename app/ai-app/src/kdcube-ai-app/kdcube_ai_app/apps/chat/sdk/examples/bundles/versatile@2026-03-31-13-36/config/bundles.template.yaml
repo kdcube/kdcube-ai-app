@@ -92,6 +92,83 @@ bundles:
                     runtime:
                       web_search: local
                       web_fetch: local
+                  - name: gmail
+                    kind: python
+                    module: kdcube_ai_app.apps.chat.sdk.integrations.google.gmail_tools
+                    alias: gmail
+                    allowed: [search_gmail, read_gmail_message, download_gmail_attachments, send_gmail, forward_gmail_message]
+                    tool_traits:
+                      search_gmail:
+                        strategy: [exploration]
+                      read_gmail_message:
+                        strategy: [exploration]
+                      download_gmail_attachments:
+                        strategy: [exploration]
+                      send_gmail:
+                        strategy: [exploitation]
+                      forward_gmail_message:
+                        strategy: [exploitation]
+                    tool_claims:
+                      search_gmail:
+                        connections:
+                          delegated_to_kdcube:
+                            connected_accounts:
+                              - provider_id: google
+                                connector_app_id: gmail
+                                claims: [gmail:read]
+                      read_gmail_message:
+                        connections:
+                          delegated_to_kdcube:
+                            connected_accounts:
+                              - provider_id: google
+                                connector_app_id: gmail
+                                claims: [gmail:read]
+                      download_gmail_attachments:
+                        connections:
+                          delegated_to_kdcube:
+                            connected_accounts:
+                              - provider_id: google
+                                connector_app_id: gmail
+                                claims: [gmail:read]
+                      send_gmail:
+                        connections:
+                          delegated_to_kdcube:
+                            connected_accounts:
+                              - provider_id: google
+                                connector_app_id: gmail
+                                claims: [gmail:send]
+                      forward_gmail_message:
+                        connections:
+                          delegated_to_kdcube:
+                            connected_accounts:
+                              - provider_id: google
+                                connector_app_id: gmail
+                                claims: [gmail:read, gmail:send]
+                  - name: slack
+                    kind: python
+                    module: kdcube_ai_app.apps.chat.sdk.integrations.slack.tools
+                    alias: slack
+                    allowed: [search_slack, post_slack_message]
+                    tool_traits:
+                      search_slack:
+                        strategy: [exploration]
+                      post_slack_message:
+                        strategy: [exploitation]
+                    tool_claims:
+                      search_slack:
+                        connections:
+                          delegated_to_kdcube:
+                            connected_accounts:
+                              - provider_id: slack
+                                connector_app_id: demo
+                                claims: [slack:search]
+                      post_slack_message:
+                        connections:
+                          delegated_to_kdcube:
+                            connected_accounts:
+                              - provider_id: slack
+                                connector_app_id: demo
+                                claims: [slack:post]
                   - name: rendering
                     kind: python
                     module: kdcube_ai_app.apps.chat.sdk.tools.rendering_tools

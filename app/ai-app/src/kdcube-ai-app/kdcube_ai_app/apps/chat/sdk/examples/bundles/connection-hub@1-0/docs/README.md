@@ -20,7 +20,7 @@ connection edges
   used by: auth bridges, inbound hooks, cross-channel user routing
 
 delegated account connections
-  platform user id -> external account token/capability
+  platform user id -> external account credential with approved provider claims
   examples: Gmail OAuth token, Slack workspace OAuth token, iCloud app password
   used by: automation that acts for the user
 ```
@@ -89,14 +89,32 @@ A user-scoped hub that:
 
 ```text
 provider (mechanics, no creds)
-  -> client app (creds, MANY per provider; carries client_id/secret + scope ceiling)
-     -> user account (one token, records the app_id it connected through)
+  -> connector app (operator app config; MANY per provider; carries client_id/secret + claim ceiling)
+     -> user account (one credential, records connector_app_id and approved claims)
 ```
 
-Providers are dynamic (registry-driven). Client apps are deploy config
-(`connections.providers.<provider>.apps`). Accounts are user state created by the
-OAuth flow. The callback is one hub-level route shared by every provider/app,
-signed by `connections.oauth_state_secret`.
+Providers are dynamic (registry-driven). Connector apps are deploy config under
+`connections.delegated_to_kdcube.providers.<provider>.connector_apps`.
+Accounts are user state created by the OAuth or credential flow. The delegated
+integration OAuth callback is shared by the OAuth providers and signed by
+`connections.delegated_to_kdcube.oauth_state_secret`.
+
+Application tool claim policy is not stored as a separate capability registry.
+A tool declares its own provider/connector/claims requirements beside the tool
+definition, for example under `tool_claims.<tool>.connections.delegated_to_kdcube.connected_accounts`.
+The SDK resolves those declarations into `ToolClaimPolicy` objects.
+
+The first runtime integration is agent preflight: when a ReAct agent starts a
+turn, it checks all configured tool claim policies for that agent against the
+current platform user's connected accounts. If something is missing, the
+workflow emits a structured `needs_connected_account_consent` chat step with a
+Connection Hub URL. The chat UI shows a banner, the user opens Connection Hub
+to connect/upgrade the account, and then retries the request. Later tool-level
+runtime checks can reuse the same payload shape.
+
+Connection Hub may scan tool declarations for admin visibility, but the
+application bundle/tool definition remains the source of truth for which
+provider claims a tool needs.
 
 ## Surfaces
 
@@ -124,12 +142,14 @@ signed by `connections.oauth_state_secret`.
   APIs reject secret values; use `secret_ref` and bundle secrets. Controlled
   surfaces carry `X-KDCube-Auth-Authority-ID` and
   `X-KDCube-Auth-Authenticator-ID`.
-- `connections_catalog`, `connections_start_oauth`, `connections_disconnect`
-  (operations) — widget helpers.
+- `delegated_to_kdcube_catalog`, `delegated_to_kdcube_start_oauth`,
+  `delegated_to_kdcube_connect_credential`, `delegated_to_kdcube_disconnect`,
+  `delegated_to_kdcube_resolve` (operations) — current widget and server-side
+  broker helpers for delegated external accounts.
+- `delegated_to_kdcube_oauth_callback` (public) — the shared OAuth browser
+  redirect for delegated to KDCube providers such as Gmail and Slack.
 - `email_accounts_status`, `email_connect_app_password`, `email_disconnect_account`
-  (operations) — **iCloud only** (the email integration; Gmail is a connections provider).
-- `connection_oauth_callback` (public) — the shared OAuth browser redirect for all
-  connections providers (Gmail, Slack).
+  (operations) — older iCloud-only email integration surface.
 - `connections_settings` (widget) — the React/Redux settings UI.
 
 ## Telegram Mini App embedding

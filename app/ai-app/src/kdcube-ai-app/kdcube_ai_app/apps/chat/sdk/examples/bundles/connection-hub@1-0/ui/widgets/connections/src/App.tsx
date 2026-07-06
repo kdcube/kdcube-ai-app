@@ -4,18 +4,14 @@ import { useAppDispatch, useAppSelector } from './app/hooks';
 import { AppShell, type ConnectionsTab } from './components/AppShell';
 import { AuthenticatorsPanel } from './features/authenticators/AuthenticatorsPanel';
 import { clearAuthenticatorsError, loadAuthenticators } from './features/authenticators/authenticatorsSlice';
-import { ConnectionsList } from './features/connections/ConnectionsList';
-import { clearConnectionsError, loadCatalog } from './features/connections/connectionsSlice';
 import { DelegatedAccessPanel } from './features/delegatedAccess/DelegatedAccessPanel';
 import { clearDelegatedAccessError, loadDelegatedAccess } from './features/delegatedAccess/delegatedAccessSlice';
-import { IcloudPanel } from './features/email/IcloudPanel';
-import { clearEmailError, loadEmailStatus } from './features/email/emailSlice';
 import { ConnectionEdgesPanel } from './features/identity/ConnectionEdgesPanel';
 import { clearIdentityError, loadConnectionEdges } from './features/identity/identitySlice';
 import { TelegramClaimPage } from './features/identity/TelegramClaimPage';
 import { TelegramMiniAppLinkPanel } from './features/identity/TelegramMiniAppLinkPanel';
-import { UserIntegrationsPanel } from './features/userIntegrations/UserIntegrationsPanel';
-import { clearUserIntegrationsError, loadUserIntegrations } from './features/userIntegrations/userIntegrationsSlice';
+import { DelegatedToKdcubePanel } from './features/delegatedToKdcube/DelegatedToKdcubePanel';
+import { clearDelegatedToKdcubeError, loadDelegatedToKdcube } from './features/delegatedToKdcube/delegatedToKdcubeSlice';
 
 function claimChallengeFromLocation(): string {
   const params = new URLSearchParams(window.location.search);
@@ -32,9 +28,18 @@ type TelegramConnectStatus = 'idle' | 'connecting' | 'connected' | 'failed';
 function tabFromLocation(): ConnectionsTab {
   const params = new URLSearchParams(window.location.search);
   const value = (params.get('tab') || window.location.hash.replace(/^#/, '') || '').toLowerCase();
-  if (value === 'accounts' || value === 'authenticators' || value === 'identity') return value;
-  if (value === 'userintegrations' || value === 'user-integrations' || value === 'user_integrations') return 'userIntegrations';
+  if (value === 'authenticators' || value === 'identity') return value;
+  if (
+    value === 'accounts'
+    || value === 'delegatedintegrations'
+    || value === 'delegated-integrations'
+    || value === 'delegated_integrations'
+    || value === 'delegatedtokdcube'
+    || value === 'delegated-to-kdcube'
+    || value === 'delegated_to_kdcube'
+  ) return 'delegatedToKdcube';
   if (value === 'delegatedaccess' || value === 'delegated-access' || value === 'delegated_access') return 'delegatedAccess';
+  if (value === 'delegatedbykdcube' || value === 'delegated-by-kdcube' || value === 'delegated_by_kdcube') return 'delegatedAccess';
   return 'identity';
 }
 
@@ -46,18 +51,14 @@ export default function App() {
   const [runtimeReady, setRuntimeReady] = useState(false);
   const [activeTab, setActiveTab] = useState<ConnectionsTab>(tabFromLocation);
   const [telegramConnectStatus] = useState<TelegramConnectStatus>('idle');
-  const connectionsLoading = useAppSelector((s) => s.connections.loading);
   const authenticatorsLoading = useAppSelector((s) => s.authenticators.loading);
   const delegatedAccessLoading = useAppSelector((s) => s.delegatedAccess.loading);
-  const emailLoading = useAppSelector((s) => s.email.loading);
   const identityLoading = useAppSelector((s) => s.identity.loading);
-  const userIntegrationsLoading = useAppSelector((s) => s.userIntegrations.loading);
-  const connectionsError = useAppSelector((s) => s.connections.error);
+  const delegatedToKdcubeLoading = useAppSelector((s) => s.delegatedToKdcube.loading);
   const authenticatorsError = useAppSelector((s) => s.authenticators.error);
   const delegatedAccessError = useAppSelector((s) => s.delegatedAccess.error);
-  const emailError = useAppSelector((s) => s.email.error);
   const identityError = useAppSelector((s) => s.identity.error);
-  const userIntegrationsError = useAppSelector((s) => s.userIntegrations.error);
+  const delegatedToKdcubeError = useAppSelector((s) => s.delegatedToKdcube.error);
 
   useEffect(() => {
     void settings.setupParentListener().then(async () => {
@@ -65,38 +66,31 @@ export default function App() {
       if (telegramMiniAppMode || claimChallengeId) return;
       void dispatch(loadConnectionEdges());
       void dispatch(loadAuthenticators());
-      void dispatch(loadCatalog());
       void dispatch(loadDelegatedAccess());
-      void dispatch(loadEmailStatus());
-      void dispatch(loadUserIntegrations());
+      void dispatch(loadDelegatedToKdcube());
     });
   }, [claimChallengeId, dispatch, telegramMiniAppMode]);
 
   const [refreshing, setRefreshing] = useState(false);
-  const loading = identityLoading || authenticatorsLoading || connectionsLoading || delegatedAccessLoading || emailLoading || userIntegrationsLoading;
-  const errors = [identityError, authenticatorsError, connectionsError, delegatedAccessError, emailError, userIntegrationsError].filter(Boolean) as string[];
+  const loading = identityLoading || authenticatorsLoading || delegatedAccessLoading || delegatedToKdcubeLoading;
+  const errors = [identityError, authenticatorsError, delegatedAccessError, delegatedToKdcubeError].filter(Boolean) as string[];
 
   const dismissErrors = () => {
     dispatch(clearIdentityError());
     dispatch(clearAuthenticatorsError());
-    dispatch(clearConnectionsError());
     dispatch(clearDelegatedAccessError());
-    dispatch(clearEmailError());
-    dispatch(clearUserIntegrationsError());
+    dispatch(clearDelegatedToKdcubeError());
   };
 
-  // Re-fetch the catalog + iCloud status (e.g. after finishing OAuth in the other
-  // tab). Doesn't blank the page — just updates the lists.
+  // Re-fetch after finishing OAuth in another tab. Doesn't blank the page.
   const refresh = useCallback(async () => {
     setRefreshing(true);
     try {
       await Promise.all([
         dispatch(loadConnectionEdges()).unwrap().catch(() => undefined),
         dispatch(loadAuthenticators()).unwrap().catch(() => undefined),
-        dispatch(loadCatalog()).unwrap().catch(() => undefined),
         dispatch(loadDelegatedAccess()).unwrap().catch(() => undefined),
-        dispatch(loadEmailStatus()).unwrap().catch(() => undefined),
-        dispatch(loadUserIntegrations()).unwrap().catch(() => undefined),
+        dispatch(loadDelegatedToKdcube()).unwrap().catch(() => undefined),
       ]);
     } finally {
       setRefreshing(false);
@@ -158,13 +152,7 @@ export default function App() {
       {activeTab === 'identity' ? <ConnectionEdgesPanel telegramConnectStatus={telegramConnectStatus} /> : null}
       {activeTab === 'authenticators' ? <AuthenticatorsPanel /> : null}
       {activeTab === 'delegatedAccess' ? <DelegatedAccessPanel /> : null}
-      {activeTab === 'userIntegrations' ? <UserIntegrationsPanel /> : null}
-      {activeTab === 'accounts' ? (
-        <>
-          <ConnectionsList />
-          <IcloudPanel />
-        </>
-      ) : null}
+      {activeTab === 'delegatedToKdcube' ? <DelegatedToKdcubePanel /> : null}
     </AppShell>
   );
 }

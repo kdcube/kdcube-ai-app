@@ -298,6 +298,18 @@ class VersatileWorkflow(BaseWorkflow):
                     client_id,
                     bundle_root=BUNDLE_ROOT,
                 )
+                consent_preflight = await self.preflight_delegated_to_kdcube_tool_claims(tool_config)
+                if consent_preflight:
+                    scratchpad.answer = (
+                        "Connect the required external account in Connection Hub, then send your request again."
+                    )
+                    await self.finish_turn(scratchpad, ok=True)
+                    state["result"] = {
+                        "answer": scratchpad.answer,
+                        "suggested_followups": [],
+                    }
+                    state["short_circuit"] = True
+                    return state
                 skill_config = agent_skill_config_from_bundle_props(
                     self.bundle_props,
                     client_id,

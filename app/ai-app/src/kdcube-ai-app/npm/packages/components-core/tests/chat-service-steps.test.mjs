@@ -56,3 +56,28 @@ test('projects rejected react tool service events into chat steps', () => {
 test('does not project unrelated service events into chat steps', () => {
   assert.equal(projectServiceEventToChatStep(serviceEnvelope('accounting.usage', 'accounting')), null)
 })
+
+test('projects connected account consent payload inside tool result', () => {
+  const env = serviceEnvelope('react.tool.result', 'react.tool.result.tc_send')
+  env.data = {
+    result: [{
+      ok: false,
+      error: {
+        code: 'needs_connected_account_consent',
+        message: 'Gmail send access is required.',
+      },
+      consent: {
+        provider_id: 'google',
+        connector_app_id: 'gmail',
+        claims: ['gmail.send'],
+        url: '/connection-hub/connect/google/gmail',
+      },
+    }],
+  }
+  const projected = projectServiceEventToChatStep(env)
+
+  assert.ok(projected)
+  assert.equal(projected.type, 'chat.step')
+  assert.equal(projected.data.result[0].error.code, 'needs_connected_account_consent')
+  assert.equal(projected.data.result[0].consent.url, '/connection-hub/connect/google/gmail')
+})
