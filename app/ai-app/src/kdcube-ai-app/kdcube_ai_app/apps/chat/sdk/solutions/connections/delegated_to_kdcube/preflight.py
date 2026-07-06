@@ -11,6 +11,10 @@ from urllib.parse import quote, urlencode
 from kdcube_ai_app.apps.chat.sdk.solutions.connections.connection_edges import DEFAULT_CONNECTION_HUB_BUNDLE_ID
 from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube.client import DelegatedToKdcubeClient
 from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube.models import (
+    REASON_ACCOUNT_REQUIRED,
+    REASON_CLAIM_UPGRADE_REQUIRED,
+    REASON_CONNECT_REQUIRED,
+    REASON_RECONNECT_REQUIRED,
     ToolClaimPolicy,
     as_str,
 )
@@ -38,6 +42,7 @@ def _connection_hub_widget_url(
     connector_app_id: str = "",
     claims: Iterable[str] = (),
     tool_name: str = "",
+    account_id: str = "",
 ) -> str:
     if not tenant or not project:
         return ""
@@ -53,6 +58,8 @@ def _connection_hub_widget_url(
         query["claims"] = ",".join(claim_list)
     if tool_name:
         query["tool_name"] = tool_name
+    if account_id:
+        query["account_id"] = account_id
     return (
         "/api/integrations/bundles/"
         f"{quote(tenant, safe='')}/{quote(project, safe='')}/"
@@ -139,6 +146,50 @@ def unavailable_tools_message(missing: list[dict[str, Any]]) -> str:
     )
 
 
+_ACTION_LABELS = {
+    REASON_CONNECT_REQUIRED: "Connect account",
+    REASON_CLAIM_UPGRADE_REQUIRED: "Approve access",
+    REASON_RECONNECT_REQUIRED: "Reconnect account",
+    REASON_ACCOUNT_REQUIRED: "Choose account",
+}
+
+
+def consent_action_message(
+    *,
+    reason: str,
+    provider_id: str,
+    claims: Iterable[str] = (),
+    candidates: Iterable[dict[str, Any]] = (),
+    account_label: str = "",
+) -> str:
+    """A user-facing sentence matched to WHY the claim failed to resolve."""
+    label = _provider_label(provider_id)
+    claim_list = _clean_list(claims)
+    needs = f" (needs: {', '.join(claim_list)})" if claim_list else ""
+    if reason == REASON_CLAIM_UPGRADE_REQUIRED:
+        return (
+            f"Your {label} account is connected but has not approved the required access{needs}. "
+            "Approve it in Connection Hub, then retry."
+        )
+    if reason == REASON_RECONNECT_REQUIRED:
+        target = f' "{account_label}"' if account_label else ""
+        return (
+            f"Your {label} account{target} needs to be reconnected — its stored credential "
+            "no longer works. Reconnect it in Connection Hub, then retry."
+        )
+    if reason == REASON_ACCOUNT_REQUIRED:
+        names = _clean_list(
+            as_str(item.get("label") or item.get("email") or item.get("workspace") or item.get("account_id"))
+            for item in candidates
+            if isinstance(item, dict)
+        )
+        listed = f": {', '.join(names[:4])}" + (", …" if len(names) > 4 else "") if names else ""
+        return f"Several {label} accounts are connected{listed}. Choose which account to use and retry."
+    if reason == REASON_CONNECT_REQUIRED:
+        return f"Connect your {label} account in Connection Hub{needs}, then retry."
+    return ""
+
+
 def connected_account_consent_payload(
     *,
     tenant: str,
@@ -157,6 +208,16 @@ def connected_account_consent_payload(
     provider_id = as_str(failure.get("provider_id"))
     connector_app_id = as_str(failure.get("connector_app_id"))
     tool_name = as_str(failure.get("tool_name"))
+    reason = as_str(failure.get("reason") or failure.get("error")) or REASON_CONNECT_REQUIRED
+    retry_hint = bool(failure.get("retry_hint"))
+    account_id = as_str(failure.get("account_id"))
+    raw_candidates = failure.get("candidates")
+    candidates = [dict(item) for item in raw_candidates if isinstance(item, dict)] if isinstance(raw_candidates, list) else []
+    account_label = ""
+    for item in candidates:
+        if as_str(item.get("account_id")) == account_id:
+            account_label = as_str(item.get("label") or item.get("email") or item.get("workspace"))
+            break
     url = _connection_hub_widget_url(
         tenant=tenant,
         project=project,
@@ -165,8 +226,19 @@ def connected_account_consent_payload(
         connector_app_id=connector_app_id,
         claims=claims,
         tool_name=tool_name,
+        account_id=account_id,
     )
-    message = unavailable_tools_message(missing)
+    message = (
+        consent_action_message(
+            reason=reason,
+            provider_id=provider_id,
+            claims=claims,
+            candidates=candidates,
+            account_label=account_label,
+        )
+        or as_str(failure.get("message"))
+        or unavailable_tools_message(missing)
+    )
     return {
         "ok": False,
         "schema": PREFLIGHT_SCHEMA,
@@ -176,13 +248,17 @@ def connected_account_consent_payload(
         },
         "consent": {
             "kind": "delegated_to_kdcube.connected_account",
+            "reason": reason,
+            "retry_hint": retry_hint,
             "provider_id": provider_id,
             "connector_app_id": connector_app_id,
             "claims": claims,
+            "account_id": account_id,
+            "candidates": candidates,
             "tool_id": tool_name,
             "tool_label": tool_name,
             "url": url,
-            "action_label": "Open Connection Hub",
+            "action_label": _ACTION_LABELS.get(reason, "Open Connection Hub"),
         },
         "tools": tool_names,
         "missing": missing,
@@ -246,6 +322,7 @@ __all__ = [
     "CONSENT_NEEDED_CODE",
     "PREFLIGHT_SCHEMA",
     "connected_account_consent_payload",
+    "consent_action_message",
     "preflight_tool_claim_policies",
     "unavailable_tools_by_provider",
     "unavailable_tools_message",

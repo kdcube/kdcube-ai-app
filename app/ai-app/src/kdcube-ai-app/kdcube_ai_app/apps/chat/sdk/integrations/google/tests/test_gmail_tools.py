@@ -132,5 +132,6 @@ def test_connected_account_provider_auth_failure_returns_consent_envelope():
     assert envelope["consent"]["url"].endswith(
         "/connection-hub%401-0/widgets/connections_settings"
         "?tab=delegated_to_kdcube&provider_id=google&connector_app_id=gmail"
-        "&claims=gmail%3Aread&tool_name=gmail.read_gmail_message"
+        "&claims=gmail%3Aread&tool_name=gmail.read_gmail_message&account_id=acct-1"
     )
+    assert envelope["consent"]["account_id"] == "acct-1"

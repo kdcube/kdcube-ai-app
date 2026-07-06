@@ -20,7 +20,9 @@ except Exception:
 
 from kdcube_ai_app.apps.chat.sdk.integrations.connected_accounts import (
     ConnectedAccountCredential,
+    connected_account_auth_failure,
     resolve_connected_account_claim,
+    run_with_connected_account_retry,
 )
 from kdcube_ai_app.apps.chat.sdk.runtime.workspace import artifact_outdir_for, resolve_artifact_path
 from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import (
@@ -89,22 +91,9 @@ def _is_auth_failure(data: Any, status_code: int = 200) -> bool:
     return False
 
 
-def _provider_auth_envelope(
-    credential: ConnectedAccountCredential,
-    *,
-    where: str,
-    message: str = "",
-) -> dict[str, Any]:
-    envelope = credential.consent_required_envelope(
-        where=where,
-        message="Slack authorization needs to be renewed. Open Connection Hub and reconnect or approve Slack.",
-    )
-    provider_message = str(message or "").strip()
-    if provider_message:
-        ret = envelope.get("ret")
-        if isinstance(ret, dict):
-            ret["provider_error"] = provider_message
-    return envelope
+# Live provider rejections return connected_account_auth_failure(credential,
+# message) markers; run_with_connected_account_retry force-refreshes once,
+# re-runs the tool body, and only then emits the reconnect envelope.
 
 
 def _safe_segment(raw: str, *, fallback: str = "item") -> str:
@@ -270,11 +259,7 @@ async def _download_file_to_artifact(
     response = await client.get(download_url, headers={"Authorization": f"Bearer {token}"})
     if response.status_code >= 400:
         if response.status_code in {401, 403}:
-            return _provider_auth_envelope(
-                credential,
-                where="slack.download_slack_file",
-                message=f"Slack file download failed with HTTP {response.status_code}.",
-            )
+            return connected_account_auth_failure(credential, f"Slack file download failed with HTTP {response.status_code}.")
         return _error_result(
             code="slack_file_download_failed",
             message=f"Slack file download failed with HTTP {response.status_code}.",
@@ -393,6 +378,13 @@ class SlackTools:
         count: Annotated[int, "Maximum results to return, 1-20.", {"min": 1, "max": 20}] = 10,
         account_id: Annotated[str, "Optional connected account id when the user has several Slack workspaces/accounts."] = "",
     ) -> Annotated[dict, "Envelope: {ok, error, ret}."]:
+        return await run_with_connected_account_retry(
+            globals(),
+            where="slack.search_slack",
+            run=lambda: self._search_slack(query=query, count=count, account_id=account_id),
+        )
+
+    async def _search_slack(self, *, query: str, count: int, account_id: str) -> dict[str, Any]:
         if not str(query or "").strip():
             return _error_result(
                 code="query_required",
@@ -420,6 +412,8 @@ class SlackTools:
         except Exception:
             data = {}
         if response.status_code >= 400 or not (isinstance(data, dict) and data.get("ok")):
+            if _is_auth_failure(data, response.status_code):
+                return connected_account_auth_failure(credential, _slack_error(data, fallback="Slack search failed."))
             return _error_result(
                 code="slack_api_error",
                 message=_slack_error(data, fallback="Slack search failed."),
@@ -459,6 +453,27 @@ class SlackTools:
         exclude_archived: Annotated[bool, "Whether to exclude archived conversations."] = True,
         account_id: Annotated[str, "Optional connected account id when the user has several Slack workspaces/accounts."] = "",
     ) -> Annotated[dict, "Envelope: {ok, error, ret}."]:
+        return await run_with_connected_account_retry(
+            globals(),
+            where="slack.list_slack_channels",
+            run=lambda: self._list_slack_channels(
+                types=types,
+                limit=limit,
+                cursor=cursor,
+                exclude_archived=exclude_archived,
+                account_id=account_id,
+            ),
+        )
+
+    async def _list_slack_channels(
+        self,
+        *,
+        types: str,
+        limit: int,
+        cursor: str,
+        exclude_archived: bool,
+        account_id: str,
+    ) -> dict[str, Any]:
         credential = await self._credential(claim=SLACK_CHANNELS_CLAIM, account_id=account_id, tool_name="slack.list_slack_channels")
         if not credential.ok:
             return credential.error_envelope(where="slack.list_slack_channels")
@@ -530,6 +545,31 @@ class SlackTools:
         inclusive: Annotated[bool, "Whether oldest/latest bounds are inclusive."] = False,
         account_id: Annotated[str, "Optional connected account id when the user has several Slack workspaces/accounts."] = "",
     ) -> Annotated[dict, "Envelope: {ok, error, ret}."]:
+        return await run_with_connected_account_retry(
+            globals(),
+            where="slack.read_slack_channel_history",
+            run=lambda: self._read_slack_channel_history(
+                channel=channel,
+                limit=limit,
+                cursor=cursor,
+                oldest=oldest,
+                latest=latest,
+                inclusive=inclusive,
+                account_id=account_id,
+            ),
+        )
+
+    async def _read_slack_channel_history(
+        self,
+        *,
+        channel: str,
+        limit: int,
+        cursor: str,
+        oldest: str,
+        latest: str,
+        inclusive: bool,
+        account_id: str,
+    ) -> dict[str, Any]:
         if not str(channel or "").strip():
             return _error_result(code="channel_required", message="Slack channel id is required.", where="slack.read_slack_channel_history")
         credential = await self._credential(claim=SLACK_HISTORY_CLAIM, account_id=account_id, tool_name="slack.read_slack_channel_history")
@@ -584,6 +624,25 @@ class SlackTools:
         max_bytes: Annotated[int, "Maximum file bytes to download."] = MAX_SLACK_FILE_BYTES,
         account_id: Annotated[str, "Optional connected account id when the user has several Slack workspaces/accounts."] = "",
     ) -> Annotated[dict, "Envelope: {ok, error, ret}."]:
+        return await run_with_connected_account_retry(
+            globals(),
+            where="slack.download_slack_file",
+            run=lambda: self._download_slack_file(
+                file_id=file_id,
+                save=save,
+                max_bytes=max_bytes,
+                account_id=account_id,
+            ),
+        )
+
+    async def _download_slack_file(
+        self,
+        *,
+        file_id: str,
+        save: bool,
+        max_bytes: int,
+        account_id: str,
+    ) -> dict[str, Any]:
         if not str(file_id or "").strip():
             return _error_result(code="file_required", message="Slack file id is required.", where="slack.download_slack_file")
         credential = await self._credential(claim=SLACK_FILES_READ_CLAIM, account_id=account_id, tool_name="slack.download_slack_file")
@@ -607,10 +666,7 @@ class SlackTools:
                 data = {}
             if response.status_code >= 400 or not (isinstance(data, dict) and data.get("ok")):
                 if _is_auth_failure(data, response.status_code):
-                    return _provider_auth_envelope(
-                        credential,
-                        where="slack.download_slack_file",
-                        message=_slack_error(data, fallback="Slack file lookup failed."),
+                    return connected_account_auth_failure(credential, _slack_error(data, fallback="Slack file lookup failed."),
                     )
                 return _error_result(
                     code="slack_api_error",
@@ -646,6 +702,31 @@ class SlackTools:
         filename: Annotated[str, "Optional filename override."] = "",
         account_id: Annotated[str, "Optional connected account id when the user has several Slack workspaces/accounts."] = "",
     ) -> Annotated[dict, "Envelope: {ok, error, ret}."]:
+        return await run_with_connected_account_retry(
+            globals(),
+            where="slack.upload_slack_file",
+            run=lambda: self._upload_slack_file(
+                channel=channel,
+                file_path=file_path,
+                title=title,
+                initial_comment=initial_comment,
+                thread_ts=thread_ts,
+                filename=filename,
+                account_id=account_id,
+            ),
+        )
+
+    async def _upload_slack_file(
+        self,
+        *,
+        channel: str,
+        file_path: str,
+        title: str,
+        initial_comment: str,
+        thread_ts: str,
+        filename: str,
+        account_id: str,
+    ) -> dict[str, Any]:
         if not str(file_path or "").strip():
             return _error_result(code="file_path_required", message="KDCube artifact file path is required.", where="slack.upload_slack_file")
         upload_file, load_error = _load_upload_file(file_path)
@@ -679,10 +760,7 @@ class SlackTools:
                 start_data = {}
             if start_response.status_code >= 400 or not (isinstance(start_data, dict) and start_data.get("ok")):
                 if _is_auth_failure(start_data, start_response.status_code):
-                    return _provider_auth_envelope(
-                        credential,
-                        where="slack.upload_slack_file",
-                        message=_slack_error(start_data, fallback="Slack upload start failed."),
+                    return connected_account_auth_failure(credential, _slack_error(start_data, fallback="Slack upload start failed."),
                     )
                 return _error_result(
                     code="slack_api_error",
@@ -728,10 +806,7 @@ class SlackTools:
                 complete_data = {}
             if complete_response.status_code >= 400 or not (isinstance(complete_data, dict) and complete_data.get("ok")):
                 if _is_auth_failure(complete_data, complete_response.status_code):
-                    return _provider_auth_envelope(
-                        credential,
-                        where="slack.upload_slack_file",
-                        message=_slack_error(complete_data, fallback="Slack upload finalize failed."),
+                    return connected_account_auth_failure(credential, _slack_error(complete_data, fallback="Slack upload finalize failed."),
                     )
                 return _error_result(
                     code="slack_api_error",
@@ -763,6 +838,13 @@ class SlackTools:
         self,
         account_id: Annotated[str, "Optional connected account id when the user has several Slack workspaces/accounts."] = "",
     ) -> Annotated[dict, "Envelope: {ok, error, ret}."]:
+        return await run_with_connected_account_retry(
+            globals(),
+            where="slack.slack_assistant_search_info",
+            run=lambda: self._slack_assistant_search_info(account_id=account_id),
+        )
+
+    async def _slack_assistant_search_info(self, *, account_id: str) -> dict[str, Any]:
         credential = await self._credential(claim=SLACK_ASSISTANT_SEARCH_CLAIM, account_id=account_id, tool_name="slack.slack_assistant_search_info")
         if not credential.ok:
             return credential.error_envelope(where="slack.slack_assistant_search_info")
@@ -803,6 +885,37 @@ class SlackTools:
         sort_dir: Annotated[str, "Slack sort direction: asc or desc."] = "desc",
         account_id: Annotated[str, "Optional connected account id when the user has several Slack workspaces/accounts."] = "",
     ) -> Annotated[dict, "Envelope: {ok, error, ret}."]:
+        return await run_with_connected_account_retry(
+            globals(),
+            where="slack.slack_assistant_search",
+            run=lambda: self._slack_assistant_search(
+                query=query,
+                content_types=content_types,
+                channel_types=channel_types,
+                limit=limit,
+                cursor=cursor,
+                context_channel_id=context_channel_id,
+                include_context_messages=include_context_messages,
+                sort=sort,
+                sort_dir=sort_dir,
+                account_id=account_id,
+            ),
+        )
+
+    async def _slack_assistant_search(
+        self,
+        *,
+        query: str,
+        content_types: str,
+        channel_types: str,
+        limit: int,
+        cursor: str,
+        context_channel_id: str,
+        include_context_messages: bool,
+        sort: str,
+        sort_dir: str,
+        account_id: str,
+    ) -> dict[str, Any]:
         if not str(query or "").strip():
             return _error_result(code="query_required", message="Slack assistant search query is required.", where="slack.slack_assistant_search")
         credential = await self._credential(claim=SLACK_ASSISTANT_SEARCH_CLAIM, account_id=account_id, tool_name="slack.slack_assistant_search")
@@ -860,6 +973,25 @@ class SlackTools:
         thread_ts: Annotated[str, "Optional Slack thread timestamp to reply in a thread."] = "",
         account_id: Annotated[str, "Optional connected account id when the user has several Slack workspaces/accounts."] = "",
     ) -> Annotated[dict, "Envelope: {ok, error, ret}."]:
+        return await run_with_connected_account_retry(
+            globals(),
+            where="slack.post_slack_message",
+            run=lambda: self._post_slack_message(
+                channel=channel,
+                text=text,
+                thread_ts=thread_ts,
+                account_id=account_id,
+            ),
+        )
+
+    async def _post_slack_message(
+        self,
+        *,
+        channel: str,
+        text: str,
+        thread_ts: str,
+        account_id: str,
+    ) -> dict[str, Any]:
         if not str(channel or "").strip():
             return _error_result(
                 code="channel_required",
@@ -895,6 +1027,8 @@ class SlackTools:
         except Exception:
             data = {}
         if response.status_code >= 400 or not (isinstance(data, dict) and data.get("ok")):
+            if _is_auth_failure(data, response.status_code):
+                return connected_account_auth_failure(credential, _slack_error(data, fallback="Slack post failed."))
             return _error_result(
                 code="slack_api_error",
                 message=_slack_error(data, fallback="Slack post failed."),

@@ -22,7 +22,9 @@ except Exception:
 
 from kdcube_ai_app.apps.chat.sdk.integrations.connected_accounts import (
     ConnectedAccountCredential,
+    connected_account_auth_failure,
     resolve_connected_account_claim,
+    run_with_connected_account_retry,
 )
 from kdcube_ai_app.apps.chat.sdk.integrations.email.delivery import (
     build_email_message,
@@ -95,22 +97,9 @@ def _is_provider_auth_failure(response: httpx.Response) -> bool:
     return response.status_code in {401, 403}
 
 
-def _provider_auth_envelope(
-    credential: ConnectedAccountCredential,
-    *,
-    where: str,
-    message: str = "",
-) -> dict[str, Any]:
-    envelope = credential.consent_required_envelope(
-        where=where,
-        message="Gmail authorization needs to be renewed. Open Connection Hub and reconnect or approve Gmail.",
-    )
-    provider_message = str(message or "").strip()
-    if provider_message:
-        ret = envelope.get("ret")
-        if isinstance(ret, dict):
-            ret["provider_error"] = provider_message
-    return envelope
+# Live provider rejections return connected_account_auth_failure(credential,
+# message) markers; run_with_connected_account_retry force-refreshes once,
+# re-runs the tool body, and only then emits the reconnect envelope.
 
 
 def _header_map(message: dict[str, Any]) -> dict[str, str]:
@@ -428,11 +417,7 @@ async def _download_gmail_attachments_for_message(
             max_bytes=max_bytes_per_attachment,
         )
         if auth_failed:
-            return _provider_auth_envelope(
-                credential,
-                where="gmail.download_gmail_attachments",
-                message=err,
-            )
+            return connected_account_auth_failure(credential, err)
         if err or data is None:
             errors.append({
                 "attachment_id": attachment_id,
@@ -552,6 +537,13 @@ class GmailTools:
         max_results: Annotated[int, "Maximum messages to return, 1-10.", {"min": 1, "max": 10}] = 5,
         account_id: Annotated[str, "Optional connected account id when the user has several Gmail accounts."] = "",
     ) -> Annotated[dict, "Envelope: {ok, error, ret}."]:
+        return await run_with_connected_account_retry(
+            globals(),
+            where="gmail.search_gmail",
+            run=lambda: self._search_gmail(query=query, max_results=max_results, account_id=account_id),
+        )
+
+    async def _search_gmail(self, *, query: str, max_results: int, account_id: str) -> dict[str, Any]:
         credential = await self._credential(claim=GMAIL_READ_CLAIM, account_id=account_id, tool_name="gmail.search_gmail")
         if not credential.ok:
             return credential.error_envelope(where="gmail.search_gmail")
@@ -571,10 +563,7 @@ class GmailTools:
             )
             if list_response.status_code >= 400:
                 if _is_provider_auth_failure(list_response):
-                    return _provider_auth_envelope(
-                        credential,
-                        where="gmail.search_gmail",
-                        message=_api_error(list_response, fallback="Gmail authorization failed."),
+                    return connected_account_auth_failure(credential, _api_error(list_response, fallback="Gmail authorization failed."),
                     )
                 return _error_result(
                     code="gmail_api_error",
@@ -603,10 +592,7 @@ class GmailTools:
                 )
                 if detail.status_code >= 400:
                     if _is_provider_auth_failure(detail):
-                        return _provider_auth_envelope(
-                            credential,
-                            where="gmail.search_gmail",
-                            message=_api_error(detail, fallback="Gmail authorization failed."),
+                        return connected_account_auth_failure(credential, _api_error(detail, fallback="Gmail authorization failed."),
                         )
                     rows.append({"id": message_id, "error": _api_error(detail, fallback="Failed to fetch message metadata.")})
                     continue
@@ -642,6 +628,25 @@ class GmailTools:
         max_body_chars: Annotated[int, "Maximum body characters to return, 1000-24000.", {"min": 1000, "max": MAX_BODY_CHARS}] = 12000,
         account_id: Annotated[str, "Optional connected account id when the user has several Gmail accounts."] = "",
     ) -> Annotated[dict, "Envelope: {ok, error, ret}."]:
+        return await run_with_connected_account_retry(
+            globals(),
+            where="gmail.read_gmail_message",
+            run=lambda: self._read_gmail_message(
+                message_id=message_id,
+                include_html=include_html,
+                max_body_chars=max_body_chars,
+                account_id=account_id,
+            ),
+        )
+
+    async def _read_gmail_message(
+        self,
+        *,
+        message_id: str,
+        include_html: bool,
+        max_body_chars: int,
+        account_id: str,
+    ) -> dict[str, Any]:
         msg_id = str(message_id or "").strip()
         if not msg_id:
             return _error_result(
@@ -663,11 +668,7 @@ class GmailTools:
             message, err, auth_failed = await _get_gmail_message(client, credential.access_token, msg_id)
         if err or message is None:
             if auth_failed:
-                return _provider_auth_envelope(
-                    credential,
-                    where="gmail.read_gmail_message",
-                    message=err,
-                )
+                return connected_account_auth_failure(credential, err)
             return _error_result(
                 code="gmail_api_error",
                 message=err or "Gmail message fetch failed.",
@@ -716,6 +717,31 @@ class GmailTools:
         visibility: Annotated[str, "external for deliverable artifacts, internal for analysis-only artifacts."] = "external",
         account_id: Annotated[str, "Optional connected account id when the user has several Gmail accounts."] = "",
     ) -> Annotated[dict, "Envelope with artifact_type=files and ret.files."]:
+        return await run_with_connected_account_retry(
+            globals(),
+            where="gmail.download_gmail_attachments",
+            run=lambda: self._download_gmail_attachments(
+                message_id=message_id,
+                attachment_ids=attachment_ids,
+                include_inline=include_inline,
+                max_attachments=max_attachments,
+                max_bytes_per_attachment=max_bytes_per_attachment,
+                visibility=visibility,
+                account_id=account_id,
+            ),
+        )
+
+    async def _download_gmail_attachments(
+        self,
+        *,
+        message_id: str,
+        attachment_ids: str,
+        include_inline: bool,
+        max_attachments: int,
+        max_bytes_per_attachment: int,
+        visibility: str,
+        account_id: str,
+    ) -> dict[str, Any]:
         msg_id = str(message_id or "").strip()
         if not msg_id:
             return _error_result(
@@ -743,11 +769,7 @@ class GmailTools:
             message, err, auth_failed = await _get_gmail_message(client, credential.access_token, msg_id)
             if err or message is None:
                 if auth_failed:
-                    return _provider_auth_envelope(
-                        credential,
-                        where="gmail.download_gmail_attachments",
-                        message=err,
-                    )
+                    return connected_account_auth_failure(credential, err)
                 return _error_result(
                     code="gmail_api_error",
                     message=err or "Gmail message fetch failed.",
@@ -784,6 +806,33 @@ class GmailTools:
         attachment_paths: Annotated[str, "Optional comma/newline/JSON list of KDCube logical_path or physical_path file refs to attach."] = "",
         account_id: Annotated[str, "Optional connected account id when the user has several Gmail accounts."] = "",
     ) -> Annotated[dict, "Envelope: {ok, error, ret}."]:
+        return await run_with_connected_account_retry(
+            globals(),
+            where="gmail.send_gmail",
+            run=lambda: self._send_gmail(
+                to=to,
+                subject=subject,
+                body_markdown=body_markdown,
+                cc=cc,
+                bcc=bcc,
+                body_html=body_html,
+                attachment_paths=attachment_paths,
+                account_id=account_id,
+            ),
+        )
+
+    async def _send_gmail(
+        self,
+        *,
+        to: str,
+        subject: str,
+        body_markdown: str,
+        cc: str,
+        bcc: str,
+        body_html: str,
+        attachment_paths: str,
+        account_id: str,
+    ) -> dict[str, Any]:
         recipients = split_email_addresses(to)
         if not recipients:
             return _error_result(
@@ -813,11 +862,7 @@ class GmailTools:
             sender_email, auth_failed = await self._profile_email(client, credential.access_token)
             if not sender_email:
                 if auth_failed:
-                    return _provider_auth_envelope(
-                        credential,
-                        where="gmail.send_gmail",
-                        message="Gmail rejected the stored send authorization.",
-                    )
+                    return connected_account_auth_failure(credential, "Gmail rejected the stored send authorization.")
                 return _error_result(
                     code="gmail_profile_unavailable",
                     message="Could not resolve the connected Gmail sender address.",
@@ -841,10 +886,7 @@ class GmailTools:
             )
             if response.status_code >= 400:
                 if _is_provider_auth_failure(response):
-                    return _provider_auth_envelope(
-                        credential,
-                        where="gmail.send_gmail",
-                        message=_api_error(response, fallback="Gmail authorization failed."),
+                    return connected_account_auth_failure(credential, _api_error(response, fallback="Gmail authorization failed."),
                     )
                 return _error_result(
                     code="gmail_api_error",
@@ -891,6 +933,33 @@ class GmailTools:
         attachment_paths: Annotated[str, "Optional comma/newline/JSON list of additional KDCube file refs to attach."] = "",
         account_id: Annotated[str, "Optional connected account id when the user has several Gmail accounts."] = "",
     ) -> Annotated[dict, "Envelope: {ok, error, ret}."]:
+        return await run_with_connected_account_retry(
+            globals(),
+            where="gmail.forward_gmail_message",
+            run=lambda: self._forward_gmail_message(
+                message_id=message_id,
+                to=to,
+                note_markdown=note_markdown,
+                cc=cc,
+                bcc=bcc,
+                include_original_attachments=include_original_attachments,
+                attachment_paths=attachment_paths,
+                account_id=account_id,
+            ),
+        )
+
+    async def _forward_gmail_message(
+        self,
+        *,
+        message_id: str,
+        to: str,
+        note_markdown: str,
+        cc: str,
+        bcc: str,
+        include_original_attachments: bool,
+        attachment_paths: str,
+        account_id: str,
+    ) -> dict[str, Any]:
         msg_id = str(message_id or "").strip()
         recipients = split_email_addresses(to)
         if not msg_id:
@@ -945,11 +1014,7 @@ class GmailTools:
             message, err, auth_failed = await _get_gmail_message(client, read_credential.access_token, msg_id)
             if err or message is None:
                 if auth_failed:
-                    return _provider_auth_envelope(
-                        read_credential,
-                        where="gmail.forward_gmail_message",
-                        message=err,
-                    )
+                    return connected_account_auth_failure(read_credential, err)
                 return _error_result(
                     code="gmail_api_error",
                     message=err or "Gmail message fetch failed.",
@@ -960,11 +1025,7 @@ class GmailTools:
             sender_email, auth_failed = await self._profile_email(client, token)
             if not sender_email:
                 if auth_failed:
-                    return _provider_auth_envelope(
-                        send_credential,
-                        where="gmail.forward_gmail_message",
-                        message="Gmail rejected the stored send authorization.",
-                    )
+                    return connected_account_auth_failure(send_credential, "Gmail rejected the stored send authorization.")
                 return _error_result(
                     code="gmail_profile_unavailable",
                     message="Could not resolve the connected Gmail sender address.",
@@ -982,11 +1043,7 @@ class GmailTools:
                         attachment_id=str(row.get("attachment_id") or ""),
                     )
                     if auth_failed:
-                        return _provider_auth_envelope(
-                            read_credential,
-                            where="gmail.forward_gmail_message",
-                            message=fetch_err,
-                        )
+                        return connected_account_auth_failure(read_credential, fetch_err)
                     if fetch_err or data is None:
                         original_attachment_errors.append(
                             {
@@ -1043,10 +1100,7 @@ class GmailTools:
             )
             if response.status_code >= 400:
                 if _is_provider_auth_failure(response):
-                    return _provider_auth_envelope(
-                        send_credential,
-                        where="gmail.forward_gmail_message",
-                        message=_api_error(response, fallback="Gmail authorization failed."),
+                    return connected_account_auth_failure(send_credential, _api_error(response, fallback="Gmail authorization failed."),
                     )
                 return _error_result(
                     code="gmail_api_error",

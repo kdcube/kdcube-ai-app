@@ -10,6 +10,7 @@ Hub and returns the same consent-needed envelope the chat UI understands.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from typing import Any, Mapping
 
@@ -17,10 +18,13 @@ from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import get_current_user_identi
 from kdcube_ai_app.apps.chat.sdk.runtime.tool_module_bindings import get_bound_context
 from kdcube_ai_app.apps.chat.sdk.solutions.connections.connection_edges import DEFAULT_CONNECTION_HUB_BUNDLE_ID
 from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube import (
+    REASON_RECONNECT_REQUIRED,
     ClaimResolution,
     DelegatedToKdcubeClient,
     connected_account_consent_payload,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _clean(value: Any) -> str:
@@ -188,6 +192,7 @@ async def resolve_connected_account_claim(
     tool_name: str,
     account_id: str = "",
     connection_hub_bundle_id: str = DEFAULT_CONNECTION_HUB_BUNDLE_ID,
+    force_refresh: bool = False,
 ) -> ConnectedAccountCredential:
     """Resolve one provider claim for the current tool invocation."""
 
@@ -239,6 +244,7 @@ async def resolve_connected_account_claim(
         connector_app_id=connector_app_id,
         claim=claim,
         account_id=account_id,
+        force_refresh=force_refresh,
     )
     if not result.ok or result.credential is None:
         payload = connected_account_consent_payload(
@@ -282,7 +288,169 @@ async def resolve_connected_account_claim(
     )
 
 
+async def refresh_connected_account_claim(
+    source: Mapping[str, Any] | Any,
+    *,
+    credential: ConnectedAccountCredential,
+) -> ConnectedAccountCredential:
+    """Force-refresh a credential the provider just rejected.
+
+    Re-resolves the same claim pinned to the same account with
+    ``force_refresh=True``, so a token whose stored timestamps still look
+    valid gets exchanged anyway. Returns the refreshed credential on success;
+    on failure the broker has already marked the account and the returned
+    credential carries the reconnect payload.
+    """
+    return await resolve_connected_account_claim(
+        source,
+        provider_id=credential.provider_id,
+        connector_app_id=credential.connector_app_id,
+        claim=credential.claim,
+        tool_name=credential.tool_name,
+        account_id=credential.account_id,
+        connection_hub_bundle_id=credential.connection_hub_bundle_id,
+        force_refresh=True,
+    )
+
+
+async def provider_auth_failed(
+    source: Mapping[str, Any] | Any,
+    *,
+    credential: ConnectedAccountCredential,
+    where: str,
+    provider_error: str = "",
+) -> dict[str, Any]:
+    """Translate a live provider rejection into KDCube state plus envelope.
+
+    Marks the account ``reconnect_required`` in Connection Hub (best-effort —
+    the envelope must reach the user even if marking fails) and returns the
+    consent envelope pointing at the reconnect action.
+    """
+    detail = _clean(provider_error)
+    entrypoint, tenant, project, user_id = _scope(source)
+    tenant = tenant or credential.tenant
+    project = project or credential.project
+    if credential.account_id and user_id:
+        try:
+            client = await DelegatedToKdcubeClient.from_connection_hub(
+                entrypoint,
+                user_id=user_id,
+                tenant=tenant,
+                project=project,
+                connection_hub_bundle_id=credential.connection_hub_bundle_id,
+            )
+            await client.mark_account_auth_failure(
+                credential.account_id,
+                last_error=detail or "provider rejected the stored credential",
+            )
+        except Exception:
+            logger.exception(
+                "Failed to mark connected account %s after provider auth failure",
+                credential.account_id,
+            )
+    payload = connected_account_consent_payload(
+        tenant=tenant,
+        project=project,
+        connection_hub_bundle_id=credential.connection_hub_bundle_id,
+        missing=[
+            {
+                "ok": False,
+                "tool_name": credential.tool_name or where,
+                "failures": [
+                    {
+                        "ok": False,
+                        "provider_id": credential.provider_id,
+                        "connector_app_id": credential.connector_app_id,
+                        "claim": credential.claim,
+                        "account_id": credential.account_id,
+                        "error": REASON_RECONNECT_REQUIRED,
+                        "retry_hint": True,
+                        "message": detail,
+                    }
+                ],
+            }
+        ],
+    )
+    return ConnectedAccountCredential(
+        ok=False,
+        account_id=credential.account_id,
+        provider_id=credential.provider_id,
+        connector_app_id=credential.connector_app_id,
+        claim=credential.claim,
+        tool_name=credential.tool_name or where,
+        tenant=tenant,
+        project=project,
+        connection_hub_bundle_id=credential.connection_hub_bundle_id,
+        error_payload=payload,
+    ).error_envelope(where=where)
+
+
+_AUTH_FAILURE_KEY = "__connected_account_auth_failure__"
+
+
+def connected_account_auth_failure(
+    credential: ConnectedAccountCredential,
+    message: str = "",
+) -> dict[str, Any]:
+    """Signal that the provider rejected this credential mid-operation.
+
+    Tool bodies return this marker instead of a final envelope; the
+    surrounding :func:`run_with_connected_account_retry` translates it into
+    a force-refresh retry or the reconnect envelope. The marker never
+    escapes to callers.
+    """
+    return {_AUTH_FAILURE_KEY: {"credential": credential, "message": _clean(message)}}
+
+
+def _auth_failure_of(result: Any) -> tuple[ConnectedAccountCredential | None, str]:
+    if isinstance(result, dict):
+        marker = result.get(_AUTH_FAILURE_KEY)
+        if isinstance(marker, dict) and isinstance(marker.get("credential"), ConnectedAccountCredential):
+            return marker["credential"], _clean(marker.get("message"))
+    return None, ""
+
+
+async def run_with_connected_account_retry(
+    source: Mapping[str, Any] | Any,
+    *,
+    where: str,
+    run: Any,
+) -> Any:
+    """Run a tool body with the live provider-rejection recovery contract.
+
+    ``run`` is an async callable with no arguments that resolves its own
+    connected-account credentials and returns either a final result or a
+    :func:`connected_account_auth_failure` marker. On a marker, the failing
+    credential is force-refreshed once (the refreshed token lands in the
+    store, so the re-run picks it up by re-resolving) and ``run`` is retried
+    once. A second rejection — or an unrefreshable credential — marks the
+    account ``reconnect_required`` and returns the reconnect envelope.
+    """
+    result = await run()
+    credential, message = _auth_failure_of(result)
+    if credential is None:
+        return result
+    refreshed = await refresh_connected_account_claim(source, credential=credential)
+    if not (refreshed.ok and refreshed.access_token):
+        # The broker already recorded the health transition on the account.
+        return refreshed.error_envelope(where=where)
+    result = await run()
+    credential, message = _auth_failure_of(result)
+    if credential is None:
+        return result
+    return await provider_auth_failed(
+        source,
+        credential=credential,
+        where=where,
+        provider_error=message,
+    )
+
+
 __all__ = [
     "ConnectedAccountCredential",
+    "connected_account_auth_failure",
+    "provider_auth_failed",
+    "refresh_connected_account_claim",
     "resolve_connected_account_claim",
+    "run_with_connected_account_retry",
 ]

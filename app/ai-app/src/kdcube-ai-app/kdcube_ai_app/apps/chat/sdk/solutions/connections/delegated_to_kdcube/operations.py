@@ -116,6 +116,22 @@ class DelegatedToKdcubeOperations:
         credential = await self.store.get_credential(account.credential_id)
         health = self._credential_health(account, credential)
         data.update(health)
+        # A persisted live rejection outranks timestamp-derived health: a
+        # provider may refuse a token whose stored expiry still looks valid.
+        metadata = dict(account.metadata or {})
+        persisted = as_str(metadata.get("credential_status"))
+        if persisted in {"reconnect_required", "missing", "revoked"}:
+            data["credential_status"] = persisted
+            data["reconnect_required"] = persisted != "revoked"
+            data["credential_message"] = (
+                "The provider rejected the stored credential. Reconnect this account."
+                if persisted == "reconnect_required"
+                else data.get("credential_message") or ""
+            )
+        for key in ("credential_status_at", "last_error", "last_error_at"):
+            value = metadata.get(key)
+            if value:
+                data[key] = value
         return data
 
     def _credential_health(self, account: ConnectedAccount, credential: dict[str, Any]) -> dict[str, Any]:

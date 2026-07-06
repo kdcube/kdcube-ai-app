@@ -12,6 +12,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube.adapt
 )
 
 from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube.models import (
+    CREDENTIAL_ACTIVE,
     CREDENTIAL_MISSING,
     CREDENTIAL_RECONNECT_REQUIRED,
     REASON_ACCOUNT_REQUIRED,
@@ -307,6 +308,13 @@ class DelegatedToKdcubeBroker:
             }
         )
         await self.store.set_credential(credential_id, refreshed)
+        # A successful refresh supersedes any persisted rejection: Connection
+        # Hub must stop telling the user to reconnect a working account.
+        await self.store.set_account_status(
+            account_id,
+            "",
+            credential_status=CREDENTIAL_ACTIVE,
+        )
         return refreshed
 
     async def ensure_tool_claims(

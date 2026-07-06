@@ -446,6 +446,12 @@ async def test_preflight_returns_connection_hub_consent_payload_when_account_mis
     assert result["consent"]["url"].startswith(
         "/api/integrations/bundles/demo-tenant/demo-project/connection-hub%401-0/widgets/connections_settings?"
     )
+    # The consent block carries the broker reason verbatim so chat/MCP can
+    # render the right action instead of a generic connect banner.
+    assert result["consent"]["reason"] == "connect_required"
+    assert result["consent"]["retry_hint"] is True
+    assert result["consent"]["action_label"] == "Connect account"
+    assert "Connect your Google account" in result["error"]["message"]
 
 
 @pytest.mark.asyncio

@@ -17,6 +17,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube.confi
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube.models import (
     CONNECTION_HUB_BUNDLE_ID,
+    CREDENTIAL_RECONNECT_REQUIRED,
     ClaimResolution,
     ConnectedAccount,
     DelegatedToKdcubeConfig,
@@ -153,6 +154,7 @@ class DelegatedToKdcubeClient:
         connector_app_id: str = "",
         account_id: str | None = None,
         purpose: str = "",
+        force_refresh: bool = False,
     ) -> ClaimResolution:
         return await self._broker.ensure_claim(
             provider_id=provider_id,
@@ -160,6 +162,28 @@ class DelegatedToKdcubeClient:
             claim=claim,
             account_id=account_id,
             purpose=purpose,
+            force_refresh=force_refresh,
+        )
+
+    async def mark_account_auth_failure(
+        self,
+        account_id: str,
+        *,
+        last_error: str = "",
+    ) -> ConnectedAccount | None:
+        """Record that the provider rejected this account's stored credential.
+
+        The account keeps its lifecycle status; ``credential_status`` becomes
+        ``reconnect_required`` so Connection Hub stops presenting it as healthy.
+        """
+        account = await self._broker.store.get_account(account_id)
+        if account is None:
+            return None
+        return await self._broker.store.set_account_status(
+            account.account_id,
+            account.status,
+            credential_status=CREDENTIAL_RECONNECT_REQUIRED,
+            last_error=last_error or "provider rejected the stored credential",
         )
 
     async def ensure_tool_claims(
