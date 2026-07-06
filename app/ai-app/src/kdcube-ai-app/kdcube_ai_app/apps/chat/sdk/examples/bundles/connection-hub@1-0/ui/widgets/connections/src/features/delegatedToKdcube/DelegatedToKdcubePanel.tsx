@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { useAppDispatch, useAppSelector } from '../../app/hooks';
 import { AccountRow, type AccountStatusTone } from '../../components/AccountRow';
+import { ConsentPlan, type ConsentPlanAction } from './ConsentPlan';
 import type { DelegatedToKdcubeAccount, DelegatedToKdcubeClaim, DelegatedToKdcubeProvider } from '../../api/types';
 import {
   connectDelegatedToKdcubeCredential,
@@ -159,7 +160,6 @@ export function DelegatedToKdcubePanel() {
     : rawSelectedClaims;
   const selectedClaims = providerScopedClaims.length ? providerScopedClaims : suggestedClaims;
   const [email, setEmail] = useState('');
-  const [externalSubject, setExternalSubject] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [workspace, setWorkspace] = useState('');
   const [secretKind, setSecretKind] = useState<ConnectCredentialArgs['secretKind']>('app_password');
@@ -215,11 +215,64 @@ export function DelegatedToKdcubePanel() {
     setConnectorAppId(account.connector_app_id || '');
     setClaims(targetClaims);
     setEmail(account.email || '');
-    setExternalSubject(account.external_subject || '');
     setDisplayName(account.display_name || '');
     setWorkspace(account.workspace || '');
     setFormNotice(notice);
     formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  // ── consent-plan (deep-link) wiring ────────────────────────────────────
+  const [planDismissed, setPlanDismissed] = useState(false);
+  const planProvider = deepLink.providerId ? providers[deepLink.providerId] : undefined;
+  const planRequestedClaims = useMemo(() => {
+    if (!planProvider) return [] as string[];
+    const declared = Object.keys(planProvider.claims || {});
+    const requested = deepLink.claims.filter((claimId) => declared.includes(claimId));
+    return requested.length ? requested : defaultClaims(planProvider, deepLink.connectorAppId || firstConnectorAppId(planProvider));
+  }, [planProvider, deepLink]);
+  const planAccount = useMemo(() => {
+    if (!planProvider) return undefined;
+    const candidates = accounts.filter((account) =>
+      account.provider_id === deepLink.providerId
+      && (!deepLink.connectorAppId || !account.connector_app_id || account.connector_app_id === deepLink.connectorAppId));
+    if (deepLink.accountId) {
+      const exact = candidates.find((account) => account.account_id === deepLink.accountId);
+      if (exact) return exact;
+    }
+    // Prefer the account that already approved most of what was requested.
+    return [...candidates].sort((a, b) => {
+      const approvedIn = (account: DelegatedToKdcubeAccount) =>
+        planRequestedClaims.filter((claimId) => (account.claims || []).includes(claimId)).length;
+      return approvedIn(b) - approvedIn(a);
+    })[0];
+  }, [planProvider, accounts, deepLink, planRequestedClaims]);
+
+  const runPlanAction = (action: ConsentPlanAction) => {
+    if (!planProvider) return;
+    const appId = deepLink.connectorAppId || firstConnectorAppId(planProvider);
+    if (action === 'connect') {
+      if (oauthEnabled(planProvider, appId)) {
+        void launchOAuth(planProvider.provider_id, appId, planRequestedClaims);
+        return;
+      }
+      setProviderId(planProvider.provider_id);
+      setConnectorAppId(appId);
+      setClaims(planRequestedClaims);
+      setFormNotice(`Enter the ${providerLabel(planProvider)} account details and its credential below.`);
+      formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return;
+    }
+    if (!planAccount) return;
+    if (action === 'reconnect') {
+      reconnect(planAccount);
+      return;
+    }
+    const merged = Array.from(new Set([...(planAccount.claims || []), ...planRequestedClaims]));
+    if (oauthEnabled(planProvider, planAccount.connector_app_id || appId)) {
+      void launchOAuth(planProvider.provider_id, planAccount.connector_app_id || appId, merged);
+      return;
+    }
+    prefillForAccount(planAccount, merged, 'Check the additional access this account should approve, then reconnect it.');
   };
 
   const toggleClaim = (claimId: string) => {
@@ -249,7 +302,9 @@ export function DelegatedToKdcubePanel() {
     await dispatch(connectDelegatedToKdcubeCredential({
       providerId: selectedProviderId,
       connectorAppId: selectedConnectorAppId,
-      externalSubject,
+      // The account email is the user-facing identity of a pasted-in
+      // credential; a separate provider subject is an OAuth-callback concern.
+      externalSubject: email,
       email,
       displayName,
       workspace,
@@ -258,7 +313,6 @@ export function DelegatedToKdcubePanel() {
       secretValue,
     })).unwrap().catch(() => undefined);
     setEmail('');
-    setExternalSubject('');
     setDisplayName('');
     setWorkspace('');
     setSecretValue('');
@@ -297,6 +351,21 @@ export function DelegatedToKdcubePanel() {
         </div>
         <span className="badge badge-ok">{providerList.length} providers</span>
       </div>
+
+      {planProvider && !planDismissed ? (
+        <ConsentPlan
+          request={{
+            provider: planProvider,
+            providerLabel: providerLabel(planProvider),
+            requestedClaims: planRequestedClaims,
+            account: planAccount,
+          }}
+          claimLabel={(claimId) => claimLabel(planProvider.claims?.[claimId], claimId)}
+          busy={busy}
+          onAction={runPlanAction}
+          onDismiss={() => setPlanDismissed(true)}
+        />
+      ) : null}
 
       <div className="integration-provider-list">
         {providerList.map((provider) => {
@@ -374,7 +443,11 @@ export function DelegatedToKdcubePanel() {
           if (!busy) void submit();
         }}
       >
-        <div className="form-title">Delegate an account credential to KDCube</div>
+        <div className="form-title">Connect a new account</div>
+        <p className="muted">
+          Pick the provider, choose what KDCube may do with the account, then
+          approve. The result appears above as a connected account.
+        </p>
         {formNotice ? <p className="notice success">{formNotice}</p> : null}
         <div className="inline-fields">
           <select className="input" value={selectedProviderId} onChange={(event) => changeProvider(event.target.value)}>
@@ -412,39 +485,47 @@ export function DelegatedToKdcubePanel() {
         {canStartOAuth ? (
           <div className="oauth-connect">
             <button className="btn" type="button" disabled={busy} onClick={() => void startOAuth()}>
-              Connect with OAuth
+              Connect with {providerLabel(selectedProvider)}
             </button>
-            <span className="small">Opens the provider approval page in a new tab.</span>
+            <span className="small">
+              Opens {providerLabel(selectedProvider)}'s approval page in a new tab; the account
+              details come back from the provider.
+            </span>
           </div>
-        ) : null}
-
-        <div className="inline-fields">
-          <input className="input" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="email" />
-          <input className="input" value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="display name" />
-        </div>
-        <div className="inline-fields">
-          <input className="input" value={externalSubject} onChange={(event) => setExternalSubject(event.target.value)} placeholder="provider subject" />
-          <input className="input" value={workspace} onChange={(event) => setWorkspace(event.target.value)} placeholder="workspace / mailbox" />
-        </div>
-        <div className="inline-fields">
-          <select className="input" value={secretKind} onChange={(event) => setSecretKind(event.target.value as ConnectCredentialArgs['secretKind'])}>
-            <option value="app_password">app password</option>
-            <option value="access_token">access token</option>
-            <option value="api_key">API key</option>
-            <option value="secret">secret</option>
-          </select>
-          <input
-            className="input"
-            type="password"
-            value={secretValue}
-            onChange={(event) => setSecretValue(event.target.value)}
-            placeholder="credential"
-            autoComplete="new-password"
-          />
-        </div>
-        <button className="btn" type="submit" disabled={busy || !selectedProviderId || !selectedConnectorAppId || !secretValue || selectedClaims.length === 0}>
-          Connect
-        </button>
+        ) : (
+          <>
+            <p className="muted">
+              This provider uses a credential you paste in (for example an app
+              password created in the provider's security settings).
+            </p>
+            <div className="inline-fields">
+              <input className="input" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="account email" />
+              <input className="input" value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="label shown in KDCube (optional)" />
+            </div>
+            <div className="inline-fields">
+              <input className="input" value={workspace} onChange={(event) => setWorkspace(event.target.value)} placeholder="mailbox / workspace (optional)" />
+            </div>
+            <div className="inline-fields">
+              <select className="input" value={secretKind} onChange={(event) => setSecretKind(event.target.value as ConnectCredentialArgs['secretKind'])}>
+                <option value="app_password">app password</option>
+                <option value="access_token">access token</option>
+                <option value="api_key">API key</option>
+                <option value="secret">secret</option>
+              </select>
+              <input
+                className="input"
+                type="password"
+                value={secretValue}
+                onChange={(event) => setSecretValue(event.target.value)}
+                placeholder="credential"
+                autoComplete="new-password"
+              />
+            </div>
+            <button className="btn" type="submit" disabled={busy || !selectedProviderId || !selectedConnectorAppId || !secretValue || selectedClaims.length === 0}>
+              Connect
+            </button>
+          </>
+        )}
       </form>
     </section>
   );
