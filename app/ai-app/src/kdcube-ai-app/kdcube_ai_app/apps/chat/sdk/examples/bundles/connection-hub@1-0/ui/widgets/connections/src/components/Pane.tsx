@@ -1,16 +1,17 @@
 /**
  * Pane system for Connection Hub tabs — the workspace-scene window idea
  * (ui/scene windows.tsx) scaled down to a widget: each tab shows its areas
- * as PINNED panes stacked in one viewport-high column, each pane scrolling
- * internally. A pane can be expanded to fill the column, unpinned into a
- * floating draggable/resizable window, and docked back. A splitter between
- * two docked panes adjusts their share. The page itself never scrolls.
+ * as PINNED panes stacked in one viewport-high column. A pinned pane takes
+ * its content's height; when the column runs out, panes shrink and scroll
+ * internally — the page itself never scrolls. A pane can be expanded to
+ * fill the column, or unpinned into a floating draggable/resizable window
+ * that opens at EXACTLY the geometry it had while pinned.
  */
 
 import { useCallback, useRef, useState, type ReactNode, type PointerEvent as ReactPointerEvent } from 'react';
 
 const MIN_W = 320;
-const MIN_H = 200;
+const MIN_H = 160;
 const BASE_Z = 1000;
 
 interface FloatRect {
@@ -58,52 +59,60 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
-function defaultRect(index: number, z: number): FloatRect {
-  const offset = index * 26;
-  const w = clamp(Math.round(window.innerWidth * 0.72), MIN_W, window.innerWidth - 24);
-  const h = clamp(Math.round(window.innerHeight * 0.6), MIN_H, window.innerHeight - 60);
-  return {
-    x: clamp(Math.round((window.innerWidth - w) / 2) + offset, 8, Math.max(8, window.innerWidth - w - 8)),
-    y: clamp(40 + offset, 8, Math.max(8, window.innerHeight - h - 8)),
-    w,
-    h,
-    z,
-  };
-}
-
 export function PaneGroup({ panes }: { panes: PaneDef[] }) {
   const [states, setStates] = useState<Record<string, PaneState>>({});
-  // Share of the docked column taken by the FIRST docked pane (two-pane case).
-  const [share, setShare] = useState(0.55);
   const zRef = useRef(BASE_Z);
-  const columnRef = useRef<HTMLDivElement | null>(null);
+  const dockedEls = useRef<Record<string, HTMLElement | null>>({});
 
-  const stateOf = (id: string, index: number): PaneState =>
-    states[id] ?? { floating: false, expanded: false, rect: defaultRect(index, BASE_Z) };
+  const stateOf = (id: string): PaneState =>
+    states[id] ?? { floating: false, expanded: false, rect: { x: 24, y: 24, w: MIN_W, h: MIN_H, z: BASE_Z } };
 
-  const update = useCallback((id: string, index: number, patch: Partial<PaneState> | ((prev: PaneState) => PaneState)) => {
+  const update = useCallback((id: string, patch: Partial<PaneState> | ((prev: PaneState) => PaneState)) => {
     setStates((current) => {
-      const prev = current[id] ?? { floating: false, expanded: false, rect: defaultRect(index, BASE_Z) };
+      const prev = current[id] ?? { floating: false, expanded: false, rect: { x: 24, y: 24, w: MIN_W, h: MIN_H, z: BASE_Z } };
       const next = typeof patch === 'function' ? patch(prev) : { ...prev, ...patch };
       return { ...current, [id]: next };
     });
   }, []);
 
-  const front = useCallback((id: string, index: number) => {
+  const front = useCallback((id: string) => {
     zRef.current += 2;
     const z = zRef.current;
-    update(id, index, (prev) => ({ ...prev, rect: { ...prev.rect, z } }));
+    update(id, (prev) => ({ ...prev, rect: { ...prev.rect, z } }));
   }, [update]);
 
-  const startDrag = useCallback((id: string, index: number, event: ReactPointerEvent<HTMLElement>) => {
+  // Unpin in place: the floating window opens at the pinned pane's exact
+  // viewport geometry — the user resizes from there if needed.
+  const unpin = useCallback((id: string) => {
+    zRef.current += 2;
+    const z = zRef.current;
+    const el = dockedEls.current[id];
+    const rect = el?.getBoundingClientRect();
+    const w = clamp(Math.round(rect?.width ?? MIN_W), MIN_W, window.innerWidth - 8);
+    const h = clamp(Math.round(rect?.height ?? MIN_H), MIN_H, window.innerHeight - 8);
+    update(id, (prev) => ({
+      ...prev,
+      floating: true,
+      expanded: false,
+      rect: {
+        x: clamp(Math.round(rect?.left ?? 24), 4, Math.max(4, window.innerWidth - w - 4)),
+        y: clamp(Math.round(rect?.top ?? 24), 4, Math.max(4, window.innerHeight - h - 4)),
+        w,
+        h,
+        z,
+      },
+    }));
+  }, [update]);
+
+  const startDrag = useCallback((id: string, event: ReactPointerEvent<HTMLElement>) => {
     if ((event.target as HTMLElement).closest('button')) return;
     event.preventDefault();
-    front(id, index);
+    front(id);
     const startX = event.clientX;
     const startY = event.clientY;
-    const origin = (states[id] ?? stateOf(id, index)).rect;
+    const origin = stateOf(id).rect;
     const onMove = (move: PointerEvent) => {
-      update(id, index, (prev) => ({
+      update(id, (prev) => ({
         ...prev,
         rect: {
           ...prev.rect,
@@ -121,14 +130,14 @@ export function PaneGroup({ panes }: { panes: PaneDef[] }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [front, states, update]);
 
-  const startResize = useCallback((id: string, index: number, event: ReactPointerEvent<HTMLElement>) => {
+  const startResize = useCallback((id: string, event: ReactPointerEvent<HTMLElement>) => {
     event.preventDefault();
-    front(id, index);
+    front(id);
     const startX = event.clientX;
     const startY = event.clientY;
-    const origin = (states[id] ?? stateOf(id, index)).rect;
+    const origin = stateOf(id).rect;
     const onMove = (move: PointerEvent) => {
-      update(id, index, (prev) => ({
+      update(id, (prev) => ({
         ...prev,
         rect: {
           ...prev.rect,
@@ -146,35 +155,17 @@ export function PaneGroup({ panes }: { panes: PaneDef[] }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [front, states, update]);
 
-  const startSplit = useCallback((event: ReactPointerEvent<HTMLElement>) => {
-    event.preventDefault();
-    const column = columnRef.current;
-    if (!column) return;
-    const bounds = column.getBoundingClientRect();
-    const onMove = (move: PointerEvent) => {
-      const ratio = (move.clientY - bounds.top) / Math.max(1, bounds.height);
-      setShare(clamp(ratio, 0.2, 0.8));
-    };
-    const finish = () => {
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', finish);
-    };
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', finish);
-  }, []);
-
-  const resolved = panes.map((pane, index) => ({ pane, index, state: stateOf(pane.id, index) }));
+  const resolved = panes.map((pane) => ({ pane, state: stateOf(pane.id) }));
   const docked = resolved.filter((item) => !item.state.floating);
   const expandedDocked = docked.find((item) => item.state.expanded);
   const visibleDocked = expandedDocked ? [expandedDocked] : docked;
-  const showSplitter = !expandedDocked && docked.length === 2;
 
   const renderBar = (item: (typeof resolved)[number]) => {
-    const { pane, index, state } = item;
+    const { pane, state } = item;
     return (
       <header
         className="pane-bar"
-        onPointerDown={state.floating ? (event) => startDrag(pane.id, index, event) : undefined}
+        onPointerDown={state.floating ? (event) => startDrag(pane.id, event) : undefined}
       >
         <span className="pane-title">{pane.title}</span>
         <span className="pane-controls">
@@ -184,7 +175,7 @@ export function PaneGroup({ panes }: { panes: PaneDef[] }) {
               className="pane-btn"
               title={state.expanded ? 'Restore' : 'Expand'}
               aria-label={state.expanded ? 'Restore' : 'Expand'}
-              onClick={() => update(pane.id, index, { expanded: !state.expanded })}
+              onClick={() => update(pane.id, { expanded: !state.expanded })}
             >
               {state.expanded ? ICON_COLLAPSE : ICON_EXPAND}
             </button>
@@ -195,18 +186,8 @@ export function PaneGroup({ panes }: { panes: PaneDef[] }) {
             title={state.floating ? 'Pin back into the page' : `Pop out ${pane.title}`}
             aria-label={state.floating ? 'Pin back into the page' : `Pop out ${pane.title}`}
             onClick={() => {
-              if (state.floating) {
-                update(pane.id, index, { floating: false, expanded: false });
-              } else {
-                zRef.current += 2;
-                const z = zRef.current;
-                update(pane.id, index, (prev) => ({
-                  ...prev,
-                  floating: true,
-                  expanded: false,
-                  rect: { ...defaultRect(index, z), z },
-                }));
-              }
+              if (state.floating) update(pane.id, { floating: false, expanded: false });
+              else unpin(pane.id);
             }}
           >
             {state.floating ? ICON_DOCK : ICON_UNPIN}
@@ -217,28 +198,17 @@ export function PaneGroup({ panes }: { panes: PaneDef[] }) {
   };
 
   return (
-    <div className="pane-group" ref={columnRef}>
-      {visibleDocked.map((item, position) => (
+    <div className="pane-group">
+      {visibleDocked.map((item) => (
         <div
           key={item.pane.id}
-          className="pane"
-          style={
-            expandedDocked || visibleDocked.length === 1
-              ? { flex: '1 1 auto' }
-              : { flex: `${position === 0 ? share : 1 - share} 1 0%` }
-          }
+          className={`pane${item.state.expanded ? ' pane--fill' : ''}`}
+          ref={(el) => {
+            dockedEls.current[item.pane.id] = el;
+          }}
         >
           {renderBar(item)}
           <div className="pane-body">{item.pane.content}</div>
-          {showSplitter && position === 0 ? (
-            <div
-              className="pane-splitter"
-              role="separator"
-              aria-orientation="horizontal"
-              title="Drag to resize"
-              onPointerDown={startSplit}
-            />
-          ) : null}
         </div>
       ))}
       {resolved.filter((item) => item.state.floating).map((item) => (
@@ -253,7 +223,7 @@ export function PaneGroup({ panes }: { panes: PaneDef[] }) {
             zIndex: item.state.rect.z,
           }}
           aria-label={item.pane.title}
-          onPointerDownCapture={() => front(item.pane.id, item.index)}
+          onPointerDownCapture={() => front(item.pane.id)}
         >
           {renderBar(item)}
           <div className="pane-body">{item.pane.content}</div>
@@ -262,7 +232,7 @@ export function PaneGroup({ panes }: { panes: PaneDef[] }) {
             className="pane-grip"
             title="Resize"
             aria-label="Resize"
-            onPointerDown={(event) => startResize(item.pane.id, item.index, event)}
+            onPointerDown={(event) => startResize(item.pane.id, event)}
           />
         </section>
       ))}

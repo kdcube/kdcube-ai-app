@@ -1067,12 +1067,20 @@ code {
   position: relative;
   display: flex;
   flex-direction: column;
-  min-height: 0;
+  /* Content-sized while pinned: natural height; when the column runs out,
+     panes shrink proportionally and their bodies scroll internally. */
+  flex: 0 1 auto;
+  min-height: 110px;
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
   box-shadow: 0 1px 2px rgba(13, 30, 44, 0.04);
   overflow: hidden;
+}
+
+.pane--fill {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .pane--floating {
@@ -1151,27 +1159,6 @@ code {
   min-height: 0;
   overflow: auto;
   padding: 12px;
-}
-
-.pane-splitter {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: -8px;
-  height: 8px;
-  cursor: row-resize;
-  z-index: 5;
-}
-
-.pane-splitter:hover::after {
-  content: '';
-  position: absolute;
-  left: 20%;
-  right: 20%;
-  top: 3px;
-  height: 2px;
-  border-radius: 999px;
-  background: rgba(var(--kind-rgb), 0.45);
 }
 
 .pane-grip {
