@@ -126,6 +126,10 @@ declaration reads consistently on both sides of the mount.
   applies when omitted).
 - `command_id` (optional) makes the command ack-able; the host echoes it.
 - `widget` / `source` identify the emitter for diagnostics.
+- `ui_event` carries `tab` plus the target's deep-link query params verbatim —
+  the same keys the target widget's URL deep-link path parses (the example
+  above shows the provider-connections params; a delegated consent plan rides
+  `provider_id` / `connector_app_id` / `claims` the same way).
 - **The command payload rides in `ui_event`.** Hosts rebuild the command before
   forwarding and copy only the enumerated envelopes — `ui_event` (verbatim),
   `context`, `object_ref`, `response`, `source`, `view`, `x`/`y`, `reason`.

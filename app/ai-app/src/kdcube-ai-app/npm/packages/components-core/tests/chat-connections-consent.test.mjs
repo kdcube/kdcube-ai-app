@@ -1,0 +1,63 @@
+import assert from 'node:assert/strict'
+import { test } from 'node:test'
+import { connectionsConsentOpen, consentTiersForClaims } from '../dist/chat/index.js'
+
+// Surfaced live case: the backend consent deep link points at the
+// Delegated-to-KDCube consent plan; the hub-open payload must carry that tab
+// and the link's params verbatim (the summon lands where the direct link would).
+test('delegated consent deep link drives tab and params verbatim', () => {
+  const open = connectionsConsentOpen({
+    provider: 'slack',
+    claims: ['slack:search', 'slack:post'],
+    accountId: 'acc1',
+    url: '/api/integrations/bundles/t/p/connection-hub%401-0/widgets/connections_settings'
+      + '?tab=delegated_to_kdcube&provider_id=slack&connector_app_id=demo'
+      + '&claims=slack%3Asearch%2Cslack%3Apost&tool_name=search_slack&account_id=acc1',
+  })
+  assert.equal(open.tab, 'delegated_to_kdcube')
+  assert.deepEqual(open.params, {
+    provider_id: 'slack',
+    connector_app_id: 'demo',
+    claims: 'slack:search,slack:post',
+    tool_name: 'search_slack',
+    account_id: 'acc1',
+  })
+})
+
+test('provider-connections deep link keeps its params and fills tiers from claims', () => {
+  const open = connectionsConsentOpen({
+    provider: 'slack',
+    claims: ['slack:search', 'slack:post', 'slack:unknown'],
+    url: '/widgets/connections_settings?tab=provider_connections&provider=slack&account_id=acc2',
+  })
+  assert.equal(open.tab, 'provider_connections')
+  assert.equal(open.params.provider, 'slack')
+  assert.equal(open.params.account_id, 'acc2')
+  assert.equal(open.params.tiers, 'read,write')
+})
+
+test('deep link tiers stay authoritative when the link names them', () => {
+  const open = connectionsConsentOpen({
+    provider: 'slack',
+    claims: ['slack:post'],
+    url: '/widgets/connections_settings?tab=provider_connections&provider=slack&tiers=read',
+  })
+  assert.equal(open.params.tiers, 'read')
+})
+
+test('a link without a tab lands on the provider-connections card from consent fields', () => {
+  const open = connectionsConsentOpen({
+    provider: 'google',
+    claims: ['gmail:read', 'gmail:send'],
+    accountId: 'g1',
+    url: '/widgets/connections_settings',
+  })
+  assert.equal(open.tab, 'provider_connections')
+  assert.deepEqual(open.params, { provider: 'google', tiers: 'read,send', account_id: 'g1' })
+})
+
+test('claim to tier map covers the shipped providers', () => {
+  assert.deepEqual(consentTiersForClaims('slack', ['slack:files:read', 'slack:history']), ['files', 'read'])
+  assert.deepEqual(consentTiersForClaims('google', ['gmail:send']), ['send'])
+  assert.deepEqual(consentTiersForClaims('slack', ['other:claim']), [])
+})

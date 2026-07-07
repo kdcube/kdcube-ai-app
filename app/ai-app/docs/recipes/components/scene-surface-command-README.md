@@ -97,34 +97,38 @@ the served widget), so both paths land on the same state.
 
 ## Worked Example: Consent → Connection Hub
 
-Shipped on main; a chat consent banner lands the user on the hub's provider
-card with the requested access tiers preselected.
+Shipped on main; a chat consent banner lands the user on the exact hub view
+the backend's consent deep link names — for the delegated-accounts flow that
+is the numbered consent plan, for provider cards it is the tier picker.
 
 ```text
 tool needs slack access
   chat renders consent banner ("Connect account")
         |  click
         v
-chat widget maps the consent's claims to the provider's tier ids
+chat widget derives tab + params from the consent deep-link URL, verbatim
+  ?tab=delegated_to_kdcube&provider_id=…&connector_app_id=…&claims=…
+  links that point at provider cards also map claims to tier ids:
   slack:search -> read     slack:post -> write     slack:files:* -> files
-  (map: npm/packages/components-core/src/chat/connectionsConsent.ts)
+  (npm/packages/components-core/src/chat/connectionsConsent.ts)
         |
         v
 emit connections.hub.open with command_id
-  ui_event { tab: provider_connections, provider, tiers, account_id }
+  ui_event { tab, ...deep-link params }
   (chat/ui/widget/src/host.ts)
         |
         v
 scene routes the contract, summons/focuses the hub window, acks {command_id, ok}
         |
         v
-hub widget applies at runtime: switches tab, scrolls the provider card into
-view, preselects the tiers, seeds reconnect mode when account_id names an
-existing account; posts the applied ack
+hub widget applies at runtime — the same state its URL deep-link path
+produces: delegated_to_kdcube seeds the consent plan for the provider +
+claims; provider_connections scrolls the provider card into view with the
+tiers preselected; posts the applied ack
   (connection-hub@1-0/ui/widgets/connections/src/api/surfaceCommand.ts + App.tsx)
 
 unacked (standalone / non-routing host)
-  -> window.open(served hub URL: ?tab=provider_connections&provider=…&tiers=…&account_id=…)
+  -> window.open(the consent deep-link URL itself)
 ```
 
 Shipped in three commits: `af02826b` (kdcube-ai-app — hub receiver + workspace

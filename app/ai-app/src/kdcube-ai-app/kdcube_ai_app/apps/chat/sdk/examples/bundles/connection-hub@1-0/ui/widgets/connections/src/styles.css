@@ -98,13 +98,17 @@ body {
   color: var(--teal-dark);
 }
 
+/* Five tabs stay on one line at any window width: the strip scrolls
+   horizontally when the summoned window is narrower than the tab row. */
 .tabs {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 4px;
   border-bottom: 1px solid var(--line-soft);
   margin: 0 0 14px;
+  overflow-x: auto;
+  scrollbar-width: thin;
 }
 
 .tab {
@@ -117,6 +121,8 @@ body {
   font: inherit;
   font-weight: 600;
   padding: 9px 12px 8px;
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .tab:hover {

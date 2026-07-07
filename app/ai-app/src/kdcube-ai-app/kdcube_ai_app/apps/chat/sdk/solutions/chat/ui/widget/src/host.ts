@@ -199,14 +199,12 @@ function postConnectionsCommandAndAwaitAck(source: string, consent?: Connections
       }
       if (consent) {
         // The scene forwards `ui_event` verbatim to the hub widget — the
-        // settled `connections.hub.open` payload shape.
-        const uiEvent: Record<string, unknown> = {
+        // settled `connections.hub.open` payload shape: the consent deep
+        // link's tab plus its query params, carried as-is.
+        command.ui_event = {
           tab: consent.tab || 'provider_connections',
-          provider: consent.provider,
+          ...consent.params,
         }
-        if (consent.tiers.length) uiEvent.tiers = consent.tiers
-        if (consent.accountId) uiEvent.account_id = consent.accountId
-        command.ui_event = uiEvent
       }
       window.parent.postMessage(command, '*')
     } catch {

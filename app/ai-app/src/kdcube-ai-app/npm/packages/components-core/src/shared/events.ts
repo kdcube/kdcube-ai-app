@@ -30,19 +30,18 @@ export type ConnectionStatus = 'idle' | 'connecting' | 'open' | 'reconnecting' |
 export type NoticeTone = 'info' | 'success' | 'warning' | 'error'
 
 /** Structured open request for the host's connections surface, derived from a
- * connected-account consent card. Hosts that route surface commands send it as
- * the `ui_event` of a `kdcube.surface.command` targeting
+ * connected-account consent card. Hosts that route surface commands send
+ * `{tab, ...params}` as the `ui_event` of a `kdcube.surface.command` targeting
  * `connection_hub.connections` (the `connections.hub.open` scene contract);
  * `url` is the served Connection-Hub deep link for the direct fallback path. */
 export interface ConnectionsConsentOpen {
-  /** Hub tab token (e.g. `provider_connections`). */
+  /** Hub tab token from the consent deep link (e.g. `delegated_to_kdcube`,
+   *  `provider_connections`). */
   tab: string
-  /** Connection provider id (e.g. `slack`, `google`). */
-  provider: string
-  /** Provider claim-tier ids covering the consent's claims (may be empty). */
-  tiers: string[]
-  /** Existing hub account to reconnect/upgrade, when the consent names one. */
-  accountId: string
+  /** The deep link's query params, carried verbatim (e.g. `provider_id` /
+   *  `connector_app_id` / `claims` for the delegated consent plan;
+   *  `provider` / `tiers` / `account_id` for the provider-connections cards). */
+  params: Record<string, string>
   /** Served Connection-Hub URL (deep-linked) for the direct-open fallback. */
   url: string
 }

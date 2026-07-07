@@ -184,7 +184,8 @@ export function ProviderConnectCard({
           </div>
         ) : (
           <p className="muted" style={{ margin: 0 }}>
-            Available once an operator configures a {label} client app.
+            Available once an operator configures a {label} client app
+            (<code>connections.providers.{row.provider}.apps</code> in the app config).
           </p>
         )}
       </div>

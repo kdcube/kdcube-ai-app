@@ -14,7 +14,7 @@ import { DelegatedToKdcubePanel } from './features/delegatedToKdcube/DelegatedTo
 import { clearDelegatedToKdcubeError, loadDelegatedToKdcube } from './features/delegatedToKdcube/delegatedToKdcubeSlice';
 import { ProviderConnectionsPanel, type ProviderSummon } from './features/providerConnections/ProviderConnectionsPanel';
 import { clearProviderConnectionsError, loadProviderConnections } from './features/providerConnections/providerConnectionsSlice';
-import { ackConnectionsHubOpen, parseConnectionsHubOpen } from './api/surfaceCommand';
+import { ackConnectionsHubOpen, parseConnectionsHubOpen, splitListParam } from './api/surfaceCommand';
 
 function claimChallengeFromLocation(): string {
   const params = new URLSearchParams(window.location.search);
@@ -67,6 +67,9 @@ export default function App() {
   const [runtimeReady, setRuntimeReady] = useState(false);
   const [activeTab, setActiveTab] = useState<ConnectionsTab>(tabFromLocation);
   const [hubSummon, setHubSummon] = useState<ProviderSummon | null>(null);
+  // A fresh nonce remounts the delegated panel so it re-reads the URL deep
+  // link a summon just wrote (0 = stable initial mount).
+  const [delegatedSummonNonce, setDelegatedSummonNonce] = useState(0);
   const [telegramConnectStatus] = useState<TelegramConnectStatus>('idle');
   const authenticatorsLoading = useAppSelector((s) => s.authenticators.loading);
   const authenticatorsAllowed = useAppSelector((s) => s.authenticators.allowed);
@@ -182,24 +185,48 @@ export default function App() {
   }, []);
 
   // Scene hosts summon this widget with a `connections.hub.open` surface
-  // command (?tab / provider / tiers / account_id as ui_event payload) — apply
-  // the same state as the URL deep-link path, at runtime, and ack the host.
+  // command: ui_event carries the consent deep link's tab plus its query
+  // params verbatim. Apply the same state the URL deep-link path produces, at
+  // runtime, and ack the host.
+  //
+  // Delegated-to-KDCube summons (provider_id / connector_app_id / claims /
+  // account_id) land by writing those params into the URL and remounting the
+  // panel — its consentDeepLinkFromLocation idiom then seeds the numbered
+  // consent plan exactly as a direct link would.
   useEffect(() => {
     if (telegramMiniAppMode || claimChallengeId) return;
     const onSurfaceCommand = (event: MessageEvent) => {
       const command = parseConnectionsHubOpen(event.data);
       if (!command) return;
+      const params = command.params;
       const tab = tabFromValue(command.tab)
-        ?? ((command.provider || command.tiers.length || command.accountId) ? 'providerConnections' : null);
-      if (tab) changeTab(tab);
-      if (command.provider) {
+        ?? ((params.provider_id || params.connector_app_id || params.claims)
+          ? 'delegatedToKdcube'
+          : (params.provider || params.tiers || params.account_id)
+            ? 'providerConnections'
+            : null);
+      if (tab === 'delegatedToKdcube') {
+        try {
+          const url = new URL(window.location.href);
+          (['provider_id', 'connector_app_id', 'claims', 'account_id'] as const).forEach((key) => {
+            const value = (params[key] || '').trim();
+            if (value) url.searchParams.set(key, value);
+            else url.searchParams.delete(key);
+          });
+          window.history.replaceState({}, '', url.toString());
+        } catch {
+          // Embedded/test contexts may not allow history mutation.
+        }
+        setDelegatedSummonNonce(Date.now());
+      } else if (tab === 'providerConnections' && params.provider) {
         setHubSummon({
           nonce: Date.now(),
-          provider: command.provider,
-          tiers: command.tiers,
-          accountId: command.accountId,
+          provider: params.provider,
+          tiers: splitListParam(params.tiers || ''),
+          accountId: params.account_id || '',
         });
       }
+      if (tab) changeTab(tab);
       ackConnectionsHubOpen(command, 'applied');
     };
     window.addEventListener('message', onSurfaceCommand);
@@ -251,7 +278,7 @@ export default function App() {
       {activeTab === 'identity' ? <ConnectionEdgesPanel telegramConnectStatus={telegramConnectStatus} /> : null}
       {activeTab === 'authenticators' && authenticatorsAllowed ? <AuthenticatorsPanel /> : null}
       {activeTab === 'delegatedAccess' ? <DelegatedAccessPanel /> : null}
-      {activeTab === 'delegatedToKdcube' ? <DelegatedToKdcubePanel /> : null}
+      {activeTab === 'delegatedToKdcube' ? <DelegatedToKdcubePanel key={delegatedSummonNonce} /> : null}
       {activeTab === 'providerConnections' ? <ProviderConnectionsPanel summon={hubSummon ?? undefined} /> : null}
     </AppShell>
   );
