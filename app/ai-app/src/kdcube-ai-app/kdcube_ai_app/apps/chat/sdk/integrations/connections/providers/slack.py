@@ -28,6 +28,28 @@ class SlackConnection(ConnectionProvider):
     # These are USER-token scopes (the user acts on their own workspace), so they
     # are requested under `user_scope` — see authorize_scope_param below.
     scopes = ["search:read", "channels:history", "groups:history"]
+    # Slack's consent screen is all-or-nothing, so granularity lives in these
+    # tiers: the connect card picks tiers, we request only their scopes.
+    claim_tiers = [
+        {
+            "id": "read",
+            "label": "Read & search",
+            "description": "Search messages and read history in channels you can see.",
+            "scopes": ["search:read", "channels:history", "groups:history"],
+        },
+        {
+            "id": "write",
+            "label": "Post as you",
+            "description": "Send messages on your behalf.",
+            "scopes": ["chat:write"],
+        },
+        {
+            "id": "files",
+            "label": "Move files",
+            "description": "Upload files as you and download files shared with you.",
+            "scopes": ["files:read", "files:write"],
+        },
+    ]
 
     def authorize_scope_param(self) -> str:
         # Slack: request a USER token (act as the user), not a bot token.

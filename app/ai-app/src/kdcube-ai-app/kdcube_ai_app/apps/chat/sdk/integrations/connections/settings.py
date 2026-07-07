@@ -161,6 +161,7 @@ async def start_oauth(
     provider: str,
     app_id: Optional[str] = None,
     scopes: Optional[List[str]] = None,
+    tiers: Optional[List[str]] = None,
     request: Any = None,
     return_hint: str = "",
     user_id: Optional[str] = None,
@@ -168,6 +169,11 @@ async def start_oauth(
     source: str = "kdcube_widget",
 ) -> Dict[str, Any]:
     prov = _resolve_provider(provider)
+    if tiers and not scopes:
+        try:
+            scopes = prov.scopes_for_tiers(tiers)
+        except ValueError as exc:
+            return {"ok": False, "error": {"code": f"{prov.provider}_unknown_tier", "message": str(exc)}}
     try:
         client_app = resolve_client_app(entrypoint, prov.provider, app_id)
     except AmbiguousClientApp as exc:
@@ -241,7 +247,15 @@ async def catalog(
                 "configured": bool(enabled_apps and state_secret_ok),
                 "connected": any(a.get("has_token") for a in accounts),
                 "apps": _app_summaries(apps),
-                "accounts": accounts,
+                "accounts": [
+                    (
+                        {**a, "tier_coverage": prov.tier_coverage(a.get("scope"))}
+                        if prov.claim_tiers
+                        else a
+                    )
+                    for a in accounts
+                ],
+                "claim_tiers": prov.claim_tiers,
             }
         )
     return {"ok": True, "user_id": resolved_user, "providers": rows}

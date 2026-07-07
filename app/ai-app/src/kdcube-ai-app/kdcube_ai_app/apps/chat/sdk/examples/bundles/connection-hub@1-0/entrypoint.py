@@ -1920,25 +1920,32 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
         provider: str = "",
         app_id: str = "",
         scopes: Any = None,
+        tiers: Any = None,
         return_hint: str = "",
         user_id: Optional[str] = None,
         fingerprint: Optional[str] = None,
         **kwargs: Any,
     ) -> Dict[str, Any]:
         del kwargs
-        # `scopes` (optional): per-connect subset of the client app's configured
-        # scopes. Accept a list or a space/comma-separated string.
-        scope_list: Optional[list[str]] = None
-        if isinstance(scopes, (list, tuple)):
-            scope_list = [str(s).strip() for s in scopes if str(s).strip()]
-        elif isinstance(scopes, str) and scopes.strip():
-            scope_list = [s.strip() for s in scopes.replace(",", " ").split() if s.strip()]
+
+        # `scopes` / `tiers` (optional): per-connect narrowing. `tiers` names the
+        # provider's claim tiers (see ConnectionProvider.claim_tiers) and wins by
+        # being resolved server-side; `scopes` remains the raw escape hatch.
+        # Both accept a list or a space/comma-separated string.
+        def _as_list(value: Any) -> Optional[list[str]]:
+            if isinstance(value, (list, tuple)):
+                return [str(s).strip() for s in value if str(s).strip()]
+            if isinstance(value, str) and value.strip():
+                return [s.strip() for s in value.replace(",", " ").split() if s.strip()]
+            return None
+
         return await connections_settings.start_oauth(
             self,
             request=request,
             provider=provider,
             app_id=app_id or None,
-            scopes=scope_list,
+            scopes=_as_list(scopes),
+            tiers=_as_list(tiers),
             return_hint=return_hint,
             user_id=user_id,
             fingerprint=fingerprint,

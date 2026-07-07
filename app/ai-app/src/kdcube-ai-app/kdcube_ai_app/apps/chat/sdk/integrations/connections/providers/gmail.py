@@ -35,6 +35,22 @@ class GmailConnection(ConnectionProvider):
         "https://www.googleapis.com/auth/gmail.readonly",
         "https://www.googleapis.com/auth/gmail.send",
     ]
+    # Google's consent is granular already; tiers keep OUR ask minimal and give
+    # the connect card the same shape as Slack's. Identity scopes ride with read.
+    claim_tiers = [
+        {
+            "id": "read",
+            "label": "Read & search mail",
+            "description": "Search and read your messages and attachments.",
+            "scopes": ["openid", "email", "profile", "https://www.googleapis.com/auth/gmail.readonly"],
+        },
+        {
+            "id": "send",
+            "label": "Send as you",
+            "description": "Send and forward mail on your behalf.",
+            "scopes": ["https://www.googleapis.com/auth/gmail.send"],
+        },
+    ]
 
     def authorize_extra_params(self) -> Dict[str, Any]:
         """Force Google to mint a refresh_token.

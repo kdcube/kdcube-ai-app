@@ -54,6 +54,39 @@ class ConnectionProvider(ABC):
     # with these when building the authorize URL.
     scopes: List[str] = []
 
+    # ── claim tiers: user-facing consent granularity ─────────────────────────
+    # Providers whose consent screens are all-or-nothing (Slack) get granularity
+    # on OUR side: the connect card offers tiers, and the authorize URL requests
+    # only the scopes of the picked tiers. Order = display order.
+    # Each entry: {"id", "label", "description", "scopes": [...]}.
+    claim_tiers: List[Dict[str, Any]] = []
+
+    def scopes_for_tiers(self, tiers: Optional[List[str]]) -> List[str]:
+        """Union of the scopes behind the picked tier ids (order-preserving).
+        Raises ValueError on an unknown tier id."""
+        wanted = [str(t).strip() for t in (tiers or []) if str(t).strip()]
+        if not wanted:
+            return []
+        by_id = {str(t.get("id") or ""): [str(s) for s in (t.get("scopes") or [])] for t in self.claim_tiers}
+        unknown = [t for t in wanted if t not in by_id]
+        if unknown:
+            raise ValueError(f"unknown claim tier(s) for {self.provider}: {', '.join(unknown)}")
+        out: List[str] = []
+        for tier in wanted:
+            for scope in by_id[tier]:
+                if scope not in out:
+                    out.append(scope)
+        return out
+
+    def tier_coverage(self, granted_scopes: Optional[List[str]]) -> Dict[str, bool]:
+        """Which tiers an account's granted scopes fully cover — lets UIs mark
+        held vs upgradeable tiers, and the broker phrase claim_upgrade_required."""
+        granted = {str(s).strip() for s in (granted_scopes or []) if str(s).strip()}
+        return {
+            str(t.get("id") or ""): set(str(s) for s in (t.get("scopes") or [])) <= granted
+            for t in self.claim_tiers
+        }
+
     # ── optional per-provider authorize tuning ──────────────────────────────
 
     def authorize_extra_params(self) -> Dict[str, Any]:
