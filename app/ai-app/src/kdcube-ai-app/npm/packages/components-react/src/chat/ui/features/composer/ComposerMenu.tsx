@@ -552,6 +552,21 @@ export function ComposerMenu({
   >(null)
   const [rememberChoice, setRememberChoice] = useState(false)
 
+  /* Surfaced live: with the default `confirm` policy a row click routes to
+   * this picker, which renders after ALL sections — outside the menu's
+   * scrolled 420px viewport when the user is mid-list (exactly where the
+   * spotlight put them). The row's check stays put by design until the
+   * decision, so an off-screen picker made the click look dead. Bring the
+   * question to the click. */
+  const confirmRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    if (!confirmState) return
+    const timer = window.setTimeout(() => {
+      confirmRef.current?.scrollIntoView({ block: 'nearest' })
+    }, 30)
+    return () => window.clearTimeout(timer)
+  }, [confirmState])
+
   useEffect(() => {
     if (open) capabilities.load()
     if (!open) {
@@ -666,13 +681,15 @@ export function ComposerMenu({
             {index > 0 ? <div className="k-menu-divider" role="separator" /> : null}
             {section.node}
             {section.id === 'model' && confirmState?.klass === 'model_switch' ? (
-              <ConfirmPicker
-                text={MODEL_SWITCH_CACHE_NOTICE}
-                allowed={allowedPolicies}
-                remember={rememberChoice}
-                onRemember={setRememberChoice}
-                onDecide={resolveConfirm}
-              />
+              <div ref={confirmRef}>
+                <ConfirmPicker
+                  text={MODEL_SWITCH_CACHE_NOTICE}
+                  allowed={allowedPolicies}
+                  remember={rememberChoice}
+                  onRemember={setRememberChoice}
+                  onDecide={resolveConfirm}
+                />
+              </div>
             ) : null}
             {section.id === 'model' && !confirmState && modelNoticeVisible ? (
               <div className="k-menu-notice" role="note">{MODEL_SWITCH_CACHE_NOTICE}</div>
@@ -680,13 +697,15 @@ export function ComposerMenu({
           </div>
         ))}
         {confirmState?.klass === 'capability_toggle' ? (
-          <ConfirmPicker
-            text={CAPABILITY_TOGGLE_CACHE_NOTICE}
-            allowed={allowedPolicies}
-            remember={rememberChoice}
-            onRemember={setRememberChoice}
-            onDecide={resolveConfirm}
-          />
+          <div ref={confirmRef}>
+            <ConfirmPicker
+              text={CAPABILITY_TOGGLE_CACHE_NOTICE}
+              allowed={allowedPolicies}
+              remember={rememberChoice}
+              onRemember={setRememberChoice}
+              onDecide={resolveConfirm}
+            />
+          </div>
         ) : null}
         {!confirmState && toggleNoticeVisible ? (
           <div className="k-menu-notice" role="note">{CAPABILITY_TOGGLE_CACHE_NOTICE}</div>
