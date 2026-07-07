@@ -1,10 +1,10 @@
 ---
 id: repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/hosting/hosting-README.md
 title: "File Hosting For Turn-Less Transports"
-summary: "How KDCube moves file bytes between external agents and integrations when there is no chat turn: signed download URLs outbound, signed upload slots plus a staging area inbound, and an ephemeral turn workspace that lets the unchanged integration tools run."
+summary: "How KDCube moves file bytes between external agents and integrations when there is no chat turn: signed download URLs outbound, signed upload slots plus a host-local staging area inbound (single-use, discardable, TTL-swept), and an ephemeral turn workspace that lets the unchanged integration tools run."
 status: active
 tags: ["sdk", "solutions", "hosting", "staging", "upload", "download", "signed-url", "mcp", "integrations", "mail", "slack"]
-updated_at: 2026-07-06
+updated_at: 2026-07-07
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/recipes/resource_sharing/hosting-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/recipes/kdcube_for_agents/named-services-mcp-README.md
@@ -23,6 +23,8 @@ must attach a file to an email, upload one to Slack, and pull a mail
 attachment or Slack file out. This solution is the hosting room that makes
 both directions work over plain JSON transports, with bytes always traveling
 out-of-band over HTTP.
+
+![The hosting use case: inbound upload-slot flow into the staging area and the consuming action; outbound signed download URLs with turn-free provider fetch](hosting-flow.svg)
 
 ## Where the pieces live
 
@@ -62,6 +64,8 @@ filenames outside latin-1 — macOS screenshot names embed U+202F — survive.
      -> {ok, staged_ref, size_bytes}
 3. send / forward  attachments=[{staged_ref}]      (mail)
    upload_file     {staged_ref, channel, ...}      (slack)
+   — or —
+   discard_upload  {staged_ref}                    (changed your mind)
 ```
 
 The action loads the staged bytes, materializes them into the ephemeral
@@ -70,6 +74,37 @@ consumed and deleted after a successful send/upload; unconsumed files expire
 with the TTL sweep. Tiny files (≤10MB, 25MB per action) may instead ride
 inline as `{filename, content_base64}` for clients that hold bytes but cannot
 issue HTTP requests.
+
+## Storage and lifecycle
+
+Staged bytes live on the **local filesystem of the proc host**, one directory
+per staged id:
+
+```text
+$STORAGE_PATH/kdcube-integration-staging/<staged-id>/<filename>
+```
+
+`STORAGE_PATH` comes from the entrypoint settings and is shared by all proc
+workers on the host; when it is unset or is a URI (an object-store path), the
+system temp dir is used instead. The upload route and the consuming action
+derive the root from the same settings, so they always agree. Staging is
+deliberately NOT durable storage: it is a hand-off buffer between two HTTP
+calls. On multi-host deployments the staging root must be a shared mount
+(for example EFS) — otherwise the upload may land on one host and the
+consuming action run on another.
+
+Bounds: 25MB per staged file (`MAX_STAGED_FILE_BYTES`), one file per slot.
+
+A staged file leaves the staging area in exactly one of three ways:
+
+| How | When | Mechanism |
+| --- | --- | --- |
+| **Consumed** | the send/forward/upload action succeeds | the action deletes every staged ref it used — refs are single-use |
+| **Discarded** | the agent changes its mind | `object.action discard_upload {staged_ref}` (mail and slack namespaces) — idempotent, removes the file at once |
+| **Expired** | nothing ever used it | the TTL sweep removes directories older than 1h (`STAGED_TTL_SECONDS`); the sweep runs on every save |
+
+A ref that was consumed, discarded, or expired answers subsequent loads with
+"staged file not found (expired, already used, or never uploaded)".
 
 ## Adding hosting to a bundle
 

@@ -203,6 +203,7 @@ async def test_about_capabilities_and_schema_expose_mail_contract():
         ACTION_SEND,
         ACTION_FORWARD,
         "request_upload",
+        "discard_upload",
     ]
     assert schema.ret["extra"]["schema"]["namespace"] == MAIL_NAMESPACE
     assert schema.ret["extra"]["schema"]["refs"]["message"] == "mail:<provider>:<account_id>:message:<message_id>"

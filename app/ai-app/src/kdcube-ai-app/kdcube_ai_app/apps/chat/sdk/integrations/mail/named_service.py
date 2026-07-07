@@ -89,6 +89,7 @@ ACTION_DOWNLOAD_ATTACHMENTS = "download_attachments"
 ACTION_SEND = "send"
 ACTION_FORWARD = "forward"
 ACTION_REQUEST_UPLOAD = "request_upload"
+ACTION_DISCARD_UPLOAD = "discard_upload"
 
 MAIL_GRANT_HINTS = {
     "object.list": ["mail:read"],
@@ -205,6 +206,13 @@ MAIL_SCHEMA = {
             ),
             "object_ref": "mail:<provider>:<account_id>:message:<message_id>",
             "payload": ["attachment_ids", "include_inline", "max_attachments", "visibility"],
+        },
+        ACTION_DISCARD_UPLOAD: {
+            "description": (
+                "Remove one staged upload before it is used (idempotent). Unused staged "
+                "files also expire on their own within about an hour."
+            ),
+            "payload": ["staged_ref"],
         },
         ACTION_REQUEST_UPLOAD: {
             "description": (
@@ -462,6 +470,29 @@ class MailNamedServiceProvider(NamedServiceProvider):
             return staging_root(storage)
         except OSError:
             return None
+
+    def _discard_upload(self, ctx: NamedServiceContext, request: NamedServiceRequest) -> NamedServiceResponse:
+        del ctx
+        payload = dict(request.payload or {})
+        staged_ref = _text(payload.get("staged_ref"))
+        if not staged_ref:
+            return NamedServiceResponse.error_response(
+                code="staged_ref_required",
+                message="discard_upload needs payload.staged_ref.",
+                status=400,
+                provider=self._provider_identity(),
+                namespace=request.namespace or MAIL_NAMESPACE,
+                object_ref=request.object_ref,
+            )
+        root = self._staging_root()
+        if root is not None:
+            delete_staged(root, staged_ref)
+        return NamedServiceResponse.ok_response(
+            provider=self._provider_identity(),
+            namespace=request.namespace or MAIL_NAMESPACE,
+            object_ref=request.object_ref,
+            extra={"action": ACTION_DISCARD_UPLOAD, "staged_ref": staged_ref, "removed": True},
+        )
 
     async def _request_upload(self, ctx: NamedServiceContext, request: NamedServiceRequest) -> NamedServiceResponse:
         payload = dict(request.payload or {})
@@ -749,7 +780,7 @@ class MailNamedServiceProvider(NamedServiceProvider):
                 "get": True,
                 "upsert": False,
                 "delete": False,
-                "actions": [ACTION_DOWNLOAD_ATTACHMENTS, ACTION_SEND, ACTION_FORWARD, ACTION_REQUEST_UPLOAD],
+                "actions": [ACTION_DOWNLOAD_ATTACHMENTS, ACTION_SEND, ACTION_FORWARD, ACTION_REQUEST_UPLOAD, ACTION_DISCARD_UPLOAD],
                 "providers": MAIL_PROVIDER_CATALOG,
                 "grant_hints": MAIL_GRANT_HINTS,
                 "connected_account_claims": MAIL_SCHEMA["connected_account_claims"],
@@ -1015,6 +1046,9 @@ class MailNamedServiceProvider(NamedServiceProvider):
         if action == ACTION_REQUEST_UPLOAD:
             return await self._request_upload(ctx, request)
 
+        if action == ACTION_DISCARD_UPLOAD:
+            return self._discard_upload(ctx, request)
+
         if action == ACTION_SEND:
             account_id = _text(payload.get("account_id") or parsed.get("account_id"))
             entries = [item for item in _as_list(payload.get("attachments")) if isinstance(item, Mapping)]
@@ -1138,6 +1172,7 @@ __all__ = [
     "ACTION_DOWNLOAD_ATTACHMENTS",
     "ACTION_FORWARD",
     "ACTION_REQUEST_UPLOAD",
+    "ACTION_DISCARD_UPLOAD",
     "ACTION_SEND",
     "MAIL_ACCOUNT_KIND",
     "MAIL_ATTACHMENT_KIND",

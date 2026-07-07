@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 420" font-family="Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif" role="img" aria-label="The hosting use case. Inbound: an external agent calls request_upload and receives a signed upload URL and a staged ref; it POSTs raw bytes over HTTP into the staging area; the send or upload_file action consumes the staged file inside an ephemeral turn workspace and deletes it. Outbound: object.get on an attachment or file ref returns a signed download URL; a plain GET re-resolves the provider credential and streams the bytes. Staged files that are never used are removed by discard_upload or expire within an hour.">
+  <text x="20" y="26" font-size="12.5" letter-spacing="0.06em" fill="#7A99B0" font-weight="700">THE HOSTING ROOM — FILE BYTES FOR AGENTS WITHOUT A CHAT TURN</text>
+
+  <!-- lanes -->
+  <text x="90" y="56" font-size="10.5" font-weight="700" letter-spacing="0.05em" fill="#4372C3">EXTERNAL AGENT (MCP)</text>
+  <text x="392" y="56" font-size="10.5" font-weight="700" letter-spacing="0.05em" fill="#06968C">KDCUBE GATEWAY APP</text>
+  <text x="676" y="56" font-size="10.5" font-weight="700" letter-spacing="0.05em" fill="#C4861F">PROVIDER (GMAIL / SLACK)</text>
+  <line x1="30" y1="64" x2="270" y2="64" stroke="#E6ECEE"/>
+  <line x1="330" y1="64" x2="570" y2="64" stroke="#E6ECEE"/>
+  <line x1="630" y1="64" x2="840" y2="64" stroke="#E6ECEE"/>
+
+  <!-- INBOUND -->
+  <text x="20" y="92" font-size="11" font-weight="700" fill="#0D1E2C">INBOUND — agent file → provider</text>
+
+  <rect x="30" y="104" width="240" height="34" rx="8" fill="#FFFFFF" stroke="#E6ECEE"/>
+  <text x="42" y="125" font-size="11.5" fill="#3A5672">1&#160;&#160;action: <tspan font-weight="600" fill="#3B62A8">request_upload</tspan> {filename}</text>
+  <rect x="330" y="104" width="240" height="34" rx="8" fill="#FFFFFF" stroke="#E6ECEE"/>
+  <text x="342" y="125" font-size="11.5" fill="#3A5672">mints signed <tspan font-weight="600" fill="#0E8F86">upload_url + staged_ref</tspan></text>
+  <path d="M270 121 H330" stroke="#B9CBD6" stroke-width="1.5" marker-end="url(#ar)"/>
+
+  <rect x="30" y="150" width="240" height="34" rx="8" fill="#FFFFFF" stroke="#E6ECEE"/>
+  <text x="42" y="171" font-size="11.5" fill="#3A5672">2&#160;&#160;<tspan font-weight="600" fill="#3B62A8">POST raw bytes</tspan> to upload_url</text>
+  <rect x="330" y="150" width="240" height="34" rx="8" fill="#FFFFFF" stroke="#E6ECEE"/>
+  <text x="342" y="164" font-size="11.5" fill="#3A5672">staging area on disk</text>
+  <text x="342" y="178" font-size="10" fill="#7A99B0" font-family="ui-monospace, Menlo, monospace">$STORAGE_PATH/kdcube-integration-staging/&lt;id&gt;/</text>
+  <path d="M270 167 H330" stroke="#B9CBD6" stroke-width="1.5" marker-end="url(#ar)"/>
+
+  <rect x="30" y="196" width="240" height="34" rx="8" fill="#FFFFFF" stroke="#E6ECEE"/>
+  <text x="42" y="217" font-size="11.5" fill="#3A5672">3&#160;&#160;action: <tspan font-weight="600" fill="#3B62A8">send / upload_file</tspan> {staged_ref}</text>
+  <rect x="330" y="196" width="240" height="34" rx="8" fill="#FFFFFF" stroke="#E6ECEE"/>
+  <text x="342" y="210" font-size="11.5" fill="#3A5672">ephemeral turn workspace runs</text>
+  <text x="342" y="224" font-size="11.5" fill="#3A5672">the same tool chat runs</text>
+  <rect x="630" y="196" width="210" height="34" rx="8" fill="#FFFFFF" stroke="#E6ECEE"/>
+  <text x="642" y="217" font-size="11.5" fill="#3A5672">mail sent / file posted</text>
+  <path d="M270 213 H330" stroke="#B9CBD6" stroke-width="1.5" marker-end="url(#ar)"/>
+  <path d="M570 213 H630" stroke="#B9CBD6" stroke-width="1.5" marker-end="url(#ar)"/>
+
+  <rect x="330" y="240" width="240" height="26" rx="13" fill="#E2F7F4" stroke="#01BEB2" stroke-opacity="0.5"/>
+  <text x="450" y="257" font-size="10.5" font-weight="600" fill="#06968C" text-anchor="middle">on success: staged file consumed + deleted</text>
+
+  <!-- OUTBOUND -->
+  <text x="20" y="298" font-size="11" font-weight="700" fill="#0D1E2C">OUTBOUND — provider file → agent</text>
+
+  <rect x="30" y="310" width="240" height="34" rx="8" fill="#FFFFFF" stroke="#E6ECEE"/>
+  <text x="42" y="331" font-size="11.5" fill="#3A5672">1&#160;&#160;<tspan font-weight="600" fill="#3B62A8">object.get</tspan> attachment / file ref</text>
+  <rect x="330" y="310" width="240" height="34" rx="8" fill="#FFFFFF" stroke="#E6ECEE"/>
+  <text x="342" y="331" font-size="11.5" fill="#3A5672">returns signed <tspan font-weight="600" fill="#0E8F86">download url</tspan></text>
+  <path d="M270 327 H330" stroke="#B9CBD6" stroke-width="1.5" marker-end="url(#ar)"/>
+
+  <rect x="30" y="356" width="240" height="34" rx="8" fill="#FFFFFF" stroke="#E6ECEE"/>
+  <text x="42" y="377" font-size="11.5" fill="#3A5672">2&#160;&#160;<tspan font-weight="600" fill="#3B62A8">GET url</tspan> → bytes stream back</text>
+  <rect x="330" y="356" width="240" height="34" rx="8" fill="#FFFFFF" stroke="#E6ECEE"/>
+  <text x="342" y="370" font-size="11.5" fill="#3A5672">token verified; credential re-resolved</text>
+  <text x="342" y="384" font-size="11.5" fill="#3A5672">under the requester's identity</text>
+  <rect x="630" y="356" width="210" height="34" rx="8" fill="#FFFFFF" stroke="#E6ECEE"/>
+  <text x="642" y="377" font-size="11.5" fill="#3A5672">bytes fetched turn-free</text>
+  <path d="M270 373 H330" stroke="#B9CBD6" stroke-width="1.5" marker-end="url(#ar)"/>
+  <path d="M570 373 H630" stroke="#B9CBD6" stroke-width="1.5" marker-end="url(#ar)"/>
+
+  <text x="20" y="412" font-size="11" fill="#7A99B0" font-style="italic">Staged files that are never used: discard_upload removes them at once; the TTL sweep removes them within ~1h. Bytes never ride inside tool calls.</text>
+  <defs><marker id="ar" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="userSpaceOnUse"><path d="M1 1 L7 4 L1 7 Z" fill="#B9CBD6"/></marker></defs>
+</svg>

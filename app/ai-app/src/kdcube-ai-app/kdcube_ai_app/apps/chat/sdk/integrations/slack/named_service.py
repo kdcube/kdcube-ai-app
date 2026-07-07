@@ -96,6 +96,7 @@ ACTION_UPLOAD_FILE = "upload_file"
 ACTION_DOWNLOAD_FILE = "download_file"
 ACTION_ASSISTANT_SEARCH_INFO = "assistant_search_info"
 ACTION_REQUEST_UPLOAD = "request_upload"
+ACTION_DISCARD_UPLOAD = "discard_upload"
 
 SLACK_GRANT_HINTS = {
     "object.list": ["slack:read"],
@@ -205,6 +206,13 @@ SLACK_SCHEMA = {
             "description": "Post a message to a Slack channel.",
             "object_ref": "slack:<account_id>:channel:<channel_id> or omit and pass payload.channel",
             "payload": ["channel", "text", "thread_ts", "account_id"],
+        },
+        ACTION_DISCARD_UPLOAD: {
+            "description": (
+                "Remove one staged upload before it is used (idempotent). Unused staged "
+                "files also expire on their own within about an hour."
+            ),
+            "payload": ["staged_ref"],
         },
         ACTION_REQUEST_UPLOAD: {
             "description": (
@@ -574,6 +582,29 @@ class SlackNamedServiceProvider(NamedServiceProvider):
         except OSError:
             return None
 
+    def _discard_upload(self, ctx: NamedServiceContext, request: NamedServiceRequest) -> NamedServiceResponse:
+        del ctx
+        payload = dict(request.payload or {})
+        staged_ref = _text(payload.get("staged_ref"))
+        if not staged_ref:
+            return NamedServiceResponse.error_response(
+                code="staged_ref_required",
+                message="discard_upload needs payload.staged_ref.",
+                status=400,
+                provider=self._provider_identity(),
+                namespace=request.namespace or SLACK_NAMESPACE,
+                object_ref=request.object_ref,
+            )
+        root = self._staging_root()
+        if root is not None:
+            delete_staged(root, staged_ref)
+        return NamedServiceResponse.ok_response(
+            provider=self._provider_identity(),
+            namespace=request.namespace or SLACK_NAMESPACE,
+            object_ref=request.object_ref,
+            extra={"action": ACTION_DISCARD_UPLOAD, "staged_ref": staged_ref, "removed": True},
+        )
+
     async def _request_upload(self, ctx: NamedServiceContext, request: NamedServiceRequest) -> NamedServiceResponse:
         payload = dict(request.payload or {})
         filename = _text(payload.get("filename"))
@@ -793,6 +824,7 @@ class SlackNamedServiceProvider(NamedServiceProvider):
                     ACTION_DOWNLOAD_FILE,
                     ACTION_ASSISTANT_SEARCH_INFO,
                     ACTION_REQUEST_UPLOAD,
+                    ACTION_DISCARD_UPLOAD,
                 ],
                 "grant_hints": SLACK_GRANT_HINTS,
                 "connected_account_claims": SLACK_CONNECTED_ACCOUNT_CLAIMS,
@@ -1057,6 +1089,9 @@ class SlackNamedServiceProvider(NamedServiceProvider):
         if action == ACTION_REQUEST_UPLOAD:
             return await self._request_upload(ctx, request)
 
+        if action == ACTION_DISCARD_UPLOAD:
+            return self._discard_upload(ctx, request)
+
         if action == ACTION_UPLOAD_FILE:
             staged_ref = _text(payload.get("staged_ref"))
             inline_content = _text(payload.get("content_base64"))
@@ -1189,6 +1224,7 @@ __all__ = [
     "ACTION_DOWNLOAD_FILE",
     "ACTION_POST_MESSAGE",
     "ACTION_REQUEST_UPLOAD",
+    "ACTION_DISCARD_UPLOAD",
     "ACTION_UPLOAD_FILE",
     "SLACK_ACCOUNT_KIND",
     "SLACK_CHANNEL_KIND",

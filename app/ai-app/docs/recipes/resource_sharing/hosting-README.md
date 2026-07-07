@@ -4,7 +4,7 @@ title: "Move Files In And Out Over MCP (Hosting Room)"
 summary: "Exact calls for an external agent to attach files to mail, upload files to Slack, and pull provider attachments/files out — signed upload slots and download URLs, bytes always over plain HTTP, never inside tool calls."
 status: active
 tags: ["recipes", "resource-sharing", "hosting", "upload", "download", "mcp", "mail", "slack", "staged-ref", "signed-url"]
-updated_at: 2026-07-06
+updated_at: 2026-07-07
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/hosting/hosting-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/recipes/kdcube_for_agents/named-services-mcp-README.md
@@ -54,9 +54,24 @@ slack:  action=upload_file payload_json={"channel": "C…", "staged_ref": "stage
 ```
 
 A successful action consumes and deletes the staged file; reuse needs a fresh
-slot. Unused uploads expire after one hour. Tiny files (≤10MB) may skip the
-slot and ride inline as `{"filename": ..., "content_base64": ...}` — meant for
-clients that hold bytes but cannot issue HTTP requests.
+slot. To remove a staged file you decided against using:
+
+```text
+named_services_action namespace=mail|slack action=discard_upload
+  payload_json={"staged_ref": "staged:<id>:report.pdf"}
+-> {removed: true}          # idempotent
+```
+
+Unused uploads also expire on their own after one hour. Tiny files (≤10MB)
+may skip the slot and ride inline as
+`{"filename": ..., "content_base64": ...}` — meant for clients that hold
+bytes but cannot issue HTTP requests.
+
+Where the bytes wait: a host-local staging directory
+(`$STORAGE_PATH/kdcube-integration-staging/<id>/`), 25MB per file — a
+hand-off buffer between two HTTP calls, deliberately not durable storage.
+Storage and lifecycle details:
+[hosting solution doc](../../sdk/solutions/hosting/hosting-README.md).
 
 ## Get a file OUT of KDCube (mail attachment, Slack file)
 
