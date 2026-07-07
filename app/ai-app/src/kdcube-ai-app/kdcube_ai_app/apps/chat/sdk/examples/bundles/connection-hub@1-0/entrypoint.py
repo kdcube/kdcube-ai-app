@@ -1536,11 +1536,17 @@ class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
         code: str = "",
         state: str = "",
         error: str = "",
+        error_description: str = "",
         **kwargs: Any,
     ):
         del kwargs
         return await connections_settings.callback(
-            self, request=request, code=code, state=state, error=error
+            self,
+            request=request,
+            code=code,
+            state=state,
+            error=error,
+            error_description=error_description,
         )
 
     # ── delegated credential OAuth adapter ─────────────────────────────────

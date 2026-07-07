@@ -250,9 +250,21 @@ def _html_done(*, title: str, body: str, link: str = "") -> HTMLResponse:
     return HTMLResponse(content=content)
 
 
-async def callback(entrypoint: Any, *, request: Any = None, code: str = "", state: str = "", error: str = ""):
+async def callback(
+    entrypoint: Any,
+    *,
+    request: Any = None,
+    code: str = "",
+    state: str = "",
+    error: str = "",
+    error_description: str = "",
+):
     if error:
-        return _html_done(title="Email connection failed", body=f"OAuth provider returned: {error}")
+        from kdcube_ai_app.apps.chat.sdk.integrations.connections.settings import oauth_error_sentences
+
+        sentences = oauth_error_sentences(code=error, label="Google", error_description=error_description)
+        sentences.append("You can close this tab and retry from the app's Connections settings.")
+        return _html_done(title="Email connection failed", body=" ".join(sentences))
     if not code or not state:
         raise HTTPException(status_code=400, detail="code and state are required")
 

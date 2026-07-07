@@ -249,10 +249,11 @@ async def catalog(
 
 # ── callback (provider read from signed state) ──────────────────────────────
 
-def _html_done(*, title: str, body: str, link: str = "") -> HTMLResponse:
+def _html_done(*, title: str, body: str, link: str = "", tone: str = "ok") -> HTMLResponse:
     safe_title = html.escape(str(title or ""))
     safe_body = html.escape(str(body or ""))
     safe_link = html.escape(str(link or ""), quote=True)
+    tone_class = "err" if str(tone) == "err" else "ok"
     link_html = f'<p><a href="{safe_link}">Return to app</a></p>' if safe_link else ""
     content = (
         "<!doctype html><html><head><meta charset=\"utf-8\">"
@@ -260,14 +261,111 @@ def _html_done(*, title: str, body: str, link: str = "") -> HTMLResponse:
         f"<title>{safe_title}</title>"
         "<style>body{font-family:system-ui,sans-serif;margin:32px;line-height:1.45;max-width:680px}"
         ".ok{color:#047857}.err{color:#b91c1c}</style></head><body>"
-        f"<h1>{safe_title}</h1><p>{safe_body}</p>{link_html}</body></html>"
+        f"<h1 class=\"{tone_class}\">{safe_title}</h1><p>{safe_body}</p>{link_html}</body></html>"
     )
     return HTMLResponse(content=content)
 
 
-async def callback(entrypoint: Any, *, request: Any = None, code: str = "", state: str = "", error: str = ""):
+# Provider error codes we can explain better than the raw code. Values are
+# diagnosis sentences; {label} is the provider label (e.g. "Slack", "Google").
+_OAUTH_ERROR_HINTS: Dict[str, str] = {
+    "access_denied": "The request was declined on {label}'s consent screen.",
+    "invalid_team_for_non_distributed_app": (
+        "The {label} app is available only in its home workspace so far. Your workspace can use it "
+        "after the app owner enables distribution or installs the app for your workspace."
+    ),
+    "org_internal": "This {label} app accepts accounts from its own organization only.",
+    "admin_policy_enforced": (
+        "Your organization's admin policy blocks this app for your account — a workspace admin can allow it."
+    ),
+    "invalid_scope": (
+        "{label} rejected the requested permissions: the app configuration and the requested scopes "
+        "disagree, and the app operator needs to align them."
+    ),
+    "temporarily_unavailable": "{label}'s authorization service reported a temporary problem — a retry in a minute usually goes through.",
+    "server_error": "{label}'s authorization service failed on its side — a retry in a minute usually goes through.",
+}
+
+
+def _state_peek_provider_label(state: str) -> str:
+    """Best-effort provider label from the (unverified) state — display only."""
+    try:
+        from .store import _unb64url_json  # local: avoid widening module surface
+
+        peek = _unb64url_json(str(state).rsplit(".", 1)[0])
+        return _resolve_provider(str(peek.get("provider") or "").strip()).label
+    except Exception:
+        return ""
+
+
+async def _error_return_link(entrypoint: Any, state: str) -> str:
+    """Mirror the success path's return link on failure: telegram deeplink for
+    telegram-sourced connects, otherwise a same-origin/https return_hint from the
+    signed state. Consumes the state (single-use), which is correct — a retry
+    must go through a fresh start_oauth."""
+    try:
+        secret = await oauth_state_secret(entrypoint)
+        payload = await ConnectionStore(_storage_root(entrypoint), user_id="state-reader").consume_oauth_state_async(
+            state=state,
+            secret=secret,
+        )
+    except Exception:
+        return ""
+    if str(payload.get("source") or "").startswith("telegram"):
+        link = str(
+            integration_definition_value(entrypoint, provider="telegram", key="webapp_deeplink", default="")
+            or ""
+        ).strip()
+        if link:
+            return link
+    hint = str(payload.get("return_hint") or "").strip()
+    if hint.startswith("https://") or hint.startswith("/"):
+        return hint
+    return ""
+
+
+def oauth_error_sentences(*, code: str, label: str, error_description: str = "") -> List[str]:
+    """Human sentences for a provider's OAuth error redirect — shared by every
+    provider-connect callback (generic connections, LinkedIn, email)."""
+    code = str(code or "").strip()
+    hint = _OAUTH_ERROR_HINTS.get(code, "")
+    diagnosis = hint.format(label=label) if hint else f"{label} answered the connection request with “{code}”."
+    sentences = [diagnosis]
+    detail = str(error_description or "").strip()
+    if detail:
+        sentences.append(f"Provider message: “{detail}”.")
+    sentences.append("Nothing was connected.")
+    return sentences
+
+
+async def _callback_error_page(
+    entrypoint: Any,
+    *,
+    state: str,
+    error: str,
+    error_description: str = "",
+) -> HTMLResponse:
+    label = _state_peek_provider_label(state) or "The provider"
+    sentences = oauth_error_sentences(code=error, label=label, error_description=error_description)
+    link = await _error_return_link(entrypoint, state) if state else ""
+    if not link:
+        sentences.append("You can close this tab and retry from the app's Connections settings.")
+    return _html_done(title="Connection failed", body=" ".join(sentences), link=link, tone="err")
+
+
+async def callback(
+    entrypoint: Any,
+    *,
+    request: Any = None,
+    code: str = "",
+    state: str = "",
+    error: str = "",
+    error_description: str = "",
+):
     if error:
-        return _html_done(title="Connection failed", body=f"OAuth provider returned: {error}")
+        return await _callback_error_page(
+            entrypoint, state=state, error=error, error_description=error_description
+        )
     if not code or not state:
         raise HTTPException(status_code=400, detail="code and state are required")
 
@@ -348,7 +446,11 @@ async def callback(entrypoint: Any, *, request: Any = None, code: str = "", stat
         )
         await store.set_tokens_async(str(account.get("account_id") or account_id), token)
     except Exception as exc:
-        return _html_done(title="Connection failed", body=str(exc))
+        return _html_done(
+            title="Connection failed",
+            body=f"{exc} Nothing was connected. You can close this tab and retry from the app's Connections settings.",
+            tone="err",
+        )
 
     return_link = str(
         integration_definition_value(entrypoint, provider="telegram", key="webapp_deeplink", default="")
