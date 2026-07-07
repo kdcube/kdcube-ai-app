@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 import uuid
 from typing import Any, Iterable
@@ -23,6 +24,8 @@ from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube.model
     as_str,
     utc_now,
 )
+
+LOGGER = logging.getLogger("kdcube.connections.delegated_to_kdcube")
 
 ACCOUNT_INDEX_KEY = "delegated_to_kdcube.account_index"
 ACCOUNT_KEY_PREFIX = "delegated_to_kdcube.accounts"
@@ -224,18 +227,46 @@ class DelegatedToKdcubeStore:
     async def get_credential(self, credential_id: str) -> dict[str, Any]:
         if not credential_id:
             return {}
+        # Consent (connect / claim upgrade / reconnect) rewrites this secret,
+        # and it may complete in ANOTHER process (the Connection Hub API
+        # worker) whose cache invalidation cannot reach this process. The
+        # process-local secret cache (120s TTL) would otherwise hand the
+        # runtime a pre-consent credential right after the user approved — and
+        # the broker's failure paths persist reconnect_required onto the
+        # account from that stale read. Credentials are consent-critical:
+        # read through the cache, always.
+        try:
+            sdk_config.clear_secret_cache(user_id=self.user_id, bundle_id=self.bundle_id)
+        except Exception:
+            LOGGER.debug("delegated credential cache clear unavailable", exc_info=True)
         raw = await sdk_config.get_secret(
             f"u:{self.credential_secret_key(credential_id)}",
             user_id=self.user_id,
             bundle_id=self.bundle_id,
         )
         if not raw:
+            LOGGER.info(
+                "[delegated.store] credential read: credential_id=%s present=False user=%s",
+                credential_id, self.user_id,
+            )
             return {}
         try:
             parsed = json.loads(raw)
         except Exception:
+            LOGGER.warning(
+                "[delegated.store] credential read: credential_id=%s present=True parse=failed user=%s",
+                credential_id, self.user_id,
+            )
             return {}
-        return dict(parsed or {}) if isinstance(parsed, dict) else {}
+        value = dict(parsed or {}) if isinstance(parsed, dict) else {}
+        LOGGER.info(
+            "[delegated.store] credential read: credential_id=%s present=True claims=%s provider=%s user=%s",
+            credential_id,
+            ",".join(value.get("claims") or []) if isinstance(value.get("claims"), list) else "?",
+            value.get("provider_id") or "?",
+            self.user_id,
+        )
+        return value
 
     async def delete_credential(self, credential_id: str) -> None:
         if not credential_id:

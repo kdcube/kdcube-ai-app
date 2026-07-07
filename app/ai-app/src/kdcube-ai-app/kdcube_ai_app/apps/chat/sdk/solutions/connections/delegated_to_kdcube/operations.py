@@ -10,6 +10,8 @@ Connection Hub user props/secrets directly.
 
 from __future__ import annotations
 
+import logging
+
 import inspect
 import time
 from typing import Any, Callable, Mapping
@@ -93,6 +95,9 @@ async def _resolve_client_secret(
     if inspect.isawaitable(value):
         value = await value
     return as_str(value)
+
+
+LOGGER = logging.getLogger("kdcube.connections.delegated_to_kdcube")
 
 
 class DelegatedToKdcubeOperations:
@@ -417,6 +422,15 @@ class DelegatedToKdcubeOperations:
                     "workspace_label": profile.get("workspace_label"),
                 },
             }
+        )
+        stored_account = connected.get("account") if isinstance(connected.get("account"), dict) else {}
+        LOGGER.info(
+            "[delegated.oauth] consent persisted: account=%s provider=%s connector=%s claims=%s user=%s",
+            stored_account.get("account_id"),
+            provider_id,
+            connector_app_id,
+            ",".join(stored_account.get("claims") or []),
+            user_id,
         )
         return {
             "ok": True,

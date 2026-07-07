@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from typing import Any, Callable
 
 from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube.adapters import (
@@ -28,6 +30,9 @@ from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube.model
     as_str_list,
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube.store import DelegatedToKdcubeStore
+
+
+LOGGER = logging.getLogger("kdcube.connections.delegated_to_kdcube")
 
 
 class DelegatedToKdcubeBroker:
@@ -111,6 +116,14 @@ class DelegatedToKdcubeBroker:
                 )
 
         accounts = await self.store.list_accounts(provider_id=provider_key)
+        LOGGER.info(
+            "[delegated.broker] resolve claim=%s provider=%s connector=%s account_key=%s accounts=%s",
+            claim_key, provider_key, connector_key or "-", account_key or "-",
+            "; ".join(
+                f"{item.account_id}(status={item.status},claims={','.join(item.claims)})"
+                for item in accounts
+            ) or "none",
+        )
         if account_key:
             account = next(
                 (
@@ -237,6 +250,10 @@ class DelegatedToKdcubeBroker:
             credential_id=account.credential_id,
             claims=account.claims,
             credential=credential,
+        )
+        LOGGER.info(
+            "[delegated.broker] verdict=ok claim=%s provider=%s account=%s claims=%s",
+            claim_key, provider_key, account.account_id, ",".join(account.claims),
         )
         return ClaimResolution(
             ok=True,
@@ -387,6 +404,10 @@ class DelegatedToKdcubeBroker:
         """One user-fixable resolution failure. ``reason`` is a REASON_*
         constant; retrying after the Connection Hub action should succeed,
         hence retry_hint=True."""
+        LOGGER.info(
+            "[delegated.broker] verdict=%s claim=%s provider=%s connector=%s account=%s: %s",
+            reason, claim, provider_id, connector_app_id or "-", account_id or "-", message,
+        )
         return ClaimResolution(
             ok=False,
             provider_id=provider_id,

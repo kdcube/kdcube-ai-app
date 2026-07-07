@@ -1046,3 +1046,80 @@ def test_consent_payload_lists_the_blocked_tools_for_its_provider():
     assert consent["tools"] == ["slack.upload_slack_file", "slack.post_slack_message"]
     # The full cross-provider tool list stays available at the payload top.
     assert "gmail.send_gmail" in payload["tools"]
+
+
+@pytest.mark.asyncio
+async def test_claim_upgrade_becomes_visible_to_the_next_resolution(monkeypatch):
+    """Surfaced live: connect read-only -> approve the write claims via the
+    consent plan -> the NEXT resolution must see the write claims on the SAME
+    account (verdict ok, zero consent_required), with the union persisted."""
+    _install_fake_storage(monkeypatch)
+    config = _multi_claim_oauth_config()
+    ops = operations_for_user(user_id="user-1", config=config)
+    state_store = MemoryOAuthStateStore()
+
+    async def _oauth(claims):
+        started = await ops.start_oauth(
+            {"provider_id": "test", "connector_app_id": "default", "claims": claims},
+            user_id="user-1",
+            callback_url="https://kdcube.example.test/oauth/callback",
+            state_store=state_store,
+            state_secret="state-secret",
+        )
+        return await ops.complete_oauth(
+            code="code-1",
+            state=started["authorize_url"].split("state=", 1)[1].split("&", 1)[0],
+            callback_url="https://kdcube.example.test/oauth/callback",
+            state_store=state_store,
+            state_secret="state-secret",
+            client_secret_resolver=lambda **kwargs: "test-secret",
+        )
+
+    # 1. Read-only connect (search works, write claims withheld).
+    first = await _oauth(["test:read"])
+    account_id = first["account"]["account_id"]
+    store = ops.store
+    broker = DelegatedToKdcubeBroker(config=config, store=store)
+
+    read_ok = await broker.ensure_claim(provider_id="test", claim="test:read")
+    write_blocked = await broker.ensure_claim(provider_id="test", claim="test:write")
+    assert read_ok.ok is True
+    assert write_blocked.ok is False
+    # Account exists -> the verdict is the upgrade, with connect stays out.
+    assert write_blocked.error == "claim_upgrade_required"
+
+    # 2. Approve the write claims (the consent plan submits held ∪ ticked).
+    second = await _oauth(["test:read", "test:write"])
+
+    # Same account, union persisted.
+    assert second["account"]["account_id"] == account_id
+    assert sorted(second["account"]["claims"]) == ["test:read", "test:write"]
+
+    # 3. Next resolution sees the write claim live — no consent required.
+    write_ok = await broker.ensure_claim(provider_id="test", claim="test:write")
+    assert write_ok.ok is True
+    assert write_ok.account_id == account_id
+    read_still_ok = await broker.ensure_claim(provider_id="test", claim="test:read")
+    assert read_still_ok.ok is True
+
+
+@pytest.mark.asyncio
+async def test_credential_read_goes_through_the_process_secret_cache(monkeypatch):
+    """The credential secret may be rewritten by ANOTHER process at consent
+    time; this process's 120s secret cache must be dropped before each
+    credential read so the runtime always judges with live facts."""
+    _install_fake_storage(monkeypatch)
+    cleared: list[dict[str, Any]] = []
+
+    def _record_clear(**kwargs):
+        cleared.append(kwargs)
+        return 0
+
+    monkeypatch.setattr(ui_store.sdk_config, "clear_secret_cache", _record_clear)
+    store = DelegatedToKdcubeStore(user_id="user-1")
+    await store.set_credential("cred-x", {"access_token": "t", "claims": ["test:read"]})
+
+    value = await store.get_credential("cred-x")
+    assert value["access_token"] == "t"
+    assert cleared, "get_credential clears the process-local secret cache before reading"
+    assert cleared[0].get("user_id") == "user-1"

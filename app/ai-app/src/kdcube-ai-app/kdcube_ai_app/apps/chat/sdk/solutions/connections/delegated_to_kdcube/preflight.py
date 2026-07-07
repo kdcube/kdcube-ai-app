@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from typing import Any, Iterable
 from urllib.parse import quote, urlencode
 
@@ -22,6 +24,9 @@ from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube.model
 
 CONSENT_NEEDED_CODE = "needs_connected_account_consent"
 PREFLIGHT_SCHEMA = "connection_hub.delegated_to_kdcube.tool_claim_preflight.v1"
+
+
+LOGGER = logging.getLogger("kdcube.connections.delegated_to_kdcube")
 
 
 def _clean_list(values: Iterable[Any]) -> list[str]:
@@ -317,6 +322,19 @@ async def preflight_tool_claim_policies(
     resolved: list[dict[str, Any]] = []
     for policy in policy_list:
         result = await client.ensure_tool_claims(policy=policy)
+        # Per-tool preflight verdict — the resolution truth for a live repro:
+        # which tool passed/failed, on which claim, and WHY.
+        failures = result.get("failures") if isinstance(result.get("failures"), list) else []
+        LOGGER.info(
+            "[delegated.preflight] tool=%s ok=%s user=%s%s",
+            policy.tool_name,
+            result.get("ok") is True,
+            user_id,
+            "" if result.get("ok") is True else " failures=" + "; ".join(
+                f"{f.get('provider_id')}:{f.get('claim')}->{f.get('reason') or f.get('error')}"
+                for f in failures if isinstance(f, dict)
+            ),
+        )
         if result.get("ok") is True:
             resolved.append(result)
         else:
