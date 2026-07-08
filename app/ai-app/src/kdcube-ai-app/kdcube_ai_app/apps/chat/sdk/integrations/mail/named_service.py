@@ -100,6 +100,27 @@ MAIL_GRANT_HINTS = {
     "object.action.forward": ["mail:read", "mail:send"],
 }
 
+# Machine-readable connected-account requirements for catalog consumers (the
+# composer menu's proactive consent). The mail realm DIFFERENTIATES claims per
+# operation — read operations need the read claim; send-class actions need the
+# send claim — so consumers can scope the shown claims to the operations a
+# configuration actually allows. Same constants `_resolve_claim` uses.
+MAIL_CONNECTED_ACCOUNT_REQUIREMENTS = [
+    {
+        "provider_id": GMAIL_PROVIDER_ID,
+        "connector_app_id": GMAIL_CONNECTOR_APP_ID,
+        "claims": [GMAIL_READ_CLAIM, GMAIL_SEND_CLAIM],
+        "claims_by_operation": {
+            "object.list": [GMAIL_READ_CLAIM],
+            "object.search": [GMAIL_READ_CLAIM],
+            "object.get": [GMAIL_READ_CLAIM],
+            "object.action.download_attachments": [GMAIL_READ_CLAIM],
+            "object.action.send": [GMAIL_SEND_CLAIM],
+            "object.action.forward": [GMAIL_READ_CLAIM, GMAIL_SEND_CLAIM],
+        },
+    }
+]
+
 MAIL_PROVIDER_CATALOG = {
     "gmail": {
         "provider_id": GMAIL_PROVIDER_ID,
@@ -416,7 +437,15 @@ def _error_from_tool(result: Mapping[str, Any], *, request: NamedServiceRequest,
     label="Mail",
     description="Provider-neutral mail namespace over user-connected accounts.",
     intro=MAIL_INTRO,
-    metadata={"provider_catalog": MAIL_PROVIDER_CATALOG, "grant_hints": MAIL_GRANT_HINTS},
+    metadata={
+        "provider_catalog": MAIL_PROVIDER_CATALOG,
+        "grant_hints": MAIL_GRANT_HINTS,
+        "connected_accounts": MAIL_CONNECTED_ACCOUNT_REQUIREMENTS,
+        "actions": {
+            name: str((meta or {}).get("description") or "").strip()
+            for name, meta in (MAIL_SCHEMA.get("actions") or {}).items()
+        },
+    },
 )
 class MailNamedServiceProvider(NamedServiceProvider):
     def __init__(

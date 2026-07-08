@@ -57,6 +57,29 @@ export interface AgentCapabilityMcpServer {
   tool_entries?: AgentCapabilityToolEntry[]
 }
 
+/** One operation or named action inside a namespace's realm view. */
+export interface AgentCapabilityRealmEntry {
+  name: string
+  description?: string
+  /** Provider claims this entry needs — present only when the realm
+   *  declared per-operation differentiation (e.g. mail read vs send). */
+  claims?: string[]
+}
+
+/** The resolved realm behind a configured namespace: what's inside and which
+ *  provider claims it runs on (sourced from the realm's own declaration). */
+export interface AgentCapabilityRealm {
+  label?: string
+  description?: string
+  operations?: AgentCapabilityRealmEntry[]
+  actions?: AgentCapabilityRealmEntry[]
+  connected_accounts?: {
+    provider_id: string
+    connector_app_id?: string
+    claims: string[]
+  }[]
+}
+
 export interface AgentCapabilityNamespace {
   namespace: string
   alias: string
@@ -64,6 +87,8 @@ export interface AgentCapabilityNamespace {
   tools: string[]
   /** Namespace-level consent state (the realm's connected-account claims). */
   consent?: AgentCapabilityConsent
+  /** Resolved realm view (label/description, operations, named actions). */
+  realm?: AgentCapabilityRealm
 }
 
 export interface AgentCapabilitySkill {

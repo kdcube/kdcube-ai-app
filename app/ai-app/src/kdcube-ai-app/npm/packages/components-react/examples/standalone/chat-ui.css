@@ -2103,6 +2103,17 @@ a { color: inherit; }
   cursor: pointer;
 }
 .k-menu-row-main:hover { background: var(--surface-2); }
+/* Informational row inside an expanded namespace (operations / named
+   actions): row geometry without the toggle affordance — selection stays
+   namespace-level. Ellipsizes exactly like a toggle row. */
+.k-menu-row-static {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px 4px 10px;
+}
 .k-menu-row-text { display: flex; flex-direction: column; min-width: 0; gap: 1px; }
 .k-menu-row-label {
   font-size: 13px;

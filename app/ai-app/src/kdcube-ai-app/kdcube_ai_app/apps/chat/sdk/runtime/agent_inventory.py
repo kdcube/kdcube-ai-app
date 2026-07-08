@@ -575,6 +575,187 @@ def agent_capabilities_catalog(
     }
 
 
+# One-line descriptions for the generic named-service grammar, shown when a
+# namespace row expands in the picker UI.
+_NAMED_SERVICE_OPERATION_DESCRIPTIONS = {
+    "provider.about": "What this service is and how to work it.",
+    "provider.capabilities": "Provider-declared operations and behaviors.",
+    "object.list": "List the namespace's objects (accounts, folders, channels...).",
+    "object.search": "Search objects by query and filters.",
+    "object.get": "Read one object by ref.",
+    "object.schema": "Object shapes and refs for this namespace.",
+    "object.upsert": "Create or update one object.",
+    "object.action": "Run a named, bounded provider action.",
+    "object.host_file": "Host a file into the namespace.",
+    "object.delete": "Delete one object.",
+}
+
+
+def _operation_key_allowed(op_key: str, allowed_operations: Sequence[str]) -> bool:
+    """`object.action.send` counts allowed when `object.action` is allowed."""
+    key = str(op_key or "").strip()
+    for allowed in allowed_operations or ():
+        base = str(allowed or "").strip()
+        if not base:
+            continue
+        if key == base or key.startswith(base + "."):
+            return True
+    return False
+
+
+def _realm_requirement_effective_claims(
+    requirement: Mapping[str, Any],
+    allowed_operations: Sequence[str],
+) -> list[str]:
+    """The provider claims the ALLOWED operations actually need.
+
+    A realm that differentiates declares `claims_by_operation`; the effective
+    set is the union over allowed operation keys. A realm that declares one
+    flat `claims` set shows that set — the catalog never invents granularity.
+    """
+    by_operation = requirement.get("claims_by_operation")
+    if isinstance(by_operation, Mapping) and by_operation:
+        claims: list[str] = []
+        for op_key, op_claims in by_operation.items():
+            if not _operation_key_allowed(str(op_key), allowed_operations):
+                continue
+            for claim in _string_list(op_claims):
+                if claim not in claims:
+                    claims.append(claim)
+        return sorted(claims)
+    return sorted(set(_string_list(requirement.get("claims"))))
+
+
+def _realm_payload_from_spec(spec: Any, allowed_operations: Sequence[str]) -> dict[str, Any] | None:
+    """The picker-facing view of one realm behind a configured namespace.
+
+    Sourced from the provider's discovery spec — the same declaration surface
+    its claim resolution uses: label/description, the named actions with
+    their one-line descriptions, and the connected-account requirements
+    scoped to the operations this configuration allows.
+    """
+    if spec is None:
+        return None
+    metadata = getattr(spec, "metadata", None)
+    metadata = dict(metadata) if isinstance(metadata, Mapping) else {}
+    allowed = [str(op or "").strip() for op in (allowed_operations or ()) if str(op or "").strip()]
+
+    requirements_out: list[dict[str, Any]] = []
+    raw_requirements = metadata.get("connected_accounts")
+    by_operation_union: dict[str, list[str]] = {}
+    if isinstance(raw_requirements, (list, tuple)):
+        for raw in raw_requirements:
+            if not isinstance(raw, Mapping):
+                continue
+            provider_id = _norm(raw.get("provider_id"))
+            if not provider_id:
+                continue
+            effective = _realm_requirement_effective_claims(raw, allowed)
+            if not effective:
+                continue
+            requirements_out.append({
+                "provider_id": provider_id,
+                "connector_app_id": _norm(raw.get("connector_app_id")),
+                "claims": effective,
+            })
+            declared_by_op = raw.get("claims_by_operation")
+            if isinstance(declared_by_op, Mapping):
+                for op_key, op_claims in declared_by_op.items():
+                    merged = by_operation_union.setdefault(str(op_key), [])
+                    for claim in _string_list(op_claims):
+                        if claim not in merged:
+                            merged.append(claim)
+
+    actions_out: list[dict[str, Any]] = []
+    if _operation_key_allowed("object.action", allowed):
+        raw_actions = metadata.get("actions")
+        if isinstance(raw_actions, Mapping):
+            for name in sorted(raw_actions):
+                entry: dict[str, Any] = {
+                    "name": str(name),
+                    "description": _first_para(str(raw_actions.get(name) or "")),
+                }
+                claims = by_operation_union.get(f"object.action.{name}")
+                if claims:
+                    entry["claims"] = sorted(claims)
+                actions_out.append(entry)
+
+    operations_out: list[dict[str, Any]] = []
+    for op in allowed:
+        if op == "object.action" and actions_out:
+            continue  # the named actions expand this operation
+        entry = {
+            "name": op,
+            "description": _NAMED_SERVICE_OPERATION_DESCRIPTIONS.get(op, ""),
+        }
+        claims = by_operation_union.get(op)
+        if claims:
+            entry["claims"] = sorted(claims)
+        operations_out.append(entry)
+
+    label = _norm(getattr(spec, "label", ""))
+    description = _first_para(str(getattr(spec, "description", "") or ""))
+    if not (label or description or requirements_out or actions_out):
+        return None
+    payload: dict[str, Any] = {
+        "label": label,
+        "description": description,
+        "operations": operations_out,
+        "actions": actions_out,
+    }
+    if requirements_out:
+        payload["connected_accounts"] = requirements_out
+    return payload
+
+
+async def enrich_catalog_named_service_realms(
+    catalog: dict[str, Any],
+    *,
+    discovery: Any = None,
+    tenant: str = "",
+    project: str = "",
+) -> dict[str, Any]:
+    """Attach each configured namespace's realm view to the catalog.
+
+    Resolution goes through named-service discovery (the registry every
+    provider publishes its spec to); a namespace with no resolvable realm
+    keeps its plain row. Fail-open throughout — a menu render asks nothing.
+    """
+    entries = [e for e in (catalog.get("named_services") or []) if isinstance(e, dict)]
+    if not entries:
+        return catalog
+    try:
+        if discovery is None:
+            from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers.discovery import (
+                RedisNamedServiceDiscovery,
+                _redis_client_from_settings,
+            )
+
+            if not tenant or not project:
+                return catalog
+            discovery = RedisNamedServiceDiscovery(
+                _redis_client_from_settings(), tenant=tenant, project=project,
+            )
+        for entry in entries:
+            namespace = _norm_namespace(entry.get("namespace"))
+            if not namespace:
+                continue
+            try:
+                found = await discovery.entries_for_namespace(namespace)
+            except Exception:
+                continue
+            spec = next(
+                (item.spec for item in (found or []) if getattr(item, "spec", None) is not None),
+                None,
+            )
+            realm = _realm_payload_from_spec(spec, _string_list(entry.get("operations")))
+            if realm:
+                entry["realm"] = realm
+    except Exception:
+        pass
+    return catalog
+
+
 def _mcp_services_config_from_props(bundle_props: Mapping[str, Any] | None) -> Any:
     """MCP services config as the runtime resolves it (parity with
     BaseWorkflow._resolve_mcp_services_config, trimmed to the mapping forms)."""

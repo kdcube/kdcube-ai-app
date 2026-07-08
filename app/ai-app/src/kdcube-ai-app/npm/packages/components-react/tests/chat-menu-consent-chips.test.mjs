@@ -68,3 +68,20 @@ for (const sheet of STYLESHEETS) {
     assert.match(css, /\.k-menu-row-label\s*\{[^}]*text-overflow:\s*ellipsis/)
   })
 }
+
+// Expanded-namespace internals: informational rows share the toggle row's
+// geometry and truncation without its affordance; the chip family applies
+// unchanged to claims-bearing entries.
+for (const sheet of STYLESHEETS) {
+  const label = sheet.pathname.split('/').slice(-3).join('/')
+  const css = readFileSync(sheet, 'utf8')
+
+  test(`namespace internals rows keep row geometry without the toggle (${label})`, () => {
+    const start = css.indexOf('.k-menu-row-static {')
+    assert.ok(start >= 0, '.k-menu-row-static exists')
+    const block = css.slice(start, css.indexOf('}', start))
+    assert.match(block, /flex:\s*1 1 auto/)
+    assert.match(block, /min-width:\s*0/)
+    assert.doesNotMatch(block, /cursor:/)
+  })
+}

@@ -521,3 +521,159 @@ def test_catalog_carries_supported_models_and_default():
     plain = agent_capabilities_catalog(_props(), "main")
     assert plain["supported_models"] == []
     assert plain["default_model"] is None
+
+
+# ── Named-service realm view (what's inside a namespace + derived claims) ────
+# The realm's discovery spec is the declaration surface its own claim
+# resolution uses; the catalog scopes the shown claims to the operations the
+# consumer configuration allows and NEVER invents granularity a realm did not
+# declare.
+
+
+class _FakeDiscovery:
+    def __init__(self, specs_by_namespace):
+        self.specs_by_namespace = specs_by_namespace
+
+    async def entries_for_namespace(self, namespace):
+        spec = self.specs_by_namespace.get(namespace)
+        if spec is None:
+            return []
+
+        class _Entry:
+            def __init__(self, spec):
+                self.spec = spec
+
+        return [_Entry(spec)]
+
+
+def _spec_for(namespace):
+    if namespace == "slack":
+        from kdcube_ai_app.apps.chat.sdk.integrations.slack.named_service import (
+            slack_named_service_spec,
+        )
+
+        return slack_named_service_spec()
+    raise AssertionError(namespace)
+
+
+@pytest.mark.asyncio
+async def test_realm_enrichment_scopes_mail_claims_to_allowed_operations():
+    from kdcube_ai_app.apps.chat.sdk.runtime.agent_inventory import (
+        enrich_catalog_named_service_realms,
+    )
+    from kdcube_ai_app.apps.chat.sdk.integrations.mail.named_service import (
+        MAIL_CONNECTED_ACCOUNT_REQUIREMENTS,
+        MAIL_SCHEMA,
+    )
+    from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers.types import (
+        NamedServiceProviderSpec,
+    )
+
+    spec = NamedServiceProviderSpec(
+        provider_id="kdcube.mail",
+        namespace="mail",
+        label="Mail",
+        description="Provider-neutral mail namespace over user-connected accounts.",
+        metadata={
+            "connected_accounts": MAIL_CONNECTED_ACCOUNT_REQUIREMENTS,
+            "actions": {
+                name: str((meta or {}).get("description") or "")
+                for name, meta in (MAIL_SCHEMA.get("actions") or {}).items()
+            },
+        },
+    )
+
+    # Read-only configuration: the send claim must NOT appear.
+    catalog = {
+        "named_services": [
+            {"namespace": "mail", "alias": "named_services",
+             "operations": ["provider.about", "object.list", "object.search", "object.get"]},
+        ]
+    }
+    out = await enrich_catalog_named_service_realms(
+        catalog, discovery=_FakeDiscovery({"mail": spec}),
+    )
+    realm = out["named_services"][0]["realm"]
+    assert realm["label"] == "Mail"
+    assert realm["connected_accounts"] == [
+        {"provider_id": "google", "connector_app_id": "gmail", "claims": ["gmail:read"]},
+    ]
+    # No actions listing without object.action in the allowed set.
+    assert realm["actions"] == []
+    assert [op["name"] for op in realm["operations"]] == [
+        "provider.about", "object.list", "object.search", "object.get",
+    ]
+
+    # Full configuration: both claims, and the named actions render with the
+    # per-action claims the realm declared.
+    catalog = {
+        "named_services": [
+            {"namespace": "mail", "alias": "named_services",
+             "operations": ["object.list", "object.search", "object.get", "object.action"]},
+        ]
+    }
+    out = await enrich_catalog_named_service_realms(
+        catalog, discovery=_FakeDiscovery({"mail": spec}),
+    )
+    realm = out["named_services"][0]["realm"]
+    assert realm["connected_accounts"][0]["claims"] == ["gmail:read", "gmail:send"]
+    actions = {item["name"]: item for item in realm["actions"]}
+    assert "send" in actions and "forward" in actions
+    assert actions["send"]["claims"] == ["gmail:send"]
+    assert actions["forward"]["claims"] == ["gmail:read", "gmail:send"]
+    assert actions["download_attachments"]["claims"] == ["gmail:read"]
+    assert actions["send"]["description"]
+    # object.action is expanded by the named actions, so its generic row hides.
+    assert "object.action" not in [op["name"] for op in realm["operations"]]
+
+
+@pytest.mark.asyncio
+async def test_realm_enrichment_keeps_slack_flat_claim_set():
+    from kdcube_ai_app.apps.chat.sdk.runtime.agent_inventory import (
+        enrich_catalog_named_service_realms,
+    )
+
+    spec = _spec_for("slack")
+    catalog = {
+        "named_services": [
+            {"namespace": "slack", "alias": "named_services",
+             "operations": ["object.list", "object.search", "object.get", "object.action"]},
+            {"namespace": "task", "alias": "named_services", "operations": ["object.list"]},
+        ]
+    }
+    out = await enrich_catalog_named_service_realms(
+        catalog, discovery=_FakeDiscovery({"slack": spec}),
+    )
+    slack_entry, task_entry = out["named_services"]
+    realm = slack_entry["realm"]
+    # One declared flat set: shown whole, no invented per-operation split.
+    assert realm["connected_accounts"] == [{
+        "provider_id": "slack",
+        "connector_app_id": "demo",
+        "claims": sorted([
+            "slack:search", "slack:channels", "slack:history",
+            "slack:files:read", "slack:files:write", "slack:post",
+            "slack:assistant:search",
+        ]),
+    }]
+    actions = {item["name"] for item in realm["actions"]}
+    assert {"post_message", "upload_file", "download_file"} <= actions
+    for item in realm["actions"]:
+        assert "claims" not in item  # slack declared no per-action claims
+    # Unresolvable namespace keeps its plain row (fail-open).
+    assert "realm" not in task_entry
+
+
+@pytest.mark.asyncio
+async def test_realm_enrichment_fails_open_on_discovery_errors():
+    from kdcube_ai_app.apps.chat.sdk.runtime.agent_inventory import (
+        enrich_catalog_named_service_realms,
+    )
+
+    class _BrokenDiscovery:
+        async def entries_for_namespace(self, namespace):
+            raise RuntimeError("discovery down")
+
+    catalog = {"named_services": [{"namespace": "mail", "alias": "named_services", "operations": ["object.list"]}]}
+    out = await enrich_catalog_named_service_realms(catalog, discovery=_BrokenDiscovery())
+    assert "realm" not in out["named_services"][0]

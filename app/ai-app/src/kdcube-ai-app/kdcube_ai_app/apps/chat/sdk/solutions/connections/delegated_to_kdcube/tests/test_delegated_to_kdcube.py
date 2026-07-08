@@ -1664,3 +1664,46 @@ def test_hub_props_public_base_extraction():
     assert public_base_url_from_hub_props({}) == ""
     assert public_base_url_from_hub_props(None) == ""
     assert public_base_url_from_hub_props({"connections": {}}) == ""
+
+
+@pytest.mark.asyncio
+async def test_claim_coverage_decorates_namespace_policies_from_realm_requirements(monkeypatch):
+    """Realm-backed namespaces (mail -> google claims, slack -> slack claims)
+    get the same read-only coverage as dedicated tools: a namespace-named
+    policy synthesized from the realm's declared requirements resolves to
+    covered/unmet against the user's connected accounts."""
+    from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube.consent_demand import (
+        claim_coverage_for_policies,
+    )
+    from kdcube_ai_app.apps.chat.sdk.integrations.mail.named_service import (
+        MAIL_CONNECTED_ACCOUNT_REQUIREMENTS,
+    )
+    from kdcube_ai_app.apps.chat.sdk.integrations.slack.named_service import (
+        SLACK_CONNECTED_ACCOUNT_REQUIREMENTS,
+    )
+
+    _install_fake_storage(monkeypatch)
+    store = DelegatedToKdcubeStore(user_id="user-1")
+    await store.upsert_account(
+        ConnectedAccount(
+            account_id="acct-gmail",
+            provider_id="google",
+            connector_app_id="gmail",
+            external_subject="u-gmail",
+            claims=("gmail:read",),
+            credential_id=credential_id_for("acct-gmail"),
+        )
+    )
+
+    policies = [
+        ToolClaimPolicy.from_config("mail", {"connected_accounts": MAIL_CONNECTED_ACCOUNT_REQUIREMENTS}),
+        ToolClaimPolicy.from_config("slack", {"connected_accounts": SLACK_CONNECTED_ACCOUNT_REQUIREMENTS}),
+    ]
+    coverage = await claim_coverage_for_policies(user_id="user-1", policies=policies)
+
+    assert coverage["mail"]["provider_id"] == "google"
+    assert coverage["mail"]["unmet"] == ["gmail:send"]
+    assert coverage["mail"]["covered"] is False
+    # No slack account at all: the whole realm claim set is unmet.
+    assert coverage["slack"]["covered"] is False
+    assert "slack:history" in coverage["slack"]["unmet"]

@@ -118,6 +118,18 @@ SLACK_CONNECTED_ACCOUNT_CLAIMS = {
     "assistant_search": SLACK_ASSISTANT_SEARCH_CLAIM,
 }
 
+# Machine-readable connected-account requirements for catalog consumers (the
+# composer menu's proactive consent). One flat claim set: the Slack realm
+# does not differentiate claims per operation, so consumers show the whole
+# set. Same constants `_resolve_claim` uses.
+SLACK_CONNECTED_ACCOUNT_REQUIREMENTS = [
+    {
+        "provider_id": SLACK_PROVIDER_ID,
+        "connector_app_id": SLACK_CONNECTOR_APP_ID,
+        "claims": sorted(set(SLACK_CONNECTED_ACCOUNT_CLAIMS.values())),
+    }
+]
+
 SLACK_SEARCH_FILTERS = {
     "account_id": {
         "type": "string",
@@ -282,6 +294,11 @@ def slack_named_service_spec(*, bundle_id: str | None = None) -> NamedServicePro
         metadata={
             "grant_hints": SLACK_GRANT_HINTS,
             "connected_account_claims": SLACK_CONNECTED_ACCOUNT_CLAIMS,
+            "connected_accounts": SLACK_CONNECTED_ACCOUNT_REQUIREMENTS,
+            "actions": {
+                name: str((meta or {}).get("description") or "").strip()
+                for name, meta in (SLACK_SCHEMA.get("actions") or {}).items()
+            },
             "canonical_refs": SLACK_SCHEMA["refs"],
         },
     )

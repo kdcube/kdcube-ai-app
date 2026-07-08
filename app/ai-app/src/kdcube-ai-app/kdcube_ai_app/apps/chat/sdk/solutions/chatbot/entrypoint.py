@@ -419,7 +419,50 @@ class BaseEntrypoint:
             bundle_id=bundle_id,
             timeout_seconds=timeout,
         )
+        catalog = await self._attach_named_service_realms(catalog)
         return await self._attach_claim_coverage(catalog, agent_id)
+
+    # Realm resolution rides the same fail-open discipline as coverage: the
+    # menu renders with plain namespace rows on any miss.
+    NAMED_SERVICE_REALM_BUDGET_SECONDS = 2.5
+
+    async def _attach_named_service_realms(self, catalog: Dict[str, Any]) -> Dict[str, Any]:
+        """What's INSIDE each configured namespace, for the picker UI.
+
+        Per namespace: the realm's label/description, its named actions, the
+        allowed operations with one-line descriptions, and the underlying
+        provider claim requirements — sourced from the realm's discovery spec
+        (the same declaration its claim resolution uses), scoped to the
+        operations this agent's configuration allows."""
+        try:
+            from kdcube_ai_app.apps.chat.sdk.runtime.agent_inventory import (
+                enrich_catalog_named_service_realms,
+            )
+
+            actor = getattr(self.comm_context, "actor", None)
+            tenant = str(
+                getattr(actor, "tenant_id", "")
+                or getattr(getattr(self, "settings", None), "TENANT", "")
+                or ""
+            ).strip()
+            project = str(
+                getattr(actor, "project_id", "")
+                or getattr(getattr(self, "settings", None), "PROJECT", "")
+                or ""
+            ).strip()
+            return await asyncio.wait_for(
+                enrich_catalog_named_service_realms(catalog, tenant=tenant, project=project),
+                timeout=self.NAMED_SERVICE_REALM_BUDGET_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            self.logger.log(
+                "[agent_capabilities] named-service realm resolution exceeded "
+                f"{self.NAMED_SERVICE_REALM_BUDGET_SECONDS}s — namespace rows render plain",
+                "WARNING",
+            )
+        except Exception:
+            self.logger.log("[agent_capabilities] named-service realm resolution failed (fail-open)", "WARNING")
+        return catalog
 
     # The menu inventory must render even when coverage cannot: the whole
     # decoration runs under this budget, rows simply omit consent state on a
@@ -447,9 +490,25 @@ class BaseEntrypoint:
 
             identity = self._agent_selection_identity()
             user_id = str(identity.get("user_id") or "").strip()
-            policies = agent_tool_config_from_bundle_props(
+            policies = list(agent_tool_config_from_bundle_props(
                 self.bundle_props, agent_id, bundle_root=self._bundle_root(),
-            ).tool_claim_policies
+            ).tool_claim_policies)
+            # Realm-backed namespaces keep their claim requirements inside the
+            # realm provider; the resolved realm view supplies them, so the
+            # namespace rows get exactly the same coverage treatment as
+            # dedicated tools.
+            from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube.models import (
+                ToolClaimPolicy,
+            )
+
+            for entry in catalog.get("named_services") or []:
+                realm = entry.get("realm") if isinstance(entry.get("realm"), dict) else {}
+                requirements = realm.get("connected_accounts") or []
+                namespace = str(entry.get("namespace") or "").strip()
+                if namespace and requirements:
+                    policies.append(ToolClaimPolicy.from_config(
+                        namespace, {"connected_accounts": requirements},
+                    ))
             if not user_id or not policies:
                 return catalog
             try:

@@ -489,7 +489,53 @@ function McpSection({ inventory, disabled, toggle }: CapabilityRowsProps) {
   )
 }
 
+/** One line inside an expanded namespace: an operation or a named action —
+ *  informational (selection stays namespace-level), with the flat consent
+ *  chip family on claims-bearing entries. Per-entry consent seeds the plan
+ *  with exactly that entry's claims; entries without declared claims lean on
+ *  the namespace-level chip. */
+function RealmEntryRow({
+  entry,
+  consent,
+  onConsent,
+}: {
+  entry: { name: string; description?: string; claims?: string[] }
+  consent?: AgentCapabilityConsent
+  onConsent?: (open: ConnectionsConsentOpen) => void
+}) {
+  const claims = (entry.claims ?? []).filter(Boolean)
+  let aside: ReactNode = null
+  if (claims.length && consent) {
+    const unmet = claims.filter((claim) => (consent.unmet ?? []).includes(claim))
+    aside = (
+      <ConsentAside
+        consent={{
+          provider_id: consent.provider_id,
+          connector_app_id: consent.connector_app_id,
+          claims,
+          unmet,
+          covered: unmet.length === 0,
+        }}
+        onConsent={onConsent}
+        title={`Approve account access: ${unmet.join(', ')}`}
+      />
+    )
+  }
+  return (
+    <div className="k-menu-row k-menu-row-child">
+      <span className="k-menu-row-static" title={entry.description || undefined}>
+        <span className="k-menu-row-text">
+          <span className="k-menu-row-label"><code>{entry.name}</code></span>
+          {entry.description ? <span className="k-menu-row-sub">{entry.description}</span> : null}
+        </span>
+      </span>
+      {aside}
+    </div>
+  )
+}
+
 function ServicesSection({ inventory, disabled, toggle, namespaceStyles, spotlight, onConsent }: CapabilityRowsProps) {
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   if (!inventory.named_services.length) return null
   // The consent banner's "turn off the tools" for a named-service tool names
   // the NAMESPACE — the entry the user sees here.
@@ -497,16 +543,43 @@ function ServicesSection({ inventory, disabled, toggle, namespaceStyles, spotlig
   return (
     <div>
       <SectionTitle>Services</SectionTitle>
-      {inventory.named_services.map((entry) => (
-        <MenuRow
-          key={entry.namespace}
-          label={namespaceLabel(entry.namespace, namespaceStyles)}
-          checked={isNamespaceDisabled(disabled, entry.namespace) ? 'off' : 'on'}
-          onToggle={() => toggle({ named_services: { [entry.namespace]: !isNamespaceDisabled(disabled, entry.namespace) } })}
-          spotlight={spotlit.has(entry.namespace) || spotlit.has(entry.alias)}
-          aside={<ConsentAside consent={entry.consent} onConsent={onConsent} />}
-        />
-      ))}
+      {inventory.named_services.map((entry) => {
+        const realm = entry.realm
+        const internals = [...(realm?.operations ?? []), ...(realm?.actions ?? [])]
+        const isOpen = Boolean(expanded[entry.namespace])
+        return (
+          <div key={entry.namespace}>
+            <MenuRow
+              label={realm?.label || namespaceLabel(entry.namespace, namespaceStyles)}
+              sub={realm?.description || undefined}
+              checked={isNamespaceDisabled(disabled, entry.namespace) ? 'off' : 'on'}
+              onToggle={() => toggle({ named_services: { [entry.namespace]: !isNamespaceDisabled(disabled, entry.namespace) } })}
+              expandable={internals.length > 0}
+              expanded={isOpen}
+              onExpand={() => setExpanded((current) => ({ ...current, [entry.namespace]: !isOpen }))}
+              spotlight={spotlit.has(entry.namespace) || spotlit.has(entry.alias)}
+              aside={(
+                <ConsentAside
+                  consent={entry.consent}
+                  onConsent={onConsent}
+                  label="Consent all"
+                  title={`Approve all ${realm?.label || entry.namespace} account access`}
+                />
+              )}
+            />
+            {isOpen
+              ? internals.map((item) => (
+                  <RealmEntryRow
+                    key={item.name}
+                    entry={item}
+                    consent={entry.consent}
+                    onConsent={onConsent}
+                  />
+                ))
+              : null}
+          </div>
+        )
+      })}
     </div>
   )
 }
