@@ -12,6 +12,7 @@ import { createRoot } from 'react-dom/client'
 import { ChatStoreProvider, Chat, useChatEngine } from '@kdcube/components-react/chat'
 import type { EngineConfig } from '@kdcube/components-core'
 import { installCapabilitiesMock } from './mockCapabilities.ts'
+import './tailwind.css'
 import './chat-ui.css'
 
 const params = new URLSearchParams(window.location.search)

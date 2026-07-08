@@ -4,7 +4,7 @@ title: "User Settings Solution"
 summary: "The per-user, per-app, per-key settings construct over user_bundle_props: the storage model, the merge-write/clamp semantics that make user choices safe, the two shipped stores (memory preferences and the agent selection record), and how settings reach runtime and UI."
 status: current
 tags: ["sdk", "solutions", "user-settings", "user_bundle_props", "preferences", "agent-selection", "storage"]
-updated_at: 2026-07-06
+updated_at: 2026-07-08
 keywords:
   [
     "user_bundle_props",
@@ -19,6 +19,7 @@ keywords:
     "pending delta",
   ]
 see_also:
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/user-settings/capabilities-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/recipes/constructs/user-settings-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/how/how-to-construct-react-agent-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/context-caching-README.md
@@ -91,7 +92,7 @@ record per (user, app, agent):
   "disabled": {
     "tools": {"gmail": true, "web_tools": ["web_fetch"]},
     "mcp": {"knowledge": ["kb_fetch"]},
-    "named_services": {"task": true},
+    "named_services": {"task": true, "mail": ["object.action.send"]},
     "skills": ["public.docx-press"]
   },
   "model": {"provider": "anthropic", "model": "claude-haiku-4-5-20251001"},
@@ -107,8 +108,11 @@ record per (user, app, agent):
 ```
 
 - `disabled` — DENY-lists per category (python tool groups whole or per tool,
-  MCP servers whole or per tool, named-service namespaces, skills). Absent
-  entry = enabled; absent record = the full configured set.
+  MCP servers whole or per tool, named-service namespaces whole or per
+  operation/action — `object.search`, `object.action.send` — skills). Absent
+  entry = enabled; absent record = the full configured set. The full
+  granularity map and the picker surfaces live in
+  [Per-User Agent Capabilities](capabilities-README.md).
 - `model` — the single PICK from the admin-declared `supported_models` list;
   absent = the configured default model runs.
 - `cache_policy` — the user's standing cold-cache policy per change class
@@ -168,7 +172,9 @@ UI (widget / composer menu)
 runtime (per turn)
   └─ application point reads the record fresh and applies it fail-open
      (agent selection: BaseWorkflow.apply_user_agent_selection narrows the
-      tool/skill configs, applies the model pick, honors cache_policy/pending;
+      tool/skill configs, makes denied namespace operations/actions
+      uncallable at named-service dispatch, applies the model pick, honors
+      cache_policy/pending;
       memory: announce/tools honor memory_enabled + memory_scope)
 ```
 

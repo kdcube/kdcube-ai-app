@@ -1,4 +1,9 @@
-@import "tailwindcss";
+/* kdcube chat design-system stylesheet. Pure CSS by contract: no
+   toolchain directives, so ANY consumer (the chat widget, the
+   standalone example, served widgets like `capabilities`) can import
+   it without the Tailwind build. Consumers that also use Tailwind
+   utilities import the toolchain from their own entry (a local
+   tailwind.css) BEFORE this sheet. */
 
 :root {
   color-scheme: light;

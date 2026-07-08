@@ -7,6 +7,7 @@ keywords: ["documentation index", "platform architecture", "configuration guides
 updated_at: 2026-06-23
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/what-you-can-do-with-kdcube-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/recipes/use-cases-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/how-to-integrate-with-kdcube-apps-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/quick-start-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/arch/architecture-of-what-we-built-README.md
@@ -26,6 +27,7 @@ Curated index of platform, service, and SDK documentation.
 ## Start Here
 
 * What You Can Do With KDCube: [what-you-can-do-with-kdcube-README.md](what-you-can-do-with-kdcube-README.md)
+* Use Cases — What Problem Does KDCube Solve: [use-cases-README.md](recipes/use-cases-README.md)
 * How To Integrate With KDCube Apps: [how-to-integrate-with-kdcube-apps-README.md](how-to-integrate-with-kdcube-apps-README.md)
 * Quick Start: [quick-start-README.md](quick-start-README.md)
 * Architecture Of What We Built: [architecture-of-what-we-built-README.md](arch/architecture-of-what-we-built-README.md)

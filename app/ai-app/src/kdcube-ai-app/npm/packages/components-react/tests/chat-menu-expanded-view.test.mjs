@@ -118,3 +118,18 @@ for (const sheet of STYLESHEETS) {
     assert.match(block, /max-width:\s*920px/)
   })
 }
+
+// The design-system stylesheet is PURE CSS by contract: no toolchain
+// directives, so any served widget (e.g. `capabilities`) can import it
+// without the Tailwind build. The exact regression: an `@import "tailwindcss"`
+// inside the shared sheet broke the bundle UI build for consumers that do
+// not carry the Tailwind toolchain.
+for (const sheet of STYLESHEETS) {
+  const label = sheet.pathname.split('/').slice(-3).join('/')
+  const css = readFileSync(sheet, 'utf8')
+
+  test(`stylesheet carries no toolchain directives (${label})`, () => {
+    assert.doesNotMatch(css, /@import\s+["']tailwindcss["']/)
+    assert.doesNotMatch(css, /^@plugin|^@theme|^@source/m)
+  })
+}

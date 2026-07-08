@@ -1,4 +1,5 @@
 import { createRoot } from 'react-dom/client'
+import './tailwind.css'
 import './index.css'
 // The widget mounts the npm @kdcube/components-* chat (package <Chat/> + engine +
 // iframe host-bridge) via the package engine-root. There is no in-tree App/engine.
