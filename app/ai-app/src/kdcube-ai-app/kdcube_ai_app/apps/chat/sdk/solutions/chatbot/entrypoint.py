@@ -421,6 +421,11 @@ class BaseEntrypoint:
         )
         return await self._attach_claim_coverage(catalog, agent_id)
 
+    # The menu inventory must render even when coverage cannot: the whole
+    # decoration runs under this budget, rows simply omit consent state on a
+    # miss (fail-open, warning logged).
+    CLAIM_COVERAGE_BUDGET_SECONDS = 2.5
+
     async def _attach_claim_coverage(self, catalog: Dict[str, Any], agent_id: str) -> Dict[str, Any]:
         """Per-entry connected-account consent state for the picker UI.
 
@@ -447,11 +452,22 @@ class BaseEntrypoint:
             ).tool_claim_policies
             if not user_id or not policies:
                 return catalog
-            coverage = await claim_coverage_for_policies(
-                user_id=user_id,
-                policies=policies,
-                connection_hub_bundle_id=connection_hub_bundle_id_from_entrypoint(self),
-            )
+            try:
+                coverage = await asyncio.wait_for(
+                    claim_coverage_for_policies(
+                        user_id=user_id,
+                        policies=policies,
+                        connection_hub_bundle_id=connection_hub_bundle_id_from_entrypoint(self),
+                    ),
+                    timeout=self.CLAIM_COVERAGE_BUDGET_SECONDS,
+                )
+            except asyncio.TimeoutError:
+                self.logger.log(
+                    "[agent_capabilities] claim coverage exceeded "
+                    f"{self.CLAIM_COVERAGE_BUDGET_SECONDS}s — menu renders without consent state",
+                    "WARNING",
+                )
+                return catalog
             if not coverage:
                 return catalog
             for group in catalog.get("tools") or []:
@@ -482,11 +498,16 @@ class BaseEntrypoint:
         """
         payload = self._agent_selection_payload(data, kwargs)
         agent_id = self._agent_selection_agent_id(payload)
+        started_at = time.monotonic()
         try:
             catalog = await self._agent_capabilities_catalog_enriched(agent_id)
         except Exception as exc:
             self.logger.log(f"[agent_capabilities] catalog failed: {traceback.format_exc()}", "ERROR")
             return {"ok": False, "error": str(exc), "status": 500}
+        self.logger.log(
+            f"[agent_capabilities] catalog+coverage in {int((time.monotonic() - started_at) * 1000)}ms agent={agent_id}",
+            "INFO",
+        )
         selection: Dict[str, Any] = {"schema_version": 1, "disabled": {}}
         identity = self._agent_selection_identity()
         try:

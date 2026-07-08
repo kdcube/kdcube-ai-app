@@ -15,6 +15,7 @@ conversation, so a new conversation simply overwrites the record.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -26,15 +27,22 @@ LOGGER = logging.getLogger("kdcube.connections.delegated_to_kdcube")
 PENDING_CONSENT_KEY = "delegated_to_kdcube.blocked_snapshot"
 
 
-def read_pending_consent(*, user_id: str, bundle_id: str, conversation_id: str) -> list:
-    """The conversation's pending consent-demand groups (empty otherwise)."""
+async def read_pending_consent(*, user_id: str, bundle_id: str, conversation_id: str) -> list:
+    """The conversation's pending consent-demand groups (empty otherwise).
+
+    The user-props client is synchronous (psycopg2); the read runs in a worker
+    thread so async turn/op paths never block their event loop on it."""
     if not user_id or not bundle_id or not conversation_id:
         return []
     try:
         from kdcube_ai_app.apps.chat.sdk import config as sdk_config
 
-        raw = sdk_config.get_user_prop(
-            PENDING_CONSENT_KEY, user_id=user_id, bundle_id=bundle_id, default=None,
+        raw = await asyncio.to_thread(
+            sdk_config.get_user_prop,
+            PENDING_CONSENT_KEY,
+            user_id=user_id,
+            bundle_id=bundle_id,
+            default=None,
         )
     except Exception:
         return []
@@ -44,26 +52,29 @@ def read_pending_consent(*, user_id: str, bundle_id: str, conversation_id: str) 
     return [g for g in providers if isinstance(g, dict)] if isinstance(providers, list) else []
 
 
-def write_pending_consent(*, user_id: str, bundle_id: str, conversation_id: str, providers: list) -> None:
+async def write_pending_consent(*, user_id: str, bundle_id: str, conversation_id: str, providers: list) -> None:
     if not user_id or not bundle_id or not conversation_id:
         return
     try:
         from kdcube_ai_app.apps.chat.sdk import config as sdk_config
 
         if providers:
-            sdk_config.set_user_prop(
+            await asyncio.to_thread(
+                sdk_config.set_user_prop,
                 PENDING_CONSENT_KEY,
                 {"conversation_id": conversation_id, "providers": providers},
                 user_id=user_id,
                 bundle_id=bundle_id,
             )
         else:
-            sdk_config.delete_user_prop(PENDING_CONSENT_KEY, user_id=user_id, bundle_id=bundle_id)
+            await asyncio.to_thread(
+                sdk_config.delete_user_prop, PENDING_CONSENT_KEY, user_id=user_id, bundle_id=bundle_id,
+            )
     except Exception:
         LOGGER.debug("pending-consent write unavailable", exc_info=True)
 
 
-def record_consent_demand(
+async def record_consent_demand(
     *,
     user_id: str,
     bundle_id: str,
@@ -86,7 +97,7 @@ def record_consent_demand(
     claim_list = [str(c).strip() for c in (claims or []) if str(c or "").strip()]
     if not provider_key or not tool_key:
         return False
-    pending = read_pending_consent(user_id=user_id, bundle_id=bundle_id, conversation_id=conversation_id)
+    pending = await read_pending_consent(user_id=user_id, bundle_id=bundle_id, conversation_id=conversation_id)
     for group in pending:
         if str(group.get("provider_id") or "") != provider_key:
             continue
@@ -98,7 +109,7 @@ def record_consent_demand(
         group["claims"] = sorted(known_claims | set(claim_list))
         if provider_label and not group.get("provider_label"):
             group["provider_label"] = provider_label
-        write_pending_consent(
+        await write_pending_consent(
             user_id=user_id, bundle_id=bundle_id, conversation_id=conversation_id, providers=pending,
         )
         return True
@@ -109,7 +120,7 @@ def record_consent_demand(
         "claims": sorted(set(claim_list)),
         "tools": [tool_key],
     })
-    write_pending_consent(
+    await write_pending_consent(
         user_id=user_id, bundle_id=bundle_id, conversation_id=conversation_id, providers=pending,
     )
     return True
@@ -146,7 +157,7 @@ async def announce_consent_demand(
         bundle_id = str(identity.get("bundle_id") or "").strip()
         conversation_id = str(identity.get("conversation_id") or "").strip()
         provider_key = str(provider_id or "").strip()
-        newly_recorded = record_consent_demand(
+        newly_recorded = await record_consent_demand(
             user_id=user_id,
             bundle_id=bundle_id,
             conversation_id=conversation_id,
@@ -215,6 +226,9 @@ async def claim_coverage_for_policies(
         bundle_id=str(connection_hub_bundle_id or "").strip() or CONNECTION_HUB_BUNDLE_ID,
     )
     try:
+        # Await natively: the store offloads its synchronous storage client to
+        # a worker thread itself (never a nested event loop over shared
+        # clients).
         accounts = await store.list_accounts()
     except Exception:
         LOGGER.debug("claim coverage account read unavailable", exc_info=True)

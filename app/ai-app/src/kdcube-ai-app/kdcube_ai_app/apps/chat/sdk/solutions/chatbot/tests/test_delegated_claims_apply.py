@@ -204,7 +204,7 @@ async def test_pending_demand_still_unmet_stays_pending_and_quiet(monkeypatch):
 
     props = _install_fake_user_props(monkeypatch)
     stub = _conversation_stub()
-    record_consent_demand(
+    await record_consent_demand(
         user_id="u1", bundle_id="workspace@test", conversation_id="conv-1",
         provider_id="slack", connector_app_id="demo",
         claims=["slack:post"], tool_name="slack.post_slack_message",
@@ -260,7 +260,7 @@ async def test_disabled_group_claims_never_resolve(monkeypatch):
 
     props = _install_fake_user_props(monkeypatch)
     stub = _conversation_stub()
-    record_consent_demand(
+    await record_consent_demand(
         user_id="u1", bundle_id="workspace@test", conversation_id="conv-1",
         provider_id="slack", connector_app_id="demo",
         claims=["slack:post"], tool_name="slack.post_slack_message",
@@ -341,7 +341,7 @@ async def test_consent_satisfied_mid_conversation_announces_the_transition(monke
     stub = _conversation_stub()
 
     # A tool ATTEMPT recorded the demand (demand-driven; no turn-start block).
-    assert record_consent_demand(
+    assert await record_consent_demand(
         user_id="u1", bundle_id="workspace@test", conversation_id="conv-1",
         provider_id="slack", provider_label="Slack", connector_app_id="demo",
         claims=["slack:search"], tool_name="slack.search_slack",
@@ -398,3 +398,33 @@ def test_announce_renders_connected_accounts_update():
     assert "[CONNECTED ACCOUNTS UPDATE]" in announce
     # The stale blocked section stays out when everything is active.
     assert "[INACTIVE TOOLS THIS TURN]" not in announce
+
+
+@pytest.mark.asyncio
+async def test_blocking_consent_bookkeeping_never_blocks_the_turn(monkeypatch):
+    """Fail-open budget: a hanging snapshot store (DB stall, secrets stall —
+    any of it) lets the turn proceed with bookkeeping skipped and a warning."""
+    import time as _time
+    from kdcube_ai_app.apps.chat.sdk import config as sdk_config
+
+    def hanging_get_user_prop(key, *, user_id=None, bundle_id=None, default=None):
+        # Far beyond the 0.3s test budget; short enough that the leftover
+        # worker thread drains quickly at loop close.
+        _time.sleep(2)
+        return default
+
+    monkeypatch.setattr(sdk_config, "get_user_prop", hanging_get_user_prop)
+
+    stub = _conversation_stub()
+    stub.DELEGATED_CONSENT_TURN_BUDGET_SECONDS = 0.3
+    cfg = _tool_cfg()
+    import time as _clock
+    started = _clock.monotonic()
+    out = await BaseWorkflow.apply_delegated_tool_claims(stub, cfg)
+    elapsed = _clock.monotonic() - started
+
+    assert out is cfg
+    assert elapsed < 2.0, "the budget bounded the turn-start hook"
+    assert any("fail-open" in line for _lvl, line in stub.logger.lines), "the skip is named in a warning"
+    assert stub.runtime_ctx.inactive_tools == []
+    assert stub.runtime_ctx.reactivated_tools == []

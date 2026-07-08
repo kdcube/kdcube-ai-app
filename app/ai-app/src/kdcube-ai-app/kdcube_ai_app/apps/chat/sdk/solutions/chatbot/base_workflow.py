@@ -562,26 +562,26 @@ def _delegated_snapshot_scope(runtime_ctx: Any) -> tuple:
     )
 
 
-def _read_delegated_blocked_snapshot(runtime_ctx: Any) -> list:
+async def _read_delegated_blocked_snapshot(runtime_ctx: Any) -> list:
     user_id, bundle_id, conversation_id = _delegated_snapshot_scope(runtime_ctx)
     try:
         from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube.consent_demand import (
             read_pending_consent,
         )
 
-        return read_pending_consent(user_id=user_id, bundle_id=bundle_id, conversation_id=conversation_id)
+        return await read_pending_consent(user_id=user_id, bundle_id=bundle_id, conversation_id=conversation_id)
     except Exception:
         return []
 
 
-def _write_delegated_blocked_snapshot(runtime_ctx: Any, providers: list) -> None:
+async def _write_delegated_blocked_snapshot(runtime_ctx: Any, providers: list) -> None:
     user_id, bundle_id, conversation_id = _delegated_snapshot_scope(runtime_ctx)
     try:
         from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube.consent_demand import (
             write_pending_consent,
         )
 
-        write_pending_consent(
+        await write_pending_consent(
             user_id=user_id, bundle_id=bundle_id, conversation_id=conversation_id, providers=providers,
         )
     except Exception:
@@ -1326,7 +1326,35 @@ class BaseWorkflow():
             return result
         return None
 
+    # Consent bookkeeping is best-effort: a turn must always proceed. The
+    # whole turn-start hook runs under this budget; on timeout the configured
+    # set continues unchanged and a warning names the skip.
+    DELEGATED_CONSENT_TURN_BUDGET_SECONDS = 3.0
+
     async def apply_delegated_tool_claims(self, tool_config: Any) -> Any:
+        """Budgeted wrapper — see ``_apply_delegated_tool_claims_inner``."""
+        budget = float(getattr(self, "DELEGATED_CONSENT_TURN_BUDGET_SECONDS", 0) or
+                       BaseWorkflow.DELEGATED_CONSENT_TURN_BUDGET_SECONDS)
+        try:
+            return await asyncio.wait_for(
+                BaseWorkflow._apply_delegated_tool_claims_inner(self, tool_config),
+                timeout=budget,
+            )
+        except asyncio.TimeoutError:
+            try:
+                self.logger.log(
+                    f"[delegated_claims] consent bookkeeping exceeded {budget}s — "
+                    "skipped for this turn (fail-open)",
+                    level="WARNING",
+                )
+            except Exception:
+                pass
+            return tool_config
+        except Exception:
+            self.logger.log(traceback.format_exc(), level="ERROR")
+            return tool_config
+
+    async def _apply_delegated_tool_claims_inner(self, tool_config: Any) -> Any:
         """Demand-driven consent: every configured tool STAYS in the turn's set.
 
         Which tools a turn needs only becomes clear as the agent works, so
@@ -1350,7 +1378,7 @@ class BaseWorkflow():
         if runtime_ctx is not None:
             runtime_ctx.inactive_tools = []
             runtime_ctx.reactivated_tools = []
-        pending = _read_delegated_blocked_snapshot(runtime_ctx)
+        pending = await _read_delegated_blocked_snapshot(runtime_ctx)
         if not pending:
             return tool_config
         policies = list(getattr(tool_config, "tool_claim_policies", []) or [])
@@ -1364,7 +1392,7 @@ class BaseWorkflow():
         # demand-scoped check, never a sweep of the whole configured set.
         pending_policies = [p for p in policies if getattr(p, "tool_name", "") in pending_tool_names]
         if not pending_policies:
-            _write_delegated_blocked_snapshot(runtime_ctx, [])
+            await _write_delegated_blocked_snapshot(runtime_ctx, [])
             return tool_config
         tenant = str(getattr(runtime_ctx, "tenant", "") or "").strip()
         project = str(getattr(runtime_ctx, "project", "") or "").strip()
@@ -1388,7 +1416,7 @@ class BaseWorkflow():
         missing = result.get("missing") if isinstance(result.get("missing"), list) else []
         still_pending = unavailable_tools_by_provider(missing) if missing else []
         reactivated = _delegated_reactivated_groups(pending, still_pending)
-        _write_delegated_blocked_snapshot(runtime_ctx, still_pending)
+        await _write_delegated_blocked_snapshot(runtime_ctx, still_pending)
         if runtime_ctx is not None and reactivated:
             runtime_ctx.reactivated_tools = reactivated
         return tool_config

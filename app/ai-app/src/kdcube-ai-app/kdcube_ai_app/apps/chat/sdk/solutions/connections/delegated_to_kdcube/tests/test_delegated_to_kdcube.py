@@ -1184,3 +1184,29 @@ async def test_claim_coverage_is_read_only_and_per_tool(monkeypatch):
     assert coverage["gmail.search_gmail"]["unmet"] == ["gmail:read"]
     # Read-only contract: the computation touched no credentials.
     assert credential_reads == []
+
+
+def test_consent_bookkeeping_stays_off_the_event_loop():
+    """Loop-hygiene guard (surfaced live: '+' latency + socket heartbeat
+    starvation): every consent_demand store touch is async-shaped with the
+    synchronous storage client offloaded to a worker thread — and no code in
+    the demand/coverage path ever spins a nested event loop."""
+    import inspect
+    import pathlib
+
+    from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube import consent_demand
+
+    assert inspect.iscoroutinefunction(consent_demand.read_pending_consent)
+    assert inspect.iscoroutinefunction(consent_demand.write_pending_consent)
+    assert inspect.iscoroutinefunction(consent_demand.record_consent_demand)
+    assert inspect.iscoroutinefunction(consent_demand.claim_coverage_for_policies)
+
+    for module in (consent_demand,):
+        source = pathlib.Path(module.__file__).read_text(encoding="utf-8")
+        assert "asyncio.run(" not in source, "no nested event loops in the consent path"
+        assert "asyncio.to_thread" in source, "sync storage calls run on worker threads"
+
+    from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube import store as store_mod
+
+    store_source = pathlib.Path(store_mod.__file__).read_text(encoding="utf-8")
+    assert "asyncio.to_thread(self.list_accounts_sync" in store_source

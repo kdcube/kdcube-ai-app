@@ -100,3 +100,54 @@ async def test_plain_errors_and_successes_raise_nothing(monkeypatch):
         tool_name="get_object",
     )
     assert announced == []
+
+
+@pytest.mark.asyncio
+async def test_menu_inventory_renders_even_when_coverage_hangs(monkeypatch):
+    """The '+' menu must render even when coverage computation stalls: the
+    decoration runs under a budget; rows simply omit consent state and a
+    warning names the miss."""
+    import asyncio
+    import time as clock
+    from types import SimpleNamespace
+
+    from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint import BaseEntrypoint
+    from kdcube_ai_app.apps.chat.sdk.runtime import tool_config as tool_config_mod
+    from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube import consent_demand as cd
+    from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube.models import ToolClaimPolicy
+
+    policy = ToolClaimPolicy.from_config("slack.search_slack", {
+        "connected_accounts": [
+            {"provider_id": "slack", "connector_app_id": "demo", "claims": ["slack:search"]},
+        ],
+    })
+    monkeypatch.setattr(
+        tool_config_mod,
+        "agent_tool_config_from_bundle_props",
+        lambda *a, **k: SimpleNamespace(tool_claim_policies=[policy]),
+    )
+
+    async def hanging_coverage(**kwargs):
+        await asyncio.sleep(30)
+        return {}
+
+    monkeypatch.setattr(cd, "claim_coverage_for_policies", hanging_coverage)
+
+    logged: list[tuple[str, str]] = []
+    stub = SimpleNamespace(
+        bundle_props={},
+        logger=SimpleNamespace(log=lambda msg, level=None, **kw: logged.append((str(level), str(msg)))),
+        CLAIM_COVERAGE_BUDGET_SECONDS=0.2,
+        _agent_selection_identity=lambda: {"user_id": "u1", "bundle_id": "b1"},
+        _bundle_root=lambda: None,
+    )
+
+    catalog = {"tools": [{"alias": "slack", "tools": [{"name": "search_slack"}]}], "named_services": []}
+    started = clock.monotonic()
+    out = await BaseEntrypoint._attach_claim_coverage(stub, dict(catalog), "main")
+    elapsed = clock.monotonic() - started
+
+    assert elapsed < 2.0, "the budget bounded the coverage decoration"
+    assert out["tools"][0].get("consent") is None
+    assert out["tools"][0]["tools"][0].get("consent") is None
+    assert any("without consent state" in msg for _lvl, msg in logged)

@@ -9,6 +9,7 @@ in user secrets. Callers should use the broker/client, not these keys directly.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -103,7 +104,8 @@ class DelegatedToKdcubeStore:
 
     # ── account metadata ────────────────────────────────────────────────────
 
-    async def list_accounts(self, *, provider_id: str = "") -> list[ConnectedAccount]:
+    def list_accounts_sync(self, *, provider_id: str = "") -> list[ConnectedAccount]:
+        """The synchronous account listing (user props over psycopg2)."""
         wanted = as_str(provider_id)
         accounts: list[ConnectedAccount] = []
         for account_id in self._index():
@@ -117,6 +119,11 @@ class DelegatedToKdcubeStore:
                 continue
             accounts.append(account)
         return sorted(accounts, key=lambda item: (item.provider_id, item.display_name or item.account_id))
+
+    async def list_accounts(self, *, provider_id: str = "") -> list[ConnectedAccount]:
+        # The storage client is synchronous; the read runs on a worker thread
+        # so serving event loops keep their heartbeats (never a nested loop).
+        return await asyncio.to_thread(self.list_accounts_sync, provider_id=provider_id)
 
     async def get_account(self, account_id: str) -> ConnectedAccount | None:
         raw = self._prop(self.account_prop_key(account_id), default=None)
