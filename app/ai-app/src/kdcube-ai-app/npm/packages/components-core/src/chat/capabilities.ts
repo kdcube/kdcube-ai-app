@@ -156,7 +156,9 @@ export interface AgentCapabilitiesInventory {
 export interface AgentSelectionDisabled {
   tools?: Record<string, true | string[]>
   mcp?: Record<string, true | string[]>
-  named_services?: Record<string, true>
+  /** `true` denies the whole namespace; a key list denies individual
+   *  operations (`object.search`) / named actions (`object.action.send`). */
+  named_services?: Record<string, true | string[]>
   skills?: string[]
 }
 
@@ -166,7 +168,7 @@ export interface AgentSelectionDisabled {
 export interface AgentSelectionPatch {
   tools?: Record<string, boolean | string[]>
   mcp?: Record<string, boolean | string[]>
-  named_services?: Record<string, boolean>
+  named_services?: Record<string, boolean | string[]>
   skills?: Record<string, boolean>
   /** The single model PICK: a `{provider, model}` sets it, `null` clears back
    *  to the configured default; omitted keeps the stored pick. */
@@ -396,6 +398,75 @@ export function mcpToolTogglePatch(
 
 export function isNamespaceDisabled(disabled: AgentSelectionDisabled, namespace: string): boolean {
   return disabled.named_services?.[namespace] === true
+}
+
+/** The deny key for one namespace internals entry: operations use their own
+ *  token; a named action rides `object.action.<name>` (the grammar it runs
+ *  through — denying the action blocks that action name specifically). */
+export function namespaceEntryKey(kind: 'operation' | 'action', name: string): string {
+  return kind === 'action' ? `object.action.${name}` : name
+}
+
+export function isNamespaceEntryDisabled(
+  disabled: AgentSelectionDisabled,
+  namespace: string,
+  entryKey: string,
+): boolean {
+  const entry = disabled.named_services?.[namespace]
+  if (entry === true) return true
+  return Array.isArray(entry) && entry.includes(entryKey)
+}
+
+/** Namespace row state over its internals: `off` when the whole realm is
+ *  denied (or every entry is), `partial` when some entries are. */
+export function namespaceState(
+  namespace: string,
+  entryKeys: string[],
+  disabled: AgentSelectionDisabled,
+): ToolGroupToggleState {
+  const entry = disabled.named_services?.[namespace]
+  if (!entry) return 'on'
+  if (entry === true) return 'off'
+  const offCount = entryKeys.filter((key) => entry.includes(key)).length
+  if (offCount === 0) return 'on'
+  return entryKeys.length > 0 && offCount >= entryKeys.length ? 'off' : 'partial'
+}
+
+/** The patch a namespace master toggle produces: fully on → deny the whole
+ *  realm; off/partial → re-enable everything under it. */
+export function namespaceTogglePatch(
+  namespace: string,
+  entryKeys: string[],
+  disabled: AgentSelectionDisabled,
+): AgentSelectionPatch {
+  return { named_services: { [namespace]: namespaceState(namespace, entryKeys, disabled) === 'on' } }
+}
+
+/** The patch toggling ONE operation/action inside a namespace. Collapses to
+ *  the namespace form when the result covers everything (`true`) or nothing
+ *  (`false`), so the stored record stays minimal. */
+export function namespaceEntryTogglePatch(
+  namespace: string,
+  entryKeys: string[],
+  disabled: AgentSelectionDisabled,
+  entryKey: string,
+): AgentSelectionPatch {
+  const entry = disabled.named_services?.[namespace]
+  let nextOff: string[]
+  if (entry === true) {
+    // The whole realm was off; turning one entry back on leaves the rest off.
+    nextOff = entryKeys.filter((key) => key !== entryKey)
+  } else {
+    const current = Array.isArray(entry) ? entry.filter((key) => entryKeys.includes(key)) : []
+    nextOff = current.includes(entryKey)
+      ? current.filter((key) => key !== entryKey)
+      : [...current, entryKey]
+  }
+  if (nextOff.length === 0) return { named_services: { [namespace]: false } }
+  if (entryKeys.length > 0 && entryKeys.every((key) => nextOff.includes(key))) {
+    return { named_services: { [namespace]: true } }
+  }
+  return { named_services: { [namespace]: nextOff } }
 }
 
 export function isSkillDisabled(disabled: AgentSelectionDisabled, skillId: string): boolean {

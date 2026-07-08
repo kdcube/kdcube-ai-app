@@ -28,9 +28,13 @@ import {
   isMcpToolDisabled,
   isModelPicked,
   mergeSelectionPatches,
-  isNamespaceDisabled,
+  isNamespaceEntryDisabled,
   isSkillDisabled,
   isToolDisabled,
+  namespaceEntryKey,
+  namespaceEntryTogglePatch,
+  namespaceState,
+  namespaceTogglePatch,
   mcpServerState,
   mcpServerTogglePatch,
   mcpToolTogglePatch,
@@ -425,8 +429,7 @@ function ToolGroupsSection({ inventory, disabled, toggle, pending, spotlight, on
                 <ConsentAside
                   consent={groupConsentUnion(group)}
                   onConsent={onConsent}
-                  label="Consent all"
-                  title={`Approve all ${group.name || group.alias} account access`}
+                  title={`Approve ${group.name || group.alias} account access`}
                 />
               )}
             />
@@ -490,16 +493,26 @@ function McpSection({ inventory, disabled, toggle }: CapabilityRowsProps) {
 }
 
 /** One line inside an expanded namespace: an operation or a named action —
- *  informational (selection stays namespace-level), with the flat consent
- *  chip family on claims-bearing entries. Per-entry consent seeds the plan
- *  with exactly that entry's claims; entries without declared claims lean on
- *  the namespace-level chip. */
+ *  TOGGLEABLE like a tool row (per-entry deny, routed through the same
+ *  selection flow), with the flat consent chip family on claims-bearing
+ *  entries. Per-entry consent seeds the plan with exactly that entry's
+ *  claims; entries without declared claims lean on the namespace chip. */
 function RealmEntryRow({
+  namespace,
+  entryKeys,
+  entryKey,
   entry,
+  disabled,
+  toggle,
   consent,
   onConsent,
 }: {
+  namespace: string
+  entryKeys: string[]
+  entryKey: string
   entry: { name: string; description?: string; claims?: string[] }
+  disabled: AgentSelectionDisabled
+  toggle: (patch: AgentSelectionPatch) => void
   consent?: AgentCapabilityConsent
   onConsent?: (open: ConnectionsConsentOpen) => void
 }) {
@@ -522,16 +535,29 @@ function RealmEntryRow({
     )
   }
   return (
-    <div className="k-menu-row k-menu-row-child">
-      <span className="k-menu-row-static" title={entry.description || undefined}>
-        <span className="k-menu-row-text">
-          <span className="k-menu-row-label"><code>{entry.name}</code></span>
-          {entry.description ? <span className="k-menu-row-sub">{entry.description}</span> : null}
-        </span>
-      </span>
-      {aside}
-    </div>
+    <MenuRow
+      child
+      label={<code>{entry.name}</code>}
+      sub={entry.description || undefined}
+      checked={isNamespaceEntryDisabled(disabled, namespace, entryKey) ? 'off' : 'on'}
+      onToggle={() => toggle(namespaceEntryTogglePatch(namespace, entryKeys, disabled, entryKey))}
+      aside={aside}
+    />
   )
+}
+
+/** A namespace's toggleable internals: allowed operations by their own token,
+ *  named actions as `object.action.<name>` (denying the action blocks that
+ *  action name in the grammar's dispatch). */
+function namespaceInternals(entry: { realm?: { operations?: { name: string }[]; actions?: { name: string }[] } }): {
+  item: { name: string; description?: string; claims?: string[] }
+  key: string
+}[] {
+  const realm = entry.realm
+  return [
+    ...(realm?.operations ?? []).map((item) => ({ item, key: namespaceEntryKey('operation', item.name) })),
+    ...(realm?.actions ?? []).map((item) => ({ item, key: namespaceEntryKey('action', item.name) })),
+  ]
 }
 
 function ServicesSection({ inventory, disabled, toggle, namespaceStyles, spotlight, onConsent }: CapabilityRowsProps) {
@@ -545,15 +571,16 @@ function ServicesSection({ inventory, disabled, toggle, namespaceStyles, spotlig
       <SectionTitle>Services</SectionTitle>
       {inventory.named_services.map((entry) => {
         const realm = entry.realm
-        const internals = [...(realm?.operations ?? []), ...(realm?.actions ?? [])]
+        const internals = namespaceInternals(entry)
+        const entryKeys = internals.map(({ key }) => key)
         const isOpen = Boolean(expanded[entry.namespace])
         return (
           <div key={entry.namespace}>
             <MenuRow
               label={realm?.label || namespaceLabel(entry.namespace, namespaceStyles)}
               sub={realm?.description || undefined}
-              checked={isNamespaceDisabled(disabled, entry.namespace) ? 'off' : 'on'}
-              onToggle={() => toggle({ named_services: { [entry.namespace]: !isNamespaceDisabled(disabled, entry.namespace) } })}
+              checked={namespaceState(entry.namespace, entryKeys, disabled)}
+              onToggle={() => toggle(namespaceTogglePatch(entry.namespace, entryKeys, disabled))}
               expandable={internals.length > 0}
               expanded={isOpen}
               onExpand={() => setExpanded((current) => ({ ...current, [entry.namespace]: !isOpen }))}
@@ -562,16 +589,20 @@ function ServicesSection({ inventory, disabled, toggle, namespaceStyles, spotlig
                 <ConsentAside
                   consent={entry.consent}
                   onConsent={onConsent}
-                  label="Consent all"
-                  title={`Approve all ${realm?.label || entry.namespace} account access`}
+                  title={`Approve ${realm?.label || entry.namespace} account access`}
                 />
               )}
             />
             {isOpen
-              ? internals.map((item) => (
+              ? internals.map(({ item, key }) => (
                   <RealmEntryRow
-                    key={item.name}
+                    key={key}
+                    namespace={entry.namespace}
+                    entryKeys={entryKeys}
+                    entryKey={key}
                     entry={item}
+                    disabled={disabled}
+                    toggle={toggle}
                     consent={entry.consent}
                     onConsent={onConsent}
                   />

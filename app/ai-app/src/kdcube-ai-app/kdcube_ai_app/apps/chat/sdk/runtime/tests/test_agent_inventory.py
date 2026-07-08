@@ -595,9 +595,13 @@ async def test_realm_enrichment_scopes_mail_claims_to_allowed_operations():
     )
     realm = out["named_services"][0]["realm"]
     assert realm["label"] == "Mail"
-    assert realm["connected_accounts"] == [
-        {"provider_id": "google", "connector_app_id": "gmail", "claims": ["gmail:read"]},
-    ]
+    requirement = realm["connected_accounts"][0]
+    assert requirement["provider_id"] == "google"
+    assert requirement["connector_app_id"] == "gmail"
+    assert requirement["claims"] == ["gmail:read"]
+    # The declared differentiation rides along so consumers can recompute
+    # effective claims over a user-narrowed operation set.
+    assert requirement["claims_by_operation"]["object.action.send"] == ["gmail:send"]
     # No actions listing without object.action in the allowed set.
     assert realm["actions"] == []
     assert [op["name"] for op in realm["operations"]] == [
@@ -677,3 +681,124 @@ async def test_realm_enrichment_fails_open_on_discovery_errors():
     catalog = {"named_services": [{"namespace": "mail", "alias": "named_services", "operations": ["object.list"]}]}
     out = await enrich_catalog_named_service_realms(catalog, discovery=_BrokenDiscovery())
     assert "realm" not in out["named_services"][0]
+
+
+# ── Per-user namespace narrowing at (namespace, operation/action) level ──────
+
+
+def _mail_catalog(*, operations=None):
+    from kdcube_ai_app.apps.chat.sdk.integrations.mail.named_service import (
+        MAIL_CONNECTED_ACCOUNT_REQUIREMENTS,
+    )
+
+    ops = operations or ["object.list", "object.search", "object.get", "object.action"]
+    return {
+        "named_services": [
+            {
+                "namespace": "mail",
+                "alias": "named_services",
+                "operations": list(ops),
+                "realm": {
+                    "label": "Mail",
+                    "actions": [
+                        {"name": "send"}, {"name": "forward"}, {"name": "download_attachments"},
+                    ],
+                    "connected_accounts": [dict(req) for req in MAIL_CONNECTED_ACCOUNT_REQUIREMENTS],
+                },
+            }
+        ]
+    }
+
+
+def test_disabled_namespace_maps_split_full_and_entry_denies():
+    from kdcube_ai_app.apps.chat.sdk.runtime.agent_inventory import disabled_namespace_maps
+
+    fully, per_entry = disabled_namespace_maps({
+        "named_services": {
+            "slack": True,
+            "mail": ["object.search", "object.action.send"],
+            "task": [],
+        }
+    })
+    assert fully == {"slack"}
+    assert per_entry == {"mail": {"object.search", "object.action.send"}}
+
+
+def test_clamp_accepts_namespace_entry_lists_within_the_inventory():
+    from kdcube_ai_app.apps.chat.sdk.runtime.agent_inventory import clamp_selection
+
+    catalog = _mail_catalog()
+    out = clamp_selection({
+        "named_services": {
+            "mail": ["object.search", "object.action.send", "object.action.bogus", "object.upsert"],
+            "ghost": ["object.list"],
+        }
+    }, catalog)
+    # Known keys survive: allowed operations + realm actions as
+    # object.action.<name>; unknown keys and unknown namespaces are stripped
+    # (the user pick narrows within the config's allowed set, never widens).
+    assert out["named_services"] == {"mail": ["object.search", "object.action.send"]}
+
+
+def test_narrow_keeps_grammar_tools_for_entry_denies_but_drops_full_denies():
+    from kdcube_ai_app.apps.chat.sdk.runtime.agent_inventory import disabled_namespace_maps
+
+    # The full/entry split is what narrow consumes: a per-entry list must
+    # NEVER count as a full namespace deny (that was the truthiness trap).
+    fully, per_entry = disabled_namespace_maps({"named_services": {"mail": ["object.search"]}})
+    assert fully == set()
+    assert per_entry == {"mail": {"object.search"}}
+
+
+def test_namespace_claim_policies_recompute_effective_claims_over_denies():
+    from kdcube_ai_app.apps.chat.sdk.runtime.agent_inventory import namespace_claim_policies
+
+    catalog = _mail_catalog()
+
+    # No denies: both claims.
+    policies = namespace_claim_policies(catalog, {})
+    assert policies == [{
+        "tool_name": "mail",
+        "connected_accounts": [{
+            "provider_id": "google", "connector_app_id": "gmail",
+            "claims": ["gmail:read", "gmail:send"],
+        }],
+    }]
+
+    # Denying send + forward drops the send claim: the user is never asked
+    # for gmail:send.
+    policies = namespace_claim_policies(catalog, {
+        "named_services": {"mail": ["object.action.send", "object.action.forward"]},
+    })
+    assert policies[0]["connected_accounts"][0]["claims"] == ["gmail:read"]
+
+    # Fully denied namespace: no policy at all.
+    assert namespace_claim_policies(catalog, {"named_services": {"mail": True}}) == []
+
+
+def test_namespace_claim_policies_keep_flat_realms_flat():
+    from kdcube_ai_app.apps.chat.sdk.integrations.slack.named_service import (
+        SLACK_CONNECTED_ACCOUNT_REQUIREMENTS,
+    )
+    from kdcube_ai_app.apps.chat.sdk.runtime.agent_inventory import namespace_claim_policies
+
+    catalog = {
+        "named_services": [{
+            "namespace": "slack",
+            "alias": "named_services",
+            "operations": ["object.list", "object.search", "object.action"],
+            "realm": {
+                "label": "Slack",
+                "actions": [{"name": "post_message"}],
+                "connected_accounts": [dict(req) for req in SLACK_CONNECTED_ACCOUNT_REQUIREMENTS],
+            },
+        }]
+    }
+    # Slack declared one flat set: entry denies keep it whole (honest — the
+    # realm declared no per-operation split).
+    policies = namespace_claim_policies(catalog, {
+        "named_services": {"slack": ["object.action.post_message"]},
+    })
+    assert policies[0]["connected_accounts"][0]["claims"] == sorted(
+        SLACK_CONNECTED_ACCOUNT_REQUIREMENTS[0]["claims"]
+    )

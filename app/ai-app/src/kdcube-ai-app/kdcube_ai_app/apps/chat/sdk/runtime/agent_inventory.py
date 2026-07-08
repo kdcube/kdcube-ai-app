@@ -653,12 +653,18 @@ def _realm_payload_from_spec(spec: Any, allowed_operations: Sequence[str]) -> di
             effective = _realm_requirement_effective_claims(raw, allowed)
             if not effective:
                 continue
-            requirements_out.append({
+            requirement_out: dict[str, Any] = {
                 "provider_id": provider_id,
                 "connector_app_id": _norm(raw.get("connector_app_id")),
                 "claims": effective,
-            })
+            }
             declared_by_op = raw.get("claims_by_operation")
+            if isinstance(declared_by_op, Mapping) and declared_by_op:
+                requirement_out["claims_by_operation"] = {
+                    str(op_key): _string_list(op_claims)
+                    for op_key, op_claims in declared_by_op.items()
+                }
+            requirements_out.append(requirement_out)
             if isinstance(declared_by_op, Mapping):
                 for op_key, op_claims in declared_by_op.items():
                     merged = by_operation_union.setdefault(str(op_key), [])
@@ -754,6 +760,69 @@ async def enrich_catalog_named_service_realms(
     except Exception:
         pass
     return catalog
+
+
+def namespace_claim_policies(
+    catalog: Mapping[str, Any] | None,
+    disabled: Mapping[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """Namespace-named claim policies for coverage, over the NARROWED set.
+
+    Effective claims recompute against the operations/actions the user kept:
+    a realm that differentiates (`claims_by_operation`) loses the claims whose
+    every carrying operation is denied — a user who denied `object.action.send`
+    is never asked for the send claim. A realm with one flat claim set keeps
+    it whole (honest: the realm declared no per-operation split) unless the
+    namespace itself is fully denied. Returns `{tool_name, connected_accounts}`
+    config dicts ready for ``ToolClaimPolicy.from_config``.
+    """
+    fully_denied, per_entry_denied = disabled_namespace_maps(disabled)
+    out: list[dict[str, Any]] = []
+    for entry in (catalog or {}).get("named_services") or []:
+        if not isinstance(entry, Mapping):
+            continue
+        namespace = _norm_namespace(entry.get("namespace"))
+        realm = entry.get("realm") if isinstance(entry.get("realm"), Mapping) else {}
+        requirements = realm.get("connected_accounts") or []
+        if not namespace or not requirements or namespace in fully_denied:
+            continue
+        denied_keys = per_entry_denied.get(namespace) or set()
+        allowed_ops = [
+            op for op in _string_list(entry.get("operations"))
+            if op not in denied_keys
+        ]
+        effective_requirements: list[dict[str, Any]] = []
+        for raw in requirements:
+            if not isinstance(raw, Mapping):
+                continue
+            by_operation = raw.get("claims_by_operation")
+            if isinstance(by_operation, Mapping) and by_operation:
+                claims: list[str] = []
+                for op_key, op_claims in by_operation.items():
+                    key = str(op_key)
+                    if key in denied_keys:
+                        continue
+                    if not _operation_key_allowed(key, allowed_ops):
+                        continue
+                    for claim in _string_list(op_claims):
+                        if claim not in claims:
+                            claims.append(claim)
+                claims = sorted(claims)
+            else:
+                claims = sorted(set(_string_list(raw.get("claims"))))
+            if not claims:
+                continue
+            effective_requirements.append({
+                "provider_id": _norm(raw.get("provider_id")),
+                "connector_app_id": _norm(raw.get("connector_app_id")),
+                "claims": claims,
+            })
+        if effective_requirements:
+            out.append({
+                "tool_name": namespace,
+                "connected_accounts": effective_requirements,
+            })
+    return out
 
 
 def _mcp_services_config_from_props(bundle_props: Mapping[str, Any] | None) -> Any:
@@ -963,13 +1032,36 @@ def clamp_selection(
             if names:
                 out_mcp[server_id] = names
 
+    # Known deny keys per namespace: the configured operations plus the
+    # realm's named actions as `object.action.<name>` — the same key grammar
+    # the runtime dispatch enforces.
+    namespace_entry_keys: dict[str, set[str]] = {}
+    for e in catalog.get("named_services") or []:
+        ns = _norm_namespace(e.get("namespace"))
+        if not ns:
+            continue
+        keys = set(_string_list(e.get("operations")))
+        realm = e.get("realm") if isinstance(e.get("realm"), Mapping) else {}
+        for action in realm.get("actions") or []:
+            name = _norm((action or {}).get("name")) if isinstance(action, Mapping) else ""
+            if name:
+                keys.add(f"object.action.{name}")
+        namespace_entry_keys[ns] = keys
+
     out_namespaces: dict[str, Any] = {}
     raw_namespaces = disabled.get("named_services")
     if isinstance(raw_namespaces, Mapping):
         for namespace, value in raw_namespaces.items():
             namespace = _norm_namespace(namespace)
-            if namespace and namespace in namespaces and value is True:
+            if not namespace or namespace not in namespaces:
+                continue
+            if value is True:
                 out_namespaces[namespace] = True
+                continue
+            known = namespace_entry_keys.get(namespace) or set()
+            keys = [k for k in _string_list(value) if k in known]
+            if keys:
+                out_namespaces[namespace] = keys
 
     out_skills: list[str] = []
     for skill_id in _string_list(disabled.get("skills")):
@@ -989,6 +1081,28 @@ def clamp_selection(
 
 
 # ── narrowing (read-side application; effective = configured − disabled) ─────
+
+
+def disabled_namespace_maps(
+    disabled: Mapping[str, Any] | None,
+) -> tuple[set[str], dict[str, set[str]]]:
+    """Split the named_services deny map into fully-denied namespaces and
+    per-entry (operation / `object.action.<name>`) denials."""
+    fully: set[str] = set()
+    per_entry: dict[str, set[str]] = {}
+    raw = (disabled or {}).get("named_services")
+    if isinstance(raw, Mapping):
+        for namespace, value in raw.items():
+            ns = _norm_namespace(namespace)
+            if not ns:
+                continue
+            if value is True:
+                fully.add(ns)
+            else:
+                keys = set(_string_list(value))
+                if keys:
+                    per_entry[ns] = keys
+    return fully, per_entry
 
 
 def _disabled_tool_maps(disabled: Mapping[str, Any] | None) -> tuple[set[str], dict[str, set[str]]]:
@@ -1127,7 +1241,9 @@ def narrow_agent_tool_config(
 
     fully_disabled, per_tool_disabled = _disabled_tool_maps(disabled)
     denied_servers, mcp_per_tool_disabled = _disabled_mcp_maps(disabled)
-    denied_namespaces = _disabled_flag_set(disabled, "named_services", namespace=True)
+    # Only FULL namespace denials remove tools from the grammar; per-entry
+    # denials are enforced at dispatch (a per-entry list is NOT a full deny).
+    denied_namespaces, _ = disabled_namespace_maps(disabled)
 
     removed_aliases: set[str] = set(fully_disabled)
     allowed_map: dict[str, list[str] | None] = {

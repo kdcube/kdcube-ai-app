@@ -2600,11 +2600,13 @@ class BaseWorkflow():
         """
         try:
             from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers.client_tools import (
+                set_denied_named_service_entries,
                 set_denied_named_service_namespaces,
             )
 
-            # Reset any deny-set left over from a previous turn on this task.
+            # Reset any deny-sets left over from a previous turn on this task.
             set_denied_named_service_namespaces(None)
+            set_denied_named_service_entries(None)
 
             runtime_ctx = getattr(self, "runtime_ctx", None)
             user_id = str(getattr(runtime_ctx, "user_id", "") or "").strip()
@@ -2777,13 +2779,18 @@ class BaseWorkflow():
                     disabled.get("skills") or [],
                 )
 
-                denied_namespaces = {
-                    str(ns or "").strip().lower().rstrip(":")
-                    for ns, flag in (disabled.get("named_services") or {}).items()
-                    if flag and str(ns or "").strip()
-                }
+                from kdcube_ai_app.apps.chat.sdk.runtime.agent_inventory import (
+                    disabled_namespace_maps,
+                )
+
+                # Full denials remove the namespace from roster + dispatch;
+                # per-entry denials make individual operations/actions
+                # uncallable at the grammar tools' dispatch for this turn.
+                denied_namespaces, denied_entries = disabled_namespace_maps(disabled)
                 if denied_namespaces:
                     set_denied_named_service_namespaces(denied_namespaces)
+                if denied_entries:
+                    set_denied_named_service_entries(denied_entries)
 
             try:
                 self.logger.log(

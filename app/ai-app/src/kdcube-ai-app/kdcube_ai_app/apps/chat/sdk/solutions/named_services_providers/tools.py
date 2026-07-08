@@ -21,6 +21,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import (
 from kdcube_ai_app.apps.chat.sdk.solutions.widgets.named_service_search import NamedServiceSearchResultsWidget
 
 from .client_tools import (
+    denied_named_service_entries,
     named_service_namespace_client_tools_config,
     named_service_namespace_provider_configs,
     named_service_namespaces,
@@ -343,6 +344,9 @@ def _allowed_values(raw: Any, defaults: frozenset[str]) -> frozenset[str]:
 
 
 def _operation_allowed(namespace: str, operation: str) -> bool:
+    # Per-user selection: a denied operation is uncallable this turn.
+    if operation in denied_named_service_entries(namespace):
+        return False
     policy = _client_namespace_policy(namespace)
     allowed = _allowed_values(policy.get("allowed_operations"), _DEFAULT_READ_OPERATIONS)
     return "*" in allowed or operation in allowed
@@ -479,8 +483,11 @@ def _snapshot_tool_traits_by_namespace(
 
 
 def _action_allowed(namespace: str, action: str) -> bool:
-    del namespace, action
-    return True
+    """Named actions ride `object.action`; the per-user selection denies one
+    action name via the `object.action.<name>` key — this dispatch check is
+    the enforcement mechanism (config expresses operations, not action
+    names)."""
+    return f"{OBJECT_ACTION}.{str(action or '').strip()}" not in denied_named_service_entries(namespace)
 
 
 def _endpoint(namespace: str) -> NamedServiceEndpoint | Dict[str, Any]:

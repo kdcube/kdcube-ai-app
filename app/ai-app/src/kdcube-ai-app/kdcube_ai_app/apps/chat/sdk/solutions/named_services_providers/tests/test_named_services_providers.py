@@ -2884,3 +2884,90 @@ async def test_object_get_single_is_unaffected_by_batch_path():
     assert resp.ok
     assert resp.object["ref"] == "ns:a"
     assert not resp.items
+
+
+@pytest.mark.asyncio
+async def test_per_user_entry_denies_make_operations_and_actions_uncallable():
+    """Runtime narrowing at (namespace, operation/action) granularity: a
+    denied operation is literally uncallable this turn (the negative
+    assertion), an allowed sibling still dispatches, and denying ONE named
+    action (`object.action.send`) blocks exactly that action name while a
+    sibling action passes."""
+    from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers.client_tools import (
+        set_denied_named_service_entries,
+    )
+
+    redis = FakeDiscoveryRedis()
+    discovery = RedisNamedServiceDiscovery(redis, tenant="tenant-a", project="project-a")
+    await discovery.register_provider(
+        NamedServiceProviderSpec(
+            provider_id="kdcube.mail",
+            bundle_id="kdcube-services@1-0",
+            namespace="mail",
+            refs=("mail:*",),
+            object_kinds=("mail.message",),
+            operations={
+                "object.list": {"transports": ["local"]},
+                "object.search": {"transports": ["local"]},
+                "object.action": {"transports": ["local"]},
+            },
+        ),
+        bundle_id="kdcube-services@1-0",
+    )
+    props = {
+        "named_services": {
+            "namespaces": {
+                "mail": {
+                    "clients": {
+                        "main": {
+                            "tools": {
+                                "allowed_operations": ["object.list", "object.search", "object.action"],
+                            },
+                        },
+                    },
+                }
+            },
+        }
+    }
+    calls = []
+
+    async def _named_service_caller(call):
+        calls.append(call)
+        return BundleNamedServiceResult(
+            NamedServiceResponse.ok_response(
+                provider={"provider_id": call.request.provider},
+                namespace=call.request.namespace,
+                extra={"operation": call.request.operation, "action": call.request.action},
+            )
+        )
+
+    named_service_client_tools.bind_registry({"bundle_props": props, "client_id": "main"})
+    set_denied_named_service_entries({"mail": ["object.search", "object.action.send"]})
+    try:
+        with bind_named_service_discovery(discovery), bind_bundle_named_service_caller(_named_service_caller):
+            # Denied operation: uncallable.
+            denied_op = await named_service_client_tools.search_objects(namespace="mail", query="q")
+            # Allowed sibling operation: dispatches.
+            allowed_op = await named_service_client_tools.list_objects(namespace="mail")
+            # Denied named action: blocked by its exact name.
+            denied_action = await named_service_client_tools.object_action(
+                namespace="mail", object_ref="mail:gmail:acct-1", action="send",
+            )
+            # Sibling action rides object.action untouched.
+            allowed_action = await named_service_client_tools.object_action(
+                namespace="mail", object_ref="mail:gmail:acct-1:message:m-1", action="download_attachments",
+            )
+    finally:
+        set_denied_named_service_entries(None)
+
+    assert denied_op["ok"] is False
+    assert denied_op["error"] == "named_service_tool_not_allowed_for_client"
+    assert allowed_op["ok"] is True
+    assert denied_action["ok"] is False
+    assert denied_action["error"] == "named_service_action_not_allowed_for_client"
+    assert allowed_action["ok"] is True
+    # The denied calls never reached dispatch.
+    assert [(c.request.operation, c.request.action) for c in calls] == [
+        ("object.list", None),
+        ("object.action", "download_attachments"),
+    ]

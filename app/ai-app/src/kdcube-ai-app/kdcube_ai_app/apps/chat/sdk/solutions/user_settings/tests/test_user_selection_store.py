@@ -328,3 +328,21 @@ async def test_model_none_clears_back_to_default():
     assert cleared["model"] is None
     stored = await store.get_selection(user_id="u1", bundle_id="b", agent_id="main")
     assert stored["model"] is None
+
+
+def test_merge_patch_namespace_entry_lists_round_trip():
+    """Namespace narrowing at (namespace, operation/action) granularity rides
+    the same merge-write as tools: a key list denies entries, `false` clears,
+    `true` denies the whole realm."""
+    current = {"named_services": {"mail": ["object.search"]}}
+    # Add an action deny; the list replaces.
+    merged = merge_selection_patch(current, {
+        "named_services": {"mail": ["object.search", "object.action.send"]},
+    })
+    assert merged["named_services"]["mail"] == ["object.search", "object.action.send"]
+    # Whole-realm deny supersedes the list.
+    merged = merge_selection_patch(merged, {"named_services": {"mail": True}})
+    assert merged["named_services"]["mail"] is True
+    # Re-enable clears everything for the namespace.
+    merged = merge_selection_patch(merged, {"named_services": {"mail": False}})
+    assert "named_services" not in merged or "mail" not in merged.get("named_services", {})

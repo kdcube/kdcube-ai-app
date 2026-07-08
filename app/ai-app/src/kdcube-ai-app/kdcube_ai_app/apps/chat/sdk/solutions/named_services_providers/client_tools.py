@@ -40,6 +40,36 @@ def denied_named_service_namespaces() -> frozenset[str]:
     return _NAMED_SERVICE_NAMESPACE_DENY_CV.get() or frozenset()
 
 
+# Per-turn (namespace -> denied entry keys) deny-set — the per-user selection
+# at (namespace, operation/action) granularity. Keys are operation tokens
+# (`object.search`) and action keys (`object.action.send`). Consulted by the
+# grammar tools' dispatch (`_operation_allowed` / `_action_allowed`) so a
+# denied operation or action is literally uncallable for the turn. Set via
+# `set_denied_named_service_entries` in BaseWorkflow.apply_user_agent_selection.
+_NAMED_SERVICE_ENTRY_DENY_CV: ContextVar[Mapping[str, frozenset[str]] | None] = ContextVar(
+    "kdcube_named_service_entry_deny", default=None
+)
+
+
+def set_denied_named_service_entries(entries: Mapping[str, Iterable[str]] | None) -> None:
+    if not entries:
+        _NAMED_SERVICE_ENTRY_DENY_CV.set(None)
+        return
+    normalized: dict[str, frozenset[str]] = {}
+    for namespace, keys in entries.items():
+        ns = str(namespace or "").strip().lower().rstrip(":")
+        clean = frozenset(str(key or "").strip() for key in (keys or ()) if str(key or "").strip())
+        if ns and clean:
+            normalized[ns] = clean
+    _NAMED_SERVICE_ENTRY_DENY_CV.set(normalized or None)
+
+
+def denied_named_service_entries(namespace: str) -> frozenset[str]:
+    entries = _NAMED_SERVICE_ENTRY_DENY_CV.get() or {}
+    ns = str(namespace or "").strip().lower().rstrip(":")
+    return entries.get(ns) or frozenset()
+
+
 def _get_path(data: Mapping[str, Any] | None, path: str, default: Any = None) -> Any:
     cur: Any = data
     for part in path.split("."):

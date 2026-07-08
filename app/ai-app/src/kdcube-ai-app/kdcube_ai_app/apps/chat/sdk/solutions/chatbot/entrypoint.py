@@ -496,19 +496,35 @@ class BaseEntrypoint:
             # Realm-backed namespaces keep their claim requirements inside the
             # realm provider; the resolved realm view supplies them, so the
             # namespace rows get exactly the same coverage treatment as
-            # dedicated tools.
+            # dedicated tools. Effective claims recompute over the user's
+            # NARROWED set — a denied operation/action drops the claims only
+            # it carried, so consent never asks for what the user turned off.
+            from kdcube_ai_app.apps.chat.sdk.runtime.agent_inventory import (
+                namespace_claim_policies,
+            )
             from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube.models import (
                 ToolClaimPolicy,
             )
 
-            for entry in catalog.get("named_services") or []:
-                realm = entry.get("realm") if isinstance(entry.get("realm"), dict) else {}
-                requirements = realm.get("connected_accounts") or []
-                namespace = str(entry.get("namespace") or "").strip()
-                if namespace and requirements:
-                    policies.append(ToolClaimPolicy.from_config(
-                        namespace, {"connected_accounts": requirements},
-                    ))
+            disabled_selection: Dict[str, Any] = {}
+            try:
+                if self.pg_pool is not None and identity.get("bundle_id"):
+                    store = self._agent_selection_store(identity)
+                    selection = await store.get_selection(
+                        user_id=user_id,
+                        bundle_id=str(identity.get("bundle_id") or ""),
+                        agent_id=agent_id,
+                    )
+                    raw_disabled = (selection or {}).get("disabled")
+                    if isinstance(raw_disabled, Mapping):
+                        disabled_selection = dict(raw_disabled)
+            except Exception:
+                disabled_selection = {}
+            for policy_cfg in namespace_claim_policies(catalog, disabled_selection):
+                policies.append(ToolClaimPolicy.from_config(
+                    str(policy_cfg.get("tool_name") or ""),
+                    {"connected_accounts": policy_cfg.get("connected_accounts") or []},
+                ))
             if not user_id or not policies:
                 return catalog
             try:
