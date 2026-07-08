@@ -484,3 +484,20 @@ export function namespaceEntryTogglePatch(
 export function isSkillDisabled(disabled: AgentSelectionDisabled, skillId: string): boolean {
   return Boolean(disabled.skills?.includes(skillId))
 }
+
+/** Which presentation a spotlight request should open the capability picker
+ *  in. The deep-linked user needs the READABLE form when the target is a
+ *  namespace entry (service cards carry prose) or a long target list; a
+ *  short dedicated-tool spotlight stays in the compact popover. */
+export function preferredMenuPresentation(
+  spotlightTargets: string[] | undefined,
+  inventory: Pick<AgentCapabilitiesInventory, 'named_services'> | null | undefined,
+): 'popover' | 'modal' {
+  const targets = (spotlightTargets ?? []).map((item) => String(item || '').trim()).filter(Boolean)
+  if (!targets.length) return 'popover'
+  if (targets.length > 3) return 'modal'
+  const namespaceTokens = new Set(
+    (inventory?.named_services ?? []).flatMap((entry) => [entry.namespace, entry.alias]).filter(Boolean),
+  )
+  return targets.some((target) => namespaceTokens.has(target)) ? 'modal' : 'popover'
+}

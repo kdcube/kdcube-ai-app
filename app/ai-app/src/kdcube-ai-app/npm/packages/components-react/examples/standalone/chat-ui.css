@@ -2136,6 +2136,52 @@ a { color: inherit; }
   font-style: italic;
   color: var(--muted);
 }
+
+/* Popover head: names the picker and carries the expand affordance (the
+   widget's canvas expand idiom) to the wide modal presentation. */
+.k-menu-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 4px 6px 8px;
+  border-bottom: 1px solid var(--line-soft);
+  margin-bottom: 4px;
+}
+.k-menu-head-label {
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.k-menu-head .k-tinybtn svg { width: 12px; height: 12px; }
+
+/* Expanded presentation: the SAME picker inside the canvas-modal shell.
+   Full-width rows in a readable column; the service-card prose (purpose,
+   third-party, via-lines, object kinds, descriptions) WRAPS instead of
+   ellipsizing. */
+.k-menu-modal-body {
+  display: block;
+  overflow: auto;
+  padding: 10px 16px 16px;
+}
+.k-menu-expanded {
+  max-width: 920px;
+  margin: 0 auto;
+}
+.k-menu-expanded .k-menu-row-sub,
+.k-menu-expanded .k-menu-card-line {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  line-height: 1.4;
+}
+.k-menu-expanded .k-menu-row-label {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
 .k-menu-row-text { display: flex; flex-direction: column; min-width: 0; gap: 1px; }
 .k-menu-row-label {
   font-size: 13px;

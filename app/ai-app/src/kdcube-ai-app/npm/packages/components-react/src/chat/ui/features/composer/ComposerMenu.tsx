@@ -14,6 +14,7 @@
  * descriptor, no menu changes.
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { chatActions, consentOpenForClaims } from '@kdcube/components-core/chat'
 import type { AgentCapabilityConsent, ConnectionsConsentOpen } from '@kdcube/components-core/chat'
 import { useAppDispatch } from '../../support/hooks.ts'
@@ -35,6 +36,7 @@ import {
   namespaceEntryTogglePatch,
   namespaceState,
   namespaceTogglePatch,
+  preferredMenuPresentation,
   mcpServerState,
   mcpServerTogglePatch,
   mcpToolTogglePatch,
@@ -43,6 +45,7 @@ import {
   toolTogglePatch,
 } from '@kdcube/components-core/chat'
 import { namespaceStyleForKey } from '@kdcube/components-core'
+import { CanvasExpandButton } from '../../components/CanvasModal.tsx'
 import { useChatViewModel } from '../../context.tsx'
 import type { ChatViewModel } from '../../viewModel.ts'
 
@@ -756,15 +759,25 @@ export function ComposerMenu({
   const vm = useChatViewModel()
   const dispatch = useAppDispatch()
   const [open, setOpen] = useState(false)
+  /* One picker, two presentations: the compact popover for quick toggles and
+   * a wide in-widget modal where the service-card prose wraps instead of
+   * ellipsizing. The SAME body node renders into whichever shell is active;
+   * all interaction state (checkboxes via the store, spotlight, the confirm
+   * picker) lives above the shells, so switching mid-interaction keeps it. */
+  const [view, setView] = useState<'popover' | 'modal'>('popover')
   const anchorRef = useRef<HTMLDivElement | null>(null)
   const capabilities = vm.capabilities
 
   /* A consent banner's "turn off the tools" option requests a spotlight:
    * open the menu; the tools section highlights + scrolls to the tools.
-   * Closing the menu clears the request. */
+   * A namespace target (service card, long prose) or a long target list
+   * opens the READABLE expanded form directly. Closing clears the request. */
   const spotlightNonce = vm.state.toolSpotlight?.nonce ?? 0
   useEffect(() => {
-    if (spotlightNonce) setOpen(true)
+    if (!spotlightNonce) return
+    setView(preferredMenuPresentation(vm.state.toolSpotlight?.tools, capabilities.inventory))
+    setOpen(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [spotlightNonce])
   const wasOpenRef = useRef(false)
   useEffect(() => {
@@ -805,7 +818,7 @@ export function ComposerMenu({
       confirmRef.current?.scrollIntoView({ block: 'nearest' })
     }, 30)
     return () => window.clearTimeout(timer)
-  }, [confirmState])
+  }, [confirmState, view])
 
   useEffect(() => {
     if (open) capabilities.load()
@@ -814,6 +827,7 @@ export function ComposerMenu({
       setToggledThisOpen(false)
       setConfirmState(null)
       setRememberChoice(false)
+      setView('popover')
     }
   }, [open, capabilities])
 
@@ -982,14 +996,66 @@ export function ComposerMenu({
           <path d="M12 5v14M5 12h14" />
         </svg>
       </button>
-      {open ? (
+      {open && view === 'popover' ? (
         <>
           <div className="k-menu-backdrop" onClick={close} aria-hidden="true" />
           <div className="k-composer-menu" role="menu" aria-label="Tools and skills">
+            <div className="k-menu-head">
+              <span className="k-menu-head-label">Tools &amp; skills</span>
+              <CanvasExpandButton onClick={() => setView('modal')} title="Expand" />
+            </div>
             {body}
           </div>
         </>
       ) : null}
+      {open && view === 'modal'
+        ? createPortal(
+            <div className="k-canvas-modal-backdrop" onClick={close}>
+              <div
+                className="k-canvas-modal k-menu-modal"
+                onClick={(event) => event.stopPropagation()}
+                role="dialog"
+                aria-modal="true"
+                aria-label="Tools and skills"
+              >
+                <div className="k-canvas-modal-head">
+                  <div className="k-canvas-modal-title">
+                    <span className="k-text">Tools &amp; skills</span>
+                    <span className="k-micro">what this agent may use for you</span>
+                  </div>
+                  <button
+                    type="button"
+                    className="k-iconbtn"
+                    onClick={() => setView('popover')}
+                    aria-label="Collapse to menu"
+                    title="Collapse to menu"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7" />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    className="k-iconbtn"
+                    onClick={close}
+                    aria-label="Close (Esc)"
+                    title="Close (Esc)"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M18 6L6 18M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+                <div className="k-canvas-modal-body k-menu-modal-body">
+                  <div className="k-menu-expanded" role="menu" aria-label="Tools and skills">
+                    {body}
+                  </div>
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   )
 }
