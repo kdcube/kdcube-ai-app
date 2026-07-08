@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import importlib
 import logging
-from typing import Any, Dict
+import traceback
+from pathlib import Path
+from typing import Any, Dict, Optional
 
 from langgraph.graph import END, START, StateGraph
 
-from kdcube_ai_app.apps.chat.sdk.config import get_secret
+from kdcube_ai_app.apps.chat.sdk.config import get_secret, get_settings
+from kdcube_ai_app.apps.chat.sdk.viz.patch_platform_dashboard import patch_dashboard
 from kdcube_ai_app.apps.chat.sdk.infra.bundle_urls import bundle_operation_url
 from kdcube_ai_app.apps.chat.sdk.protocol import ExternalEventPayload
 from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint import BaseEntrypoint
@@ -608,3 +612,209 @@ class KDCubeServicesEntrypoint(BaseEntrypoint):
         params: Dict[str, Any],
     ):
         return await self.graph.ainvoke(state)
+
+    # ── platform admin apps ─────────────────────────────────────────────
+    # The operator dashboards (economics control plane, conversation and
+    # Redis browsers, gateway monitoring, the apps dashboard) are served by
+    # THIS app — the always-running platform services app — so the control
+    # plane links to one stable home instead of whichever app is loaded.
+
+    @api(route="operations", user_types=("privileged",))
+    @ui_widget(
+        icon={
+            "tailwind": "heroicons-outline:currency-dollar",
+            "lucide": "CircleDollarSign",
+        },
+        alias="control_plane",
+        user_types=("privileged",),
+    )
+    def control_plane(self, user_id: Optional[str] = None, **kwargs):
+        user_type = self._ensure_privileged(user_id=user_id, feature="control_plane")
+        if not user_type:
+            return ["<p>No permission.</p>"]
+        self.logger.log(f"[control_plane]. Generating Control Plane Admin Dashboard for user {user_id} ({user_type})")
+
+        bundle_root = self._bundle_root()
+        default_content = "<p>No control plane interface available.</p>"
+        default_html = f"<div style='margin: 0; position: absolute'>{default_content}</div>"
+
+        if bundle_root:
+            try:
+                cp_mod = importlib.import_module("kdcube_ai_app.apps.chat.ingress.control_plane")
+                fallback_path = Path(cp_mod.__file__).parent / "EconomicsDashboard.tsx"
+                content = fallback_path.read_text(encoding="utf-8")
+                output_content = patch_dashboard(
+                    input_content=content,
+                    base_url=f"http://localhost:{get_settings().CHAT_APP_PORT}",
+                    access_token=None,
+                    default_tenant=self.settings.TENANT,
+                    default_project=self.settings.PROJECT,
+                    default_app_bundle_id=self.config.ai_bundle_spec.id,
+                )
+                html = self._render_dashboard_html(content=output_content, title="Control Plane")
+                return [html]
+            except Exception:
+                self.logger.log(f"Error loading control_plane by user {user_id}: {traceback.format_exc()}", "ERROR")
+        return [default_html]
+
+    @api(route="operations", user_types=("privileged",))
+    @ui_widget(
+        icon={
+            "tailwind": "heroicons-outline:chat-bubble-left-right",
+            "lucide": "MessageSquareMore",
+        },
+        alias="conversation_browser",
+        user_types=("privileged",),
+    )
+    def conversation_browser(self, user_id: Optional[str] = None, **kwargs):
+        user_type = self._ensure_privileged(user_id=user_id, feature="conversation_browser")
+        if not user_type:
+            return ["<p>No permission.</p>"]
+        self.logger.log(
+            f"[conversation_browser]. Generating Conversation Browser Admin Dashboard for user {user_id} ({user_type})"
+        )
+
+        bundle_root = self._bundle_root()
+        default_content = "<p>No conversation browser interface available.</p>"
+        default_html = f"<div style='margin: 0; position: absolute'>{default_content}</div>"
+
+        if bundle_root:
+            try:
+                cp_mod = importlib.import_module("kdcube_ai_app.apps.chat.ingress.control_plane")
+                fallback_path = Path(cp_mod.__file__).parent / "ConversationBrowser.tsx"
+                content = fallback_path.read_text(encoding="utf-8")
+
+                output_content = patch_dashboard(
+                    input_content=content,
+                    base_url=f"http://localhost:{get_settings().CHAT_APP_PORT}",
+                    access_token=None,
+                    default_tenant=self.settings.TENANT,
+                    default_project=self.settings.PROJECT,
+                    default_app_bundle_id=self.config.ai_bundle_spec.id,
+                )
+                html = self._render_dashboard_html(content=output_content, title="Conversation Browser")
+                return [html]
+            except Exception:
+                self.logger.log(
+                    f"Error loading conversation browser by user {user_id}: {traceback.format_exc()}",
+                    "ERROR",
+                )
+        return [default_html]
+
+    @api(route="operations", user_types=("privileged",))
+    @ui_widget(
+        icon={
+            "tailwind": "heroicons-outline:arrows-right-left",
+            "lucide": "ArrowLeftRight",
+        },
+        alias="svc_gateway",
+        user_types=("privileged",),
+    )
+    def svc_gateway(self, user_id: Optional[str] = None, **kwargs):
+        user_type = self._ensure_privileged(user_id=user_id, feature="svc_gateway")
+        if not user_type:
+            return ["<p>No permission.</p>"]
+        self.logger.log(f"[svc_gateway]. Generating Gateway Monitoring Dashboard for user {user_id} ({user_type})")
+
+        bundle_root = self._bundle_root()
+        default_content = "<p>No gateway monitoring interface available.</p>"
+        default_html = f"<div style='margin: 0; position: absolute'>{default_content}</div>"
+
+        if bundle_root:
+            try:
+                monitoring_mod = importlib.import_module("kdcube_ai_app.apps.chat.ingress.monitoring")
+                fallback_path = Path(monitoring_mod.__file__).parent / "ControlPlaneMonitoringDashboard.tsx"
+                content = fallback_path.read_text(encoding="utf-8")
+
+                output_content = patch_dashboard(
+                    input_content=content,
+                    base_url=f"http://localhost:{get_settings().CHAT_APP_PORT}",
+                    access_token=None,
+                    default_tenant=self.settings.TENANT,
+                    default_project=self.settings.PROJECT,
+                    default_app_bundle_id=self.config.ai_bundle_spec.id,
+                )
+                html = self._render_dashboard_html(content=output_content, title="Gateway Monitoring")
+                return [html]
+            except Exception:
+                self.logger.log(f"Error loading svc_gateway by user {user_id}: {traceback.format_exc()}", "ERROR")
+        return [default_html]
+
+    @api(route="operations", user_types=("privileged",))
+    @ui_widget(
+        icon={
+            "tailwind": "heroicons-outline:circle-stack",
+            "lucide": "Database",
+        },
+        alias="redis_browser",
+        user_types=("privileged",),
+    )
+    def redis_browser(self, user_id: Optional[str] = None, **kwargs):
+        user_type = self._ensure_privileged(user_id=user_id, feature="redis_browser")
+        if not user_type:
+            return ["<p>No permission.</p>"]
+        self.logger.log(f"[redis_browser]. Generating Redis Browser Admin Dashboard for user {user_id} ({user_type})")
+
+        bundle_root = self._bundle_root()
+        default_content = "<p>No redis browser interface available.</p>"
+        default_html = f"<div style='margin: 0; position: absolute'>{default_content}</div>"
+
+        if bundle_root:
+            try:
+                cp_mod = importlib.import_module("kdcube_ai_app.apps.chat.ingress.control_plane")
+                fallback_path = Path(cp_mod.__file__).parent / "RedisBrowser.tsx"
+                content = fallback_path.read_text(encoding="utf-8")
+                output_content = patch_dashboard(
+                    input_content=content,
+                    base_url=f"http://localhost:{get_settings().CHAT_APP_PORT}",
+                    access_token=None,
+                    default_tenant=self.settings.TENANT,
+                    default_project=self.settings.PROJECT,
+                    default_app_bundle_id=self.config.ai_bundle_spec.id,
+                )
+                html = self._render_dashboard_html(content=output_content, title="Redis Browser")
+                return [html]
+            except Exception:
+                self.logger.log(f"Error loading redis browser by user {user_id}: {traceback.format_exc()}", "ERROR")
+        return [default_html]
+
+    @api(route="operations", user_types=("privileged",))
+    @ui_widget(
+        icon={
+            "tailwind": "heroicons-outline:cpu-chip",
+            "lucide": "Bot",
+        },
+        alias="ai_bundles",
+        user_types=("privileged",),
+    )
+    def ai_bundles(self, user_id: Optional[str] = None, **kwargs):
+        user_type = self._ensure_privileged(user_id=user_id, feature="ai_bundles")
+        if not user_type:
+            return ["<p>No permission.</p>"]
+        self.logger.log(f"[ai_bundles]. Generating the Apps admin dashboard for user {user_id} ({user_type})")
+
+        bundle_root = self._bundle_root()
+        default_content = "<p>No apps dashboard available.</p>"
+        default_html = f"<div style='margin: 0; position: absolute'>{default_content}</div>"
+
+        try:
+            integrations_mod = importlib.import_module("kdcube_ai_app.apps.chat.proc.rest.integrations")
+            fallback_path = Path(integrations_mod.__file__).parent / "AIBundleDashboard.tsx"
+            content = fallback_path.read_text(encoding="utf-8")
+
+            output_content = patch_dashboard(
+                input_content=content,
+                base_url=f"http://localhost:{get_settings().CHAT_APP_PORT}",
+                access_token=None,
+                default_tenant=self.settings.TENANT,
+                default_project=self.settings.PROJECT,
+                default_app_bundle_id=self.config.ai_bundle_spec.id,
+                host_bundles_path=get_settings().HOST_BUNDLES_PATH,
+                bundles_root=get_settings().PLATFORM.APPLICATIONS.BUNDLES_ROOT,
+            )
+            html = self._render_dashboard_html(content=output_content, title="Apps")
+            return [html]
+        except Exception:
+            self.logger.log(f"Error loading ai_bundles by user {user_id}: {traceback.format_exc()}", "ERROR")
+        return [default_html]
+

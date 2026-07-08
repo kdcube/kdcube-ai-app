@@ -21,6 +21,10 @@ const EconomicUsageTag = "economic_usage"
 const WorkspacePreferencesTag = "workspace_preferences"
 const BundleWidgetTag = "bundle_widget"
 
+// Platform admin apps are served by the always-running services app,
+// not by whichever app is currently the default.
+const SERVICES_APP_ID = "kdcube-services@1-0";
+
 export type GetWidgetParams = ChatScope
 export interface GetBundleWidgetParams extends ChatScope {
     bundleId: string;
@@ -42,7 +46,7 @@ export const widgetPanelsApiSlice = createApi({
         }>({
             query: ({tenant, project}: GetWidgetParams) => {
                 return {
-                    url: `/api/integrations/bundles/${tenant}/${project}/operations/control_plane`,
+                    url: `/api/integrations/bundles/${tenant}/${project}/${SERVICES_APP_ID}/operations/control_plane`,
                     method: 'POST',
                     headers: [
                         ["Content-Type", "application/json"]
@@ -61,7 +65,7 @@ export const widgetPanelsApiSlice = createApi({
         }>({
             query: ({tenant, project}: GetWidgetParams) => {
                 return {
-                    url: `/api/integrations/bundles/${tenant}/${project}/operations/ai_bundles`,
+                    url: `/api/integrations/bundles/${tenant}/${project}/${SERVICES_APP_ID}/operations/ai_bundles`,
                     method: 'POST',
                     headers: [
                         ["Content-Type", "application/json"]
@@ -80,7 +84,7 @@ export const widgetPanelsApiSlice = createApi({
         }>({
             query: ({tenant, project}: GetWidgetParams) => {
                 return {
-                    url: `/api/integrations/bundles/${tenant}/${project}/operations/svc_gateway`,
+                    url: `/api/integrations/bundles/${tenant}/${project}/${SERVICES_APP_ID}/operations/svc_gateway`,
                     method: 'POST',
                     headers: [
                         ["Content-Type", "application/json"]
@@ -99,7 +103,7 @@ export const widgetPanelsApiSlice = createApi({
         }>({
             query: ({tenant, project}: GetWidgetParams) => {
                 return {
-                    url: `/api/integrations/bundles/${tenant}/${project}/operations/conversation_browser`,
+                    url: `/api/integrations/bundles/${tenant}/${project}/${SERVICES_APP_ID}/operations/conversation_browser`,
                     method: 'POST',
                     headers: [
                         ["Content-Type", "application/json"]
@@ -118,7 +122,7 @@ export const widgetPanelsApiSlice = createApi({
         }>({
             query: ({tenant, project}: GetWidgetParams) => {
                 return {
-                    url: `/api/integrations/bundles/${tenant}/${project}/operations/redis_browser`,
+                    url: `/api/integrations/bundles/${tenant}/${project}/${SERVICES_APP_ID}/operations/redis_browser`,
                     method: 'POST',
                     headers: [
                         ["Content-Type", "application/json"]
