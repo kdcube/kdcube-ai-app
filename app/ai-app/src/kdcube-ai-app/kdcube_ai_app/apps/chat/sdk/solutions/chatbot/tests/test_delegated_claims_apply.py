@@ -275,3 +275,100 @@ def test_notice_message_names_provider_and_tools():
     assert "Connection Hub" in payload["error"]["message"]
     assert payload["consent"]["url"].startswith("/api/integrations/bundles/acme/demo/connection-hub%401-0/")
     assert "widgets/connections_settings" in payload["consent"]["url"]
+
+
+def _install_fake_user_props(monkeypatch):
+    from kdcube_ai_app.apps.chat.sdk import config as sdk_config
+
+    props: dict[tuple[str, str, str], object] = {}
+
+    def get_user_prop(key, *, user_id=None, bundle_id=None, default=None):
+        return props.get((user_id or "", bundle_id or "", key), default)
+
+    def set_user_prop(key, value, *, user_id=None, bundle_id=None):
+        props[(user_id or "", bundle_id or "", key)] = value
+
+    def delete_user_prop(key, *, user_id=None, bundle_id=None):
+        props.pop((user_id or "", bundle_id or "", key), None)
+
+    monkeypatch.setattr(sdk_config, "get_user_prop", get_user_prop)
+    monkeypatch.setattr(sdk_config, "set_user_prop", set_user_prop)
+    monkeypatch.setattr(sdk_config, "delete_user_prop", delete_user_prop)
+    return props
+
+
+def _conversation_stub():
+    stub = _workflow_stub()
+    stub.runtime_ctx.bundle_id = "workspace@test"
+    stub.runtime_ctx.conversation_id = "conv-1"
+    stub.runtime_ctx.reactivated_tools = []
+    return stub
+
+
+@pytest.mark.asyncio
+async def test_claims_satisfied_mid_conversation_announces_the_transition(monkeypatch):
+    """Surfaced live (log-verified): a blocked turn, the user connects the
+    account, the next turn's preflight passes — the context must carry the
+    active-now signal and keep the stale blocked note out."""
+    props = _install_fake_user_props(monkeypatch)
+    stub = _conversation_stub()
+
+    # Turn 1: slack blocked -> tools dropped, blocked snapshot recorded.
+    _patch_preflight(monkeypatch, {
+        "ok": False,
+        "error": {"code": "needs_connected_account_consent", "message": "…"},
+        "missing": _missing_slack(),
+    })
+    await BaseWorkflow.apply_delegated_tool_claims(stub, _tool_cfg())
+    assert stub.runtime_ctx.inactive_tools[0]["provider_id"] == "slack"
+    assert stub.runtime_ctx.reactivated_tools == []
+    assert props, "the blocked snapshot persists for the conversation"
+
+    # Turn 2: the user connected slack; preflight passes.
+    _patch_preflight(monkeypatch, {"ok": True, "checked": 3})
+    cfg = _tool_cfg()
+    out = await BaseWorkflow.apply_delegated_tool_claims(stub, cfg)
+    assert out is cfg
+    # No stale blocked note…
+    assert stub.runtime_ctx.inactive_tools == []
+    # …and the transition is published for the ANNOUNCE composer.
+    reactivated = stub.runtime_ctx.reactivated_tools
+    assert reactivated and reactivated[0]["provider_id"] == "slack"
+    assert set(reactivated[0]["tools"]) == {"slack.search_slack", "slack.post_slack_message"}
+
+    # Turn 3: steady state — the transition announces once, then stays quiet.
+    _patch_preflight(monkeypatch, {"ok": True, "checked": 3})
+    await BaseWorkflow.apply_delegated_tool_claims(stub, _tool_cfg())
+    assert stub.runtime_ctx.reactivated_tools == []
+    assert stub.runtime_ctx.inactive_tools == []
+
+
+def test_announce_renders_connected_accounts_update():
+    from kdcube_ai_app.apps.chat.sdk.solutions.react.layout import (
+        build_announce_reactivated_tools_lines,
+    )
+
+    providers = [{
+        "provider_id": "slack",
+        "provider_label": "Slack",
+        "connector_app_id": "demo",
+        "claims": ["slack:search", "slack:post"],
+        "tools": ["slack.search_slack", "slack.post_slack_message"],
+    }]
+    runtime = RuntimeCtx(reactivated_tools=providers)
+    lines = build_announce_reactivated_tools_lines(runtime_ctx=runtime)
+    assert lines[0] == "[CONNECTED ACCOUNTS UPDATE]"
+    assert "Slack account is connected; tools (post_slack_message, search_slack) are active this turn." in lines[1]
+    assert "supersedes earlier notes" in lines[2]
+
+    announce = build_announce_text(
+        iteration=0,
+        max_iterations=8,
+        started_at=None,
+        timezone="UTC",
+        timeline_blocks=[],
+        runtime_ctx=runtime,
+    )
+    assert "[CONNECTED ACCOUNTS UPDATE]" in announce
+    # The stale blocked section stays out when everything is active.
+    assert "[INACTIVE TOOLS THIS TURN]" not in announce

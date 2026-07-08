@@ -1422,6 +1422,37 @@ def build_announce_inactive_tools_lines(*, runtime_ctx: Optional[RuntimeCtx]) ->
     return lines
 
 
+def build_announce_reactivated_tools_lines(*, runtime_ctx: Optional[RuntimeCtx]) -> List[str]:
+    """`[CONNECTED ACCOUNTS UPDATE]` — providers whose tools became active
+    again since the previous turn (the user connected or approved the account
+    mid-conversation). The conversation history still carries the earlier
+    "connect your account" prose, so this block states the current truth
+    explicitly and supersedes it."""
+    if runtime_ctx is None:
+        return []
+    groups = getattr(runtime_ctx, "reactivated_tools", None)
+    groups = [g for g in groups if isinstance(g, dict)] if isinstance(groups, list) else []
+    if not groups:
+        return []
+    lines = ["[CONNECTED ACCOUNTS UPDATE]"]
+    for group in groups:
+        label = str(group.get("provider_label") or group.get("provider_id") or "External").strip() or "External"
+        tools = sorted({
+            str(t).rsplit(".", 1)[-1]
+            for t in (group.get("tools") or [])
+            if str(t or "").strip()
+        })
+        tool_list = ", ".join(tools)
+        lines.append(
+            f"  - {label} account is connected; tools ({tool_list}) are active this turn."
+        )
+    lines.append(
+        "  This is the current state — it supersedes earlier notes in this conversation "
+        "that named these tools unavailable. Use them directly for the user's request."
+    )
+    return lines
+
+
 def build_announce_cold_turn_lines(*, runtime_ctx: Optional[RuntimeCtx]) -> List[str]:
     """`[CACHE]` — one small turn-local line when a selection change applied on
     a warm conversation: the context re-caches this turn, and the rebuild
@@ -1545,6 +1576,11 @@ def build_announce_text(
     if show_status_sections and inactive_tool_lines:
         lines.append("")
         lines.extend(inactive_tool_lines)
+
+    reactivated_tool_lines = build_announce_reactivated_tools_lines(runtime_ctx=runtime_ctx)
+    if show_status_sections and reactivated_tool_lines:
+        lines.append("")
+        lines.extend(reactivated_tool_lines)
 
     cold_turn_lines = build_announce_cold_turn_lines(runtime_ctx=runtime_ctx)
     if show_status_sections and cold_turn_lines:

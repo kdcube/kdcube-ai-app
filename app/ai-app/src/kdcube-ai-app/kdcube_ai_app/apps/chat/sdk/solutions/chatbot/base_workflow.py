@@ -546,6 +546,88 @@ def _norm_topic(s: str) -> str:
 
 # ---------- Orchestrator ----------
 
+
+# ── delegated-claims transition tracking (module-level; test-stub friendly) ──
+# One small user-prop per user+bundle remembering which providers/tools the
+# LAST turn of a conversation blocked on unmet claims — the delta against the
+# current preflight is the "account connected mid-conversation" signal the
+# ANNOUNCE must surface (the model otherwise keeps trusting its own earlier
+# prose about unavailable tools). Single key, last conversation only:
+# transition detection matters within one conversation.
+_DELEGATED_BLOCKED_SNAPSHOT_KEY = "delegated_to_kdcube.blocked_snapshot"
+
+
+def _delegated_snapshot_scope(runtime_ctx: Any) -> tuple:
+    return (
+        str(getattr(runtime_ctx, "user_id", "") or "").strip(),
+        str(getattr(runtime_ctx, "bundle_id", "") or "").strip(),
+        str(getattr(runtime_ctx, "conversation_id", "") or "").strip(),
+    )
+
+
+def _read_delegated_blocked_snapshot(runtime_ctx: Any) -> list:
+    user_id, bundle_id, conversation_id = _delegated_snapshot_scope(runtime_ctx)
+    if not user_id or not bundle_id or not conversation_id:
+        return []
+    try:
+        from kdcube_ai_app.apps.chat.sdk import config as sdk_config
+
+        raw = sdk_config.get_user_prop(
+            _DELEGATED_BLOCKED_SNAPSHOT_KEY, user_id=user_id, bundle_id=bundle_id, default=None,
+        )
+    except Exception:
+        return []
+    if not isinstance(raw, dict) or str(raw.get("conversation_id") or "") != conversation_id:
+        return []
+    providers = raw.get("providers")
+    return [g for g in providers if isinstance(g, dict)] if isinstance(providers, list) else []
+
+
+def _write_delegated_blocked_snapshot(runtime_ctx: Any, providers: list) -> None:
+    user_id, bundle_id, conversation_id = _delegated_snapshot_scope(runtime_ctx)
+    if not user_id or not bundle_id or not conversation_id:
+        return
+    try:
+        from kdcube_ai_app.apps.chat.sdk import config as sdk_config
+
+        if providers:
+            sdk_config.set_user_prop(
+                _DELEGATED_BLOCKED_SNAPSHOT_KEY,
+                {"conversation_id": conversation_id, "providers": providers},
+                user_id=user_id,
+                bundle_id=bundle_id,
+            )
+        else:
+            sdk_config.delete_user_prop(
+                _DELEGATED_BLOCKED_SNAPSHOT_KEY, user_id=user_id, bundle_id=bundle_id,
+            )
+    except Exception:
+        pass
+
+
+def _delegated_reactivated_groups(previous: list, current: list) -> list:
+    """Provider groups whose tools left the blocked set since last turn."""
+    blocked_now: dict = {}
+    for group in current or []:
+        if isinstance(group, dict):
+            key = str(group.get("provider_id") or "")
+            blocked_now.setdefault(key, set()).update(
+                str(t) for t in (group.get("tools") or []) if str(t or "").strip()
+            )
+    reactivated: list = []
+    for group in previous or []:
+        if not isinstance(group, dict):
+            continue
+        key = str(group.get("provider_id") or "")
+        freed = [
+            str(t) for t in (group.get("tools") or [])
+            if str(t or "").strip() and str(t) not in blocked_now.get(key, set())
+        ]
+        if freed:
+            reactivated.append({**group, "tools": freed})
+    return reactivated
+
+
 class BaseWorkflow():
 
     def __init__(self,
@@ -1293,6 +1375,7 @@ class BaseWorkflow():
         # inactive-tools announce into the next turn.
         if runtime_ctx is not None:
             runtime_ctx.inactive_tools = []
+            runtime_ctx.reactivated_tools = []
         policies = list(getattr(tool_config, "tool_claim_policies", []) or [])
         if not policies:
             return tool_config
@@ -1320,6 +1403,16 @@ class BaseWorkflow():
             self.logger.log(traceback.format_exc(), level="ERROR")
             return tool_config
         if result.get("ok") is not False:
+            # Everything resolves now. If the PREVIOUS turn of this
+            # conversation blocked tools on unmet claims, the user connected
+            # or approved the account mid-chat — announce the transition so
+            # the model reads current truth louder than its own earlier prose.
+            previously_blocked = _read_delegated_blocked_snapshot(runtime_ctx)
+            if previously_blocked:
+                reactivated = _delegated_reactivated_groups(previously_blocked, [])
+                if runtime_ctx is not None and reactivated:
+                    runtime_ctx.reactivated_tools = reactivated
+                _write_delegated_blocked_snapshot(runtime_ctx, [])
             return tool_config
 
         missing = result.get("missing") if isinstance(result.get("missing"), list) else []
@@ -1349,8 +1442,13 @@ class BaseWorkflow():
 
         providers = unavailable_tools_by_provider(missing)
         message = unavailable_tools_message(missing)
+        previously_blocked = _read_delegated_blocked_snapshot(runtime_ctx)
+        reactivated = _delegated_reactivated_groups(previously_blocked, providers)
+        _write_delegated_blocked_snapshot(runtime_ctx, providers)
         if runtime_ctx is not None:
             runtime_ctx.inactive_tools = providers
+            if reactivated:
+                runtime_ctx.reactivated_tools = reactivated
         try:
             await self._emit(
                 {
