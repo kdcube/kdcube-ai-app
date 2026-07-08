@@ -26,6 +26,7 @@ export { projectServiceEventToChatStep } from './serviceSteps.ts'
 export { connectionsConsentOpen, consentOpenForClaims, consentTiersForClaims } from './connectionsConsent.ts'
 export type { ConnectionsConsentOpen } from '../shared/index.ts'
 export * from './capabilities.ts'
+export * from './capabilitiesSurface.ts'
 
 export type * from './state.ts'
 export type * from './protocol.ts'

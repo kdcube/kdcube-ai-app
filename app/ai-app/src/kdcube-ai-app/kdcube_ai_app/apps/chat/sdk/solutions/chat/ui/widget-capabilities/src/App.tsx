@@ -6,13 +6,17 @@
  * actions deep-link into the Connection Hub settings widget.
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   CapabilityPickerPage,
   useStandaloneCapabilitiesVm,
   type StandaloneCapabilitiesResponse,
   type StandaloneSelectionWriteOptions,
 } from '@kdcube/components-react/chat'
+import {
+  ackCapabilitiesOpen,
+  parseCapabilitiesOpen,
+} from '@kdcube/components-core/chat'
 import type { AgentSelectionPatch, ConnectionsConsentOpen } from '@kdcube/components-core/chat'
 import { settings } from './settings.ts'
 
@@ -66,15 +70,25 @@ function openConnections(consent: ConnectionsConsentOpen): void {
 }
 
 function PickerApp() {
-  const agentId = settings.getAgentId()
+  // Scene hosts summon this widget with a `capabilities.open` surface
+  // command: {agent_id?, spotlight_tools?, section?} in ui_event applies at
+  // runtime — agent switch reloads the inventory, spotlight reuses the
+  // picker's existing highlight+scroll mechanics, section scrolls its
+  // anchor into view. The widget acks for host diagnostics (the scene acks
+  // the emitting frame itself).
+  const [agentId, setAgentId] = useState(settings.getAgentId())
+  const [spotlight, setSpotlight] = useState<{ tools: string[]; nonce: number } | null>(null)
+  const agentRef = useRef(agentId)
+  agentRef.current = agentId
+
   const vm = useStandaloneCapabilitiesVm({
     agentId,
-    fetchCapabilities: () => callOperation('agent_capabilities', { agent: agentId }),
+    fetchCapabilities: () => callOperation('agent_capabilities', { agent: agentRef.current }),
     submitUpdate: (patch: AgentSelectionPatch, options?: StandaloneSelectionWriteOptions) => {
       const { model, ...disabled } = patch
       const apply = options?.apply && options.apply !== 'now' ? options.apply : undefined
       return callOperation('agent_selection_update', {
-        agent: agentId,
+        agent: agentRef.current,
         disabled,
         ...(model !== undefined ? { model } : {}),
         ...(apply ? { apply } : {}),
@@ -82,7 +96,34 @@ function PickerApp() {
       })
     },
     openConnections,
-  })
+  }, { spotlight })
+
+  const loadRef = useRef(vm.capabilities.load)
+  loadRef.current = vm.capabilities.load
+  useEffect(() => {
+    const onSurfaceCommand = (event: MessageEvent) => {
+      const command = parseCapabilitiesOpen(event.data)
+      if (!command) return
+      const payload = command.payload
+      if (payload.agent_id && payload.agent_id !== agentRef.current) {
+        setAgentId(payload.agent_id)
+        window.setTimeout(() => void loadRef.current({ force: true }), 0)
+      }
+      if (payload.spotlight_tools?.length) {
+        setSpotlight({ tools: payload.spotlight_tools, nonce: Date.now() })
+      }
+      if (payload.section) {
+        const anchor = `[data-picker-section="${payload.section}"]`
+        window.setTimeout(() => {
+          document.querySelector(anchor)?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+        }, 120)
+      }
+      ackCapabilitiesOpen(command, 'applied')
+    }
+    window.addEventListener('message', onSurfaceCommand)
+    return () => window.removeEventListener('message', onSurfaceCommand)
+  }, [])
+
   return (
     <CapabilityPickerPage
       vm={vm}

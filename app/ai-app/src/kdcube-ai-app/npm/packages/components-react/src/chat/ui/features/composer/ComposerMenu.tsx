@@ -15,7 +15,7 @@
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { chatActions, consentOpenForClaims } from '@kdcube/components-core/chat'
+import { chatActions, consentOpenForClaims, openCapabilitiesOnHost } from '@kdcube/components-core/chat'
 import type { AgentCapabilityConsent, ConnectionsConsentOpen } from '@kdcube/components-core/chat'
 import { useAppDispatch } from '../../support/hooks.ts'
 import type {
@@ -894,7 +894,7 @@ export function useCapabilityPickerBody({
   return rendered.length ? (
     <>
       {rendered.map((section, index) => (
-        <div key={section.id}>
+        <div key={section.id} data-picker-section={section.id}>
           {index > 0 ? <div className="k-menu-divider" role="separator" /> : null}
           {section.node}
           {section.id === 'model' && confirmState?.klass === 'model_switch' ? (
@@ -1008,7 +1008,26 @@ export function ComposerMenu({
   const spotlightNonce = vm.state.toolSpotlight?.nonce ?? 0
   useEffect(() => {
     if (!spotlightNonce) return
-    setView(preferredMenuPresentation(vm.state.toolSpotlight?.tools, capabilities.inventory))
+    const targets = vm.state.toolSpotlight?.tools
+    const preferred = preferredMenuPresentation(targets, capabilities.inventory)
+    if (preferred === 'modal') {
+      // The readable form: a host that declared the `capabilities.open`
+      // contract opens the picker as a real scene window (resizable,
+      // dockable); its ack replaces the in-chat modal. No ack -> the modal.
+      void openCapabilitiesOnHost(
+        { spotlight_tools: targets, agent_id: vm.agentId },
+        { source: 'chat-spotlight' },
+      ).then((acked) => {
+        if (acked) {
+          dispatch(chatActions.clearToolSpotlight())
+          return
+        }
+        setView('modal')
+        setOpen(true)
+      })
+      return
+    }
+    setView(preferred)
     setOpen(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [spotlightNonce])
@@ -1074,7 +1093,18 @@ export function ComposerMenu({
           <div className="k-composer-menu" role="menu" aria-label="Tools and skills">
             <div className="k-menu-head">
               <span className="k-menu-head-label">Tools &amp; skills</span>
-              <CanvasExpandButton onClick={() => setView('modal')} title="Expand" />
+              <CanvasExpandButton
+                onClick={() => {
+                  void openCapabilitiesOnHost(
+                    { agent_id: vm.agentId },
+                    { source: 'composer-expand' },
+                  ).then((acked) => {
+                    if (acked) setOpen(false)
+                    else setView('modal')
+                  })
+                }}
+                title="Expand"
+              />
             </div>
             {body}
           </div>

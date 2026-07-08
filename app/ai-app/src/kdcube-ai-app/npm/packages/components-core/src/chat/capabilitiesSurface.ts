@@ -1,0 +1,158 @@
+/**
+ * `capabilities.open` — the scene surface-command contract for the capability
+ * picker, mirroring `connections.hub.open`.
+ *
+ * EMIT (the chat composer's expand affordance, and the consent-banner
+ * spotlight when it prefers the readable presentation): post a
+ * `kdcube.surface.command` to the parent frame targeting
+ * `sdk.agent.capabilities` and await the host's `{command_id, ok}` ack. An
+ * acked command means a scene window opened (resizable/dockable like every
+ * widget); a timeout or standalone context keeps the in-chat modal.
+ *
+ * RECEIVE (the served `capabilities` widget): parse the routed command,
+ * apply `{agent_id?, spotlight_tools?, section?}` at runtime, and ack for
+ * host diagnostics.
+ */
+
+export const CAPABILITIES_SURFACE = 'sdk.agent.capabilities'
+export const SURFACE_COMMAND_MESSAGE_TYPE = 'kdcube.surface.command'
+export const SURFACE_COMMAND_ACK_MESSAGE_TYPE = 'kdcube.surface.command.ack'
+const CAPABILITIES_ACK_TIMEOUT_MS = 600
+
+/** Runtime payload of one `capabilities.open` (the command's `ui_event`). */
+export interface CapabilitiesOpenPayload {
+  /** The bundle agent whose inventory the picker should manage. */
+  agent_id?: string
+  /** Entries to highlight + scroll to (`alias.tool` or a namespace token). */
+  spotlight_tools?: string[]
+  /** Section to bring into view: model | skills | tools | mcp | services. */
+  section?: string
+}
+
+export interface CapabilitiesOpenCommand {
+  targetSurface: string
+  commandId: string
+  payload: CapabilitiesOpenPayload
+}
+
+type WindowLike = {
+  parent: WindowLike | null
+  postMessage?: (message: unknown, targetOrigin: string) => void
+  addEventListener: (type: string, listener: (event: MessageEvent) => void) => void
+  removeEventListener: (type: string, listener: (event: MessageEvent) => void) => void
+  setTimeout: (handler: () => void, ms: number) => number
+  clearTimeout: (id: number) => void
+}
+
+function defaultWindow(): WindowLike | null {
+  return typeof window === 'undefined' ? null : (window as unknown as WindowLike)
+}
+
+/** Ask the HOST to open the capability picker as a scene window.
+ *
+ * Resolves true only on an explicit `{command_id, ok: true}` ack — the
+ * caller keeps its in-chat presentation on timeout, a negative ack, or a
+ * standalone (non-embedded) context. Never throws.
+ */
+export function openCapabilitiesOnHost(
+  payload: CapabilitiesOpenPayload = {},
+  options: { source?: string; widget?: string; timeoutMs?: number; win?: WindowLike | null } = {},
+): Promise<boolean> {
+  const win = options.win !== undefined ? options.win : defaultWindow()
+  return new Promise((resolve) => {
+    if (!win || !win.parent || win.parent === win || !win.parent.postMessage) {
+      resolve(false)
+      return
+    }
+    const commandId = `caps_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    let settled = false
+    const finish = (acked: boolean) => {
+      if (settled) return
+      settled = true
+      win.removeEventListener('message', onMessage)
+      win.clearTimeout(timer)
+      resolve(acked)
+    }
+    function onMessage(event: MessageEvent) {
+      const data = event.data as Record<string, unknown> | null
+      if (!data || typeof data !== 'object') return
+      if (data.type !== SURFACE_COMMAND_ACK_MESSAGE_TYPE) return
+      if (String(data.command_id || '') !== commandId) return
+      finish(data.ok !== false)
+    }
+    win.addEventListener('message', onMessage)
+    const timer = win.setTimeout(() => finish(false), options.timeoutMs ?? CAPABILITIES_ACK_TIMEOUT_MS)
+    try {
+      const ui_event: Record<string, unknown> = {}
+      const agent = String(payload.agent_id || '').trim()
+      if (agent) ui_event.agent_id = agent
+      const spotlight = (payload.spotlight_tools ?? []).map((item) => String(item || '').trim()).filter(Boolean)
+      if (spotlight.length) ui_event.spotlight_tools = spotlight
+      const section = String(payload.section || '').trim()
+      if (section) ui_event.section = section
+      const command: Record<string, unknown> = {
+        type: SURFACE_COMMAND_MESSAGE_TYPE,
+        target_surface: CAPABILITIES_SURFACE,
+        action: 'open',
+        command_id: commandId,
+        source: options.source || 'chat',
+      }
+      if (options.widget) command.widget = options.widget
+      if (Object.keys(ui_event).length) command.ui_event = ui_event
+      win.parent.postMessage(command, '*')
+    } catch {
+      finish(false)
+    }
+  })
+}
+
+/** Parse a routed `capabilities.open` surface command (widget side). */
+export function parseCapabilitiesOpen(data: unknown): CapabilitiesOpenCommand | null {
+  if (!data || typeof data !== 'object') return null
+  const raw = data as Record<string, unknown>
+  if (raw.type !== SURFACE_COMMAND_MESSAGE_TYPE) return null
+  const target = typeof raw.target_surface === 'string' ? raw.target_surface.trim().toLowerCase() : ''
+  if (target !== CAPABILITIES_SURFACE) return null
+  const action = typeof raw.action === 'string' ? raw.action.trim().toLowerCase() : ''
+  if (action && action !== 'open') return null
+  const source = (raw.ui_event && typeof raw.ui_event === 'object' ? raw.ui_event : {}) as Record<string, unknown>
+  const payload: CapabilitiesOpenPayload = {}
+  const agent = typeof source.agent_id === 'string' ? source.agent_id.trim() : ''
+  if (agent) payload.agent_id = agent
+  if (Array.isArray(source.spotlight_tools)) {
+    const spotlight = source.spotlight_tools.map((item) => String(item || '').trim()).filter(Boolean)
+    if (spotlight.length) payload.spotlight_tools = spotlight
+  }
+  const section = typeof source.section === 'string' ? source.section.trim() : ''
+  if (section) payload.section = section
+  return {
+    targetSurface: target,
+    commandId: typeof raw.command_id === 'string' ? raw.command_id.trim() : '',
+    payload,
+  }
+}
+
+/** Widget-side diagnostics ack (the scene host acks the emitter itself). */
+export function ackCapabilitiesOpen(
+  command: CapabilitiesOpenCommand,
+  reason: string,
+  win: WindowLike | null = defaultWindow(),
+): void {
+  try {
+    if (!win || !win.parent || win.parent === win || !win.parent.postMessage) return
+    const ack: Record<string, unknown> = {
+      type: SURFACE_COMMAND_ACK_MESSAGE_TYPE,
+      target_surface: command.targetSurface,
+      action: 'open',
+      reason,
+      ts: new Date().toISOString(),
+    }
+    if (command.commandId) {
+      ack.command_id = command.commandId
+      ack.ok = true
+    }
+    win.parent.postMessage(ack, '*')
+  } catch {
+    /* host diagnostics are best-effort only */
+  }
+}

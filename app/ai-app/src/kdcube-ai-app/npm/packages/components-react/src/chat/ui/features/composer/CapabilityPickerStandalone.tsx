@@ -60,7 +60,10 @@ const SAVE_DEBOUNCE_MS = 600
 /** A `vm`-shaped object for `useCapabilityPickerBody` / `CapabilityPickerPage`
  *  backed by plain operation calls. Only the slice the picker reads is real;
  *  the cast is the documented seam (the picker touches nothing else). */
-export function useStandaloneCapabilitiesVm(runtime: StandaloneCapabilityRuntime): ChatViewModel {
+export function useStandaloneCapabilitiesVm(
+  runtime: StandaloneCapabilityRuntime,
+  options: { spotlight?: { tools: string[]; nonce: number } | null } = {},
+): ChatViewModel {
   const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [error, setError] = useState<string | null>(null)
   const [agent, setAgent] = useState<string>(runtime.agentId)
@@ -161,7 +164,8 @@ export function useStandaloneCapabilitiesVm(runtime: StandaloneCapabilityRuntime
         // A served page has no conversation: nothing is cached, so toggles
         // apply directly (the confirm flow is a warm-conversation concern).
         turns: [] as unknown[],
-        toolSpotlight: null,
+        // A `capabilities.open` scene command may carry spotlight targets.
+        toolSpotlight: options.spotlight ?? null,
       },
       capabilities: {
         status,
@@ -187,5 +191,5 @@ export function useStandaloneCapabilitiesVm(runtime: StandaloneCapabilityRuntime
     }
     return vm as unknown as ChatViewModel
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, error, agent, inventory, disabled, model, cachePolicy, pending, saving, saveError])
+  }, [status, error, agent, inventory, disabled, model, cachePolicy, pending, saving, saveError, options.spotlight])
 }
