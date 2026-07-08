@@ -27,7 +27,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.connections.authority_projection impo
     authority_has_platform_privilege,
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.connections.authority_registry_client import AuthorityRegistryClient
-from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint_with_memory import BaseEntrypointWithMemory
+from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint import BaseEntrypoint
 from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers import (
     NamedServiceRegistry,
     dispatch_named_service_api_request,
@@ -1198,7 +1198,7 @@ email_settings.configure_email_settings(
     allowed_roles_config="surfaces.as_provider.bundle.visibility.allowed_roles",
 )
 @bundle_id(id=BUNDLE_ID)
-class ConnectionHubEntrypoint(BaseEntrypointWithMemory):
+class ConnectionHubEntrypoint(BaseEntrypoint):
     """Connections hub: exposes the public `connections` named-service contract.
 
     Serves the whole contract over HTTP via the `named_service` alias, owns the
