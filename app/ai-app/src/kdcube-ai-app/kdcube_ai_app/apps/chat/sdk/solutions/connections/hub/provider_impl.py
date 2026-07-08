@@ -86,6 +86,17 @@ def _is_expired(tokens: dict[str, Any], *, skew: int = _REFRESH_SKEW_SECONDS) ->
     bundle_id=BUNDLE_ID,
     namespace=NAMESPACE,
     operations=build_connection_operations((TRANSPORT_LOCAL, TRANSPORT_API)),
+    label="Connections",
+    description="Connection Hub realm: the user's connected external accounts and their access.",
+    metadata={
+        # Human layer for catalog consumers. An INTERNAL management realm:
+        # it operates on the user's own connection records (the external
+        # accounts themselves are what those records point at).
+        "presentation": {
+            "about": "See and manage which external accounts are connected for you.",
+            "works_with": "Works with your connected accounts in this workspace.",
+        },
+    },
 )
 class ConnectionHubProvider(ConnectionsProviderBase):
     def __init__(self, *, entrypoint: Any, bundle_id: str = BUNDLE_ID) -> None:

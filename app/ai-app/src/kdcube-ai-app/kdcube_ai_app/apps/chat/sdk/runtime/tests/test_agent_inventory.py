@@ -887,3 +887,109 @@ async def test_realm_card_carries_the_services_own_human_contract():
     assert slack_ops["object.search"]["description"] == "Search messages across channels you can see."
     slack_actions = {a["name"]: a for a in slack_realm["actions"]}
     assert slack_actions["post_message"]["label"] == "Post a message"
+
+
+@pytest.mark.asyncio
+async def test_internal_realms_declare_their_human_contract():
+    """conv / mem / cnv speak their own contract in user terms — and as
+    INTERNAL realms they declare an honest works-with line (what they operate
+    on) with NO third-party provider lines and NO claim requirements."""
+    from kdcube_ai_app.apps.chat.sdk.context.memory.named_service import (
+        memory_named_service_spec,
+    )
+    from kdcube_ai_app.apps.chat.sdk.solutions.canvas.search.named_service import (
+        _provider_spec as canvas_provider_spec,
+    )
+    from kdcube_ai_app.apps.chat.sdk.solutions.conversation.named_service import (
+        conversation_search_named_service_spec,
+    )
+    from kdcube_ai_app.apps.chat.sdk.runtime.agent_inventory import (
+        enrich_catalog_named_service_realms,
+    )
+
+    catalog = {
+        "named_services": [
+            {"namespace": "conv", "alias": "named_services",
+             "operations": ["provider.about", "object.list", "object.search", "object.get", "object.action"]},
+            {"namespace": "mem", "alias": "named_services",
+             "operations": ["object.list", "object.search", "object.get", "object.upsert", "object.action", "object.delete"]},
+            {"namespace": "cnv", "alias": "named_services",
+             "operations": ["provider.about", "object.list", "object.search", "object.schema", "object.upsert"]},
+        ]
+    }
+    out = await enrich_catalog_named_service_realms(
+        catalog,
+        discovery=_FakeDiscovery({
+            "conv": conversation_search_named_service_spec(),
+            "mem": memory_named_service_spec(),
+            "cnv": canvas_provider_spec(),
+        }),
+    )
+    conv_realm, mem_realm, cnv_realm = (e["realm"] for e in out["named_services"])
+
+    # Purpose + honest works-with (rides the payload's third_party slot).
+    assert conv_realm["about"] == "Search and reread your past conversations in this workspace."
+    assert conv_realm["third_party"] == "Works with your conversation history in this workspace."
+    assert mem_realm["third_party"] == "Works with your saved memories in this workspace."
+    assert cnv_realm["third_party"] == "Works with your boards in this workspace."
+
+    # No connected-account requirements and no claims — nothing invented.
+    for realm in (conv_realm, mem_realm, cnv_realm):
+        assert "connected_accounts" not in realm
+        for entry in [*realm["operations"], *realm["actions"]]:
+            assert "claims" not in entry
+            assert "via" not in entry
+
+    # Object kinds with their one-liners.
+    conv_objects = {o["name"]: o["description"] for o in conv_realm["objects"]}
+    assert conv_objects["conversation.turn"] == (
+        "One turn of a conversation: what you said and what the assistant answered."
+    )
+    mem_objects = {o["name"]: o["description"] for o in mem_realm["objects"]}
+    assert mem_objects["memory.record"] == "One durable memory note this workspace keeps about you."
+    cnv_objects = {o["name"]: o["description"] for o in cnv_realm["objects"]}
+    assert cnv_objects["canvas.board"] == "One of your boards, with its pinned cards."
+
+    # Human labels + user-terms descriptions per operation/action.
+    conv_ops = {o["name"]: o for o in conv_realm["operations"]}
+    assert conv_ops["object.search"]["label"] == "Search past conversations"
+    conv_actions = {a["name"]: a for a in conv_realm["actions"]}
+    assert conv_actions["preview"]["label"] == "Preview"
+    mem_ops = {o["name"]: o for o in mem_realm["operations"]}
+    assert mem_ops["object.upsert"]["label"] == "Save a memory note"
+    mem_actions = {a["name"]: a for a in mem_realm["actions"]}
+    assert mem_actions["retire"]["label"] == "Retire a memory"
+    assert mem_actions["retire"]["description"] == "Retire a memory note that no longer applies."
+    cnv_ops = {o["name"]: o for o in cnv_realm["operations"]}
+    assert cnv_ops["object.upsert"]["label"] == "Pin to a board"
+    assert cnv_ops["object.search"]["description"] == (
+        "Search the cards pinned to your boards by their text and content."
+    )
+    # cnv declares no named actions; nothing renders where nothing exists.
+    assert cnv_realm["actions"] == []
+
+
+@pytest.mark.asyncio
+async def test_realm_without_any_works_with_line_renders_none():
+    """A realm that declares neither third_party nor works_with produces a
+    payload with NO third_party key — the card renders no line (declared text
+    only)."""
+    from kdcube_ai_app.apps.chat.sdk.runtime.agent_inventory import (
+        enrich_catalog_named_service_realms,
+    )
+    from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers.types import (
+        NamedServiceProviderSpec,
+    )
+
+    spec = NamedServiceProviderSpec(
+        provider_id="bare.realm",
+        namespace="bare",
+        label="Bare",
+        description="A realm with a minimal declaration.",
+        metadata={"presentation": {"about": "Does one thing for you."}},
+    )
+    catalog = {"named_services": [{"namespace": "bare", "alias": "named_services", "operations": ["object.list"]}]}
+    out = await enrich_catalog_named_service_realms(catalog, discovery=_FakeDiscovery({"bare": spec}))
+    realm = out["named_services"][0]["realm"]
+    assert realm["about"] == "Does one thing for you."
+    assert "third_party" not in realm

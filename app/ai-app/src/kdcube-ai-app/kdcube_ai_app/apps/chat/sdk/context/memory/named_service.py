@@ -225,6 +225,35 @@ SERVICE_ABOUT: dict[str, Any] = {
 }
 
 
+# Human layer of the realm's self-description — the same contract the agent
+# reads, in user terms. The picker renders these verbatim; missing text here
+# is a realm defect, never a UI invention. An INTERNAL realm: no third-party
+# dependency, so `works_with` states what it operates on.
+MEMORY_PRESENTATION = {
+    "about": "Save, search, and manage the durable notes this workspace keeps about you.",
+    "works_with": "Works with your saved memories in this workspace.",
+    "operations": {
+        "provider.about": {"label": "Service overview", "description": "What this memory service does and how to use it."},
+        "provider.capabilities": {"label": "Capabilities", "description": "The operations and behaviors this service declares."},
+        "object.list": {"label": "List memories", "description": "List your saved memory notes."},
+        "object.search": {"label": "Search memories", "description": "Search your saved memory notes."},
+        "object.get": {"label": "Read a memory", "description": "Read one memory note, optionally with its history."},
+        "object.schema": {"label": "Object reference", "description": "The shapes and refs of this service's objects."},
+        "object.upsert": {"label": "Save a memory note", "description": "Save a new memory note or update one of yours."},
+        "object.delete": {"label": "Delete a memory", "description": "Remove one of your memory notes."},
+    },
+    "actions": {
+        "confirm": {"label": "Confirm a memory", "description": "Confirm a proposed memory note so it stays."},
+        "retire": {"label": "Retire a memory", "description": "Retire a memory note that no longer applies."},
+        "preview": {"label": "Preview", "description": "A quick look at one memory note."},
+    },
+}
+
+MEMORY_OBJECT_KIND_DESCRIPTIONS = {
+    OBJECT_KIND: "One durable memory note this workspace keeps about you.",
+}
+
+
 def memory_named_service_spec(*, bundle_id: str | None = None) -> NamedServiceProviderSpec:
     return NamedServiceProviderSpec(
         provider_id=PROVIDER_ID,
@@ -240,6 +269,12 @@ def memory_named_service_spec(*, bundle_id: str | None = None) -> NamedServicePr
         metadata={
             "canonical_ref": "mem:record:<memory_id>",
             "viewer_surface": "sdk.memory.viewer",
+            "presentation": MEMORY_PRESENTATION,
+            "object_kinds": dict(MEMORY_OBJECT_KIND_DESCRIPTIONS),
+            "actions": {
+                name: str((meta or {}).get("description") or "")
+                for name, meta in MEMORY_PRESENTATION["actions"].items()
+            },
         },
     )
 
@@ -567,7 +602,16 @@ def _memory_object_read_text(obj: Mapping[str, Any], *, object_ref: str) -> str:
     label="User memories",
     description="SDK memory namespace provider for durable user-memory records.",
     intro=MEMORY_NAMESPACE_INTRO,
-    metadata={"canonical_ref": "mem:record:<memory_id>", "viewer_surface": "sdk.memory.viewer"},
+    metadata={
+        "canonical_ref": "mem:record:<memory_id>",
+        "viewer_surface": "sdk.memory.viewer",
+        "presentation": MEMORY_PRESENTATION,
+        "object_kinds": dict(MEMORY_OBJECT_KIND_DESCRIPTIONS),
+        "actions": {
+            name: str((meta or {}).get("description") or "")
+            for name, meta in MEMORY_PRESENTATION["actions"].items()
+        },
+    },
 )
 class MemoryNamedServiceProvider(NamedServiceProvider):
     def __init__(

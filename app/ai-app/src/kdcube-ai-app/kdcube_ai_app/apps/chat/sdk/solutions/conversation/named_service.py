@@ -107,10 +107,43 @@ _CONVERSATION_GRANT_HINTS = {
     "object.get": ["conversations:read"],
     "selected_user": ["conversations:read:any_user"],
 }
+# Human layer of the realm's self-description — the same contract the agent
+# reads, in user terms. The picker renders these verbatim; missing text here
+# is a realm defect, never a UI invention. An INTERNAL realm: no third-party
+# dependency, so `works_with` states what it operates on.
+CONVERSATION_PRESENTATION = {
+    "about": "Search and reread your past conversations in this workspace.",
+    "works_with": "Works with your conversation history in this workspace.",
+    "operations": {
+        "provider.about": {"label": "Service overview", "description": "What this conversation service does and how to use it."},
+        "provider.capabilities": {"label": "Capabilities", "description": "The operations and behaviors this service declares."},
+        "object.list": {"label": "List conversations", "description": "List your conversations."},
+        "object.search": {"label": "Search past conversations", "description": "Search what was said across your conversations — your messages, the assistant's replies, and your uploaded attachment summaries."},
+        "object.get": {"label": "Read a conversation", "description": "Read one conversation or one of its turns."},
+        "object.schema": {"label": "Object reference", "description": "The shapes and refs of this service's objects."},
+    },
+    "actions": {
+        "preview": {"label": "Preview", "description": "A quick look at one conversation or turn."},
+        "describe": {"label": "Describe", "description": "A short description of one conversation or turn."},
+        "capabilities": {"label": "Capabilities", "description": "What this service can do with the object."},
+    },
+}
+
+CONVERSATION_OBJECT_KIND_DESCRIPTIONS = {
+    OBJECT_KIND: "One turn of a conversation: what you said and what the assistant answered.",
+    CONVERSATION_OBJECT_KIND: "One conversation belonging to you, with its turns.",
+}
+
 _CONVERSATION_METADATA = {
     "viewer_surface": "sdk.conversation.viewer",
     "canonical_ref": "conv:conversation:<conversation_id>",
     "grant_hints": _CONVERSATION_GRANT_HINTS,
+    "presentation": CONVERSATION_PRESENTATION,
+    "object_kinds": dict(CONVERSATION_OBJECT_KIND_DESCRIPTIONS),
+    "actions": {
+        name: str((meta or {}).get("description") or "")
+        for name, meta in CONVERSATION_PRESENTATION["actions"].items()
+    },
 }
 _CONVERSATION_DESCRIPTION = (
     "SDK conversation namespace provider: search what was said, and list/get/export "

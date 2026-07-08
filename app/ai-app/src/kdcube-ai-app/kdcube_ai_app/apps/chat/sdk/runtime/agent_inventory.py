@@ -762,7 +762,14 @@ def _realm_payload_from_spec(spec: Any, allowed_operations: Sequence[str]) -> di
     label = _norm(getattr(spec, "label", ""))
     description = _first_para(str(getattr(spec, "description", "") or ""))
     about = _first_para(str(presentation.get("about") or "")) or description
-    third_party = _first_para(str(presentation.get("third_party") or ""))
+    # The works-with line: a third-party dependency for connected-account
+    # realms ("Works with your Slack workspace through your connected Slack
+    # account."), or what an internal realm operates on ("Works with your
+    # saved memories in this workspace."). Declared text only — a realm that
+    # declares neither renders no line.
+    third_party = _first_para(
+        str(presentation.get("third_party") or presentation.get("works_with") or "")
+    )
     if not (label or description or requirements_out or actions_out):
         return None
     payload: dict[str, Any] = {

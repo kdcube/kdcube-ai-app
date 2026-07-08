@@ -79,7 +79,8 @@ export interface AgentCapabilityRealm {
   description?: string
   /** The realm's purpose sentence in user terms. */
   about?: string
-  /** The service's third-party dependency, stated plainly. */
+  /** The works-with line, stated plainly: a third-party dependency, or what
+   *  an internal realm operates on. Absent = the card renders no line. */
   third_party?: string
   /** Object kinds the service works in (name + one-liner). */
   objects?: { name: string; description?: string }[]

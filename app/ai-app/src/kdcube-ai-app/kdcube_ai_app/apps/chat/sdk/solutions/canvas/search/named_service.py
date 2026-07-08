@@ -546,6 +546,32 @@ CanvasUpsertHandler = Callable[[NamedServiceContext, NamedServiceRequest], Await
 CanvasStoreFactory = Callable[[NamedServiceContext], Any]
 
 
+# Human layer of the realm's self-description — the same contract the agent
+# reads, in user terms. The picker renders these verbatim; missing text here
+# is a realm defect, never a UI invention. An INTERNAL realm: no third-party
+# dependency, so `works_with` states what it operates on.
+CANVAS_PRESENTATION = {
+    "about": "Browse and search your boards, and pin or update content on them.",
+    "works_with": "Works with your boards in this workspace.",
+    "operations": {
+        "provider.about": {"label": "Service overview", "description": "What this canvas service does and how to use it."},
+        "provider.capabilities": {"label": "Capabilities", "description": "The operations and behaviors this service declares."},
+        "object.list": {"label": "List boards", "description": "List your boards."},
+        "object.search": {"label": "Search cards", "description": "Search the cards pinned to your boards by their text and content."},
+        "object.schema": {"label": "Object reference", "description": "The shapes and refs of this service's objects."},
+        "object.upsert": {"label": "Pin to a board", "description": "Pin new content to one of your boards or update a card on it."},
+    },
+}
+
+CANVAS_OBJECT_KIND_DESCRIPTIONS = {
+    CANVAS_BOARD_OBJECT_KIND: "One of your boards, with its pinned cards.",
+    CANVAS_CARD_OBJECT_KIND: "One card pinned to a board (text, file, or link content).",
+    CANVAS_OBJECT_OBJECT_KIND: "One hosted object a card presents (a file or artifact).",
+    CANVAS_OPERATION_BATCH_OBJECT_KIND: "One batch of board edits applied together.",
+    CANVAS_CARD_COMMENT_OBJECT_KIND: "One comment on a pinned card.",
+}
+
+
 def _provider_spec() -> NamedServiceProviderSpec:
     return NamedServiceProviderSpec(
         provider_id=CANVAS_PIN_PROVIDER_ID,
@@ -557,6 +583,10 @@ def _provider_spec() -> NamedServiceProviderSpec:
         label="Canvas",
         description="Named-service provider for canvas boards, cards, hosted objects, and card search.",
         intro=CANVAS_NAMESPACE_INTRO,
+        metadata={
+            "presentation": CANVAS_PRESENTATION,
+            "object_kinds": dict(CANVAS_OBJECT_KIND_DESCRIPTIONS),
+        },
     )
 
 

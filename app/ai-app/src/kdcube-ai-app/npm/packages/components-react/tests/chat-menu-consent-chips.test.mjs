@@ -113,3 +113,13 @@ for (const sheet of STYLESHEETS) {
     assert.match(block, /color:\s*var\(--muted\)/)
   })
 }
+
+// Works-with honesty: the card line renders ONLY declared text — a realm
+// without a third_party/works_with declaration renders no line at all.
+test('the works-with card line is conditional on declared text', () => {
+  const source = readFileSync(
+    new URL('../src/chat/ui/features/composer/ComposerMenu.tsx', import.meta.url),
+    'utf8',
+  )
+  assert.match(source, /\{isOpen && realm\?\.third_party \? <ServiceCardLine text=\{realm\.third_party\} \/> : null\}/)
+})
