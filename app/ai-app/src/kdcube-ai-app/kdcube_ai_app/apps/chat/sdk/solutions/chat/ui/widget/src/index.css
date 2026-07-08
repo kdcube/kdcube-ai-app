@@ -2236,39 +2236,44 @@ button.k-menu-status:hover { background: var(--surface-2); }
 /* Composer-menu inline tag (e.g. the "default" model marker). */
 /* Per-row connected-account consent state in the composer menu: a quiet
    "connected" tag when the row's claims are granted, a consent button that
-   opens the hub's consent plan seeded with exactly the unmet claims. */
-.k-menu-tag-ok { color: var(--green-dark, #1E7C5A); border-color: rgba(82, 176, 68, 0.4); background: rgba(232, 247, 229, 0.55); }
-.k-menu-tag-consent { color: var(--accent); border-color: rgba(1, 190, 178, 0.4); background: var(--accent-soft); }
+   opens the hub's consent plan seeded with exactly the unmet claims.
+   One chip family — same height, same type, flat kdcube corners. State is
+   color: quiet for status tags ("connected", "default", "pending"), accent
+   for the Consent ACTION (a button: stronger border, pointer, hover). Chips
+   center themselves beside the row (`align-self`) — the row flexbox
+   stretches children by default, which turned a tag into a row-height
+   blob next to two-line tool rows. */
+.k-menu-tag,
 .k-menu-consent {
   align-self: center;
   flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
   margin-left: 6px;
-  padding: 1px 8px;
-  border: 1px solid rgba(1, 190, 178, 0.45);
-  border-radius: 999px;
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-size: 10px;
-  font-weight: 650;
-  letter-spacing: 0.03em;
-  cursor: pointer;
-  white-space: nowrap;
-}
-.k-menu-consent:hover { background: rgba(1, 190, 178, 0.18); }
-
-.k-menu-tag {
-  margin-left: 6px;
-  padding: 1px 6px;
+  padding: 0 7px;
   border: 1px solid var(--line-soft);
-  border-radius: 999px;
+  border-radius: 4px;
   background: var(--surface-2);
-  font-size: 9.5px;
+  font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+  line-height: 1;
   color: var(--muted);
-  vertical-align: 1px;
+  white-space: nowrap;
+  vertical-align: middle;
 }
+.k-menu-tag-ok { color: var(--green-dark, #1E7C5A); border-color: rgba(82, 176, 68, 0.4); background: rgba(232, 247, 229, 0.55); }
+.k-menu-tag-consent { color: var(--accent); border-color: rgba(1, 190, 178, 0.4); background: var(--accent-soft); }
+.k-menu-consent {
+  border-color: rgba(1, 190, 178, 0.55);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 650;
+  cursor: pointer;
+}
+.k-menu-consent:hover { background: rgba(1, 190, 178, 0.18); }
 
 /* Composer-menu soft info notice (e.g. cache-cost hints). Non-blocking,
    info tone — never an error treatment. */
