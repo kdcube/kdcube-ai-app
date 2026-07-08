@@ -115,6 +115,147 @@ def record_consent_demand(
     return True
 
 
+async def announce_consent_demand(
+    *,
+    comm: Any = None,
+    payload: Any,
+    provider_id: str,
+    connector_app_id: str = "",
+    claims: list | tuple = (),
+    tool_name: str = "",
+    identity: Any = None,
+) -> bool:
+    """Record one attempted tool's consent demand and emit the scoped chat
+    consent event ONCE per (provider, claims, tool) demand per conversation.
+
+    ``tool_name`` is the entry as the user sees it in the composer menu
+    (``alias.tool`` for python tools, the bare namespace for named-service
+    tools) — the banner's turn-off spotlight targets exactly that. Identity
+    (user / bundle / conversation) comes from the bound request context;
+    ``comm`` defaults to the context communicator. Best-effort: never raises.
+    """
+    try:
+        from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import (
+            get_comm,
+            get_current_user_identity,
+        )
+
+        if identity is None:
+            identity = get_current_user_identity() or {}
+        user_id = str(identity.get("user_id") or "").strip()
+        bundle_id = str(identity.get("bundle_id") or "").strip()
+        conversation_id = str(identity.get("conversation_id") or "").strip()
+        provider_key = str(provider_id or "").strip()
+        newly_recorded = record_consent_demand(
+            user_id=user_id,
+            bundle_id=bundle_id,
+            conversation_id=conversation_id,
+            provider_id=provider_key,
+            connector_app_id=str(connector_app_id or "").strip(),
+            provider_label=(provider_key[:1].upper() + provider_key[1:]) if provider_key else "",
+            claims=list(claims or []),
+            tool_name=str(tool_name or "").strip(),
+        )
+        if not newly_recorded:
+            return False
+        communicator = comm if comm is not None else get_comm()
+        event = getattr(communicator, "event", None) if communicator is not None else None
+        if not callable(event):
+            return False
+        result = event(
+            agent="connection-hub",
+            type="chat.step",
+            route="chat.step",
+            title="Account consent needed",
+            step="delegated_to_kdcube.consent",
+            data=dict(payload or {}),
+            status="completed",
+            broadcast=False,
+        )
+        if hasattr(result, "__await__"):
+            await result
+        return True
+    except Exception:
+        LOGGER.debug("consent demand announce unavailable", exc_info=True)
+        return False
+
+
+async def claim_coverage_for_policies(
+    *,
+    user_id: str,
+    policies: list,
+    connection_hub_bundle_id: str = "",
+) -> dict:
+    """READ-ONLY per-tool claim coverage for a picker UI.
+
+    Answers "which of this tool's declared claims does the user's connected
+    account set already hold" from the account records alone — zero credential
+    reads, zero consent events, zero health probes (a menu render must ask
+    nothing). A claim counts covered when ANY connected account of the
+    requirement's provider (and connector app, when named) holds it; the
+    consent plan and the tool attempt stay the authorities on health and
+    account choice.
+
+    Returns {tool_name: {provider_id, connector_app_id, claims, unmet,
+    covered}} for every policy carrying connected-account requirements.
+    """
+    from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube.models import (
+        CONNECTION_HUB_BUNDLE_ID,
+    )
+    from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube.store import (
+        DelegatedToKdcubeStore,
+    )
+
+    clean_user = str(user_id or "").strip()
+    coverage: dict = {}
+    if not clean_user:
+        return coverage
+    store = DelegatedToKdcubeStore(
+        user_id=clean_user,
+        bundle_id=str(connection_hub_bundle_id or "").strip() or CONNECTION_HUB_BUNDLE_ID,
+    )
+    try:
+        accounts = await store.list_accounts()
+    except Exception:
+        LOGGER.debug("claim coverage account read unavailable", exc_info=True)
+        return coverage
+    for policy in policies or []:
+        tool_name = str(getattr(policy, "tool_name", "") or "").strip()
+        requirements = list(getattr(policy, "connected_accounts", ()) or ())
+        if not tool_name or not requirements:
+            continue
+        declared: list = []
+        unmet: list = []
+        provider_id = ""
+        connector_app_id = ""
+        for requirement in requirements:
+            provider_id = provider_id or str(getattr(requirement, "provider_id", "") or "")
+            connector_app_id = connector_app_id or str(getattr(requirement, "connector_app_id", "") or "")
+            req_provider = str(getattr(requirement, "provider_id", "") or "")
+            req_connector = str(getattr(requirement, "connector_app_id", "") or "")
+            eligible = [
+                account for account in accounts
+                if account.provider_id == req_provider
+                and account.connected
+                and (not req_connector or not account.connector_app_id or account.connector_app_id == req_connector)
+            ]
+            for claim in getattr(requirement, "claims", ()) or ():
+                claim_key = str(claim or "").strip()
+                if not claim_key or claim_key in declared:
+                    continue
+                declared.append(claim_key)
+                if not any(account.allows(claim_key) for account in eligible):
+                    unmet.append(claim_key)
+        coverage[tool_name] = {
+            "provider_id": provider_id,
+            "connector_app_id": connector_app_id,
+            "claims": declared,
+            "unmet": unmet,
+            "covered": not unmet,
+        }
+    return coverage
+
+
 def pending_consent_delta(previous: list, current: list) -> list:
     """Provider groups whose tools left the pending set (consent satisfied)."""
     pending_now: dict = {}

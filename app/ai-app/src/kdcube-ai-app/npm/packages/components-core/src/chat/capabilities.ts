@@ -19,6 +19,19 @@
 export interface AgentCapabilityToolEntry {
   name: string
   description: string
+  /** Per-tool consent state (dotted claim policies). */
+  consent?: AgentCapabilityConsent
+}
+
+/** READ-ONLY connected-account consent state for one pickable entry: the
+ *  tool's declared claims against the user's connected accounts, computed
+ *  server-side at catalog time (a menu render asks nothing). */
+export interface AgentCapabilityConsent {
+  provider_id: string
+  connector_app_id?: string
+  claims: string[]
+  unmet: string[]
+  covered: boolean
 }
 
 export interface AgentCapabilityToolGroup {
@@ -28,6 +41,8 @@ export interface AgentCapabilityToolGroup {
   /** Locked-on platform groups (io/context). Never user-toggleable. */
   system: boolean
   tools: AgentCapabilityToolEntry[]
+  /** Group-level consent state (bare-alias claim policies). */
+  consent?: AgentCapabilityConsent
 }
 
 export interface AgentCapabilityMcpServer {
@@ -47,6 +62,8 @@ export interface AgentCapabilityNamespace {
   alias: string
   operations: string[]
   tools: string[]
+  /** Namespace-level consent state (the realm's connected-account claims). */
+  consent?: AgentCapabilityConsent
 }
 
 export interface AgentCapabilitySkill {

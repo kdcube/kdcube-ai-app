@@ -14,7 +14,8 @@
  * descriptor, no menu changes.
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { chatActions } from '@kdcube/components-core/chat'
+import { chatActions, consentOpenForClaims } from '@kdcube/components-core/chat'
+import type { AgentCapabilityConsent, ConnectionsConsentOpen } from '@kdcube/components-core/chat'
 import { useAppDispatch } from '../../support/hooks.ts'
 import type {
   AgentCapabilitiesInventory,
@@ -100,6 +101,7 @@ function MenuRow({
   onExpand,
   child = false,
   spotlight = false,
+  aside,
 }: {
   label: ReactNode
   sub?: string
@@ -110,6 +112,8 @@ function MenuRow({
   onExpand?: () => void
   child?: boolean
   spotlight?: boolean
+  /** Trailing affordance beside the toggle (e.g. the consent state/button). */
+  aside?: ReactNode
 }) {
   return (
     <div className={`k-menu-row ${child ? 'k-menu-row-child' : ''}${spotlight ? ' k-menu-row-spotlight' : ''}`}>
@@ -127,6 +131,7 @@ function MenuRow({
         </span>
         <span className="k-menu-row-state">{checked === 'off' ? null : <CheckIcon state={checked === 'partial' ? 'partial' : 'on'} />}</span>
       </button>
+      {aside}
       {expandable ? (
         <button
           type="button"
@@ -192,6 +197,73 @@ function PendingTag() {
   return <span className="k-menu-tag">pending</span>
 }
 
+/** Compact per-row connected-account consent state: covered rows show a
+ *  quiet "connected" tag; rows with unmet claims get a consent button that
+ *  opens the hub's consent plan seeded with exactly those claims. */
+function ConsentAside({
+  consent,
+  onConsent,
+  label = 'Consent',
+  title,
+}: {
+  consent?: AgentCapabilityConsent
+  onConsent?: (open: ConnectionsConsentOpen) => void
+  label?: string
+  title?: string
+}) {
+  if (!consent || !consent.claims?.length) return null
+  if (consent.covered) {
+    return (
+      <span className="k-menu-tag k-menu-tag-ok" title={`Account access granted: ${consent.claims.join(', ')}`}>
+        connected
+      </span>
+    )
+  }
+  if (!onConsent) {
+    return (
+      <span className="k-menu-tag k-menu-tag-consent" title={`Needs account access: ${consent.unmet.join(', ')}`}>
+        needs consent
+      </span>
+    )
+  }
+  return (
+    <button
+      type="button"
+      className="k-menu-consent"
+      title={title || `Approve account access: ${consent.unmet.join(', ')}`}
+      onClick={() => onConsent(consentOpenForClaims({
+        providerId: consent.provider_id,
+        connectorAppId: consent.connector_app_id,
+        claims: consent.unmet,
+      }))}
+    >
+      {label}
+    </button>
+  )
+}
+
+/** Union of a group's unmet claims — the group-level "consent all" ask, the
+ *  legitimate union spot because the user explicitly chose the whole set. */
+function groupConsentUnion(group: { consent?: AgentCapabilityConsent; tools: { consent?: AgentCapabilityConsent }[] }): AgentCapabilityConsent | undefined {
+  const states = [group.consent, ...group.tools.map((tool) => tool.consent)].filter(
+    (state): state is AgentCapabilityConsent => Boolean(state && state.claims?.length),
+  )
+  if (!states.length) return undefined
+  const claims: string[] = []
+  const unmet: string[] = []
+  for (const state of states) {
+    for (const claim of state.claims) if (!claims.includes(claim)) claims.push(claim)
+    for (const claim of state.unmet) if (!unmet.includes(claim)) unmet.push(claim)
+  }
+  return {
+    provider_id: states[0].provider_id,
+    connector_app_id: states[0].connector_app_id,
+    claims,
+    unmet,
+    covered: unmet.length === 0,
+  }
+}
+
 function firstLine(text: string): string {
   return String(text || '').split('\n')[0].trim()
 }
@@ -211,6 +283,10 @@ interface CapabilityRowsProps {
   /** Tool names to highlight + scroll to (`alias.tool`, or a bare group
    *  alias). Set when the consent banner opens the menu to turn tools off. */
   spotlight?: string[]
+  /** Opens the Connection Hub consent plan seeded with the given claims —
+   *  the picker's proactive consent affordance. Present only when the host
+   *  routes `open-connections`. */
+  onConsent?: (consent: ConnectionsConsentOpen) => void
 }
 
 /** Radio-style single model pick from the admin-allowed `supported_models`
@@ -276,7 +352,7 @@ function SkillsSection({ inventory, disabled, toggle }: CapabilityRowsProps) {
   )
 }
 
-function ToolGroupsSection({ inventory, disabled, toggle, pending, spotlight }: CapabilityRowsProps) {
+function ToolGroupsSection({ inventory, disabled, toggle, pending, spotlight, onConsent }: CapabilityRowsProps) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const groups = inventory.tools.filter((group) => !group.system)
   const containerRef = useRef<HTMLDivElement | null>(null)
@@ -345,6 +421,14 @@ function ToolGroupsSection({ inventory, disabled, toggle, pending, spotlight }: 
               expanded={isOpen}
               onExpand={() => setExpanded((current) => ({ ...current, [group.alias]: !isOpen }))}
               spotlight={groupSpotlit(group.alias)}
+              aside={(
+                <ConsentAside
+                  consent={groupConsentUnion(group)}
+                  onConsent={onConsent}
+                  label="Consent all"
+                  title={`Approve all ${group.name || group.alias} account access`}
+                />
+              )}
             />
             {isOpen
               ? group.tools.map((tool) => (
@@ -356,6 +440,7 @@ function ToolGroupsSection({ inventory, disabled, toggle, pending, spotlight }: 
                     checked={isToolDisabled(disabled, group.alias, tool.name) ? 'off' : 'on'}
                     onToggle={() => toggle(toolTogglePatch(group, disabled, tool.name))}
                     spotlight={toolSpotlit(group.alias, tool.name)}
+                    aside={<ConsentAside consent={tool.consent} onConsent={onConsent} />}
                   />
                 ))
               : null}
@@ -404,8 +489,11 @@ function McpSection({ inventory, disabled, toggle }: CapabilityRowsProps) {
   )
 }
 
-function ServicesSection({ inventory, disabled, toggle, namespaceStyles }: CapabilityRowsProps) {
+function ServicesSection({ inventory, disabled, toggle, namespaceStyles, spotlight, onConsent }: CapabilityRowsProps) {
   if (!inventory.named_services.length) return null
+  // The consent banner's "turn off the tools" for a named-service tool names
+  // the NAMESPACE — the entry the user sees here.
+  const spotlit = new Set((spotlight ?? []).map((item) => String(item || '').trim()).filter(Boolean))
   return (
     <div>
       <SectionTitle>Services</SectionTitle>
@@ -415,6 +503,8 @@ function ServicesSection({ inventory, disabled, toggle, namespaceStyles }: Capab
           label={namespaceLabel(entry.namespace, namespaceStyles)}
           checked={isNamespaceDisabled(disabled, entry.namespace) ? 'off' : 'on'}
           onToggle={() => toggle({ named_services: { [entry.namespace]: !isNamespaceDisabled(disabled, entry.namespace) } })}
+          spotlight={spotlit.has(entry.namespace) || spotlit.has(entry.alias)}
+          aside={<ConsentAside consent={entry.consent} onConsent={onConsent} />}
         />
       ))}
     </div>
@@ -467,9 +557,15 @@ function builtInSections(namespaceStyles: NamespaceStyleMap): ComposerMenuSectio
   ): ComposerMenuSectionDescriptor => ({
     id,
     order,
-    render: ({ vm }) => {
+    render: ({ vm, close }) => {
       const { inventory, disabled, toggle, pending } = vm.capabilities
       if (!inventory) return null
+      const onConsent = vm.connections.available()
+        ? (consent: ConnectionsConsentOpen) => {
+            vm.connections.open('composer-menu', consent)
+            close()
+          }
+        : undefined
       return (
         <Section
           inventory={inventory}
@@ -478,6 +574,7 @@ function builtInSections(namespaceStyles: NamespaceStyleMap): ComposerMenuSectio
           namespaceStyles={namespaceStyles}
           pending={pending}
           spotlight={vm.state.toolSpotlight?.tools}
+          onConsent={onConsent}
         />
       )
     },

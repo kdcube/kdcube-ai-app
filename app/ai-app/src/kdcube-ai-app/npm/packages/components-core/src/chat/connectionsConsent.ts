@@ -73,6 +73,24 @@ function deepLinkTabAndParams(url: string): { tab: string; params: Record<string
   return { tab, params }
 }
 
+/** Hub-open payload for a picker-row consent affordance: seeds the consent
+ *  plan with exactly the named claims. `url` stays empty — a host without the
+ *  scene contract falls back to the widget's own served-URL path. */
+export function consentOpenForClaims(args: {
+  providerId: string
+  connectorAppId?: string
+  claims: string[]
+}): ConnectionsConsentOpen {
+  const params: Record<string, string> = {}
+  const provider = String(args.providerId || '').trim()
+  if (provider) params.provider_id = provider
+  const connector = String(args.connectorAppId || '').trim()
+  if (connector) params.connector_app_id = connector
+  const claims = (args.claims || []).map((item) => String(item || '').trim()).filter(Boolean)
+  if (claims.length) params.claims = claims.join(',')
+  return { tab: 'delegated_to_kdcube', params, url: '' }
+}
+
 /** Build the structured hub-open payload from a consent card's fields.
  *  The consent deep link is authoritative for tab + params; the claim→tier
  *  map fills `tiers` on the provider-connections path. */

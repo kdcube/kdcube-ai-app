@@ -413,12 +413,65 @@ class BaseEntrypoint:
             timeout = float(self.bundle_prop("agents.capabilities.mcp_listing_timeout_seconds", 2.5) or 2.5)
         except Exception:
             timeout = 2.5
-        return await enrich_catalog_mcp_tools(
+        catalog = await enrich_catalog_mcp_tools(
             catalog,
             self.bundle_props,
             bundle_id=bundle_id,
             timeout_seconds=timeout,
         )
+        return await self._attach_claim_coverage(catalog, agent_id)
+
+    async def _attach_claim_coverage(self, catalog: Dict[str, Any], agent_id: str) -> Dict[str, Any]:
+        """Per-entry connected-account consent state for the picker UI.
+
+        READ-ONLY (a menu render asks nothing): the tool descriptors' declared
+        claims against the caller's connected accounts. Dotted policies land on
+        the group's tool rows, bare-alias policies on the group header, and
+        named-service policies on their namespace rows. Fail-open: any error
+        keeps the catalog untouched."""
+        try:
+            from kdcube_ai_app.apps.chat.sdk.runtime.tool_config import (
+                agent_tool_config_from_bundle_props,
+            )
+            from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube.consent_demand import (
+                claim_coverage_for_policies,
+            )
+            from kdcube_ai_app.apps.chat.sdk.solutions.connections.connection_edges import (
+                connection_hub_bundle_id_from_entrypoint,
+            )
+
+            identity = self._agent_selection_identity()
+            user_id = str(identity.get("user_id") or "").strip()
+            policies = agent_tool_config_from_bundle_props(
+                self.bundle_props, agent_id, bundle_root=self._bundle_root(),
+            ).tool_claim_policies
+            if not user_id or not policies:
+                return catalog
+            coverage = await claim_coverage_for_policies(
+                user_id=user_id,
+                policies=policies,
+                connection_hub_bundle_id=connection_hub_bundle_id_from_entrypoint(self),
+            )
+            if not coverage:
+                return catalog
+            for group in catalog.get("tools") or []:
+                alias = str(group.get("alias") or "")
+                group_state = coverage.get(alias)
+                if group_state:
+                    group["consent"] = group_state
+                for tool in group.get("tools") or []:
+                    state = coverage.get(f"{alias}.{tool.get('name')}")
+                    if state:
+                        tool["consent"] = state
+            for entry in catalog.get("named_services") or []:
+                state = coverage.get(str(entry.get("alias") or "")) or coverage.get(
+                    str(entry.get("namespace") or "")
+                )
+                if state:
+                    entry["consent"] = state
+        except Exception:
+            self.logger.log("[agent_capabilities] claim coverage failed (fail-open)", "WARNING")
+        return catalog
 
     @api(method="POST", alias="agent_capabilities", route="operations", user_types=("registered", "paid", "privileged"))
     async def agent_capabilities(self, data: Optional[Dict[str, Any]] = None, **kwargs: Any) -> Dict[str, Any]:

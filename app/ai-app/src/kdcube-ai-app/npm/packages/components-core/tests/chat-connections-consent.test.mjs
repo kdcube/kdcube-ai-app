@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { connectionsConsentOpen, consentTiersForClaims } from '../dist/chat/index.js'
+import { connectionsConsentOpen, consentOpenForClaims, consentTiersForClaims } from '../dist/chat/index.js'
 
 // Surfaced live case: the backend consent deep link points at the
 // Delegated-to-KDCube consent plan; the hub-open payload must carry that tab
@@ -60,4 +60,21 @@ test('claim to tier map covers the shipped providers', () => {
   assert.deepEqual(consentTiersForClaims('slack', ['slack:files:read', 'slack:history']), ['files', 'read'])
   assert.deepEqual(consentTiersForClaims('google', ['gmail:send']), ['send'])
   assert.deepEqual(consentTiersForClaims('slack', ['other:claim']), [])
+})
+
+test('a picker consent affordance seeds the plan with exactly the named claims', () => {
+  const open = consentOpenForClaims({
+    providerId: 'slack',
+    connectorAppId: 'demo',
+    claims: ['slack:post', ' ', 'slack:files:write'],
+  })
+  assert.equal(open.tab, 'delegated_to_kdcube')
+  assert.deepEqual(open.params, {
+    provider_id: 'slack',
+    connector_app_id: 'demo',
+    claims: 'slack:post,slack:files:write',
+  })
+  // No served URL of its own: a host without the scene contract falls back
+  // to the widget's served-URL path.
+  assert.equal(open.url, '')
 })

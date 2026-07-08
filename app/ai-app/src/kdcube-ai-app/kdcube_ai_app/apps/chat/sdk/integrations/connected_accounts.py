@@ -183,52 +183,24 @@ async def _announce_consent_demand(
     claims: list,
     tool_name: str,
 ) -> None:
-    """Demand-driven consent: the ATTEMPT raises the ask.
-
-    Records the pending demand for the conversation (the next turn's
-    transition check announces it once satisfied) and emits the chat consent
-    event scoped to THIS tool's claims — the banner the user acts on. New
-    (provider, claims, tool) demands emit exactly once per conversation;
-    retries stay quiet server-side.
-    """
+    """Demand-driven consent: the ATTEMPT raises the ask (shared bookkeeping
+    in ``delegated_to_kdcube/consent_demand.py``; the bound tool communicator
+    carries the scoped chat event)."""
     try:
-        identity = get_current_user_identity() or {}
-        user_id = _clean(identity.get("user_id"))
-        bundle_id = _clean(identity.get("bundle_id"))
-        conversation_id = _clean(identity.get("conversation_id"))
-        provider_key = _clean(provider_id)
         from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube.consent_demand import (
-            record_consent_demand,
+            announce_consent_demand,
         )
 
-        newly_recorded = record_consent_demand(
-            user_id=user_id,
-            bundle_id=bundle_id,
-            conversation_id=conversation_id,
-            provider_id=provider_key,
-            connector_app_id=_clean(connector_app_id),
-            provider_label=(provider_key[:1].upper() + provider_key[1:]) if provider_key else "",
-            claims=list(claims or []),
-            tool_name=_clean(tool_name),
-        )
-        if not newly_recorded:
-            return
         comm = get_bound_context(source).communicator
-        event = getattr(comm, "event", None) if comm is not None else None
-        if not callable(event):
-            return
-        result = event(
-            agent="connection-hub",
-            type="chat.step",
-            route="chat.step",
-            title="Account consent needed",
-            step="delegated_to_kdcube.consent",
-            data=dict(payload),
-            status="completed",
-            broadcast=False,
+        await announce_consent_demand(
+            comm=comm,
+            payload=payload,
+            provider_id=provider_id,
+            connector_app_id=connector_app_id,
+            claims=claims,
+            tool_name=tool_name,
+            identity=get_current_user_identity() or {},
         )
-        if hasattr(result, "__await__"):
-            await result
     except Exception:
         logger.debug("consent demand announce unavailable", exc_info=True)
 

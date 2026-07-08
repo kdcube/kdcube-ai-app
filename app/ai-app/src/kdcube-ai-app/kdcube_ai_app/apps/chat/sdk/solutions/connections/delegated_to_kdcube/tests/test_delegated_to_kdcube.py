@@ -1123,3 +1123,64 @@ async def test_credential_read_goes_through_the_process_secret_cache(monkeypatch
     assert value["access_token"] == "t"
     assert cleared, "get_credential clears the process-local secret cache before reading"
     assert cleared[0].get("user_id") == "user-1"
+
+
+@pytest.mark.asyncio
+async def test_claim_coverage_is_read_only_and_per_tool(monkeypatch):
+    """Picker consent state: each tool's declared claims against the user's
+    connected accounts — account records only (zero credential reads, zero
+    events), per tool, connector-scoped."""
+    from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube.consent_demand import (
+        claim_coverage_for_policies,
+    )
+
+    _install_fake_storage(monkeypatch)
+    store = DelegatedToKdcubeStore(user_id="user-1")
+    await store.upsert_account(
+        ConnectedAccount(
+            account_id="acct-slack",
+            provider_id="slack",
+            connector_app_id="demo",
+            external_subject="u-slack",
+            claims=("slack:search", "slack:channels"),
+            credential_id=credential_id_for("acct-slack"),
+        )
+    )
+
+    credential_reads = []
+
+    async def _no_credential_reads(self, credential_id):
+        credential_reads.append(credential_id)
+        return {}
+
+    monkeypatch.setattr(DelegatedToKdcubeStore, "get_credential", _no_credential_reads)
+
+    policies = [
+        ToolClaimPolicy.from_config("slack.search_slack", {
+            "connected_accounts": [
+                {"provider_id": "slack", "connector_app_id": "demo", "claims": ["slack:search"]},
+            ],
+        }),
+        ToolClaimPolicy.from_config("slack.post_slack_message", {
+            "connected_accounts": [
+                {"provider_id": "slack", "connector_app_id": "demo", "claims": ["slack:post"]},
+            ],
+        }),
+        ToolClaimPolicy.from_config("gmail.search_gmail", {
+            "connected_accounts": [
+                {"provider_id": "google", "connector_app_id": "gmail", "claims": ["gmail:read"]},
+            ],
+        }),
+    ]
+    coverage = await claim_coverage_for_policies(user_id="user-1", policies=policies)
+
+    assert coverage["slack.search_slack"] == {
+        "provider_id": "slack", "connector_app_id": "demo",
+        "claims": ["slack:search"], "unmet": [], "covered": True,
+    }
+    assert coverage["slack.post_slack_message"]["unmet"] == ["slack:post"]
+    assert coverage["slack.post_slack_message"]["covered"] is False
+    # A provider with zero connected accounts: everything unmet.
+    assert coverage["gmail.search_gmail"]["unmet"] == ["gmail:read"]
+    # Read-only contract: the computation touched no credentials.
+    assert credential_reads == []

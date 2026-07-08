@@ -2175,6 +2175,28 @@ button.k-menu-status:hover { background: var(--surface-2); }
 }
 
 /* Composer-menu inline tag (e.g. the "default" model marker). */
+/* Per-row connected-account consent state in the composer menu: a quiet
+   "connected" tag when the row's claims are granted, a consent button that
+   opens the hub's consent plan seeded with exactly the unmet claims. */
+.k-menu-tag-ok { color: var(--green-dark, #1E7C5A); border-color: rgba(82, 176, 68, 0.4); background: rgba(232, 247, 229, 0.55); }
+.k-menu-tag-consent { color: var(--accent); border-color: rgba(1, 190, 178, 0.4); background: var(--accent-soft); }
+.k-menu-consent {
+  align-self: center;
+  flex: 0 0 auto;
+  margin-left: 6px;
+  padding: 1px 8px;
+  border: 1px solid rgba(1, 190, 178, 0.45);
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.k-menu-consent:hover { background: rgba(1, 190, 178, 0.18); }
+
 .k-menu-tag {
   margin-left: 6px;
   padding: 1px 6px;
