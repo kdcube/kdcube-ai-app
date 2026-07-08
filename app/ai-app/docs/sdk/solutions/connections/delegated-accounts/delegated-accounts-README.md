@@ -230,8 +230,17 @@ The `url` carries `tab=delegated_to_kdcube`, `provider_id`,
 Connection Hub widget turns them into a consent plan: a step list (account
 connected → access working → requested approvals as per-claim chips) with a
 single primary button for the first unmet step, and highlights the affected
-account card. Failures of other providers stay in the payload's raw
-`missing` list and surface on the next turn.
+account card.
+
+Consent is DEMAND-DRIVEN: which tools a turn needs only becomes clear as the
+agent works, so claim-gated tools stay in the agent's set and the consent
+block raises at the tool ATTEMPT (`resolve_connected_account_claim`) — scoped
+to that tool's claims. The attempt returns the envelope to the agent
+(`consent_required` plus a short keep-working instruction), emits the chat
+consent event once per (provider, claims, tool) demand per conversation, and
+records the pending demand; the next turn after the user approves announces
+`[CONNECTED ACCOUNTS UPDATE]` for exactly those tools
+(`delegated_to_kdcube/consent_demand.py`).
 
 ## Live Provider Rejection (Refresh-Retry-Once)
 

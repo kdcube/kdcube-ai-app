@@ -57,27 +57,34 @@ cached context or static bundle instructions may describe the policy, but ANNOUN
 contains the current remaining capacity.
 
 ## Inactive tools in ANNOUNCE
-ANNOUNCE includes an `[INACTIVE TOOLS THIS TURN]` section when tools were
-dropped from the current turn's tool set — for example when a tool's
-connected-account claims are unmet. It renders right after `[RUNTIME LIMITS]`
-and only when `RuntimeCtx.inactive_tools` carries entries.
+ANNOUNCE includes an `[INACTIVE TOOLS THIS TURN]` section when tools are
+genuinely absent from the current turn's tool set. It renders right after
+`[RUNTIME LIMITS]` and only when `RuntimeCtx.inactive_tools` carries entries.
 
-Each line names the provider, its inactive tools, the reason (no connected
-account for that provider), and that the user can connect one in Connection
-Hub; a closing line instructs the agent to work with the remaining tools and,
-when the request needs an inactive tool, to name the account to connect
-instead of attempting the call.
+Connected-account consent is demand-driven and keeps claim-gated tools IN the
+set: which tools a turn needs only becomes clear as the agent works, so a
+tool invocation with unmet claims returns the structured consent envelope to
+the agent (`consent_required`, the provider, THAT tool's claims, the
+Connection Hub deep link, and a short instruction to narrate the ask and keep
+working with the other tools) while the platform raises the scoped consent
+banner in chat.
+
+## Connected accounts update in ANNOUNCE
+When a consent demand raised by an earlier attempt in this conversation is
+satisfied (the user connected or approved the account), the next turn renders
+`[CONNECTED ACCOUNTS UPDATE]` from `RuntimeCtx.reactivated_tools` — the
+current truth stated louder than the model's own earlier prose:
 
 ```text
-[INACTIVE TOOLS THIS TURN]
-  - Slack tools (post_slack_message, search_slack): the user has no connected Slack account; they can connect one in Connection Hub.
-  Work with the remaining tools. When the request needs an inactive tool, say which account to connect (named above) instead of attempting the call.
+[CONNECTED ACCOUNTS UPDATE]
+  - Slack account is connected; tools (post_slack_message, search_slack) are active this turn.
+  This is the current state — it supersedes earlier notes in this conversation that named these tools unavailable. Use them directly for the user's request.
 ```
 
-The section lives in ANNOUNCE because the set is turn-local (it changes the
-moment the user connects an account or flips a toggle); keeping it out of the
-instruction text preserves the cached prompt slice. The construction-side story
-is owned by
+Both sections live in ANNOUNCE because the facts are turn-local (they change
+the moment the user connects an account or flips a toggle); keeping them out
+of the instruction text preserves the cached prompt slice. The
+construction-side story is owned by
 [How To Construct A ReAct Agent](./how/how-to-construct-react-agent-README.md).
 
 ## Feedback in ANNOUNCE

@@ -89,6 +89,14 @@ class ConnectedAccountCredential:
         message = _clean(error.get("message")) or fallback
         action_url = _consent_url(consent)
         action_label = _clean(consent.get("action_label")) or "Open Connection Hub"
+        # Agent-facing guidance: the platform raised the ask to the user in
+        # chat (the scoped consent banner); the agent's job is to keep the
+        # turn productive and narrate the ask briefly.
+        instructions = (
+            "The platform has asked the user for this account access in chat. "
+            "Tell the user briefly what the request needs, continue with the "
+            "other available tools, and call this tool again after they approve."
+        )
         envelope = {
             "ok": False,
             "error": {
@@ -99,7 +107,10 @@ class ConnectedAccountCredential:
                 "consent": consent,
                 "action_label": action_label,
                 "action_url": action_url,
+                "instructions": instructions,
             },
+            "consent_required": True,
+            "instructions": instructions,
             "ret": self.error_payload or {
                 "ok": False,
                 "message": message,
@@ -161,6 +172,65 @@ class ConnectedAccountCredential:
             connection_hub_bundle_id=self.connection_hub_bundle_id,
             error_payload=payload,
         ).error_envelope(where=where)
+
+
+async def _announce_consent_demand(
+    source: Mapping[str, Any] | Any,
+    *,
+    payload: Mapping[str, Any],
+    provider_id: str,
+    connector_app_id: str,
+    claims: list,
+    tool_name: str,
+) -> None:
+    """Demand-driven consent: the ATTEMPT raises the ask.
+
+    Records the pending demand for the conversation (the next turn's
+    transition check announces it once satisfied) and emits the chat consent
+    event scoped to THIS tool's claims — the banner the user acts on. New
+    (provider, claims, tool) demands emit exactly once per conversation;
+    retries stay quiet server-side.
+    """
+    try:
+        identity = get_current_user_identity() or {}
+        user_id = _clean(identity.get("user_id"))
+        bundle_id = _clean(identity.get("bundle_id"))
+        conversation_id = _clean(identity.get("conversation_id"))
+        provider_key = _clean(provider_id)
+        from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube.consent_demand import (
+            record_consent_demand,
+        )
+
+        newly_recorded = record_consent_demand(
+            user_id=user_id,
+            bundle_id=bundle_id,
+            conversation_id=conversation_id,
+            provider_id=provider_key,
+            connector_app_id=_clean(connector_app_id),
+            provider_label=(provider_key[:1].upper() + provider_key[1:]) if provider_key else "",
+            claims=list(claims or []),
+            tool_name=_clean(tool_name),
+        )
+        if not newly_recorded:
+            return
+        comm = get_bound_context(source).communicator
+        event = getattr(comm, "event", None) if comm is not None else None
+        if not callable(event):
+            return
+        result = event(
+            agent="connection-hub",
+            type="chat.step",
+            route="chat.step",
+            title="Account consent needed",
+            step="delegated_to_kdcube.consent",
+            data=dict(payload),
+            status="completed",
+            broadcast=False,
+        )
+        if hasattr(result, "__await__"):
+            await result
+    except Exception:
+        logger.debug("consent demand announce unavailable", exc_info=True)
 
 
 def _scope(source: Mapping[str, Any] | Any) -> tuple[_ToolEntrypoint, str, str, str]:
@@ -259,6 +329,16 @@ async def resolve_connected_account_claim(
                 }
             ],
         )
+        if getattr(result, "retry_hint", False):
+            # User-fixable: raise the ask (scoped banner + pending record).
+            await _announce_consent_demand(
+                source,
+                payload=payload,
+                provider_id=result.provider_id or provider_id,
+                connector_app_id=result.connector_app_id or connector_app_id,
+                claims=[result.claim or claim],
+                tool_name=tool_name,
+            )
         return ConnectedAccountCredential(
             ok=False,
             account_id=result.account_id,

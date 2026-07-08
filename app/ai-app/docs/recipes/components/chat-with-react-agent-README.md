@@ -103,7 +103,10 @@ tool_config = agent_tool_config_from_bundle_props(self.bundle_props, client_id, 
 skill_config = agent_skill_config_from_bundle_props(self.bundle_props, client_id, bundle_root=BUNDLE_ROOT)
 # Per-user selection: deny-list narrowing + the model pick (fail-open).
 tool_config, skill_config = await self.apply_user_agent_selection(tool_config, skill_config)
-# Connected-account claims: unmet-claim tools drop for this turn (ANNOUNCE informs).
+# Connected-account claims are demand-driven: every configured tool stays in
+# the set; a tool ATTEMPT with unmet claims returns the consent envelope to
+# the agent and raises the scoped chat banner. This hook announces the
+# transition once the user approves mid-conversation.
 tool_config = await self.apply_delegated_tool_claims(tool_config)
 
 react = self.build_react(

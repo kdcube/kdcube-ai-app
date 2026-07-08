@@ -1,14 +1,15 @@
 # SPDX-License-Identifier: MIT
 
-"""Connected-account claims narrow the turn's tool set — never block the turn.
+"""Demand-driven consent: configured tools STAY in the turn's set.
 
-Covers the live repro: an unmet claim on ONE provider's tools (e.g. Slack
-unconnected) must drop exactly those tools, publish the provider + tool facts
-to the ANNOUNCE `[INACTIVE TOOLS THIS TURN]` section via
-`runtime_ctx.inactive_tools` (turn-local, so the cached instructions slice
-stays byte-stable across claim-status changes), and let the turn proceed. A
-user-disabled group's claims are pruned before any resolution, so they can
-never prompt.
+Which tools a turn needs only becomes clear as the agent works, so the
+turn-start hook keeps every claim-gated tool available and asks NOTHING —
+consent raises at the tool ATTEMPT (see connected_accounts). The hook's one
+job is the transition note: when an attempt-recorded consent demand is
+satisfied (the user connected/approved mid-conversation), it publishes
+`runtime_ctx.reactivated_tools` for the `[CONNECTED ACCOUNTS UPDATE]`
+announce — checking ONLY the demanded tools, never sweeping the set.
+User-disabled tools stay dropped by selection, which is a different door.
 """
 
 from __future__ import annotations
@@ -129,9 +130,11 @@ async def test_met_claims_keep_configured_set_and_reset_stale_notice(monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_unmet_claims_drop_tools_announce_and_proceed(monkeypatch):
+async def test_unmet_claims_keep_tools_available_and_stay_quiet(monkeypatch):
+    """Demand-driven: the turn start neither drops claim-gated tools nor
+    raises consent — the ask belongs to the attempt."""
     stub = _workflow_stub()
-    _patch_preflight(monkeypatch, {
+    calls = _patch_preflight(monkeypatch, {
         "ok": False,
         "error": {"code": "needs_connected_account_consent", "message": "…"},
         "missing": _missing_slack(),
@@ -139,25 +142,15 @@ async def test_unmet_claims_drop_tools_announce_and_proceed(monkeypatch):
     cfg = _tool_cfg()
     out = await BaseWorkflow.apply_delegated_tool_claims(stub, cfg)
 
-    # Slack tools dropped (both were denied -> the whole group collapses)…
-    assert "slack" not in out.allowed_plugins
-    assert "slack" not in out.allowed_tool_names_by_alias
-    # …everything else stays: the internet-search request keeps its tools.
-    assert "web_tools" in out.allowed_plugins
-    assert out.allowed_tool_names_by_alias["gmail"] == ["search_gmail", "send_gmail"]
-
-    # The facts flow to the ANNOUNCE composer via runtime_ctx (turn-local).
-    providers = stub.runtime_ctx.inactive_tools
-    assert providers[0]["provider_id"] == "slack"
-    assert set(providers[0]["tools"]) == {"slack.search_slack", "slack.post_slack_message"}
-
-    # A notice event (not a blocker) went out, still carrying the consent
-    # payload so the chat banner renders with the link.
-    assert len(stub.events) == 1
-    event = stub.events[0]
-    assert event["step"] == "delegated_to_kdcube.claims"
-    assert event["data"]["blocking"] is False
-    assert event["data"]["providers"][0]["provider_id"] == "slack"
+    # Every configured tool stays in the set…
+    assert out is cfg
+    assert "slack" in out.allowed_plugins
+    assert out.allowed_tool_names_by_alias["slack"] == ["search_slack", "post_slack_message"]
+    # …zero consent banners/events, zero inactive-tools announce…
+    assert stub.events == []
+    assert stub.runtime_ctx.inactive_tools == []
+    # …and with no pending demand recorded, zero resolution work happens.
+    assert calls == []
 
 
 def test_announce_renders_inactive_tools_section():
@@ -201,8 +194,21 @@ def test_announce_renders_inactive_tools_section():
 
 
 @pytest.mark.asyncio
-async def test_partial_group_denial_keeps_other_tools(monkeypatch):
-    stub = _workflow_stub()
+async def test_pending_demand_still_unmet_stays_pending_and_quiet(monkeypatch):
+    """A recorded demand whose claims stay unmet keeps waiting: zero announce,
+    zero events, the tool set untouched — the banner from the attempt is the
+    single ask."""
+    from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube.consent_demand import (
+        record_consent_demand,
+    )
+
+    props = _install_fake_user_props(monkeypatch)
+    stub = _conversation_stub()
+    record_consent_demand(
+        user_id="u1", bundle_id="workspace@test", conversation_id="conv-1",
+        provider_id="slack", connector_app_id="demo",
+        claims=["slack:post"], tool_name="slack.post_slack_message",
+    )
     _patch_preflight(monkeypatch, {
         "ok": False,
         "missing": [
@@ -213,8 +219,11 @@ async def test_partial_group_denial_keeps_other_tools(monkeypatch):
         ],
     })
     out = await BaseWorkflow.apply_delegated_tool_claims(stub, _tool_cfg())
-    assert out.allowed_tool_names_by_alias["slack"] == ["search_slack"]
-    assert stub.runtime_ctx.inactive_tools[0]["tools"] == ["slack.post_slack_message"]
+    assert out.allowed_tool_names_by_alias["slack"] == ["search_slack", "post_slack_message"]
+    assert stub.runtime_ctx.inactive_tools == []
+    assert stub.runtime_ctx.reactivated_tools == []
+    assert stub.events == []
+    assert props, "the demand stays pending for a later transition"
 
 
 @pytest.mark.asyncio
@@ -242,17 +251,31 @@ async def test_no_policies_no_resolution():
 
 @pytest.mark.asyncio
 async def test_disabled_group_claims_never_resolve(monkeypatch):
-    """Phase-1 guarantee, end to end: disabling a group prunes its claim
-    policies BEFORE the claims check, so the resolver never sees them."""
-    stub = _workflow_stub()
+    """Selection stays a different door: disabling a group prunes its claim
+    policies, so even a pending demand for a now-disabled tool resolves
+    nothing and simply clears."""
+    from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube.consent_demand import (
+        record_consent_demand,
+    )
+
+    props = _install_fake_user_props(monkeypatch)
+    stub = _conversation_stub()
+    record_consent_demand(
+        user_id="u1", bundle_id="workspace@test", conversation_id="conv-1",
+        provider_id="slack", connector_app_id="demo",
+        claims=["slack:post"], tool_name="slack.post_slack_message",
+    )
     seen = _patch_preflight(monkeypatch, {"ok": True, "checked": 1})
 
     cfg = narrow_agent_tool_config(_tool_cfg(), {"tools": {"slack": True}})
     assert all(not p.tool_name.startswith("slack") for p in cfg.tool_claim_policies)
 
     await BaseWorkflow.apply_delegated_tool_claims(stub, cfg)
-    assert len(seen) == 1
-    assert [p.tool_name for p in seen[0]] == ["gmail.search_gmail"]
+    # The demanded tool left the configured set (user turned it off): nothing
+    # to resolve, no announce, and the pending record clears — no recurrence.
+    assert seen == []
+    assert stub.runtime_ctx.reactivated_tools == []
+    assert not props, "the pending demand cleared with the tool deselected"
 
 
 def test_notice_message_names_provider_and_tools():
@@ -306,38 +329,41 @@ def _conversation_stub():
 
 
 @pytest.mark.asyncio
-async def test_claims_satisfied_mid_conversation_announces_the_transition(monkeypatch):
-    """Surfaced live (log-verified): a blocked turn, the user connects the
-    account, the next turn's preflight passes — the context must carry the
-    active-now signal and keep the stale blocked note out."""
+async def test_consent_satisfied_mid_conversation_announces_the_transition(monkeypatch):
+    """Surfaced live (log-verified): an attempt raised a consent demand, the
+    user connected the account, and the next turn must carry the active-now
+    signal — checking only the demanded tools — with no stale blocked note."""
+    from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube.consent_demand import (
+        record_consent_demand,
+    )
+
     props = _install_fake_user_props(monkeypatch)
     stub = _conversation_stub()
 
-    # Turn 1: slack blocked -> tools dropped, blocked snapshot recorded.
-    _patch_preflight(monkeypatch, {
-        "ok": False,
-        "error": {"code": "needs_connected_account_consent", "message": "…"},
-        "missing": _missing_slack(),
-    })
-    await BaseWorkflow.apply_delegated_tool_claims(stub, _tool_cfg())
-    assert stub.runtime_ctx.inactive_tools[0]["provider_id"] == "slack"
-    assert stub.runtime_ctx.reactivated_tools == []
-    assert props, "the blocked snapshot persists for the conversation"
+    # A tool ATTEMPT recorded the demand (demand-driven; no turn-start block).
+    assert record_consent_demand(
+        user_id="u1", bundle_id="workspace@test", conversation_id="conv-1",
+        provider_id="slack", provider_label="Slack", connector_app_id="demo",
+        claims=["slack:search"], tool_name="slack.search_slack",
+    ) is True
+    assert props, "the pending demand persists for the conversation"
 
-    # Turn 2: the user connected slack; preflight passes.
-    _patch_preflight(monkeypatch, {"ok": True, "checked": 3})
+    # Next turn: the user connected slack; the targeted check passes.
+    calls = _patch_preflight(monkeypatch, {"ok": True, "checked": 1})
     cfg = _tool_cfg()
     out = await BaseWorkflow.apply_delegated_tool_claims(stub, cfg)
     assert out is cfg
+    # Demand-scoped: ONLY the attempted tool's policy was resolved.
+    assert [p.tool_name for p in calls[0]] == ["slack.search_slack"]
     # No stale blocked note…
     assert stub.runtime_ctx.inactive_tools == []
     # …and the transition is published for the ANNOUNCE composer.
     reactivated = stub.runtime_ctx.reactivated_tools
     assert reactivated and reactivated[0]["provider_id"] == "slack"
-    assert set(reactivated[0]["tools"]) == {"slack.search_slack", "slack.post_slack_message"}
+    assert reactivated[0]["tools"] == ["slack.search_slack"]
 
-    # Turn 3: steady state — the transition announces once, then stays quiet.
-    _patch_preflight(monkeypatch, {"ok": True, "checked": 3})
+    # Steady state — the transition announces once, then stays quiet.
+    _patch_preflight(monkeypatch, {"ok": True, "checked": 1})
     await BaseWorkflow.apply_delegated_tool_claims(stub, _tool_cfg())
     assert stub.runtime_ctx.reactivated_tools == []
     assert stub.runtime_ctx.inactive_tools == []

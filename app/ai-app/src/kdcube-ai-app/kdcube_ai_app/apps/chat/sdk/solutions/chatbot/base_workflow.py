@@ -547,14 +547,11 @@ def _norm_topic(s: str) -> str:
 # ---------- Orchestrator ----------
 
 
-# ── delegated-claims transition tracking (module-level; test-stub friendly) ──
-# One small user-prop per user+bundle remembering which providers/tools the
-# LAST turn of a conversation blocked on unmet claims — the delta against the
-# current preflight is the "account connected mid-conversation" signal the
-# ANNOUNCE must surface (the model otherwise keeps trusting its own earlier
-# prose about unavailable tools). Single key, last conversation only:
-# transition detection matters within one conversation.
-_DELEGATED_BLOCKED_SNAPSHOT_KEY = "delegated_to_kdcube.blocked_snapshot"
+# ── demand-driven consent transition tracking (module-level; test-stub
+# friendly). The bookkeeping itself lives in
+# ``delegated_to_kdcube/consent_demand.py``: tool ATTEMPTS record pending
+# consent demands there; these adapters read/write the record with the
+# runtime_ctx scope so the turn-start hook can announce satisfied demands.
 
 
 def _delegated_snapshot_scope(runtime_ctx: Any) -> tuple:
@@ -567,65 +564,39 @@ def _delegated_snapshot_scope(runtime_ctx: Any) -> tuple:
 
 def _read_delegated_blocked_snapshot(runtime_ctx: Any) -> list:
     user_id, bundle_id, conversation_id = _delegated_snapshot_scope(runtime_ctx)
-    if not user_id or not bundle_id or not conversation_id:
-        return []
     try:
-        from kdcube_ai_app.apps.chat.sdk import config as sdk_config
-
-        raw = sdk_config.get_user_prop(
-            _DELEGATED_BLOCKED_SNAPSHOT_KEY, user_id=user_id, bundle_id=bundle_id, default=None,
+        from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube.consent_demand import (
+            read_pending_consent,
         )
+
+        return read_pending_consent(user_id=user_id, bundle_id=bundle_id, conversation_id=conversation_id)
     except Exception:
         return []
-    if not isinstance(raw, dict) or str(raw.get("conversation_id") or "") != conversation_id:
-        return []
-    providers = raw.get("providers")
-    return [g for g in providers if isinstance(g, dict)] if isinstance(providers, list) else []
 
 
 def _write_delegated_blocked_snapshot(runtime_ctx: Any, providers: list) -> None:
     user_id, bundle_id, conversation_id = _delegated_snapshot_scope(runtime_ctx)
-    if not user_id or not bundle_id or not conversation_id:
-        return
     try:
-        from kdcube_ai_app.apps.chat.sdk import config as sdk_config
+        from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube.consent_demand import (
+            write_pending_consent,
+        )
 
-        if providers:
-            sdk_config.set_user_prop(
-                _DELEGATED_BLOCKED_SNAPSHOT_KEY,
-                {"conversation_id": conversation_id, "providers": providers},
-                user_id=user_id,
-                bundle_id=bundle_id,
-            )
-        else:
-            sdk_config.delete_user_prop(
-                _DELEGATED_BLOCKED_SNAPSHOT_KEY, user_id=user_id, bundle_id=bundle_id,
-            )
+        write_pending_consent(
+            user_id=user_id, bundle_id=bundle_id, conversation_id=conversation_id, providers=providers,
+        )
     except Exception:
         pass
 
 
 def _delegated_reactivated_groups(previous: list, current: list) -> list:
-    """Provider groups whose tools left the blocked set since last turn."""
-    blocked_now: dict = {}
-    for group in current or []:
-        if isinstance(group, dict):
-            key = str(group.get("provider_id") or "")
-            blocked_now.setdefault(key, set()).update(
-                str(t) for t in (group.get("tools") or []) if str(t or "").strip()
-            )
-    reactivated: list = []
-    for group in previous or []:
-        if not isinstance(group, dict):
-            continue
-        key = str(group.get("provider_id") or "")
-        freed = [
-            str(t) for t in (group.get("tools") or [])
-            if str(t or "").strip() and str(t) not in blocked_now.get(key, set())
-        ]
-        if freed:
-            reactivated.append({**group, "tools": freed})
-    return reactivated
+    try:
+        from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube.consent_demand import (
+            pending_consent_delta,
+        )
+
+        return pending_consent_delta(previous, current)
+    except Exception:
+        return []
 
 
 class BaseWorkflow():
@@ -1356,28 +1327,44 @@ class BaseWorkflow():
         return None
 
     async def apply_delegated_tool_claims(self, tool_config: Any) -> Any:
-        """Resolve connected-account claims and DROP the tools whose claims are
-        unmet — the turn always proceeds with everything else.
+        """Demand-driven consent: every configured tool STAYS in the turn's set.
 
-        A missing account narrows the turn's tool set exactly like a
-        user-disabled group (same pure narrower). The affected providers +
-        tools are named in a notice event (informative, with the Connection Hub
-        link) and published on ``runtime_ctx.inactive_tools``, which the ReAct
-        ANNOUNCE composer renders as ``[INACTIVE TOOLS THIS TURN]`` — the
-        per-turn attention zone. The static instructions stay byte-stable
-        across claim-status changes, preserving the cached system-prompt slice.
+        Which tools a turn needs only becomes clear as the agent works, so
+        consent raises at the ATTEMPT: a tool invocation with an unmet claim
+        returns the structured consent envelope to the agent and emits the
+        scoped chat consent event (see
+        ``integrations/connected_accounts.py``). This turn-start hook keeps
+        exactly one job — the transition note: when a consent demand recorded
+        by an earlier attempt in THIS conversation is satisfied now (the user
+        connected/approved the account), publish ``runtime_ctx.reactivated_tools``
+        so the ANNOUNCE states the current truth louder than the model's own
+        earlier prose. User-DISABLED tools stay dropped elsewhere
+        (``apply_user_agent_selection``) — that is selection, never consent.
         FAILS OPEN: any resolver error keeps the configured set.
 
-        Returns the (possibly narrowed) tool config.
+        Returns the tool config unchanged.
         """
         runtime_ctx = getattr(self, "runtime_ctx", None)
         # Turn-local: always reset so a reused workflow never carries a stale
-        # inactive-tools announce into the next turn.
+        # announce into the next turn.
         if runtime_ctx is not None:
             runtime_ctx.inactive_tools = []
             runtime_ctx.reactivated_tools = []
+        pending = _read_delegated_blocked_snapshot(runtime_ctx)
+        if not pending:
+            return tool_config
         policies = list(getattr(tool_config, "tool_claim_policies", []) or [])
-        if not policies:
+        pending_tool_names = {
+            str(t)
+            for group in pending
+            for t in (group.get("tools") or [])
+            if str(t or "").strip()
+        }
+        # Resolve ONLY the tools an attempt already asked consent for — the
+        # demand-scoped check, never a sweep of the whole configured set.
+        pending_policies = [p for p in policies if getattr(p, "tool_name", "") in pending_tool_names]
+        if not pending_policies:
+            _write_delegated_blocked_snapshot(runtime_ctx, [])
             return tool_config
         tenant = str(getattr(runtime_ctx, "tenant", "") or "").strip()
         project = str(getattr(runtime_ctx, "project", "") or "").strip()
@@ -1386,93 +1373,25 @@ class BaseWorkflow():
             from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube import (
                 preflight_tool_claim_policies,
                 unavailable_tools_by_provider,
-                unavailable_tools_message,
-            )
-            from kdcube_ai_app.apps.chat.sdk.runtime.agent_inventory import (
-                narrow_agent_tool_config,
             )
 
             result = await preflight_tool_claim_policies(
                 entrypoint=self,
                 user_id=user_id,
-                policies=policies,
+                policies=pending_policies,
                 tenant=tenant,
                 project=project,
             )
         except Exception:
             self.logger.log(traceback.format_exc(), level="ERROR")
             return tool_config
-        if result.get("ok") is not False:
-            # Everything resolves now. If the PREVIOUS turn of this
-            # conversation blocked tools on unmet claims, the user connected
-            # or approved the account mid-chat — announce the transition so
-            # the model reads current truth louder than its own earlier prose.
-            previously_blocked = _read_delegated_blocked_snapshot(runtime_ctx)
-            if previously_blocked:
-                reactivated = _delegated_reactivated_groups(previously_blocked, [])
-                if runtime_ctx is not None and reactivated:
-                    runtime_ctx.reactivated_tools = reactivated
-                _write_delegated_blocked_snapshot(runtime_ctx, [])
-            return tool_config
-
         missing = result.get("missing") if isinstance(result.get("missing"), list) else []
-        # Deny exactly the claim-bearing tools that failed: `alias.name` denies
-        # one tool, a bare alias (connection-level policy) denies the group.
-        denied_tools: Dict[str, Any] = {}
-        for tool_result in missing:
-            tool_name = str((tool_result or {}).get("tool_name") or "").strip()
-            if not tool_name:
-                continue
-            if "." in tool_name:
-                alias, name = tool_name.split(".", 1)
-                current = denied_tools.get(alias)
-                if current is True:
-                    continue
-                names = list(current) if isinstance(current, list) else []
-                if name not in names:
-                    names.append(name)
-                denied_tools[alias] = names
-            else:
-                denied_tools[tool_name] = True
-        try:
-            narrowed = narrow_agent_tool_config(tool_config, {"tools": denied_tools}) if denied_tools else tool_config
-        except Exception:
-            self.logger.log(traceback.format_exc(), level="ERROR")
-            return tool_config
-
-        providers = unavailable_tools_by_provider(missing)
-        message = unavailable_tools_message(missing)
-        previously_blocked = _read_delegated_blocked_snapshot(runtime_ctx)
-        reactivated = _delegated_reactivated_groups(previously_blocked, providers)
-        _write_delegated_blocked_snapshot(runtime_ctx, providers)
-        if runtime_ctx is not None:
-            runtime_ctx.inactive_tools = providers
-            if reactivated:
-                runtime_ctx.reactivated_tools = reactivated
-        try:
-            await self._emit(
-                {
-                    "type": "chat.step",
-                    "agent": "connection-hub",
-                    "step": "delegated_to_kdcube.claims",
-                    "status": "completed",
-                    "title": "Some tools are inactive",
-                    "data": {**result, "blocking": False, "providers": providers},
-                }
-            )
-        except Exception:
-            pass
-        try:
-            self.logger.log(
-                "[delegated_claims.applied] " + json.dumps(
-                    {"denied_tools": denied_tools, "message": message},
-                    ensure_ascii=False, sort_keys=True,
-                ),
-                level="INFO",
-            )
-        except Exception:
-            pass
-        return narrowed
+        still_pending = unavailable_tools_by_provider(missing) if missing else []
+        reactivated = _delegated_reactivated_groups(pending, still_pending)
+        _write_delegated_blocked_snapshot(runtime_ctx, still_pending)
+        if runtime_ctx is not None and reactivated:
+            runtime_ctx.reactivated_tools = reactivated
+        return tool_config
 
     async def _emit_compaction_event(self, *, status: str, payload: Dict[str, Any] | None = None) -> None:
         payload_dict = _to_jsonable(dict(payload or {}))

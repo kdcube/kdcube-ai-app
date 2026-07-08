@@ -58,8 +58,10 @@ turn arrives (BaseWorkflow.__init__ built runtime_ctx: tenant/project/user_id/
   │      → the user's saved deny-list narrows both configs; the user's model
   │        pick lands on runtime_ctx.agent_role_models  (fail-open, per turn)
   ├─ 4. apply_delegated_tool_claims(tool_config)
-  │      → tools whose connected-account claims are unmet DROP for this turn;
-  │        the facts flow to ANNOUNCE via runtime_ctx.inactive_tools
+  │      → demand-driven consent: every claim-gated tool STAYS available; a
+  │        tool attempt with unmet claims raises the ask (structured consent
+  │        result + scoped chat banner). This hook announces satisfied
+  │        demands via runtime_ctx.reactivated_tools
   ├─ 5. compose additional_instructions
   │      (config additional_instructions + memory teaching + named-service
   │       roster — the durable, cacheable teaching text)
@@ -176,11 +178,13 @@ first turn. Section semantics and examples are owned by
 [ReAct Announce](../react-announce-README.md); the caching mechanics by
 [Context Caching](../context-caching-README.md).
 
-A worked example of the rule: when a tool's connected-account claims are unmet,
-`apply_delegated_tool_claims` drops the tool for the turn and publishes the
-provider/tool facts on `runtime_ctx.inactive_tools` — rendered as
-`[INACTIVE TOOLS THIS TURN]` in ANNOUNCE. The instruction text stays
-byte-identical whether or not the account is connected.
+A worked example of the rule: connected-account consent is demand-driven —
+a tool invocation with unmet claims returns the structured consent envelope
+to the agent (and raises the scoped chat banner); when the user approves
+mid-conversation, `apply_delegated_tool_claims` publishes the transition on
+`runtime_ctx.reactivated_tools` — rendered as `[CONNECTED ACCOUNTS UPDATE]`
+in ANNOUNCE. The instruction text stays byte-identical whether or not the
+account is connected.
 
 ## 4. The per-user selection layer
 

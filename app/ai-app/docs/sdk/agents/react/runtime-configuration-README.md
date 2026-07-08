@@ -174,7 +174,8 @@ When enabled, snapshots are written under `REACT_DEBUG_ROOT`, normally
 - `debug_timeline_keep_files`: rolling retention for `rendered-*.txt` files. The platform default is `100`.
 - `render_thinking`: when `true`, render live `react.thinking` blocks as `[thinking]` timeline sections. When `false`, hide those blocks from the rendered model context.
 - `agent_role_models`: the agent react block's role→model mapping; the runtime binds it into the invocation role_models overlay (a validated per-user model pick is applied on top per turn).
-- `inactive_tools`: turn-local provider groups for tools dropped this turn; rendered as the ANNOUNCE `[INACTIVE TOOLS THIS TURN]` section.
+- `inactive_tools`: turn-local provider groups for tools genuinely absent this turn; rendered as the ANNOUNCE `[INACTIVE TOOLS THIS TURN]` section.
+- `reactivated_tools`: turn-local provider groups whose consent demand was satisfied since the previous turn (the user connected/approved the account); rendered as the ANNOUNCE `[CONNECTED ACCOUNTS UPDATE]` section.
 - `cold_turn_marker`: turn-local record set when a selection change applied on a warm conversation; rendered as the ANNOUNCE `[CACHE]` line and joined to the decision call's accounting metadata (`cache_cold_turn`).
 - `session`: session-level configuration (see below).
 - `cache`: cache-related limits (see below).
