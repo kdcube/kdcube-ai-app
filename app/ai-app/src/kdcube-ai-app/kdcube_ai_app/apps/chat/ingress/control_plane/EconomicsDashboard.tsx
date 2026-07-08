@@ -1211,17 +1211,17 @@ class EconomicsAPI {
 // =============================================================================
 
 const Card: React.FC<{ children: React.ReactNode; className?: string }> = ({ children, className = '' }) => (
-    <div className={`rounded-xl border border-gray-200/70 bg-white shadow-sm ${className}`}>
+    <div className={`rounded-xl border border-[#E6F1F0] bg-white shadow-[0_1px_2px_rgba(13,30,44,0.04)] ${className}`}>
         {children}
     </div>
 );
 
 const CardHeader: React.FC<{ title: string; subtitle?: string; action?: React.ReactNode }> = ({ title, subtitle, action }) => (
-    <div className="border-b border-gray-200/70 px-4 py-3">
+    <div className="border-b border-[#E6F1F0] px-4 py-3">
         <div className="flex items-start justify-between gap-4">
             <div>
-                <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
-                {subtitle && <p className="mt-1 text-sm leading-relaxed text-gray-600">{subtitle}</p>}
+                <h2 className="text-lg font-semibold text-[#0D1E2C]">{title}</h2>
+                {subtitle && <p className="mt-1 text-sm leading-relaxed text-[#3A5672]">{subtitle}</p>}
             </div>
             {action && <div className="pt-1">{action}</div>}
         </div>
@@ -1240,10 +1240,10 @@ const Callout: React.FC<{
     children: React.ReactNode;
 }> = ({ tone = 'neutral', title, children }) => {
     const tones = {
-        neutral: 'bg-gray-50 border-gray-200 text-gray-700',
-        info: 'bg-blue-50 border-blue-200 text-blue-900',
-        warning: 'bg-amber-50 border-amber-200 text-amber-900',
-        success: 'bg-emerald-50 border-emerald-200 text-emerald-900',
+        neutral: 'bg-[#F6FAFA] border-[#E6F1F0] text-[#3A5672]',
+        info: 'bg-[rgba(67,114,195,0.08)] border-[rgba(67,114,195,0.35)] text-[#2B4B8A]',
+        warning: 'bg-[rgba(245,158,11,0.1)] border-[rgba(245,158,11,0.4)] text-[#B45309]',
+        success: 'bg-[rgba(34,197,94,0.08)] border-[rgba(34,197,94,0.35)] text-[#15803D]',
     };
     return (
         <div className={`rounded-xl border p-3 ${tones[tone]}`}>
@@ -1262,9 +1262,9 @@ const Button: React.FC<{
     className?: string;
 }> = ({ children, onClick, type = 'button', variant = 'primary', disabled = false, className = '' }) => {
     const variants = {
-        primary: 'bg-gray-900 hover:bg-gray-800 text-white',
-        secondary: 'bg-white hover:bg-gray-50 text-gray-900 border border-gray-200/80',
-        danger: 'bg-rose-600 hover:bg-rose-700 text-white',
+        primary: 'bg-[#4372C3] hover:bg-[#2B4B8A] text-white',
+        secondary: 'bg-white hover:bg-[#F6FAFA] text-[#3A5672] border border-[#D8ECEB]',
+        danger: 'bg-white hover:bg-[rgba(248,113,113,0.08)] text-[#B91C1C] border border-[#D8ECEB]',
     };
 
     return (
@@ -1293,7 +1293,7 @@ const Input: React.FC<{
     className?: string;
 }> = ({ label, value, onChange, type = 'text', placeholder, required, min, max, step, list, className = '' }) => (
     <div className={className}>
-        {label && <label className="mb-1.5 block text-sm font-medium text-gray-800">{label}</label>}
+        {label && <label className="mb-1.5 block text-sm font-medium text-[#0D1E2C]">{label}</label>}
         <input
             type={type}
             value={value}
@@ -1304,9 +1304,9 @@ const Input: React.FC<{
             max={max}
             step={step}
             list={list}
-            className="w-full rounded-lg border border-gray-200/80 bg-white px-3 py-2
-                 focus:ring-2 focus:ring-gray-900/10 focus:border-gray-300 transition-colors
-                 placeholder:text-gray-400"
+            className="w-full rounded-md border border-[#D8ECEB] bg-white px-3 py-2
+                 focus:ring-2 focus:ring-[#01BEB2]/30 focus:border-[#01BEB2] transition-colors
+                 placeholder:text-[#7A99B0]"
         />
     </div>
 );
@@ -1320,12 +1320,12 @@ const Select: React.FC<{
     className?: string;
 }> = ({ label, value, onChange, options, children, className = '' }) => (
     <div className={className}>
-        {label && <label className="mb-1.5 block text-sm font-medium text-gray-800">{label}</label>}
+        {label && <label className="mb-1.5 block text-sm font-medium text-[#0D1E2C]">{label}</label>}
         <select
             value={value}
             onChange={onChange}
-            className="w-full rounded-lg border border-gray-200/80 bg-white px-3 py-2
-                 focus:ring-2 focus:ring-gray-900/10 focus:border-gray-300 transition-colors"
+            className="w-full rounded-md border border-[#D8ECEB] bg-white px-3 py-2
+                 focus:ring-2 focus:ring-[#01BEB2]/30 focus:border-[#01BEB2] transition-colors"
         >
             {options ? options.map(o => <option key={o.value} value={o.value}>{o.label}</option>) : children}
         </select>
@@ -1341,15 +1341,15 @@ const TextArea: React.FC<{
     className?: string;
 }> = ({ label, value, onChange, placeholder, rows = 3, className = '' }) => (
     <div className={className}>
-        {label && <label className="mb-1.5 block text-sm font-medium text-gray-800">{label}</label>}
+        {label && <label className="mb-1.5 block text-sm font-medium text-[#0D1E2C]">{label}</label>}
         <textarea
             value={value}
             onChange={onChange}
             placeholder={placeholder}
             rows={rows}
-            className="w-full rounded-lg border border-gray-200/80 bg-white px-3 py-2
-                 focus:ring-2 focus:ring-gray-900/10 focus:border-gray-300 transition-colors
-                 placeholder:text-gray-400"
+            className="w-full rounded-md border border-[#D8ECEB] bg-white px-3 py-2
+                 focus:ring-2 focus:ring-[#01BEB2]/30 focus:border-[#01BEB2] transition-colors
+                 placeholder:text-[#7A99B0]"
         />
     </div>
 );
@@ -1359,23 +1359,23 @@ const StatCard: React.FC<{
     value: string | number;
     hint?: string;
 }> = ({ label, value, hint }) => (
-    <div className="rounded-xl border border-gray-200/70 bg-white px-4 py-3 shadow-sm">
-        <p className="text-xs font-semibold text-gray-500 tracking-wide uppercase">{label}</p>
-        <p className="mt-1 text-xl font-semibold text-gray-900">{value}</p>
-        {hint && <p className="mt-1 text-xs text-gray-600">{hint}</p>}
+    <div className="rounded-xl border border-[#E6F1F0] bg-white px-4 py-3 shadow-[0_1px_2px_rgba(13,30,44,0.04)]">
+        <p className="text-[10.5px] font-bold tracking-[0.1em] uppercase text-[#7A99B0]">{label}</p>
+        <p className="mt-1 text-xl font-semibold text-[#0D1E2C]">{value}</p>
+        {hint && <p className="mt-1 text-xs text-[#3A5672]">{hint}</p>}
     </div>
 );
 
 const LoadingSpinner: React.FC = () => (
     <div className="flex items-center justify-center py-8">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-gray-200 border-t-gray-900"></div>
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-[#E6F1F0] border-t-[#01BEB2]"></div>
     </div>
 );
 
 const EmptyState: React.FC<{ message: string; icon?: string }> = ({ message, icon = '📭' }) => (
     <div className="py-8 text-center">
         <div className="mb-3 text-4xl">{icon}</div>
-        <p className="text-gray-600">{message}</p>
+        <p className="text-[#3A5672]">{message}</p>
     </div>
 );
 
@@ -1449,13 +1449,13 @@ const Pill: React.FC<{ tone?: 'neutral' | 'success' | 'warning' | 'danger'; chil
                                                                                                                 children,
                                                                                                             }) => {
     const tones = {
-        neutral: 'bg-gray-100 text-gray-700 border-gray-200',
-        success: 'bg-emerald-50 text-emerald-800 border-emerald-200',
-        warning: 'bg-amber-50 text-amber-900 border-amber-200',
-        danger: 'bg-rose-50 text-rose-800 border-rose-200',
+        neutral: 'bg-[#F6FAFA] text-[#3A5672] border-[#E6F1F0]',
+        success: 'bg-[rgba(34,197,94,0.08)] text-[#15803D] border-[rgba(34,197,94,0.35)]',
+        warning: 'bg-[rgba(245,158,11,0.1)] text-[#B45309] border-[rgba(245,158,11,0.4)]',
+        danger: 'bg-[rgba(248,113,113,0.1)] text-[#B91C1C] border-[rgba(248,113,113,0.4)]',
     };
     return (
-        <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${tones[tone]}`}>
+        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide border ${tones[tone]}`}>
       {children}
     </span>
     );
@@ -1494,18 +1494,18 @@ const CompactUsageRow: React.FC<{
 }> = ({ label, used, limit, remaining, usedUsd, limitUsd, remainingUsd }) => {
     const hasUsd = usedUsd != null || limitUsd != null || remainingUsd != null;
     return (
-    <div className="rounded-lg border border-gray-200/70 bg-white px-3 py-2 text-sm">
+    <div className="rounded-lg border border-[#E6F1F0] bg-white px-3 py-2 text-sm">
         <div className="flex items-center justify-between gap-3">
-            <span className="text-gray-600">{label}</span>
-            <span className="font-semibold text-gray-900">
+            <span className="text-[#3A5672]">{label}</span>
+            <span className="font-semibold text-[#0D1E2C]">
                 {hasUsd ? `$${Number(usedUsd || 0).toFixed(2)} / ${formatUsdLimit(limitUsd)}` : `${formatCount(used)} / ${formatCount(limit)}`}
             </span>
         </div>
-        <div className="mt-1 text-xs text-gray-500">
+        <div className="mt-1 text-xs text-[#7A99B0]">
             Remaining: {hasUsd ? formatUsdLimit(remainingUsd) : formatCount(remaining)}
         </div>
         {hasUsd && (
-            <div className="mt-1 text-xs text-gray-400">
+            <div className="mt-1 text-xs text-[#7A99B0]">
                 Tokens: {formatCount(used)} / {formatCount(limit)} · remaining {formatCount(remaining)}
             </div>
         )}
@@ -1523,14 +1523,14 @@ const PolicyMetricList: React.FC<{
         usd_per_month?: number | null;
     };
 }> = ({ policy }) => (
-    <div className="space-y-1 text-xs text-gray-600">
-        <div>req/day: <span className="font-semibold text-gray-900">{formatCount(policy.requests_per_day)}</span></div>
-        <div>req/month: <span className="font-semibold text-gray-900">{formatCount(policy.requests_per_month)}</span></div>
-        <div>tok/hour: <span className="font-semibold text-gray-900">{formatCount(policy.tokens_per_hour)}</span></div>
-        <div>tok/day: <span className="font-semibold text-gray-900">{formatCount(policy.tokens_per_day)}</span></div>
-        <div>tok/month: <span className="font-semibold text-gray-900">{formatCount(policy.tokens_per_month)}</span></div>
+    <div className="space-y-1 text-xs text-[#3A5672]">
+        <div>req/day: <span className="font-semibold text-[#0D1E2C]">{formatCount(policy.requests_per_day)}</span></div>
+        <div>req/month: <span className="font-semibold text-[#0D1E2C]">{formatCount(policy.requests_per_month)}</span></div>
+        <div>tok/hour: <span className="font-semibold text-[#0D1E2C]">{formatCount(policy.tokens_per_hour)}</span></div>
+        <div>tok/day: <span className="font-semibold text-[#0D1E2C]">{formatCount(policy.tokens_per_day)}</span></div>
+        <div>tok/month: <span className="font-semibold text-[#0D1E2C]">{formatCount(policy.tokens_per_month)}</span></div>
         {policy.usd_per_month != null && (
-            <div>month value: <span className="font-semibold text-gray-900">${Number(policy.usd_per_month).toFixed(2)}</span></div>
+            <div>month value: <span className="font-semibold text-[#0D1E2C]">${Number(policy.usd_per_month).toFixed(2)}</span></div>
         )}
     </div>
 );
@@ -1540,7 +1540,7 @@ const Tabs: React.FC<{
     onChange: (id: string) => void;
     items: { id: string; label: string }[];
 }> = ({ active, onChange, items }) => (
-    <div className="flex flex-wrap gap-2">
+    <div className="flex flex-wrap gap-1 border-b border-[#E6F1F0]">
         {items.map((t) => {
             const isActive = active === t.id;
             return (
@@ -1548,10 +1548,10 @@ const Tabs: React.FC<{
                     key={t.id}
                     onClick={() => onChange(t.id)}
                     className={[
-                        "rounded-lg border px-3 py-2 text-sm font-semibold transition-colors",
+                        "-mb-px rounded-t-md border-b-2 px-3 py-2 text-sm font-semibold transition-colors",
                         isActive
-                            ? "bg-gray-900 text-white border-gray-900"
-                            : "bg-white text-gray-700 border-gray-200/80 hover:bg-gray-50",
+                            ? "border-[#01BEB2] text-[#0D1E2C]"
+                            : "border-transparent text-[#3A5672] hover:bg-[#F6FAFA] hover:text-[#0D1E2C]",
                     ].join(' ')}
                 >
                     {t.label}
@@ -1563,14 +1563,12 @@ const Tabs: React.FC<{
 
 const DividerTitle: React.FC<{ title: string; subtitle?: string }> = ({ title, subtitle }) => (
     <div className="text-center">
-        <h1 className="text-2xl font-semibold tracking-tight text-gray-900 md:text-3xl">
+        <div className="text-[11px] font-bold tracking-[0.14em] uppercase text-[#009C92]">CONTROL PLANE</div>
+        <h1 className="mt-1 text-[21px] font-bold text-[#0D1E2C]">
             {title}
         </h1>
-        <div className="mt-2 flex justify-center">
-            <div className="h-0.5 w-16 rounded-full bg-gray-900 opacity-80"></div>
-        </div>
         {subtitle && (
-            <p className="mt-2 text-sm leading-relaxed text-gray-600">
+            <p className="mt-2 text-sm leading-relaxed text-[#3A5672]">
                 {subtitle}
             </p>
         )}
@@ -1582,28 +1580,28 @@ const DividerTitle: React.FC<{ title: string; subtitle?: string }> = ({ title, s
 // =============================================================================
 
 const Details: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
-    <details className="rounded-xl border border-gray-200 bg-white p-4">
-        <summary className="cursor-pointer text-sm font-semibold text-gray-900">{title}</summary>
-        <div className="mt-3 text-sm text-gray-700 leading-relaxed space-y-2">{children}</div>
+    <details className="rounded-xl border border-[#E6F1F0] bg-white p-4">
+        <summary className="cursor-pointer text-sm font-semibold text-[#0D1E2C]">{title}</summary>
+        <div className="mt-3 text-sm text-[#3A5672] leading-relaxed space-y-2">{children}</div>
     </details>
 );
 
 const EconomicsOverview: React.FC<{ goTo?: (tabId: string) => void }> = ({ goTo }) => (
-    <details className="rounded-xl border border-gray-200 bg-gray-50 p-3">
-        <summary className="cursor-pointer text-sm font-semibold text-gray-900">
+    <details className="rounded-xl border border-[#E6F1F0] bg-white p-3 shadow-[0_1px_2px_rgba(13,30,44,0.04)]">
+        <summary className="cursor-pointer text-sm font-semibold text-[#0D1E2C]">
             Funding rules and admin levers
         </summary>
         <div className="mt-3 space-y-3">
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                <div className="rounded-lg border border-gray-200 bg-white p-3 text-sm text-gray-700">
-                    <div className="font-semibold text-gray-900">Plan quota</div>
+                <div className="rounded-lg border border-[#E6F1F0] bg-white p-3 text-sm text-[#3A5672]">
+                    <div className="font-semibold text-[#0D1E2C]">Plan quota</div>
                     <div className="mt-1">
                         The effective plan is the base plan, replaced by an active user override when one exists.
                         Plan quota is consumed first and is funded from the project budget.
                     </div>
                 </div>
-                <div className="rounded-lg border border-gray-200 bg-white p-3 text-sm text-gray-700">
-                    <div className="font-semibold text-gray-900">Wallet / personal credits</div>
+                <div className="rounded-lg border border-[#E6F1F0] bg-white p-3 text-sm text-[#3A5672]">
+                    <div className="font-semibold text-[#0D1E2C]">Wallet / personal credits</div>
                     <div className="mt-1">
                         Personal credits cover the part that cannot be funded by remaining quota or available project budget.
                     </div>
@@ -2064,7 +2062,7 @@ const EconomicsAdmin: React.FC = () => {
     };
 
     const handleDeleteReservation = async (floor: string) => {
-        if (!window.confirm(`Remove the "${floor}" reservation floor? The surface will inherit the platform/bundle default.`)) {
+        if (!window.confirm(`Remove the "${floor}" reservation floor? The surface will inherit the platform/app default.`)) {
             return;
         }
         clearMessages();
@@ -2567,11 +2565,11 @@ const EconomicsAdmin: React.FC = () => {
 
     if (configStatus === 'initializing') {
         return (
-            <div className="min-h-screen bg-white flex items-center justify-center p-8">
+            <div className="min-h-screen bg-[#EEF5F5] flex items-center justify-center p-8">
                 <Card className="max-w-lg w-full">
                     <CardBody className="text-center">
                         <LoadingSpinner />
-                        <p className="mt-4 text-gray-600">Initializing Economics…</p>
+                        <p className="mt-4 text-[#3A5672]">Initializing Economics…</p>
                     </CardBody>
                 </Card>
             </div>
@@ -2592,7 +2590,7 @@ const EconomicsAdmin: React.FC = () => {
     ];
 
     return (
-        <div className="h-screen overflow-hidden bg-white">
+        <div className="h-screen overflow-hidden bg-[#EEF5F5]">
             <div className="mx-auto flex h-full max-w-6xl flex-col gap-3 overflow-hidden px-4 py-4">
                 {/* Header */}
                 <div className="shrink-0 space-y-3">
@@ -2664,13 +2662,13 @@ const EconomicsAdmin: React.FC = () => {
                                                 min={1}
                                             />
                                             {trialTokensHour && tokensToUsd(trialTokensHour) != null && (
-                                                <div className="text-xs text-gray-500 pt-1">
+                                                <div className="text-xs text-[#7A99B0] pt-1">
                                                     ≈ ${Number(tokensToUsd(trialTokensHour)).toFixed(2)}
                                                 </div>
                                             )}
                                         </div>
                                     </div>
-                                    <div className="text-xs text-gray-500">
+                                    <div className="text-xs text-[#7A99B0]">
                                         USD overrides tokens for the same window.
                                     </div>
 
@@ -2684,7 +2682,7 @@ const EconomicsAdmin: React.FC = () => {
                                                 min={1}
                                             />
                                             {trialTokensDay && tokensToUsd(trialTokensDay) != null && (
-                                                <div className="text-xs text-gray-500 pt-1">
+                                                <div className="text-xs text-[#7A99B0] pt-1">
                                                     ≈ ${Number(tokensToUsd(trialTokensDay)).toFixed(2)}
                                                 </div>
                                             )}
@@ -2698,7 +2696,7 @@ const EconomicsAdmin: React.FC = () => {
                                                 min={1}
                                             />
                                             {trialTokensMonth && tokensToUsd(trialTokensMonth) != null && (
-                                                <div className="text-xs text-gray-500 pt-1">
+                                                <div className="text-xs text-[#7A99B0] pt-1">
                                                     ≈ ${Number(tokensToUsd(trialTokensMonth)).toFixed(2)}
                                                 </div>
                                             )}
@@ -2713,7 +2711,7 @@ const EconomicsAdmin: React.FC = () => {
                                                 step="0.01"
                                             />
                                             {trialUsdHour && usdToTokens(trialUsdHour) != null && (
-                                                <div className="text-xs text-gray-500 pt-1">
+                                                <div className="text-xs text-[#7A99B0] pt-1">
                                                     ≈ {Number(usdToTokens(trialUsdHour)).toLocaleString()} tokens
                                                 </div>
                                             )}
@@ -2731,7 +2729,7 @@ const EconomicsAdmin: React.FC = () => {
                                                 step="0.01"
                                             />
                                             {trialUsdDay && usdToTokens(trialUsdDay) != null && (
-                                                <div className="text-xs text-gray-500 pt-1">
+                                                <div className="text-xs text-[#7A99B0] pt-1">
                                                     ≈ {Number(usdToTokens(trialUsdDay)).toLocaleString()} tokens
                                                 </div>
                                             )}
@@ -2746,12 +2744,12 @@ const EconomicsAdmin: React.FC = () => {
                                                 step="0.01"
                                             />
                                             {trialUsdMonth && usdToTokens(trialUsdMonth) != null && (
-                                                <div className="text-xs text-gray-500 pt-1">
+                                                <div className="text-xs text-[#7A99B0] pt-1">
                                                     ≈ {Number(usdToTokens(trialUsdMonth)).toLocaleString()} tokens
                                                 </div>
                                             )}
                                         </div>
-                                        <div className="text-xs text-gray-500 pt-6">
+                                        <div className="text-xs text-[#7A99B0] pt-6">
                                             USD overrides tokens for the same window.
                                         </div>
                                     </div>
@@ -2816,7 +2814,7 @@ const EconomicsAdmin: React.FC = () => {
                                                 placeholder="500000"
                                             />
                                             {updateTokensHour && tokensToUsd(updateTokensHour) != null && (
-                                                <div className="text-xs text-gray-500 pt-1">
+                                                <div className="text-xs text-[#7A99B0] pt-1">
                                                     ≈ ${Number(tokensToUsd(updateTokensHour)).toFixed(2)}
                                                 </div>
                                             )}
@@ -2830,7 +2828,7 @@ const EconomicsAdmin: React.FC = () => {
                                                 placeholder="10000000"
                                             />
                                             {updateTokensDay && tokensToUsd(updateTokensDay) != null && (
-                                                <div className="text-xs text-gray-500 pt-1">
+                                                <div className="text-xs text-[#7A99B0] pt-1">
                                                     ≈ ${Number(tokensToUsd(updateTokensDay)).toFixed(2)}
                                                 </div>
                                             )}
@@ -2844,7 +2842,7 @@ const EconomicsAdmin: React.FC = () => {
                                                 placeholder="300000000"
                                             />
                                             {updateTokensMonth && tokensToUsd(updateTokensMonth) != null && (
-                                                <div className="text-xs text-gray-500 pt-1">
+                                                <div className="text-xs text-[#7A99B0] pt-1">
                                                     ≈ ${Number(tokensToUsd(updateTokensMonth)).toFixed(2)}
                                                 </div>
                                             )}
@@ -2860,7 +2858,7 @@ const EconomicsAdmin: React.FC = () => {
                                                 step="0.01"
                                             />
                                             {updateUsdHour && usdToTokens(updateUsdHour) != null && (
-                                                <div className="text-xs text-gray-500 pt-1">
+                                                <div className="text-xs text-[#7A99B0] pt-1">
                                                     ≈ {Number(usdToTokens(updateUsdHour)).toLocaleString()} tokens
                                                 </div>
                                             )}
@@ -2876,7 +2874,7 @@ const EconomicsAdmin: React.FC = () => {
                                                 step="0.01"
                                             />
                                             {updateUsdDay && usdToTokens(updateUsdDay) != null && (
-                                                <div className="text-xs text-gray-500 pt-1">
+                                                <div className="text-xs text-[#7A99B0] pt-1">
                                                     ≈ {Number(usdToTokens(updateUsdDay)).toLocaleString()} tokens
                                                 </div>
                                             )}
@@ -2892,7 +2890,7 @@ const EconomicsAdmin: React.FC = () => {
                                                 step="0.01"
                                             />
                                             {updateUsdMonth && usdToTokens(updateUsdMonth) != null && (
-                                                <div className="text-xs text-gray-500 pt-1">
+                                                <div className="text-xs text-[#7A99B0] pt-1">
                                                     ≈ {Number(usdToTokens(updateUsdMonth)).toLocaleString()} tokens
                                                 </div>
                                             )}
@@ -2961,17 +2959,17 @@ const EconomicsAdmin: React.FC = () => {
                                                 <div>
                                                     <strong>Then:</strong> use wallet credits for any shortfall caused by quota or project budget limits.
                                                 </div>
-                                                <div className="text-gray-600">
+                                                <div className="text-[#3A5672]">
                                                     Concurrency and provider budgets are enforced separately.
                                                 </div>
                                             </div>
                                         </Callout>
-                                        <div className="border-t border-gray-200/70 pt-6">
+                                        <div className="border-t border-[#E6F1F0] pt-6">
                                             <div className="flex items-baseline justify-between flex-wrap gap-2">
-                                                <h3 className="text-2xl font-semibold text-gray-900">
+                                                <h3 className="font-mono text-lg font-semibold text-[#0D1E2C]">
                                                     {planBalance.user_id}
                                                 </h3>
-                                                <div className="text-sm text-gray-500">
+                                                <div className="text-sm text-[#7A99B0]">
                                                     {planBalance.message || ''}
                                                 </div>
                                             </div>
@@ -2981,11 +2979,11 @@ const EconomicsAdmin: React.FC = () => {
                                             ) : (
                                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-5">
                                                     {planBalance.has_plan_override && planBalance.plan_override && (
-                                                        <div className="rounded-2xl border border-gray-200/70 bg-gray-50 p-5">
+                                                        <div className="rounded-xl border border-[#E6F1F0] bg-[#F6FAFA] p-5">
                                                             <div className="flex items-center justify-between">
                                                                 <div>
-                                                                    <div className="text-sm font-semibold text-gray-900">Tier Override</div>
-                                                                    <div className="text-xs text-gray-600 mt-1">
+                                                                    <div className="text-sm font-semibold text-[#0D1E2C]">Tier Override</div>
+                                                                    <div className="text-xs text-[#3A5672] mt-1">
                                                                         Replaces base plan while active
                                                                     </div>
                                                                 </div>
@@ -2994,46 +2992,46 @@ const EconomicsAdmin: React.FC = () => {
 
                                                             <div className="mt-4 space-y-2 text-sm">
                                                                 <div className="flex justify-between gap-3">
-                                                                    <span className="text-gray-600">Requests / day</span>
-                                                                    <span className="font-semibold text-gray-900">{planBalance.plan_override.requests_per_day ?? '—'}</span>
+                                                                    <span className="text-[#3A5672]">Requests / day</span>
+                                                                    <span className="font-semibold text-[#0D1E2C]">{planBalance.plan_override.requests_per_day ?? '—'}</span>
                                                                 </div>
                                                                 <div className="flex justify-between gap-3">
-                                                                    <span className="text-gray-600">Tokens / hour</span>
-                                                                    <span className="font-semibold text-gray-900">
+                                                                    <span className="text-[#3A5672]">Tokens / hour</span>
+                                                                    <span className="font-semibold text-[#0D1E2C]">
                                                                         {planBalance.plan_override.tokens_per_hour?.toLocaleString() ?? '—'}
                                                                         {planBalance.plan_override.usd_per_hour != null ? ` ($${Number(planBalance.plan_override.usd_per_hour).toFixed(2)})` : ''}
                                                                     </span>
                                                                 </div>
                                                                 <div className="flex justify-between gap-3">
-                                                                    <span className="text-gray-600">Tokens / day</span>
-                                                                    <span className="font-semibold text-gray-900">
+                                                                    <span className="text-[#3A5672]">Tokens / day</span>
+                                                                    <span className="font-semibold text-[#0D1E2C]">
                                                                         {planBalance.plan_override.tokens_per_day?.toLocaleString() ?? '—'}
                                                                         {planBalance.plan_override.usd_per_day != null ? ` ($${Number(planBalance.plan_override.usd_per_day).toFixed(2)})` : ''}
                                                                     </span>
                                                                 </div>
                                                                 <div className="flex justify-between gap-3">
-                                                                    <span className="text-gray-600">Tokens / month</span>
-                                                                    <span className="font-semibold text-gray-900">
+                                                                    <span className="text-[#3A5672]">Tokens / month</span>
+                                                                    <span className="font-semibold text-[#0D1E2C]">
                                                                         {planBalance.plan_override.tokens_per_month?.toLocaleString() ?? '—'}
                                                                         {planBalance.plan_override.usd_per_month != null ? ` ($${Number(planBalance.plan_override.usd_per_month).toFixed(2)})` : ''}
                                                                     </span>
                                                                 </div>
                                                                 <div className="flex justify-between gap-3">
-                                                                    <span className="text-gray-600">Expires</span>
-                                                                    <span className="font-semibold text-gray-900">
+                                                                    <span className="text-[#3A5672]">Expires</span>
+                                                                    <span className="font-semibold text-[#0D1E2C]">
                                     {planBalance.plan_override.expires_at
                                         ? new Date(planBalance.plan_override.expires_at).toLocaleString()
                                         : 'Never'}
                                   </span>
                                                                 </div>
                                                                 {planBalance.plan_override.notes && (
-                                                                    <div className="pt-3 border-t border-gray-200/70 text-xs text-gray-600 italic">
+                                                                    <div className="pt-3 border-t border-[#E6F1F0] text-xs text-[#3A5672] italic">
                                                                         {planBalance.plan_override.notes}
                                                                     </div>
                                                                 )}
                                                                 {planBalance.plan_override.reference_model && (
-                                                                    <div className="pt-2 text-xs text-gray-500">
-                                                                        Reference: {planBalance.plan_override.reference_model}
+                                                                    <div className="pt-2 text-xs text-[#7A99B0]">
+                                                                        Reference: <span className="font-mono">{planBalance.plan_override.reference_model}</span>
                                                                     </div>
                                                                 )}
                                                             </div>
@@ -3041,11 +3039,11 @@ const EconomicsAdmin: React.FC = () => {
                                                     )}
 
                                                     {planBalance.has_lifetime_budget && planBalance.lifetime_budget && (
-                                                        <div className="rounded-2xl border border-gray-200/70 bg-gray-50 p-5">
+                                                        <div className="rounded-xl border border-[#E6F1F0] bg-[#F6FAFA] p-5">
                                                             <div className="flex items-center justify-between">
                                                                 <div>
-                                                                    <div className="text-sm font-semibold text-gray-900">Lifetime Credits</div>
-                                                                    <div className="text-xs text-gray-600 mt-1">
+                                                                    <div className="text-sm font-semibold text-[#0D1E2C]">Lifetime Credits</div>
+                                                                    <div className="text-xs text-[#3A5672] mt-1">
                                                                         Purchased tokens (do not reset)
                                                                     </div>
                                                                 </div>
@@ -3054,26 +3052,26 @@ const EconomicsAdmin: React.FC = () => {
 
                                                             <div className="mt-4 space-y-2 text-sm">
                                                                 <div className="flex justify-between gap-3">
-                                                                    <span className="text-gray-600">Purchased</span>
-                                                                    <span className="font-semibold text-gray-900">
+                                                                    <span className="text-[#3A5672]">Purchased</span>
+                                                                    <span className="font-semibold text-[#0D1E2C]">
                                     ${Number(planBalance.lifetime_budget.purchased_usd || 0).toFixed(2)}
                                   </span>
                                                                 </div>
                                                                 <div className="flex justify-between gap-3">
-                                                                    <span className="text-gray-600">Spent</span>
-                                                                    <span className="font-semibold text-gray-900">
+                                                                    <span className="text-[#3A5672]">Spent</span>
+                                                                    <span className="font-semibold text-[#0D1E2C]">
                                     ${Number(planBalance.lifetime_budget.spent_usd || 0).toFixed(2)}
                                   </span>
                                                                 </div>
                                                                 <div className="flex justify-between gap-3">
-                                                                    <span className="text-gray-600">Reserved (in-flight)</span>
-                                                                    <span className="font-semibold text-gray-900">
+                                                                    <span className="text-[#3A5672]">Reserved (in-flight)</span>
+                                                                    <span className="font-semibold text-[#0D1E2C]">
                                     ${Number(planBalance.lifetime_budget.reserved_usd || 0).toFixed(2)}
                                   </span>
                                                                 </div>
                                                                 <div className="flex justify-between gap-3">
-                                                                    <span className="text-gray-600">Available now</span>
-                                                                    <span className="font-semibold text-gray-900">
+                                                                    <span className="text-[#3A5672]">Available now</span>
+                                                                    <span className="font-semibold text-[#0D1E2C]">
                                     ${Number(planBalance.lifetime_budget.available_usd || 0).toFixed(2)}
                                   </span>
                                                                 </div>
@@ -3111,7 +3109,7 @@ const EconomicsAdmin: React.FC = () => {
                                             required
                                         />
                                         <Input
-                                            label="Bundle ID (optional)"
+                                            label="App ID (optional)"
                                             value={breakdownBundleId}
                                             onChange={(e) => setBreakdownBundleId(e.target.value)}
                                             placeholder="e.g. __project__ (global)"
@@ -3140,26 +3138,26 @@ const EconomicsAdmin: React.FC = () => {
                                             <StatCard label="Wallet available" value={quotaBreakdown.lifetime_credits ? `$${Number(quotaBreakdown.lifetime_credits.available_usd || 0).toFixed(2)}` : '$0.00'} hint={quotaBreakdown.lifetime_credits ? 'available' : 'no wallet record'} />
                                         </div>
 
-                                        <div className="rounded-xl border border-gray-200/70 bg-gray-50 p-4">
+                                        <div className="rounded-xl border border-[#E6F1F0] bg-[#F6FAFA] p-4">
                                             <div className="flex items-center justify-between gap-3">
                                                 <div>
-                                                    <div className="text-sm font-semibold text-gray-900">Plan limits</div>
-                                                    <div className="mt-1 text-xs text-gray-600">Base plan, active override, and enforced policy.</div>
+                                                    <div className="text-sm font-semibold text-[#0D1E2C]">Plan limits</div>
+                                                    <div className="mt-1 text-xs text-[#3A5672]">Base plan, active override, and enforced policy.</div>
                                                 </div>
                                                 {quotaBreakdown.reference_model && (
-                                                    <div className="text-right text-xs text-gray-500">Reference: {quotaBreakdown.reference_model}</div>
+                                                    <div className="text-right text-xs text-[#7A99B0]">Reference: <span className="font-mono">{quotaBreakdown.reference_model}</span></div>
                                                 )}
                                             </div>
 
                                             <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
-                                                <div className="rounded-lg border border-gray-200/70 bg-white p-3">
-                                                    <div className="mb-2 text-sm font-semibold text-gray-900">Base</div>
+                                                <div className="rounded-lg border border-[#E6F1F0] bg-white p-3">
+                                                    <div className="mb-2 text-sm font-semibold text-[#0D1E2C]">Base</div>
                                                     <PolicyMetricList policy={quotaBreakdown.base_policy} />
                                                 </div>
 
-                                                <div className="rounded-lg border border-gray-200/70 bg-white p-3">
+                                                <div className="rounded-lg border border-[#E6F1F0] bg-white p-3">
                                                     <div className="mb-2 flex items-center justify-between gap-2">
-                                                        <span className="text-sm font-semibold text-gray-900">Override</span>
+                                                        <span className="text-sm font-semibold text-[#0D1E2C]">Override</span>
                                                         {quotaBreakdown.plan_override ? (
                                                             quotaBreakdown.plan_override.active ? (
                                                                 <Pill tone="success">Active</Pill>
@@ -3175,25 +3173,25 @@ const EconomicsAdmin: React.FC = () => {
                                                     {quotaBreakdown.plan_override ? (
                                                         <>
                                                             <PolicyMetricList policy={quotaBreakdown.plan_override.limits} />
-                                                            <div className="mt-2 text-xs text-gray-500">
+                                                            <div className="mt-2 text-xs text-[#7A99B0]">
                                                                 Expires: {quotaBreakdown.plan_override.expires_at ? new Date(quotaBreakdown.plan_override.expires_at).toLocaleString() : '—'}
                                                             </div>
                                                         </>
                                                     ) : (
-                                                        <div className="text-xs text-gray-600">No user override is configured.</div>
+                                                        <div className="text-xs text-[#3A5672]">No user override is configured.</div>
                                                     )}
                                                 </div>
 
-                                                <div className="rounded-lg border border-gray-200/70 bg-white p-3">
-                                                    <div className="mb-2 text-sm font-semibold text-gray-900">Effective</div>
+                                                <div className="rounded-lg border border-[#E6F1F0] bg-white p-3">
+                                                    <div className="mb-2 text-sm font-semibold text-[#0D1E2C]">Effective</div>
                                                     <PolicyMetricList policy={quotaBreakdown.effective_policy} />
                                                 </div>
                                             </div>
                                         </div>
 
-                                        <div className="rounded-xl border border-gray-200/70 bg-gray-50 p-4">
-                                            <div className="text-sm font-semibold text-gray-900">Plan quota now</div>
-                                            <div className="mt-1 text-xs text-gray-600">Used / limit and remaining capacity for the effective plan.</div>
+                                        <div className="rounded-xl border border-[#E6F1F0] bg-[#F6FAFA] p-4">
+                                            <div className="text-sm font-semibold text-[#0D1E2C]">Plan quota now</div>
+                                            <div className="mt-1 text-xs text-[#3A5672]">Used / limit and remaining capacity for the effective plan.</div>
                                             <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
                                                 <CompactUsageRow
                                                     label="Tokens / hour"
@@ -3234,19 +3232,19 @@ const EconomicsAdmin: React.FC = () => {
                                                     limitUsd={quotaBreakdown.effective_policy.usd_per_month}
                                                     remainingUsd={quotaBreakdown.remaining.tokens_this_month_usd}
                                                 />
-                                                <div className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-sm">
+                                                <div className="rounded-lg border border-[rgba(245,158,11,0.4)] bg-[rgba(245,158,11,0.1)] px-3 py-2 text-sm">
                                                     <div className="flex items-center justify-between gap-3">
-                                                        <span className="text-amber-800">Plan reserved</span>
-                                                        <span className="font-semibold text-amber-950">{formatUsdLimit(quotaBreakdown.current_usage.tokens_reserved_usd)}</span>
+                                                        <span className="text-[#B45309]">Plan reserved</span>
+                                                        <span className="font-semibold text-[#B45309]">{formatUsdLimit(quotaBreakdown.current_usage.tokens_reserved_usd)}</span>
                                                     </div>
-                                                    <div className="mt-1 text-xs text-amber-800">
+                                                    <div className="mt-1 text-xs text-[#B45309]">
                                                         {formatCount(quotaBreakdown.current_usage.tokens_reserved || 0)} tokens held by in-flight requests
                                                     </div>
                                                 </div>
-                                                <div className="rounded-lg border border-gray-200/70 bg-white px-3 py-2 text-sm">
+                                                <div className="rounded-lg border border-[#E6F1F0] bg-white px-3 py-2 text-sm">
                                                     <div className="flex items-center justify-between gap-3">
-                                                        <span className="text-gray-600">Concurrent</span>
-                                                        <span className="font-semibold text-gray-900">
+                                                        <span className="text-[#3A5672]">Concurrent</span>
+                                                        <span className="font-semibold text-[#0D1E2C]">
                                                             {formatCount(quotaBreakdown.current_usage.concurrent)} / {formatCount(quotaBreakdown.effective_policy.max_concurrent)}
                                                         </span>
                                                     </div>
@@ -3255,80 +3253,80 @@ const EconomicsAdmin: React.FC = () => {
                                         </div>
 
                                         {quotaBreakdown.reset_windows ? (
-                                            <div className="rounded-xl border border-gray-200/70 bg-white p-3 text-sm text-gray-700">
-                                                <div className="font-semibold text-gray-900">Rolling resets</div>
-                                                <div className="mt-1 grid grid-cols-1 gap-1 text-xs text-gray-600 md:grid-cols-3">
-                                                    <div>Bundle: {quotaBreakdown.reset_windows.bundle_id}</div>
+                                            <div className="rounded-xl border border-[#E6F1F0] bg-white p-3 text-sm text-[#3A5672]">
+                                                <div className="font-semibold text-[#0D1E2C]">Rolling resets</div>
+                                                <div className="mt-1 grid grid-cols-1 gap-1 text-xs text-[#3A5672] md:grid-cols-3">
+                                                    <div>App: <span className="font-mono text-[#0D1E2C]">{quotaBreakdown.reset_windows.bundle_id}</span></div>
                                                     <div>Hourly: {quotaBreakdown.reset_windows.hour_reset_at ? new Date(quotaBreakdown.reset_windows.hour_reset_at).toLocaleString() : '—'}</div>
                                                     <div>30-day: {quotaBreakdown.reset_windows.month_reset_at ? new Date(quotaBreakdown.reset_windows.month_reset_at).toLocaleString() : '—'}</div>
                                                 </div>
                                             </div>
                                         ) : (
-                                            <div className="text-xs text-gray-500">
-                                                Provide a Bundle ID (use <code>__project__</code> for global quotas) to see rolling reset timestamps.
+                                            <div className="text-xs text-[#7A99B0]">
+                                                Provide an App ID (use <code>__project__</code> for global quotas) to see rolling reset timestamps.
                                             </div>
                                         )}
 
-                                        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
-                                            <div className="text-sm font-semibold text-emerald-950">Wallet / personal credits</div>
-                                            <div className="mt-1 text-xs text-emerald-800">Separate from plan quota. Used for shortfall capacity.</div>
+                                        <div className="rounded-xl border border-[rgba(34,197,94,0.35)] bg-[rgba(34,197,94,0.08)] p-4">
+                                            <div className="text-sm font-semibold text-[#15803D]">Wallet / personal credits</div>
+                                            <div className="mt-1 text-xs text-[#15803D]">Separate from plan quota. Used for shortfall capacity.</div>
                                             {!quotaBreakdown.lifetime_credits ? (
-                                                <div className="mt-3 text-sm text-emerald-900">No wallet record for this user.</div>
+                                                <div className="mt-3 text-sm text-[#15803D]">No wallet record for this user.</div>
                                             ) : (
                                                 <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-4">
-                                                    <div className="rounded-lg border border-emerald-100 bg-white px-3 py-2 text-sm">
-                                                        <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Purchased</div>
-                                                        <div className="mt-1 font-semibold text-emerald-950">${Number(quotaBreakdown.lifetime_credits.purchased_usd || 0).toFixed(2)}</div>
+                                                    <div className="rounded-lg border border-[rgba(34,197,94,0.35)] bg-white px-3 py-2 text-sm">
+                                                        <div className="text-[10.5px] font-bold tracking-[0.1em] uppercase text-[#15803D]">Purchased</div>
+                                                        <div className="mt-1 font-semibold text-[#15803D]">${Number(quotaBreakdown.lifetime_credits.purchased_usd || 0).toFixed(2)}</div>
                                                     </div>
-                                                    <div className="rounded-lg border border-emerald-100 bg-white px-3 py-2 text-sm">
-                                                        <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Spent</div>
-                                                        <div className="mt-1 font-semibold text-emerald-950">${Number(quotaBreakdown.lifetime_credits.spent_usd || 0).toFixed(2)}</div>
+                                                    <div className="rounded-lg border border-[rgba(34,197,94,0.35)] bg-white px-3 py-2 text-sm">
+                                                        <div className="text-[10.5px] font-bold tracking-[0.1em] uppercase text-[#15803D]">Spent</div>
+                                                        <div className="mt-1 font-semibold text-[#15803D]">${Number(quotaBreakdown.lifetime_credits.spent_usd || 0).toFixed(2)}</div>
                                                     </div>
-                                                    <div className="rounded-lg border border-emerald-100 bg-white px-3 py-2 text-sm">
-                                                        <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Reserved</div>
-                                                        <div className="mt-1 font-semibold text-emerald-950">${Number(quotaBreakdown.lifetime_credits.reserved_usd || 0).toFixed(2)}</div>
+                                                    <div className="rounded-lg border border-[rgba(34,197,94,0.35)] bg-white px-3 py-2 text-sm">
+                                                        <div className="text-[10.5px] font-bold tracking-[0.1em] uppercase text-[#15803D]">Reserved</div>
+                                                        <div className="mt-1 font-semibold text-[#15803D]">${Number(quotaBreakdown.lifetime_credits.reserved_usd || 0).toFixed(2)}</div>
                                                     </div>
-                                                    <div className="rounded-lg border border-emerald-100 bg-white px-3 py-2 text-sm">
-                                                        <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Available</div>
-                                                        <div className="mt-1 font-semibold text-emerald-950">${Number(quotaBreakdown.lifetime_credits.available_usd || 0).toFixed(2)}</div>
+                                                    <div className="rounded-lg border border-[rgba(34,197,94,0.35)] bg-white px-3 py-2 text-sm">
+                                                        <div className="text-[10.5px] font-bold tracking-[0.1em] uppercase text-[#15803D]">Available</div>
+                                                        <div className="mt-1 font-semibold text-[#15803D]">${Number(quotaBreakdown.lifetime_credits.available_usd || 0).toFixed(2)}</div>
                                                     </div>
                                                 </div>
                                             )}
                                         </div>
 
-                                        <div className="rounded-xl border border-gray-200/70 bg-gray-50 p-4">
+                                        <div className="rounded-xl border border-[#E6F1F0] bg-[#F6FAFA] p-4">
                                             <div className="flex items-center justify-between">
                                                 <div>
-                                                    <div className="text-sm font-semibold text-gray-900">Subscription balance</div>
-                                                    <div className="mt-1 text-xs text-gray-600">Per-period subscription credits</div>
+                                                    <div className="text-sm font-semibold text-[#0D1E2C]">Subscription balance</div>
+                                                    <div className="mt-1 text-xs text-[#3A5672]">Per-period subscription credits</div>
                                                 </div>
                                             </div>
 
                                             {!quotaBreakdown.subscription_balance ? (
-                                                <div className="mt-4 text-sm text-gray-600">
+                                                <div className="mt-4 text-sm text-[#3A5672]">
                                                     No subscription balance record for this user.
                                                 </div>
                                             ) : (
                                                 <div className="mt-4 space-y-3 text-sm">
-                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-gray-600">
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-[#3A5672]">
                                                         {quotaBreakdown.subscription_balance.plan_id && (
                                                             <div>
-                                                                plan: <span className="font-semibold text-gray-900">{quotaBreakdown.subscription_balance.plan_id}</span>
+                                                                plan: <span className="font-mono text-[13px] font-semibold text-[#0D1E2C]">{quotaBreakdown.subscription_balance.plan_id}</span>
                                                             </div>
                                                         )}
                                                         {quotaBreakdown.subscription_balance.status && (
                                                             <div>
-                                                                status: <span className="font-semibold text-gray-900">{quotaBreakdown.subscription_balance.status}</span>
+                                                                status: <span className="font-semibold text-[#0D1E2C]">{quotaBreakdown.subscription_balance.status}</span>
                                                             </div>
                                                         )}
                                                         {quotaBreakdown.subscription_balance.provider && (
                                                             <div>
-                                                                provider: <span className="font-semibold text-gray-900">{providerLabel(quotaBreakdown.subscription_balance.provider)}</span>
+                                                                provider: <span className="font-semibold text-[#0D1E2C]">{providerLabel(quotaBreakdown.subscription_balance.provider)}</span>
                                                             </div>
                                                         )}
                                                         {quotaBreakdown.subscription_balance.monthly_price_cents != null && (
                                                             <div>
-                                                                monthly price: <span className="font-semibold text-gray-900">
+                                                                monthly price: <span className="font-semibold text-[#0D1E2C]">
                                                                     ${Number(quotaBreakdown.subscription_balance.monthly_price_cents / 100).toFixed(2)}
                                                                 </span>
                                                             </div>
@@ -3336,46 +3334,46 @@ const EconomicsAdmin: React.FC = () => {
                                                     </div>
 
                                                     {quotaBreakdown.subscription_balance.period_start && quotaBreakdown.subscription_balance.period_end && (
-                                                        <div className="text-xs text-gray-600">
+                                                        <div className="text-xs text-[#3A5672]">
                                                             Period: {formatDateTime(quotaBreakdown.subscription_balance.period_start)} → {formatDateTime(quotaBreakdown.subscription_balance.period_end)}
                                                         </div>
                                                     )}
                                                     {quotaBreakdown.subscription_balance.period_status && (
-                                                        <div className="text-xs text-gray-600">
+                                                        <div className="text-xs text-[#3A5672]">
                                                             Period status: {quotaBreakdown.subscription_balance.period_status}
                                                         </div>
                                                     )}
 
                                                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
-                                                        <div className="rounded-xl bg-white border border-gray-200/70 p-3">
-                                                            <div className="text-gray-600">Balance</div>
-                                                            <div className="font-semibold text-gray-900">
+                                                        <div className="rounded-lg bg-white border border-[#E6F1F0] p-3">
+                                                            <div className="text-[#3A5672]">Balance</div>
+                                                            <div className="font-semibold text-[#0D1E2C]">
                                                                 ${Number(quotaBreakdown.subscription_balance.balance_usd || 0).toFixed(2)}
                                                             </div>
                                                             {quotaBreakdown.subscription_balance.balance_tokens != null && (
-                                                                <div className="text-xs text-gray-500">
+                                                                <div className="text-xs text-[#7A99B0]">
                                                                     {Number(quotaBreakdown.subscription_balance.balance_tokens).toLocaleString()} tokens
                                                                 </div>
                                                             )}
                                                         </div>
-                                                        <div className="rounded-xl bg-white border border-gray-200/70 p-3">
-                                                            <div className="text-gray-600">Reserved</div>
-                                                            <div className="font-semibold text-gray-900">
+                                                        <div className="rounded-lg bg-white border border-[#E6F1F0] p-3">
+                                                            <div className="text-[#3A5672]">Reserved</div>
+                                                            <div className="font-semibold text-[#0D1E2C]">
                                                                 ${Number(quotaBreakdown.subscription_balance.reserved_usd || 0).toFixed(2)}
                                                             </div>
                                                             {quotaBreakdown.subscription_balance.reserved_tokens != null && (
-                                                                <div className="text-xs text-gray-500">
+                                                                <div className="text-xs text-[#7A99B0]">
                                                                     {Number(quotaBreakdown.subscription_balance.reserved_tokens).toLocaleString()} tokens
                                                                 </div>
                                                             )}
                                                         </div>
-                                                        <div className="rounded-xl bg-white border border-gray-200/70 p-3">
-                                                            <div className="text-gray-600">Available</div>
-                                                            <div className="font-semibold text-gray-900">
+                                                        <div className="rounded-lg bg-white border border-[#E6F1F0] p-3">
+                                                            <div className="text-[#3A5672]">Available</div>
+                                                            <div className="font-semibold text-[#0D1E2C]">
                                                                 ${Number(quotaBreakdown.subscription_balance.available_usd || 0).toFixed(2)}
                                                             </div>
                                                             {quotaBreakdown.subscription_balance.available_tokens != null && (
-                                                                <div className="text-xs text-gray-500">
+                                                                <div className="text-xs text-[#7A99B0]">
                                                                     {Number(quotaBreakdown.subscription_balance.available_tokens).toLocaleString()} tokens
                                                                 </div>
                                                             )}
@@ -3383,28 +3381,28 @@ const EconomicsAdmin: React.FC = () => {
                                                     </div>
 
                                                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
-                                                        <div className="rounded-xl bg-white border border-gray-200/70 p-3">
-                                                            <div className="text-gray-600">Period top-up</div>
-                                                            <div className="font-semibold text-gray-900">
+                                                        <div className="rounded-lg bg-white border border-[#E6F1F0] p-3">
+                                                            <div className="text-[#3A5672]">Period top-up</div>
+                                                            <div className="font-semibold text-[#0D1E2C]">
                                                                 ${Number(quotaBreakdown.subscription_balance.topup_usd ?? quotaBreakdown.subscription_balance.lifetime_added_usd ?? 0).toFixed(2)}
                                                             </div>
                                                         </div>
-                                                        <div className="rounded-xl bg-white border border-gray-200/70 p-3">
-                                                            <div className="text-gray-600">Period spent</div>
-                                                            <div className="font-semibold text-gray-900">
+                                                        <div className="rounded-lg bg-white border border-[#E6F1F0] p-3">
+                                                            <div className="text-[#3A5672]">Period spent</div>
+                                                            <div className="font-semibold text-[#0D1E2C]">
                                                                 ${Number(quotaBreakdown.subscription_balance.spent_usd ?? quotaBreakdown.subscription_balance.lifetime_spent_usd ?? 0).toFixed(2)}
                                                             </div>
                                                         </div>
-                                                        <div className="rounded-xl bg-white border border-gray-200/70 p-3">
-                                                            <div className="text-gray-600">Rolled over</div>
-                                                            <div className="font-semibold text-gray-900">
+                                                        <div className="rounded-lg bg-white border border-[#E6F1F0] p-3">
+                                                            <div className="text-[#3A5672]">Rolled over</div>
+                                                            <div className="font-semibold text-[#0D1E2C]">
                                                                 ${Number(quotaBreakdown.subscription_balance.rolled_over_usd || 0).toFixed(2)}
                                                             </div>
                                                         </div>
                                                     </div>
 
-                                                    <div className="pt-2 text-xs text-gray-600">
-                                                        Reference: {quotaBreakdown.subscription_balance.reference_model || (economicsRef ? `${economicsRef.reference_provider}/${economicsRef.reference_model}` : '')}
+                                                    <div className="pt-2 text-xs text-[#3A5672]">
+                                                        Reference: <span className="font-mono">{quotaBreakdown.subscription_balance.reference_model || (economicsRef ? `${economicsRef.reference_provider}/${economicsRef.reference_model}` : '')}</span>
                                                     </div>
                                                 </div>
                                             )}
@@ -3412,27 +3410,27 @@ const EconomicsAdmin: React.FC = () => {
 
                                         {/* Reservations table */}
                                         {quotaBreakdown.active_reservations?.length > 0 && (
-                                            <div className="rounded-2xl border border-gray-200/70 bg-gray-50 p-5">
-                                                <div className="text-sm font-semibold text-gray-900 mb-3">Active credit reservations</div>
+                                            <div className="rounded-xl border border-[#E6F1F0] bg-[#F6FAFA] p-5">
+                                                <div className="text-sm font-semibold text-[#0D1E2C] mb-3">Active credit reservations</div>
                                                 <div className="overflow-x-auto">
                                                     <table className="w-full text-sm">
-                                                        <thead className="bg-white border-b border-gray-200/70">
-                                                        <tr className="text-gray-600">
-                                                            <th className="px-4 py-3 text-left font-semibold">Reservation</th>
-                                                            <th className="px-4 py-3 text-left font-semibold">Bundle</th>
-                                                            <th className="px-4 py-3 text-right font-semibold">Reserved (USD)</th>
-                                                            <th className="px-4 py-3 text-left font-semibold">Expires</th>
-                                                            <th className="px-4 py-3 text-left font-semibold">Notes</th>
+                                                        <thead className="bg-[#F6FAFA] border-b border-[#E6F1F0] text-[10.5px] font-bold tracking-[0.1em] uppercase text-[#7A99B0]">
+                                                        <tr>
+                                                            <th className="px-4 py-3 text-left font-bold">Reservation</th>
+                                                            <th className="px-4 py-3 text-left font-bold">App</th>
+                                                            <th className="px-4 py-3 text-right font-bold">Reserved (USD)</th>
+                                                            <th className="px-4 py-3 text-left font-bold">Expires</th>
+                                                            <th className="px-4 py-3 text-left font-bold">Notes</th>
                                                         </tr>
                                                         </thead>
-                                                        <tbody className="divide-y divide-gray-200/70">
+                                                        <tbody className="divide-y divide-[#E6F1F0]">
                                                         {quotaBreakdown.active_reservations.map((r) => (
-                                                            <tr key={r.reservation_id} className="hover:bg-white/70 transition-colors">
-                                                                <td className="px-4 py-3 font-semibold text-gray-900">{r.reservation_id}</td>
-                                                                <td className="px-4 py-3 text-gray-700">{r.bundle_id ?? '—'}</td>
-                                                                <td className="px-4 py-3 text-right text-gray-700">${Number(r.reserved_usd || 0).toFixed(2)}</td>
-                                                                <td className="px-4 py-3 text-gray-700">{r.expires_at ? new Date(r.expires_at).toLocaleString() : '—'}</td>
-                                                                <td className="px-4 py-3 text-gray-600">{r.notes ?? '—'}</td>
+                                                            <tr key={r.reservation_id} className="hover:bg-white transition-colors">
+                                                                <td className="px-4 py-3 font-mono text-[13px] font-semibold text-[#0D1E2C]">{r.reservation_id}</td>
+                                                                <td className="px-4 py-3 font-mono text-[13px] text-[#0D1E2C]">{r.bundle_id ?? '—'}</td>
+                                                                <td className="px-4 py-3 text-right text-[#3A5672]">${Number(r.reserved_usd || 0).toFixed(2)}</td>
+                                                                <td className="px-4 py-3 text-[#3A5672]">{r.expires_at ? new Date(r.expires_at).toLocaleString() : '—'}</td>
+                                                                <td className="px-4 py-3 text-[#3A5672]">{r.notes ?? '—'}</td>
                                                             </tr>
                                                         ))}
                                                         </tbody>
@@ -3457,16 +3455,16 @@ const EconomicsAdmin: React.FC = () => {
                                 />
                                 <CardBody className="space-y-6">
                                     <Callout tone="neutral" title="Meaning">
-                                        This is the default quota envelope for a plan (free/wallet/admin). Daily is calendar day, hourly is a rolling 60‑minute window, and monthly is a rolling 30‑day window (anchored to first usage per bundle).
+                                        This is the default quota envelope for a plan (free/wallet/admin). Daily is calendar day, hourly is a rolling 60‑minute window, and monthly is a rolling 30‑day window (anchored to first usage per app).
                                     </Callout>
                                     <Callout tone="neutral" title="Reservation Floor">
                                         The platform reservation floor is set in the <span className="font-semibold">Reservation Floors</span> tab
-                                        (stored in the economics descriptor, picked up live). A bundle can still override per surface via
-                                        bundle props <span className="font-mono"> economics.reservation.&lt;floor&gt;</span>.
+                                        (stored in the economics descriptor, picked up live). An app can still override per surface via
+                                        app props <span className="font-mono"> economics.reservation.&lt;floor&gt;</span>.
                                     </Callout>
                                     {economicsRef && (
-                                        <div className="text-xs text-gray-500">
-                                            Reference: {economicsRef.reference_provider}/{economicsRef.reference_model}
+                                        <div className="text-xs text-[#7A99B0]">
+                                            Reference: <span className="font-mono">{economicsRef.reference_provider}/{economicsRef.reference_model}</span>
                                         </div>
                                     )}
 
@@ -3518,7 +3516,7 @@ const EconomicsAdmin: React.FC = () => {
                                                     placeholder="500000"
                                                 />
                                                 {policyTokensHour && tokensToUsd(policyTokensHour) != null && (
-                                                    <div className="text-xs text-gray-500 pt-1">
+                                                    <div className="text-xs text-[#7A99B0] pt-1">
                                                         ≈ ${Number(tokensToUsd(policyTokensHour)).toFixed(2)}
                                                     </div>
                                                 )}
@@ -3532,7 +3530,7 @@ const EconomicsAdmin: React.FC = () => {
                                                     placeholder="1000000"
                                                 />
                                                 {policyTokensDay && tokensToUsd(policyTokensDay) != null && (
-                                                    <div className="text-xs text-gray-500 pt-1">
+                                                    <div className="text-xs text-[#7A99B0] pt-1">
                                                         ≈ ${Number(tokensToUsd(policyTokensDay)).toFixed(2)}
                                                     </div>
                                                 )}
@@ -3546,7 +3544,7 @@ const EconomicsAdmin: React.FC = () => {
                                                     placeholder="30000000"
                                                 />
                                                 {policyTokensMonth && tokensToUsd(policyTokensMonth) != null && (
-                                                    <div className="text-xs text-gray-500 pt-1">
+                                                    <div className="text-xs text-[#7A99B0] pt-1">
                                                         ≈ ${Number(tokensToUsd(policyTokensMonth)).toFixed(2)}
                                                     </div>
                                                 )}
@@ -3562,7 +3560,7 @@ const EconomicsAdmin: React.FC = () => {
                                                     step="0.01"
                                                 />
                                                 {policyUsdHour && usdToTokens(policyUsdHour) != null && (
-                                                    <div className="text-xs text-gray-500 pt-1">
+                                                    <div className="text-xs text-[#7A99B0] pt-1">
                                                         ≈ {Number(usdToTokens(policyUsdHour)).toLocaleString()} tokens
                                                     </div>
                                                 )}
@@ -3578,7 +3576,7 @@ const EconomicsAdmin: React.FC = () => {
                                                     step="0.01"
                                                 />
                                                 {policyUsdDay && usdToTokens(policyUsdDay) != null && (
-                                                    <div className="text-xs text-gray-500 pt-1">
+                                                    <div className="text-xs text-[#7A99B0] pt-1">
                                                         ≈ {Number(usdToTokens(policyUsdDay)).toLocaleString()} tokens
                                                     </div>
                                                 )}
@@ -3594,13 +3592,13 @@ const EconomicsAdmin: React.FC = () => {
                                                     step="0.01"
                                                 />
                                                 {policyUsdMonth && usdToTokens(policyUsdMonth) != null && (
-                                                    <div className="text-xs text-gray-500 pt-1">
+                                                    <div className="text-xs text-[#7A99B0] pt-1">
                                                         ≈ {Number(usdToTokens(policyUsdMonth)).toLocaleString()} tokens
                                                     </div>
                                                 )}
                                             </div>
                                         </div>
-                                        <div className="text-xs text-gray-500">
+                                        <div className="text-xs text-[#7A99B0]">
                                             USD overrides tokens for the same window.
                                         </div>
 
@@ -3631,41 +3629,41 @@ const EconomicsAdmin: React.FC = () => {
                                     ) : (
                                         <div className="overflow-x-auto">
                                             <table className="w-full text-sm">
-                                                <thead className="bg-gray-50 border-b border-gray-200/70">
-                                                <tr className="text-gray-600">
-                                                    <th className="px-6 py-4 text-left font-semibold">Plan ID</th>
-                                                    <th className="px-6 py-4 text-right font-semibold">Max concurrent</th>
-                                                    <th className="px-6 py-4 text-right font-semibold">Req/day</th>
-                                                    <th className="px-6 py-4 text-right font-semibold">Req/month</th>
-                                                    <th className="px-6 py-4 text-right font-semibold">Tok/hour</th>
-                                                    <th className="px-6 py-4 text-right font-semibold">Tok/day</th>
-                                                    <th className="px-6 py-4 text-right font-semibold">Tok/month</th>
-                                                    <th className="px-6 py-4 text-right font-semibold">USD/hour</th>
-                                                    <th className="px-6 py-4 text-right font-semibold">USD/day</th>
-                                                    <th className="px-6 py-4 text-right font-semibold">USD/month</th>
-                                                    <th className="px-6 py-4 text-left font-semibold">Notes</th>
+                                                <thead className="bg-[#F6FAFA] border-b border-[#E6F1F0] text-[10.5px] font-bold tracking-[0.1em] uppercase text-[#7A99B0]">
+                                                <tr>
+                                                    <th className="px-6 py-4 text-left font-bold">Plan ID</th>
+                                                    <th className="px-6 py-4 text-right font-bold">Max concurrent</th>
+                                                    <th className="px-6 py-4 text-right font-bold">Req/day</th>
+                                                    <th className="px-6 py-4 text-right font-bold">Req/month</th>
+                                                    <th className="px-6 py-4 text-right font-bold">Tok/hour</th>
+                                                    <th className="px-6 py-4 text-right font-bold">Tok/day</th>
+                                                    <th className="px-6 py-4 text-right font-bold">Tok/month</th>
+                                                    <th className="px-6 py-4 text-right font-bold">USD/hour</th>
+                                                    <th className="px-6 py-4 text-right font-bold">USD/day</th>
+                                                    <th className="px-6 py-4 text-right font-bold">USD/month</th>
+                                                    <th className="px-6 py-4 text-left font-bold">Notes</th>
                                                 </tr>
                                                 </thead>
-                                                <tbody className="divide-y divide-gray-200/70">
+                                                <tbody className="divide-y divide-[#E6F1F0]">
                                                 {quotaPolicies.map((policy, idx) => (
-                                                    <tr key={idx} className="hover:bg-gray-50/70 transition-colors">
-                                                        <td className="px-6 py-4 font-semibold text-gray-900">{policy.plan_id}</td>
-                                                        <td className="px-6 py-4 text-right text-gray-700">{policy.max_concurrent ?? '—'}</td>
-                                                        <td className="px-6 py-4 text-right text-gray-700">{policy.requests_per_day ?? '—'}</td>
-                                                        <td className="px-6 py-4 text-right text-gray-700">{policy.requests_per_month ?? '—'}</td>
-                                                        <td className="px-6 py-4 text-right text-gray-700">{policy.tokens_per_hour?.toLocaleString() ?? '—'}</td>
-                                                        <td className="px-6 py-4 text-right text-gray-700">{policy.tokens_per_day?.toLocaleString() ?? '—'}</td>
-                                                        <td className="px-6 py-4 text-right text-gray-700">{policy.tokens_per_month?.toLocaleString() ?? '—'}</td>
-                                                        <td className="px-6 py-4 text-right text-gray-700">
+                                                    <tr key={idx} className="hover:bg-[#F6FAFA] transition-colors">
+                                                        <td className="px-6 py-4 font-mono text-[13px] font-semibold text-[#0D1E2C]">{policy.plan_id}</td>
+                                                        <td className="px-6 py-4 text-right text-[#3A5672]">{policy.max_concurrent ?? '—'}</td>
+                                                        <td className="px-6 py-4 text-right text-[#3A5672]">{policy.requests_per_day ?? '—'}</td>
+                                                        <td className="px-6 py-4 text-right text-[#3A5672]">{policy.requests_per_month ?? '—'}</td>
+                                                        <td className="px-6 py-4 text-right text-[#3A5672]">{policy.tokens_per_hour?.toLocaleString() ?? '—'}</td>
+                                                        <td className="px-6 py-4 text-right text-[#3A5672]">{policy.tokens_per_day?.toLocaleString() ?? '—'}</td>
+                                                        <td className="px-6 py-4 text-right text-[#3A5672]">{policy.tokens_per_month?.toLocaleString() ?? '—'}</td>
+                                                        <td className="px-6 py-4 text-right text-[#3A5672]">
                                                             {policy.usd_per_hour != null ? `$${Number(policy.usd_per_hour).toFixed(2)}` : '—'}
                                                         </td>
-                                                        <td className="px-6 py-4 text-right text-gray-700">
+                                                        <td className="px-6 py-4 text-right text-[#3A5672]">
                                                             {policy.usd_per_day != null ? `$${Number(policy.usd_per_day).toFixed(2)}` : '—'}
                                                         </td>
-                                                        <td className="px-6 py-4 text-right text-gray-700">
+                                                        <td className="px-6 py-4 text-right text-[#3A5672]">
                                                             {policy.usd_per_month != null ? `$${Number(policy.usd_per_month).toFixed(2)}` : '—'}
                                                         </td>
-                                                        <td className="px-6 py-4 text-gray-600">{policy.notes || '—'}</td>
+                                                        <td className="px-6 py-4 text-[#3A5672]">{policy.notes || '—'}</td>
                                                     </tr>
                                                 ))}
                                                 </tbody>
@@ -3673,8 +3671,8 @@ const EconomicsAdmin: React.FC = () => {
                                         </div>
                                     )}
                                     {quotaPolicies.length > 0 && quotaPolicies[0].reference_model && (
-                                        <div className="pt-3 text-xs text-gray-500">
-                                            Reference: {quotaPolicies[0].reference_model}
+                                        <div className="pt-3 text-xs text-[#7A99B0]">
+                                            Reference: <span className="font-mono">{quotaPolicies[0].reference_model}</span>
                                         </div>
                                     )}
                                 </CardBody>
@@ -3687,14 +3685,14 @@ const EconomicsAdmin: React.FC = () => {
                             <Card>
                                 <CardHeader
                                     title="Reservation Floors"
-                                    subtitle="Platform default per-turn reservation floor (USD). Read live by bundles each turn."
+                                    subtitle="Platform default per-turn reservation floor (USD). Read live by apps each turn."
                                 />
                                 <CardBody className="space-y-6">
                                     <Callout tone="neutral" title="Meaning">
                                         The reservation floor is the minimum USD reserved before a turn runs. It is stored in the
-                                        economics descriptor (not the database) and is picked up live by running bundles. A value of
+                                        economics descriptor (not the database) and is picked up live by running apps. A value of
                                         <span className="font-mono"> 0 or less disables</span> the floor (estimate falls back to tokens).
-                                        A bundle can override per surface via bundle props
+                                        An app can override per surface via app props
                                         <span className="font-mono"> economics.reservation.&lt;floor&gt;</span>; omitting it inherits this default.
                                         Only <span className="font-mono">chat</span> is consumed today.
                                     </Callout>
@@ -3732,22 +3730,22 @@ const EconomicsAdmin: React.FC = () => {
                                     ) : (
                                         <div className="overflow-x-auto">
                                             <table className="w-full text-sm">
-                                                <thead className="bg-gray-50 border-b border-gray-200/70">
-                                                <tr className="text-gray-600">
-                                                    <th className="px-6 py-4 text-left font-semibold">Surface</th>
-                                                    <th className="px-6 py-4 text-right font-semibold">Floor (USD)</th>
-                                                    <th className="px-6 py-4 text-left font-semibold">State</th>
-                                                    <th className="px-6 py-4 text-right font-semibold">Actions</th>
+                                                <thead className="bg-[#F6FAFA] border-b border-[#E6F1F0] text-[10.5px] font-bold tracking-[0.1em] uppercase text-[#7A99B0]">
+                                                <tr>
+                                                    <th className="px-6 py-4 text-left font-bold">Surface</th>
+                                                    <th className="px-6 py-4 text-right font-bold">Floor (USD)</th>
+                                                    <th className="px-6 py-4 text-left font-bold">State</th>
+                                                    <th className="px-6 py-4 text-right font-bold">Actions</th>
                                                 </tr>
                                                 </thead>
-                                                <tbody className="divide-y divide-gray-200/70">
+                                                <tbody className="divide-y divide-[#E6F1F0]">
                                                 {Object.entries(reservation).map(([floor, amount]) => (
-                                                    <tr key={floor} className="hover:bg-gray-50/70 transition-colors">
-                                                        <td className="px-6 py-4 font-semibold text-gray-900">{floor}</td>
-                                                        <td className="px-6 py-4 text-right text-gray-700">
+                                                    <tr key={floor} className="hover:bg-[#F6FAFA] transition-colors">
+                                                        <td className="px-6 py-4 font-mono text-[13px] font-semibold text-[#0D1E2C]">{floor}</td>
+                                                        <td className="px-6 py-4 text-right text-[#3A5672]">
                                                             {Number(amount) > 0 ? `$${Number(amount).toFixed(2)}` : '—'}
                                                         </td>
-                                                        <td className="px-6 py-4 text-gray-600">
+                                                        <td className="px-6 py-4 text-[#3A5672]">
                                                             {Number(amount) > 0 ? 'enabled' : 'disabled'}
                                                         </td>
                                                         <td className="px-6 py-4 text-right">
@@ -3846,29 +3844,29 @@ const EconomicsAdmin: React.FC = () => {
                                     ) : (
                                         <div className="overflow-x-auto">
                                             <table className="w-full text-sm">
-                                                <thead className="bg-gray-50 border-b border-gray-200/70">
-                                                <tr className="text-gray-600">
-                                                    <th className="px-6 py-4 text-left font-semibold">Provider</th>
-                                                    <th className="px-6 py-4 text-right font-semibold">USD/hour</th>
-                                                    <th className="px-6 py-4 text-right font-semibold">USD/day</th>
-                                                    <th className="px-6 py-4 text-right font-semibold">USD/month</th>
-                                                    <th className="px-6 py-4 text-left font-semibold">Notes</th>
+                                                <thead className="bg-[#F6FAFA] border-b border-[#E6F1F0] text-[10.5px] font-bold tracking-[0.1em] uppercase text-[#7A99B0]">
+                                                <tr>
+                                                    <th className="px-6 py-4 text-left font-bold">Provider</th>
+                                                    <th className="px-6 py-4 text-right font-bold">USD/hour</th>
+                                                    <th className="px-6 py-4 text-right font-bold">USD/day</th>
+                                                    <th className="px-6 py-4 text-right font-bold">USD/month</th>
+                                                    <th className="px-6 py-4 text-left font-bold">Notes</th>
                                                 </tr>
                                                 </thead>
-                                                <tbody className="divide-y divide-gray-200/70">
+                                                <tbody className="divide-y divide-[#E6F1F0]">
                                                 {budgetPolicies.map((policy, idx) => (
-                                                    <tr key={idx} className="hover:bg-gray-50/70 transition-colors">
-                                                        <td className="px-6 py-4 font-semibold text-gray-900">{policy.provider}</td>
-                                                        <td className="px-6 py-4 text-right text-gray-700">
+                                                    <tr key={idx} className="hover:bg-[#F6FAFA] transition-colors">
+                                                        <td className="px-6 py-4 font-mono text-[13px] font-semibold text-[#0D1E2C]">{policy.provider}</td>
+                                                        <td className="px-6 py-4 text-right text-[#3A5672]">
                                                             {policy.usd_per_hour != null ? `$${policy.usd_per_hour.toFixed(2)}` : '—'}
                                                         </td>
-                                                        <td className="px-6 py-4 text-right text-gray-700">
+                                                        <td className="px-6 py-4 text-right text-[#3A5672]">
                                                             {policy.usd_per_day != null ? `$${policy.usd_per_day.toFixed(2)}` : '—'}
                                                         </td>
-                                                        <td className="px-6 py-4 text-right text-gray-700">
+                                                        <td className="px-6 py-4 text-right text-[#3A5672]">
                                                             {policy.usd_per_month != null ? `$${policy.usd_per_month.toFixed(2)}` : '—'}
                                                         </td>
-                                                        <td className="px-6 py-4 text-gray-600">{policy.notes || '—'}</td>
+                                                        <td className="px-6 py-4 text-[#3A5672]">{policy.notes || '—'}</td>
                                                     </tr>
                                                 ))}
                                                 </tbody>
@@ -3932,8 +3930,8 @@ const EconomicsAdmin: React.FC = () => {
                                             >
                                                 Check Balance
                                             </Button>
-                                            <div className="text-sm text-gray-500 flex items-center">
-                                                Reference model: <span className="ml-1 font-semibold text-gray-800">{economicsRef ? `${economicsRef.reference_provider}/${economicsRef.reference_model}` : '…'}</span>
+                                            <div className="text-sm text-[#7A99B0] flex items-center">
+                                                Reference model: <span className="ml-1 font-mono text-[13px] font-semibold text-[#0D1E2C]">{economicsRef ? `${economicsRef.reference_provider}/${economicsRef.reference_model}` : '…'}</span>
                                             </div>
                                         </div>
                                     </form>
@@ -3964,20 +3962,20 @@ const EconomicsAdmin: React.FC = () => {
                                 />
                                 <CardBody>
                                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                        <div className="rounded-2xl border border-gray-200/70 bg-gray-50 p-5">
-                                            <div className="text-xs font-semibold text-gray-500 uppercase">Example</div>
-                                            <div className="mt-2 text-2xl font-semibold text-gray-900">$5.00</div>
-                                            <div className="mt-2 text-sm text-gray-600">Converted using reference model rate</div>
+                                        <div className="rounded-xl border border-[#E6F1F0] bg-[#F6FAFA] p-5">
+                                            <div className="text-[10.5px] font-bold tracking-[0.1em] uppercase text-[#7A99B0]">Example</div>
+                                            <div className="mt-2 text-2xl font-semibold text-[#0D1E2C]">$5.00</div>
+                                            <div className="mt-2 text-sm text-[#3A5672]">Converted using reference model rate</div>
                                         </div>
-                                        <div className="rounded-2xl border border-gray-200/70 bg-gray-50 p-5">
-                                            <div className="text-xs font-semibold text-gray-500 uppercase">Example</div>
-                                            <div className="mt-2 text-2xl font-semibold text-gray-900">$10.00</div>
-                                            <div className="mt-2 text-sm text-gray-600">Converted using reference model rate</div>
+                                        <div className="rounded-xl border border-[#E6F1F0] bg-[#F6FAFA] p-5">
+                                            <div className="text-[10.5px] font-bold tracking-[0.1em] uppercase text-[#7A99B0]">Example</div>
+                                            <div className="mt-2 text-2xl font-semibold text-[#0D1E2C]">$10.00</div>
+                                            <div className="mt-2 text-sm text-[#3A5672]">Converted using reference model rate</div>
                                         </div>
-                                        <div className="rounded-2xl border border-gray-200/70 bg-gray-50 p-5">
-                                            <div className="text-xs font-semibold text-gray-500 uppercase">Example</div>
-                                            <div className="mt-2 text-2xl font-semibold text-gray-900">$50.00</div>
-                                            <div className="mt-2 text-sm text-gray-600">Converted using reference model rate</div>
+                                        <div className="rounded-xl border border-[#E6F1F0] bg-[#F6FAFA] p-5">
+                                            <div className="text-[10.5px] font-bold tracking-[0.1em] uppercase text-[#7A99B0]">Example</div>
+                                            <div className="mt-2 text-2xl font-semibold text-[#0D1E2C]">$50.00</div>
+                                            <div className="mt-2 text-sm text-[#3A5672]">Converted using reference model rate</div>
                                         </div>
                                     </div>
                                 </CardBody>
@@ -4020,24 +4018,24 @@ const EconomicsAdmin: React.FC = () => {
                                                 )}
                                             </div>
 
-                                            <div className="rounded-2xl border border-gray-200/70 bg-gray-50 p-5">
-                                                <div className="text-sm font-semibold text-gray-900 mb-3">Current month spending</div>
+                                            <div className="rounded-xl border border-[#E6F1F0] bg-[#F6FAFA] p-5">
+                                                <div className="text-sm font-semibold text-[#0D1E2C] mb-3">Current month spending</div>
                                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                                    <div className="rounded-xl bg-white border border-gray-200/70 p-4">
-                                                        <div className="text-xs text-gray-500 font-semibold uppercase">This hour</div>
-                                                        <div className="mt-2 text-2xl font-semibold text-gray-900">
+                                                    <div className="rounded-lg bg-white border border-[#E6F1F0] p-4">
+                                                        <div className="text-[10.5px] font-bold tracking-[0.1em] uppercase text-[#7A99B0]">This hour</div>
+                                                        <div className="mt-2 text-2xl font-semibold text-[#0D1E2C]">
                                                             ${Number(appBudget.current_month_spending?.hour || 0).toFixed(2)}
                                                         </div>
                                                     </div>
-                                                    <div className="rounded-xl bg-white border border-gray-200/70 p-4">
-                                                        <div className="text-xs text-gray-500 font-semibold uppercase">Today</div>
-                                                        <div className="mt-2 text-2xl font-semibold text-gray-900">
+                                                    <div className="rounded-lg bg-white border border-[#E6F1F0] p-4">
+                                                        <div className="text-[10.5px] font-bold tracking-[0.1em] uppercase text-[#7A99B0]">Today</div>
+                                                        <div className="mt-2 text-2xl font-semibold text-[#0D1E2C]">
                                                             ${Number(appBudget.current_month_spending?.day || 0).toFixed(2)}
                                                         </div>
                                                     </div>
-                                                    <div className="rounded-xl bg-white border border-gray-200/70 p-4">
-                                                        <div className="text-xs text-gray-500 font-semibold uppercase">This month</div>
-                                                        <div className="mt-2 text-2xl font-semibold text-gray-900">
+                                                    <div className="rounded-lg bg-white border border-[#E6F1F0] p-4">
+                                                        <div className="text-[10.5px] font-bold tracking-[0.1em] uppercase text-[#7A99B0]">This month</div>
+                                                        <div className="mt-2 text-2xl font-semibold text-[#0D1E2C]">
                                                             ${Number(appBudget.current_month_spending?.month || 0).toFixed(2)}
                                                         </div>
                                                     </div>
@@ -4045,20 +4043,20 @@ const EconomicsAdmin: React.FC = () => {
                                             </div>
 
                                             {appBudget.by_bundle && Object.keys(appBudget.by_bundle).length > 0 && (
-                                                <div className="rounded-2xl border border-gray-200/70 bg-gray-50 p-5">
-                                                    <div className="text-sm font-semibold text-gray-900 mb-3">Spending by bundle</div>
+                                                <div className="rounded-xl border border-[#E6F1F0] bg-[#F6FAFA] p-5">
+                                                    <div className="text-sm font-semibold text-[#0D1E2C] mb-3">Spending by app</div>
                                                     <div className="space-y-3">
                                                         {Object.entries(appBudget.by_bundle).map(([bundleId, spending]) => (
                                                             <div
                                                                 key={bundleId}
                                                                 className="flex flex-col md:flex-row md:items-center md:justify-between gap-2
-                                           rounded-xl bg-white border border-gray-200/70 p-4"
+                                           rounded-lg bg-white border border-[#E6F1F0] p-4"
                                                             >
-                                                                <div className="font-semibold text-gray-900">{bundleId}</div>
-                                                                <div className="text-sm text-gray-600 flex flex-wrap gap-4">
-                                                                    <span>Hour: <strong className="text-gray-900">${Number(spending.hour || 0).toFixed(2)}</strong></span>
-                                                                    <span>Day: <strong className="text-gray-900">${Number(spending.day || 0).toFixed(2)}</strong></span>
-                                                                    <span>Month: <strong className="text-gray-900">${Number(spending.month || 0).toFixed(2)}</strong></span>
+                                                                <div className="font-mono text-[13px] font-semibold text-[#0D1E2C]">{bundleId}</div>
+                                                                <div className="text-sm text-[#3A5672] flex flex-wrap gap-4">
+                                                                    <span>Hour: <strong className="text-[#0D1E2C]">${Number(spending.hour || 0).toFixed(2)}</strong></span>
+                                                                    <span>Day: <strong className="text-[#0D1E2C]">${Number(spending.day || 0).toFixed(2)}</strong></span>
+                                                                    <span>Month: <strong className="text-[#0D1E2C]">${Number(spending.month || 0).toFixed(2)}</strong></span>
                                                                 </div>
                                                             </div>
                                                         ))}
@@ -4066,11 +4064,11 @@ const EconomicsAdmin: React.FC = () => {
                                                 </div>
                                             )}
 
-                                            <div className="rounded-2xl border border-gray-200/70 bg-gray-50 p-5">
+                                            <div className="rounded-xl border border-[#E6F1F0] bg-[#F6FAFA] p-5">
                                                 <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
                                                     <div>
-                                                        <div className="text-sm font-semibold text-gray-900">Budget absorption report</div>
-                                                        <div className="text-xs text-gray-600">
+                                                        <div className="text-sm font-semibold text-[#0D1E2C]">Budget absorption report</div>
+                                                        <div className="text-xs text-[#3A5672]">
                                                             Project budget absorbs shortfalls when plan + wallet can’t cover actual spend.
                                                         </div>
                                                     </div>
@@ -4106,7 +4104,7 @@ const EconomicsAdmin: React.FC = () => {
                                                     >
                                                         <option value="none">None</option>
                                                         <option value="user">User</option>
-                                                        <option value="bundle">Bundle</option>
+                                                        <option value="bundle">App</option>
                                                     </Select>
                                                     <Input
                                                         label="Lookback (days)"
@@ -4125,11 +4123,11 @@ const EconomicsAdmin: React.FC = () => {
                                                 ) : (
                                                     <div className="overflow-x-auto">
                                                         <table className="min-w-full text-sm text-left">
-                                                            <thead className="text-xs uppercase text-gray-500">
+                                                            <thead className="text-[10.5px] font-bold tracking-[0.1em] uppercase text-[#7A99B0]">
                                                                 <tr>
                                                                     <th className="py-2 pr-4">Period</th>
                                                                     {absorptionGroupBy !== 'none' && (
-                                                                        <th className="py-2 pr-4">{absorptionGroupBy === 'user' ? 'User' : 'Bundle'}</th>
+                                                                        <th className="py-2 pr-4">{absorptionGroupBy === 'user' ? 'User' : 'App'}</th>
                                                                     )}
                                                                     <th className="py-2 pr-4">Total absorbed</th>
                                                                     <th className="py-2 pr-4">Subscription shortfall</th>
@@ -4139,12 +4137,12 @@ const EconomicsAdmin: React.FC = () => {
                                                                     <th className="py-2 pr-4">Events</th>
                                                                 </tr>
                                                             </thead>
-                                                            <tbody className="text-gray-700">
+                                                            <tbody className="text-[#3A5672]">
                                                                 {absorptionItems.map((row, idx) => (
-                                                                    <tr key={`${row.period_start}-${idx}`} className="border-t border-gray-200/70">
+                                                                    <tr key={`${row.period_start}-${idx}`} className="border-t border-[#E6F1F0]">
                                                                         <td className="py-2 pr-4">{new Date(row.period_start).toLocaleString()}</td>
                                                                         {absorptionGroupBy !== 'none' && (
-                                                                            <td className="py-2 pr-4">{row.group_key || '-'}</td>
+                                                                            <td className="py-2 pr-4 font-mono text-[13px]">{row.group_key || '-'}</td>
                                                                         )}
                                                                         <td className="py-2 pr-4">${row.total_shortfall_usd.toFixed(2)}</td>
                                                                         <td className="py-2 pr-4">${row.wallet_subscription_shortfall_usd.toFixed(2)}</td>
@@ -4166,7 +4164,7 @@ const EconomicsAdmin: React.FC = () => {
                                                     subtitle="This helps explain why project budget goes negative."
                                                 />
                                                 <CardBody>
-                                                    <pre className="text-xs leading-relaxed text-gray-700 bg-gray-50 border border-gray-200/70 rounded-xl p-4 whitespace-pre-wrap">
+                                                    <pre className="text-xs leading-relaxed text-[#3A5672] bg-[#F6FAFA] border border-[#E6F1F0] rounded-lg p-4 whitespace-pre-wrap">
 {`External (Stripe) subscription — primary: subscription budget
 subscription budget -> wallet overflow -> project absorbs
 actual over reserved: subscription headroom, then project (shortfall:subscription_overage)
@@ -4223,11 +4221,11 @@ Shortfall ledger notes:
                                                         <LoadingSpinner />
                                                     ) : lineageResult ? (
                                                         <div className="space-y-6">
-                                                            <div className="rounded-xl border border-gray-200/70 bg-gray-50 p-4">
-                                                                <div className="text-xs text-gray-500 font-semibold uppercase mb-2">Project budget reservations</div>
+                                                            <div className="rounded-xl border border-[#E6F1F0] bg-[#F6FAFA] p-4">
+                                                                <div className="text-[10.5px] font-bold tracking-[0.1em] uppercase text-[#7A99B0] mb-2">Project budget reservations</div>
                                                                 {lineageResult.project_budget?.reservations?.length ? (
                                                                     <table className="min-w-full text-xs text-left">
-                                                                        <thead className="text-gray-500 uppercase">
+                                                                        <thead className="text-[10.5px] font-bold tracking-[0.1em] uppercase text-[#7A99B0]">
                                                                             <tr>
                                                                                 <th className="py-1 pr-3">Reservation</th>
                                                                                 <th className="py-1 pr-3">Amount</th>
@@ -4237,10 +4235,10 @@ Shortfall ledger notes:
                                                                                 <th className="py-1 pr-3">Expires</th>
                                                                             </tr>
                                                                         </thead>
-                                                                        <tbody className="text-gray-700">
+                                                                        <tbody className="text-[#3A5672]">
                                                                             {lineageResult.project_budget.reservations.map((r: any, i: number) => (
-                                                                                <tr key={`pr-${i}`} className="border-t border-gray-200/70">
-                                                                                    <td className="py-1 pr-3">{r.reservation_id}</td>
+                                                                                <tr key={`pr-${i}`} className="border-t border-[#E6F1F0]">
+                                                                                    <td className="py-1 pr-3 font-mono">{r.reservation_id}</td>
                                                                                     <td className="py-1 pr-3">{formatUsdFromCents(r.amount_cents)}</td>
                                                                                     <td className="py-1 pr-3">{formatUsdFromCents(r.actual_spent_cents)}</td>
                                                                                     <td className="py-1 pr-3">{r.status}</td>
@@ -4255,11 +4253,11 @@ Shortfall ledger notes:
                                                                 )}
                                                             </div>
 
-                                                            <div className="rounded-xl border border-gray-200/70 bg-gray-50 p-4">
-                                                                <div className="text-xs text-gray-500 font-semibold uppercase mb-2">Project budget ledger</div>
+                                                            <div className="rounded-xl border border-[#E6F1F0] bg-[#F6FAFA] p-4">
+                                                                <div className="text-[10.5px] font-bold tracking-[0.1em] uppercase text-[#7A99B0] mb-2">Project budget ledger</div>
                                                                 {lineageResult.project_budget?.ledger?.length ? (
                                                                     <table className="min-w-full text-xs text-left">
-                                                                        <thead className="text-gray-500 uppercase">
+                                                                        <thead className="text-[10.5px] font-bold tracking-[0.1em] uppercase text-[#7A99B0]">
                                                                             <tr>
                                                                                 <th className="py-1 pr-3">ID</th>
                                                                                 <th className="py-1 pr-3">Amount</th>
@@ -4268,9 +4266,9 @@ Shortfall ledger notes:
                                                                                 <th className="py-1 pr-3">Created</th>
                                                                             </tr>
                                                                         </thead>
-                                                                        <tbody className="text-gray-700">
+                                                                        <tbody className="text-[#3A5672]">
                                                                             {lineageResult.project_budget.ledger.map((r: any, i: number) => (
-                                                                                <tr key={`pl-${i}`} className="border-t border-gray-200/70">
+                                                                                <tr key={`pl-${i}`} className="border-t border-[#E6F1F0]">
                                                                                     <td className="py-1 pr-3">{r.id}</td>
                                                                                     <td className="py-1 pr-3">{formatUsd(r.amount_usd)}</td>
                                                                                     <td className="py-1 pr-3">{r.kind}</td>
@@ -4285,11 +4283,11 @@ Shortfall ledger notes:
                                                                 )}
                                                             </div>
 
-                                                            <div className="rounded-xl border border-gray-200/70 bg-gray-50 p-4">
-                                                                <div className="text-xs text-gray-500 font-semibold uppercase mb-2">Subscription reservations</div>
+                                                            <div className="rounded-xl border border-[#E6F1F0] bg-[#F6FAFA] p-4">
+                                                                <div className="text-[10.5px] font-bold tracking-[0.1em] uppercase text-[#7A99B0] mb-2">Subscription reservations</div>
                                                                 {lineageResult.subscription_budget?.reservations?.length ? (
                                                                     <table className="min-w-full text-xs text-left">
-                                                                        <thead className="text-gray-500 uppercase">
+                                                                        <thead className="text-[10.5px] font-bold tracking-[0.1em] uppercase text-[#7A99B0]">
                                                                             <tr>
                                                                                 <th className="py-1 pr-3">Reservation</th>
                                                                                 <th className="py-1 pr-3">Period</th>
@@ -4299,11 +4297,11 @@ Shortfall ledger notes:
                                                                                 <th className="py-1 pr-3">Created</th>
                                                                             </tr>
                                                                         </thead>
-                                                                        <tbody className="text-gray-700">
+                                                                        <tbody className="text-[#3A5672]">
                                                                             {lineageResult.subscription_budget.reservations.map((r: any, i: number) => (
-                                                                                <tr key={`sr-${i}`} className="border-t border-gray-200/70">
-                                                                                    <td className="py-1 pr-3">{r.reservation_id}</td>
-                                                                                    <td className="py-1 pr-3">{r.period_key}</td>
+                                                                                <tr key={`sr-${i}`} className="border-t border-[#E6F1F0]">
+                                                                                    <td className="py-1 pr-3 font-mono">{r.reservation_id}</td>
+                                                                                    <td className="py-1 pr-3 font-mono">{r.period_key}</td>
                                                                                     <td className="py-1 pr-3">{formatUsdFromCents(r.amount_cents)}</td>
                                                                                     <td className="py-1 pr-3">{formatUsdFromCents(r.actual_spent_cents)}</td>
                                                                                     <td className="py-1 pr-3">{r.status}</td>
@@ -4317,11 +4315,11 @@ Shortfall ledger notes:
                                                                 )}
                                                             </div>
 
-                                                            <div className="rounded-xl border border-gray-200/70 bg-gray-50 p-4">
-                                                                <div className="text-xs text-gray-500 font-semibold uppercase mb-2">Subscription ledger</div>
+                                                            <div className="rounded-xl border border-[#E6F1F0] bg-[#F6FAFA] p-4">
+                                                                <div className="text-[10.5px] font-bold tracking-[0.1em] uppercase text-[#7A99B0] mb-2">Subscription ledger</div>
                                                                 {lineageResult.subscription_budget?.ledger?.length ? (
                                                                     <table className="min-w-full text-xs text-left">
-                                                                        <thead className="text-gray-500 uppercase">
+                                                                        <thead className="text-[10.5px] font-bold tracking-[0.1em] uppercase text-[#7A99B0]">
                                                                             <tr>
                                                                                 <th className="py-1 pr-3">ID</th>
                                                                                 <th className="py-1 pr-3">Period</th>
@@ -4331,11 +4329,11 @@ Shortfall ledger notes:
                                                                                 <th className="py-1 pr-3">Created</th>
                                                                             </tr>
                                                                         </thead>
-                                                                        <tbody className="text-gray-700">
+                                                                        <tbody className="text-[#3A5672]">
                                                                             {lineageResult.subscription_budget.ledger.map((r: any, i: number) => (
-                                                                                <tr key={`sl-${i}`} className="border-t border-gray-200/70">
+                                                                                <tr key={`sl-${i}`} className="border-t border-[#E6F1F0]">
                                                                                     <td className="py-1 pr-3">{r.id}</td>
-                                                                                    <td className="py-1 pr-3">{r.period_key}</td>
+                                                                                    <td className="py-1 pr-3 font-mono">{r.period_key}</td>
                                                                                     <td className="py-1 pr-3">{formatUsd(r.amount_usd)}</td>
                                                                                     <td className="py-1 pr-3">{r.kind}</td>
                                                                                     <td className="py-1 pr-3">{r.note || '-'}</td>
@@ -4349,11 +4347,11 @@ Shortfall ledger notes:
                                                                 )}
                                                             </div>
 
-                                                            <div className="rounded-xl border border-gray-200/70 bg-gray-50 p-4">
-                                                                <div className="text-xs text-gray-500 font-semibold uppercase mb-2">Wallet reservations</div>
+                                                            <div className="rounded-xl border border-[#E6F1F0] bg-[#F6FAFA] p-4">
+                                                                <div className="text-[10.5px] font-bold tracking-[0.1em] uppercase text-[#7A99B0] mb-2">Wallet reservations</div>
                                                                 {lineageResult.wallet?.reservations?.length ? (
                                                                     <table className="min-w-full text-xs text-left">
-                                                                        <thead className="text-gray-500 uppercase">
+                                                                        <thead className="text-[10.5px] font-bold tracking-[0.1em] uppercase text-[#7A99B0]">
                                                                             <tr>
                                                                                 <th className="py-1 pr-3">Reservation</th>
                                                                                 <th className="py-1 pr-3">Reserved (USD)</th>
@@ -4362,10 +4360,10 @@ Shortfall ledger notes:
                                                                                 <th className="py-1 pr-3">Created</th>
                                                                             </tr>
                                                                         </thead>
-                                                                        <tbody className="text-gray-700">
+                                                                        <tbody className="text-[#3A5672]">
                                                                             {lineageResult.wallet.reservations.map((r: any, i: number) => (
-                                                                                <tr key={`wr-${i}`} className="border-t border-gray-200/70">
-                                                                                    <td className="py-1 pr-3">{r.reservation_id}</td>
+                                                                                <tr key={`wr-${i}`} className="border-t border-[#E6F1F0]">
+                                                                                    <td className="py-1 pr-3 font-mono">{r.reservation_id}</td>
                                                                                     <td className="py-1 pr-3">${Number(r.reserved_usd || 0).toFixed(2)}</td>
                                                                                     <td className="py-1 pr-3">{r.spent_usd == null ? '—' : `$${Number(r.spent_usd).toFixed(2)}`}</td>
                                                                                     <td className="py-1 pr-3">{r.status}</td>
@@ -4481,15 +4479,15 @@ Shortfall ledger notes:
                                                 required
                                             />
                                             <div className="flex flex-col">
-                                                <label className="block text-sm font-medium text-gray-800 mb-2">Active</label>
+                                                <label className="block text-sm font-medium text-[#0D1E2C] mb-2">Active</label>
                                                 <div className="flex items-center gap-3 h-full">
                                                     <input
                                                         type="checkbox"
                                                         checked={planActive}
                                                         onChange={(e) => setPlanActive(e.target.checked)}
-                                                        className="h-4 w-4 rounded border-gray-300 text-gray-900 focus:ring-gray-900/20"
+                                                        className="h-4 w-4 rounded border-[#D8ECEB] text-[#01BEB2] focus:ring-[#01BEB2]/30"
                                                     />
-                                                    <span className="text-sm text-gray-600">{planActive ? 'enabled' : 'disabled'}</span>
+                                                    <span className="text-sm text-[#3A5672]">{planActive ? 'enabled' : 'disabled'}</span>
                                                 </div>
                                             </div>
                                         </div>
@@ -4523,29 +4521,29 @@ Shortfall ledger notes:
                                     ) : (
                                         <div className="overflow-x-auto">
                                             <table className="w-full text-sm">
-                                                <thead className="bg-gray-50 border-b border-gray-200/70">
-                                                <tr className="text-gray-600">
-                                                    <th className="px-6 py-4 text-left font-semibold">Plan ID</th>
-                                                    <th className="px-6 py-4 text-left font-semibold">Provider</th>
-                                                    <th className="px-6 py-4 text-left font-semibold">Stripe price</th>
-                                                    <th className="px-6 py-4 text-right font-semibold">Monthly price</th>
-                                                    <th className="px-6 py-4 text-left font-semibold">Active</th>
-                                                    <th className="px-6 py-4 text-left font-semibold">Updated</th>
-                                                    <th className="px-6 py-4 text-left font-semibold">Notes</th>
+                                                <thead className="bg-[#F6FAFA] border-b border-[#E6F1F0] text-[10.5px] font-bold tracking-[0.1em] uppercase text-[#7A99B0]">
+                                                <tr>
+                                                    <th className="px-6 py-4 text-left font-bold">Plan ID</th>
+                                                    <th className="px-6 py-4 text-left font-bold">Provider</th>
+                                                    <th className="px-6 py-4 text-left font-bold">Stripe price</th>
+                                                    <th className="px-6 py-4 text-right font-bold">Monthly price</th>
+                                                    <th className="px-6 py-4 text-left font-bold">Active</th>
+                                                    <th className="px-6 py-4 text-left font-bold">Updated</th>
+                                                    <th className="px-6 py-4 text-left font-bold">Notes</th>
                                                 </tr>
                                                 </thead>
-                                                <tbody className="divide-y divide-gray-200/70">
+                                                <tbody className="divide-y divide-[#E6F1F0]">
                                                 {subscriptionPlans.map((plan) => (
-                                                    <tr key={`${plan.tenant}:${plan.project}:${plan.plan_id}`} className="hover:bg-gray-50/70 transition-colors">
-                                                        <td className="px-6 py-4 font-semibold text-gray-900">{plan.plan_id}</td>
-                                                        <td className="px-6 py-4 text-gray-700">{plan.provider}</td>
-                                                        <td className="px-6 py-4 text-gray-700">{plan.stripe_price_id || '—'}</td>
-                                                        <td className="px-6 py-4 text-right text-gray-700">
+                                                    <tr key={`${plan.tenant}:${plan.project}:${plan.plan_id}`} className="hover:bg-[#F6FAFA] transition-colors">
+                                                        <td className="px-6 py-4 font-mono text-[13px] font-semibold text-[#0D1E2C]">{plan.plan_id}</td>
+                                                        <td className="px-6 py-4 text-[#3A5672]">{plan.provider}</td>
+                                                        <td className="px-6 py-4 font-mono text-[13px] text-[#0D1E2C]">{plan.stripe_price_id || '—'}</td>
+                                                        <td className="px-6 py-4 text-right text-[#3A5672]">
                                                             ${(Number(plan.monthly_price_cents || 0) / 100).toFixed(2)} ({plan.monthly_price_cents}¢)
                                                         </td>
-                                                        <td className="px-6 py-4 text-gray-700">{plan.active ? 'yes' : 'no'}</td>
-                                                        <td className="px-6 py-4 text-gray-600">{formatDateTime(plan.updated_at)}</td>
-                                                        <td className="px-6 py-4 text-gray-600">{plan.notes || '—'}</td>
+                                                        <td className="px-6 py-4 text-[#3A5672]">{plan.active ? 'yes' : 'no'}</td>
+                                                        <td className="px-6 py-4 text-[#3A5672]">{formatDateTime(plan.updated_at)}</td>
+                                                        <td className="px-6 py-4 text-[#3A5672]">{plan.notes || '—'}</td>
                                                     </tr>
                                                 ))}
                                                 </tbody>
@@ -4649,104 +4647,104 @@ Shortfall ledger notes:
                                     </form>
 
                                     {subscription && (
-                                        <div className="rounded-2xl border border-gray-200/70 bg-gray-50 p-5 text-sm space-y-3">
+                                        <div className="rounded-xl border border-[#E6F1F0] bg-[#F6FAFA] p-5 text-sm space-y-3">
                                             <div className="flex items-center justify-between">
-                                                <div className="font-semibold text-gray-900">Subscription</div>
+                                                <div className="font-semibold text-[#0D1E2C]">Subscription</div>
                                                 <DuePill sub={subscription} />
                                             </div>
 
                                             <div className="space-y-2">
                                                 <div className="flex justify-between">
-                                                    <span className="text-gray-600">plan_id</span>
-                                                    <strong>{subscription.plan_id || '—'}</strong>
+                                                    <span className="text-[#3A5672]">plan_id</span>
+                                                    <strong className="font-mono text-[13px]">{subscription.plan_id || '—'}</strong>
                                                 </div>
 
                                                 <div className="flex justify-between">
-                                                    <span className="text-gray-600">billing</span>
+                                                    <span className="text-[#3A5672]">billing</span>
                                                     <strong>{providerLabel(subscription.provider)}</strong>
                                                 </div>
 
                                                 <div className="flex justify-between">
-                                                    <span className="text-gray-600">status</span>
+                                                    <span className="text-[#3A5672]">status</span>
                                                     <strong>{subscription.status}</strong>
                                                 </div>
 
                                                 <div className="flex justify-between">
-                                                    <span className="text-gray-600">monthly price</span>
+                                                    <span className="text-[#3A5672]">monthly price</span>
                                                     <strong>${(Number(subscription.monthly_price_cents || 0) / 100).toFixed(2)} ({subscription.monthly_price_cents}¢)</strong>
                                                 </div>
 
                                                 <div className="flex justify-between">
-                                                    <span className="text-gray-600">started</span>
+                                                    <span className="text-[#3A5672]">started</span>
                                                     <strong>{formatDateTime(subscription.started_at)}</strong>
                                                 </div>
 
                                                 <div className="flex justify-between">
-                                                    <span className="text-gray-600">last charge</span>
+                                                    <span className="text-[#3A5672]">last charge</span>
                                                     <strong>{formatDateTime(subscription.last_charged_at)}</strong>
                                                 </div>
 
                                                 <div className="flex justify-between">
-                                                    <span className="text-gray-600">next charge</span>
+                                                    <span className="text-[#3A5672]">next charge</span>
                                                     <strong>{formatDateTime(subscription.next_charge_at)}</strong>
                                                 </div>
 
                                                 {subscription.provider === 'stripe' && (
                                                     <>
                                                         <div className="flex justify-between">
-                                                            <span className="text-gray-600">stripe_customer_id</span>
-                                                            <strong>{subscription.stripe_customer_id || '—'}</strong>
+                                                            <span className="text-[#3A5672]">stripe_customer_id</span>
+                                                            <strong className="font-mono text-[13px]">{subscription.stripe_customer_id || '—'}</strong>
                                                         </div>
                                                         <div className="flex justify-between">
-                                                            <span className="text-gray-600">stripe_subscription_id</span>
-                                                            <strong>{subscription.stripe_subscription_id || '—'}</strong>
+                                                            <span className="text-[#3A5672]">stripe_subscription_id</span>
+                                                            <strong className="font-mono text-[13px]">{subscription.stripe_subscription_id || '—'}</strong>
                                                         </div>
                                                     </>
                                                 )}
                                             </div>
 
                                             {subscriptionBalance && (
-                                                <div className="pt-4 border-t border-gray-200/70 space-y-2">
-                                                    <div className="text-sm font-semibold text-gray-900">Subscription balance</div>
-                                                    <div className="text-xs text-gray-600">
-                                                        Reference: {subscriptionBalance.reference_model || (economicsRef ? `${economicsRef.reference_provider}/${economicsRef.reference_model}` : '')}
+                                                <div className="pt-4 border-t border-[#E6F1F0] space-y-2">
+                                                    <div className="text-sm font-semibold text-[#0D1E2C]">Subscription balance</div>
+                                                    <div className="text-xs text-[#3A5672]">
+                                                        Reference: <span className="font-mono">{subscriptionBalance.reference_model || (economicsRef ? `${economicsRef.reference_provider}/${economicsRef.reference_model}` : '')}</span>
                                                     </div>
                                                     {subscriptionBalance.period_start && subscriptionBalance.period_end && (
-                                                        <div className="text-xs text-gray-600">
+                                                        <div className="text-xs text-[#3A5672]">
                                                             Period: {formatDateTime(subscriptionBalance.period_start)} → {formatDateTime(subscriptionBalance.period_end)}
                                                         </div>
                                                     )}
 
                                                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
-                                                        <div className="rounded-xl bg-white border border-gray-200/70 p-3">
-                                                            <div className="text-gray-600">Balance</div>
-                                                            <div className="font-semibold text-gray-900">
+                                                        <div className="rounded-lg bg-white border border-[#E6F1F0] p-3">
+                                                            <div className="text-[#3A5672]">Balance</div>
+                                                            <div className="font-semibold text-[#0D1E2C]">
                                                                 ${Number(subscriptionBalance.balance_usd || 0).toFixed(2)}
                                                             </div>
                                                             {subscriptionBalance.balance_tokens != null && (
-                                                                <div className="text-xs text-gray-500">
+                                                                <div className="text-xs text-[#7A99B0]">
                                                                     {Number(subscriptionBalance.balance_tokens).toLocaleString()} tokens
                                                                 </div>
                                                             )}
                                                         </div>
-                                                        <div className="rounded-xl bg-white border border-gray-200/70 p-3">
-                                                            <div className="text-gray-600">Reserved</div>
-                                                            <div className="font-semibold text-gray-900">
+                                                        <div className="rounded-lg bg-white border border-[#E6F1F0] p-3">
+                                                            <div className="text-[#3A5672]">Reserved</div>
+                                                            <div className="font-semibold text-[#0D1E2C]">
                                                                 ${Number(subscriptionBalance.reserved_usd || 0).toFixed(2)}
                                                             </div>
                                                             {subscriptionBalance.reserved_tokens != null && (
-                                                                <div className="text-xs text-gray-500">
+                                                                <div className="text-xs text-[#7A99B0]">
                                                                     {Number(subscriptionBalance.reserved_tokens).toLocaleString()} tokens
                                                                 </div>
                                                             )}
                                                         </div>
-                                                        <div className="rounded-xl bg-white border border-gray-200/70 p-3">
-                                                            <div className="text-gray-600">Available</div>
-                                                            <div className="font-semibold text-gray-900">
+                                                        <div className="rounded-lg bg-white border border-[#E6F1F0] p-3">
+                                                            <div className="text-[#3A5672]">Available</div>
+                                                            <div className="font-semibold text-[#0D1E2C]">
                                                                 ${Number(subscriptionBalance.available_usd || 0).toFixed(2)}
                                                             </div>
                                                             {subscriptionBalance.available_tokens != null && (
-                                                                <div className="text-xs text-gray-500">
+                                                                <div className="text-xs text-[#7A99B0]">
                                                                     {Number(subscriptionBalance.available_tokens).toLocaleString()} tokens
                                                                 </div>
                                                             )}
@@ -4754,21 +4752,21 @@ Shortfall ledger notes:
                                                     </div>
 
                                                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
-                                                        <div className="rounded-xl bg-white border border-gray-200/70 p-3">
-                                                            <div className="text-gray-600">Period top-up</div>
-                                                            <div className="font-semibold text-gray-900">
+                                                        <div className="rounded-lg bg-white border border-[#E6F1F0] p-3">
+                                                            <div className="text-[#3A5672]">Period top-up</div>
+                                                            <div className="font-semibold text-[#0D1E2C]">
                                                                 ${Number(subscriptionBalance.topup_usd ?? subscriptionBalance.lifetime_added_usd ?? 0).toFixed(2)}
                                                             </div>
                                                         </div>
-                                                        <div className="rounded-xl bg-white border border-gray-200/70 p-3">
-                                                            <div className="text-gray-600">Period spent</div>
-                                                            <div className="font-semibold text-gray-900">
+                                                        <div className="rounded-lg bg-white border border-[#E6F1F0] p-3">
+                                                            <div className="text-[#3A5672]">Period spent</div>
+                                                            <div className="font-semibold text-[#0D1E2C]">
                                                                 ${Number(subscriptionBalance.spent_usd ?? subscriptionBalance.lifetime_spent_usd ?? 0).toFixed(2)}
                                                             </div>
                                                         </div>
-                                                        <div className="rounded-xl bg-white border border-gray-200/70 p-3">
-                                                            <div className="text-gray-600">Rolled over</div>
-                                                            <div className="font-semibold text-gray-900">
+                                                        <div className="rounded-lg bg-white border border-[#E6F1F0] p-3">
+                                                            <div className="text-[#3A5672]">Rolled over</div>
+                                                            <div className="font-semibold text-[#0D1E2C]">
                                                                 ${Number(subscriptionBalance.rolled_over_usd || 0).toFixed(2)}
                                                             </div>
                                                         </div>
@@ -4779,8 +4777,8 @@ Shortfall ledger notes:
                                             {/* Internal ops */}
                                             {subscription.provider === 'internal' &&
                                                 subscription.status === 'active' && (
-                                                    <div className="pt-4 border-t border-gray-200/70 flex flex-wrap items-center justify-between gap-3">
-                                                        <div className="text-xs text-gray-600">
+                                                    <div className="pt-4 border-t border-[#E6F1F0] flex flex-wrap items-center justify-between gap-3">
+                                                        <div className="text-xs text-[#3A5672]">
                                                             Internal plans draw from the project budget bounded by quota. Reset re-anchors the month + day windows and clears hour buckets so all rolling counters start fresh.
                                                         </div>
 
@@ -4820,7 +4818,7 @@ Shortfall ledger notes:
                                     subtitle="Manual top-ups for a user's subscription balance."
                                 />
                                 <CardBody className="space-y-6">
-                                    <div className="text-xs text-gray-600">
+                                    <div className="text-xs text-[#3A5672]">
                                         Manual top-ups apply to external subscription balances. Internal plans have no
                                         balance — use “Reset quota” in the lookup card to refresh their rolling quota windows.
                                     </div>
@@ -4848,12 +4846,12 @@ Shortfall ledger notes:
                                                 placeholder="Optional notes"
                                             />
                                         </div>
-                                        <label className="flex items-center gap-2 text-sm text-gray-700">
+                                        <label className="flex items-center gap-2 text-sm text-[#3A5672]">
                                             <input
                                                 type="checkbox"
                                                 checked={subBudgetForceTopup}
                                                 onChange={(e) => setSubBudgetForceTopup(e.target.checked)}
-                                                className="h-4 w-4 rounded border-gray-300 text-gray-900 focus:ring-gray-900/20"
+                                                className="h-4 w-4 rounded border-[#D8ECEB] text-[#01BEB2] focus:ring-[#01BEB2]/30"
                                             />
                                             Force topup (allow multiple in the same billing period)
                                         </label>
@@ -4938,7 +4936,7 @@ Shortfall ledger notes:
                                             {loadingAction ? 'Submitting…' : 'Request Cancellation'}
                                         </Button>
                                     </form>
-                                    <div className="text-xs text-gray-500">
+                                    <div className="text-xs text-[#7A99B0]">
                                         Provide either User ID or Stripe Subscription ID.
                                     </div>
                                 </CardBody>
@@ -4999,48 +4997,48 @@ Shortfall ledger notes:
                                     ) : (
                                         <div className="overflow-x-auto">
                                             <table className="w-full text-sm">
-                                                <thead className="bg-gray-50 border-b border-gray-200/70">
-                                                <tr className="text-gray-600">
-                                                    <th className="px-6 py-4 text-left font-semibold">Kind</th>
-                                                    <th className="px-6 py-4 text-left font-semibold">User</th>
-                                                    <th className="px-6 py-4 text-left font-semibold">Amount</th>
-                                                    <th className="px-6 py-4 text-left font-semibold">Tokens</th>
-                                                    <th className="px-6 py-4 text-left font-semibold">Stripe ID</th>
-                                                    <th className="px-6 py-4 text-left font-semibold">Open</th>
-                                                    <th className="px-6 py-4 text-left font-semibold">External ID</th>
-                                                    <th className="px-6 py-4 text-left font-semibold">Created</th>
+                                                <thead className="bg-[#F6FAFA] border-b border-[#E6F1F0] text-[10.5px] font-bold tracking-[0.1em] uppercase text-[#7A99B0]">
+                                                <tr>
+                                                    <th className="px-6 py-4 text-left font-bold">Kind</th>
+                                                    <th className="px-6 py-4 text-left font-bold">User</th>
+                                                    <th className="px-6 py-4 text-left font-bold">Amount</th>
+                                                    <th className="px-6 py-4 text-left font-bold">Tokens</th>
+                                                    <th className="px-6 py-4 text-left font-bold">Stripe ID</th>
+                                                    <th className="px-6 py-4 text-left font-bold">Open</th>
+                                                    <th className="px-6 py-4 text-left font-bold">External ID</th>
+                                                    <th className="px-6 py-4 text-left font-bold">Created</th>
                                                 </tr>
                                                 </thead>
-                                                <tbody className="divide-y divide-gray-200/70">
+                                                <tbody className="divide-y divide-[#E6F1F0]">
                                                 {pendingStripeItems.map((p) => {
                                                     const stripeLink = stripeLinkForPending(p);
                                                     return (
-                                                    <tr key={`${p.kind}:${p.external_id}`} className="hover:bg-gray-50/70 transition-colors">
-                                                        <td className="px-6 py-4 text-gray-700">{p.kind}</td>
-                                                        <td className="px-6 py-4 text-gray-700">{p.user_id || '—'}</td>
-                                                        <td className="px-6 py-4 text-gray-700">
+                                                    <tr key={`${p.kind}:${p.external_id}`} className="hover:bg-[#F6FAFA] transition-colors">
+                                                        <td className="px-6 py-4 font-mono text-[13px] text-[#0D1E2C]">{p.kind}</td>
+                                                        <td className="px-6 py-4 font-mono text-[13px] text-[#0D1E2C]">{p.user_id || '—'}</td>
+                                                        <td className="px-6 py-4 text-[#3A5672]">
                                                             {p.amount_usd != null ? `$${Number(p.amount_usd).toFixed(2)}` : '—'}
                                                         </td>
-                                                        <td className="px-6 py-4 text-gray-700">
+                                                        <td className="px-6 py-4 text-[#3A5672]">
                                                             {p.tokens != null ? Number(p.tokens).toLocaleString() : '—'}
                                                         </td>
-                                                        <td className="px-6 py-4 text-gray-700">{stripeLink?.id || '—'}</td>
+                                                        <td className="px-6 py-4 font-mono text-[13px] text-[#0D1E2C]">{stripeLink?.id || '—'}</td>
                                                         <td className="px-6 py-4">
                                                             {stripeLink ? (
                                                                 <a
                                                                     href={stripeLink.url}
                                                                     target="_blank"
                                                                     rel="noreferrer"
-                                                                    className="text-gray-900 underline"
+                                                                    className="text-[#4372C3] underline hover:text-[#2B4B8A]"
                                                                 >
                                                                     Open
                                                                 </a>
                                                             ) : (
-                                                                <span className="text-gray-400">—</span>
+                                                                <span className="text-[#7A99B0]">—</span>
                                                             )}
                                                         </td>
-                                                        <td className="px-6 py-4 text-gray-500">{p.external_id}</td>
-                                                        <td className="px-6 py-4 text-gray-600">{formatDateTime(p.created_at)}</td>
+                                                        <td className="px-6 py-4 font-mono text-[13px] text-[#3A5672]">{p.external_id}</td>
+                                                        <td className="px-6 py-4 text-[#3A5672]">{formatDateTime(p.created_at)}</td>
                                                     </tr>
                                                 );
                                                 })}
@@ -5087,48 +5085,48 @@ Shortfall ledger notes:
                                     ) : (
                                         <div className="overflow-x-auto">
                                             <table className="w-full text-sm">
-                                                <thead className="bg-gray-50 border-b border-gray-200/70">
-                                                <tr className="text-gray-600">
-                                                    <th className="px-6 py-4 text-left font-semibold">Kind</th>
-                                                    <th className="px-6 py-4 text-left font-semibold">User</th>
-                                                    <th className="px-6 py-4 text-left font-semibold">Amount</th>
-                                                    <th className="px-6 py-4 text-left font-semibold">Tokens</th>
-                                                    <th className="px-6 py-4 text-left font-semibold">Stripe ID</th>
-                                                    <th className="px-6 py-4 text-left font-semibold">Open</th>
-                                                    <th className="px-6 py-4 text-left font-semibold">External ID</th>
-                                                    <th className="px-6 py-4 text-left font-semibold">Created</th>
+                                                <thead className="bg-[#F6FAFA] border-b border-[#E6F1F0] text-[10.5px] font-bold tracking-[0.1em] uppercase text-[#7A99B0]">
+                                                <tr>
+                                                    <th className="px-6 py-4 text-left font-bold">Kind</th>
+                                                    <th className="px-6 py-4 text-left font-bold">User</th>
+                                                    <th className="px-6 py-4 text-left font-bold">Amount</th>
+                                                    <th className="px-6 py-4 text-left font-bold">Tokens</th>
+                                                    <th className="px-6 py-4 text-left font-bold">Stripe ID</th>
+                                                    <th className="px-6 py-4 text-left font-bold">Open</th>
+                                                    <th className="px-6 py-4 text-left font-bold">External ID</th>
+                                                    <th className="px-6 py-4 text-left font-bold">Created</th>
                                                 </tr>
                                                 </thead>
-                                                <tbody className="divide-y divide-gray-200/70">
+                                                <tbody className="divide-y divide-[#E6F1F0]">
                                                 {pendingEconomicsItems.map((p) => {
                                                     const stripeLink = stripeLinkForPending(p);
                                                     return (
-                                                    <tr key={`${p.kind}:${p.external_id}`} className="hover:bg-gray-50/70 transition-colors">
-                                                        <td className="px-6 py-4 text-gray-700">{p.kind}</td>
-                                                        <td className="px-6 py-4 text-gray-700">{p.user_id || '—'}</td>
-                                                        <td className="px-6 py-4 text-gray-700">
+                                                    <tr key={`${p.kind}:${p.external_id}`} className="hover:bg-[#F6FAFA] transition-colors">
+                                                        <td className="px-6 py-4 font-mono text-[13px] text-[#0D1E2C]">{p.kind}</td>
+                                                        <td className="px-6 py-4 font-mono text-[13px] text-[#0D1E2C]">{p.user_id || '—'}</td>
+                                                        <td className="px-6 py-4 text-[#3A5672]">
                                                             {p.amount_usd != null ? `$${Number(p.amount_usd).toFixed(2)}` : '—'}
                                                         </td>
-                                                        <td className="px-6 py-4 text-gray-700">
+                                                        <td className="px-6 py-4 text-[#3A5672]">
                                                             {p.tokens != null ? Number(p.tokens).toLocaleString() : '—'}
                                                         </td>
-                                                        <td className="px-6 py-4 text-gray-700">{stripeLink?.id || '—'}</td>
+                                                        <td className="px-6 py-4 font-mono text-[13px] text-[#0D1E2C]">{stripeLink?.id || '—'}</td>
                                                         <td className="px-6 py-4">
                                                             {stripeLink ? (
                                                                 <a
                                                                     href={stripeLink.url}
                                                                     target="_blank"
                                                                     rel="noreferrer"
-                                                                    className="text-gray-900 underline"
+                                                                    className="text-[#4372C3] underline hover:text-[#2B4B8A]"
                                                                 >
                                                                     Open
                                                                 </a>
                                                             ) : (
-                                                                <span className="text-gray-400">—</span>
+                                                                <span className="text-[#7A99B0]">—</span>
                                                             )}
                                                         </td>
-                                                        <td className="px-6 py-4 text-gray-500">{p.external_id}</td>
-                                                        <td className="px-6 py-4 text-gray-600">{formatDateTime(p.created_at)}</td>
+                                                        <td className="px-6 py-4 font-mono text-[13px] text-[#3A5672]">{p.external_id}</td>
+                                                        <td className="px-6 py-4 text-[#3A5672]">{formatDateTime(p.created_at)}</td>
                                                     </tr>
                                                 );
                                                 })}
@@ -5236,34 +5234,34 @@ Shortfall ledger notes:
                                     ) : (
                                         <div className="overflow-x-auto">
                                             <table className="w-full text-sm">
-                                                <thead className="bg-gray-50 border-b border-gray-200/70">
-                                                <tr className="text-gray-600">
-                                                    <th className="px-6 py-4 text-left font-semibold">Period</th>
-                                                    <th className="px-6 py-4 text-left font-semibold">Status</th>
-                                                    <th className="px-6 py-4 text-left font-semibold">Topup</th>
-                                                    <th className="px-6 py-4 text-left font-semibold">Spent</th>
-                                                    <th className="px-6 py-4 text-left font-semibold">Rolled</th>
-                                                    <th className="px-6 py-4 text-left font-semibold">Balance</th>
-                                                    <th className="px-6 py-4 text-left font-semibold">Closed</th>
-                                                    <th className="px-6 py-4 text-left font-semibold">Actions</th>
+                                                <thead className="bg-[#F6FAFA] border-b border-[#E6F1F0] text-[10.5px] font-bold tracking-[0.1em] uppercase text-[#7A99B0]">
+                                                <tr>
+                                                    <th className="px-6 py-4 text-left font-bold">Period</th>
+                                                    <th className="px-6 py-4 text-left font-bold">Status</th>
+                                                    <th className="px-6 py-4 text-left font-bold">Topup</th>
+                                                    <th className="px-6 py-4 text-left font-bold">Spent</th>
+                                                    <th className="px-6 py-4 text-left font-bold">Rolled</th>
+                                                    <th className="px-6 py-4 text-left font-bold">Balance</th>
+                                                    <th className="px-6 py-4 text-left font-bold">Closed</th>
+                                                    <th className="px-6 py-4 text-left font-bold">Actions</th>
                                                 </tr>
                                                 </thead>
-                                                <tbody className="divide-y divide-gray-200/70">
+                                                <tbody className="divide-y divide-[#E6F1F0]">
                                                 {subPeriods.map((p) => (
                                                     <tr
                                                         key={p.period_key}
-                                                        className={p.period_key === subSelectedPeriodKey ? 'bg-gray-50/80' : 'hover:bg-gray-50/70 transition-colors'}
+                                                        className={p.period_key === subSelectedPeriodKey ? 'bg-[rgba(1,190,178,0.07)]' : 'hover:bg-[#F6FAFA] transition-colors'}
                                                     >
-                                                        <td className="px-6 py-4 text-gray-700">
-                                                            <div className="font-medium text-gray-900">{formatDateTime(p.period_start)} → {formatDateTime(p.period_end)}</div>
-                                                            <div className="text-xs text-gray-500">{p.period_key}</div>
+                                                        <td className="px-6 py-4 text-[#3A5672]">
+                                                            <div className="font-medium text-[#0D1E2C]">{formatDateTime(p.period_start)} → {formatDateTime(p.period_end)}</div>
+                                                            <div className="font-mono text-xs text-[#7A99B0]">{p.period_key}</div>
                                                         </td>
-                                                        <td className="px-6 py-4 text-gray-700">{p.status}</td>
-                                                        <td className="px-6 py-4 text-gray-700">${Number(p.topup_usd || 0).toFixed(2)}</td>
-                                                        <td className="px-6 py-4 text-gray-700">${Number(p.spent_usd || 0).toFixed(2)}</td>
-                                                        <td className="px-6 py-4 text-gray-700">${Number(p.rolled_over_usd || 0).toFixed(2)}</td>
-                                                        <td className="px-6 py-4 text-gray-700">${Number(p.balance_usd || 0).toFixed(2)}</td>
-                                                        <td className="px-6 py-4 text-gray-600">{formatDateTime(p.closed_at)}</td>
+                                                        <td className="px-6 py-4 text-[#3A5672]">{p.status}</td>
+                                                        <td className="px-6 py-4 text-[#3A5672]">${Number(p.topup_usd || 0).toFixed(2)}</td>
+                                                        <td className="px-6 py-4 text-[#3A5672]">${Number(p.spent_usd || 0).toFixed(2)}</td>
+                                                        <td className="px-6 py-4 text-[#3A5672]">${Number(p.rolled_over_usd || 0).toFixed(2)}</td>
+                                                        <td className="px-6 py-4 text-[#3A5672]">${Number(p.balance_usd || 0).toFixed(2)}</td>
+                                                        <td className="px-6 py-4 text-[#3A5672]">{formatDateTime(p.closed_at)}</td>
                                                         <td className="px-6 py-4">
                                                             <Button
                                                                 type="button"
@@ -5282,10 +5280,10 @@ Shortfall ledger notes:
                                     )}
 
                                     {subSelectedPeriodKey && (
-                                        <div className="pt-4 border-t border-gray-200/70 space-y-3">
+                                        <div className="pt-4 border-t border-[#E6F1F0] space-y-3">
                                             <div className="flex items-center justify-between">
-                                                <div className="text-sm text-gray-600">
-                                                    Ledger for period: <span className="font-medium text-gray-900">{subSelectedPeriodKey}</span>
+                                                <div className="text-sm text-[#3A5672]">
+                                                    Ledger for period: <span className="font-medium text-[#0D1E2C]">{subSelectedPeriodKey}</span>
                                                 </div>
                                                 <Button
                                                     type="button"
@@ -5302,30 +5300,30 @@ Shortfall ledger notes:
                                             ) : (
                                                 <div className="overflow-x-auto">
                                                     <table className="w-full text-sm">
-                                                        <thead className="bg-gray-50 border-b border-gray-200/70">
-                                                        <tr className="text-gray-600">
-                                                            <th className="px-6 py-4 text-left font-semibold">Time</th>
-                                                            <th className="px-6 py-4 text-left font-semibold">Kind</th>
-                                                            <th className="px-6 py-4 text-left font-semibold">Amount</th>
-                                                            <th className="px-6 py-4 text-left font-semibold">Provider</th>
-                                                            <th className="px-6 py-4 text-left font-semibold">Note</th>
-                                                            <th className="px-6 py-4 text-left font-semibold">Request</th>
+                                                        <thead className="bg-[#F6FAFA] border-b border-[#E6F1F0] text-[10.5px] font-bold tracking-[0.1em] uppercase text-[#7A99B0]">
+                                                        <tr>
+                                                            <th className="px-6 py-4 text-left font-bold">Time</th>
+                                                            <th className="px-6 py-4 text-left font-bold">Kind</th>
+                                                            <th className="px-6 py-4 text-left font-bold">Amount</th>
+                                                            <th className="px-6 py-4 text-left font-bold">Provider</th>
+                                                            <th className="px-6 py-4 text-left font-bold">Note</th>
+                                                            <th className="px-6 py-4 text-left font-bold">Request</th>
                                                         </tr>
                                                         </thead>
-                                                        <tbody className="divide-y divide-gray-200/70">
+                                                        <tbody className="divide-y divide-[#E6F1F0]">
                                                         {subLedger.map((l) => {
                                                             const amt = Number(l.amount_usd || 0);
                                                             const sign = amt >= 0 ? '+' : '-';
                                                             return (
-                                                                <tr key={l.id} className="hover:bg-gray-50/70 transition-colors">
-                                                                    <td className="px-6 py-4 text-gray-600">{formatDateTime(l.created_at)}</td>
-                                                                    <td className="px-6 py-4 text-gray-700">{l.kind}</td>
-                                                                    <td className="px-6 py-4 font-semibold text-gray-900">
+                                                                <tr key={l.id} className="hover:bg-[#F6FAFA] transition-colors">
+                                                                    <td className="px-6 py-4 text-[#3A5672]">{formatDateTime(l.created_at)}</td>
+                                                                    <td className="px-6 py-4 font-mono text-[13px] text-[#0D1E2C]">{l.kind}</td>
+                                                                    <td className="px-6 py-4 font-semibold text-[#0D1E2C]">
                                                                         {sign}${Math.abs(amt).toFixed(2)}
                                                                     </td>
-                                                                    <td className="px-6 py-4 text-gray-700">{l.provider || '—'}</td>
-                                                                    <td className="px-6 py-4 text-gray-700">{l.note || '—'}</td>
-                                                                    <td className="px-6 py-4 text-gray-500">{l.request_id || '—'}</td>
+                                                                    <td className="px-6 py-4 text-[#3A5672]">{l.provider || '—'}</td>
+                                                                    <td className="px-6 py-4 text-[#3A5672]">{l.note || '—'}</td>
+                                                                    <td className="px-6 py-4 font-mono text-[13px] text-[#3A5672]">{l.request_id || '—'}</td>
                                                                 </tr>
                                                             );
                                                         })}
@@ -5371,27 +5369,27 @@ Shortfall ledger notes:
                                     ) : (
                                         <div className="overflow-x-auto">
                                             <table className="w-full text-sm">
-                                                <thead className="bg-gray-50 border-b border-gray-200/70">
-                                                <tr className="text-gray-600">
-                                                    <th className="px-6 py-4 text-left font-semibold">User</th>
-                                                    <th className="px-6 py-4 text-left font-semibold">Billing</th>
-                                                    <th className="px-6 py-4 text-left font-semibold">Plan</th>
-                                                    <th className="px-6 py-4 text-left font-semibold">Due</th>
-                                                    <th className="px-6 py-4 text-left font-semibold">Next</th>
-                                                    <th className="px-6 py-4 text-left font-semibold">Last</th>
-                                                    <th className="px-6 py-4 text-left font-semibold">Updated</th>
+                                                <thead className="bg-[#F6FAFA] border-b border-[#E6F1F0] text-[10.5px] font-bold tracking-[0.1em] uppercase text-[#7A99B0]">
+                                                <tr>
+                                                    <th className="px-6 py-4 text-left font-bold">User</th>
+                                                    <th className="px-6 py-4 text-left font-bold">Billing</th>
+                                                    <th className="px-6 py-4 text-left font-bold">Plan</th>
+                                                    <th className="px-6 py-4 text-left font-bold">Due</th>
+                                                    <th className="px-6 py-4 text-left font-bold">Next</th>
+                                                    <th className="px-6 py-4 text-left font-bold">Last</th>
+                                                    <th className="px-6 py-4 text-left font-bold">Updated</th>
                                                 </tr>
                                                 </thead>
-                                                <tbody className="divide-y divide-gray-200/70">
+                                                <tbody className="divide-y divide-[#E6F1F0]">
                                                 {subsList.map((s) => (
-                                                    <tr key={`${s.tenant}:${s.project}:${s.user_id}`} className="hover:bg-gray-50/70 transition-colors">
-                                                        <td className="px-6 py-4 font-semibold text-gray-900">{s.user_id}</td>
-                                                        <td className="px-6 py-4 text-gray-700">{providerLabel(s.provider)}</td>
-                                                        <td className="px-6 py-4 text-gray-700">{s.plan_id || '—'}</td>
+                                                    <tr key={`${s.tenant}:${s.project}:${s.user_id}`} className="hover:bg-[#F6FAFA] transition-colors">
+                                                        <td className="px-6 py-4 font-mono text-[13px] font-semibold text-[#0D1E2C]">{s.user_id}</td>
+                                                        <td className="px-6 py-4 text-[#3A5672]">{providerLabel(s.provider)}</td>
+                                                        <td className="px-6 py-4 text-[#3A5672]">{s.plan_id || '—'}</td>
                                                         <td className="px-6 py-4"><DuePill sub={s} /></td>
-                                                        <td className="px-6 py-4 text-gray-700">{formatDateTime(s.next_charge_at)}</td>
-                                                        <td className="px-6 py-4 text-gray-700">{formatDateTime(s.last_charged_at)}</td>
-                                                        <td className="px-6 py-4 text-gray-600">{formatDateTime(s.updated_at)}</td>
+                                                        <td className="px-6 py-4 text-[#3A5672]">{formatDateTime(s.next_charge_at)}</td>
+                                                        <td className="px-6 py-4 text-[#3A5672]">{formatDateTime(s.last_charged_at)}</td>
+                                                        <td className="px-6 py-4 text-[#3A5672]">{formatDateTime(s.updated_at)}</td>
                                                     </tr>
                                                 ))}
                                                 </tbody>
@@ -5404,7 +5402,7 @@ Shortfall ledger notes:
                     )}
                     {/* Data lists loading indicator (global hint) */}
                     {(viewMode === 'quotaPolicies' || viewMode === 'budgetPolicies' || viewMode === 'appBudget' || viewMode === 'reservation') && loadingData && (
-                        <div className="text-center text-sm text-gray-500">Loading…</div>
+                        <div className="text-center text-sm text-[#7A99B0]">Loading…</div>
                     )}
 
 

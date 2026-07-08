@@ -363,33 +363,34 @@ const RedisBrowserAdmin: React.FC = () => {
             { label: 'Process HB', value: `${tp}kdcube:heartbeat:process` },
             { label: 'Instance HB', value: `${tp}kdcube:heartbeat:instance` },
             { label: 'Capacity', value: `${tp}kdcube:system:capacity` },
-            { label: 'Bundles', value: 'kdcube:config:bundles:' },
+            { label: 'Apps', value: 'kdcube:config:bundles:' },
         ];
     }, [configReady]);
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-indigo-50">
-            <div className="max-w-7xl mx-auto px-6 py-10">
-                <div className="flex items-center justify-between mb-8">
+        <div className="min-h-screen bg-[#EEF5F5]">
+            <div className="max-w-7xl mx-auto px-6 py-8">
+                <div className="flex items-center justify-between mb-6">
                     <div>
-                        <h1 className="text-4xl font-semibold text-gray-900 tracking-tight">Redis Browser</h1>
-                        <p className="text-gray-600 mt-2">Explore Redis keys and inspect stored values.</p>
+                        <div className="text-[11px] font-bold tracking-[0.14em] uppercase text-[#009C92]">Control Plane</div>
+                        <h1 className="text-xl font-bold text-[#0D1E2C] tracking-tight mt-1">Redis Browser</h1>
+                        <p className="text-sm text-[#3A5672] mt-1">Explore Redis keys and inspect stored values.</p>
                     </div>
-                    <div className="text-sm text-gray-500">{deleting ? 'Deleting…' : loading ? 'Loading…' : 'Ready'}</div>
+                    <div className={`inline-flex items-center px-2.5 py-1 rounded-full uppercase text-[10px] font-bold border ${(deleting || loading) ? 'text-[#B45309] bg-[rgba(245,158,11,0.1)] border-[rgba(245,158,11,0.4)]' : 'text-[#15803D] bg-[rgba(34,197,94,0.08)] border-[rgba(34,197,94,0.35)]'}`}>{deleting ? 'Deleting…' : loading ? 'Loading…' : 'Ready'}</div>
                 </div>
 
                 {error && (
-                    <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-red-700 text-sm">
+                    <div className="mb-6 rounded-lg border border-[rgba(248,113,113,0.4)] bg-[rgba(248,113,113,0.1)] px-4 py-3 text-[#B91C1C] text-sm">
                         {error}
                     </div>
                 )}
 
                 <div className="grid grid-cols-1 lg:grid-cols-[340px_1fr] gap-6">
                     <div className="space-y-6">
-                        <div className="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm">
-                            <div className="text-sm font-semibold text-gray-900 mb-3">Key filter</div>
+                        <div className="bg-white border border-[#E6F1F0] rounded-xl p-5 shadow-[0_1px_2px_rgba(13,30,44,0.04)]">
+                            <div className="text-[10.5px] font-bold tracking-[0.1em] uppercase text-[#7A99B0] mb-3">Key filter</div>
                             <input
-                                className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs"
+                                className="w-full rounded-md border border-[#D8ECEB] px-3 py-2 text-xs font-mono text-[#0D1E2C] placeholder:text-[#7A99B0] focus:outline-none focus:ring-2 focus:ring-[rgba(1,190,178,0.35)] focus:border-[#01BEB2]"
                                 placeholder="Prefix (e.g. kdcube:cp:)"
                                 value={prefix}
                                 onChange={(e) => setPrefix(e.target.value)}
@@ -399,7 +400,7 @@ const RedisBrowserAdmin: React.FC = () => {
                                     {quickPrefixes.map((item) => (
                                         <button
                                             key={item.label}
-                                            className="px-3 py-1 rounded-full text-[11px] font-semibold border border-gray-200 text-gray-700 hover:bg-gray-50"
+                                            className="px-3 py-1 rounded-md text-[11px] font-semibold border border-[#D8ECEB] bg-white text-[#3A5672] hover:bg-[#F6FAFA]"
                                             onClick={() => {
                                                 setPrefix(item.value);
                                                 setCursor(0);
@@ -414,7 +415,7 @@ const RedisBrowserAdmin: React.FC = () => {
                             )}
                             <div className="flex gap-2 mt-3">
                                 <button
-                                    className="flex-1 px-3 py-2 rounded-xl text-xs font-semibold bg-gray-900 text-white"
+                                    className="flex-1 px-3 py-2 rounded-md text-xs font-semibold bg-[#4372C3] hover:bg-[#2B4B8A] text-white"
                                     onClick={() => {
                                         setCursor(0);
                                         setKeys([]);
@@ -424,7 +425,7 @@ const RedisBrowserAdmin: React.FC = () => {
                                     Search
                                 </button>
                                 <button
-                                    className="flex-1 px-3 py-2 rounded-xl text-xs font-semibold border border-gray-200 text-gray-700"
+                                    className="flex-1 px-3 py-2 rounded-md text-xs font-semibold border border-[#D8ECEB] bg-white text-[#3A5672] hover:bg-[#F6FAFA] disabled:opacity-50"
                                     onClick={() => loadKeys(false)}
                                     disabled={cursor === 0 && keys.length > 0}
                                 >
@@ -433,32 +434,32 @@ const RedisBrowserAdmin: React.FC = () => {
                             </div>
                         </div>
 
-                        <div className="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm">
-                            <div className="text-sm font-semibold text-gray-900 mb-3">Keys</div>
-                            <div className="max-h-72 overflow-auto divide-y divide-gray-100">
+                        <div className="bg-white border border-[#E6F1F0] rounded-xl p-5 shadow-[0_1px_2px_rgba(13,30,44,0.04)]">
+                            <div className="text-[10.5px] font-bold tracking-[0.1em] uppercase text-[#7A99B0] mb-3">Keys</div>
+                            <div className="max-h-72 overflow-auto divide-y divide-[#E6F1F0]">
                                 {keys.map((item) => (
                                     <button
                                         key={item.key}
-                                        className={`w-full text-left px-3 py-2 text-xs transition ${selectedKey === item.key ? 'bg-indigo-50' : 'hover:bg-gray-50'}`}
+                                        className={`w-full text-left px-3 py-2 text-xs transition ${selectedKey === item.key ? 'bg-[rgba(1,190,178,0.06)]' : 'hover:bg-[#F6FAFA]'}`}
                                         onClick={() => loadKeyDetails(item.key)}
                                     >
-                                        <div className="font-semibold text-gray-900 truncate">{item.key}</div>
-                                        <div className="text-gray-500">{item.type} • TTL {item.ttl ?? 'n/a'}</div>
+                                        <div className="font-mono font-semibold text-[#0D1E2C] truncate">{item.key}</div>
+                                        <div className="text-[#7A99B0]">{item.type} • TTL {item.ttl ?? 'n/a'}</div>
                                     </button>
                                 ))}
                                 {!keys.length && (
-                                    <div className="px-3 py-4 text-xs text-gray-500">No keys loaded.</div>
+                                    <div className="px-3 py-4 text-xs text-[#7A99B0]">No keys loaded.</div>
                                 )}
                             </div>
                         </div>
                     </div>
 
                     <div className="space-y-6">
-                        <div className="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm">
-                            <div className="text-sm font-semibold text-gray-900 mb-3">Inspect key</div>
+                        <div className="bg-white border border-[#E6F1F0] rounded-xl p-5 shadow-[0_1px_2px_rgba(13,30,44,0.04)]">
+                            <div className="text-[10.5px] font-bold tracking-[0.1em] uppercase text-[#7A99B0] mb-3">Inspect key</div>
                             <div className="flex gap-2">
                                 <input
-                                    className="flex-1 rounded-xl border border-gray-200 px-3 py-2 text-xs"
+                                    className="flex-1 rounded-md border border-[#D8ECEB] px-3 py-2 text-xs font-mono text-[#0D1E2C] placeholder:text-[#7A99B0] focus:outline-none focus:ring-2 focus:ring-[rgba(1,190,178,0.35)] focus:border-[#01BEB2]"
                                     placeholder="Paste key and press Enter"
                                     value={manualKey}
                                     onChange={(e) => setManualKey(e.target.value)}
@@ -470,7 +471,7 @@ const RedisBrowserAdmin: React.FC = () => {
                                     }}
                                 />
                                 <button
-                                    className="px-3 py-2 rounded-xl text-xs font-semibold bg-indigo-600 text-white"
+                                    className="px-3 py-2 rounded-md text-xs font-semibold bg-[#4372C3] hover:bg-[#2B4B8A] text-white"
                                     onClick={() => loadKeyDetails(manualKey.trim())}
                                 >
                                     Load
@@ -478,24 +479,24 @@ const RedisBrowserAdmin: React.FC = () => {
                             </div>
                         </div>
 
-                        <div className="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm">
+                        <div className="bg-white border border-[#E6F1F0] rounded-xl p-5 shadow-[0_1px_2px_rgba(13,30,44,0.04)]">
                             <div className="flex items-center justify-between mb-3">
-                                <div className="text-sm font-semibold text-gray-900">Key data</div>
+                                <div className="text-[10.5px] font-bold tracking-[0.1em] uppercase text-[#7A99B0]">Key data</div>
                                 <div className="flex items-center gap-2">
                                     {selectedKey && (
                                         <button
-                                            className="px-3 py-1.5 rounded-xl text-[11px] font-semibold border border-red-200 text-red-700 hover:bg-red-50 disabled:opacity-50"
+                                            className="px-3 py-1.5 rounded-md text-[11px] font-semibold border border-[#D8ECEB] bg-white text-[#B91C1C] hover:bg-[rgba(248,113,113,0.08)] disabled:opacity-50"
                                             onClick={() => deleteCurrentKey(selectedKey)}
                                             disabled={deleting || loading}
                                         >
                                             Delete key
                                         </button>
                                     )}
-                                    <div className="text-xs text-gray-500">{selectedKey || '—'}</div>
+                                    <div className="text-xs font-mono text-[#7A99B0]">{selectedKey || '—'}</div>
                                 </div>
                             </div>
-                            <div className="text-xs text-gray-500 mb-3">{summary}</div>
-                            <pre className="text-xs bg-gray-900 text-gray-100 rounded-xl p-4 max-h-[420px] overflow-auto">
+                            <div className="text-xs text-[#3A5672] mb-3">{summary}</div>
+                            <pre className="font-mono text-xs bg-[#F6FAFA] text-[#0D1E2C] border border-[#E6F1F0] rounded-lg p-4 max-h-[420px] overflow-auto">
                                 {keyDetails ? JSON.stringify(keyDetails.value, null, 2) : 'Select a key to load details.'}
                             </pre>
                         </div>

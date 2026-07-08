@@ -582,7 +582,7 @@ const api = new IntegrationsAPI();
 // =============================================================================
 
 const Card: React.FC<{ children: React.ReactNode; className?: string }> = ({ children, className = '' }) => (
-    <div className={`bg-white rounded-2xl shadow-sm border border-gray-200/70 ${className}`}>{children}</div>
+    <div className={`bg-white rounded-xl shadow-[0_1px_2px_rgba(13,30,44,0.04)] border border-[#E6F1F0] ${className}`}>{children}</div>
 );
 
 const OverridableValue: React.FC<{
@@ -601,7 +601,7 @@ const OverridableValue: React.FC<{
         <span className="inline-flex items-center gap-1.5" title={title}>
             <span>{display}</span>
             {overridden && (
-                <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-[10px] font-semibold uppercase tracking-wide">
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-[rgba(245,158,11,0.1)] border border-[rgba(245,158,11,0.4)] text-[#B45309] text-[10px] font-bold uppercase tracking-wide">
                     overridden
                 </span>
             )}
@@ -752,16 +752,16 @@ const KNOWN_TRANSPORTS: ReadonlyArray<string> = ['streamable-http'];
 // overridden, descriptor-configurable but not overridden, or hard-coded.
 const FieldStatePill: React.FC<{ overridden?: boolean; configurable: boolean }> = ({ overridden, configurable }) => {
     if (overridden) {
-        return <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-[10px] font-semibold uppercase tracking-wide">overridden</span>;
+        return <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-[rgba(245,158,11,0.1)] border border-[rgba(245,158,11,0.4)] text-[#B45309] text-[10px] font-bold uppercase tracking-wide">overridden</span>;
     }
     if (configurable) {
-        return <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-[10px] font-semibold uppercase tracking-wide">configurable</span>;
+        return <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-[rgba(34,197,94,0.08)] border border-[rgba(34,197,94,0.35)] text-[#15803D] text-[10px] font-bold uppercase tracking-wide">configurable</span>;
     }
-    return <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-gray-100 border border-gray-200 text-gray-500 text-[10px] font-semibold uppercase tracking-wide">hard-coded</span>;
+    return <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-[#F6FAFA] border border-[#E6F1F0] text-[#7A99B0] text-[10px] font-bold uppercase tracking-wide">hard-coded</span>;
 };
 
 const FieldHint: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-    <p className="mt-1 text-[11px] text-gray-500">{children}</p>
+    <p className="mt-1 text-[11px] text-[#7A99B0]">{children}</p>
 );
 
 const FieldRow: React.FC<{
@@ -774,7 +774,7 @@ const FieldRow: React.FC<{
 }> = ({ label, overridden, configurable, onResetToDefault, children, hint }) => (
     <div>
         <div className="flex items-center justify-between mb-1.5">
-            <label className="block text-sm font-medium text-gray-800">
+            <label className="block text-[12.5px] font-semibold text-[#0D1E2C]">
                 <span className="mr-2">{label}</span>
                 <FieldStatePill overridden={overridden} configurable={configurable === true} />
             </label>
@@ -782,7 +782,7 @@ const FieldRow: React.FC<{
                 <button
                     type="button"
                     onClick={onResetToDefault}
-                    className="text-[11px] text-gray-500 hover:text-gray-700 cursor-pointer underline-offset-2 hover:underline"
+                    className="text-[11px] text-[#7A99B0] hover:text-[#3A5672] cursor-pointer underline-offset-2 hover:underline"
                 >
                     Reset to default
                 </button>
@@ -811,19 +811,20 @@ const UserTypesEditor: React.FC<{
     };
 
     return (
-        <div className={`rounded-xl border border-gray-200/80 bg-white p-3 ${disabled ? 'bg-gray-50 text-gray-400' : ''}`}>
+        <div className={`rounded-[8px] border border-[#E6F1F0] bg-white p-3 ${disabled ? 'bg-[#F6FAFA] text-[#7A99B0]' : ''}`}>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {KNOWN_USER_TYPES.map(ut => (
                     <label
                         key={ut}
-                        className={`inline-flex items-center gap-2 text-sm rounded-lg px-2.5 py-2 border ${
+                        className={`inline-flex items-center gap-2 text-sm rounded-[6px] px-2.5 py-2 border ${
                             selected.has(ut)
-                                ? 'border-blue-200 bg-blue-50 text-blue-800'
-                                : 'border-gray-200 bg-white text-gray-700'
-                        } ${disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:border-blue-200 hover:bg-blue-50/70'}`}
+                                ? 'border-[#01BEB2] bg-[rgba(1,190,178,0.08)] text-[#00857C]'
+                                : 'border-[#D8ECEB] bg-white text-[#3A5672]'
+                        } ${disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:border-[#01BEB2] hover:bg-[rgba(1,190,178,0.05)]'}`}
                     >
                         <input
                             type="checkbox"
+                            className="accent-[#01BEB2]"
                             checked={selected.has(ut)}
                             disabled={disabled}
                             onChange={e => setChecked(ut, e.target.checked)}
@@ -837,7 +838,7 @@ const UserTypesEditor: React.FC<{
                     type="button"
                     disabled={disabled}
                     onClick={() => onChange([...KNOWN_USER_TYPES])}
-                    className="text-blue-700 hover:text-blue-900 disabled:text-gray-400 disabled:cursor-not-allowed"
+                    className="text-[#00857C] hover:text-[#01BEB2] disabled:text-[#7A99B0] disabled:cursor-not-allowed"
                 >
                     Select all
                 </button>
@@ -845,7 +846,7 @@ const UserTypesEditor: React.FC<{
                     type="button"
                     disabled={disabled}
                     onClick={() => onChange([])}
-                    className="text-gray-600 hover:text-gray-900 disabled:text-gray-400 disabled:cursor-not-allowed"
+                    className="text-[#7A99B0] hover:text-[#3A5672] disabled:text-[#7A99B0] disabled:cursor-not-allowed"
                 >
                     Clear
                 </button>
@@ -855,11 +856,11 @@ const UserTypesEditor: React.FC<{
 };
 
 const CardHeader: React.FC<{ title: string; subtitle?: string; action?: React.ReactNode }> = ({ title, subtitle, action }) => (
-    <div className="px-6 py-5 border-b border-gray-200/70">
+    <div className="px-5 py-4 border-b border-[#E6F1F0]">
         <div className="flex items-start justify-between gap-4">
             <div>
-                <h2 className="text-xl font-semibold text-gray-900">{title}</h2>
-                {subtitle && <p className="mt-1 text-sm text-gray-600 leading-relaxed">{subtitle}</p>}
+                <h2 className="text-[15px] font-semibold text-[#0D1E2C]">{title}</h2>
+                {subtitle && <p className="mt-1 text-[13px] text-[#3A5672] leading-relaxed">{subtitle}</p>}
             </div>
             {action && <div className="pt-1">{action}</div>}
         </div>
@@ -867,7 +868,7 @@ const CardHeader: React.FC<{ title: string; subtitle?: string; action?: React.Re
 );
 
 const CardBody: React.FC<{ children: React.ReactNode; className?: string }> = ({ children, className = '' }) => (
-    <div className={`px-6 py-5 ${className}`}>{children}</div>
+    <div className={`px-5 py-5 ${className}`}>{children}</div>
 );
 
 const Button: React.FC<{
@@ -878,16 +879,16 @@ const Button: React.FC<{
     disabled?: boolean;
 }> = ({ children, onClick, type = 'button', variant = 'primary', disabled = false }) => {
     const variants: Record<string, string> = {
-        primary: 'bg-gray-900 text-white hover:bg-gray-800',
-        secondary: 'bg-gray-100 text-gray-800 hover:bg-gray-200',
-        danger: 'bg-red-600 text-white hover:bg-red-500'
+        primary: 'bg-[#4372C3] text-white hover:bg-[#2B4B8A]',
+        secondary: 'bg-white border border-[#D8ECEB] text-[#3A5672] hover:bg-[#F6FAFA]',
+        danger: 'bg-white border border-[#D8ECEB] text-[#B91C1C] hover:bg-[rgba(248,113,113,0.08)]'
     };
     return (
         <button
             type={type}
             onClick={onClick}
             disabled={disabled}
-            className={`px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${variants[variant]}`}
+            className={`px-3.5 py-2 rounded-[6px] text-sm font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#01BEB2]/40 disabled:opacity-50 disabled:cursor-not-allowed ${variants[variant]}`}
         >
             {children}
         </button>
@@ -902,9 +903,9 @@ const InputField: React.FC<{
     listId?: string;
 }> = ({ label, value, onChange, placeholder, listId }) => (
     <div>
-        <label className="block text-sm font-medium text-gray-800 mb-2">{label}</label>
+        <label className="block text-[10.5px] font-bold tracking-[0.1em] uppercase text-[#7A99B0] mb-1.5">{label}</label>
         <input
-            className="w-full px-4 py-2.5 border border-gray-200/80 rounded-xl bg-white text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/10"
+            className="w-full px-3.5 py-2.5 border border-[#D8ECEB] rounded-[6px] bg-white text-sm text-[#0D1E2C] placeholder:text-[#7A99B0] focus:outline-none focus:ring-2 focus:ring-[#01BEB2]/25 focus:border-[#01BEB2]"
             value={value}
             onChange={e => onChange(e.target.value)}
             placeholder={placeholder}
@@ -1307,11 +1308,11 @@ const ResourceEditorCard: React.FC<ResourceEditorCardProps> = ({
         <Card>
             <CardHeader
                 title={title}
-                subtitle="Resource overrides are written to bundle props (op: merge). Changes apply immediately at request time."
+                subtitle="Resource overrides are written to app props (op: merge). Changes apply immediately at request time."
                 action={
                     <div className="flex items-center gap-3">
-                        {flash && <span className="text-xs text-emerald-700 font-semibold">{flash}</span>}
-                        {error && <span className="text-xs text-red-700">{error}</span>}
+                        {flash && <span className="text-xs text-[#15803D] font-semibold">{flash}</span>}
+                        {error && <span className="text-xs text-[#B91C1C]">{error}</span>}
                         <Button variant="primary" disabled={saving || !selectedSpec || editorPropsLoading} onClick={handleSave}>
                             {saving ? 'Saving…' : 'Save'}
                         </Button>
@@ -1320,9 +1321,9 @@ const ResourceEditorCard: React.FC<ResourceEditorCardProps> = ({
             />
             <CardBody className="space-y-5">
                 <div>
-                    <label className="block text-sm font-medium text-gray-800 mb-2">Resource</label>
+                    <label className="block text-[10.5px] font-bold tracking-[0.1em] uppercase text-[#7A99B0] mb-1.5">Resource</label>
                     <select
-                        className="w-full px-4 py-2.5 border border-gray-200/80 rounded-xl bg-white text-sm"
+                        className="w-full px-3.5 py-2.5 border border-[#D8ECEB] rounded-[6px] bg-white text-sm text-[#0D1E2C] focus:outline-none focus:ring-2 focus:ring-[#01BEB2]/25 focus:border-[#01BEB2]"
                         value={selectedKey}
                         onChange={e => setSelectedKey(e.target.value)}
                     >
@@ -1347,10 +1348,11 @@ const ResourceEditorCard: React.FC<ResourceEditorCardProps> = ({
                             <label className="inline-flex items-center gap-2 cursor-pointer">
                                 <input
                                     type="checkbox"
+                                    className="accent-[#01BEB2]"
                                     checked={formEnabled}
                                     onChange={e => setFormEnabled(e.target.checked)}
                                 />
-                                <span className={formEnabled ? 'text-emerald-700 font-semibold text-sm' : 'text-gray-500 font-semibold text-sm'}>
+                                <span className={formEnabled ? 'text-[#15803D] font-semibold text-sm' : 'text-[#7A99B0] font-semibold text-sm'}>
                                     {formEnabled ? 'enabled' : 'disabled'}
                                 </span>
                             </label>
@@ -1392,7 +1394,7 @@ const ResourceEditorCard: React.FC<ResourceEditorCardProps> = ({
                                         onChange={e => setFormRoles(e.target.value)}
                                         disabled={!selectedSpec.roles_path}
                                         placeholder={!selectedSpec.roles_path && !formRoles ? 'all roles allowed' : 'kdcube:role:editor, kdcube:role:viewer'}
-                                        className="w-full px-3 py-2 border border-gray-200/80 rounded-xl bg-white text-sm font-mono disabled:bg-gray-50 disabled:text-gray-400"
+                                        className="w-full px-3 py-2 border border-[#D8ECEB] rounded-[6px] bg-white text-[12.5px] font-mono text-[#0D1E2C] placeholder:text-[#7A99B0] focus:outline-none focus:ring-2 focus:ring-[#01BEB2]/25 focus:border-[#01BEB2] disabled:bg-[#F6FAFA] disabled:text-[#7A99B0]"
                                     />
                                     <FieldHint>
                                         {selectedSpec.roles_path
@@ -1416,7 +1418,7 @@ const ResourceEditorCard: React.FC<ResourceEditorCardProps> = ({
                                         value={formAuthorityId}
                                         onChange={e => setFormAuthorityId(e.target.value)}
                                         placeholder="kdcube.platform, delegated_client, custom.identity"
-                                        className="w-full px-3 py-2 border border-gray-200/80 rounded-xl bg-white text-sm font-mono"
+                                        className="w-full px-3 py-2 border border-[#D8ECEB] rounded-[6px] bg-white text-[12.5px] font-mono text-[#0D1E2C] placeholder:text-[#7A99B0] focus:outline-none focus:ring-2 focus:ring-[#01BEB2]/25 focus:border-[#01BEB2]"
                                     />
                                     <FieldHint>
                                         Descriptor path: <code>{(selectedSpec as any).auth_path || 'surfaces.as_provider'}</code>. Empty means no authority-id restriction.
@@ -1432,7 +1434,7 @@ const ResourceEditorCard: React.FC<ResourceEditorCardProps> = ({
                                         value={formGrants}
                                         onChange={e => setFormGrants(e.target.value)}
                                         placeholder="conversations:read, feedback:write"
-                                        className="w-full px-3 py-2 border border-gray-200/80 rounded-xl bg-white text-sm font-mono"
+                                        className="w-full px-3 py-2 border border-[#D8ECEB] rounded-[6px] bg-white text-[12.5px] font-mono text-[#0D1E2C] placeholder:text-[#7A99B0] focus:outline-none focus:ring-2 focus:ring-[#01BEB2]/25 focus:border-[#01BEB2]"
                                     />
                                     <FieldHint>
                                         Comma-separated delegated authority grants required by this provider surface. Empty means no grant restriction.
@@ -1452,7 +1454,7 @@ const ResourceEditorCard: React.FC<ResourceEditorCardProps> = ({
                                     value={formTransport}
                                     onChange={e => setFormTransport(e.target.value)}
                                     disabled={!selectedSpec.transport_config}
-                                    className="w-full px-3 py-2 border border-gray-200/80 rounded-xl bg-white text-sm disabled:bg-gray-50 disabled:text-gray-400"
+                                    className="w-full px-3 py-2 border border-[#D8ECEB] rounded-[6px] bg-white text-sm text-[#0D1E2C] focus:outline-none focus:ring-2 focus:ring-[#01BEB2]/25 focus:border-[#01BEB2] disabled:bg-[#F6FAFA] disabled:text-[#7A99B0]"
                                 >
                                     {KNOWN_TRANSPORTS.map(t => <option key={t} value={t}>{t}</option>)}
                                 </select>
@@ -1481,7 +1483,7 @@ const ResourceEditorCard: React.FC<ResourceEditorCardProps> = ({
                                         onChange={e => setFormCron(e.target.value)}
                                         disabled={!selectedSpec.expr_config}
                                         placeholder={selectedSpec.cron_expression_default || '*/15 * * * *'}
-                                        className="w-full px-3 py-2 border border-gray-200/80 rounded-xl bg-white text-sm font-mono disabled:bg-gray-50 disabled:text-gray-400"
+                                        className="w-full px-3 py-2 border border-[#D8ECEB] rounded-[6px] bg-white text-[12.5px] font-mono text-[#0D1E2C] placeholder:text-[#7A99B0] focus:outline-none focus:ring-2 focus:ring-[#01BEB2]/25 focus:border-[#01BEB2] disabled:bg-[#F6FAFA] disabled:text-[#7A99B0]"
                                     />
                                     <FieldHint>
                                         {selectedSpec.expr_config ? (
@@ -1489,7 +1491,7 @@ const ResourceEditorCard: React.FC<ResourceEditorCardProps> = ({
                                                 Override path: <code>{selectedSpec.expr_config}</code>.
                                                 {' '}Decorator default: <code>{selectedSpec.cron_expression_default || '—'}</code>.
                                                 <br />
-                                                <span className="text-gray-400">
+                                                <span className="text-[#7A99B0]">
                                                     Setting the value to <code>disable</code> (or an empty string) suppresses scheduling
                                                     without flipping <code>enabled.cron.{selectedSpec.alias}</code>.
                                                     Removing the value entirely also stops the job. "Reset to default" therefore writes
@@ -1517,7 +1519,7 @@ const ResourceEditorCard: React.FC<ResourceEditorCardProps> = ({
                                         onChange={e => setFormTimezone(e.target.value)}
                                         disabled={!selectedSpec.tz_config}
                                         placeholder={selectedSpec.timezone_default || 'Europe/Berlin'}
-                                        className="w-full px-3 py-2 border border-gray-200/80 rounded-xl bg-white text-sm font-mono disabled:bg-gray-50 disabled:text-gray-400"
+                                        className="w-full px-3 py-2 border border-[#D8ECEB] rounded-[6px] bg-white text-[12.5px] font-mono text-[#0D1E2C] placeholder:text-[#7A99B0] focus:outline-none focus:ring-2 focus:ring-[#01BEB2]/25 focus:border-[#01BEB2] disabled:bg-[#F6FAFA] disabled:text-[#7A99B0]"
                                     />
                                     <FieldHint>
                                         {selectedSpec.tz_config ? (
@@ -1525,7 +1527,7 @@ const ResourceEditorCard: React.FC<ResourceEditorCardProps> = ({
                                                 Override path: <code>{selectedSpec.tz_config}</code>.
                                                 {' '}Decorator default: <code>{selectedSpec.timezone_default || 'UTC'}</code>.
                                                 <br />
-                                                <span className="text-gray-400">
+                                                <span className="text-[#7A99B0]">
                                                     Empty / missing falls back to the decorator default. "Reset to default" writes the
                                                     decorator default back to the override path.
                                                 </span>
@@ -1612,7 +1614,7 @@ const AIBundleDashboard: React.FC = () => {
     }, [propsDefaultsJson]);
     const authorityLabel = useMemo(() => {
         const label = (bundleAuthority?.label || '').trim();
-        return label || 'configured bundle authority';
+        return label || 'configured app authority';
     }, [bundleAuthority]);
     const authorityDescription = useMemo(() => {
         const description = (bundleAuthority?.description || '').trim();
@@ -1719,7 +1721,7 @@ const AIBundleDashboard: React.FC = () => {
             if (!quiet) setError(null);
         } catch (e: any) {
             if (!quiet) {
-                setError(e.message || 'Failed to load bundles');
+                setError(e.message || 'Failed to load apps');
                 setBundleAuthority(null);
             }
             throw e;
@@ -1741,7 +1743,7 @@ const AIBundleDashboard: React.FC = () => {
             setPropsDefaultsError(data.defaults_error || null);
         } catch (e: any) {
             setPropsDefaultsError(null);
-            setError(e.message || 'Failed to load bundle props');
+            setError(e.message || 'Failed to load app props');
         } finally {
             setPropsLoading(false);
         }
@@ -1799,7 +1801,7 @@ const AIBundleDashboard: React.FC = () => {
 
     const submitSecretDotPath = async (mode: 'set' | 'clear') => {
         if (!secretsBundleId) {
-            setError('Select a bundle to update secrets.');
+            setError('Select an app to update secrets.');
             return;
         }
         const path = normalizeDotPath(secretsKeyPath);
@@ -1881,7 +1883,7 @@ const AIBundleDashboard: React.FC = () => {
             const data = await api.getBundleSecrets(secretsBundleId, propsScope);
             setSecretsKeys(data.keys || []);
         } catch (e: any) {
-            setError(e.message || 'Failed to load bundle secrets');
+            setError(e.message || 'Failed to load app secrets');
         } finally {
             setSecretsLoading(false);
         }
@@ -1901,7 +1903,7 @@ const AIBundleDashboard: React.FC = () => {
             }
             setError(null);
         } catch (e: any) {
-            setError(e.message || `Failed to reload bundle ${bundleId} from ${authorityLabel}`);
+            setError(e.message || `Failed to reload app ${bundleId} from ${authorityLabel}`);
         } finally {
             setReloadingBundleId(null);
         }
@@ -1969,7 +1971,7 @@ const AIBundleDashboard: React.FC = () => {
 
     const saveBundle = async () => {
         if (!form.id || (!form.path && !form.repo)) {
-            setError('Bundle id is required. Provide either a path or a repo.');
+            setError('App id is required. Provide either a path or a repo.');
             return;
         }
         try {
@@ -1987,7 +1989,7 @@ const AIBundleDashboard: React.FC = () => {
             resetForm();
             await loadBundles();
         } catch (e: any) {
-            setError(e.message || 'Failed to save bundle');
+            setError(e.message || 'Failed to save app');
         }
     };
 
@@ -2003,7 +2005,7 @@ const AIBundleDashboard: React.FC = () => {
             }, registryScope);
             await loadBundles();
         } catch (e: any) {
-            setError(e.message || 'Failed to delete bundle');
+            setError(e.message || 'Failed to delete app');
         }
     };
 
@@ -2032,7 +2034,7 @@ const AIBundleDashboard: React.FC = () => {
             }, registryScope);
             await loadBundles();
         } catch (e: any) {
-            setError(e.message || 'Failed to update default bundle');
+            setError(e.message || 'Failed to update default app');
         }
     };
 
@@ -2049,13 +2051,13 @@ const AIBundleDashboard: React.FC = () => {
         try {
             await api.cleanupBundles({ drop_sys_modules: true }, registryScope);
         } catch (e: any) {
-            setError(e.message || 'Failed to cleanup bundles');
+            setError(e.message || 'Failed to clean up apps');
         }
     };
 
     const saveProps = async (op: 'replace' | 'merge') => {
         if (!propsBundleId) {
-            setError('Select a bundle to update props.');
+            setError('Select an app to update props.');
             return;
         }
         try {
@@ -2073,7 +2075,7 @@ const AIBundleDashboard: React.FC = () => {
 
     const resetPropsFromCode = async () => {
         if (!propsBundleId) {
-            setError('Select a bundle to reset props.');
+            setError('Select an app to reset props.');
             return;
         }
         try {
@@ -2086,7 +2088,7 @@ const AIBundleDashboard: React.FC = () => {
 
     const saveSecrets = async () => {
         if (!secretsBundleId) {
-            setError('Select a bundle to update secrets.');
+            setError('Select an app to update secrets.');
             return;
         }
         try {
@@ -2114,7 +2116,7 @@ const AIBundleDashboard: React.FC = () => {
 
     const clearSecrets = async () => {
         if (!secretsBundleId) {
-            setError('Select a bundle to clear secrets.');
+            setError('Select an app to clear secrets.');
             return;
         }
         let parsed: Record<string, unknown> = {};
@@ -2130,7 +2132,7 @@ const AIBundleDashboard: React.FC = () => {
             return;
         }
         const confirmed = window.confirm(
-            `Clear these secrets for this bundle?\\n- ${keys.join('\\n- ')}\\nThis cannot be undone.`
+            `Clear these secrets for this app?\\n- ${keys.join('\\n- ')}\\nThis cannot be undone.`
         );
         if (!confirmed) return;
         try {
@@ -2162,30 +2164,28 @@ const AIBundleDashboard: React.FC = () => {
 
     if (loading) {
         return (
-            <div className="min-h-screen bg-white flex items-center justify-center p-8">
+            <div className="min-h-screen bg-[#EEF5F5] flex items-center justify-center p-8">
                 <div className="text-center">
-                    <div className="animate-spin rounded-full h-10 w-10 border-2 border-gray-200 border-t-gray-900"></div>
-                    <p className="mt-4 text-gray-600">Loading AI bundle registry…</p>
+                    <div className="animate-spin rounded-full h-10 w-10 border-2 border-[#D8ECEB] border-t-[#01BEB2] mx-auto"></div>
+                    <p className="mt-4 text-[#3A5672]">Loading app registry…</p>
                 </div>
             </div>
         );
     }
 
     return (
-        <div className="min-h-screen bg-white">
-            <div className="max-w-6xl mx-auto px-6 py-10 space-y-8">
-                <div className="text-center">
-                    <h1 className="text-4xl md:text-5xl font-semibold text-gray-900 tracking-tight">AI Bundles</h1>
-                    <div className="mt-3 flex justify-center">
-                        <div className="h-1 w-24 bg-gray-900 rounded-full opacity-80"></div>
-                    </div>
-                    <p className="mt-4 text-gray-600 text-base md:text-lg leading-relaxed">
-                        Manage dynamic bundles (plugins) and set the default bundle for the tenant/project.
+        <div className="min-h-screen bg-[#EEF5F5]">
+            <div className="max-w-6xl mx-auto px-6 py-10 space-y-6">
+                <div>
+                    <div className="text-[11px] font-bold tracking-[0.14em] uppercase text-[#009C92]">Control Plane</div>
+                    <h1 className="mt-1.5 text-3xl font-semibold text-[#0D1E2C] tracking-tight">Apps</h1>
+                    <p className="mt-2 text-[#3A5672] text-sm leading-relaxed">
+                        Manage dynamic apps and set the default app for the tenant/project.
                     </p>
                 </div>
 
                 <Card>
-                    <CardHeader title="Tenant / Project" subtitle="All registry and bundle props operations use this scope." />
+                    <CardHeader title="Tenant / Project" subtitle="All registry and app props operations use this scope." />
                     <CardBody>
                         <InputField
                             label="Tenant / Project"
@@ -2207,28 +2207,28 @@ const AIBundleDashboard: React.FC = () => {
                                 Apply scope
                             </Button>
                             {!scopeDirty ? (
-                                <span className="text-xs text-gray-500">Scope is up to date.</span>
+                                <span className="text-xs text-[#7A99B0]">Scope is up to date.</span>
                             ) : null}
                             {tenantProjectsLoading ? (
-                                <span className="text-xs text-gray-500">Loading tenant/projects…</span>
+                                <span className="text-xs text-[#7A99B0]">Loading tenant/projects…</span>
                             ) : null}
                             {!tenantProjectsLoading && tenantProjectsError ? (
-                                <span className="text-xs text-red-600">{tenantProjectsError}</span>
+                                <span className="text-xs text-[#B91C1C]">{tenantProjectsError}</span>
                             ) : null}
                         </div>
                     </CardBody>
                 </Card>
 
                 {error && (
-                    <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                    <div className="rounded-[8px] border border-[rgba(248,113,113,0.4)] bg-[rgba(248,113,113,0.08)] px-4 py-3 text-sm text-[#B91C1C]">
                         {error}
                     </div>
                 )}
 
                 <Card>
                     <CardHeader
-                        title="Registry"
-                        subtitle={`Current bundles stored in the registry. ${authorityDescription} This replaces the runtime registry and descriptor-backed bundle props from that source.`}
+                        title="Registered apps"
+                        subtitle={`Current apps stored in the registry. ${authorityDescription} This replaces the runtime registry and descriptor-backed app props from that source.`}
                         action={
                             <div className="flex gap-2">
                                 <Button variant="secondary" onClick={loadBundles}>Refresh</Button>
@@ -2238,20 +2238,20 @@ const AIBundleDashboard: React.FC = () => {
                         }
                     />
                     <CardBody className="space-y-4">
-                        <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-xs text-gray-600">
+                        <div className="rounded-[8px] border border-[#E6F1F0] bg-[#F6FAFA] px-4 py-3 text-xs text-[#3A5672]">
                             <div>
-                                <strong className="text-gray-800">Current reload source:</strong> {authorityLabel}
+                                <strong className="text-[#0D1E2C]">Current reload source:</strong> {authorityLabel}
                             </div>
                             {authorityDetail ? (
                                 <div className="mt-1 break-all">
-                                    <strong className="text-gray-800">Location:</strong> {authorityDetail}
+                                    <strong className="text-[#0D1E2C]">Location:</strong> {authorityDetail}
                                 </div>
                             ) : null}
                         </div>
                         <div className="flex items-center gap-3">
-                            <label className="text-sm font-medium text-gray-800">Default bundle</label>
+                            <label className="text-[10.5px] font-bold tracking-[0.1em] uppercase text-[#7A99B0]">Default app</label>
                             <select
-                                className="px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                                className="px-3 py-2 border border-[#D8ECEB] rounded-[6px] bg-white text-sm text-[#0D1E2C] focus:outline-none focus:ring-2 focus:ring-[#01BEB2]/25 focus:border-[#01BEB2]"
                                 value={defaultBundleId}
                                 onChange={e => setDefaultBundleId(e.target.value)}
                             >
@@ -2265,37 +2265,37 @@ const AIBundleDashboard: React.FC = () => {
 
                         <div className="overflow-x-auto">
                             <table className="w-full text-sm">
-                                <thead className="bg-gray-50 border-b border-gray-200/70">
-                                    <tr className="text-gray-600">
-                                        <th className="px-4 py-3 text-left font-semibold">ID</th>
-                                        <th className="px-4 py-3 text-left font-semibold">Name</th>
-                                        <th className="px-4 py-3 text-left font-semibold">Path</th>
-                                        <th className="px-4 py-3 text-left font-semibold">Module</th>
-                                        <th className="px-4 py-3 text-left font-semibold">Singleton</th>
-                                        <th className="px-4 py-3 text-left font-semibold">Description</th>
-                                        <th className="px-4 py-3 text-left font-semibold">Version</th>
-                                        <th className="px-4 py-3 text-left font-semibold">Git</th>
-                                        <th className="px-4 py-3 text-right font-semibold">Actions</th>
+                                <thead className="bg-[#F6FAFA] border-b border-[#E6F1F0]">
+                                    <tr className="text-[#7A99B0]">
+                                        <th className="px-4 py-2.5 text-left text-[10.5px] font-bold tracking-[0.1em] uppercase">ID</th>
+                                        <th className="px-4 py-2.5 text-left text-[10.5px] font-bold tracking-[0.1em] uppercase">Name</th>
+                                        <th className="px-4 py-2.5 text-left text-[10.5px] font-bold tracking-[0.1em] uppercase">Path</th>
+                                        <th className="px-4 py-2.5 text-left text-[10.5px] font-bold tracking-[0.1em] uppercase">Module</th>
+                                        <th className="px-4 py-2.5 text-left text-[10.5px] font-bold tracking-[0.1em] uppercase">Singleton</th>
+                                        <th className="px-4 py-2.5 text-left text-[10.5px] font-bold tracking-[0.1em] uppercase">Description</th>
+                                        <th className="px-4 py-2.5 text-left text-[10.5px] font-bold tracking-[0.1em] uppercase">Version</th>
+                                        <th className="px-4 py-2.5 text-left text-[10.5px] font-bold tracking-[0.1em] uppercase">Git</th>
+                                        <th className="px-4 py-2.5 text-right text-[10.5px] font-bold tracking-[0.1em] uppercase">Actions</th>
                                     </tr>
                                 </thead>
-                                <tbody className="divide-y divide-gray-200/70">
+                                <tbody className="divide-y divide-[#E6F1F0]">
                                     {bundleList.map(b => {
                                         const isAdminBundle = b.id === 'kdcube.admin';
                                         return (
-                                        <tr key={b.id} className="hover:bg-gray-50/70 transition-colors">
-                                            <td className="px-4 py-3 font-semibold text-gray-900">{b.id}</td>
-                                            <td className="px-4 py-3 text-gray-700">{b.name || '—'}</td>
-                                            <td className="px-4 py-3 text-gray-700">{b.path}</td>
-                                            <td className="px-4 py-3 text-gray-700">{b.module || '—'}</td>
-                                            <td className="px-4 py-3 text-gray-700">{b.singleton ? 'true' : 'false'}</td>
-                                            <td className="px-4 py-3 text-gray-600">{b.description || '—'}</td>
-                                            <td className="px-4 py-3 text-gray-600">{b.version || '—'}</td>
-                                            <td className="px-4 py-3 text-gray-600">
+                                        <tr key={b.id} className="hover:bg-[#F6FAFA] transition-colors">
+                                            <td className="px-4 py-3 font-mono text-[12.5px] font-semibold text-[#0D1E2C]">{b.id}</td>
+                                            <td className="px-4 py-3 text-[#3A5672]">{b.name || '—'}</td>
+                                            <td className="px-4 py-3 font-mono text-[12.5px] text-[#3A5672]">{b.path}</td>
+                                            <td className="px-4 py-3 font-mono text-[12.5px] text-[#3A5672]">{b.module || '—'}</td>
+                                            <td className="px-4 py-3 text-[#3A5672]">{b.singleton ? 'true' : 'false'}</td>
+                                            <td className="px-4 py-3 text-[#7A99B0]">{b.description || '—'}</td>
+                                            <td className="px-4 py-3 font-mono text-[12.5px] text-[#3A5672]">{b.version || '—'}</td>
+                                            <td className="px-4 py-3 text-[#3A5672]">
                                                 {b.repo ? (
                                                     <div className="space-y-1">
-                                                        <div className="truncate max-w-[220px]" title={b.repo || ''}>{b.repo}</div>
+                                                        <div className="truncate max-w-[220px] font-mono text-[12px]" title={b.repo || ''}>{b.repo}</div>
                                                         {b.ref && <div>ref: {b.ref}</div>}
-                                                        {b.git_commit && <div className="text-xs text-gray-500">commit: {b.git_commit.slice(0, 12)}</div>}
+                                                        {b.git_commit && <div className="font-mono text-[11px] text-[#7A99B0]">commit: {b.git_commit.slice(0, 12)}</div>}
                                                     </div>
                                                 ) : '—'}
                                             </td>
@@ -2307,13 +2307,13 @@ const AIBundleDashboard: React.FC = () => {
                                                         disabled={reloadingBundleId === b.id}
                                                         title={`Reload ${b.id} from ${authorityLabel}`}
                                                     >
-                                                        {reloadingBundleId === b.id ? 'Reloading…' : 'Reload'}
+                                                        {reloadingBundleId === b.id ? 'Reloading…' : 'Reload app'}
                                                     </Button>
                                                     <Button
                                                         variant="secondary"
                                                         onClick={() => editBundle(b)}
                                                         disabled={isAdminBundle}
-                                                        title={isAdminBundle ? 'Admin bundle is protected' : undefined}
+                                                        title={isAdminBundle ? 'Admin app is protected' : undefined}
                                                     >
                                                         Edit
                                                     </Button>
@@ -2321,7 +2321,7 @@ const AIBundleDashboard: React.FC = () => {
                                                         variant="danger"
                                                         onClick={() => deleteBundle(b.id)}
                                                         disabled={isAdminBundle}
-                                                        title={isAdminBundle ? 'Admin bundle is protected' : undefined}
+                                                        title={isAdminBundle ? 'Admin app is protected' : undefined}
                                                     >
                                                         Delete
                                                     </Button>
@@ -2332,8 +2332,8 @@ const AIBundleDashboard: React.FC = () => {
                                     })}
                                     {bundleList.length === 0 && (
                                         <tr>
-                                            <td colSpan={9} className="px-4 py-6 text-center text-gray-500">
-                                                No bundles configured.
+                                            <td colSpan={9} className="px-4 py-6 text-center text-[#7A99B0]">
+                                                No apps configured.
                                             </td>
                                         </tr>
                                     )}
@@ -2347,10 +2347,10 @@ const AIBundleDashboard: React.FC = () => {
                     <CardHeader
                         title={
                             <div className="flex items-center gap-3">
-                                <span>Bundle props</span>
+                                <span>App props</span>
                                 {bundleVersion ? (
                                     <div className="flex items-center gap-2">
-                                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-gray-900 text-white">
+                                        <span className="inline-flex items-center px-2 py-0.5 rounded-full font-mono text-[11px] font-semibold bg-[rgba(1,190,178,0.1)] border border-[rgba(1,190,178,0.35)] text-[#00857C]">
                                             v{bundleVersion}
                                         </span>
                                         <Button variant="secondary" onClick={() => copyText(bundleVersion)}>Copy</Button>
@@ -2358,7 +2358,7 @@ const AIBundleDashboard: React.FC = () => {
                                 ) : null}
                             </div>
                         }
-                        subtitle={`Override bundle props per tenant/project. ${reloadAuthorityLabel} re-applies props from that source; reset from code restores bundle code defaults only.`}
+                        subtitle={`Override app props per tenant/project. ${reloadAuthorityLabel} re-applies props from that source; reset from code restores app code defaults only.`}
                         action={
                             <div className="flex gap-2">
                                 <Button variant="secondary" onClick={loadProps} disabled={!propsBundleId || propsLoading}>
@@ -2372,9 +2372,9 @@ const AIBundleDashboard: React.FC = () => {
                     />
                     <CardBody className="space-y-5">
                         <div>
-                            <label className="block text-sm font-medium text-gray-800 mb-2">Bundle ID</label>
+                            <label className="block text-[10.5px] font-bold tracking-[0.1em] uppercase text-[#7A99B0] mb-1.5">App ID</label>
                             <select
-                                className="w-full px-4 py-2.5 border border-gray-200/80 rounded-xl bg-white text-sm"
+                                className="w-full px-3.5 py-2.5 border border-[#D8ECEB] rounded-[6px] bg-white text-sm text-[#0D1E2C] focus:outline-none focus:ring-2 focus:ring-[#01BEB2]/25 focus:border-[#01BEB2]"
                                 value={propsBundleId}
                                 onChange={e => setPropsBundleId(e.target.value)}
                             >
@@ -2385,7 +2385,7 @@ const AIBundleDashboard: React.FC = () => {
                             </select>
                         </div>
 
-                        <div className="text-xs text-gray-600">
+                        <div className="text-xs text-[#3A5672]">
                             Props resolution order: <strong>code defaults → {propsResolutionLabel} → runtime overrides</strong>.
                             The editor shows the full effective props; <strong>Save props</strong> stores exactly what you see.
                             Use dot-path updates for precise changes. <strong>{reloadAuthorityLabel}</strong> rebuilds this Redis props layer from the
@@ -2417,17 +2417,17 @@ const AIBundleDashboard: React.FC = () => {
                         </div>
 
                         {bundleSnapshotPath ? (
-                            <div className="flex flex-wrap items-center gap-2 text-xs text-gray-600">
+                            <div className="flex flex-wrap items-center gap-2 text-xs text-[#3A5672]">
                                 <span className="font-semibold">Snapshot path:</span>
-                                <code className="px-2 py-1 rounded bg-gray-100 border border-gray-200">{bundleSnapshotPath}</code>
+                                <code className="px-2 py-1 rounded-[6px] bg-[#F6FAFA] border border-[#E6F1F0] font-mono text-[12px] text-[#3A5672]">{bundleSnapshotPath}</code>
                                 <Button variant="secondary" onClick={() => copyText(bundleSnapshotPath)}>Copy path</Button>
                             </div>
                         ) : null}
 
                         <div>
-                            <label className="block text-sm font-medium text-gray-800 mb-2">Props JSON</label>
+                            <label className="block text-[10.5px] font-bold tracking-[0.1em] uppercase text-[#7A99B0] mb-1.5">Props JSON</label>
                             <textarea
-                                className="w-full min-h-[220px] px-4 py-3 border border-gray-200/80 rounded-xl bg-white text-sm font-mono focus:outline-none focus:ring-2 focus:ring-gray-900/10"
+                                className="w-full min-h-[220px] px-4 py-3 border border-[#D8ECEB] rounded-[8px] bg-white text-[12.5px] font-mono text-[#0D1E2C] focus:outline-none focus:ring-2 focus:ring-[#01BEB2]/25 focus:border-[#01BEB2]"
                                 value={propsJson}
                                 onChange={e => setPropsJson(e.target.value)}
                                 placeholder={`{\n  "key": "value"\n}`}
@@ -2440,18 +2440,18 @@ const AIBundleDashboard: React.FC = () => {
                                 {propsLoading ? 'Loading…' : 'Reset editor'}
                             </Button>
                         </div>
-                        <div className="text-xs text-gray-500">
+                        <div className="text-xs text-[#7A99B0]">
                             The JSON editor shows the <strong>full effective props</strong> (defaults + overrides).<br />
                             <strong>Save props</strong> stores exactly what you see in the editor.
                         </div>
 
                         <div>
-                            <label className="block text-sm font-medium text-gray-800 mb-2">Code defaults (read-only)</label>
+                            <label className="block text-[10.5px] font-bold tracking-[0.1em] uppercase text-[#7A99B0] mb-1.5">Code defaults (read-only)</label>
                             {propsDefaultsError ? (
-                                <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                                    <div className="font-semibold">Code defaults could not be loaded for this bundle.</div>
+                                <div className="mb-3 rounded-[8px] border border-[rgba(245,158,11,0.4)] bg-[rgba(245,158,11,0.08)] px-4 py-3 text-sm text-[#B45309]">
+                                    <div className="font-semibold">Code defaults could not be loaded for this app.</div>
                                     <div className="mt-1">
-                                        Persisted props are still editable. Reset from code is disabled until the bundle loads.
+                                        Persisted props are still editable. Reset from code is disabled until the app loads.
                                     </div>
                                     <div className="mt-2 font-mono text-xs break-all">
                                         {propsDefaultsError.code || 'BundleLoadError'}: {propsDefaultsError.message || 'Unknown error'}
@@ -2459,7 +2459,7 @@ const AIBundleDashboard: React.FC = () => {
                                 </div>
                             ) : null}
                             <textarea
-                                className="w-full min-h-[180px] px-4 py-3 border border-gray-200/70 rounded-xl bg-gray-50 text-sm font-mono text-gray-600"
+                                className="w-full min-h-[180px] px-4 py-3 border border-[#E6F1F0] rounded-[8px] bg-[#F6FAFA] text-[12.5px] font-mono text-[#3A5672]"
                                 value={propsDefaultsJson}
                                 readOnly
                             />
@@ -2469,14 +2469,14 @@ const AIBundleDashboard: React.FC = () => {
 
                 <Card>
                     <CardHeader
-                        title="Bundle secrets"
-                        subtitle="Write-only secrets for bundles. Use dot-path for single keys or JSON for bulk updates."
+                        title="App secrets"
+                        subtitle="Write-only secrets for apps. Use dot-path for single keys or JSON for bulk updates."
                     />
                     <CardBody className="space-y-5">
                         <div>
-                            <label className="block text-sm font-medium text-gray-800 mb-2">Bundle ID</label>
+                            <label className="block text-[10.5px] font-bold tracking-[0.1em] uppercase text-[#7A99B0] mb-1.5">App ID</label>
                             <select
-                                className="w-full px-4 py-2.5 border border-gray-200/80 rounded-xl bg-white text-sm"
+                                className="w-full px-3.5 py-2.5 border border-[#D8ECEB] rounded-[6px] bg-white text-sm text-[#0D1E2C] focus:outline-none focus:ring-2 focus:ring-[#01BEB2]/25 focus:border-[#01BEB2]"
                                 value={secretsBundleId}
                                 onChange={e => setSecretsBundleId(e.target.value)}
                             >
@@ -2487,7 +2487,7 @@ const AIBundleDashboard: React.FC = () => {
                             </select>
                         </div>
 
-                        <div className="text-xs text-gray-600">
+                        <div className="text-xs text-[#3A5672]">
                             {secretsLoading ? 'Loading keys…' : (
                                 <>
                                     Known keys:{' '}
@@ -2519,15 +2519,15 @@ const AIBundleDashboard: React.FC = () => {
                                     Clear key
                                 </Button>
                             </div>
-                            <div className="mt-2 text-xs text-gray-500">
+                            <div className="mt-2 text-xs text-[#7A99B0]">
                                 Dot-path writes a single key. Values accept JSON (objects/arrays) or raw strings.
                             </div>
                         </div>
 
                         <div>
-                            <label className="block text-sm font-medium text-gray-800 mb-2">Bulk secrets JSON (optional)</label>
+                            <label className="block text-[10.5px] font-bold tracking-[0.1em] uppercase text-[#7A99B0] mb-1.5">Bulk secrets JSON (optional)</label>
                             <textarea
-                                className="w-full min-h-[180px] px-4 py-3 border border-gray-200/80 rounded-xl bg-white text-sm font-mono focus:outline-none focus:ring-2 focus:ring-gray-900/10"
+                                className="w-full min-h-[180px] px-4 py-3 border border-[#D8ECEB] rounded-[8px] bg-white text-[12.5px] font-mono text-[#0D1E2C] focus:outline-none focus:ring-2 focus:ring-[#01BEB2]/25 focus:border-[#01BEB2]"
                                 value={secretsJson}
                                 onChange={e => setSecretsJson(e.target.value)}
                                 placeholder={`{\n  \"openai\": { \"api_key\": \"...\" },\n  \"stripe\": { \"secret_key\": \"...\" }\n}`}
@@ -2543,12 +2543,12 @@ const AIBundleDashboard: React.FC = () => {
                             </Button>
                         </div>
                         {secretsStatus ? (
-                            <div className="text-xs text-gray-600">
+                            <div className="text-xs text-[#3A5672]">
                                 {secretsStatus.mode === 'set' ? 'Saved' : 'Cleared'} keys:{' '}
                                 <code>{(secretsStatus.keys || []).join(', ') || 'none'}</code>
                             </div>
                         ) : null}
-                        <div className="text-xs text-gray-500">
+                        <div className="text-xs text-[#7A99B0]">
                             Secrets are stored under <code>bundles.&lt;bundle_id&gt;.secrets.*</code> and are write-only.
                         </div>
                     </CardBody>
@@ -2556,15 +2556,15 @@ const AIBundleDashboard: React.FC = () => {
 
                 <Card>
                     <CardHeader
-                        title="Bundle interface"
-                        subtitle="Declared APIs, MCP endpoints, widgets, and scheduled jobs (cron) for the selected bundle."
+                        title="App interface"
+                        subtitle="Declared APIs, MCP endpoints, widgets, and scheduled jobs (cron) for the selected app."
                         action={<Button variant="secondary" onClick={() => loadBundles()}>Refresh</Button>}
                     />
                     <CardBody className="space-y-5">
                         <div>
-                            <label className="block text-sm font-medium text-gray-800 mb-2">Bundle ID</label>
+                            <label className="block text-[10.5px] font-bold tracking-[0.1em] uppercase text-[#7A99B0] mb-1.5">App ID</label>
                             <select
-                                className="w-full px-4 py-2.5 border border-gray-200/80 rounded-xl bg-white text-sm"
+                                className="w-full px-3.5 py-2.5 border border-[#D8ECEB] rounded-[6px] bg-white text-sm text-[#0D1E2C] focus:outline-none focus:ring-2 focus:ring-[#01BEB2]/25 focus:border-[#01BEB2]"
                                 value={interfaceBundleId}
                                 onChange={e => setInterfaceBundleId(e.target.value)}
                             >
@@ -2578,7 +2578,7 @@ const AIBundleDashboard: React.FC = () => {
                         {(() => {
                             const b = interfaceBundleId ? bundles[interfaceBundleId] : null;
                             if (!b) return (
-                                <div className="text-sm text-gray-500">Select a bundle to view its interface.</div>
+                                <div className="text-sm text-[#7A99B0]">Select an app to view its interface.</div>
                             );
 
                             const apis = b.apis || [];
@@ -2589,7 +2589,7 @@ const AIBundleDashboard: React.FC = () => {
                             const hasAny = apis.length > 0 || mcp.length > 0 || widgets.length > 0 || jobs.length > 0 || b.on_message || b.on_job;
 
                             if (!hasAny && allowedRoles.length === 0) return (
-                                <div className="text-sm text-gray-500">No interface declared for this bundle.</div>
+                                <div className="text-sm text-[#7A99B0]">No interface declared for this app.</div>
                             );
 
                             const bundleEnabledRaw = (editorProps as any)?.enabled?.bundle;
@@ -2600,10 +2600,11 @@ const AIBundleDashboard: React.FC = () => {
                                 <div className="space-y-5">
                                     <div className="flex flex-wrap items-center gap-3 text-xs">
                                         <span className="ml-auto inline-flex items-center gap-2">
-                                            <span className="text-gray-700 font-semibold">enabled.bundle:</span>
+                                            <span className="text-[#3A5672] font-semibold">enabled.bundle:</span>
                                             <label className="inline-flex items-center gap-1.5 cursor-pointer">
                                                 <input
                                                     type="checkbox"
+                                                    className="accent-[#01BEB2]"
                                                     checked={bundleEnabledEffective}
                                                     onChange={async e => {
                                                         try {
@@ -2613,7 +2614,7 @@ const AIBundleDashboard: React.FC = () => {
                                                         }
                                                     }}
                                                 />
-                                                <span className={bundleEnabledEffective ? 'text-emerald-700 font-semibold' : 'text-gray-500 font-semibold'}>
+                                                <span className={bundleEnabledEffective ? 'text-[#15803D] font-semibold' : 'text-[#7A99B0] font-semibold'}>
                                                     {bundleEnabledEffective ? 'enabled' : 'disabled'}
                                                 </span>
                                             </label>
@@ -2647,7 +2648,7 @@ const AIBundleDashboard: React.FC = () => {
                                                 onChange={e => setFormBundleRoles(e.target.value)}
                                                 disabled={!b.allowed_roles_path || bundleRolesSaving || editorPropsLoading}
                                                 placeholder="kdcube:role:editor, kdcube:role:viewer"
-                                                className="flex-1 px-3 py-2 border border-gray-200/80 rounded-xl bg-white text-sm font-mono disabled:bg-gray-50 disabled:text-gray-400"
+                                                className="flex-1 px-3 py-2 border border-[#D8ECEB] rounded-[6px] bg-white text-[12.5px] font-mono text-[#0D1E2C] placeholder:text-[#7A99B0] focus:outline-none focus:ring-2 focus:ring-[#01BEB2]/25 focus:border-[#01BEB2] disabled:bg-[#F6FAFA] disabled:text-[#7A99B0]"
                                             />
                                             {b.allowed_roles_path && (
                                                 <Button
@@ -2670,8 +2671,8 @@ const AIBundleDashboard: React.FC = () => {
                                                     {bundleRolesSaving ? 'Saving…' : 'Save'}
                                                 </Button>
                                             )}
-                                            {bundleRolesFlash && <span className="text-xs text-emerald-700 font-semibold">{bundleRolesFlash}</span>}
-                                            {bundleRolesError && <span className="text-xs text-red-700">{bundleRolesError}</span>}
+                                            {bundleRolesFlash && <span className="text-xs text-[#15803D] font-semibold">{bundleRolesFlash}</span>}
+                                            {bundleRolesError && <span className="text-xs text-[#B91C1C]">{bundleRolesError}</span>}
                                         </div>
                                     </FieldRow>
 
@@ -2717,8 +2718,8 @@ const AIBundleDashboard: React.FC = () => {
                                                     }
                                                 } : undefined}
                                                 hint={<>
-                                                    Bundle-level override for <code>events.record.{section}</code>.
-                                                    Overrides assembly.yaml defaults for this bundle. Reset clears the override.
+                                                    App-level override for <code>events.record.{section}</code>.
+                                                    Overrides assembly.yaml defaults for this app. Reset clears the override.
                                                     {isPersist && <> Types emitted through processor comm (e.g. <code>chat.complete</code>) will not appear in artifacts even if listed.</>}
                                                 </>}
                                             >
@@ -2726,6 +2727,7 @@ const AIBundleDashboard: React.FC = () => {
                                                     <label className="inline-flex items-center gap-2 cursor-pointer">
                                                         <input
                                                             type="checkbox"
+                                                            className="accent-[#01BEB2]"
                                                             checked={enabledEffective}
                                                             disabled={saving || editorPropsLoading}
                                                             onChange={async e => {
@@ -2742,10 +2744,10 @@ const AIBundleDashboard: React.FC = () => {
                                                                 }
                                                             }}
                                                         />
-                                                        <span className={`text-sm font-semibold ${enabledEffective ? 'text-emerald-700' : 'text-gray-500'}`}>
+                                                        <span className={`text-sm font-semibold ${enabledEffective ? 'text-[#15803D]' : 'text-[#7A99B0]'}`}>
                                                             {enabledEffective ? 'enabled' : 'disabled'}
                                                         </span>
-                                                        <span className="text-xs text-gray-400">(events.record.{section}.enabled)</span>
+                                                        <span className="text-xs text-[#7A99B0]">(events.record.{section}.enabled)</span>
                                                     </label>
                                                     <div className="flex items-center gap-2">
                                                         <input
@@ -2753,7 +2755,7 @@ const AIBundleDashboard: React.FC = () => {
                                                             onChange={e => setFormSelector(e.target.value)}
                                                             disabled={saving || editorPropsLoading}
                                                             placeholder={placeholder}
-                                                            className="flex-1 px-3 py-2 border border-gray-200/80 rounded-xl bg-white text-sm font-mono disabled:bg-gray-50 disabled:text-gray-400"
+                                                            className="flex-1 px-3 py-2 border border-[#D8ECEB] rounded-[6px] bg-white text-[12.5px] font-mono text-[#0D1E2C] placeholder:text-[#7A99B0] focus:outline-none focus:ring-2 focus:ring-[#01BEB2]/25 focus:border-[#01BEB2] disabled:bg-[#F6FAFA] disabled:text-[#7A99B0]"
                                                         />
                                                         <Button
                                                             variant="primary"
@@ -2774,8 +2776,8 @@ const AIBundleDashboard: React.FC = () => {
                                                         >
                                                             {saving ? 'Saving…' : 'Save selector'}
                                                         </Button>
-                                                        {flash && <span className="text-xs text-emerald-700 font-semibold">{flash}</span>}
-                                                        {err && <span className="text-xs text-red-700">{err}</span>}
+                                                        {flash && <span className="text-xs text-[#15803D] font-semibold">{flash}</span>}
+                                                        {err && <span className="text-xs text-[#B91C1C]">{err}</span>}
                                                     </div>
                                                 </div>
                                             </FieldRow>
@@ -2783,16 +2785,16 @@ const AIBundleDashboard: React.FC = () => {
                                     })}
 
                                     {(b.on_message || b.on_job) && (
-                                        <div className="flex flex-wrap gap-3 text-xs text-gray-600">
+                                        <div className="flex flex-wrap gap-3 text-xs text-[#3A5672]">
                                             {b.on_message && (
-                                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gray-100 border border-gray-200">
-                                                    <span className="font-semibold text-gray-800">on_message</span>
+                                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#F6FAFA] border border-[#E6F1F0]">
+                                                    <span className="font-semibold text-[#0D1E2C]">on_message</span>
                                                     <code>{b.on_message}</code>
                                                 </span>
                                             )}
                                             {b.on_job && (
-                                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gray-100 border border-gray-200">
-                                                    <span className="font-semibold text-gray-800">on_job</span>
+                                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#F6FAFA] border border-[#E6F1F0]">
+                                                    <span className="font-semibold text-[#0D1E2C]">on_job</span>
                                                     <code>{b.on_job}</code>
                                                 </span>
                                             )}
@@ -2801,47 +2803,47 @@ const AIBundleDashboard: React.FC = () => {
 
                                     {apis.length > 0 && (
                                         <div>
-                                            <div className="text-sm font-semibold text-gray-800 mb-2">
+                                            <div className="text-[10.5px] font-bold tracking-[0.1em] uppercase text-[#7A99B0] mb-2">
                                                 API Endpoints
-                                                <span className="ml-2 text-xs font-normal text-gray-500">({apis.length})</span>
+                                                <span className="ml-1.5 text-[10px] font-normal tracking-normal">({apis.length})</span>
                                             </div>
-                                            <div className="overflow-x-auto rounded-xl border border-gray-200">
+                                            <div className="overflow-x-auto rounded-[8px] border border-[#E6F1F0]">
                                                 <table className="w-full text-xs">
-                                                    <thead className="bg-gray-50 border-b border-gray-200">
-                                                        <tr className="text-gray-600">
-                                                            <th className="px-3 py-2 text-left font-semibold">Alias</th>
-                                                            <th className="px-3 py-2 text-left font-semibold">Method</th>
-                                                            <th className="px-3 py-2 text-left font-semibold">Route</th>
-                                                            <th className="px-3 py-2 text-left font-semibold">User types</th>
-                                                            <th className="px-3 py-2 text-left font-semibold">User types config</th>
-                                                            <th className="px-3 py-2 text-left font-semibold">Roles</th>
-                                                            <th className="px-3 py-2 text-left font-semibold">Roles config</th>
-                                                            <th className="px-3 py-2 text-left font-semibold">Enabled path</th>
+                                                    <thead className="bg-[#F6FAFA] border-b border-[#E6F1F0]">
+                                                        <tr className="text-[#7A99B0]">
+                                                            <th className="px-3 py-2 text-left text-[10.5px] font-bold tracking-[0.1em] uppercase">Alias</th>
+                                                            <th className="px-3 py-2 text-left text-[10.5px] font-bold tracking-[0.1em] uppercase">Method</th>
+                                                            <th className="px-3 py-2 text-left text-[10.5px] font-bold tracking-[0.1em] uppercase">Route</th>
+                                                            <th className="px-3 py-2 text-left text-[10.5px] font-bold tracking-[0.1em] uppercase">User types</th>
+                                                            <th className="px-3 py-2 text-left text-[10.5px] font-bold tracking-[0.1em] uppercase">User types config</th>
+                                                            <th className="px-3 py-2 text-left text-[10.5px] font-bold tracking-[0.1em] uppercase">Roles</th>
+                                                            <th className="px-3 py-2 text-left text-[10.5px] font-bold tracking-[0.1em] uppercase">Roles config</th>
+                                                            <th className="px-3 py-2 text-left text-[10.5px] font-bold tracking-[0.1em] uppercase">Enabled path</th>
                                                         </tr>
                                                     </thead>
-                                                    <tbody className="divide-y divide-gray-100">
+                                                    <tbody className="divide-y divide-[#E6F1F0]">
                                                         {apis.map((ep, i) => (
-                                                            <tr key={i} className="hover:bg-gray-50/70">
-                                                                <td className="px-3 py-2 font-mono font-semibold text-gray-900">{ep.alias}</td>
-                                                                <td className="px-3 py-2 font-mono uppercase text-blue-700">{ep.http_method}</td>
-                                                                <td className="px-3 py-2 font-mono text-gray-700">{ep.route}</td>
-                                                                <td className="px-3 py-2 text-gray-600">
+                                                            <tr key={i} className="hover:bg-[#F6FAFA]">
+                                                                <td className="px-3 py-2 font-mono text-[12.5px] font-semibold text-[#0D1E2C]">{ep.alias}</td>
+                                                                <td className="px-3 py-2 font-mono text-[12px] font-semibold uppercase text-[#4372C3]">{ep.http_method}</td>
+                                                                <td className="px-3 py-2 font-mono text-[12.5px] text-[#3A5672]">{ep.route}</td>
+                                                                <td className="px-3 py-2 text-[#3A5672]">
                                                                     <OverridableValue
                                                                         value={ep.user_types}
                                                                         defaultValue={ep.user_types_default}
                                                                         overridden={ep.user_types_overridden}
                                                                     />
                                                                 </td>
-                                                                <td className="px-3 py-2 font-mono text-gray-500">{ep.user_types_path || '—'}</td>
-                                                                <td className="px-3 py-2 text-gray-600">
+                                                                <td className="px-3 py-2 font-mono text-[12px] text-[#7A99B0]">{ep.user_types_path || '—'}</td>
+                                                                <td className="px-3 py-2 text-[#3A5672]">
                                                                     <OverridableValue
                                                                         value={ep.roles}
                                                                         defaultValue={ep.roles_default}
                                                                         overridden={ep.roles_overridden}
                                                                     />
                                                                 </td>
-                                                                <td className="px-3 py-2 font-mono text-gray-500">{ep.roles_path || '—'}</td>
-                                                                <td className="px-3 py-2 font-mono text-gray-500">{ep.enabled_path || '—'}</td>
+                                                                <td className="px-3 py-2 font-mono text-[12px] text-[#7A99B0]">{ep.roles_path || '—'}</td>
+                                                                <td className="px-3 py-2 font-mono text-[12px] text-[#7A99B0]">{ep.enabled_path || '—'}</td>
                                                             </tr>
                                                         ))}
                                                     </tbody>
@@ -2852,49 +2854,49 @@ const AIBundleDashboard: React.FC = () => {
 
                                     {widgets.length > 0 && (
                                         <div>
-                                            <div className="text-sm font-semibold text-gray-800 mb-2">
+                                            <div className="text-[10.5px] font-bold tracking-[0.1em] uppercase text-[#7A99B0] mb-2">
                                                 Widgets
-                                                <span className="ml-2 text-xs font-normal text-gray-500">({widgets.length})</span>
+                                                <span className="ml-1.5 text-[10px] font-normal tracking-normal">({widgets.length})</span>
                                             </div>
-                                            <div className="overflow-x-auto rounded-xl border border-gray-200">
+                                            <div className="overflow-x-auto rounded-[8px] border border-[#E6F1F0]">
                                                 <table className="w-full text-xs">
-                                                    <thead className="bg-gray-50 border-b border-gray-200">
-                                                        <tr className="text-gray-600">
-                                                            <th className="px-3 py-2 text-left font-semibold">Alias</th>
-                                                            <th className="px-3 py-2 text-left font-semibold">Icon</th>
-                                                            <th className="px-3 py-2 text-left font-semibold">User types</th>
-                                                            <th className="px-3 py-2 text-left font-semibold">User types config</th>
-                                                            <th className="px-3 py-2 text-left font-semibold">Roles</th>
-                                                            <th className="px-3 py-2 text-left font-semibold">Roles config</th>
-                                                            <th className="px-3 py-2 text-left font-semibold">Enabled path</th>
+                                                    <thead className="bg-[#F6FAFA] border-b border-[#E6F1F0]">
+                                                        <tr className="text-[#7A99B0]">
+                                                            <th className="px-3 py-2 text-left text-[10.5px] font-bold tracking-[0.1em] uppercase">Alias</th>
+                                                            <th className="px-3 py-2 text-left text-[10.5px] font-bold tracking-[0.1em] uppercase">Icon</th>
+                                                            <th className="px-3 py-2 text-left text-[10.5px] font-bold tracking-[0.1em] uppercase">User types</th>
+                                                            <th className="px-3 py-2 text-left text-[10.5px] font-bold tracking-[0.1em] uppercase">User types config</th>
+                                                            <th className="px-3 py-2 text-left text-[10.5px] font-bold tracking-[0.1em] uppercase">Roles</th>
+                                                            <th className="px-3 py-2 text-left text-[10.5px] font-bold tracking-[0.1em] uppercase">Roles config</th>
+                                                            <th className="px-3 py-2 text-left text-[10.5px] font-bold tracking-[0.1em] uppercase">Enabled path</th>
                                                         </tr>
                                                     </thead>
-                                                    <tbody className="divide-y divide-gray-100">
+                                                    <tbody className="divide-y divide-[#E6F1F0]">
                                                         {widgets.map((w, i) => {
                                                             const iconLabel = w.icon
                                                                 ? Object.entries(w.icon).map(([k, v]) => `${k}:${v}`).join(', ')
                                                                 : '';
                                                             return (
-                                                                <tr key={i} className="hover:bg-gray-50/70">
-                                                                    <td className="px-3 py-2 font-mono font-semibold text-gray-900">{w.alias}</td>
-                                                                    <td className="px-3 py-2 font-mono text-gray-500">{iconLabel || '—'}</td>
-                                                                    <td className="px-3 py-2 text-gray-600">
+                                                                <tr key={i} className="hover:bg-[#F6FAFA]">
+                                                                    <td className="px-3 py-2 font-mono text-[12.5px] font-semibold text-[#0D1E2C]">{w.alias}</td>
+                                                                    <td className="px-3 py-2 font-mono text-[12px] text-[#7A99B0]">{iconLabel || '—'}</td>
+                                                                    <td className="px-3 py-2 text-[#3A5672]">
                                                                         <OverridableValue
                                                                             value={w.user_types}
                                                                             defaultValue={w.user_types_default}
                                                                             overridden={w.user_types_overridden}
                                                                         />
                                                                     </td>
-                                                                    <td className="px-3 py-2 font-mono text-gray-500">{w.user_types_path || '—'}</td>
-                                                                    <td className="px-3 py-2 text-gray-600">
+                                                                    <td className="px-3 py-2 font-mono text-[12px] text-[#7A99B0]">{w.user_types_path || '—'}</td>
+                                                                    <td className="px-3 py-2 text-[#3A5672]">
                                                                         <OverridableValue
                                                                             value={w.roles}
                                                                             defaultValue={w.roles_default}
                                                                             overridden={w.roles_overridden}
                                                                         />
                                                                     </td>
-                                                                    <td className="px-3 py-2 font-mono text-gray-500">{w.roles_path || '—'}</td>
-                                                                    <td className="px-3 py-2 font-mono text-gray-500">{w.enabled_path || '—'}</td>
+                                                                    <td className="px-3 py-2 font-mono text-[12px] text-[#7A99B0]">{w.roles_path || '—'}</td>
+                                                                    <td className="px-3 py-2 font-mono text-[12px] text-[#7A99B0]">{w.enabled_path || '—'}</td>
                                                                 </tr>
                                                             );
                                                         })}
@@ -2906,35 +2908,35 @@ const AIBundleDashboard: React.FC = () => {
 
                                     {mcp.length > 0 && (
                                         <div>
-                                            <div className="text-sm font-semibold text-gray-800 mb-2">
+                                            <div className="text-[10.5px] font-bold tracking-[0.1em] uppercase text-[#7A99B0] mb-2">
                                                 MCP Endpoints
-                                                <span className="ml-2 text-xs font-normal text-gray-500">({mcp.length})</span>
+                                                <span className="ml-1.5 text-[10px] font-normal tracking-normal">({mcp.length})</span>
                                             </div>
-                                            <div className="overflow-x-auto rounded-xl border border-gray-200">
+                                            <div className="overflow-x-auto rounded-[8px] border border-[#E6F1F0]">
                                                 <table className="w-full text-xs">
-                                                    <thead className="bg-gray-50 border-b border-gray-200">
-                                                        <tr className="text-gray-600">
-                                                            <th className="px-3 py-2 text-left font-semibold">Alias</th>
-                                                            <th className="px-3 py-2 text-left font-semibold">Route</th>
-                                                            <th className="px-3 py-2 text-left font-semibold">Transport</th>
-                                                            <th className="px-3 py-2 text-left font-semibold">Transport config</th>
-                                                            <th className="px-3 py-2 text-left font-semibold">Enabled path</th>
+                                                    <thead className="bg-[#F6FAFA] border-b border-[#E6F1F0]">
+                                                        <tr className="text-[#7A99B0]">
+                                                            <th className="px-3 py-2 text-left text-[10.5px] font-bold tracking-[0.1em] uppercase">Alias</th>
+                                                            <th className="px-3 py-2 text-left text-[10.5px] font-bold tracking-[0.1em] uppercase">Route</th>
+                                                            <th className="px-3 py-2 text-left text-[10.5px] font-bold tracking-[0.1em] uppercase">Transport</th>
+                                                            <th className="px-3 py-2 text-left text-[10.5px] font-bold tracking-[0.1em] uppercase">Transport config</th>
+                                                            <th className="px-3 py-2 text-left text-[10.5px] font-bold tracking-[0.1em] uppercase">Enabled path</th>
                                                         </tr>
                                                     </thead>
-                                                    <tbody className="divide-y divide-gray-100">
+                                                    <tbody className="divide-y divide-[#E6F1F0]">
                                                         {mcp.map((ep, i) => (
-                                                            <tr key={i} className="hover:bg-gray-50/70">
-                                                                <td className="px-3 py-2 font-mono font-semibold text-gray-900">{ep.alias}</td>
-                                                                <td className="px-3 py-2 font-mono text-gray-700">{ep.route}</td>
-                                                                <td className="px-3 py-2 text-gray-600">
+                                                            <tr key={i} className="hover:bg-[#F6FAFA]">
+                                                                <td className="px-3 py-2 font-mono text-[12.5px] font-semibold text-[#0D1E2C]">{ep.alias}</td>
+                                                                <td className="px-3 py-2 font-mono text-[12.5px] text-[#3A5672]">{ep.route}</td>
+                                                                <td className="px-3 py-2 text-[#3A5672]">
                                                                     <OverridableValue
                                                                         value={ep.transport}
                                                                         defaultValue={ep.transport_default}
                                                                         overridden={ep.transport_overridden}
                                                                     />
                                                                 </td>
-                                                                <td className="px-3 py-2 font-mono text-gray-500">{ep.transport_config || '—'}</td>
-                                                                <td className="px-3 py-2 font-mono text-gray-500">{ep.enabled_path || '—'}</td>
+                                                                <td className="px-3 py-2 font-mono text-[12px] text-[#7A99B0]">{ep.transport_config || '—'}</td>
+                                                                <td className="px-3 py-2 font-mono text-[12px] text-[#7A99B0]">{ep.enabled_path || '—'}</td>
                                                             </tr>
                                                         ))}
                                                     </tbody>
@@ -2945,47 +2947,47 @@ const AIBundleDashboard: React.FC = () => {
 
                                     {jobs.length > 0 && (
                                         <div>
-                                            <div className="text-sm font-semibold text-gray-800 mb-2">
+                                            <div className="text-[10.5px] font-bold tracking-[0.1em] uppercase text-[#7A99B0] mb-2">
                                                 Scheduled Jobs (Cron)
-                                                <span className="ml-2 text-xs font-normal text-gray-500">({jobs.length})</span>
+                                                <span className="ml-1.5 text-[10px] font-normal tracking-normal">({jobs.length})</span>
                                             </div>
-                                            <div className="overflow-x-auto rounded-xl border border-gray-200">
+                                            <div className="overflow-x-auto rounded-[8px] border border-[#E6F1F0]">
                                                 <table className="w-full text-xs">
-                                                    <thead className="bg-gray-50 border-b border-gray-200">
-                                                        <tr className="text-gray-600">
-                                                            <th className="px-3 py-2 text-left font-semibold">Alias</th>
-                                                            <th className="px-3 py-2 text-left font-semibold">Method</th>
-                                                            <th className="px-3 py-2 text-left font-semibold">Cron</th>
-                                                            <th className="px-3 py-2 text-left font-semibold">Expr config</th>
-                                                            <th className="px-3 py-2 text-left font-semibold">Timezone</th>
-                                                            <th className="px-3 py-2 text-left font-semibold">Tz config</th>
-                                                            <th className="px-3 py-2 text-left font-semibold">Span</th>
-                                                            <th className="px-3 py-2 text-left font-semibold">Enabled path</th>
+                                                    <thead className="bg-[#F6FAFA] border-b border-[#E6F1F0]">
+                                                        <tr className="text-[#7A99B0]">
+                                                            <th className="px-3 py-2 text-left text-[10.5px] font-bold tracking-[0.1em] uppercase">Alias</th>
+                                                            <th className="px-3 py-2 text-left text-[10.5px] font-bold tracking-[0.1em] uppercase">Method</th>
+                                                            <th className="px-3 py-2 text-left text-[10.5px] font-bold tracking-[0.1em] uppercase">Cron</th>
+                                                            <th className="px-3 py-2 text-left text-[10.5px] font-bold tracking-[0.1em] uppercase">Expr config</th>
+                                                            <th className="px-3 py-2 text-left text-[10.5px] font-bold tracking-[0.1em] uppercase">Timezone</th>
+                                                            <th className="px-3 py-2 text-left text-[10.5px] font-bold tracking-[0.1em] uppercase">Tz config</th>
+                                                            <th className="px-3 py-2 text-left text-[10.5px] font-bold tracking-[0.1em] uppercase">Span</th>
+                                                            <th className="px-3 py-2 text-left text-[10.5px] font-bold tracking-[0.1em] uppercase">Enabled path</th>
                                                         </tr>
                                                     </thead>
-                                                    <tbody className="divide-y divide-gray-100">
+                                                    <tbody className="divide-y divide-[#E6F1F0]">
                                                         {jobs.map((job, i) => (
-                                                            <tr key={i} className="hover:bg-gray-50/70">
-                                                                <td className="px-3 py-2 font-mono font-semibold text-gray-900">{job.alias || '—'}</td>
-                                                                <td className="px-3 py-2 font-mono text-gray-700">{job.method_name}</td>
-                                                                <td className="px-3 py-2 font-mono text-gray-700 whitespace-nowrap">
+                                                            <tr key={i} className="hover:bg-[#F6FAFA]">
+                                                                <td className="px-3 py-2 font-mono text-[12.5px] font-semibold text-[#0D1E2C]">{job.alias || '—'}</td>
+                                                                <td className="px-3 py-2 font-mono text-[12.5px] text-[#3A5672]">{job.method_name}</td>
+                                                                <td className="px-3 py-2 font-mono text-[12.5px] text-[#3A5672] whitespace-nowrap">
                                                                     <OverridableValue
                                                                         value={job.cron_expression}
                                                                         defaultValue={job.cron_expression_default}
                                                                         overridden={job.cron_expression_overridden}
                                                                     />
                                                                 </td>
-                                                                <td className="px-3 py-2 font-mono text-gray-500">{job.expr_config || '—'}</td>
-                                                                <td className="px-3 py-2 text-gray-600">
+                                                                <td className="px-3 py-2 font-mono text-[12px] text-[#7A99B0]">{job.expr_config || '—'}</td>
+                                                                <td className="px-3 py-2 text-[#3A5672]">
                                                                     <OverridableValue
                                                                         value={job.timezone}
                                                                         defaultValue={job.timezone_default}
                                                                         overridden={job.timezone_overridden}
                                                                     />
                                                                 </td>
-                                                                <td className="px-3 py-2 font-mono text-gray-500">{job.tz_config || '—'}</td>
-                                                                <td className="px-3 py-2 text-gray-600">{job.span || '—'}</td>
-                                                                <td className="px-3 py-2 font-mono text-gray-500">{job.enabled_path || '—'}</td>
+                                                                <td className="px-3 py-2 font-mono text-[12px] text-[#7A99B0]">{job.tz_config || '—'}</td>
+                                                                <td className="px-3 py-2 text-[#3A5672]">{job.span || '—'}</td>
+                                                                <td className="px-3 py-2 font-mono text-[12px] text-[#7A99B0]">{job.enabled_path || '—'}</td>
                                                             </tr>
                                                         ))}
                                                     </tbody>
@@ -3038,15 +3040,15 @@ const AIBundleDashboard: React.FC = () => {
 
                 <Card>
                     <CardHeader
-                        title={editingId ? `Edit bundle: ${editingId}` : 'Add bundle'}
+                        title={editingId ? `Edit app: ${editingId}` : 'Add app'}
                         subtitle="Provide id and either path or repo; module is optional unless using zip/whl."
                         action={editingId ? <Button variant="secondary" onClick={resetForm}>Cancel edit</Button> : undefined}
                     />
                     <CardBody className="space-y-5">
                         <div ref={formRef} />
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <InputField label="Bundle ID" value={form.id} onChange={v => setForm({ ...form, id: v })} placeholder="demo.react@1.0.0" />
-                            <InputField label="Name" value={form.name || ''} onChange={v => setForm({ ...form, name: v })} placeholder="Demo bundle" />
+                            <InputField label="App ID" value={form.id} onChange={v => setForm({ ...form, id: v })} placeholder="demo.react@1.0.0" />
+                            <InputField label="Name" value={form.name || ''} onChange={v => setForm({ ...form, name: v })} placeholder="Demo app" />
                             <InputField label="Path" value={form.path} onChange={v => setForm({ ...form, path: v })} placeholder="/bundles" />
                             <InputField label="Module" value={form.module || ''} onChange={v => setForm({ ...form, module: v })} placeholder="demo.react@1.0.0.entrypoint" />
                         </div>
@@ -3055,50 +3057,50 @@ const AIBundleDashboard: React.FC = () => {
                             <InputField label="Ref" value={form.ref || ''} onChange={v => setForm({ ...form, ref: v })} placeholder="main | v1.2.3 | <commit>" />
                             <InputField label="Subdir" value={form.subdir || ''} onChange={v => setForm({ ...form, subdir: v })} placeholder="path/to/bundles" />
                         </div>
-                        <div className="rounded-xl border border-slate-200/70 bg-slate-50 px-4 py-3 text-xs text-slate-700">
-                            <div className="font-semibold mb-1">Resolved path preview</div>
+                        <div className="rounded-[8px] border border-[#E6F1F0] bg-[#F6FAFA] px-4 py-3 text-xs text-[#3A5672]">
+                            <div className="text-[10.5px] font-bold tracking-[0.1em] uppercase text-[#7A99B0] mb-1.5">Resolved path preview</div>
                             <div className="space-y-1">
                                 <div>
                                     <span className="font-medium">HOST_BUNDLES_PATH:</span>{' '}
-                                    <code className="px-1 py-0.5 rounded bg-white border border-slate-200">
+                                    <code className="px-1 py-0.5 rounded-[6px] bg-white border border-[#D8ECEB] font-mono">
                                         {settings.getHostBundlesPath() || '—'}
                                     </code>
                                 </div>
                                 <div>
                                     <span className="font-medium">BUNDLES_ROOT:</span>{' '}
-                                    <code className="px-1 py-0.5 rounded bg-white border border-slate-200">
+                                    <code className="px-1 py-0.5 rounded-[6px] bg-white border border-[#D8ECEB] font-mono">
                                         {settings.getBundlesRoot() || '—'}
                                     </code>
                                 </div>
                                 <div>
                                     <span className="font-medium">Current path:</span>{' '}
-                                    <code className="px-1 py-0.5 rounded bg-white border border-slate-200">{form.path || '—'}</code>
+                                    <code className="px-1 py-0.5 rounded-[6px] bg-white border border-[#D8ECEB] font-mono">{form.path || '—'}</code>
                                 </div>
                                 {derivedGitPath ? (
                                     <div>
                                         <span className="font-medium">Derived path (repo/ref template):</span>{' '}
-                                        <code className="px-1 py-0.5 rounded bg-white border border-slate-200">{derivedGitPath}</code>
+                                        <code className="px-1 py-0.5 rounded-[6px] bg-white border border-[#D8ECEB] font-mono">{derivedGitPath}</code>
                                     </div>
                                 ) : null}
                                 {derivedHostPath ? (
                                     <div>
                                         <span className="font-medium">Derived path (HOST_BUNDLES_PATH):</span>{' '}
-                                        <code className="px-1 py-0.5 rounded bg-white border border-slate-200">{derivedHostPath}</code>
+                                        <code className="px-1 py-0.5 rounded-[6px] bg-white border border-[#D8ECEB] font-mono">{derivedHostPath}</code>
                                     </div>
                                 ) : null}
                                 {derivedAgenticPath ? (
                                     <div>
                                         <span className="font-medium">Derived path (BUNDLES_ROOT):</span>{' '}
-                                        <code className="px-1 py-0.5 rounded bg-white border border-slate-200">{derivedAgenticPath}</code>
+                                        <code className="px-1 py-0.5 rounded-[6px] bg-white border border-[#D8ECEB] font-mono">{derivedAgenticPath}</code>
                                     </div>
                                 ) : null}
                             </div>
-                            <div className="mt-2 text-[11px] text-slate-600">
-                                Updates take effect when the bundle path changes. For repo bundles, use a new <code>ref</code>.
-                                For local bundles, deploy to a new path and update <code>path</code>.
+                            <div className="mt-2 text-[11px] text-[#7A99B0]">
+                                Updates take effect when the app path changes. For repo apps, use a new <code>ref</code>.
+                                For local apps, deploy to a new path and update <code>path</code>.
                             </div>
                         </div>
-                        <div className="rounded-xl border border-amber-200/60 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                        <div className="rounded-[8px] border border-[rgba(245,158,11,0.4)] bg-[rgba(245,158,11,0.08)] px-4 py-3 text-sm text-[#B45309]">
                             <div className="font-semibold mb-1">Private Git repos</div>
                             <div>Set one of:</div>
                             <ul className="list-disc pl-5 space-y-1">
@@ -3113,14 +3115,14 @@ const AIBundleDashboard: React.FC = () => {
                                 type="checkbox"
                                 checked={!!form.singleton}
                                 onChange={e => setForm({ ...form, singleton: e.target.checked })}
-                                className="h-4 w-4"
+                                className="h-4 w-4 accent-[#01BEB2]"
                             />
-                            <span className="text-sm text-gray-700">Singleton (reuse workflow instance)</span>
+                            <span className="text-sm text-[#3A5672]">Singleton (reuse workflow instance)</span>
                         </div>
 
                         <div className="flex gap-3">
                             <Button variant="primary" onClick={saveBundle}>
-                                {editingId ? 'Save changes' : 'Add bundle'}
+                                {editingId ? 'Save changes' : 'Add app'}
                             </Button>
                             <Button variant="secondary" onClick={resetForm}>Clear</Button>
                         </div>

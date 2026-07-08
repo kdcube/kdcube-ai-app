@@ -454,32 +454,33 @@ const ConversationBrowserAdmin: React.FC = () => {
     };
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-blue-50">
-            <div className="max-w-7xl mx-auto px-6 py-10">
-                <div className="flex items-center justify-between mb-8">
+        <div className="min-h-screen bg-[#EEF5F5]">
+            <div className="max-w-7xl mx-auto px-6 py-8">
+                <div className="flex items-center justify-between mb-6">
                     <div>
-                        <h1 className="text-4xl font-semibold text-gray-900 tracking-tight">Conversation Browser</h1>
-                        <p className="text-gray-600 mt-2">Inspect user conversations across tenant projects.</p>
+                        <div className="text-[11px] font-bold tracking-[0.14em] uppercase text-[#009C92]">Control Plane</div>
+                        <h1 className="text-xl font-bold text-[#0D1E2C] tracking-tight mt-1">Conversation Browser</h1>
+                        <p className="text-sm text-[#3A5672] mt-1">Inspect user conversations across tenant projects.</p>
                     </div>
-                    <div className="text-sm text-gray-500">
+                    <div className={`inline-flex items-center px-2.5 py-1 rounded-full uppercase text-[10px] font-bold border ${loading ? 'text-[#B45309] bg-[rgba(245,158,11,0.1)] border-[rgba(245,158,11,0.4)]' : 'text-[#15803D] bg-[rgba(34,197,94,0.08)] border-[rgba(34,197,94,0.35)]'}`}>
                         {loading ? 'Loading…' : 'Ready'}
                     </div>
                 </div>
 
                 {error && (
-                    <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-red-700 text-sm">
+                    <div className="mb-6 rounded-lg border border-[rgba(248,113,113,0.4)] bg-[rgba(248,113,113,0.1)] px-4 py-3 text-[#B91C1C] text-sm">
                         {error}
                     </div>
                 )}
 
                 <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-6">
                     <div className="space-y-6">
-                        <div className="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm">
-                            <div className="text-sm font-semibold text-gray-900 mb-3">Scope</div>
+                        <div className="bg-white border border-[#E6F1F0] rounded-xl p-5 shadow-[0_1px_2px_rgba(13,30,44,0.04)]">
+                            <div className="text-[10.5px] font-bold tracking-[0.1em] uppercase text-[#7A99B0] mb-3">Scope</div>
                             <div className="space-y-3">
-                                <label className="block text-xs font-semibold text-gray-600">Tenant / Project</label>
+                                <label className="block text-xs font-semibold text-[#3A5672]">Tenant / Project</label>
                                 <select
-                                    className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm"
+                                    className="w-full rounded-md border border-[#D8ECEB] px-3 py-2 text-sm text-[#0D1E2C] focus:outline-none focus:ring-2 focus:ring-[rgba(1,190,178,0.35)] focus:border-[#01BEB2]"
                                     value={`${tenant}::${project}`}
                                     onChange={(e) => {
                                         const [t, p] = e.target.value.split('::');
@@ -493,54 +494,54 @@ const ConversationBrowserAdmin: React.FC = () => {
                                 </select>
                                 <div className="grid grid-cols-2 gap-2">
                                     <input
-                                        className="rounded-xl border border-gray-200 px-3 py-2 text-xs"
+                                        className="rounded-md border border-[#D8ECEB] px-3 py-2 text-xs text-[#0D1E2C] placeholder:text-[#7A99B0] focus:outline-none focus:ring-2 focus:ring-[rgba(1,190,178,0.35)] focus:border-[#01BEB2]"
                                         value={tenant}
                                         onChange={(e) => setTenant(e.target.value)}
                                         placeholder="Tenant"
                                     />
                                     <input
-                                        className="rounded-xl border border-gray-200 px-3 py-2 text-xs"
+                                        className="rounded-md border border-[#D8ECEB] px-3 py-2 text-xs text-[#0D1E2C] placeholder:text-[#7A99B0] focus:outline-none focus:ring-2 focus:ring-[rgba(1,190,178,0.35)] focus:border-[#01BEB2]"
                                         value={project}
                                         onChange={(e) => setProject(e.target.value)}
                                         placeholder="Project"
                                     />
                                 </div>
-                                <p className="text-xs text-gray-500">Schema: {tenant && project ? `${tenant}_${project}` : '—'}</p>
+                                <p className="text-xs text-[#7A99B0]">Schema: <span className="font-mono">{tenant && project ? `${tenant}_${project}` : '—'}</span></p>
                             </div>
                         </div>
 
-                        <div className="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm">
+                        <div className="bg-white border border-[#E6F1F0] rounded-xl p-5 shadow-[0_1px_2px_rgba(13,30,44,0.04)]">
                             <div className="flex items-center justify-between mb-3">
-                                <div className="text-sm font-semibold text-gray-900">Users</div>
+                                <div className="text-[10.5px] font-bold tracking-[0.1em] uppercase text-[#7A99B0]">Users</div>
                                 <button
-                                    className="text-xs text-blue-600 font-semibold"
+                                    className="text-xs text-[#4372C3] hover:text-[#2B4B8A] font-semibold"
                                     onClick={() => api.listUsers(tenant, project, userSearch).then(setUsers)}
                                 >
                                     Refresh
                                 </button>
                             </div>
                             <input
-                                className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs mb-3"
+                                className="w-full rounded-md border border-[#D8ECEB] px-3 py-2 text-xs text-[#0D1E2C] placeholder:text-[#7A99B0] focus:outline-none focus:ring-2 focus:ring-[rgba(1,190,178,0.35)] focus:border-[#01BEB2] mb-3"
                                 placeholder="Search users"
                                 value={userSearch}
                                 onChange={(e) => setUserSearch(e.target.value)}
                             />
-                            <div className="max-h-72 overflow-auto space-y-2">
+                            <div className="max-h-72 overflow-auto space-y-1">
                                 {users.map((user) => (
                                     <button
                                         key={user}
-                                        className={`w-full text-left px-3 py-2 rounded-xl text-xs font-semibold transition ${selectedUser === user ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+                                        className={`w-full text-left px-3 py-2 rounded-lg text-xs font-mono font-semibold transition ${selectedUser === user ? 'bg-[rgba(1,190,178,0.06)] text-[#0D1E2C]' : 'text-[#3A5672] hover:bg-[#F6FAFA]'}`}
                                         onClick={() => setSelectedUser(user)}
                                     >
                                         {user}
                                     </button>
                                 ))}
                                 {!users.length && (
-                                    <div className="text-xs text-gray-500">No users found.</div>
+                                    <div className="text-xs text-[#7A99B0]">No users found.</div>
                                 )}
                             </div>
                             <button
-                                className="mt-4 w-full px-4 py-2 rounded-xl text-sm font-semibold bg-gray-900 text-white disabled:opacity-50"
+                                className="mt-4 w-full px-4 py-2 rounded-md text-sm font-semibold bg-[#4372C3] hover:bg-[#2B4B8A] text-white disabled:opacity-50"
                                 onClick={downloadExcel}
                                 disabled={!selectedUser}
                             >
@@ -550,30 +551,30 @@ const ConversationBrowserAdmin: React.FC = () => {
                     </div>
 
                     <div className="space-y-6">
-                        <div className="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm">
+                        <div className="bg-white border border-[#E6F1F0] rounded-xl p-5 shadow-[0_1px_2px_rgba(13,30,44,0.04)]">
                             <div className="flex items-center justify-between mb-3">
-                                <div className="text-sm font-semibold text-gray-900">Conversations</div>
-                                <div className="text-xs text-gray-500">{selectedUser || 'Select a user'}</div>
+                                <div className="text-[10.5px] font-bold tracking-[0.1em] uppercase text-[#7A99B0]">Conversations</div>
+                                <div className="text-xs font-mono text-[#7A99B0]">{selectedUser || 'Select a user'}</div>
                             </div>
-                            <div className="max-h-52 overflow-auto divide-y divide-gray-100">
+                            <div className="max-h-52 overflow-auto divide-y divide-[#E6F1F0]">
                                 {conversations.map((conv) => (
                                     <div
                                         key={conv.conversation_id}
-                                        className={`flex items-center justify-between px-3 py-2 text-xs transition ${selectedConversationId === conv.conversation_id ? 'bg-blue-50' : 'hover:bg-gray-50'}`}
+                                        className={`flex items-center justify-between px-3 py-2 text-xs transition ${selectedConversationId === conv.conversation_id ? 'bg-[rgba(1,190,178,0.06)]' : 'hover:bg-[#F6FAFA]'}`}
                                     >
                                         <button
                                             onClick={() => loadConversation(conv.conversation_id)}
                                             className="flex-1 text-left"
                                         >
-                                            <div className="font-semibold text-gray-900">
+                                            <div className="font-semibold text-[#0D1E2C]">
                                                 {conv.title || conv.conversation_id}
                                             </div>
-                                            <div className="text-gray-500">
+                                            <div className="text-[#7A99B0]">
                                                 {conv.last_activity_at || conv.started_at || '—'}
                                             </div>
                                         </button>
                                         <button
-                                            className={`ml-3 px-2 py-1 rounded-lg border text-[10px] font-semibold ${selectedConversationIds.includes(conv.conversation_id) ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 border-gray-200'}`}
+                                            className={`ml-3 px-2 py-1 rounded-md border text-[10px] font-semibold ${selectedConversationIds.includes(conv.conversation_id) ? 'bg-[rgba(1,190,178,0.06)] text-[#009C92] border-[#01BEB2]' : 'bg-white text-[#3A5672] border-[#D8ECEB] hover:bg-[#F6FAFA]'}`}
                                             onClick={() => toggleConversationId(conv.conversation_id)}
                                         >
                                             {selectedConversationIds.includes(conv.conversation_id) ? 'Added' : 'Add'}
@@ -581,13 +582,13 @@ const ConversationBrowserAdmin: React.FC = () => {
                                     </div>
                                 ))}
                                 {!conversations.length && (
-                                    <div className="px-3 py-4 text-xs text-gray-500">No conversations loaded.</div>
+                                    <div className="px-3 py-4 text-xs text-[#7A99B0]">No conversations loaded.</div>
                                 )}
                             </div>
-                            <div className="mt-4 border-t border-gray-100 pt-4">
-                                <div className="text-xs font-semibold text-gray-700 mb-2">Report selection</div>
+                            <div className="mt-4 border-t border-[#E6F1F0] pt-4">
+                                <div className="text-[10.5px] font-bold tracking-[0.1em] uppercase text-[#7A99B0] mb-2">Report selection</div>
                                 <input
-                                    className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs"
+                                    className="w-full rounded-md border border-[#D8ECEB] px-3 py-2 text-xs font-mono text-[#0D1E2C] placeholder:text-[#7A99B0] focus:outline-none focus:ring-2 focus:ring-[rgba(1,190,178,0.35)] focus:border-[#01BEB2]"
                                     placeholder="Paste conversation id and press Enter"
                                     value={manualConversationId}
                                     onChange={(e) => setManualConversationId(e.target.value)}
@@ -603,11 +604,11 @@ const ConversationBrowserAdmin: React.FC = () => {
                                     {selectedConversationIds.map((cid) => (
                                         <span
                                             key={cid}
-                                            className="inline-flex items-center gap-2 px-2 py-1 rounded-full bg-blue-50 text-[11px] font-semibold text-blue-700 border border-blue-100"
+                                            className="inline-flex items-center gap-2 px-2 py-1 rounded-md bg-[rgba(1,190,178,0.06)] text-[11px] font-mono font-semibold text-[#009C92] border border-[#D8ECEB]"
                                         >
                                             <span className="truncate max-w-[180px]">{cid}</span>
                                             <button
-                                                className="text-blue-700 hover:text-blue-900"
+                                                className="text-[#3A5672] hover:text-[#B91C1C]"
                                                 onClick={() => removeConversationId(cid)}
                                             >
                                                 x
@@ -615,26 +616,26 @@ const ConversationBrowserAdmin: React.FC = () => {
                                         </span>
                                     ))}
                                     {!selectedConversationIds.length && (
-                                        <span className="text-[11px] text-gray-400">No conversations selected.</span>
+                                        <span className="text-[11px] text-[#7A99B0]">No conversations selected.</span>
                                     )}
                                 </div>
-                                <div className="text-[11px] text-gray-400 mt-2">
+                                <div className="text-[11px] text-[#7A99B0] mt-2">
                                     {selectedConversationIds.length ? `${selectedConversationIds.length} selected` : 'Exporting with no selections includes all conversations.'}
                                 </div>
                             </div>
                         </div>
 
-                        <div className="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm">
+                        <div className="bg-white border border-[#E6F1F0] rounded-xl p-5 shadow-[0_1px_2px_rgba(13,30,44,0.04)]">
                             <div className="flex items-center justify-between mb-3">
-                                <div className="text-sm font-semibold text-gray-900">Conversation JSON</div>
-                                <div className="text-xs text-gray-500">{selectedConversationId || '—'}</div>
+                                <div className="text-[10.5px] font-bold tracking-[0.1em] uppercase text-[#7A99B0]">Conversation JSON</div>
+                                <div className="text-xs font-mono text-[#7A99B0]">{selectedConversationId || '—'}</div>
                             </div>
                             {conversationDetails && (
-                                <div className="text-xs text-gray-500 mb-3">
+                                <div className="text-xs text-[#3A5672] mb-3">
                                     Turns: {conversationDetails.turns?.length || 0}
                                 </div>
                             )}
-                            <pre className="text-xs bg-gray-900 text-gray-100 rounded-xl p-4 max-h-[420px] overflow-auto">
+                            <pre className="font-mono text-xs bg-[#F6FAFA] text-[#0D1E2C] border border-[#E6F1F0] rounded-lg p-4 max-h-[420px] overflow-auto">
                                 {conversationFetch ? JSON.stringify(conversationFetch, null, 2) : 'Select a conversation to load JSON.'}
                             </pre>
                         </div>

@@ -476,7 +476,7 @@ class MonitoringAPI {
 // =============================================================================
 
 const Card: React.FC<{ children: React.ReactNode; className?: string }> = ({ children, className = '' }) => (
-    <div className={`bg-white rounded-2xl shadow-sm border border-gray-200/70 ${className}`}>
+    <div className={`bg-white rounded-xl shadow-[0_1px_2px_rgba(13,30,44,0.04)] border border-[#E6F1F0] ${className}`}>
         {children}
     </div>
 );
@@ -510,28 +510,28 @@ const CapacityPanel: React.FC<{
                     Compares configured worker counts to live heartbeats from the capacity source component.
                 </Legend>
                 {dbConnections?.warning ? (
-                    <div className="p-3 rounded-xl border border-rose-200 bg-rose-50 text-rose-800 text-sm">
+                    <div className="p-3 rounded-lg border border-[rgba(248,113,113,0.4)] bg-[rgba(248,113,113,0.1)] text-[#B91C1C] text-sm">
                         <div className="font-semibold">DB connection capacity warning</div>
                         <div>
                             {dbConnections.warning_reason || 'Estimated DB connections are close to max_connections.'}
                             {dbConnections.percent_of_max != null ? ` (${dbConnections.percent_of_max}% of max)` : ''}
                         </div>
-                        <div className="text-[11px] text-rose-700 mt-1">
+                        <div className="text-[11px] text-[#B91C1C] mt-1">
                             estimated_total={dbConnections.estimated_total ?? '—'} · max_connections={dbConnections.max_connections ?? '—'} ·
                             pool_per_worker={dbConnections.pool_max_per_worker ?? '—'} · processes_per_instance={dbConnections.processes_per_instance ?? '—'}
                         </div>
-                        <div className="text-[11px] text-rose-700">
+                        <div className="text-[11px] text-[#B91C1C]">
                             source={dbConnections.source || 'unknown'}
                         </div>
                     </div>
                 ) : null}
                 {actualProcesses === 0 ? (
-                    <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-sm">
+                    <div className="p-3 rounded-lg bg-[rgba(245,158,11,0.1)] border border-[rgba(245,158,11,0.4)] text-[#B45309] text-sm">
                         No capacity-source processes detected. Start the capacity source service (usually `proc`) or
                         align configured worker counts with the running service.
                     </div>
                 ) : warnings.length > 0 && (
-                    <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-sm">
+                    <div className="p-3 rounded-lg bg-[rgba(248,113,113,0.1)] border border-[rgba(248,113,113,0.4)] text-[#B91C1C] text-sm">
                         {warnings.map((w, i) => (
                             <div key={i}>• {w}</div>
                         ))}
@@ -540,100 +540,100 @@ const CapacityPanel: React.FC<{
 
                 {hasActual && actualProcesses > 0 && (
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                        <div className="p-3 rounded-xl bg-gray-100">
-                            <div className="text-xs text-gray-600">Configured</div>
+                        <div className="p-3 rounded-lg bg-[#F6FAFA] border border-[#E6F1F0]">
+                            <div className="text-xs text-[#3A5672]">Configured</div>
                             <div className="text-sm font-semibold">{configuredProcesses ?? '—'}</div>
-                            <div className="text-xs text-gray-500">processes</div>
+                            <div className="text-xs text-[#7A99B0]">processes</div>
                         </div>
-                        <div className="p-3 rounded-xl bg-gray-100">
-                            <div className="text-xs text-gray-600">Actual</div>
+                        <div className="p-3 rounded-lg bg-[#F6FAFA] border border-[#E6F1F0]">
+                            <div className="text-xs text-[#3A5672]">Actual</div>
                             <div className="text-sm font-semibold">{actualProcesses ?? '—'}</div>
-                            <div className="text-xs text-gray-500">running</div>
+                            <div className="text-xs text-[#7A99B0]">running</div>
                         </div>
-                        <div className="p-3 rounded-xl bg-gray-100">
-                            <div className="text-xs text-gray-600">Healthy</div>
+                        <div className="p-3 rounded-lg bg-[#F6FAFA] border border-[#E6F1F0]">
+                            <div className="text-xs text-[#3A5672]">Healthy</div>
                             <div className="text-sm font-semibold">{healthyProcesses ?? '—'}</div>
-                            <div className="text-xs text-gray-500">{Math.round((health.process_health_ratio ?? 0) * 100)}% health</div>
+                            <div className="text-xs text-[#7A99B0]">{Math.round((health.process_health_ratio ?? 0) * 100)}% health</div>
                         </div>
-                        <div className="p-3 rounded-xl bg-gray-100">
-                            <div className="text-xs text-gray-600">Process Deficit</div>
+                        <div className="p-3 rounded-lg bg-[#F6FAFA] border border-[#E6F1F0]">
+                            <div className="text-xs text-[#3A5672]">Process Deficit</div>
                             <div className="text-sm font-semibold">{health.processes_vs_configured?.process_deficit ?? 0}</div>
-                            <div className="text-xs text-gray-500">missing</div>
+                            <div className="text-xs text-[#7A99B0]">missing</div>
                         </div>
                     </div>
                 )}
 
                 {metrics.actual_runtime && metrics.configuration && actualProcesses > 0 && (
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                        <div className="p-3 rounded-xl bg-gray-100">
-                            <div className="text-xs text-gray-600">Per Process</div>
+                        <div className="p-3 rounded-lg bg-[#F6FAFA] border border-[#E6F1F0]">
+                            <div className="text-xs text-[#3A5672]">Per Process</div>
                             <div className="text-sm font-semibold">{metrics.configuration.configured_concurrent_per_process ?? '—'}</div>
-                            <div className="text-xs text-gray-500">{metrics.configuration.configured_avg_processing_time_seconds ?? '—'}s avg</div>
+                            <div className="text-xs text-[#7A99B0]">{metrics.configuration.configured_avg_processing_time_seconds ?? '—'}s avg</div>
                         </div>
-                        <div className="p-3 rounded-xl bg-gray-100">
-                            <div className="text-xs text-gray-600">Actual Concurrent</div>
+                        <div className="p-3 rounded-lg bg-[#F6FAFA] border border-[#E6F1F0]">
+                            <div className="text-xs text-[#3A5672]">Actual Concurrent</div>
                             <div className="text-sm font-semibold">{metrics.actual_runtime.actual_concurrent_per_instance ?? '—'}</div>
-                            <div className="text-xs text-gray-500">per instance</div>
+                            <div className="text-xs text-[#7A99B0]">per instance</div>
                         </div>
-                        <div className="p-3 rounded-xl bg-gray-100">
-                            <div className="text-xs text-gray-600">Effective</div>
+                        <div className="p-3 rounded-lg bg-[#F6FAFA] border border-[#E6F1F0]">
+                            <div className="text-xs text-[#3A5672]">Effective</div>
                             <div className="text-sm font-semibold">{metrics.actual_runtime.actual_effective_concurrent_per_instance ?? '—'}</div>
-                            <div className="text-xs text-gray-500">after buffer</div>
+                            <div className="text-xs text-[#7A99B0]">after buffer</div>
                         </div>
-                        <div className="p-3 rounded-xl bg-gray-100">
-                            <div className="text-xs text-gray-600">Total Capacity</div>
+                        <div className="p-3 rounded-lg bg-[#F6FAFA] border border-[#E6F1F0]">
+                            <div className="text-xs text-[#3A5672]">Total Capacity</div>
                             <div className="text-sm font-semibold">{metrics.actual_runtime.actual_total_capacity_per_instance ?? '—'}</div>
-                            <div className="text-xs text-gray-500">per instance</div>
+                            <div className="text-xs text-[#7A99B0]">per instance</div>
                         </div>
                     </div>
                 )}
 
                 {scaling && actualProcesses > 0 && (
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                        <div className="p-3 rounded-xl bg-gray-100">
-                            <div className="text-xs text-gray-600">Instances</div>
+                        <div className="p-3 rounded-lg bg-[#F6FAFA] border border-[#E6F1F0]">
+                            <div className="text-xs text-[#3A5672]">Instances</div>
                             <div className="text-sm font-semibold">{scaling.detected_instances ?? '—'}</div>
-                            <div className="text-xs text-gray-500">detected</div>
+                            <div className="text-xs text-[#7A99B0]">detected</div>
                         </div>
-                        <div className="p-3 rounded-xl bg-gray-100">
-                            <div className="text-xs text-gray-600">System Concurrent</div>
+                        <div className="p-3 rounded-lg bg-[#F6FAFA] border border-[#E6F1F0]">
+                            <div className="text-xs text-[#3A5672]">System Concurrent</div>
                             <div className="text-sm font-semibold">{scaling.total_concurrent_capacity ?? '—'}</div>
-                            <div className="text-xs text-gray-500">total</div>
+                            <div className="text-xs text-[#7A99B0]">total</div>
                         </div>
-                        <div className="p-3 rounded-xl bg-gray-100">
-                            <div className="text-xs text-gray-600">System Total</div>
+                        <div className="p-3 rounded-lg bg-[#F6FAFA] border border-[#E6F1F0]">
+                            <div className="text-xs text-[#3A5672]">System Total</div>
                             <div className="text-sm font-semibold">{scaling.total_system_capacity ?? '—'}</div>
-                            <div className="text-xs text-gray-500">capacity</div>
+                            <div className="text-xs text-[#7A99B0]">capacity</div>
                         </div>
-                        <div className="p-3 rounded-xl bg-gray-100">
-                            <div className="text-xs text-gray-600">Health Ratio</div>
+                        <div className="p-3 rounded-lg bg-[#F6FAFA] border border-[#E6F1F0]">
+                            <div className="text-xs text-[#3A5672]">Health Ratio</div>
                             <div className="text-sm font-semibold">{Math.round((scaling.process_health_ratio ?? 0) * 100)}%</div>
-                            <div className="text-xs text-gray-500">system</div>
+                            <div className="text-xs text-[#7A99B0]">system</div>
                         </div>
                     </div>
                 )}
 
                 {thresholds && (
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                        <div className="p-3 rounded-xl bg-gray-100">
-                            <div className="text-xs text-gray-600">Anonymous Blocks At</div>
+                        <div className="p-3 rounded-lg bg-[#F6FAFA] border border-[#E6F1F0]">
+                            <div className="text-xs text-[#3A5672]">Anonymous Blocks At</div>
                             <div className="text-sm font-semibold">{thresholds.anonymous_blocks_at ?? '—'}</div>
-                            <div className="text-xs text-gray-500">{thresholds.anonymous_percentage ?? '—'}%</div>
+                            <div className="text-xs text-[#7A99B0]">{thresholds.anonymous_percentage ?? '—'}%</div>
                         </div>
-                        <div className="p-3 rounded-xl bg-gray-100">
-                            <div className="text-xs text-gray-600">Registered Blocks At</div>
+                        <div className="p-3 rounded-lg bg-[#F6FAFA] border border-[#E6F1F0]">
+                            <div className="text-xs text-[#3A5672]">Registered Blocks At</div>
                             <div className="text-sm font-semibold">{thresholds.registered_blocks_at ?? '—'}</div>
-                            <div className="text-xs text-gray-500">{thresholds.registered_percentage ?? '—'}%</div>
+                            <div className="text-xs text-[#7A99B0]">{thresholds.registered_percentage ?? '—'}%</div>
                         </div>
-                        <div className="p-3 rounded-xl bg-gray-100">
-                            <div className="text-xs text-gray-600">Paid Blocks At</div>
+                        <div className="p-3 rounded-lg bg-[#F6FAFA] border border-[#E6F1F0]">
+                            <div className="text-xs text-[#3A5672]">Paid Blocks At</div>
                             <div className="text-sm font-semibold">{thresholds.paid_blocks_at ?? '—'}</div>
-                            <div className="text-xs text-gray-500">{thresholds.paid_percentage ?? '—'}%</div>
+                            <div className="text-xs text-[#7A99B0]">{thresholds.paid_percentage ?? '—'}%</div>
                         </div>
-                        <div className="p-3 rounded-xl bg-gray-100">
-                            <div className="text-xs text-gray-600">Hard Limit At</div>
+                        <div className="p-3 rounded-lg bg-[#F6FAFA] border border-[#E6F1F0]">
+                            <div className="text-xs text-[#3A5672]">Hard Limit At</div>
                             <div className="text-sm font-semibold">{thresholds.hard_limit_at ?? '—'}</div>
-                            <div className="text-xs text-gray-500">{thresholds.hard_limit_percentage ?? '—'}%</div>
+                            <div className="text-xs text-[#7A99B0]">{thresholds.hard_limit_percentage ?? '—'}%</div>
                         </div>
                     </div>
                 )}
@@ -654,20 +654,20 @@ const LatencyTable: React.FC<{ title: string; data?: Record<string, any>; compac
     const titleClass = compact ? 'text-xs font-semibold mb-2' : 'text-sm font-semibold mb-2';
     if (!data) {
         return (
-            <div className={`${padding} rounded-xl bg-gray-100 ${className}`}>
+            <div className={`${padding} rounded-lg bg-[#F6FAFA] border border-[#E6F1F0] ${className}`}>
                 <div className={titleClass}>{title}</div>
-                <div className="text-xs text-gray-500">No samples yet.</div>
+                <div className="text-xs text-[#7A99B0]">No samples yet.</div>
             </div>
         );
     }
     return (
-        <div className={`${padding} rounded-xl bg-gray-100 ${className}`}>
+        <div className={`${padding} rounded-lg bg-[#F6FAFA] border border-[#E6F1F0] ${className}`}>
             <div className={titleClass}>{title}</div>
-            <div className="grid grid-cols-4 gap-2 text-[11px] text-gray-600">
-                <div className="font-semibold">Window</div>
-                <div className="font-semibold">p50</div>
-                <div className="font-semibold">p95</div>
-                <div className="font-semibold">p99</div>
+            <div className="grid grid-cols-4 gap-2 text-[11px] text-[#3A5672]">
+                <div className="text-[10.5px] font-bold tracking-[0.1em] uppercase text-[#7A99B0]">Window</div>
+                <div className="text-[10.5px] font-bold tracking-[0.1em] uppercase text-[#7A99B0]">p50</div>
+                <div className="text-[10.5px] font-bold tracking-[0.1em] uppercase text-[#7A99B0]">p95</div>
+                <div className="text-[10.5px] font-bold tracking-[0.1em] uppercase text-[#7A99B0]">p99</div>
                 {windows.map((w) => (
                     <React.Fragment key={w}>
                         <div>{w}</div>
@@ -678,18 +678,18 @@ const LatencyTable: React.FC<{ title: string; data?: Record<string, any>; compac
                 ))}
             </div>
             {showMax && (
-                <div className="text-[11px] text-gray-500 mt-2">max (1h): {data?.["1h"]?.max ?? '—'} ms</div>
+                <div className="text-[11px] text-[#7A99B0] mt-2">max (1h): {data?.["1h"]?.max ?? '—'} ms</div>
             )}
         </div>
     );
 };
 
 const CardHeader: React.FC<{ title: string; subtitle?: string; action?: React.ReactNode }> = ({ title, subtitle, action }) => (
-    <div className="px-4 py-3 border-b border-gray-200/70">
+    <div className="px-4 py-3 border-b border-[#E6F1F0]">
         <div className="flex items-start justify-between gap-4">
             <div>
-                <h2 className="text-base font-semibold text-gray-900">{title}</h2>
-                {subtitle && <p className="mt-1 text-xs text-gray-600 leading-relaxed">{subtitle}</p>}
+                <h2 className="text-[10.5px] font-bold tracking-[0.1em] uppercase text-[#7A99B0]">{title}</h2>
+                {subtitle && <p className="mt-1 text-xs text-[#3A5672] leading-relaxed">{subtitle}</p>}
             </div>
             {action && <div className="pt-1">{action}</div>}
         </div>
@@ -711,9 +711,9 @@ const Button: React.FC<{
     className?: string;
 }> = ({ children, onClick, type = 'button', variant = 'primary', disabled = false, className = '' }) => {
     const variants = {
-        primary: 'bg-gray-900 hover:bg-gray-800 text-white',
-        secondary: 'bg-white hover:bg-gray-50 text-gray-900 border border-gray-200/80',
-        danger: 'bg-rose-600 hover:bg-rose-700 text-white',
+        primary: 'bg-[#4372C3] hover:bg-[#2B4B8A] text-white',
+        secondary: 'bg-white hover:bg-[#F6FAFA] text-[#3A5672] border border-[#D8ECEB]',
+        danger: 'bg-white hover:bg-[rgba(248,113,113,0.08)] text-[#B91C1C] border border-[#D8ECEB]',
     };
 
     return (
@@ -721,7 +721,7 @@ const Button: React.FC<{
             type={type}
             onClick={onClick}
             disabled={disabled}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${variants[variant]} ${className}`}
+            className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${variants[variant]} ${className}`}
         >
             {children}
         </button>
@@ -736,13 +736,13 @@ const Input: React.FC<{
     className?: string;
 }> = ({ label, value, onChange, placeholder, className = '' }) => (
     <div className={className}>
-        {label && <label className="block text-xs font-medium text-gray-800 mb-1.5">{label}</label>}
+        {label && <label className="block text-xs font-medium text-[#3A5672] mb-1.5">{label}</label>}
         <input
             type="text"
             value={value}
             onChange={onChange}
             placeholder={placeholder}
-            className="w-full px-3 py-1.5 border border-gray-200/80 rounded-lg bg-white text-xs focus:ring-2 focus:ring-gray-900/10 focus:border-gray-300 transition-colors placeholder:text-gray-400"
+            className="w-full px-3 py-1.5 border border-[#D8ECEB] rounded-md bg-white text-xs text-[#0D1E2C] focus:outline-none focus:ring-2 focus:ring-[#01BEB2]/25 focus:border-[#01BEB2] transition-colors placeholder:text-[#7A99B0]"
         />
     </div>
 );
@@ -754,28 +754,28 @@ const TextArea: React.FC<{
     className?: string;
 }> = ({ label, value, onChange, className = '' }) => (
     <div className={className}>
-        {label && <label className="block text-xs font-medium text-gray-800 mb-1.5">{label}</label>}
+        {label && <label className="block text-xs font-medium text-[#3A5672] mb-1.5">{label}</label>}
         <textarea
             value={value}
             onChange={onChange}
             rows={10}
-            className="w-full px-3 py-2 border border-gray-200/80 rounded-lg bg-white font-mono text-xs leading-relaxed focus:ring-2 focus:ring-gray-900/10 focus:border-gray-300"
+            className="w-full px-3 py-2 border border-[#D8ECEB] rounded-lg bg-white font-mono text-xs leading-relaxed text-[#0D1E2C] focus:outline-none focus:ring-2 focus:ring-[#01BEB2]/25 focus:border-[#01BEB2]"
         />
     </div>
 );
 
 const Pill: React.FC<{ tone?: 'neutral' | 'success' | 'warning' | 'danger'; children: React.ReactNode }> = ({ tone = 'neutral', children }) => {
     const tones = {
-        neutral: 'bg-gray-100 text-gray-700',
-        success: 'bg-emerald-100 text-emerald-700',
-        warning: 'bg-amber-100 text-amber-700',
-        danger: 'bg-rose-100 text-rose-700',
+        neutral: 'bg-[#F6FAFA] text-[#3A5672] border border-[#D8ECEB]',
+        success: 'bg-[rgba(34,197,94,0.08)] text-[#15803D] border border-[rgba(34,197,94,0.35)]',
+        warning: 'bg-[rgba(245,158,11,0.1)] text-[#B45309] border border-[rgba(245,158,11,0.4)]',
+        danger: 'bg-[rgba(248,113,113,0.1)] text-[#B91C1C] border border-[rgba(248,113,113,0.4)]',
     };
-    return <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${tones[tone]}`}>{children}</span>;
+    return <span className={`px-2 py-0.5 rounded-full uppercase text-[10px] font-bold ${tones[tone]}`}>{children}</span>;
 };
 
 const Legend: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-    <div className="text-[11px] text-gray-500 mb-3">Legend: {children}</div>
+    <div className="text-[11px] text-[#7A99B0] mb-3">Legend: {children}</div>
 );
 
 // =============================================================================
@@ -1337,16 +1337,17 @@ const MonitoringDashboard: React.FC = () => {
     }, [burstMessagesPerUser, burstConcurrency, burstMessage, burstBundleId]);
 
     return (
-        <div className="min-h-screen bg-gray-50 text-gray-900">
+        <div className="min-h-screen bg-[#EEF5F5] text-[#0D1E2C]">
             <div className="max-w-6xl mx-auto px-4 py-4 space-y-4">
                 <div className="flex items-start justify-between gap-4">
                     <div>
-                        <h1 className="text-lg font-semibold">Gateway Monitoring</h1>
-                        <p className="text-xs text-gray-600">System health, queues, throttling, and config management.</p>
+                        <div className="text-[11px] font-bold tracking-[0.14em] uppercase text-[#009C92]">Control Plane</div>
+                        <h1 className="text-lg font-bold text-[#0D1E2C]">Gateway Monitoring</h1>
+                        <p className="text-xs text-[#3A5672]">System health, queues, throttling, and config management.</p>
                     </div>
                     <div className="flex items-center gap-3">
-                        <label className="text-[11px] text-gray-600 flex items-center gap-2">
-                            <input type="checkbox" checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)} />
+                        <label className="text-[11px] text-[#3A5672] flex items-center gap-2">
+                            <input type="checkbox" className="accent-[#01BEB2]" checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)} />
                             Auto refresh
                         </label>
                         <Button variant="secondary" onClick={refreshAll} disabled={loading}>
@@ -1358,7 +1359,7 @@ const MonitoringDashboard: React.FC = () => {
                 {error && (
                     <Card>
                         <CardBody>
-                            <div className="text-xs text-rose-700">{error}</div>
+                            <div className="text-xs text-[#B91C1C]">{error}</div>
                         </CardBody>
                     </Card>
                 )}
@@ -1374,19 +1375,19 @@ const MonitoringDashboard: React.FC = () => {
                             Proc queue = backpressure queue depth; SSE = active ingress streams; Instances = heartbeat counts; throttled (1h) = 429/503 totals.
                         </Legend>
                         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                            <div className="p-4 rounded-xl bg-gray-100">
-                                <div className="text-xs text-gray-600">Tenant / Project</div>
+                            <div className="p-4 rounded-lg bg-[#F6FAFA] border border-[#E6F1F0]">
+                                <div className="text-xs text-[#3A5672]">Tenant / Project</div>
                                 <div className="text-sm font-semibold">{configRaw?.tenant || gateway?.tenant_id || '—'}</div>
-                                <div className="text-xs text-gray-500">{configRaw?.project || gateway?.display_name || '—'}</div>
-                                <div className="text-[11px] text-gray-500">Config source: {configSource}</div>
+                                <div className="text-xs text-[#7A99B0]">{configRaw?.project || gateway?.display_name || '—'}</div>
+                                <div className="text-[11px] text-[#7A99B0]">Config source: {configSource}</div>
                             </div>
-                            <div className="p-4 rounded-xl bg-gray-100">
-                                <div className="text-xs text-gray-600">Proc Queue</div>
+                            <div className="p-4 rounded-lg bg-[#F6FAFA] border border-[#E6F1F0]">
+                                <div className="text-xs text-[#3A5672]">Proc Queue</div>
                                 <div className="text-sm font-semibold">{queue?.total ?? 0}</div>
-                                <div className="text-xs text-gray-500">{Math.round((capacityCtx.pressure_ratio || 0) * 100)}% pressure</div>
+                                <div className="text-xs text-[#7A99B0]">{Math.round((capacityCtx.pressure_ratio || 0) * 100)}% pressure</div>
                             </div>
-                            <div className="p-4 rounded-xl bg-gray-100">
-                                <div className="text-xs text-gray-600">Ingress SSE</div>
+                            <div className="p-4 rounded-lg bg-[#F6FAFA] border border-[#E6F1F0]">
+                                <div className="text-xs text-[#3A5672]">Ingress SSE</div>
                                 <div className="text-sm font-semibold">
                                     {sseStats?.global_total_connections ?? sseStats?.total_connections ?? 0}
                                     {typeof (sseStats?.global_max_connections ?? sseStats?.max_connections) === 'number'
@@ -1394,14 +1395,14 @@ const MonitoringDashboard: React.FC = () => {
                                         ? ` / ${(sseStats?.global_max_connections ?? sseStats?.max_connections)}`
                                         : ''}
                                 </div>
-                                <div className="text-xs text-gray-500">sessions {sseStats?.global_sessions ?? sseStats?.sessions ?? 0}</div>
+                                <div className="text-xs text-[#7A99B0]">sessions {sseStats?.global_sessions ?? sseStats?.sessions ?? 0}</div>
                             </div>
-                            <div className="p-4 rounded-xl bg-gray-100">
-                                <div className="text-xs text-gray-600">Instances</div>
+                            <div className="p-4 rounded-lg bg-[#F6FAFA] border border-[#E6F1F0]">
+                                <div className="text-xs text-[#3A5672]">Instances</div>
                                 <div className="text-sm font-semibold">
                                     ingress {components?.ingress?.instance_count ?? 0} · proc {components?.proc?.instance_count ?? 0}
                                 </div>
-                                <div className="text-xs text-gray-500">
+                                <div className="text-xs text-[#7A99B0]">
                                     throttled (1h) {throttling?.total_throttled ?? 0} · {(throttling?.throttle_rate ?? 0).toFixed(1)}%
                                 </div>
                             </div>
@@ -1422,13 +1423,13 @@ const MonitoringDashboard: React.FC = () => {
                                 const decision = auto?.decision || 'hold';
                                 const tone = decision === 'scale_up' ? 'danger' : decision === 'scale_down' ? 'warning' : 'success';
                                 return (
-                                    <div key={comp} className="p-4 rounded-xl bg-gray-100">
+                                    <div key={comp} className="p-4 rounded-lg bg-[#F6FAFA] border border-[#E6F1F0]">
                                         <div className="flex items-center justify-between mb-2">
-                                            <div className="text-sm font-semibold">{comp}</div>
+                                            <div className="font-mono text-[13px] font-semibold text-[#0D1E2C]">{comp}</div>
                                             <Pill tone={tone}>{decision}</Pill>
                                         </div>
                                         {data ? (
-                                            <div className="space-y-1 text-xs text-gray-600">
+                                            <div className="space-y-1 text-xs text-[#3A5672]">
                                                 <div>Instances: {data.instance_count ?? 0}</div>
                                                 <div>
                                                     Processes: {data.healthy_processes ?? 0}/{data.actual_processes ?? 0}
@@ -1441,7 +1442,7 @@ const MonitoringDashboard: React.FC = () => {
                                                         {data.sse.max_connections ? ` / ${data.sse.max_connections}` : ''}
                                                         {data.sse.utilization_percent ? ` (${data.sse.utilization_percent}%)` : ''}
                                                         {data.sse.windows && (
-                                                            <div className="text-[11px] text-gray-500">
+                                                            <div className="text-[11px] text-[#7A99B0]">
                                                                 windows: 1m {data.sse.windows["1m"] ?? '—'} · 15m {data.sse.windows["15m"] ?? '—'} · 1h {data.sse.windows["1h"] ?? '—'} · max {data.sse.windows["max"] ?? '—'}
                                                             </div>
                                                         )}
@@ -1459,39 +1460,39 @@ const MonitoringDashboard: React.FC = () => {
                                                     <div>
                                                         Queue: {data.queue.total ?? 0} · pressure {(data.queue.pressure_ratio ?? 0).toFixed(2)}
                                                         {data.queue.windows && (
-                                                            <div className="text-[11px] text-gray-500">
+                                                            <div className="text-[11px] text-[#7A99B0]">
                                                                 depth windows: 1m {data.queue.windows.depth?.["1m"] ?? '—'} · 15m {data.queue.windows.depth?.["15m"] ?? '—'} · 1h {data.queue.windows.depth?.["1h"] ?? '—'} · max {data.queue.windows.depth?.["max"] ?? '—'}
                                                                 <br />
                                                                 pressure windows: 1m {data.queue.windows.pressure_ratio?.["1m"] ?? '—'} · 15m {data.queue.windows.pressure_ratio?.["15m"] ?? '—'} · 1h {data.queue.windows.pressure_ratio?.["1h"] ?? '—'} · max {data.queue.windows.pressure_ratio?.["max"] ?? '—'}
                                                             </div>
                                                         )}
                                                         {data.latency && (
-                                                            <div className="text-[11px] text-gray-500 mt-1">
+                                                            <div className="text-[11px] text-[#7A99B0] mt-1">
                                                                 Latency: see Latency card.
                                                             </div>
                                                         )}
                                                     </div>
                                                 )}
                                                 {data.pools && (
-                                                    <div className="text-[11px] text-gray-500">
+                                                    <div className="text-[11px] text-[#7A99B0]">
                                                         Pools: pg_max={data.pools.pg_pool_max_size ?? '—'} · redis_max={data.pools.redis_max_connections ?? '—'}
                                                         {data.pools.estimated_pg_total ? ` · est_pg_total=${data.pools.estimated_pg_total}` : ''}
                                                     </div>
                                                 )}
                                                 {auto?.reasons?.length ? (
-                                                    <div className="text-[11px] text-gray-500">Reasons: {auto.reasons.join('; ')}</div>
+                                                    <div className="text-[11px] text-[#7A99B0]">Reasons: {auto.reasons.join('; ')}</div>
                                                 ) : (
-                                                    <div className="text-[11px] text-gray-500">Reasons: none</div>
+                                                    <div className="text-[11px] text-[#7A99B0]">Reasons: none</div>
                                                 )}
                                                 {Array.isArray(data.instances) && data.instances.length > 0 && (
-                                                    <div className="text-[11px] text-gray-500 mt-1">
+                                                    <div className="text-[11px] text-[#7A99B0] mt-1">
                                                         <div className="mb-1">Instances:</div>
                                                         <div className="flex flex-wrap gap-2">
                                                             {data.instances.map((i: any) => {
                                                                 const unhealthy = (i.healthy_processes ?? 0) < (i.processes ?? 0);
                                                                 return (
                                                                     <span key={i.instance_id} className="flex items-center gap-1">
-                                                                        <span>{i.instance_id}</span>
+                                                                        <span className="font-mono">{i.instance_id}</span>
                                                                         {i.draining && <Pill tone="warning">draining</Pill>}
                                                                         {!i.draining && unhealthy && <Pill tone="danger">unhealthy</Pill>}
                                                                     </span>
@@ -1502,7 +1503,7 @@ const MonitoringDashboard: React.FC = () => {
                                                 )}
                                             </div>
                                         ) : (
-                                            <div className="text-xs text-gray-500">No heartbeat data.</div>
+                                            <div className="text-xs text-[#7A99B0]">No heartbeat data.</div>
                                         )}
                                     </div>
                                 );
@@ -1564,70 +1565,70 @@ const MonitoringDashboard: React.FC = () => {
                                         return w["max"] ?? '—';
                                     };
                                     return (
-                                        <div key={name} className="p-4 rounded-xl bg-gray-100">
-                                            <div className="text-sm font-semibold mb-2">{name}</div>
-                                            <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs text-gray-600">
+                                        <div key={name} className="p-4 rounded-lg bg-[#F6FAFA] border border-[#E6F1F0]">
+                                            <div className="font-mono text-[13px] font-semibold text-[#0D1E2C] mb-2">{name}</div>
+                                            <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs text-[#3A5672]">
                                                 <div>
-                                                    <div className="text-[11px] text-gray-500">PG</div>
+                                                    <div className="text-[11px] text-[#7A99B0]">PG</div>
                                                     <div className="text-sm font-semibold">
                                                         {pgReported ? `${fmtMaybeZero(pg.in_use_total, true)}/${fmt(pg.max_total ?? pg.size_total)}` : '—'}
                                                         {pgReported && pg.utilization_percent != null ? ` (${pg.utilization_percent}%)` : ''}
                                                     </div>
-                                                    <div className="text-[11px] text-gray-500">
+                                                    <div className="text-[11px] text-[#7A99B0]">
                                                         reported {pgReported}
                                                     </div>
-                                                    <div className="text-[11px] text-gray-500">
+                                                    <div className="text-[11px] text-[#7A99B0]">
                                                         {fmtWindow(windows.postgres)}
                                                     </div>
-                                                    <div className="text-[11px] text-gray-500">
+                                                    <div className="text-[11px] text-[#7A99B0]">
                                                         max in-use (1h): {fmtInUseMax(inUseWindows.postgres)}
                                                     </div>
                                                 </div>
                                                 <div>
-                                                    <div className="text-[11px] text-gray-500">Redis (async)</div>
+                                                    <div className="text-[11px] text-[#7A99B0]">Redis (async)</div>
                                                     <div className="text-sm font-semibold">
                                                         {raReported ? `${fmt(rAsync.in_use_total)}/${fmt(rAsync.max_total ?? rAsync.total_total)}` : '—'}
                                                         {raReported && rAsync.utilization_percent != null ? ` (${rAsync.utilization_percent}%)` : ''}
                                                     </div>
-                                                    <div className="text-[11px] text-gray-500">
+                                                    <div className="text-[11px] text-[#7A99B0]">
                                                         reported {raReported}
                                                     </div>
-                                                    <div className="text-[11px] text-gray-500">
+                                                    <div className="text-[11px] text-[#7A99B0]">
                                                         {fmtWindow(windows.redis_async)}
                                                     </div>
-                                                    <div className="text-[11px] text-gray-500">
+                                                    <div className="text-[11px] text-[#7A99B0]">
                                                         max in-use (1h): {fmtInUseMax(inUseWindows.redis_async)}
                                                     </div>
                                                 </div>
                                                 <div>
-                                                    <div className="text-[11px] text-gray-500">Redis (async decode)</div>
+                                                    <div className="text-[11px] text-[#7A99B0]">Redis (async decode)</div>
                                                     <div className="text-sm font-semibold">
                                                         {radReported ? `${fmt(rAsyncDecode.in_use_total)}/${fmt(rAsyncDecode.max_total ?? rAsyncDecode.total_total)}` : '—'}
                                                         {radReported && rAsyncDecode.utilization_percent != null ? ` (${rAsyncDecode.utilization_percent}%)` : ''}
                                                     </div>
-                                                    <div className="text-[11px] text-gray-500">
+                                                    <div className="text-[11px] text-[#7A99B0]">
                                                         reported {radReported}
                                                     </div>
-                                                    <div className="text-[11px] text-gray-500">
+                                                    <div className="text-[11px] text-[#7A99B0]">
                                                         {fmtWindow(windows.redis_async_decode)}
                                                     </div>
-                                                    <div className="text-[11px] text-gray-500">
+                                                    <div className="text-[11px] text-[#7A99B0]">
                                                         max in-use (1h): {fmtInUseMax(inUseWindows.redis_async_decode)}
                                                     </div>
                                                 </div>
                                                 <div>
-                                                    <div className="text-[11px] text-gray-500">Redis (sync)</div>
+                                                    <div className="text-[11px] text-[#7A99B0]">Redis (sync)</div>
                                                     <div className="text-sm font-semibold">
                                                         {rsReported ? `${fmt(rSync.in_use_total)}/${fmt(rSync.max_total ?? rSync.total_total)}` : '—'}
                                                         {rsReported && rSync.utilization_percent != null ? ` (${rSync.utilization_percent}%)` : ''}
                                                     </div>
-                                                    <div className="text-[11px] text-gray-500">
+                                                    <div className="text-[11px] text-[#7A99B0]">
                                                         reported {rsReported}
                                                     </div>
-                                                    <div className="text-[11px] text-gray-500">
+                                                    <div className="text-[11px] text-[#7A99B0]">
                                                         {fmtWindow(windows.redis_sync)}
                                                     </div>
-                                                    <div className="text-[11px] text-gray-500">
+                                                    <div className="text-[11px] text-[#7A99B0]">
                                                         max in-use (1h): {fmtInUseMax(inUseWindows.redis_sync)}
                                                     </div>
                                                 </div>
@@ -1637,7 +1638,7 @@ const MonitoringDashboard: React.FC = () => {
                                 })}
                             </div>
                         ) : (
-                            <div className="text-xs text-gray-500">No pool data reported yet.</div>
+                            <div className="text-xs text-[#7A99B0]">No pool data reported yet.</div>
                         )}
                     </CardBody>
                 </Card>
@@ -1656,10 +1657,10 @@ const MonitoringDashboard: React.FC = () => {
                                 const perHour = hours ? total / hours : 0;
                                 const perMin = perHour / 60;
                                 return (
-                                    <div key={key} className="p-4 rounded-xl bg-gray-100">
-                                        <div className="text-xs text-gray-600">{key} total</div>
+                                    <div key={key} className="p-4 rounded-lg bg-[#F6FAFA] border border-[#E6F1F0]">
+                                        <div className="text-xs text-[#3A5672]">{key} total</div>
                                         <div className="text-sm font-semibold">{Math.round(total)}</div>
-                                        <div className="text-xs text-gray-500">
+                                        <div className="text-xs text-[#7A99B0]">
                                             ~{Math.round(perMin)} / min · ~{Math.round(perHour)} / hour
                                         </div>
                                     </div>
@@ -1671,13 +1672,13 @@ const MonitoringDashboard: React.FC = () => {
                                 {["1m", "15m", "1h"].map((key) => {
                                     const win = throttlingWindows[key] || {};
                                     return (
-                                        <div key={key} className="p-4 rounded-xl bg-gray-100">
-                                            <div className="text-xs text-gray-600">{key} throttling</div>
+                                        <div key={key} className="p-4 rounded-lg bg-[#F6FAFA] border border-[#E6F1F0]">
+                                            <div className="text-xs text-[#3A5672]">{key} throttling</div>
                                             <div className="text-sm font-semibold">{win.total_throttled ?? 0}</div>
-                                            <div className="text-xs text-gray-500">
+                                            <div className="text-xs text-[#7A99B0]">
                                                 429 {win.rate_limit_429 ?? 0} · 503 {win.backpressure_503 ?? 0}
                                             </div>
-                                            <div className="text-xs text-gray-500">
+                                            <div className="text-xs text-[#7A99B0]">
                                                 {win.events_per_min != null ? `${win.events_per_min} / min` : '—'}
                                             </div>
                                         </div>
@@ -1695,38 +1696,38 @@ const MonitoringDashboard: React.FC = () => {
                             Queue sizes are current backpressure queues; “accepting/blocked” is per-role admission status.
                         </Legend>
                         <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-                            <div className="p-4 rounded-xl bg-gray-100">
-                                <div className="text-xs text-gray-600">Anonymous</div>
+                            <div className="p-4 rounded-lg bg-[#F6FAFA] border border-[#E6F1F0]">
+                                <div className="text-xs text-[#3A5672]">Anonymous</div>
                                 <div className="text-sm font-semibold">{queue?.anonymous ?? 0}</div>
-                                <div className="text-xs text-gray-500">
+                                <div className="text-xs text-[#7A99B0]">
                                     {capacityCtx.accepting_anonymous ? 'accepting' : 'blocked'}
                                 </div>
                             </div>
-                            <div className="p-4 rounded-xl bg-gray-100">
-                                <div className="text-xs text-gray-600">Registered</div>
+                            <div className="p-4 rounded-lg bg-[#F6FAFA] border border-[#E6F1F0]">
+                                <div className="text-xs text-[#3A5672]">Registered</div>
                                 <div className="text-sm font-semibold">{queue?.registered ?? 0}</div>
-                                <div className="text-xs text-gray-500">
+                                <div className="text-xs text-[#7A99B0]">
                                     {capacityCtx.accepting_registered ? 'accepting' : 'blocked'}
                                 </div>
                             </div>
-                            <div className="p-4 rounded-xl bg-gray-100">
-                                <div className="text-xs text-gray-600">Paid</div>
+                            <div className="p-4 rounded-lg bg-[#F6FAFA] border border-[#E6F1F0]">
+                                <div className="text-xs text-[#3A5672]">Paid</div>
                                 <div className="text-sm font-semibold">{queue?.paid ?? 0}</div>
-                                <div className="text-xs text-gray-500">
+                                <div className="text-xs text-[#7A99B0]">
                                     {(capacityCtx.accepting_paid ?? true) ? 'accepting' : 'blocked'}
                                 </div>
                             </div>
-                            <div className="p-4 rounded-xl bg-gray-100">
-                                <div className="text-xs text-gray-600">Privileged</div>
+                            <div className="p-4 rounded-lg bg-[#F6FAFA] border border-[#E6F1F0]">
+                                <div className="text-xs text-[#3A5672]">Privileged</div>
                                 <div className="text-sm font-semibold">{queue?.privileged ?? 0}</div>
-                                <div className="text-xs text-gray-500">
+                                <div className="text-xs text-[#7A99B0]">
                                     {capacityCtx.accepting_privileged ? 'accepting' : 'blocked'}
                                 </div>
                             </div>
-                            <div className="p-4 rounded-xl bg-gray-100">
-                                <div className="text-xs text-gray-600">Hard Limit</div>
+                            <div className="p-4 rounded-lg bg-[#F6FAFA] border border-[#E6F1F0]">
+                                <div className="text-xs text-[#3A5672]">Hard Limit</div>
                                 <div className="text-sm font-semibold">{capacityCtx.thresholds?.hard_limit_threshold ?? 0}</div>
-                                <div className="text-xs text-gray-500">items</div>
+                                <div className="text-xs text-[#7A99B0]">items</div>
                             </div>
                         </div>
                     </CardBody>
@@ -1744,21 +1745,21 @@ const MonitoringDashboard: React.FC = () => {
                                 const wait = q.avg_wait ?? 0;
                                 const throughput = q.throughput ?? 0;
                                 return (
-                                    <div key={key} className="p-4 rounded-xl bg-gray-100">
-                                        <div className="text-xs text-gray-600">{key}</div>
+                                    <div key={key} className="p-4 rounded-lg bg-[#F6FAFA] border border-[#E6F1F0]">
+                                        <div className="text-xs font-mono text-[#3A5672]">{key}</div>
                                         <div className="text-sm font-semibold">{q.size ?? 0} queued</div>
-                                        <div className="text-xs text-gray-500">avg wait {wait.toFixed(2)}s</div>
-                                        <div className="text-xs text-gray-500">throughput {throughput}/hr</div>
-                                        <div className="text-xs text-gray-500">{q.blocked ? 'blocked' : 'accepting'}</div>
+                                        <div className="text-xs text-[#7A99B0]">avg wait {wait.toFixed(2)}s</div>
+                                        <div className="text-xs text-[#7A99B0]">throughput {throughput}/hr</div>
+                                        <div className="text-xs text-[#7A99B0]">{q.blocked ? 'blocked' : 'accepting'}</div>
                                     </div>
                                 );
                             })}
-                            <div className="p-4 rounded-xl bg-gray-100">
-                                <div className="text-xs text-gray-600">Utilization</div>
+                            <div className="p-4 rounded-lg bg-[#F6FAFA] border border-[#E6F1F0]">
+                                <div className="text-xs text-[#3A5672]">Utilization</div>
                                 <div className="text-sm font-semibold">
                                     {typeof queueUtilization === 'number' ? `${queueUtilization.toFixed(1)}%` : '—'}
                                 </div>
-                                <div className="text-xs text-gray-500">queue / weighted capacity</div>
+                                <div className="text-xs text-[#7A99B0]">queue / weighted capacity</div>
                             </div>
                         </div>
                     </CardBody>
@@ -1771,7 +1772,7 @@ const MonitoringDashboard: React.FC = () => {
                             Uses SimpleIDP tokens to open SSE streams and send synthetic chat bursts.
                         </Legend>
                         {burstError && (
-                            <div className="text-xs text-rose-700">{burstError}</div>
+                            <div className="text-xs text-[#B91C1C]">{burstError}</div>
                         )}
                         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                             <Input label="Admin streams" value={burstAdminCount} onChange={(e) => setBurstAdminCount(e.target.value)} />
@@ -1781,28 +1782,28 @@ const MonitoringDashboard: React.FC = () => {
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <Input label="Message text" value={burstMessage} onChange={(e) => setBurstMessage(e.target.value)} />
-                            <Input label="Bundle ID (optional)" value={burstBundleId} onChange={(e) => setBurstBundleId(e.target.value)} />
+                            <Input label="App ID (optional)" value={burstBundleId} onChange={(e) => setBurstBundleId(e.target.value)} />
                         </div>
                         <div className="flex flex-wrap items-center gap-3">
                             <Button variant="secondary" onClick={loadBurstUsers}>Load tokens</Button>
                             <Button variant="secondary" onClick={openBurstStreams}>Open SSE</Button>
                             <Button variant="secondary" onClick={closeBurstStreams}>Close SSE</Button>
                             <Button onClick={sendBurstMessages} disabled={burstRunning}>Send chat burst</Button>
-                            <span className="text-xs text-gray-600">
+                            <span className="text-xs text-[#3A5672]">
                                 Open streams: {burstOpenCount}
                             </span>
                         </div>
                         {burstUsers ? (
-                            <div className="text-xs text-gray-500">
+                            <div className="text-xs text-[#7A99B0]">
                                 Available tokens: admin {burstUsers.counts?.admin ?? 0}, registered {burstUsers.counts?.registered ?? 0}, paid {burstUsers.counts?.paid ?? 0}
                             </div>
                         ) : (
-                            <div className="text-xs text-gray-500">
+                            <div className="text-xs text-[#7A99B0]">
                                 Enable with `MONITORING_BURST_ENABLE=1` and platform authenticator provider `simple`.
                             </div>
                         )}
                         {burstStatus && (
-                            <div className="text-xs text-gray-600">{burstStatus}</div>
+                            <div className="text-xs text-[#3A5672]">{burstStatus}</div>
                         )}
                     </CardBody>
                 </Card>
@@ -1824,11 +1825,11 @@ const MonitoringDashboard: React.FC = () => {
                         <Legend>
                             Rough sizing only; validate with real traffic and latency.
                         </Legend>
-                        <div className="flex flex-wrap items-center gap-3 text-xs text-gray-600">
+                        <div className="flex flex-wrap items-center gap-3 text-xs text-[#3A5672]">
                             <label className="flex items-center gap-2">
                                 Draft target
                                 <select
-                                    className="border border-gray-200 rounded px-2 py-1 text-xs"
+                                    className="border border-[#D8ECEB] rounded-md px-2 py-1 text-xs bg-white text-[#0D1E2C] focus:outline-none focus:border-[#01BEB2]"
                                     value={selectedComponent}
                                     onChange={(e) => setSelectedComponent(e.target.value as 'ingress' | 'proc')}
                                 >
@@ -1838,11 +1839,11 @@ const MonitoringDashboard: React.FC = () => {
                             </label>
                             <span>Config source: {configSource}</span>
                         </div>
-                        <div className="text-xs text-gray-500">
+                        <div className="text-xs text-[#7A99B0]">
                             {`Source: GATEWAY_CONFIG_JSON.service_capacity.${plannerComponentKey} (or admin update). Assumes all instances in the selected tenant/project share the same config.`}
                         </div>
                         {selectedComponent !== plannerComponentKey && (
-                            <div className="text-xs text-amber-700">
+                            <div className="text-xs text-[#B45309]">
                                 Planner is anchored to capacity source <span className="font-semibold">{plannerComponentKey}</span>. Updating
                                 <span className="font-semibold"> {selectedComponent}</span> will keep its current service_capacity and only
                                 apply rate limits/limits for that component.
@@ -1864,42 +1865,42 @@ const MonitoringDashboard: React.FC = () => {
                             <Input label="Avg processing (s)" value={plannerAvgProcessing} onChange={(e) => setPlannerAvgProcessing(e.target.value)} />
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
-                            <div className="p-4 rounded-xl bg-gray-100">
-                                <div className="text-xs text-gray-600">Total users</div>
+                            <div className="p-4 rounded-lg bg-[#F6FAFA] border border-[#E6F1F0]">
+                                <div className="text-xs text-[#3A5672]">Total users</div>
                                 <div className="text-sm font-semibold">{planner.totalUsers}</div>
-                                <div className="text-xs text-gray-500">admins + registered + paid</div>
+                                <div className="text-xs text-[#7A99B0]">admins + registered + paid</div>
                             </div>
-                            <div className="p-4 rounded-xl bg-gray-100">
-                                <div className="text-xs text-gray-600">Burst / session (min)</div>
+                            <div className="p-4 rounded-lg bg-[#F6FAFA] border border-[#E6F1F0]">
+                                <div className="text-xs text-[#3A5672]">Burst / session (min)</div>
                                 <div className="text-sm font-semibold">{planner.burstPerSession}</div>
-                                <div className="text-xs text-gray-500">page-load × tabs</div>
+                                <div className="text-xs text-[#7A99B0]">page-load × tabs</div>
                             </div>
-                            <div className="p-4 rounded-xl bg-gray-100">
-                                <div className="text-xs text-gray-600">Suggested burst</div>
+                            <div className="p-4 rounded-lg bg-[#F6FAFA] border border-[#E6F1F0]">
+                                <div className="text-xs text-[#3A5672]">Suggested burst</div>
                                 <div className="text-sm font-semibold">{planner.suggestedBurst}</div>
-                                <div className="text-xs text-gray-500">with safety factor</div>
+                                <div className="text-xs text-[#7A99B0]">with safety factor</div>
                             </div>
-                            <div className="p-4 rounded-xl bg-gray-100">
-                                <div className="text-xs text-gray-600">Peak RPS</div>
+                            <div className="p-4 rounded-lg bg-[#F6FAFA] border border-[#E6F1F0]">
+                                <div className="text-xs text-[#3A5672]">Peak RPS</div>
                                 <div className="text-sm font-semibold">{planner.peakRps.toFixed(1)}</div>
-                                <div className="text-xs text-gray-500">page-load surge</div>
+                                <div className="text-xs text-[#7A99B0]">page-load surge</div>
                             </div>
-                            <div className="p-4 rounded-xl bg-gray-100">
-                                <div className="text-xs text-gray-600">Max RPS</div>
+                            <div className="p-4 rounded-lg bg-[#F6FAFA] border border-[#E6F1F0]">
+                                <div className="text-xs text-[#3A5672]">Max RPS</div>
                                 <div className="text-sm font-semibold">{planner.maxRps.toFixed(1)}</div>
-                                <div className="text-xs text-gray-500">capacity estimate</div>
+                                <div className="text-xs text-[#7A99B0]">capacity estimate</div>
                             </div>
-                            <div className="p-4 rounded-xl bg-gray-100">
-                                <div className="text-xs text-gray-600">Peak utilization</div>
+                            <div className="p-4 rounded-lg bg-[#F6FAFA] border border-[#E6F1F0]">
+                                <div className="text-xs text-[#3A5672]">Peak utilization</div>
                                 <div className="text-sm font-semibold">
                                     {(planner.peakUtilization * 100).toFixed(1)}%
                                 </div>
-                                <div className="text-xs text-gray-500">
+                                <div className="text-xs text-[#7A99B0]">
                                     {planner.peakUtilization > 1 ? 'over capacity' : 'ok'}
                                 </div>
                             </div>
                         </div>
-                        <div className="text-[11px] text-gray-500">
+                        <div className="text-[11px] text-[#7A99B0]">
                             Suggested burst is a per-session value. Set it per role in the config JSON under `rate_limits`.
                         </div>
                     </CardBody>
@@ -1915,13 +1916,13 @@ const MonitoringDashboard: React.FC = () => {
                             Draft is component-scoped and preserves current hourly limits.
                         </Legend>
                         {selectedComponent !== plannerComponentKey && (
-                            <div className="text-xs text-amber-700">
+                            <div className="text-xs text-[#B45309]">
                                 Service capacity stays anchored to <span className="font-semibold">{plannerComponentKey}</span>. This draft
                                 only changes rate limits/limits for <span className="font-semibold">{selectedComponent}</span>.
                             </div>
                         )}
                         <TextArea value={recommendedConfigJson} onChange={() => { /* read-only */ }} />
-                        <div className="text-[11px] text-gray-500">
+                        <div className="text-[11px] text-[#7A99B0]">
                             This draft keeps current hourly limits, updates burst/burst_window, and mirrors the planner’s service capacity values.
                         </div>
                     </CardBody>
@@ -1942,10 +1943,10 @@ const MonitoringDashboard: React.FC = () => {
                         </div>
                         <div className="space-y-3">
                             {Object.entries(circuitBreakers).map(([name, cb]) => (
-                                <div key={name} className="flex items-center justify-between p-3 rounded-xl bg-gray-100">
+                                <div key={name} className="flex items-center justify-between p-3 rounded-lg bg-[#F6FAFA] border border-[#E6F1F0]">
                                     <div className="text-sm">
-                                        <div className="font-semibold">{name}</div>
-                                        <div className="text-xs text-gray-600">
+                                        <div className="font-mono text-[13px] font-semibold text-[#0D1E2C]">{name}</div>
+                                        <div className="text-xs text-[#3A5672]">
                                             state: {cb.state} • failures: {cb.current_window_failures}/{cb.failure_count}
                                         </div>
                                     </div>
@@ -1964,10 +1965,10 @@ const MonitoringDashboard: React.FC = () => {
                         <Legend>
                             Actions apply to the selected tenant/project. “All sessions” clears all rate-limit keys.
                         </Legend>
-                        <div className="text-xs text-gray-600">
+                        <div className="text-xs text-[#3A5672]">
                             Active scope: <span className="font-semibold">{tenant || '—'}</span> / <span className="font-semibold">{project || '—'}</span>
                         </div>
-                        <div className="text-[11px] text-gray-500">
+                        <div className="text-[11px] text-[#7A99B0]">
                             Affected keys:
                             <div className="font-mono break-all">
                                 {tenant && project ? `${tenant}:${project}:kdcube:system:ratelimit:<session_id>` : '<tenant>:<project>:kdcube:system:ratelimit:<session_id>'}
@@ -1990,9 +1991,9 @@ const MonitoringDashboard: React.FC = () => {
                                 placeholder="defaults to current session"
                             />
                             <div className="flex items-end">
-                                <label className="text-xs text-gray-600 flex items-center gap-2">
+                                <label className="text-xs text-[#3A5672] flex items-center gap-2">
                                     <input
-                                        type="checkbox"
+                                        type="checkbox" className="accent-[#01BEB2]"
                                         checked={resetAllSessions}
                                         onChange={(e) => setResetAllSessions(e.target.checked)}
                                     />
@@ -2001,33 +2002,33 @@ const MonitoringDashboard: React.FC = () => {
                             </div>
                         </div>
                         <div className="flex flex-wrap items-center gap-4">
-                            <label className="text-xs text-gray-600 flex items-center gap-2">
+                            <label className="text-xs text-[#3A5672] flex items-center gap-2">
                                 <input
-                                    type="checkbox"
+                                    type="checkbox" className="accent-[#01BEB2]"
                                     checked={resetRateLimits}
                                     onChange={(e) => setResetRateLimits(e.target.checked)}
                                 />
                                 Reset rate limits
                             </label>
-                            <label className="text-xs text-gray-600 flex items-center gap-2">
+                            <label className="text-xs text-[#3A5672] flex items-center gap-2">
                                 <input
-                                    type="checkbox"
+                                    type="checkbox" className="accent-[#01BEB2]"
                                     checked={resetBackpressure}
                                     onChange={(e) => setResetBackpressure(e.target.checked)}
                                 />
                                 Reset backpressure counters
                             </label>
-                            <label className="text-xs text-gray-600 flex items-center gap-2">
+                            <label className="text-xs text-[#3A5672] flex items-center gap-2">
                                 <input
-                                    type="checkbox"
+                                    type="checkbox" className="accent-[#01BEB2]"
                                     checked={resetThrottlingStats}
                                     onChange={(e) => setResetThrottlingStats(e.target.checked)}
                                 />
                                 Clear throttling stats
                             </label>
-                            <label className="text-xs text-gray-600 flex items-center gap-2">
+                            <label className="text-xs text-[#3A5672] flex items-center gap-2">
                                 <input
-                                    type="checkbox"
+                                    type="checkbox" className="accent-[#01BEB2]"
                                     checked={purgeChatQueues}
                                     onChange={(e) => setPurgeChatQueues(e.target.checked)}
                                 />
@@ -2035,7 +2036,7 @@ const MonitoringDashboard: React.FC = () => {
                             </label>
                         </div>
                         {(resetAllSessions || purgeChatQueues) && (
-                            <div className="text-xs text-rose-700">
+                            <div className="text-xs text-[#B91C1C]">
                                 {resetAllSessions ? 'Warning: clears rate limits for all sessions in this tenant/project.' : ''}
                                 {resetAllSessions && purgeChatQueues ? ' ' : ''}
                                 {purgeChatQueues ? 'Warning: purging queues drops pending event payloads.' : ''}
@@ -2050,7 +2051,7 @@ const MonitoringDashboard: React.FC = () => {
                                 Reset
                             </Button>
                             {resetThrottlingMessage && (
-                                <span className="text-xs text-gray-600">{resetThrottlingMessage}</span>
+                                <span className="text-xs text-[#3A5672]">{resetThrottlingMessage}</span>
                             )}
                         </div>
                     </CardBody>
@@ -2066,14 +2067,14 @@ const MonitoringDashboard: React.FC = () => {
                             <Input label="Tenant" value={tenant} onChange={(e) => setTenant(e.target.value)} />
                             <Input label="Project" value={project} onChange={(e) => setProject(e.target.value)} />
                             <div className="flex items-end gap-3">
-                                <label className="text-xs text-gray-600 flex items-center gap-2">
-                                    <input type="checkbox" checked={dryRun} onChange={(e) => setDryRun(e.target.checked)} />
+                                <label className="text-xs text-[#3A5672] flex items-center gap-2">
+                                    <input type="checkbox" className="accent-[#01BEB2]" checked={dryRun} onChange={(e) => setDryRun(e.target.checked)} />
                                     Dry run reset
                                 </label>
                             </div>
                         </div>
 
-                        <div className="flex flex-wrap items-center gap-3 text-xs text-gray-600">
+                        <div className="flex flex-wrap items-center gap-3 text-xs text-[#3A5672]">
                             <span>Config source: {configSource}</span>
                         </div>
 
@@ -2091,25 +2092,25 @@ const MonitoringDashboard: React.FC = () => {
                             <Button variant="secondary" onClick={handleValidate}>Validate</Button>
                             <Button onClick={handleUpdate}>Update</Button>
                             <Button variant="danger" onClick={handleReset}>Reset to Env</Button>
-                            {actionMessage && <span className="text-sm text-gray-600">{actionMessage}</span>}
+                            {actionMessage && <span className="text-sm text-[#3A5672]">{actionMessage}</span>}
                         </div>
 
-                        <div className="text-xs text-amber-700">
+                        <div className="text-xs text-[#B45309]">
                             Note: changing `service_capacity.processes_per_instance` requires a service restart to affect worker count.
                         </div>
-                        <div className="text-xs text-gray-600">
+                        <div className="text-xs text-[#3A5672]">
                             Updates are persisted in the tenant/project cache and broadcast to running replicas.
                             Paste the full `GATEWAY_CONFIG_JSON` to replace the cached config.
                         </div>
 
                         <div className="flex flex-wrap items-center gap-3">
                             <Button variant="secondary" onClick={handleClearCache}>Clear Cached Config</Button>
-                            <span className="text-xs text-gray-500">Cache key: {gatewayCacheKeyPattern}</span>
-                            {clearCacheMessage && <span className="text-xs text-gray-600">{clearCacheMessage}</span>}
+                            <span className="text-xs text-[#7A99B0]">Cache key: {gatewayCacheKeyPattern}</span>
+                            {clearCacheMessage && <span className="text-xs text-[#3A5672]">{clearCacheMessage}</span>}
                         </div>
 
                         {validationResult && (
-                            <div className="mt-4 p-3 rounded-xl bg-gray-100 text-xs font-mono whitespace-pre-wrap">
+                            <div className="mt-4 p-3 rounded-lg bg-[#F6FAFA] border border-[#E6F1F0] text-xs font-mono text-[#3A5672] whitespace-pre-wrap">
                                 {JSON.stringify(validationResult, null, 2)}
                             </div>
                         )}
@@ -2123,7 +2124,7 @@ const MonitoringDashboard: React.FC = () => {
                             Counts are for the last hour. Events list the most recent throttles (429/503).
                         </Legend>
                         {lastThrottle && (
-                            <div className="mb-4 p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs">
+                            <div className="mb-4 p-3 rounded-lg bg-[rgba(245,158,11,0.1)] border border-[rgba(245,158,11,0.4)] text-[#B45309] text-xs">
                                 <div className="font-semibold">Latest throttle</div>
                                 <div>reason: {lastThrottle.reason}</div>
                                 <div>endpoint: {lastThrottle.endpoint || '—'}</div>
@@ -2134,34 +2135,34 @@ const MonitoringDashboard: React.FC = () => {
                             </div>
                         )}
                         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-                            <div className="p-3 rounded-xl bg-gray-100">
-                                <div className="text-xs text-gray-600">Total</div>
+                            <div className="p-3 rounded-lg bg-[#F6FAFA] border border-[#E6F1F0]">
+                                <div className="text-xs text-[#3A5672]">Total</div>
                                 <div className="text-sm font-semibold">{throttling?.total_requests ?? 0}</div>
                             </div>
-                            <div className="p-3 rounded-xl bg-gray-100">
-                                <div className="text-xs text-gray-600">Throttled</div>
+                            <div className="p-3 rounded-lg bg-[#F6FAFA] border border-[#E6F1F0]">
+                                <div className="text-xs text-[#3A5672]">Throttled</div>
                                 <div className="text-sm font-semibold">{throttling?.total_throttled ?? 0}</div>
                             </div>
-                            <div className="p-3 rounded-xl bg-gray-100">
-                                <div className="text-xs text-gray-600">429</div>
+                            <div className="p-3 rounded-lg bg-[#F6FAFA] border border-[#E6F1F0]">
+                                <div className="text-xs text-[#3A5672]">429</div>
                                 <div className="text-sm font-semibold">{throttling?.rate_limit_429 ?? 0}</div>
                             </div>
-                            <div className="p-3 rounded-xl bg-gray-100">
-                                <div className="text-xs text-gray-600">503</div>
+                            <div className="p-3 rounded-lg bg-[#F6FAFA] border border-[#E6F1F0]">
+                                <div className="text-xs text-[#3A5672]">503</div>
                                 <div className="text-sm font-semibold">{throttling?.backpressure_503 ?? 0}</div>
                             </div>
                         </div>
 
                         <div className="space-y-2">
                             {events.slice(0, 10).map((e, idx) => (
-                                <div key={e.event_id || idx} className="text-xs flex items-center justify-between bg-white border border-gray-200/70 rounded-xl px-3 py-2">
-                                    <div className="text-gray-700">{e.reason}</div>
-                                    <div className="text-gray-500">{e.endpoint || '—'}</div>
-                                    <div className="text-gray-500">{e.user_type}</div>
-                                    <div className="text-gray-500">{e.http_status}</div>
+                                <div key={e.event_id || idx} className="text-xs flex items-center justify-between bg-white border border-[#E6F1F0] rounded-lg px-3 py-2">
+                                    <div className="text-[#3A5672]">{e.reason}</div>
+                                    <div className="text-[#7A99B0] font-mono">{e.endpoint || '—'}</div>
+                                    <div className="text-[#7A99B0]">{e.user_type}</div>
+                                    <div className="text-[#7A99B0]">{e.http_status}</div>
                                 </div>
                             ))}
-                            {events.length === 0 && <div className="text-sm text-gray-500">No recent events.</div>}
+                            {events.length === 0 && <div className="text-sm text-[#7A99B0]">No recent events.</div>}
                         </div>
                     </CardBody>
                 </Card>
