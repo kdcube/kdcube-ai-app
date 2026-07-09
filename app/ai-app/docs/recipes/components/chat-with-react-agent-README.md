@@ -4,7 +4,7 @@ title: "Recipe: Chat With A ReAct Agent"
 summary: "End-to-end steps: declare a ReAct agent with per-agent config (tools/skills inventory, instructions, supported_models), wire the chat component to it, and let users customize the agent through the composer menu."
 status: current
 tags: ["recipes", "components", "chat", "react", "agent", "supported-models", "composer-menu"]
-updated_at: 2026-07-06
+updated_at: 2026-07-09
 keywords:
   [
     "chat with react agent",
@@ -17,6 +17,7 @@ keywords:
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/how/how-to-construct-react-agent-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/recipes/components/chat-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/user-settings/capabilities-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/chat/chat-widget-solution-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/npm/components-core/chat-engine-README.md
 ---
@@ -145,7 +146,14 @@ chat widget) renders the composer "+" menu automatically for signed-in users.
 - The "+" menu lists Model (when step 2 declared `supported_models`, with the
   configured default tagged), Skills, Tools with per-tool rows, MCP servers,
   and Services — everything from step 1's inventory, system groups excluded
-  from toggling.
+  from toggling. Service rows expand to per-operation and per-action toggles
+  (`object.search`, `object.action.<name>`) and draw a service card from the
+  realm's own presentation metadata.
+- The same picker body ships in three shells: the composer popover, an
+  expanded in-chat modal, and a served full-page `capabilities` widget a
+  scene can mount and summon (`capabilities.open`). Model, granularity, and
+  enforcement:
+  [Per-User Agent Capabilities](../../sdk/solutions/user-settings/capabilities-README.md).
 - Toggles and the model pick save as the user clicks and apply from the next
   message.
 - Verify end to end: toggle a tool group off, send a message, and confirm the

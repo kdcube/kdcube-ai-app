@@ -29,6 +29,38 @@ chat iframe
     accounting events
 ```
 
+## Serve It From Your App
+
+Four wiring points put this widget on your own app, backed by your own agent:
+
+1. Register the widget on the entrypoint — an `@ui_widget(alias="my_chat", ...)`
+   method (its body is a served-from-build placeholder), plus a
+   `visibility.widget.my_chat` block in the descriptor for who may load it.
+2. Declare the UI source: `config.ui.widgets.my_chat: chat_widget_ui_config()`
+   from the entrypoint, or inline YAML with
+   `src_folder: sdk://solutions/chat/ui/widget` and an `engine` selector.
+   `engine` picks the implementation: `local` (in-tree engine + UI, no
+   `npm://`), `package` (package engine, in-tree UI), `package-ui` (package
+   engine + packaged `<Chat/>` UI; materializes `@kdcube/components-*` via
+   `npm://` shared sources). Helper reference:
+   [Chat Widget Solution](../../sdk/solutions/chat/chat-widget-solution-README.md);
+   build mechanics:
+   [Widget Integration](../../sdk/npm/widget-integration-README.md).
+3. Bind the agent. The widget talks to the app it is served from; the agent
+   key (`agentId`, default `main`) selects which of the app's declared agents
+   answers. Declaring that agent — inventory, react block,
+   `supported_models`, per-user customization — is the
+   [Chat With A ReAct Agent recipe](./chat-with-react-agent-README.md).
+4. Declare the chat surface: `surfaces.as_provider.bundle.default_chat: true`
+   in the descriptor makes the control plane draw the conversation UI for the
+   app (absent means the app presents its widget scene instead). Auth rides
+   the standard widget path: the iframe resolves tokens from the served route
+   and the parent CONFIG handshake, and signed-in users get the composer "+"
+   menu.
+
+To mount the widget inside a composed scene instead of serving it standalone,
+declare it as a scene component: [Scene recipe](./scene-README.md).
+
 ## Scene Boundary
 
 When embedded, the scene provides:
@@ -99,8 +131,11 @@ A scene should declare chat as a context drop target:
 
 - [Architecture Of What You Build](../../arch/architecture-of-what-you-build-README.md)
 - [Component Recipes](./README.md)
+- [Scene Recipe](./scene-README.md)
+- [Chat With A ReAct Agent](./chat-with-react-agent-README.md)
 - [Components Ecosystem Architecture](../../sdk/solutions/ecosystem-component/components-ecosystem-README.md)
 - [Chat Widget Solution](../../sdk/solutions/chat/chat-widget-solution-README.md)
+- [Widget Integration](../../sdk/npm/widget-integration-README.md)
 - [Context Drag And Canvas Ingress](../../sdk/npm/components-core/context-drag-README.md)
 - [Host Event Bus](../../sdk/npm/components-core/host-event-bus-README.md)
 - [React Event Blocks](../../sdk/agents/react/event-blocks-README.md)

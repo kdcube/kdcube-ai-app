@@ -74,17 +74,19 @@ widget as one more iframe surface.
 
 Per-component keys:
 
-| Key | Meaning |
+| Key | Meaning (default for a new alias) |
 | --- | --- |
-| `bundle_id` + `widget_alias` (or `route`) | Owning app package and its served widget; `route` overrides the widget path when the app exposes a public route. |
-| `title`, `accent`, `size {w,h}`, `full {w,h}`, `order` | Rail/window presentation. |
-| `gated` | Hidden from the rail and closed unless the viewer is authenticated. |
-| `views` | The widget supports `kdcube-set-view` compact/expanded. |
-| `target_surfaces` | Surfaces the component registers in the scene runtime. |
-| `drop { effect, patterns, target_surface }` | Context-drop acceptance. `target_surface` lets an `open` drop resolve toward a surface owned by ANOTHER component: the `memories` list accepts `mem:*` drops that open in `sdk.memory.viewer`, owned by the `memory_item` editor component. |
-| `placement: docked \| floating` | `docked` components sit in a static stage slot and unpin into a floating window; `pinboard` and `chat` are docked by default. |
-| `rail` | `false` hides the rail button for surface-command-only components such as `memory_item`. |
-| `default_open` | Floating component summoned once its gate allows. |
+| `enabled` | `false` removes the component, including a shipped default (`true`). |
+| `bundle_id` + `widget_alias` (or `route`) | Owning app package and its served widget; `route` overrides the widget path when the app exposes a public route. An entry with neither `widget_alias` nor `route` is dropped. |
+| `params` | Extra query params appended to the widget URL, e.g. `view: compact`, `single: "1"` (none). |
+| `title`, `accent`, `size {w,h}`, `full {w,h}`, `order` | Rail/window presentation (`title` = alias, `accent: teal`, `size` 480x560, `full` = `size`, `order` 100). |
+| `gated` | Hidden from the rail and closed unless the viewer is authenticated (`true`). |
+| `views` | The widget supports `kdcube-set-view` compact/expanded (`false`). |
+| `target_surfaces` | Surfaces the component registers in the scene runtime (empty). |
+| `drop { effect, patterns, target_surface }` | Context-drop acceptance (none). `target_surface` lets an `open` drop resolve toward a surface owned by ANOTHER component: the `memories` list accepts `mem:*` drops that open in `sdk.memory.viewer`, owned by the `memory_item` editor component. |
+| `placement: docked \| floating` | `docked` components sit in a static stage slot and unpin into a floating window; `pinboard` and `chat` are docked by default (`floating`). |
+| `rail` | `false` hides the rail button for surface-command-only components such as `memory_item` (`true`). |
+| `default_open` | Floating component summoned once its gate allows (`false`). |
 
 The docked/floating window behavior behind `placement` is described in
 [Scene Composition](../scene-composition-README.md).

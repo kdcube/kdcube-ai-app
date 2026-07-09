@@ -114,6 +114,69 @@ the panel expanded with the issue loaded (the open payload is forwarded as
 the widget command). Descriptor semantics:
 [External Panels And Provider-Open Routing](../../sdk/solutions/scene/config/README.md#external-panels-and-provider-open-routing).
 
+## Scene Components
+
+An app-owned scene host reads its component set from the app descriptor,
+`surfaces.as_consumer.ui.scene.components.<alias>`. Each entry mounts one
+served widget as a rail-summonable iframe window:
+
+```yaml
+ui:
+  scene:
+    components:
+      stats:
+        enabled: true
+        bundle_id: kdcube.stats@2026-05-20-12-05
+        widget_alias: usage
+        route: public/widgets/usage
+        title: Stats
+        accent: orange
+        gated: false
+        views: true
+        size: { w: 720, h: 520 }
+        order: 40
+```
+
+Every key, its meaning, and its default live in one table:
+[Server-Configured Scene Components](../../sdk/solutions/scene/config/README.md#server-configured-scene-components).
+
+Two layers produce the final set, merged BY ALIAS:
+
+1. Code defaults in the scene build (`ui/scene/src/sceneConfig.ts`,
+   `defaultComponentSpecs()`) — the composition the app always ships. The
+   workspace scene's defaults: pinboard, chat, memories, memory_item, usage,
+   capabilities, connection_hub.
+2. Descriptor entries under `ui.scene.components`, delivered through the
+   app's `scene_surface_config` operation and merged over the defaults with
+   `resolveComponentSpecs(configured)`.
+
+A configured field wins where present; the code default fills the rest;
+`enabled: false` removes a default; a new alias adds a component. Put what
+the scene always is in code defaults; use descriptor entries for
+per-deployment composition — enabling, removing, or re-skinning a component
+without rebuilding the scene.
+
+A component may mount ANOTHER app's widget: `bundle_id` + `widget_alias`
+name the owning app, and the scene builds the iframe URL from them. The
+workspace scene does this twice — `memories`/`memory_item` iframe
+`user-memories@2026-06-26`, and `connection_hub` iframes
+`connection-hub@1-0`'s `connections_settings` widget, which chat consent
+cards summon through the `connections.hub.open` surface command.
+
+Identity rule for cross-bundle widgets: the ROUTE bundle id (the bundle URL
+a widget is served from) is that widget's own app identity; the host CONFIG
+handshake's `defaultAppBundleId` is the HOST's context and must never
+override it.
+
+To let one mounted component summon and direct another, declare a surface
+command contract: the
+[Scene Surface Command recipe](./scene-surface-command-README.md) is the
+walkthrough,
+[Scene Surface Commands](../../sdk/solutions/scene/scene-surface-commands-README.md)
+the mechanism reference. Mounting the chat component and the agent behind it
+are the [Chat Widget](./chat-README.md) and
+[Chat With A ReAct Agent](./chat-with-react-agent-README.md) recipes.
+
 ## Event Flow
 
 ```text
@@ -166,7 +229,9 @@ namespace parsing.
 - [Architecture Of What You Build](../../arch/architecture-of-what-you-build-README.md)
 - [Component Recipes](./README.md)
 - [Components Ecosystem Architecture](../../sdk/solutions/ecosystem-component/components-ecosystem-README.md)
+- [Scene Configuration Examples](../../sdk/solutions/scene/config/README.md)
 - [Scene Composition](../../sdk/solutions/scene/scene-composition-README.md)
+- [Scene Surface Commands](../../sdk/solutions/scene/scene-surface-commands-README.md)
 - [Scene Event Orchestration](../../sdk/solutions/scene/scene-event-orchestration-README.md)
 - [Cross-Surface Context Drag](../../sdk/solutions/scene/cross-surface-context-drag-README.md)
 - [Scene Surface Registry](../../sdk/solutions/scene/scene-surface-registry-README.md)
