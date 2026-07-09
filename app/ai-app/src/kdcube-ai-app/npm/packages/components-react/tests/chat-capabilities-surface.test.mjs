@@ -296,28 +296,53 @@ test('the hub access-map admin view is read-only and admin-gated', () => {
   assert.match(app, /activeTab === 'accessMap' && authenticatorsAllowed/)
 })
 
-test('the hub tab strip never hides options silently (wrap + narrow-case affordance)', () => {
+test('the hub tab strip is a single-row carousel at every width', () => {
   const base = '../../../../kdcube_ai_app/apps/chat/sdk/examples/bundles/connection-hub@1-0/ui/widgets/connections/src'
   const css = readFileSync(new URL(`${base}/styles.css`, import.meta.url), 'utf8')
-  // Default: wrap into a clean second row — nothing hidden at summoned widths.
+  // Product ruling: the six tabs NEVER wrap into a second row. One line at
+  // every width, horizontal scroll for overflow.
   const tabsBlock = css.slice(css.indexOf('.tabs {'), css.indexOf('}', css.indexOf('.tabs {')))
-  assert.match(tabsBlock, /flex-wrap: wrap/)
-  assert.doesNotMatch(tabsBlock, /overflow-x/)
-  // Narrow fallback: a one-line strip that announces itself with edge fades.
-  const narrow = css.slice(css.indexOf('@media (max-width: 479px)'))
-  assert.match(narrow, /flex-wrap: nowrap/)
-  assert.match(narrow, /overflow-x: auto/)
-  assert.match(narrow, /\.tabs-wrap\[data-fade-left\]::before \{ opacity: 1; \}/)
-  assert.match(narrow, /\.tabs-wrap\[data-fade-right\]::after \{ opacity: 1; \}/)
+  assert.match(tabsBlock, /flex-wrap: nowrap/)
+  assert.match(tabsBlock, /overflow-x: auto/)
+  // The overflow affordance is unconditional — no width media-query gate:
+  // edge fades render on exactly the overflowing side(s).
+  assert.doesNotMatch(css, /@media \(max-width: 479px\)/)
+  assert.match(css, /\.tabs-wrap\[data-fade-left\]::before \{ opacity: 1; \}/)
+  assert.match(css, /\.tabs-wrap\[data-fade-right\]::after \{ opacity: 1; \}/)
   // The collapse trap: an overflow strip has no automatic minimum height, so
   // inside the viewport-bound page column the wrapper must never shrink.
   assert.match(css, /\.tabs-wrap \{ position: relative; margin: 0 0 14px; flex: 0 0 auto; \}/)
-  // The shell keeps the ACTIVE tab in view and tracks overflow edges.
+  // The shell keeps the ACTIVE tab in view and tracks overflow edges from a
+  // scroll listener + ResizeObserver. The edge predicates guarantee a fully
+  // fitting strip shows NO fades: scrollLeft stays 0 (left false) and
+  // scrollLeft + clientWidth === scrollWidth (right false).
   const shell = readFileSync(new URL(`${base}/components/AppShell.tsx`, import.meta.url), 'utf8')
   assert.match(shell, /querySelector\('\.tab\.active'\)/)
   assert.match(shell, /scrollIntoView\(\{ block: 'nearest', inline: 'nearest' \}\)/)
   assert.match(shell, /addEventListener\('scroll', updateFade/)
+  assert.match(shell, /new ResizeObserver\(updateFade\)/)
+  assert.match(shell, /el\.scrollLeft > 1/)
+  assert.match(shell, /el\.scrollLeft \+ el\.clientWidth < el\.scrollWidth - 1/)
   assert.match(shell, /data-fade-left=\{fade\.left \|\| undefined\}/)
+  assert.match(shell, /data-fade-right=\{fade\.right \|\| undefined\}/)
+})
+
+test('scene hosts never clamp the hub frame to a reported content height', () => {
+  // The surfaced case: in the workspace scene the platform-injected resize
+  // reporter (in the scene page) wrote the hub widget's first kdcube-resize
+  // height — measured off its brief "Loading…" page — onto the iframe, and
+  // the 100vh-bound app then re-measured exactly that clamp forever: admin
+  // tabs, tab guide, and the whole panel rendered but stayed clipped.
+  // Guard 1: the viewport-bound widget opts out of the injected reporter
+  // (its index.html carries the marker the injector checks for).
+  const widgetRoot = '../../../../kdcube_ai_app/apps/chat/sdk/examples/bundles/connection-hub@1-0/ui/widgets/connections'
+  const indexHtml = readFileSync(new URL(`${widgetRoot}/index.html`, import.meta.url), 'utf8')
+  assert.match(indexHtml, /data-kdcube-resize-reporter/)
+  // Guard 2: scene-host windows own their frame size — the stylesheet height
+  // outranks any inline style.height a resize listener writes on the iframe.
+  const sceneCss = readFileSync(new URL('../src/scene/sceneHost.css', import.meta.url), 'utf8')
+  const frameBlock = sceneCss.slice(sceneCss.indexOf('.kdc-frame {'), sceneCss.indexOf('}', sceneCss.indexOf('.kdc-frame {')))
+  assert.match(frameBlock, /height: 100% !important/)
 })
 
 test('the access-map panel body owns its scrolling (viewport-bound page contract)', () => {

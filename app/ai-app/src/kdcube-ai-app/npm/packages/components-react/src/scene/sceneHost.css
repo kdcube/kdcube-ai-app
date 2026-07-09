@@ -426,6 +426,14 @@ body {
 .kdc-frame {
   flex: 1 1 auto;
   width: 100%;
+  /* The window owns the frame's size — always fill the window body. When the
+     scene page itself is served through the platform static route, the
+     platform injects a resize reporter whose message listener writes
+     style.height on any child iframe that posts kdcube-resize; for a
+     window-sized widget that inline height is a clamp (it froze the
+     Connection Hub at the height of its brief loading page). The !important
+     stylesheet height outranks that inline write. */
+  height: 100% !important;
   min-height: 0;
   border: 0;
   display: block;

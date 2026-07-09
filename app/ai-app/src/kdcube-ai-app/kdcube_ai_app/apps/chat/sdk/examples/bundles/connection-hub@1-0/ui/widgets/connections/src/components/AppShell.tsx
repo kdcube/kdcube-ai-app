@@ -30,11 +30,12 @@ export function AppShell({
   showAuthenticators = true,
   children,
 }: AppShellProps) {
-  /* The tab strip is honest about its own overflow. At normal summoned
-   * widths the tabs WRAP into a clean second row (nothing hidden). Truly
-   * narrow windows fall back to a horizontal strip, and that strip
-   * announces itself: an edge fade appears on whichever side has more
-   * content, and the active tab is always scrolled into view. */
+  /* The tab strip is a single-line carousel at EVERY width — the six tabs
+   * never wrap into a second row. The strip is honest about its own
+   * overflow: an edge fade appears on exactly the side(s) with clipped
+   * content (this scroll listener + ResizeObserver keep data-fade-left/
+   * right current), and the active tab is always scrolled into view. When
+   * the strip fully fits, both fade flags stay false and no fade shows. */
   const tabsRef = useRef<HTMLElement | null>(null);
   const [fade, setFade] = useState({ left: false, right: false });
   const updateFade = useCallback(() => {
