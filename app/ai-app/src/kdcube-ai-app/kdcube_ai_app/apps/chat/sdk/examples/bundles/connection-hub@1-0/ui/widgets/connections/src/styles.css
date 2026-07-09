@@ -98,17 +98,54 @@ body {
   color: var(--teal-dark);
 }
 
-/* Five tabs stay on one line at any window width: the strip scrolls
-   horizontally when the summoned window is narrower than the tab row. */
+/* Six tabs never hide silently. At normal summoned-window widths the strip
+   WRAPS into a clean second row — every option visible, nothing to guess.
+   Only truly narrow windows (under 480px) fall back to a one-line scrolling
+   strip, and that strip announces itself: an edge fade renders on whichever
+   side has clipped content (data-fade-left/right set by the shell's scroll
+   listener) and the active tab is scrolled into view on selection. */
+/* Inside the viewport-bound page column the strip must never be the item
+   that gives way: an overflow-x strip has NO automatic minimum height
+   (overflow != visible), so without flex:none a tall panel silently
+   compressed it to zero — the "tabs gone" trap. */
+.tabs-wrap { position: relative; margin: 0 0 14px; flex: 0 0 auto; }
 .tabs {
   display: flex;
   align-items: center;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   gap: 4px;
   border-bottom: 1px solid var(--line-soft);
-  margin: 0 0 14px;
-  overflow-x: auto;
-  scrollbar-width: thin;
+  margin: 0;
+}
+
+@media (max-width: 479px) {
+  .tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+  .tabs-wrap::before,
+  .tabs-wrap::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 1px; /* keep the strip's bottom border crisp */
+    width: 28px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+    z-index: 1;
+  }
+  .tabs-wrap::before {
+    left: 0;
+    background: linear-gradient(90deg, var(--bg), rgba(238, 245, 245, 0));
+  }
+  .tabs-wrap::after {
+    right: 0;
+    background: linear-gradient(270deg, var(--bg), rgba(238, 245, 245, 0));
+  }
+  .tabs-wrap[data-fade-left]::before { opacity: 1; }
+  .tabs-wrap[data-fade-right]::after { opacity: 1; }
 }
 
 .tab {
@@ -1261,3 +1298,16 @@ code {
   border-radius: 8px;
 }
 .grant-chips { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+
+/* The hub page is viewport-bound (the page never scrolls); the access-map
+   panel body scrolls internally like every pane body. */
+.access-map-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-right: 2px; /* keep the scrollbar off the card borders */
+}
+.access-map-body > .card { margin: 0; }

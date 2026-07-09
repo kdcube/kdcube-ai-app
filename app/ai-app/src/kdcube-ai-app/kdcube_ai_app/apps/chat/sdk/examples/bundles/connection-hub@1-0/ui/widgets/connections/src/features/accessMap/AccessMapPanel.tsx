@@ -108,7 +108,7 @@ export function AccessMapPanel() {
   const unknown = data?.unknown_grants ?? [];
 
   return (
-    <>
+    <div className="access-map-body">
       {error ? (
         <div className="error" role="alert" onClick={() => dispatch(clearAccessMapError())}>{error}</div>
       ) : null}
@@ -194,6 +194,6 @@ export function AccessMapPanel() {
         ))}
         {!providers.length ? <p className="muted">No provider-backed connector apps configured.</p> : null}
       </section>
-    </>
+    </div>
   );
 }

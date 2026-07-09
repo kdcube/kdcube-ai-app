@@ -290,3 +290,37 @@ test('the hub access-map admin view is read-only and admin-gated', () => {
   const app = readFileSync(new URL(`${base}/App.tsx`, import.meta.url), 'utf8')
   assert.match(app, /activeTab === 'accessMap' && authenticatorsAllowed/)
 })
+
+test('the hub tab strip never hides options silently (wrap + narrow-case affordance)', () => {
+  const base = '../../../../kdcube_ai_app/apps/chat/sdk/examples/bundles/connection-hub@1-0/ui/widgets/connections/src'
+  const css = readFileSync(new URL(`${base}/styles.css`, import.meta.url), 'utf8')
+  // Default: wrap into a clean second row — nothing hidden at summoned widths.
+  const tabsBlock = css.slice(css.indexOf('.tabs {'), css.indexOf('}', css.indexOf('.tabs {')))
+  assert.match(tabsBlock, /flex-wrap: wrap/)
+  assert.doesNotMatch(tabsBlock, /overflow-x/)
+  // Narrow fallback: a one-line strip that announces itself with edge fades.
+  const narrow = css.slice(css.indexOf('@media (max-width: 479px)'))
+  assert.match(narrow, /flex-wrap: nowrap/)
+  assert.match(narrow, /overflow-x: auto/)
+  assert.match(narrow, /\.tabs-wrap\[data-fade-left\]::before \{ opacity: 1; \}/)
+  assert.match(narrow, /\.tabs-wrap\[data-fade-right\]::after \{ opacity: 1; \}/)
+  // The collapse trap: an overflow strip has no automatic minimum height, so
+  // inside the viewport-bound page column the wrapper must never shrink.
+  assert.match(css, /\.tabs-wrap \{ position: relative; margin: 0 0 14px; flex: 0 0 auto; \}/)
+  // The shell keeps the ACTIVE tab in view and tracks overflow edges.
+  const shell = readFileSync(new URL(`${base}/components/AppShell.tsx`, import.meta.url), 'utf8')
+  assert.match(shell, /querySelector\('\.tab\.active'\)/)
+  assert.match(shell, /scrollIntoView\(\{ block: 'nearest', inline: 'nearest' \}\)/)
+  assert.match(shell, /addEventListener\('scroll', updateFade/)
+  assert.match(shell, /data-fade-left=\{fade\.left \|\| undefined\}/)
+})
+
+test('the access-map panel body owns its scrolling (viewport-bound page contract)', () => {
+  const base = '../../../../kdcube_ai_app/apps/chat/sdk/examples/bundles/connection-hub@1-0/ui/widgets/connections/src'
+  const css = readFileSync(new URL(`${base}/styles.css`, import.meta.url), 'utf8')
+  const block = css.slice(css.indexOf('.access-map-body {'), css.indexOf('}', css.indexOf('.access-map-body {')))
+  assert.match(block, /overflow-y: auto/)
+  assert.match(block, /min-height: 0/)
+  const panel = readFileSync(new URL(`${base}/features/accessMap/AccessMapPanel.tsx`, import.meta.url), 'utf8')
+  assert.match(panel, /className="access-map-body"/)
+})
