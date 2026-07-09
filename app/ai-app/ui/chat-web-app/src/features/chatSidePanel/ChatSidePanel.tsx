@@ -66,9 +66,16 @@ const ChatSidePanel = () => {
 
     const sidePanelContext = useSidePanelContext()
 
+    const {currentBundleId, widgets, defaultChat} = useGetBundleWidgets()
+
     const visiblePanel = useMemo(() => {
-        return sidePanelContext.panelId
-    }, [sidePanelContext.panelId])
+        const panel = sidePanelContext.panelId
+        // The conversations panel belongs to the chat surface.
+        if (!defaultChat && panel === "conversations") {
+            return null
+        }
+        return panel
+    }, [defaultChat, sidePanelContext.panelId])
 
     const setPanelId = useMemo(() => {
         return sidePanelContext.setPanelId
@@ -88,10 +95,10 @@ const ChatSidePanel = () => {
         writeParam("sidePanelWidth", size, user ? user.username : null);
     }, [user])
 
-    const {currentBundleId, widgets} = useGetBundleWidgets()
-
     const bundlePanels = useMemo(() => {
-        if (!currentBundleId) {
+        // Apps without the chat surface show their widgets on the main scene;
+        // the side panel keeps only the kdcube-services panels for them.
+        if (!currentBundleId || !defaultChat) {
             return null
         }
         return widgets.map((widget) => {
@@ -102,7 +109,7 @@ const ChatSidePanel = () => {
                                       widgetAlias={widget.alias}
                                       className={"w-full h-full absolute left-0 top-0"}/>
         })
-    }, [currentBundleId, visiblePanel, widgets])
+    }, [currentBundleId, defaultChat, visiblePanel, widgets])
 
     const [maxWidth, setMaxWidth] = useState<number>(window.innerWidth / 2)
 
@@ -124,16 +131,18 @@ const ChatSidePanel = () => {
             className={"flex flex-row h-full overflow-visible min-h-0 min-w-0"}>
             <div
                 className={"h-full flex flex-col items-center bg-gray-50 border-r border-gray-200 pt-1 px-1 text-gray-700 gap-1"}>
-                <MenuButton onClick={() => dispatch(newConversation())}>
-                    <IconContainer icon={CirclePlus} size={1.5}/>
-                </MenuButton>
-                <MenuButton
-                    onClick={() => {
-                        onPanelButtonClick("conversations");
-                    }}
-                >
-                    <IconContainer icon={MessagesSquare} size={1.5}/>
-                </MenuButton>
+                {defaultChat && <>
+                    <MenuButton onClick={() => dispatch(newConversation())}>
+                        <IconContainer icon={CirclePlus} size={1.5}/>
+                    </MenuButton>
+                    <MenuButton
+                        onClick={() => {
+                            onPanelButtonClick("conversations");
+                        }}
+                    >
+                        <IconContainer icon={MessagesSquare} size={1.5}/>
+                    </MenuButton>
+                </>}
                 {/*<MenuButton*/}
                 {/*    onClick={() => {*/}
                 {/*        onPanelButtonClick("artifacts");*/}
@@ -199,8 +208,8 @@ const ChatSidePanel = () => {
                     {/*<div className={"h-full"} ref={sidePanelContentRef} style={{width: `${panelWidth}px`}}>*/}
                     <ResizableContainer ref={sidePanelContentRef} onResize={onPanelResize}
                                         initialSize={initialPanelWidth} minSize={300} maxSize={maxWidth} className={"h-full"}>
-                        <ConversationsPanel visible={visiblePanel === "conversations"}
-                                            className={"w-full h-full absolute left-0 top-0"}/>
+                        {defaultChat && <ConversationsPanel visible={visiblePanel === "conversations"}
+                                                            className={"w-full h-full absolute left-0 top-0"}/>}
                         <ArtifactsPanel visible={visiblePanel === "artifacts"}
                                         className={"w-full h-full absolute left-0 top-0"}/>
                         <EconomicsPanel visible={visiblePanel === "economics"}
@@ -223,7 +232,7 @@ const ChatSidePanel = () => {
                 </AnimatedExpander>
             </div>
         </div>
-    }, [bundlePanels, dispatch, maxWidth, onPanelButtonClick, onPanelResize, visiblePanel])
+    }, [bundlePanels, defaultChat, dispatch, maxWidth, onPanelButtonClick, onPanelResize, visiblePanel])
 }
 
 export default ChatSidePanel;

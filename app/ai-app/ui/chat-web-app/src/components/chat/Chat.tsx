@@ -160,12 +160,12 @@ const SingleChatApp: React.FC = () => {
                 <ChatHeader/>
 
                 <div className={`flex flex-row overflow-hidden flex-1 w-full min-h-0 min-w-0`}>
-                    {defaultChat && <ChatSidePanel/>}
+                    <ChatSidePanel/>
                     {chatInterface}
                 </div>
             </SidePanelContext>
         </div>
-    }, [chatInterface, defaultChat, sidePanelContextValue])
+    }, [chatInterface, sidePanelContextValue])
 };
 
 export default SingleChatApp;
