@@ -1124,6 +1124,23 @@ class SlackNamedServiceProvider(NamedServiceProvider):
         channel_id = _text(payload.get("channel") or parsed.get("channel_id"))
 
         if action == ACTION_POST_MESSAGE:
+            # A plain message carries no files. Anything file-shaped in the
+            # payload must not vanish silently — point at upload_file instead.
+            file_keys = [key for key in ("attachments", "files", "file_path", "staged_ref", "content_base64") if payload.get(key)]
+            if file_keys:
+                return NamedServiceResponse.error_response(
+                    code="slack_message_carries_no_files",
+                    message=(
+                        f"This action posts text only; {', '.join(file_keys)} would be dropped. "
+                        "Send files with the upload_file action: request_upload first and pass "
+                        'its staged_ref, or a tiny inline content_base64 with a filename. '
+                        "upload_file also takes initial_comment for the accompanying text."
+                    ),
+                    status=400,
+                    provider=self._provider_identity(),
+                    namespace=request.namespace or SLACK_NAMESPACE,
+                    object_ref=request.object_ref,
+                )
             result = await self._slack.post_slack_message(
                 channel=channel_id,
                 text=_text(payload.get("text") or payload.get("message")),

@@ -616,6 +616,37 @@ class MailNamedServiceProvider(NamedServiceProvider):
         paths.extend(item["relpath"] for item in staged)
         return json.dumps(paths)
 
+    def _attachment_entries(
+        self,
+        request: NamedServiceRequest,
+        payload: Mapping[str, Any],
+    ) -> tuple[list[Mapping[str, Any]], NamedServiceResponse | None]:
+        """Validate the ``attachments`` payload for send/forward.
+
+        Every provided entry must be usable; an unrecognized entry fails the
+        whole action with the contract in the message. Mail with fewer
+        attachments than the caller asked for must never go out as a success.
+        """
+        raw = [item for item in _as_list(payload.get("attachments")) if item is not None]
+        entries = [item for item in raw if isinstance(item, Mapping)]
+        if len(entries) == len(raw):
+            return entries, None
+        return [], NamedServiceResponse.error_response(
+            code="mail_attachment_entry_invalid",
+            message=(
+                "Every attachments entry must be an object. Accepted forms: "
+                '{"staged_ref": ...} from a prior request_upload action (PUT the bytes '
+                'to the signed upload URL first), or a tiny inline {"filename": ..., '
+                '"content_base64": ...}. File refs or path strings are not accepted in '
+                "attachments; files already in your working directory go in "
+                "attachment_paths as a list of paths."
+            ),
+            status=400,
+            provider=self._provider_identity(),
+            namespace=request.namespace or MAIL_NAMESPACE,
+            object_ref=request.object_ref,
+        )
+
     async def _download_attachments_as_urls(
         self,
         ctx: NamedServiceContext,
@@ -1113,7 +1144,9 @@ class MailNamedServiceProvider(NamedServiceProvider):
 
         if action == ACTION_SEND:
             account_id = _text(payload.get("account_id") or parsed.get("account_id"))
-            entries = [item for item in _as_list(payload.get("attachments")) if isinstance(item, Mapping)]
+            entries, entries_error = self._attachment_entries(request, payload)
+            if entries_error is not None:
+                return entries_error
 
             async def _send(attachment_paths: Any) -> Any:
                 return await self._gmail.send_gmail(
@@ -1163,7 +1196,9 @@ class MailNamedServiceProvider(NamedServiceProvider):
                     namespace=request.namespace or MAIL_NAMESPACE,
                     object_ref=request.object_ref,
                 )
-            entries = [item for item in _as_list(payload.get("attachments")) if isinstance(item, Mapping)]
+            entries, entries_error = self._attachment_entries(request, payload)
+            if entries_error is not None:
+                return entries_error
 
             async def _forward(attachment_paths: Any) -> Any:
                 return await self._gmail.forward_gmail_message(

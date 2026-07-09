@@ -565,6 +565,45 @@ async def test_send_with_inline_attachments_stages_bytes_in_ephemeral_workspace(
 
 
 @pytest.mark.asyncio
+async def test_send_with_string_attachment_entries_fails_loudly():
+    # The surfaced case: a caller passed file refs as plain strings in
+    # `attachments`. The mail must NOT go out bare with an ok status — the
+    # action fails and the error message carries the accepted entry forms.
+    provider = _Provider([_account("acc-1", "gmail:send")])
+    called: dict[str, Any] = {}
+
+    async def _send(**kwargs: Any) -> dict[str, Any]:
+        called["send"] = True
+        return {"ok": True, "ret": {"id": "sent-1", "account_id": kwargs["account_id"], "subject": "", "snippet": ""}}
+
+    provider._gmail.send_gmail = _send
+
+    response = await provider.object_action(
+        _ctx(),
+        NamedServiceRequest(
+            operation=OBJECT_ACTION,
+            namespace=MAIL_NAMESPACE,
+            action=ACTION_SEND,
+            payload={
+                "to": "user@example.test",
+                "subject": "Diagram",
+                "body_markdown": "Body",
+                "attachments": [
+                    "conv:fi:turn_2026-07-09.user.attachments/named_services/task/abc/diagram.svg"
+                ],
+            },
+        ),
+    )
+
+    assert response.ok is False
+    assert response.error is not None
+    assert response.error.code == "mail_attachment_entry_invalid"
+    assert "staged_ref" in response.error.message
+    assert "attachment_paths" in response.error.message
+    assert "send" not in called
+
+
+@pytest.mark.asyncio
 async def test_request_upload_returns_slot_and_send_consumes_staged_ref(tmp_path):
     from kdcube_ai_app.apps.chat.sdk.integrations.file_staging import new_staged_ref, save_staged
 
