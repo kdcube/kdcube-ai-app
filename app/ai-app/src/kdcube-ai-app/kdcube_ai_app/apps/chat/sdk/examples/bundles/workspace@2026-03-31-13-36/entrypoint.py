@@ -559,7 +559,7 @@ class WorkspaceEntrypoint(BaseEntrypointWithEconomics):
         del kwargs
         return [
             "<div style=\"font-family:system-ui,sans-serif;padding:16px\">"
-            "Tools &amp; skills is served from sdk://solutions/chat/ui/widget-capabilities after build."
+            "Capabilities is served from sdk://solutions/chat/ui/widget-capabilities after build."
             "</div>"
         ]
 

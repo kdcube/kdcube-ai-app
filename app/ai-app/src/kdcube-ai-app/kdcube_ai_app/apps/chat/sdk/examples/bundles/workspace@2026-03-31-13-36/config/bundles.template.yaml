@@ -300,6 +300,7 @@ bundles:
                           - object.list
                           - object.search
                           - object.schema
+                          - object.get
                           - object.upsert
                           - object.host_file
                           - object.delete
@@ -382,6 +383,7 @@ bundles:
                   #         - object.list
                   #         - object.search
                   #         - object.schema
+                  #         - object.get
                   #         - object.upsert
                   #         - object.host_file
                   #         - object.delete

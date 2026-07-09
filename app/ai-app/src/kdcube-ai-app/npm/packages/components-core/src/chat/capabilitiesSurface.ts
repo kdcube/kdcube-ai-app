@@ -15,6 +15,9 @@
  */
 
 export const CAPABILITIES_SURFACE = 'sdk.agent.capabilities'
+/** `connections.hub.open` target surfaces (the contract this one mirrors). */
+export const CONNECTION_HUB_CONNECTIONS_SURFACE = 'connection_hub.connections'
+export const CONNECTION_HUB_SETTINGS_SURFACE = 'connection_hub.settings'
 export const SURFACE_COMMAND_MESSAGE_TYPE = 'kdcube.surface.command'
 export const SURFACE_COMMAND_ACK_MESSAGE_TYPE = 'kdcube.surface.command.ack'
 const CAPABILITIES_ACK_TIMEOUT_MS = 600
@@ -58,13 +61,48 @@ export function openCapabilitiesOnHost(
   payload: CapabilitiesOpenPayload = {},
   options: { source?: string; widget?: string; timeoutMs?: number; win?: WindowLike | null } = {},
 ): Promise<boolean> {
+  const ui_event: Record<string, unknown> = {}
+  const agent = String(payload.agent_id || '').trim()
+  if (agent) ui_event.agent_id = agent
+  const spotlight = (payload.spotlight_tools ?? []).map((item) => String(item || '').trim()).filter(Boolean)
+  if (spotlight.length) ui_event.spotlight_tools = spotlight
+  const section = String(payload.section || '').trim()
+  if (section) ui_event.section = section
+  return emitSurfaceOpenAndAwaitAck(CAPABILITIES_SURFACE, ui_event, 'caps', options)
+}
+
+/** Ask the HOST to open the Connection Hub as a scene window (the
+ *  `connections.hub.open` contract). A consent payload targets the hub's
+ *  provider-connections card and rides `ui_event` verbatim (tab + the deep
+ *  link's query params); without one the hub opens on its settings surface.
+ *  Same ack semantics as `openCapabilitiesOnHost` — the caller falls back to
+ *  its deep link on false. Never throws. */
+export function openConnectionsOnHost(
+  consent?: { tab?: string; params?: Record<string, string> } | null,
+  options: { source?: string; widget?: string; timeoutMs?: number; win?: WindowLike | null } = {},
+): Promise<boolean> {
+  const surface = consent ? CONNECTION_HUB_CONNECTIONS_SURFACE : CONNECTION_HUB_SETTINGS_SURFACE
+  const ui_event: Record<string, unknown> = consent
+    ? { tab: consent.tab || 'provider_connections', ...(consent.params || {}) }
+    : {}
+  return emitSurfaceOpenAndAwaitAck(surface, ui_event, 'connhub', options)
+}
+
+/** Shared emitter: post one `open` surface command to the parent frame and
+ *  resolve true only on an explicit `{command_id, ok: true}` ack. */
+function emitSurfaceOpenAndAwaitAck(
+  targetSurface: string,
+  ui_event: Record<string, unknown>,
+  idPrefix: string,
+  options: { source?: string; widget?: string; timeoutMs?: number; win?: WindowLike | null } = {},
+): Promise<boolean> {
   const win = options.win !== undefined ? options.win : defaultWindow()
   return new Promise((resolve) => {
     if (!win || !win.parent || win.parent === win || !win.parent.postMessage) {
       resolve(false)
       return
     }
-    const commandId = `caps_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    const commandId = `${idPrefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
     let settled = false
     const finish = (acked: boolean) => {
       if (settled) return
@@ -83,16 +121,9 @@ export function openCapabilitiesOnHost(
     win.addEventListener('message', onMessage)
     const timer = win.setTimeout(() => finish(false), options.timeoutMs ?? CAPABILITIES_ACK_TIMEOUT_MS)
     try {
-      const ui_event: Record<string, unknown> = {}
-      const agent = String(payload.agent_id || '').trim()
-      if (agent) ui_event.agent_id = agent
-      const spotlight = (payload.spotlight_tools ?? []).map((item) => String(item || '').trim()).filter(Boolean)
-      if (spotlight.length) ui_event.spotlight_tools = spotlight
-      const section = String(payload.section || '').trim()
-      if (section) ui_event.section = section
       const command: Record<string, unknown> = {
         type: SURFACE_COMMAND_MESSAGE_TYPE,
-        target_surface: CAPABILITIES_SURFACE,
+        target_surface: targetSurface,
         action: 'open',
         command_id: commandId,
         source: options.source || 'chat',

@@ -135,13 +135,24 @@ class NamedServiceError:
     code: str
     message: str
     details: dict[str, Any] = field(default_factory=dict)
+    #: Optional fix affordance for user-/admin-fixable denials. Shape:
+    #: ``{"actor": "user"|"admin"|"provider", "summary": <one sentence: what
+    #: would fix it and who can>, "surface": {"kind": "capabilities",
+    #: "entries": [<spotlight tokens>], "section": <picker section>} |
+    #: {"kind": "url", "url": <route or absolute URL>, "label": <button>}}``.
+    #: Chat renders an actionable card from it; ``surface`` is omitted when no
+    #: honest affordance exists (the summary still explains the fix).
+    fix: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        payload: dict[str, Any] = {
             "code": str(self.code or "error"),
             "message": str(self.message or "Named service request failed"),
             "details": dict(self.details or {}),
         }
+        if self.fix:
+            payload["fix"] = dict(self.fix)
+        return payload
 
 
 @dataclass(frozen=True)
@@ -659,6 +670,7 @@ class NamedServiceResponse:
         provider: Mapping[str, Any] | None = None,
         namespace: str | None = None,
         object_ref: str | None = None,
+        fix: Mapping[str, Any] | None = None,
     ) -> "NamedServiceResponse":
         error_details = dict(details or {})
         error_details.setdefault("status", status)
@@ -676,7 +688,7 @@ class NamedServiceResponse:
                     if value not in (None, "", {})
                 }
             },
-            error=NamedServiceError(code=code, message=message, details=error_details),
+            error=NamedServiceError(code=code, message=message, details=error_details, fix=dict(fix or {})),
         )
 
     @classmethod
@@ -690,6 +702,7 @@ class NamedServiceResponse:
                 code=str(error_payload.get("code") or "error"),
                 message=str(error_payload.get("message") or "Named service request failed"),
                 details=ensure_json_object(error_payload.get("details"), field_name="error.details"),
+                fix=ensure_json_object(error_payload.get("fix"), field_name="error.fix"),
             )
         return cls(
             ok=bool(data.get("ok")),

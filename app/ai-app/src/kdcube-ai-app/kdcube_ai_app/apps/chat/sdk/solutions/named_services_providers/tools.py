@@ -141,11 +141,41 @@ async def _raise_named_service_consent_demand(
         LOGGER.debug("named-service consent demand announce unavailable", exc_info=True)
 
 
-def _error(code: str, message: str, **details: Any) -> Dict[str, Any]:
+def _error(code: str, message: str, fix: Dict[str, Any] | None = None, **details: Any) -> Dict[str, Any]:
     payload: Dict[str, Any] = {"ok": False, "error": code, "message": message}
     if details:
         payload["details"] = {k: v for k, v in details.items() if v not in (None, "")}
+    if fix:
+        payload["fix"] = dict(fix)
     return payload
+
+
+def _user_toggle_fix(namespace: str, entry_label: str) -> Dict[str, Any]:
+    """The caller's own selection turned the entry off — user-fixable in the
+    capability picker (Capabilities), spotlighting the service row."""
+    return {
+        "actor": "user",
+        "summary": (
+            f"You have turned off {entry_label} for the '{namespace}' service in "
+            "Capabilities. Re-enable it there and retry."
+        ),
+        "surface": {"kind": "capabilities", "section": "services", "entries": [namespace]},
+    }
+
+
+def _admin_grant_fix(namespace: str, operation: str) -> Dict[str, Any]:
+    """The app's agent inventory does not grant the operation — admin-fixable
+    in the descriptor. No UI affordance exists for the current user, so the
+    summary carries the whole fix (no false affordance)."""
+    return {
+        "actor": "admin",
+        "summary": (
+            f"The app's configuration does not grant '{operation}' on the "
+            f"'{namespace}' service to agent '{_client_id()}'. An app admin can "
+            f"allow it under the agent's service configuration "
+            f"(namespaces.{namespace}.allowed)."
+        ),
+    }
 
 
 def _client_id() -> str:
@@ -505,6 +535,14 @@ def _endpoint(namespace: str) -> NamedServiceEndpoint | Dict[str, Any]:
         return _error(
             "named_service_client_namespace_not_allowed",
             f"Client {_client_id()!r} is not configured to use namespace {base_ns!r}.",
+            fix={
+                "actor": "admin",
+                "summary": (
+                    f"The app's configuration does not connect the '{base_ns}' service "
+                    f"to agent '{_client_id()}'. An app admin can add it under the "
+                    "agent's named-service namespaces."
+                ),
+            },
             namespace=base_ns,
             requested_namespace=namespace,
             client_id=_client_id(),
@@ -540,18 +578,29 @@ async def _call(
     if not ns:
         return _error("named_service_namespace_required", "namespace is required")
     if not _operation_allowed(base_ns, operation):
+        # Every denial explains its own fix: the user's own toggle is
+        # user-fixable in the picker ONLY when the config ceiling would allow
+        # the operation once re-enabled; otherwise the admin change is the fix.
+        _policy = _client_namespace_policy(base_ns)
+        _ceiling = _allowed_values(_policy.get("allowed_operations"), _DEFAULT_READ_OPERATIONS)
+        config_allows = "*" in _ceiling or operation in _ceiling
+        user_denied = config_allows and operation in denied_named_service_entries(base_ns)
         return _error(
             "named_service_tool_not_allowed_for_client",
             f"Client {_client_id()!r} is not configured to call tool {tool_name!r} on namespace {base_ns!r}.",
+            fix=_user_toggle_fix(base_ns, f"'{tool_name}'") if user_denied else _admin_grant_fix(base_ns, operation),
             namespace=base_ns,
             requested_namespace=ns,
             tool=tool_name,
             client_id=_client_id(),
         )
     if action and not _action_allowed(base_ns, action):
+        # Action-name denies exist only in the per-user selection (config
+        # expresses operations), so this one is always the user's own toggle.
         return _error(
             "named_service_action_not_allowed_for_client",
             f"Client {_client_id()!r} is not configured to call action {action!r} on namespace {base_ns!r}.",
+            fix=_user_toggle_fix(base_ns, f"the '{action}' action"),
             namespace=base_ns,
             requested_namespace=ns,
             action=action,

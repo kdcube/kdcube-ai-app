@@ -572,6 +572,38 @@ function ServiceCardLine({ text, title }: { text: string; title?: string }) {
   )
 }
 
+/** A declared access requirement inside the expanded service card — the
+ *  proactive twin of the denial card: what the agent needs BEFORE chatting,
+ *  with the realm's own affordance (deep link) when one honestly exists and
+ *  a status chip only when the platform resolved one. */
+function RequirementLine({ requirement }: {
+  requirement: { id: string; label?: string; description: string; status?: string; surface?: { kind: string; url?: string; label?: string } }
+}) {
+  const heading = requirement.label || requirement.id
+  const url = requirement.surface?.kind === 'url' ? requirement.surface.url || '' : ''
+  return (
+    <div className="k-menu-row k-menu-row-child">
+      <span className="k-menu-row-static">
+        <span className="k-menu-card-line" title={`${heading} — ${requirement.description}`}>
+          Needs: {heading} — {requirement.description}
+        </span>
+      </span>
+      <span className="k-menu-row-state">
+        {requirement.status === 'granted' ? (
+          <span className="k-menu-tag k-menu-tag-ok">granted</span>
+        ) : requirement.status === 'missing' ? (
+          <span className="k-menu-tag k-menu-tag-consent">missing</span>
+        ) : null}
+        {url ? (
+          <a className="k-menu-consent" href={url} target="_blank" rel="noreferrer">
+            {requirement.surface?.label || 'Open'}
+          </a>
+        ) : null}
+      </span>
+    </div>
+  )
+}
+
 /** A namespace's toggleable internals: allowed operations by their own token,
  *  named actions as `object.action.<name>` (denying the action blocks that
  *  action name in the grammar's dispatch). */
@@ -624,6 +656,11 @@ function ServicesSection({ inventory, disabled, toggle, namespaceStyles, spotlig
               )}
             />
             {isOpen && realm?.third_party ? <ServiceCardLine text={realm.third_party} /> : null}
+            {isOpen
+              ? (realm?.requirements ?? []).map((requirement) => (
+                  <RequirementLine key={requirement.id} requirement={requirement} />
+                ))
+              : null}
             {isOpen && objectsLine ? (
               <ServiceCardLine
                 text={`Objects: ${objectsLine}`}
@@ -949,7 +986,7 @@ export function CapabilityPickerPage({
   vm,
   namespaceStyles = {},
   extraSections = [],
-  title = 'Tools & skills',
+  title = 'Capabilities',
   subtitle,
 }: {
   vm: ChatViewModel
@@ -1076,8 +1113,8 @@ export function ComposerMenu({
       <button
         type="button"
         className={`k-iconbtn ${open ? 'k-iconbtn-active' : ''}`}
-        title="Tools & skills"
-        aria-label="Tools & skills"
+        title="Capabilities"
+        aria-label="Capabilities"
         aria-haspopup="menu"
         aria-expanded={open}
         disabled={disabled}
@@ -1092,7 +1129,7 @@ export function ComposerMenu({
           <div className="k-menu-backdrop" onClick={close} aria-hidden="true" />
           <div className="k-composer-menu" role="menu" aria-label="Tools and skills">
             <div className="k-menu-head">
-              <span className="k-menu-head-label">Tools &amp; skills</span>
+              <span className="k-menu-head-label">Capabilities</span>
               <CanvasExpandButton
                 onClick={() => {
                   void openCapabilitiesOnHost(
@@ -1122,7 +1159,7 @@ export function ComposerMenu({
               >
                 <div className="k-canvas-modal-head">
                   <div className="k-canvas-modal-title">
-                    <span className="k-text">Tools &amp; skills</span>
+                    <span className="k-text">Capabilities</span>
                     <span className="k-micro">what this agent may use for you</span>
                   </div>
                   <button

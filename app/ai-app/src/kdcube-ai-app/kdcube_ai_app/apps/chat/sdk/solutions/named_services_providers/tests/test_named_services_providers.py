@@ -2971,3 +2971,102 @@ async def test_per_user_entry_denies_make_operations_and_actions_uncallable():
         ("object.list", None),
         ("object.action", "download_attachments"),
     ]
+
+
+@pytest.mark.asyncio
+async def test_denial_fix_affordance_admin_when_config_ceiling_blocks():
+    """Regression for the surfaced case: `object.get` absent from the
+    namespace's allowed list. The denial explains its own fix — the ADMIN
+    config change — and offers NO user affordance (consent or picker cannot
+    fix a ceiling)."""
+    props = {
+        "named_services": {
+            "namespaces": {
+                "task": {
+                    "clients": {
+                        "main": {
+                            "tools": {
+                                "allowed_operations": [
+                                    "object.list", "object.search", "object.upsert",
+                                ],
+                            },
+                        },
+                    },
+                }
+            },
+        }
+    }
+    named_service_client_tools.bind_registry({"bundle_props": props, "client_id": "main"})
+    result = await named_service_client_tools.get_object(
+        namespace="task",
+        object_ref="task:issue:ticket-1",
+    )
+    assert result["ok"] is False
+    assert result["error"] == "named_service_tool_not_allowed_for_client"
+    fix = result["fix"]
+    assert fix["actor"] == "admin"
+    assert "namespaces.task.allowed" in fix["summary"]
+    assert "surface" not in fix
+
+
+@pytest.mark.asyncio
+async def test_denial_fix_affordance_user_when_own_toggle_blocks():
+    """A config-allowed operation the USER turned off is user-fixable: the
+    fix points at the capability picker with the service row spotlighted."""
+    from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers.client_tools import (
+        set_denied_named_service_entries,
+    )
+
+    props = {
+        "named_services": {
+            "namespaces": {
+                "task": {
+                    "clients": {
+                        "main": {
+                            "tools": {
+                                "allowed_operations": ["object.get", "object.search"],
+                            },
+                        },
+                    },
+                }
+            },
+        }
+    }
+    named_service_client_tools.bind_registry({"bundle_props": props, "client_id": "main"})
+    set_denied_named_service_entries({"task": ["object.get", "object.action.close"]})
+    try:
+        denied_op = await named_service_client_tools.get_object(
+            namespace="task",
+            object_ref="task:issue:ticket-1",
+        )
+    finally:
+        set_denied_named_service_entries(None)
+    fix = denied_op["fix"]
+    assert fix["actor"] == "user"
+    assert fix["surface"] == {"kind": "capabilities", "section": "services", "entries": ["task"]}
+    assert "Capabilities" in fix["summary"]
+
+
+def test_named_service_error_fix_rides_the_response_contract():
+    """Realm authors declare the affordance on their error; it serializes and
+    round-trips through the response envelope untouched."""
+    fix = {
+        "actor": "provider",
+        "summary": "Review the issue on the Tasks board or ask its owner to share it.",
+        "surface": {"kind": "url", "url": "/api/integrations/bundles/t/p/task-tracker@1-0/widgets/task_tracker_tasks", "label": "Open Tasks"},
+    }
+    response = NamedServiceResponse.error_response(
+        code="task_issue_attachment_read_denied",
+        message="Attachment outside your access.",
+        status=403,
+        namespace="task",
+        fix=fix,
+    )
+    payload = response.to_dict()
+    assert payload["error"]["fix"] == fix
+    rehydrated = NamedServiceResponse.from_dict(payload)
+    assert rehydrated.error is not None
+    assert rehydrated.error.fix == fix
+    # Absent fix stays absent (no empty-key noise in the wire contract).
+    bare = NamedServiceResponse.error_response(code="x", message="y").to_dict()
+    assert "fix" not in bare["error"]

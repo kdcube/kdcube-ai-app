@@ -210,7 +210,7 @@ export function defaultComponentSpecs(): SceneComponentSpec[] {
       alias: 'capabilities',
       bundleId: '',
       widgetAlias: 'capabilities',
-      title: 'Tools & Skills',
+      title: 'Capabilities',
       accent: 'teal',
       gated: true,
       views: false,
@@ -218,7 +218,10 @@ export function defaultComponentSpecs(): SceneComponentSpec[] {
       full: { w: 1040, h: 760 },
       targetSurfaces: ['sdk.agent.capabilities'],
       placement: 'floating',
-      rail: true,
+      // No rail chip: the capability choice is PER AGENT, so this window is
+      // only summoned via `capabilities.open` from agent-scoped emitters
+      // (the chat picker's expand, banner spotlights) that carry agent_id.
+      rail: false,
       defaultOpen: false,
       enabled: true,
       order: 65,

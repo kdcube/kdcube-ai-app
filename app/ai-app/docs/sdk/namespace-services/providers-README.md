@@ -462,6 +462,36 @@ consent semantics themselves (demand-driven at the ATTEMPT, scoped claims,
 deep links) are owned by
 [Delegated Accounts](../solutions/connections/delegated-accounts/delegated-accounts-README.md).
 
+### Access Requirements (Internal Realms)
+
+The same principle covers internal access: a user should see and obtain
+everything the agent needs BEFORE chatting, from the Capabilities card —
+never by hitting denials. A realm with internal access requirements
+(memberships, per-object sharing) declares them under
+`presentation.requirements`:
+
+```python
+"requirements": [
+    {
+        "id": "task.board_access",
+        "label": "Task board access",
+        "description": "You see and change the issues you created or that were shared with you.",
+        "actor": "provider",   # who grants it: user | admin | provider
+        # Honest affordance only. `widget` resolves to the app's served
+        # widget URL server-side; `url` passes through; omit `surface`
+        # when only the description can name the fix (e.g. "ask an admin").
+        "surface": {"kind": "widget", "bundle_id": BUNDLE_ID,
+                    "widget_alias": "task_tracker_tasks", "label": "Open Tasks"},
+    }
+],
+```
+
+ONE declaration feeds TWO surfaces: the proactive Capabilities service card
+(requirement row + affordance, a status chip when the platform resolves one)
+and the reactive denial card — the provider's access errors should echo the
+same fix (see "Denials Declare Their Fix" below). The task realm is the
+working exemplar for both.
+
 ### Search Scope Filters And Relevance Tuning
 
 A search scope may declare a `filters` schema — the params a client can pass to
@@ -685,6 +715,36 @@ Responses are bounded and semantic.
 Large bytes, long reports, and generated artifacts should be returned as refs,
 hosted files, or streamed `object.get` results, not as unbounded inline
 response payloads.
+
+### Denials Declare Their Fix
+
+Every denial a user or admin can fix explains its own fix. A realm error may
+carry an optional `fix` affordance (`NamedServiceResponse.error_response(...,
+fix=...)`); chat renders an actionable card from it — the consent card's peer
+for failures consent cannot fix:
+
+```json
+{
+  "ok": false,
+  "error": {
+    "code": "task_issue_attachment_read_denied",
+    "message": "Attachment belongs to an issue outside your access.",
+    "fix": {
+      "actor": "provider",
+      "summary": "Review the issue on the Tasks board or ask its owner to share it.",
+      "surface": {"kind": "url", "url": "/api/integrations/bundles/t/p/task-tracker@1-0/widgets/task_tracker_tasks", "label": "Open Tasks"}
+    }
+  }
+}
+```
+
+`actor` names who can fix it (`user` | `admin` | `provider`); `summary` is one
+human sentence; `surface` is optional and only ever an HONEST affordance —
+`{"kind": "url", ...}` deep-links the realm's own UI, `{"kind":
+"capabilities", "entries": [...]}` opens the capability picker (used by the
+platform's own consumer-gate denials for the user's toggles). Omit `surface`
+when nothing the current user clicks can fix it — the summary still names the
+fix. The task realm's attachment read denial is the working exemplar.
 
 ### Streamed Object Reads
 

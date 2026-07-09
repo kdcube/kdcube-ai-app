@@ -5,6 +5,7 @@ import {
   CAPABILITIES_SURFACE,
   ackCapabilitiesOpen,
   openCapabilitiesOnHost,
+  openConnectionsOnHost,
   parseCapabilitiesOpen,
 } from '../../components-core/dist/chat/index.js'
 
@@ -137,4 +138,114 @@ test('widget bundle identity: route wins over the host handshake', () => {
     const block = source.slice(start, source.indexOf('}', source.indexOf('return isPlaceholder', start)))
     assert.match(block, /if \(context\.bundleId\) return context\.bundleId/)
   }
+})
+
+// ---------------------------------------------------------------------------
+// `connections.hub.open` from the served capability widget (the same emitter
+// family): host-first with ack-wait; the deep link is the caller's fallback.
+
+test('connections open emit targets the hub settings surface without consent', async () => {
+  const win = fakeWindow()
+  const pending = openConnectionsOnHost(null, { source: 'capabilities-widget', widget: 'capabilities', win })
+  assert.equal(win.posted.length, 1)
+  const command = win.posted[0]
+  assert.equal(command.type, 'kdcube.surface.command')
+  assert.equal(command.target_surface, 'connection_hub.settings')
+  assert.equal(command.action, 'open')
+  assert.equal(command.source, 'capabilities-widget')
+  assert.equal(command.widget, 'capabilities')
+  assert.ok(String(command.command_id).startsWith('connhub_'))
+  assert.equal(command.ui_event, undefined)
+  win.receive({ type: 'kdcube.surface.command.ack', command_id: command.command_id, ok: true })
+  assert.equal(await pending, true)
+})
+
+test('connections open emit carries the consent payload to the connections surface', async () => {
+  const win = fakeWindow()
+  const pending = openConnectionsOnHost(
+    { tab: 'delegated_to_kdcube', params: { provider: 'google', tiers: 'gmail:read' } },
+    { win },
+  )
+  const command = win.posted[0]
+  assert.equal(command.target_surface, 'connection_hub.connections')
+  assert.deepEqual(command.ui_event, {
+    tab: 'delegated_to_kdcube',
+    provider: 'google',
+    tiers: 'gmail:read',
+  })
+  win.receive({ type: 'kdcube.surface.command.ack', command_id: command.command_id, ok: false })
+  assert.equal(await pending, false)
+})
+
+test('connections open falls back on timeout and in standalone contexts', async () => {
+  const embedded = fakeWindow()
+  assert.equal(await openConnectionsOnHost(null, { win: embedded, timeoutMs: 20 }), false)
+  const standalone = fakeWindow({ embedded: false })
+  assert.equal(await openConnectionsOnHost(null, { win: standalone }), false)
+})
+
+test('the standalone picker fires consent-LESS connection opens (dead-row regression)', () => {
+  const source = readFileSync(
+    new URL('../src/chat/ui/features/composer/CapabilityPickerStandalone.tsx', import.meta.url),
+    'utf8',
+  )
+  const open = source.slice(source.indexOf('connections: {'))
+  assert.match(open, /runtime\.openConnections\?\.\(consent\)/)
+  assert.doesNotMatch(open, /if \(consent\) runtime\.openConnections/)
+})
+
+test('the served widget opens the hub host-first with the deep-link fallback', () => {
+  const source = readFileSync(
+    new URL('../../../../kdcube_ai_app/apps/chat/sdk/solutions/chat/ui/widget-capabilities/src/App.tsx', import.meta.url),
+    'utf8',
+  )
+  assert.match(source, /openConnectionsOnHost\(/)
+  assert.match(source, /window\.open\(connectionsDeepLink\(consent\), '_blank', 'noopener'\)/)
+})
+
+// ---------------------------------------------------------------------------
+// The full-page shell owns its scrolling: host embeddings (scene windows,
+// the side-panel widget wrapper) size or clip the frame, so document-level
+// scrolling cannot be relied on in the widget context.
+
+test('the page shell scrolls itself in both stylesheet twins', () => {
+  const sheets = [
+    '../../../../kdcube_ai_app/apps/chat/sdk/solutions/chat/ui/widget/src/index.css',
+    '../examples/standalone/chat-ui.css',
+  ]
+  for (const sheet of sheets) {
+    const css = readFileSync(new URL(sheet, import.meta.url), 'utf8')
+    const start = css.indexOf('.k-menu-page {')
+    assert.ok(start >= 0, `${sheet} has .k-menu-page`)
+    const block = css.slice(start, css.indexOf('}', start))
+    assert.match(block, /height: 100vh/, `${sheet} page shell owns the viewport`)
+    assert.match(block, /overflow-y: auto/, `${sheet} page shell scrolls its content`)
+    assert.doesNotMatch(block, /min-height: 100vh/, `${sheet} page shell no longer grows past the frame`)
+  }
+})
+
+test('the surface titles say Capabilities (holds more than tools or skills)', () => {
+  const menu = readFileSync(new URL('../src/chat/ui/features/composer/ComposerMenu.tsx', import.meta.url), 'utf8')
+  assert.match(menu, /title = 'Capabilities',/)
+  assert.doesNotMatch(menu, /Tools &(amp;)? [sS]kills/)
+  const app = readFileSync(new URL('../../../../kdcube_ai_app/apps/chat/sdk/solutions/chat/ui/widget-capabilities/src/App.tsx', import.meta.url), 'utf8')
+  assert.match(app, /title="Capabilities"/)
+  const scene = readFileSync(new URL('../../../../kdcube_ai_app/apps/chat/sdk/examples/bundles/workspace@2026-03-31-13-36/ui/scene/src/sceneConfig.ts', import.meta.url), 'utf8')
+  assert.match(scene, /title: 'Capabilities',/)
+})
+
+test('capabilities has NO scene rail chip (per-agent surface, summon-only)', () => {
+  const scene = readFileSync(new URL('../../../../kdcube_ai_app/apps/chat/sdk/examples/bundles/workspace@2026-03-31-13-36/ui/scene/src/sceneConfig.ts', import.meta.url), 'utf8')
+  const start = scene.indexOf("alias: 'capabilities',")
+  const block = scene.slice(start, scene.indexOf('order:', start))
+  assert.match(block, /rail: false,/)
+})
+
+test('the service card renders declared access requirements with honest affordances', () => {
+  const menu = readFileSync(new URL('../src/chat/ui/features/composer/ComposerMenu.tsx', import.meta.url), 'utf8')
+  assert.match(menu, /function RequirementLine/)
+  assert.match(menu, /realm\?\.requirements \?\? \[\]/)
+  // Only a resolved status renders a chip; only a url surface renders a link.
+  assert.match(menu, /requirement\.status === 'granted'/)
+  assert.match(menu, /requirement\.surface\?\.kind === 'url'/)
 })

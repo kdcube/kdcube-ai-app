@@ -993,3 +993,78 @@ async def test_realm_without_any_works_with_line_renders_none():
     realm = out["named_services"][0]["realm"]
     assert realm["about"] == "Does one thing for you."
     assert "third_party" not in realm
+
+
+@pytest.mark.asyncio
+async def test_realm_declared_access_requirements_ride_the_card_payload():
+    """Internal access requirements declared under presentation.requirements
+    reach the service card: id/label/description/actor pass through, and a
+    `widget` surface resolves to the concrete served-widget URL server-side
+    (tenant/project known at enrichment). Undeclared = absent — nothing
+    invented, no status fabricated."""
+    from kdcube_ai_app.apps.chat.sdk.runtime.agent_inventory import (
+        enrich_catalog_named_service_realms,
+    )
+    from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers.types import (
+        NamedServiceProviderSpec,
+    )
+
+    spec = NamedServiceProviderSpec(
+        provider_id="task.issue",
+        bundle_id="task-tracker@1-0",
+        namespace="task",
+        label="Tasks",
+        description="Issues and their attachments.",
+        metadata={
+            "presentation": {
+                "about": "Create, search, and update the issues in your task tracker.",
+                "requirements": [
+                    {
+                        "id": "task.board_access",
+                        "label": "Task board access",
+                        "description": "You see and change the issues you created or that were shared with you.",
+                        "actor": "provider",
+                        "surface": {
+                            "kind": "widget",
+                            "bundle_id": "task-tracker@1-0",
+                            "widget_alias": "task_tracker_tasks",
+                            "label": "Open Tasks",
+                        },
+                    },
+                    # An admin-side requirement with NO affordance: the
+                    # description carries the whole fix, no surface invented.
+                    {
+                        "id": "task.admin_zone",
+                        "description": "Ask a workspace admin to add you to the tracker.",
+                        "actor": "admin",
+                    },
+                ],
+            },
+        },
+    )
+    catalog = {
+        "named_services": [
+            {"namespace": "task", "alias": "named_services",
+             "operations": ["object.list", "object.search", "object.get"]},
+        ]
+    }
+    out = await enrich_catalog_named_service_realms(
+        catalog,
+        discovery=_FakeDiscovery({"task": spec}),
+        tenant="demo-tenant",
+        project="demo-project",
+    )
+    realm = out["named_services"][0]["realm"]
+    requirements = realm["requirements"]
+    assert [r["id"] for r in requirements] == ["task.board_access", "task.admin_zone"]
+    board = requirements[0]
+    assert board["label"] == "Task board access"
+    assert board["actor"] == "provider"
+    assert board["surface"] == {
+        "kind": "url",
+        "url": "/api/integrations/bundles/demo-tenant/demo-project/task-tracker@1-0/widgets/task_tracker_tasks",
+        "label": "Open Tasks",
+    }
+    admin = requirements[1]
+    assert "surface" not in admin
+    assert "status" not in admin

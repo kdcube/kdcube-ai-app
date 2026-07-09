@@ -2190,9 +2190,12 @@ a { color: inherit; }
 
 /* Full-page presentation (the served capability widget): the same picker
    body in a readable page column — expanded wrap rules apply via
-   .k-menu-expanded. */
+   .k-menu-expanded. The shell OWNS its scrolling (viewport height +
+   overflow-y auto): host embeddings size or clip the widget frame, so
+   document-level scrolling cannot be relied on in the widget context. */
 .k-menu-page {
-  min-height: 100vh;
+  height: 100vh;
+  overflow-y: auto;
   padding: 18px 20px 28px;
   background: var(--bg, var(--surface));
   box-sizing: border-box;

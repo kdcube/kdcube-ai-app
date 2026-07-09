@@ -91,6 +91,20 @@ export interface AgentCapabilityRealm {
     connector_app_id?: string
     claims: string[]
   }[]
+  /** Declared access requirements — the realm's own statement of what a user
+   *  needs BEFORE chatting (internal access, memberships). One declaration
+   *  feeds this proactive card row AND the reactive denial card. `surface`
+   *  is only ever an honest affordance; absent = the description names who
+   *  can grant it. `status` renders when the platform can cheaply resolve
+   *  it; absent = shown as a declared requirement without a state chip. */
+  requirements?: {
+    id: string
+    label?: string
+    description: string
+    actor?: string
+    status?: 'granted' | 'missing'
+    surface?: { kind: string; url?: string; label?: string }
+  }[]
 }
 
 export interface AgentCapabilityNamespace {

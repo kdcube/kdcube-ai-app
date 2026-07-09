@@ -15,6 +15,7 @@ import {
 } from '@kdcube/components-react/chat'
 import {
   ackCapabilitiesOpen,
+  openConnectionsOnHost,
   parseCapabilitiesOpen,
 } from '@kdcube/components-core/chat'
 import type { AgentSelectionPatch, ConnectionsConsentOpen } from '@kdcube/components-core/chat'
@@ -55,18 +56,32 @@ async function callOperation(alias: string, data: Record<string, unknown>): Prom
   return body
 }
 
-function openConnections(consent: ConnectionsConsentOpen): void {
-  const params = new URLSearchParams({ tab: consent.tab || 'delegated_to_kdcube' })
-  for (const [key, value] of Object.entries(consent.params || {})) {
+function connectionsDeepLink(consent?: ConnectionsConsentOpen): string {
+  if (consent?.url) return consent.url
+  const params = new URLSearchParams({ tab: consent?.tab || 'delegated_to_kdcube' })
+  for (const [key, value] of Object.entries(consent?.params || {})) {
     if (value) params.set(key, String(value))
   }
-  const url = consent.url
-    || (
-      `${settings.getBaseUrl()}/api/integrations/bundles/` +
-      `${encodeURIComponent(settings.getTenant())}/${encodeURIComponent(settings.getProject())}/` +
-      `${encodeURIComponent(CONNECTION_HUB_BUNDLE_ID)}/widgets/connections_settings?${params.toString()}`
-    )
-  window.open(url, '_blank', 'noopener')
+  return (
+    `${settings.getBaseUrl()}/api/integrations/bundles/` +
+    `${encodeURIComponent(settings.getTenant())}/${encodeURIComponent(settings.getProject())}/` +
+    `${encodeURIComponent(CONNECTION_HUB_BUNDLE_ID)}/widgets/connections_settings?${params.toString()}`
+  )
+}
+
+/** Host-first open: this widget lives in a scene window, so the hub should
+ *  arrive as the scene's own Connection Hub window when the host declares
+ *  `connections.hub.open` (`kdcube.surface.command` + ack-wait, the same
+ *  emit the chat widget uses). No ack — the absolute deep link opens in a
+ *  new tab. Never a silent no-op. */
+function openConnections(consent?: ConnectionsConsentOpen): void {
+  void openConnectionsOnHost(
+    consent ? { tab: consent.tab, params: consent.params } : null,
+    { source: 'capabilities-widget', widget: 'capabilities' },
+  ).then((acked) => {
+    if (acked) return
+    window.open(connectionsDeepLink(consent), '_blank', 'noopener')
+  })
 }
 
 function PickerApp() {
@@ -127,7 +142,7 @@ function PickerApp() {
   return (
     <CapabilityPickerPage
       vm={vm}
-      title="Tools & skills"
+      title="Capabilities"
       subtitle={`Everything the ${agentId} agent may use for you — narrow it here.`}
     />
   )

@@ -50,9 +50,11 @@ export interface StandaloneCapabilityRuntime {
     patch: AgentSelectionPatch,
     options?: StandaloneSelectionWriteOptions,
   ): Promise<StandaloneCapabilitiesResponse>
-  /** Opens the Connection Hub consent plan (deep link). Absent = consent
-   *  chips render as read-only state tags. */
-  openConnections?: (consent: ConnectionsConsentOpen) => void
+  /** Opens the Connection Hub: with a consent payload it lands on the
+   *  provider-connections card; without one (the bare "Manage connections"
+   *  row) it opens the hub itself. Absent = consent chips render as
+   *  read-only state tags and the row hides. */
+  openConnections?: (consent?: ConnectionsConsentOpen) => void
 }
 
 const SAVE_DEBOUNCE_MS = 600
@@ -184,8 +186,11 @@ export function useStandaloneCapabilitiesVm(
       },
       connections: {
         available: () => Boolean(runtime.openConnections),
+        /* The bare "Manage connections" row passes NO consent payload — the
+         * open must still fire (hub settings surface / plain deep link). A
+         * consent-less call silently dropped here is exactly a dead row. */
         open: (_source: string, consent?: ConnectionsConsentOpen) => {
-          if (consent) runtime.openConnections?.(consent)
+          runtime.openConnections?.(consent)
         },
       },
     }

@@ -42,7 +42,12 @@ function BannerStripImpl({
    * pinned top-right. The claims render as compact code chips after the
    * sentence, so the text wraps cleanly in both layouts. */
   const hasActions = (banner: Banner) =>
-    Boolean((banner.consent && onOpenConnections) || banner.actionUrl || (banner.consentTools?.length && onAdjustTools))
+    Boolean(
+      (banner.consent && onOpenConnections)
+      || banner.actionUrl
+      || (banner.consentTools?.length && onAdjustTools)
+      || (banner.fixEntries?.length && onAdjustTools),
+    )
   return (
     <div className="k-banner-strip flex flex-col gap-2">
       {banners.map((banner) => (
@@ -85,6 +90,19 @@ function BannerStripImpl({
                   onClick={() => onAdjustTools(banner.consentTools as string[])}
                 >
                   Turn off the tools that need it
+                </button>
+              ) : null}
+              {banner.fixEntries?.length && onAdjustTools ? (
+                /* Capability-fix card: the denial is the user's own toggle —
+                 * the honest affordance is the picker, spotlighting the
+                 * denied entries. */
+                <button
+                  type="button"
+                  className="k-btn k-ghost k-notice-action"
+                  title="Open Capabilities with the turned-off entries highlighted"
+                  onClick={() => onAdjustTools(banner.fixEntries as string[])}
+                >
+                  {banner.actionLabel || 'Open Capabilities'}
                 </button>
               ) : null}
             </div>

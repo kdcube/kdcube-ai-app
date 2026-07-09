@@ -184,6 +184,85 @@ function connectedAccountConsentBanner(data: Record<string, unknown> | undefined
   }
 }
 
+/** A structured named-service denial with a declared fix affordance.
+ *  Every user-/admin-fixable denial explains its own fix (`fix.summary`);
+ *  `fix.surface` optionally names an honest affordance — the capability
+ *  picker for the user's own toggles, or a provider URL. Consent payloads
+ *  keep their own card path (never matched here). */
+function findCapabilityFixPayload(value: unknown, depth = 0): Record<string, unknown> | null {
+  if (depth > 5 || value == null) return null
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findCapabilityFixPayload(item, depth + 1)
+      if (found) return found
+    }
+    return null
+  }
+  const record = recordValue(value)
+  if (!record) return null
+  const error = recordValue(record.error)
+  const code = stringValue(record.code || record.error_code || error?.code || (typeof record.error === 'string' ? record.error : ''))
+  if (code === 'needs_connected_account_consent' || code === 'needs_connected_account') return null
+  const fix = recordValue(record.fix) || recordValue(error?.fix)
+  if (fix && stringValue(fix.summary) && code) return record
+  for (const key of ['error', 'result', 'items', 'data', 'payload']) {
+    const found = findCapabilityFixPayload(record[key], depth + 1)
+    if (found) return found
+  }
+  return null
+}
+
+function capabilityFixBanner(data: Record<string, unknown> | undefined): {
+  text: string
+  actionLabel: string
+  actionUrl: string
+  fixEntries: string[]
+  signature: string
+} | null {
+  const payload = findCapabilityFixPayload(data)
+  if (!payload) return null
+  const error = recordValue(payload.error) || {}
+  const fix = recordValue(payload.fix) || recordValue(error.fix) || {}
+  const summary = stringValue(fix.summary)
+  if (!summary) return null
+  const code = stringValue(payload.code || payload.error_code || error.code || (typeof payload.error === 'string' ? payload.error : ''))
+  const surface = recordValue(fix.surface) || {}
+  const kind = stringValue(surface.kind)
+  const entries = Array.isArray(surface.entries)
+    ? surface.entries.map((item) => stringValue(item)).filter(Boolean)
+    : []
+  const url = kind === 'url' ? consentActionUrl(surface.url) : ''
+  const details = recordValue(payload.details) || {}
+  const namespace = stringValue(details.namespace) || entries[0] || ''
+  return {
+    text: summary,
+    actionLabel: stringValue(surface.label) || (kind === 'capabilities' ? 'Open Capabilities' : 'Open'),
+    actionUrl: url,
+    fixEntries: kind === 'capabilities' ? entries : [],
+    signature: `fix|${code}|${namespace}|${entries.join(',')}|${url}`,
+  }
+}
+
+function upsertCapabilityFixBanner(
+  state: ChatState,
+  input: { text: string; actionLabel: string; actionUrl: string; fixEntries: string[]; signature: string },
+): ChatState {
+  const trimmed = input.text.trim()
+  if (!trimmed || !input.signature) return state
+  if (state.dismissedConsentSignatures.includes(input.signature)) return state
+  if (state.banners.some((banner) => banner.consentSignature === input.signature)) return state
+  const banners = [{
+    id: createLocalId('banner'),
+    tone: 'warning' as BannerTone,
+    text: trimmed,
+    placement: 'composer' as const,
+    consentSignature: input.signature,
+    ...(input.actionUrl ? { actionLabel: input.actionLabel, actionUrl: input.actionUrl } : {}),
+    ...(input.fixEntries.length ? { fixEntries: input.fixEntries, actionLabel: input.actionLabel } : {}),
+  }, ...state.banners].slice(0, 4)
+  return { ...state, banners }
+}
+
 /** One consent banner per provider at a time, with dismissal memory.
  *
  * - A signature the user dismissed this conversation stays quiet.
@@ -1176,9 +1255,12 @@ export function applyChatStep(state: ChatState, env: ChatStepEnvelope): ChatStat
     env,
   )
   const consentBanner = connectedAccountConsentBanner(env.data)
+  const fixBanner = consentBanner ? null : capabilityFixBanner(env.data)
   const stateWithBanner = consentBanner
     ? upsertConsentBanner(syncedState, consentBanner)
-    : syncedState
+    : fixBanner
+      ? upsertCapabilityFixBanner(syncedState, fixBanner)
+      : syncedState
   return updateTurn(stateWithBanner, env.conversation.turn_id, (turn) => {
     const timestamp = timestampValue(env.timestamp)
     /* Turn accounting for the status line: cost from the `accounting.usage`

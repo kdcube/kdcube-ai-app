@@ -40,6 +40,10 @@ export interface Banner {
   /** The claims the consent asks for, rendered as compact chips after the
    *  sentence (the text itself stays short). */
   consentClaims?: string[]
+  /** Capability-picker spotlight entries when the banner is a capability-fix
+   *  card (a user-fixable internal denial): the action opens Capabilities
+   *  with these entries highlighted. */
+  fixEntries?: string[]
   /** Where the notice renders. `'composer'` = right above the chat input
    *  (chat-send / rate-limit / economic notices). `'top'` (default) =
    *  app-level strip at the top (boot/connection, list errors). */

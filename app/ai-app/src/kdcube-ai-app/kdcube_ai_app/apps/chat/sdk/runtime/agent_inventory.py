@@ -626,7 +626,13 @@ def _realm_requirement_effective_claims(
     return sorted(set(_string_list(requirement.get("claims"))))
 
 
-def _realm_payload_from_spec(spec: Any, allowed_operations: Sequence[str]) -> dict[str, Any] | None:
+def _realm_payload_from_spec(
+    spec: Any,
+    allowed_operations: Sequence[str],
+    *,
+    tenant: str = "",
+    project: str = "",
+) -> dict[str, Any] | None:
     """The picker-facing view of one realm behind a configured namespace.
 
     Sourced from the provider's discovery spec — the same declaration surface
@@ -759,6 +765,53 @@ def _realm_payload_from_spec(spec: Any, allowed_operations: Sequence[str]) -> di
                 "description": _first_para(str(raw_object_kinds.get(kind) or "")),
             })
 
+    # Declared access requirements — ONE declaration feeds two surfaces: the
+    # proactive service-card row here and the reactive denial card (the
+    # provider echoes the same fix on its errors). Only declared entries
+    # render; a `widget` surface resolves to a concrete root-relative URL
+    # server-side (tenant/project are known here, never widget-side guessed).
+    requirements_decl: list[dict[str, Any]] = []
+    raw_reqs = presentation.get("requirements")
+    if isinstance(raw_reqs, (list, tuple)):
+        for raw in raw_reqs:
+            if not isinstance(raw, Mapping):
+                continue
+            req_id = _norm(raw.get("id"))
+            summary = _first_para(str(raw.get("description") or ""))
+            if not req_id or not summary:
+                continue
+            req_out: dict[str, Any] = {"id": req_id, "description": summary}
+            req_label = _norm(raw.get("label"))
+            if req_label:
+                req_out["label"] = req_label
+            actor = _norm(raw.get("actor"))
+            if actor:
+                req_out["actor"] = actor
+            surface = raw.get("surface")
+            if isinstance(surface, Mapping):
+                kind = _norm(surface.get("kind"))
+                if kind == "widget" and tenant and project:
+                    bundle_id = _norm(surface.get("bundle_id"))
+                    widget_alias = _norm(surface.get("widget_alias"))
+                    if bundle_id and widget_alias:
+                        req_out["surface"] = {
+                            "kind": "url",
+                            "url": (
+                                f"/api/integrations/bundles/{tenant}/{project}/"
+                                f"{bundle_id}/widgets/{widget_alias}"
+                            ),
+                            "label": _norm(surface.get("label")) or "Open",
+                        }
+                elif kind == "url" and _norm(surface.get("url")):
+                    req_out["surface"] = {
+                        "kind": "url",
+                        "url": _norm(surface.get("url")),
+                        "label": _norm(surface.get("label")) or "Open",
+                    }
+                elif kind == "capabilities":
+                    req_out["surface"] = {"kind": "capabilities"}
+            requirements_decl.append(req_out)
+
     label = _norm(getattr(spec, "label", ""))
     description = _first_para(str(getattr(spec, "description", "") or ""))
     about = _first_para(str(presentation.get("about") or "")) or description
@@ -785,6 +838,8 @@ def _realm_payload_from_spec(spec: Any, allowed_operations: Sequence[str]) -> di
         payload["objects"] = objects_out
     if requirements_out:
         payload["connected_accounts"] = requirements_out
+    if requirements_decl:
+        payload["requirements"] = requirements_decl
     return payload
 
 
@@ -828,7 +883,12 @@ async def enrich_catalog_named_service_realms(
                 (item.spec for item in (found or []) if getattr(item, "spec", None) is not None),
                 None,
             )
-            realm = _realm_payload_from_spec(spec, _string_list(entry.get("operations")))
+            realm = _realm_payload_from_spec(
+                spec,
+                _string_list(entry.get("operations")),
+                tenant=str(tenant or ""),
+                project=str(project or ""),
+            )
             if realm:
                 entry["realm"] = realm
     except Exception:
