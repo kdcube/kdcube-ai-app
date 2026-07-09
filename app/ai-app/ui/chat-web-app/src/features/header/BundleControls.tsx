@@ -9,10 +9,12 @@ import {useGetBundleWidgets} from "../bundles/widgetReducer.tsx";
 const BundleControls = () => {
     const sidePanelContext = useSidePanelContext();
 
-    const {currentBundleId, widgets} = useGetBundleWidgets()
+    const {currentBundleId, widgets, conversational} = useGetBundleWidgets()
 
     return useMemo(() => {
-        if (currentBundleId && widgets.length > 0) {
+        // Non-conversational apps show their widgets as the main scene's
+        // chips; header chips would duplicate them.
+        if (currentBundleId && widgets.length > 0 && conversational) {
             return <div className={"flex flex-row items-center gap-1"}>
                 {widgets.map((widget) => {
                     const widgetPanelId = getBundleWidgetPanelId(currentBundleId, widget.alias)
@@ -37,7 +39,7 @@ const BundleControls = () => {
             </div>
         }
         return null
-    }, [currentBundleId, widgets, sidePanelContext])
+    }, [currentBundleId, widgets, conversational, sidePanelContext])
 }
 
 export default BundleControls

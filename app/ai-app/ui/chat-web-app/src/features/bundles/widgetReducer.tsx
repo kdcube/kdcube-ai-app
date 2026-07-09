@@ -40,11 +40,17 @@ export const useGetBundleWidgets = () => {
             return !BUILT_IN_WIDGET_ALIASES.has(widget.alias) && (!widget.roles || widget.roles.length === 0 || authDisabled || (!!userProfile && widget.roles.every(r=>userRoles.includes(r))))
         });
 
+        // An app converses only when it declares a reactive entrypoint
+        // (@on_reactive_event -> manifest.on_message). While the registry is
+        // still loading we assume conversational to avoid a scene flash.
+        const conversational = currentBundleData ? Boolean(currentBundleData.on_message) : true;
+
         return {
             currentBundleId,
             currentBundleData,
             widgets,
-            allWidgets
+            allWidgets,
+            conversational
         }
     }, [authDisabled, currentBundleData, currentBundleId, userProfile])
 }

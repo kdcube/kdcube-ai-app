@@ -11,6 +11,8 @@ import {useAppDispatch, useAppSelector} from "../../app/store.ts";
 import {selectChatStayConnected, selectConversationId, selectCurrentTurn,} from "../../features/chat/chatStateSlice.ts";
 import ChatSidePanel from "../../features/chatSidePanel/ChatSidePanel.tsx";
 import ChatHeader from "../../features/header/ChatHeader.tsx";
+import AppScene from "../../features/bundles/AppScene.tsx";
+import {useGetBundleWidgets} from "../../features/bundles/widgetReducer.tsx";
 import AnimatedExpander from "../AnimatedExpander.tsx";
 import ChatCanvas from "../../features/canvas/ChatCanvas.tsx";
 import {CanvasItemLink, ChatCanvasContext, ChatCanvasContextValue} from "../../features/canvas/canvasContext.tsx";
@@ -108,7 +110,14 @@ const SingleChatApp: React.FC = () => {
         }
     }, [canvasItemLink, showItem])
 
+    const {conversational} = useGetBundleWidgets()
+
     const chatInterface = useMemo(() => {
+        if (!conversational) {
+            // No reactive (chat) entrypoint on this app: the main surface is
+            // the automatic scene of its widgets, not a conversation.
+            return <AppScene/>
+        }
         if (bundleUIUrl && bundleUiAvailable !== false) {
             return <div className={"flex-1 flex flex-col h-full"}>
                 <iframe
@@ -133,7 +142,7 @@ const SingleChatApp: React.FC = () => {
                 </ChatCanvasContext>
             </div>
         </div>
-    }, [bundleId, bundleUIUrl, bundleUiAvailable, canvasItemLink, chatCanvasContextValue, handleBundleIframeLoad])
+    }, [bundleId, bundleUIUrl, bundleUiAvailable, canvasItemLink, chatCanvasContextValue, conversational, handleBundleIframeLoad])
 
     const dispatch = useAppDispatch();
     const stayConnected = useAppSelector(selectChatStayConnected)
@@ -151,12 +160,12 @@ const SingleChatApp: React.FC = () => {
                 <ChatHeader/>
 
                 <div className={`flex flex-row overflow-hidden flex-1 w-full min-h-0 min-w-0`}>
-                    <ChatSidePanel/>
+                    {conversational && <ChatSidePanel/>}
                     {chatInterface}
                 </div>
             </SidePanelContext>
         </div>
-    }, [chatInterface, sidePanelContextValue])
+    }, [chatInterface, conversational, sidePanelContextValue])
 };
 
 export default SingleChatApp;
