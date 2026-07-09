@@ -646,17 +646,22 @@ type RealmEntryItem = {
   via?: string
   claims?: string[]
   enabled_for_agent?: boolean
+  excluded_note?: string
 }
 
 /** An advertised-but-excluded realm entry: present, greyed, honest. No
- *  toggle, no consent chip — nothing clickable a user cannot act on. The
- *  quiet line reuses the denial card's admin phrasing; the tooltip names
- *  the exact descriptor key an admin would change. */
+ *  toggle, no consent chip — nothing clickable a user cannot act on. A
+ *  DECLARED exclusion renders its own reason ("Reading rides the context
+ *  tools — the agent pulls refs directly") — the capability is served, by
+ *  design, through another path. An undeclared one reuses the denial card's
+ *  admin phrasing; its tooltip names the exact descriptor key an admin
+ *  would change. */
 function ExcludedEntryRow({ namespace, entry }: { namespace: string; entry: RealmEntryItem }) {
+  const note = String(entry.excluded_note || '').trim()
   return (
     <div
       className="k-menu-row k-menu-row-child k-menu-row-excluded"
-      title={`An app admin can enable it under namespaces.${namespace}.allowed`}
+      {...(note ? {} : { title: `An app admin can enable it under namespaces.${namespace}.allowed` })}
     >
       <span className="k-menu-row-static">
         <span className="k-menu-row-text">
@@ -671,7 +676,7 @@ function ExcludedEntryRow({ namespace, entry }: { namespace: string; entry: Real
               : <code>{entry.name}</code>}
           </span>
           <span className="k-menu-row-sub">
-            {[entry.description, 'an app admin can enable it'].filter(Boolean).join(' · ')}
+            {[entry.description, note || 'an app admin can enable it'].filter(Boolean).join(' · ')}
           </span>
         </span>
       </span>
@@ -738,6 +743,10 @@ function ExcludedSummary({ namespace, excluded }: { namespace: string; excluded:
   const [open, setOpen] = useState(false)
   if (!excluded.length) return null
   const count = excluded.length
+  // When EVERY excluded entry declares its reason, the collapsed line speaks
+  // design, not a pending admin task; a single undeclared entry keeps the
+  // admin affordance visible.
+  const allDeclared = excluded.every((item) => String(item.excluded_note || '').trim())
   return (
     <div className="k-menu-excluded-summary">
       <button
@@ -745,10 +754,14 @@ function ExcludedSummary({ namespace, excluded }: { namespace: string; excluded:
         className="k-menu-row-static k-menu-excluded-toggle"
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
-        title={`These operations exist but this agent isn't set up to use them — an app admin can enable them under namespaces.${namespace}.allowed`}
+        title={allDeclared
+          ? 'These operations ride other paths by design — each row says which'
+          : `These operations exist but this agent isn't set up to use them — an app admin can enable them under namespaces.${namespace}.allowed`}
       >
         <span className="k-menu-card-line">
-          {count} more operation{count === 1 ? '' : 's'} exist, ready for an app admin to enable
+          {count} more operation{count === 1 ? '' : 's'} {allDeclared
+            ? `ride${count === 1 ? 's' : ''} other paths by design`
+            : 'exist, ready for an app admin to enable'}
         </span>
         <span className="k-menu-excluded-chevron"><ChevronIcon open={open} /></span>
       </button>

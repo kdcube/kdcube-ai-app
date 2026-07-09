@@ -3047,6 +3047,102 @@ async def test_denial_fix_affordance_user_when_own_toggle_blocks():
     assert "Capabilities" in fix["summary"]
 
 
+def _consumer_props_with_declared_exclusion() -> dict:
+    """Workspace-shaped consumer config: task allows discovery+mutations and
+    DECLARES object.get's exclusion with its alternative; object.delete is
+    excluded with no note (the admin case)."""
+    return {
+        "surfaces": {
+            "as_consumer": {
+                "default_agent": "main",
+                "agents": {
+                    "main": {
+                        "tools": [
+                            {
+                                "name": "task_service",
+                                "kind": "named_service",
+                                "alias": "named_services",
+                                "namespaces": {
+                                    "task": {
+                                        "allowed": [
+                                            "provider.about", "object.list",
+                                            "object.search", "object.upsert",
+                                        ],
+                                        "excluded": {
+                                            "object.get": {
+                                                "reason": "Reading rides the context tools — the agent pulls task refs directly.",
+                                                "agent_hint": (
+                                                    "Read a task object by pulling its ref with react.pull "
+                                                    "(paths: [\"task:...\"]); read the materialized conv:fi: "
+                                                    "artifact with react.read."
+                                                ),
+                                            },
+                                        },
+                                    },
+                                },
+                            },
+                        ],
+                    },
+                },
+            },
+        },
+    }
+
+
+def test_consumer_config_parses_declared_exclusions():
+    """`namespaces.<ns>.excluded` parses next to the allowed list: op →
+    {reason, agent_hint}; empty notes drop; plain strings read as a reason."""
+    from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers.client_tools import (
+        named_service_namespace_client_tools_config,
+        normalize_named_service_excluded_notes,
+    )
+
+    policy = named_service_namespace_client_tools_config(
+        _consumer_props_with_declared_exclusion(), namespace="task", client_id="main",
+    )
+    assert policy["allowed_operations"] == [
+        "provider.about", "object.list", "object.search", "object.upsert",
+    ]
+    note = policy["excluded_operations"]["object.get"]
+    assert note["reason"].startswith("Reading rides the context tools")
+    assert "react.pull" in note["agent_hint"]
+
+    assert normalize_named_service_excluded_notes(
+        {"object.get": "reason only", "object.delete": {}, "": {"reason": "x"}}
+    ) == {"object.get": {"reason": "reason only"}}
+
+
+@pytest.mark.asyncio
+async def test_denial_fix_actor_agent_when_exclusion_declares_alternative():
+    """A DECLARED exclusion is design, and the fix belongs to the AGENT: the
+    structured error tells the model the alternative path (the agent_hint)
+    so it reroutes in the same turn. No surface — nothing for the user to
+    fix, so chat raises no banner. An exclusion WITHOUT a note keeps the
+    admin-actor fix."""
+    props = _consumer_props_with_declared_exclusion()
+    named_service_client_tools.bind_registry({"bundle_props": props, "client_id": "main"})
+
+    declared = await named_service_client_tools.get_object(
+        namespace="task",
+        object_ref="task:issue:ticket-1",
+    )
+    assert declared["ok"] is False
+    assert declared["error"] == "named_service_tool_not_allowed_for_client"
+    fix = declared["fix"]
+    assert fix["actor"] == "agent"
+    assert "react.pull" in fix["summary"]
+    assert fix["reason"].startswith("Reading rides the context tools")
+    assert "surface" not in fix
+    assert "fix.summary" in declared["message"]
+
+    undeclared = await named_service_client_tools.delete_object(
+        namespace="task",
+        object_ref="task:issue:ticket-1",
+    )
+    assert undeclared["fix"]["actor"] == "admin"
+    assert "namespaces.task.allowed" in undeclared["fix"]["summary"]
+
+
 def test_named_service_error_fix_rides_the_response_contract():
     """Realm authors declare the affordance on their error; it serializes and
     round-trips through the response envelope untouched."""

@@ -127,9 +127,16 @@ Each group is one toggle, summarized by its entries' human labels; expanding
 a group's details reveals the per-entry rows, each still a toggle (the
 namespace-operation/action granularity above). Entries the admin excluded
 collapse to one quiet expandable line per service; its tooltip names the
-admin fix path (`namespaces.<ns>.allowed`). A namespace whose realm is
-unresolvable expands to exactly "This service hasn't described itself yet."
-— the honest state; the UI invents no copy.
+admin fix path (`namespaces.<ns>.allowed`). An INTENTIONAL exclusion with a
+declared note (`namespaces.<ns>.excluded.<op>.reason` in the consumer
+descriptor) renders that reason on its row instead of the admin sentence —
+"Reading rides the context tools — the agent pulls task refs directly" —
+with no admin tooltip: the capability is served through another path by
+design, so no fix is pending. The same declaration's `agent_hint` drives the
+in-turn reroute on the dispatch denial (fix actor `agent`, see
+[Named-Service Providers](../../namespace-services/providers-README.md)).
+A namespace whose realm is unresolvable expands to exactly "This service
+hasn't described itself yet." — the honest state; the UI invents no copy.
 
 ## Consent and cache cost (pointers)
 

@@ -74,6 +74,11 @@ export interface AgentCapabilityRealmEntry {
    *  excludes it (`namespaces.<ns>.allowed`). Rendered present-but-disabled
    *  — absence becomes information. Absent = enabled. */
   enabled_for_agent?: boolean
+  /** Declared reason for an INTENTIONAL exclusion
+   *  (`namespaces.<ns>.excluded.<op>.reason`): the capability rides another
+   *  path by design ("Reading rides the context tools — the agent pulls refs
+   *  directly"). Renders in place of the generic admin line. */
+  excluded_note?: string
 }
 
 /** The resolved realm behind a configured namespace: what's inside and which
@@ -556,6 +561,9 @@ export interface RealmEntryLike {
   via?: string
   claims?: string[]
   enabled_for_agent?: boolean
+  /** Declared reason for an intentional exclusion (see
+   *  `AgentCapabilityRealmEntry.excluded_note`). */
+  excluded_note?: string
 }
 
 export interface RealmGroupView {

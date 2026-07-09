@@ -106,6 +106,35 @@ test('the excluded wall collapses to one quiet expandable line', () => {
   assert.match(SOURCE, /<ExcludedSummary namespace=\{entry\.namespace\} excluded=\{excluded\} \/>/)
 })
 
+test('a declared exclusion renders its reason, not the admin sentence', () => {
+  // buildRealmGroups passes declared notes through untouched on excluded rows
+  const realm = {
+    operations: [
+      { name: 'object.list', label: 'List issues' },
+      {
+        name: 'object.get',
+        label: 'Read an issue',
+        enabled_for_agent: false,
+        excluded_note: 'Reading rides the context tools — the agent pulls task refs directly.',
+      },
+      { name: 'object.delete', label: 'Delete an issue', enabled_for_agent: false },
+    ],
+    actions: [],
+  }
+  const { excluded } = buildRealmGroups(realm)
+  const byName = Object.fromEntries(excluded.map((e) => [e.name, e]))
+  assert.match(byName['object.get'].excluded_note, /rides the context tools/)
+  assert.equal(byName['object.delete'].excluded_note, undefined)
+  // the row: a declared note replaces BOTH the admin sub-line and the admin
+  // tooltip; an undeclared exclusion keeps today's admin line
+  assert.match(SOURCE, /const note = String\(entry\.excluded_note \|\| ''\)\.trim\(\)/)
+  assert.match(SOURCE, /note \? \{\} : \{ title: `An app admin can enable it under namespaces\.\$\{namespace\}\.allowed` \}/)
+  assert.match(SOURCE, /note \|\| 'an app admin can enable it'/)
+  // the collapsed line speaks design when every exclusion declares its path
+  assert.match(SOURCE, /allDeclared/)
+  assert.match(SOURCE, /other paths by design/)
+})
+
 test('the requirement affordance sits in-flow and prefers an on-scene summon', () => {
   // text + aside are siblings in flow (no chip crammed into the 16px state box)
   assert.match(SOURCE, /k-menu-requirement-text/)

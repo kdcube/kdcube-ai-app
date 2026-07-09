@@ -1249,6 +1249,87 @@ async def test_realm_card_shows_advertised_but_excluded_entries_disabled():
 
 
 @pytest.mark.asyncio
+async def test_declared_exclusion_notes_ride_the_realm_card():
+    """`namespaces.<ns>.excluded` reasons flow catalog → realm payload: an
+    excluded entry with a declared reason gains `excluded_note` (the card
+    renders the reason instead of the admin line); actions inherit
+    object.action's note; undeclared exclusions and allowed entries carry
+    none."""
+    from kdcube_ai_app.apps.chat.sdk.runtime.agent_inventory import (
+        enrich_catalog_named_service_realms,
+    )
+    from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers.types import (
+        NamedServiceProviderSpec,
+    )
+
+    props = _props()
+    ns_connection = props["surfaces"]["as_consumer"]["agents"]["main"]["tools"][-1]
+    ns_connection["namespaces"]["task"] = {
+        "allowed": ["provider.about", "object.list", "object.search", "object.upsert"],
+        "excluded": {
+            "object.get": {
+                "reason": "Reading rides the context tools — the agent pulls task refs directly.",
+                "agent_hint": "Pull the ref with react.pull; read the artifact with react.read.",
+            },
+            "object.action": {
+                "reason": "Task actions run through the object cards on the board.",
+            },
+        },
+    }
+    catalog = agent_capabilities_catalog(props, "main")
+    task_row = next(e for e in catalog["named_services"] if e["namespace"] == "task")
+    # The catalog row carries the declared notes (reason + agent_hint).
+    assert task_row["excluded_config"]["object.get"]["reason"].startswith("Reading rides")
+    mem_row = next(e for e in catalog["named_services"] if e["namespace"] == "mem")
+    assert "excluded_config" not in mem_row
+
+    task_spec = NamedServiceProviderSpec(
+        provider_id="task.issue",
+        namespace="task",
+        label="Tasks",
+        description="Issues and their attachments.",
+        operations={
+            "provider.about": {"transports": ["local"]},
+            "object.list": {"transports": ["local"]},
+            "object.search": {"transports": ["local"]},
+            "object.get": {"transports": ["local"]},
+            "object.upsert": {"transports": ["local"]},
+            "object.delete": {"transports": ["local"]},
+            "object.action": {"transports": ["local"]},
+        },
+        metadata={
+            "presentation": {
+                "operations": {
+                    "object.get": {"label": "Read an issue", "description": "Read one issue."},
+                    "object.delete": {"label": "Delete an issue", "description": "Delete one issue."},
+                },
+            },
+            "actions": {"open": "Open one issue in the issue editor."},
+        },
+    )
+    out = await enrich_catalog_named_service_realms(
+        {"named_services": [dict(task_row)]},
+        discovery=_FakeDiscovery({"task": task_spec}),
+    )
+    realm = out["named_services"][0]["realm"]
+    ops = {op["name"]: op for op in realm["operations"]}
+    # Declared exclusion: the reason rides the entry.
+    assert ops["object.get"]["enabled_for_agent"] is False
+    assert ops["object.get"]["excluded_note"].startswith("Reading rides the context tools")
+    # Undeclared exclusion keeps today's shape (no note).
+    assert ops["object.delete"]["enabled_for_agent"] is False
+    assert "excluded_note" not in ops["object.delete"]
+    # Allowed entries carry neither flag nor note.
+    for name in ("provider.about", "object.list", "object.search", "object.upsert"):
+        assert "enabled_for_agent" not in ops[name]
+        assert "excluded_note" not in ops[name]
+    # Actions inherit object.action's declared note.
+    action = realm["actions"][0]
+    assert action["enabled_for_agent"] is False
+    assert action["excluded_note"] == "Task actions run through the object cards on the board."
+
+
+@pytest.mark.asyncio
 async def test_descriptor_requirements_merge_over_realm_declarations_by_id():
     """The consumer DESCRIPTOR supplies/overrides access requirements per
     namespace (`namespaces.<ns>.presentation.requirements`): a descriptor

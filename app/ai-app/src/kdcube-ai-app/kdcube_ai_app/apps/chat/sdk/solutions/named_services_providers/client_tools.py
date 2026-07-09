@@ -291,6 +291,60 @@ def _policy_provider_enabled(config: Mapping[str, Any], name: str) -> bool:
     return _policy_mode(config, name) == "provider"
 
 
+def normalize_named_service_excluded_notes(raw: Any) -> dict[str, dict[str, str]]:
+    """The `excluded` block of a consumer namespace: op → note.
+
+    A note documents an INTENTIONAL exclusion with its declared alternative::
+
+        namespaces:
+          task:
+            allowed: [...]
+            excluded:
+              object.get:
+                reason: "Reading rides the context tools — the agent pulls refs directly."
+                agent_hint: "Pull the object's ref with react.pull; ..."
+
+    `reason` is the human sentence the Capabilities card renders on the
+    excluded row; `agent_hint` is the model-facing reroute instruction the
+    dispatch denial carries (fix actor `agent`). A plain string value is a
+    shared reason. Empty notes drop.
+    """
+    out: dict[str, dict[str, str]] = {}
+    if not isinstance(raw, Mapping):
+        return out
+    for op, note in raw.items():
+        op_key = str(op or "").strip()
+        if not op_key:
+            continue
+        if isinstance(note, Mapping):
+            reason = str(note.get("reason") or "").strip()
+            agent_hint = str(note.get("agent_hint") or "").strip()
+        elif isinstance(note, str):
+            reason, agent_hint = note.strip(), ""
+        else:
+            continue
+        if reason or agent_hint:
+            out[op_key] = {
+                **({"reason": reason} if reason else {}),
+                **({"agent_hint": agent_hint} if agent_hint else {}),
+            }
+    return out
+
+
+def _namespace_tools_config_from_raw(raw: Mapping[str, Any]) -> dict[str, Any]:
+    """One consumer namespace block → the per-client tools policy dict."""
+    out: dict[str, Any] = {}
+    allowed_operations = raw.get("allowed") or raw.get("allowed_operations") or raw.get("operations")
+    if isinstance(allowed_operations, Sequence) and not isinstance(allowed_operations, (str, bytes)):
+        out["allowed_operations"] = [str(item) for item in allowed_operations if str(item or "").strip()]
+    if isinstance(raw.get("tool_traits"), Mapping):
+        out["tool_traits"] = dict(raw.get("tool_traits") or {})
+    excluded = normalize_named_service_excluded_notes(raw.get("excluded"))
+    if excluded:
+        out["excluded_operations"] = excluded
+    return out
+
+
 def _named_service_namespace_agent_tools_config(
     bundle_props: Mapping[str, Any] | None,
     *,
@@ -307,13 +361,7 @@ def _named_service_namespace_agent_tools_config(
         raw = namespaces.get(namespace_key)
         if not isinstance(raw, Mapping):
             continue
-        out: dict[str, Any] = {}
-        allowed_operations = raw.get("allowed") or raw.get("allowed_operations") or raw.get("operations")
-        if isinstance(allowed_operations, Sequence) and not isinstance(allowed_operations, (str, bytes)):
-            out["allowed_operations"] = [str(item) for item in allowed_operations if str(item or "").strip()]
-        if isinstance(raw.get("tool_traits"), Mapping):
-            out["tool_traits"] = dict(raw.get("tool_traits") or {})
-        return out
+        return _namespace_tools_config_from_raw(raw)
 
     agents = _get_path(bundle_props or {}, "tools.agents", {})
     if not isinstance(agents, Mapping):
@@ -333,13 +381,7 @@ def _named_service_namespace_agent_tools_config(
             raw = namespaces.get(namespace_key)
             if not isinstance(raw, Mapping):
                 continue
-            out: dict[str, Any] = {}
-            allowed_operations = raw.get("allowed") or raw.get("allowed_operations") or raw.get("operations")
-            if isinstance(allowed_operations, Sequence) and not isinstance(allowed_operations, (str, bytes)):
-                out["allowed_operations"] = [str(item) for item in allowed_operations if str(item or "").strip()]
-            if isinstance(raw.get("tool_traits"), Mapping):
-                out["tool_traits"] = dict(raw.get("tool_traits") or {})
-            return out
+            return _namespace_tools_config_from_raw(raw)
     return {}
 
 

@@ -178,6 +178,32 @@ def _admin_grant_fix(namespace: str, operation: str) -> Dict[str, Any]:
     }
 
 
+def _agent_reroute_fix(note: Mapping[str, Any]) -> Dict[str, Any]:
+    """The config excludes the operation ON PURPOSE and declares the working
+    alternative (`namespaces.<ns>.excluded.<op>.agent_hint`). The fix belongs
+    to the AGENT: the summary is the model's reroute instruction for this
+    same turn. No surface — there is nothing for the user to change, so chat
+    raises no banner for actor `agent`."""
+    fix: Dict[str, Any] = {
+        "actor": "agent",
+        "summary": str(note.get("agent_hint") or "").strip(),
+    }
+    reason = str(note.get("reason") or "").strip()
+    if reason:
+        fix["reason"] = reason
+    return fix
+
+
+def _declared_exclusion_note(policy: Mapping[str, Any], operation: str) -> Mapping[str, Any]:
+    """The declared exclusion note for an operation, when the consumer config
+    carries one (empty mapping otherwise)."""
+    raw = policy.get("excluded_operations")
+    if not isinstance(raw, Mapping):
+        return {}
+    note = raw.get(operation)
+    return note if isinstance(note, Mapping) else {}
+
+
 def _client_id() -> str:
     explicit = REGISTRY.get("client_id")
     if explicit:
@@ -580,15 +606,29 @@ async def _call(
     if not _operation_allowed(base_ns, operation):
         # Every denial explains its own fix: the user's own toggle is
         # user-fixable in the picker ONLY when the config ceiling would allow
-        # the operation once re-enabled; otherwise the admin change is the fix.
+        # the operation once re-enabled; a DECLARED exclusion routes the
+        # AGENT to the alternative path; otherwise the admin change is the fix.
         _policy = _client_namespace_policy(base_ns)
         _ceiling = _allowed_values(_policy.get("allowed_operations"), _DEFAULT_READ_OPERATIONS)
         config_allows = "*" in _ceiling or operation in _ceiling
         user_denied = config_allows and operation in denied_named_service_entries(base_ns)
+        exclusion_note = {} if user_denied else _declared_exclusion_note(_policy, operation)
+        if user_denied:
+            fix = _user_toggle_fix(base_ns, f"'{tool_name}'")
+        elif str(exclusion_note.get("agent_hint") or "").strip():
+            fix = _agent_reroute_fix(exclusion_note)
+        else:
+            fix = _admin_grant_fix(base_ns, operation)
+        message = (
+            f"'{operation}' on namespace {base_ns!r} rides another path for this agent; "
+            "fix.summary names it."
+            if fix.get("actor") == "agent"
+            else f"Client {_client_id()!r} is not configured to call tool {tool_name!r} on namespace {base_ns!r}."
+        )
         return _error(
             "named_service_tool_not_allowed_for_client",
-            f"Client {_client_id()!r} is not configured to call tool {tool_name!r} on namespace {base_ns!r}.",
-            fix=_user_toggle_fix(base_ns, f"'{tool_name}'") if user_denied else _admin_grant_fix(base_ns, operation),
+            message,
+            fix=fix,
             namespace=base_ns,
             requested_namespace=ns,
             tool=tool_name,

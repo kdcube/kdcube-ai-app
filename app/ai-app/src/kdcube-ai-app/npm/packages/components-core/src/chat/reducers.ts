@@ -204,6 +204,10 @@ function findCapabilityFixPayload(value: unknown, depth = 0): Record<string, unk
   const code = stringValue(record.code || record.error_code || error?.code || (typeof record.error === 'string' ? record.error : ''))
   if (code === 'needs_connected_account_consent' || code === 'needs_connected_account') return null
   const fix = recordValue(record.fix) || recordValue(error?.fix)
+  // Actor `agent` marks an intentional exclusion with a declared alternative:
+  // the fix is the MODEL's reroute instruction, applied in the same turn —
+  // nothing for the user to act on, so no banner rises from it.
+  if (fix && stringValue(fix.actor) === 'agent') return null
   if (fix && stringValue(fix.summary) && code) return record
   for (const key of ['error', 'result', 'items', 'data', 'payload']) {
     const found = findCapabilityFixPayload(record[key], depth + 1)

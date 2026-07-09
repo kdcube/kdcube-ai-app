@@ -42,6 +42,7 @@ from kdcube_ai_app.apps.chat.sdk.runtime.tool_config import (
 from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers.client_tools import (
     NAMED_SERVICE_TOOLS_ALIAS,
     NAMED_SERVICE_TOOLS_MODULE,
+    normalize_named_service_excluded_notes,
 )
 
 # io_tools carries the ReAct `tool_call` mechanism and ctx_tools the context
@@ -548,10 +549,16 @@ def agent_capabilities_catalog(
                     if isinstance(row_presentation, Mapping)
                     else None
                 )
+                # Declared intentional exclusions (`excluded: {op: {reason,
+                # agent_hint}}`): the reasons ride to the realm card so an
+                # excluded row explains its designed path instead of the
+                # generic admin line.
+                row_excluded = normalize_named_service_excluded_notes(namespace_cfg.get("excluded"))
                 namespaces_out.append({
                     "namespace": ns,
                     "alias": ns_alias,
                     "operations": operations,
+                    **({"excluded_config": row_excluded} if row_excluded else {}),
                     **(
                         {"requirements_config": list(row_requirements)}
                         if isinstance(row_requirements, (list, tuple)) and row_requirements
@@ -721,6 +728,7 @@ def _realm_payload_from_spec(
     tenant: str = "",
     project: str = "",
     requirement_overrides: Sequence[Any] = (),
+    excluded_notes: Mapping[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     """The picker-facing view of one realm behind a configured namespace.
 
@@ -734,6 +742,15 @@ def _realm_payload_from_spec(
     metadata = getattr(spec, "metadata", None)
     metadata = dict(metadata) if isinstance(metadata, Mapping) else {}
     allowed = [str(op or "").strip() for op in (allowed_operations or ()) if str(op or "").strip()]
+
+    # Declared intentional exclusions: an excluded entry with a declared
+    # `reason` renders that reason on the card (`excluded_note`); entries
+    # without one keep the generic admin affordance.
+    def _excluded_note(op_key: str) -> str:
+        note = (excluded_notes or {}).get(op_key)
+        if isinstance(note, Mapping):
+            return _norm(note.get("reason"))
+        return _norm(note) if isinstance(note, str) else ""
 
     requirements_out: list[dict[str, Any]] = []
     raw_requirements = metadata.get("connected_accounts")
@@ -823,7 +840,11 @@ def _realm_payload_from_spec(
             if not object_action_enabled:
                 # Excluded entries carry no claims/via decoration — they
                 # cannot be exercised, so no consent story renders on them.
+                # Actions inherit object.action's declared exclusion note.
                 entry["enabled_for_agent"] = False
+                action_note = _excluded_note(f"object.action.{name}") or _excluded_note("object.action")
+                if action_note:
+                    entry["excluded_note"] = action_note
                 actions_out.append(entry)
                 continue
             claims = by_operation_union.get(f"object.action.{name}")
@@ -874,11 +895,14 @@ def _realm_payload_from_spec(
             str(presented.get("description") or _NAMED_SERVICE_OPERATION_DESCRIPTIONS.get(op, ""))
         )
         label_text = _norm(presented.get("label"))
-        if not (description or label_text):
+        op_note = _excluded_note(op)
+        if not (description or label_text or op_note):
             continue
         entry = {"name": op, "description": description, "enabled_for_agent": False}
         if label_text:
             entry["label"] = label_text
+        if op_note:
+            entry["excluded_note"] = op_note
         operations_out.append(entry)
 
     objects_out: list[dict[str, Any]] = []
@@ -990,12 +1014,14 @@ async def enrich_catalog_named_service_realms(
                 None,
             )
             overrides = entry.get("requirements_config")
+            excluded_cfg = entry.get("excluded_config")
             realm = _realm_payload_from_spec(
                 spec,
                 _string_list(entry.get("operations")),
                 tenant=str(tenant or ""),
                 project=str(project or ""),
                 requirement_overrides=overrides if isinstance(overrides, (list, tuple)) else (),
+                excluded_notes=excluded_cfg if isinstance(excluded_cfg, Mapping) else None,
             )
             if realm:
                 entry["realm"] = realm

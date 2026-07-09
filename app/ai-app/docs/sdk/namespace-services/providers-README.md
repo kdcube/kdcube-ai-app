@@ -759,13 +759,26 @@ for failures consent cannot fix:
 }
 ```
 
-`actor` names who can fix it (`user` | `admin` | `provider`); `summary` is one
-human sentence; `surface` is optional and only ever an HONEST affordance —
-`{"kind": "url", ...}` deep-links the realm's own UI, `{"kind":
+`actor` names who can fix it (`user` | `admin` | `provider` | `agent`);
+`summary` is one human sentence; `surface` is optional and only ever an HONEST
+affordance — `{"kind": "url", ...}` deep-links the realm's own UI, `{"kind":
 "capabilities", "entries": [...]}` opens the capability picker (used by the
 platform's own consumer-gate denials for the user's toggles). Omit `surface`
 when nothing the current user clicks can fix it — the summary still names the
 fix. The task realm's attachment read denial is the working exemplar.
+
+An exclusion can be INTENTIONAL: the consumer descriptor declares the
+alternative next to the allowed list (`namespaces.<ns>.excluded.<op>` with
+`reason` + `agent_hint`). The consumer-gate denial for such an operation
+carries fix actor `agent`: `summary` is the `agent_hint` (the model-facing
+reroute instruction, e.g. "pull the ref with react.pull and read the
+materialized artifact"), `reason` rides along, and chat raises no banner -
+the model follows the alternative in the same turn. The workspace template's
+task and mem `object.get` exclusions (reads ride react.pull materialization,
+see the [ReAct object materialization](react-object-materialization-README.md)
+doc) are the working exemplar; the declared `reason` also renders on the
+Capabilities card's excluded row (see
+[Capabilities](../solutions/user-settings/capabilities-README.md)).
 
 ### Streamed Object Reads
 

@@ -294,16 +294,31 @@ bundles:
                         # Task refs are provider-owned objects. ReAct can
                         # explore and mutate them through the generic
                         # named_services.* tool surface when a task provider
-                        # app is present in the runtime.
+                        # app is present in the runtime. Reading a task
+                        # object into the turn is the context-ingestion
+                        # path's job: the pull policy below (event_sources)
+                        # lets react.pull materialize task: refs as fi:
+                        # artifacts with provenance.
                         allowed:
                           - provider.about
                           - object.list
                           - object.search
                           - object.schema
-                          - object.get
                           - object.upsert
                           - object.host_file
                           - object.delete
+                        # Declared intentional exclusion: the reason renders
+                        # on the Capabilities card; the agent_hint rides the
+                        # dispatch denial (fix actor `agent`) so the model
+                        # reroutes in the same turn.
+                        excluded:
+                          object.get:
+                            reason: "Reading rides the context tools — the agent pulls task refs directly."
+                            agent_hint: >-
+                              Read a task object by pulling its ref with react.pull
+                              (paths: ["task:..."]). The content materializes as a
+                              conv:fi: artifact with provenance; read it with
+                              react.read or ranged reads.
                       mem:
                         # object.get is intentionally not exposed as a model-callable
                         # named_service tool. Existing mem:record refs must be bound
@@ -329,6 +344,14 @@ bundles:
                           - object.upsert
                           - object.action
                           - object.delete
+                        excluded:
+                          object.get:
+                            reason: "Reading rides the context tools — the agent pulls memory refs directly."
+                            agent_hint: >-
+                              Read a memory record by pulling its ref with react.pull
+                              (paths: ["mem:..."]). The content materializes as a
+                              conv:fi: artifact with provenance; read it with
+                              react.read or ranged reads.
                         tool_traits:
                           upsert_object:
                             strategy: [neutral]
@@ -383,10 +406,13 @@ bundles:
                   #         - object.list
                   #         - object.search
                   #         - object.schema
-                  #         - object.get
                   #         - object.upsert
                   #         - object.host_file
                   #         - object.delete
+                  #       excluded:
+                  #         object.get:
+                  #           reason: "Reading rides the context tools — the agent pulls task refs directly."
+                  #           agent_hint: "Pull the ref with react.pull; read the materialized artifact with react.read."
                   #   tool_traits:
                   #     provider_about:
                   #       strategy: [exploration]
