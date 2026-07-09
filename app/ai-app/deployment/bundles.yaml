@@ -1209,6 +1209,9 @@ bundles:
           bundle:
             visibility:
               allowed_roles: []
+            # The default agent is connected to the chat: the control plane
+            # serves the conversation surface for this app.
+            default_chat: true
           api:
             operations:
               telegram_user_admin_data:

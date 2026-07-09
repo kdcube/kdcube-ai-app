@@ -51,6 +51,11 @@ bundles:
           data_bus_subject: canvas.patch
           revision_retention: 80
         surfaces:
+          as_provider:
+            bundle:
+              # The default agent is connected to the chat: the control plane
+              # serves the conversation surface for this app.
+              default_chat: true
           as_consumer:
             mcp:
               services: {}

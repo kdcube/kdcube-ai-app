@@ -189,6 +189,11 @@ class BundleInterfaceManifest:
     mcp_endpoints: tuple[MCPEndpointSpec, ...] = ()
     ui_main: UIMainSpec | None = None
     on_message: OnMessageSpec | None = None
+    # Whether the app serves the default chat surface: the descriptor declares
+    # it (surfaces.as_provider.bundle.default_chat) AND a reactive entrypoint
+    # exists to serve it. Set by apply_bundle_overrides; the code-derived
+    # manifest alone carries no chat intent.
+    default_chat: bool = False
     on_job: OnJobSpec | None = None
     process_offline_events: ProcessOfflineEventsSpec | None = None
     scheduled_jobs: tuple[CronJobSpec, ...] = ()
@@ -528,16 +533,41 @@ def apply_widget_overrides(spec: UIWidgetSpec, props: dict[str, Any]) -> UIWidge
     )
 
 
+def bundle_default_chat(props: Mapping[str, Any] | None) -> bool:
+    """Whether the descriptor declares the app's chat surface.
+
+    The declaration lives on the bundle provider-surface node:
+    ``surfaces.as_provider.bundle.default_chat: true``. Absent means the app
+    serves no conversation surface; the control plane draws its widget scene
+    instead.
+    """
+    node = _provider_surface_node(props, "bundle")
+    if not isinstance(node, Mapping):
+        return False
+    return bool(node.get("default_chat"))
+
+
 def apply_bundle_overrides(manifest: BundleInterfaceManifest, props: dict[str, Any]) -> BundleInterfaceManifest:
-    """Return a new BundleInterfaceManifest with allowed_roles overridden from props if configured."""
+    """Return a new BundleInterfaceManifest with descriptor-owned bundle policy applied.
+
+    - ``allowed_roles``: overridden from props when configured.
+    - ``default_chat``: declared via ``surfaces.as_provider.bundle.default_chat``
+      and requires a reactive entrypoint to serve it.
+    """
     visibility = provider_surface_visibility(props, "bundle")
     if visibility is not None:
         roles = _coerce_string_list_override(visibility.get("allowed_roles"))
     else:
         roles = _coerce_string_list_override(_resolve_override_value(manifest.allowed_roles_config, props))
-    if roles is None:
+    default_chat = bundle_default_chat(props) and manifest.on_message is not None
+    replacements: dict[str, Any] = {}
+    if roles is not None:
+        replacements["allowed_roles"] = roles
+    if default_chat != manifest.default_chat:
+        replacements["default_chat"] = default_chat
+    if not replacements:
         return manifest
-    return dataclasses.replace(manifest, allowed_roles=roles)
+    return dataclasses.replace(manifest, **replacements)
 
 
 def apply_mcp_overrides(spec: MCPEndpointSpec, props: dict[str, Any]) -> MCPEndpointSpec:

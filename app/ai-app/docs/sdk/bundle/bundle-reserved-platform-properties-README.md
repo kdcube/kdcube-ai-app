@@ -97,7 +97,7 @@ In `aws-sm`, the grouped bundle descriptor docs are:
 | `economics.reservation_amount_dollars` | `2.0` in `BaseEntrypointWithEconomics.configuration` | `BaseEntrypointWithEconomics` | Per-bundle reservation floor for pre-run economics admission |
 | `execution.runtime` | no default | `BaseEntrypoint`, `RuntimeCtx`, exec runtime | Per-bundle exec runtime selection/overrides |
 | `exec_runtime` | no default | same as `execution.runtime` | Legacy compatibility alias for `execution.runtime` |
-| `surfaces.as_provider` | no default | bundle loader, integrations bridge, Bundle Admin | Provider-side bundle/API/widget/MCP visibility and authority/grant policy |
+| `surfaces.as_provider` | no default | bundle loader, integrations bridge, Bundle Admin | Provider-side bundle/API/widget/MCP visibility, the bundle `default_chat` surface declaration, and authority/grant policy |
 | `react.default_agent.line_numbers_mode` | `ai.react.line_numbers_mode`, default `lines` | ReAct runtime | Rendered text preview line numbering mode for the default ReAct agent: `disabled`, `lines`, or `sparsed` |
 | `surfaces.as_consumer.mcp.services` | no default | `BaseWorkflow`, MCP runtime/bootstrap | MCP server transport/auth config for tool subsystem |
 | `mcp.services` | no default | `BaseWorkflow`, MCP runtime/bootstrap | Legacy fallback for MCP server transport/auth config |

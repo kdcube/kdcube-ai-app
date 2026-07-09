@@ -1644,6 +1644,7 @@ def _manifest_to_descriptor(
         "mcp_endpoints": [_mcp_spec_descriptor(s, props) for s in manifest.mcp_endpoints],
         "widgets": [_widget_spec_descriptor(s, props) for s in manifest.ui_widgets],
         "on_message": manifest.on_message.method_name if manifest.on_message else None,
+        "default_chat": bool(effective.default_chat),
         "on_job": manifest.on_job.method_name if manifest.on_job else None,
         "scheduled_jobs": [_cron_spec_descriptor(s, props=props) for s in manifest.scheduled_jobs],
         "data_bus_handlers": [
@@ -1707,6 +1708,7 @@ def _manifest_to_descriptor_filtered(
         ],
         "widgets": visible_widget_descriptors,
         "on_message": manifest.on_message.method_name if manifest.on_message else None,
+        "default_chat": bool(effective_manifest.default_chat),
         "on_job": manifest.on_job.method_name if manifest.on_job else None,
         "scheduled_jobs": [_cron_spec_descriptor(s, props=props) for s in manifest.scheduled_jobs],
         "data_bus_handlers": [

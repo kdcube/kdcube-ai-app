@@ -5,11 +5,13 @@ from __future__ import annotations
 from kdcube_ai_app.infra.plugin.bundle_loader import (
     APIEndpointSpec,
     MCPEndpointSpec,
+    OnMessageSpec,
     UIWidgetSpec,
     apply_api_overrides,
     apply_bundle_overrides,
     apply_mcp_overrides,
     apply_widget_overrides,
+    bundle_default_chat,
     canonical_provider_surface_path,
     provider_surface_auth,
     BundleInterfaceManifest,
@@ -174,3 +176,24 @@ def test_provider_surface_policy_controls_bundle_widget_and_mcp() -> None:
         "authority_id": "custom.identity",
         "grants": ["knowledge:read"],
     }
+
+
+def test_default_chat_is_descriptor_declared_not_code_inherited() -> None:
+    # Every SDK-based entrypoint inherits a reactive handler, so on_message
+    # alone must never turn the chat surface on.
+    with_handler = BundleInterfaceManifest(
+        bundle_id="example@1-0", on_message=OnMessageSpec(method_name="run")
+    )
+    declared = {"surfaces": {"as_provider": {"bundle": {"default_chat": True}}}}
+
+    assert with_handler.default_chat is False
+    assert apply_bundle_overrides(with_handler, {}).default_chat is False
+    assert apply_bundle_overrides(with_handler, declared).default_chat is True
+
+    # Declaring the chat surface without a reactive handler serves nothing.
+    without_handler = BundleInterfaceManifest(bundle_id="example@1-0")
+    assert apply_bundle_overrides(without_handler, declared).default_chat is False
+
+    assert bundle_default_chat(declared) is True
+    assert bundle_default_chat({}) is False
+    assert bundle_default_chat(None) is False

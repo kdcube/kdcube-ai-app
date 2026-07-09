@@ -221,6 +221,15 @@ Current fields relevant to access control:
   - empty list `[]` is a valid intentional override meaning "visible to all"
   - invalid types fall back silently to the decorator default
   - editable in the Bundle Admin dashboard as a descriptor path
+- `surfaces.as_provider.bundle.default_chat`
+  - descriptor declaration that the app serves the default chat surface:
+    the control plane draws the conversation UI (chat panel, conversation
+    sidebar, header widget chips) for this app
+  - boolean; absent means the app serves widgets/APIs/providers and the
+    control plane draws its widget scene as the main surface instead
+  - the effective value also requires a reactive entrypoint
+    (`@on_reactive_event`) on the entrypoint class; the served bundle
+    descriptor exposes it as `default_chat`
 - bundle-level feature gate: `enabled.bundle` in bundle props
   - boolean (or string equivalent) that controls the whole bundle
   - if the resolved value is falsy, the bundle is treated as disabled:

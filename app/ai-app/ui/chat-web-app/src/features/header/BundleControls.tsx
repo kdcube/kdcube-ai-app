@@ -9,12 +9,12 @@ import {useGetBundleWidgets} from "../bundles/widgetReducer.tsx";
 const BundleControls = () => {
     const sidePanelContext = useSidePanelContext();
 
-    const {currentBundleId, widgets, conversational} = useGetBundleWidgets()
+    const {currentBundleId, widgets, defaultChat} = useGetBundleWidgets()
 
     return useMemo(() => {
-        // Non-conversational apps show their widgets as the main scene's
-        // chips; header chips would duplicate them.
-        if (currentBundleId && widgets.length > 0 && conversational) {
+        // Apps without the default chat surface show their widgets as the
+        // main scene's chips; header chips would duplicate them.
+        if (currentBundleId && widgets.length > 0 && defaultChat) {
             return <div className={"flex flex-row items-center gap-1"}>
                 {widgets.map((widget) => {
                     const widgetPanelId = getBundleWidgetPanelId(currentBundleId, widget.alias)
@@ -39,7 +39,7 @@ const BundleControls = () => {
             </div>
         }
         return null
-    }, [currentBundleId, widgets, conversational, sidePanelContext])
+    }, [currentBundleId, widgets, defaultChat, sidePanelContext])
 }
 
 export default BundleControls

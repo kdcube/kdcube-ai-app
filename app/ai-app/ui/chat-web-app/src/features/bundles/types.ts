@@ -31,6 +31,7 @@ export interface BundleEntry {
     apis?: BundleApiEntry[] | null;
     widgets?: BundleWidgetEntry[] | null;
     on_message?: string | null;
+    default_chat?: boolean | null;
 }
 
 export interface BundlesResponse {
