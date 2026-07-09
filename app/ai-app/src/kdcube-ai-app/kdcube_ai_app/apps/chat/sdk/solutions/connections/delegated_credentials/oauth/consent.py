@@ -333,80 +333,84 @@ def render_consent_html(
   <title>Authorize MCP connection · {esc(brand)}</title>
   <style>
     :root {{
-      --accent: #1565c0; --accent-700: #0f4e9c; --ink: #1a2230; --muted: #5b6675;
-      --line: #e5e9f0; --panel: #f4f7fb;
+      --accent: #01BEB2; --accent-ink: #009C92; --primary: #4372C3; --primary-700: #2B4B8A;
+      --ink: #10304B; --body: #3A5672; --muted: #7A99B0;
+      --line: #E6F1F0; --line-strong: #D8ECEB; --panel: #F6FAFA;
     }}
     * {{ box-sizing: border-box; }}
     body {{
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-      background: linear-gradient(180deg, #eef3f8 0%, #f7f9fc 100%);
+      background: #EEF5F5;
       max-width: 560px; margin: 0 auto; min-height: 100vh; padding: 6vh 1rem 2rem;
-      color: var(--ink); line-height: 1.5;
+      color: var(--body); line-height: 1.5; font-size: 13px;
     }}
     .brand {{ display: flex; align-items: center; gap: .6rem; margin: 0 0 1rem .2rem; }}
     .brand .mark {{
-      width: 34px; height: 34px; border-radius: 9px; flex: 0 0 auto;
-      background: linear-gradient(135deg, var(--accent), var(--accent-700));
-      display: grid; place-items: center; color: #fff; font-weight: 800; font-size: .95rem;
-      box-shadow: 0 2px 6px rgba(21,101,192,.25);
+      width: 32px; height: 32px; border-radius: 8px; flex: 0 0 auto;
+      background: linear-gradient(135deg, var(--accent), var(--accent-ink));
+      display: grid; place-items: center; color: #fff; font-weight: 800; font-size: .9rem;
+      box-shadow: 0 1px 2px rgba(16,48,75,.08);
     }}
-    .brand b {{ color: var(--accent-700); font-size: .95rem; letter-spacing: .2px; }}
-    .brand span {{ color: var(--muted); font-size: .8rem; }}
+    .brand b {{ color: var(--ink); font-size: .92rem; letter-spacing: .2px; }}
+    .brand span {{ color: var(--muted); font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; }}
     .card {{
-      background: #fff; border: 1px solid var(--line); border-radius: 16px;
-      padding: 1.6rem 1.6rem 1.4rem; box-shadow: 0 8px 30px rgba(16,40,70,.08);
+      background: #fff; border: 1px solid var(--line); border-radius: 12px;
+      padding: 1.4rem 1.4rem 1.2rem; box-shadow: 0 1px 2px rgba(16,48,75,.04);
     }}
-    h1 {{ font-size: 1.3rem; line-height: 1.3; margin: 0 0 .25rem; color: var(--accent-700); }}
-    .sub {{ color: var(--muted); font-size: .9rem; margin: 0 0 1.1rem; }}
-    .details {{ background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: .85rem 1rem; margin: 0 0 1rem; }}
-    .details .row {{ display: flex; gap: .6rem; align-items: baseline; margin: .4rem 0; word-break: break-word; }}
-    .k {{ flex: 0 0 96px; color: var(--muted); font-size: .8rem; text-transform: uppercase; letter-spacing: .4px; }}
+    h1 {{ font-size: 1.15rem; line-height: 1.3; margin: 0 0 .25rem; color: var(--ink); }}
+    .sub {{ color: var(--muted); font-size: .88rem; margin: 0 0 1rem; }}
+    .details {{ background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: .7rem .85rem; margin: 0 0 .9rem; }}
+    .details .row {{ display: flex; gap: .6rem; align-items: baseline; margin: .35rem 0; word-break: break-word; }}
+    .k {{ flex: 0 0 96px; color: var(--muted); font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; }}
     .account {{
       display: flex; justify-content: space-between; gap: 1rem; align-items: center;
-      border: 1px solid #cfe3f5; border-radius: 10px; padding: .8rem .9rem; margin: 0 0 1rem;
-      background: #fbfdff;
+      border: 1px solid var(--line); border-radius: 8px; padding: .7rem .85rem; margin: 0 0 .9rem;
+      background: var(--panel);
     }}
-    .account strong {{ display: block; font-size: .95rem; margin-top: .12rem; }}
+    .account strong {{ display: block; font-size: .92rem; margin-top: .12rem; color: var(--ink); }}
     .account code {{ display: inline-block; margin-top: .2rem; max-width: 100%; word-break: break-all; }}
     .account-form {{ margin: 0; flex: 0 0 auto; }}
-    code, .scope {{ font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .85rem; }}
-    code {{ background: #eef2f7; padding: .08rem .35rem; border-radius: 5px; }}
-    .badge {{ font-size: .7rem; padding: .12rem .45rem; border-radius: 999px; white-space: nowrap; font-weight: 600; }}
-    .badge.ok {{ background: #e6f4ea; color: #1e7e34; }}
-    .badge.warn {{ background: #fdecea; color: #b71c1c; }}
-    .warn-text {{ background: #fff8e1; border: 1px solid #ffe6a3; border-radius: 10px; padding: .7rem .9rem; font-size: .85rem; color: #6b5400; }}
-    .pick {{ font-weight: 600; margin: 1.2rem 0 .5rem; font-size: .92rem; }}
+    code, .scope {{ font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .82rem; }}
+    code {{ background: var(--panel); border: 1px solid var(--line); padding: .06rem .32rem; border-radius: 5px; color: var(--ink); }}
+    .badge {{ font-size: .68rem; padding: .12rem .45rem; border-radius: 999px; white-space: nowrap; font-weight: 600; }}
+    .badge.ok {{ background: rgba(34,197,94,.12); color: #15803D; }}
+    .badge.warn {{ background: rgba(248,113,113,.12); color: #B91C1C; }}
+    .warn-text {{ background: rgba(245,158,11,.10); border: 1px solid rgba(245,158,11,.35); border-radius: 8px; padding: .6rem .8rem; font-size: .82rem; color: #B45309; }}
+    .pick {{ font-weight: 700; margin: 1.1rem 0 .15rem; font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }}
     .tool-group, .edge-group, .namespace-group {{
-      border: 1px solid var(--line); border-radius: 12px; margin: .65rem 0; overflow: hidden; background: #fff;
+      border: 1px solid var(--line); border-radius: 8px; margin: .55rem 0; overflow: hidden; background: #fff;
     }}
     .group-head {{
       display: flex; justify-content: space-between; align-items: center; gap: .75rem;
-      padding: .55rem .75rem; background: #f8fafc; border-bottom: 1px solid var(--line);
-      color: #2f4962; font-size: .85rem;
+      padding: .45rem .7rem; background: var(--panel); border-bottom: 1px solid var(--line);
+      color: var(--ink); font-size: .82rem; font-weight: 600;
+      font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
     }}
     .group-head span {{
-      min-width: 1.35rem; height: 1.35rem; border-radius: 999px; padding: .1rem .42rem;
-      display: inline-grid; place-items: center; background: #e9eef5; color: #4d5f73; font-size: .76rem;
+      min-width: 1.3rem; height: 1.3rem; border-radius: 999px; padding: .1rem .4rem;
+      display: inline-grid; place-items: center; background: rgba(1,190,178,.10); color: var(--accent-ink); font-size: .72rem;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
     }}
-    .tool {{ display: flex; gap: .6rem; align-items: flex-start; padding: .7rem .8rem; margin: .45rem 0;
-      border: 1px solid var(--line); border-radius: 10px; cursor: pointer; transition: border-color .15s, background .15s; }}
+    .tool {{ display: flex; gap: .6rem; align-items: flex-start; padding: .55rem .7rem; margin: .4rem 0;
+      border: 1px solid var(--line); border-radius: 8px; cursor: pointer; transition: border-color .15s, background .15s; }}
     .tool-group .tool, .edge-group .edge, .namespace-group .namespace-row {{
       margin: 0; border-left: 0; border-right: 0; border-top: 0; border-radius: 0;
     }}
     .tool-group .tool:last-child, .edge-group .edge:last-child, .namespace-group .namespace-row:last-child {{ border-bottom: 0; }}
-    .tool:hover {{ border-color: #c7d6e6; background: #fafcff; }}
-    .edge {{ display: flex; gap: .6rem; align-items: flex-start; padding: .7rem .8rem; margin: .45rem 0;
-      border: 1px solid #cfe3f5; border-radius: 10px; cursor: pointer; background: #fbfdff; }}
-    .namespace-row {{ display: block; padding: .7rem .8rem; margin: .45rem 0;
-      border: 1px solid #d9ead3; border-radius: 10px; background: #fbfff9; }}
-    .tool input, .edge input {{ margin-top: .2rem; width: 1.05rem; height: 1.05rem; accent-color: var(--accent); }}
-    .tool b {{ font-size: .95rem; }}
-    .edge b {{ font-size: .95rem; }}
-    .namespace-row b {{ font-size: .95rem; }}
-    .tool .desc, .edge .desc, .namespace-row .desc, .desc {{ display: block; color: var(--muted); font-size: .83rem; }}
-    .tool .grants, .edge .grants, .namespace-row .grants {{ display: block; color: #365f86; font-size: .76rem; margin-top: .16rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }}
-    .actions {{ display: flex; gap: .75rem; margin-top: 1.4rem; }}
-    button {{ flex: 1; padding: .7rem; border-radius: 10px; border: 0; font-size: 1rem; font-weight: 600; cursor: pointer; transition: filter .15s, opacity .15s; }}
+    .tool:hover {{ background: var(--panel); }}
+    .edge {{ display: flex; gap: .6rem; align-items: flex-start; padding: .55rem .7rem; margin: .4rem 0;
+      border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }}
+    .edge:hover {{ background: var(--panel); }}
+    .namespace-row {{ display: block; padding: .55rem .7rem; margin: .4rem 0;
+      border: 1px solid var(--line); border-radius: 8px; }}
+    .tool input, .edge input {{ margin-top: .2rem; width: 1rem; height: 1rem; accent-color: var(--accent); }}
+    .tool b {{ font-size: .9rem; color: var(--ink); }}
+    .edge b {{ font-size: .9rem; color: var(--ink); }}
+    .namespace-row b {{ font-size: .9rem; color: var(--ink); }}
+    .tool .desc, .edge .desc, .namespace-row .desc, .desc {{ display: block; color: var(--muted); font-size: .8rem; }}
+    .tool .grants, .edge .grants, .namespace-row .grants {{ display: block; color: var(--accent-ink); font-size: .74rem; margin-top: .14rem; font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace; }}
+    .actions {{ display: flex; gap: .75rem; margin-top: 1.2rem; }}
+    button {{ flex: 1; padding: .55rem; border-radius: 8px; border: 0; font-size: .9rem; font-weight: 600; cursor: pointer; transition: filter .15s, opacity .15s; }}
     button:hover {{ filter: brightness(.96); }}
     button:disabled {{ opacity: .65; cursor: progress; }}
     button.busy {{ pointer-events: none; }}
@@ -416,11 +420,12 @@ def render_consent_html(
       vertical-align: -.12em; animation: spin .7s linear infinite;
     }}
     @keyframes spin {{ to {{ transform: rotate(360deg); }} }}
-    .approve {{ background: var(--accent); color: #fff; }}
-    .deny {{ background: #eef1f5; color: #33414f; }}
-    .signout {{ flex: 0 0 auto; background: #fff; color: #c2185b; border: 1px solid #f4c6da; font-size: .86rem; padding: .55rem .75rem; }}
-    footer {{ margin-top: 1.3rem; font-size: .8rem; color: var(--muted); text-align: center; }}
-    footer a {{ color: var(--accent-700); }}
+    .approve {{ background: var(--primary); color: #fff; }}
+    .approve:hover {{ background: var(--primary-700); filter: none; }}
+    .deny {{ background: #fff; color: var(--body); border: 1px solid var(--line-strong); }}
+    .signout {{ flex: 0 0 auto; background: #fff; color: #B91C1C; border: 1px solid rgba(248,113,113,.45); font-size: .82rem; padding: .45rem .7rem; }}
+    footer {{ margin-top: 1.2rem; font-size: .78rem; color: var(--muted); text-align: center; }}
+    footer a {{ color: var(--accent-ink); }}
   </style>
 </head>
 <body>
