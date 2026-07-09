@@ -125,14 +125,18 @@ test('a declared exclusion renders its reason, not the admin sentence', () => {
   const byName = Object.fromEntries(excluded.map((e) => [e.name, e]))
   assert.match(byName['object.get'].excluded_note, /rides the context tools/)
   assert.equal(byName['object.delete'].excluded_note, undefined)
-  // the row: a declared note replaces BOTH the admin sub-line and the admin
-  // tooltip; an undeclared exclusion keeps today's admin line
+  // the row: only the entry's own description/declared note — the admin fix
+  // path lives ONCE, on the summary line's tooltip, never repeated per row
   assert.match(SOURCE, /const note = String\(entry\.excluded_note \|\| ''\)\.trim\(\)/)
-  assert.match(SOURCE, /note \? \{\} : \{ title: `An app admin can enable it under namespaces\.\$\{namespace\}\.allowed` \}/)
-  assert.match(SOURCE, /note \|\| 'an app admin can enable it'/)
-  // the collapsed line speaks design when every exclusion declares its path
+  const excludedRow = SOURCE.slice(
+    SOURCE.indexOf('function ExcludedEntryRow'),
+    SOURCE.indexOf('\nfunction ', SOURCE.indexOf('function ExcludedEntryRow') + 10),
+  )
+  assert.doesNotMatch(excludedRow, /app admin/)
+  assert.doesNotMatch(excludedRow, /namespaces\./)
+  // the collapsed line speaks coverage when every exclusion declares its path
   assert.match(SOURCE, /allDeclared/)
-  assert.match(SOURCE, /other paths by design/)
+  assert.match(SOURCE, /covered through other tools/)
 })
 
 test('the requirement affordance sits in-flow and prefers an on-scene summon', () => {

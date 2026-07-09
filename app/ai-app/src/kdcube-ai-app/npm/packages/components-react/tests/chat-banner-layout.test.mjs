@@ -6,7 +6,8 @@ import { test } from 'node:test'
 // the single row; below 600px (the measured width where text + the two
 // consent actions + dismiss stop fitting on one row) the banner stacks —
 // full-width text, actions on their own wrapping row, dismiss pinned
-// top-right. Claims render as compact code chips after the sentence.
+// top-right. Consent claim tokens are detail, not copy: they live in the
+// text's tooltip, never as visible chips.
 
 const STYLESHEETS = [
   new URL('../examples/standalone/chat-ui.css', import.meta.url),
@@ -35,8 +36,19 @@ for (const sheet of STYLESHEETS) {
     assert.match(block, /\.k-banner-strip \.k-banner-dismiss\s*\{\s*position:\s*absolute;\s*top:\s*5px;\s*right:\s*5px/)
   })
 
-  test(`claim chips are compact code chips (${label})`, () => {
-    assert.match(css, /\.k-banner-claim\s*\{[^}]*font-family:\s*ui-monospace/)
-    assert.match(css, /\.k-banner-claims\s*\{[^}]*flex-wrap:\s*wrap/)
+  test(`claim tokens carry no visible chip styling (${label})`, () => {
+    // The purge ruling: raw claim tokens never render in the default view.
+    assert.doesNotMatch(css, /\.k-banner-claim\b/)
   })
 }
+
+// ...and the strip itself renders claims only as the text's tooltip.
+test('claim tokens are tooltip-only in the banner strip', () => {
+  const source = readFileSync(
+    new URL('../src/chat/ui/features/banners/BannerStrip.tsx', import.meta.url),
+    'utf8',
+  )
+  assert.doesNotMatch(source, /k-banner-claim/)
+  assert.match(source, /title=\{banner\.consentClaims\?\.length/)
+  assert.match(source, /Access involved: /)
+})

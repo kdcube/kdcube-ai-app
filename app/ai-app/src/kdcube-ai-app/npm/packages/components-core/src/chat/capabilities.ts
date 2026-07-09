@@ -577,8 +577,10 @@ export interface RealmGroupView {
   keys: string[]
 }
 
-/** Humanize a member title without leaking the grammar token. */
-function realmEntryTitle(item: RealmEntryLike): string {
+/** Humanize a member title without leaking the grammar token. Shared by the
+ *  picker for realm entries, tool rows, and MCP tool rows — every child row
+ *  titles itself in words; the token demotes to a mono hint. */
+export function humanizeEntryTitle(item: RealmEntryLike): string {
   const label = String(item.label || '').trim()
   if (label) return label
   const token = String(item.name || '').trim()
@@ -609,7 +611,7 @@ export function buildRealmGroups(
   for (const id of REALM_GROUP_ORDER) {
     const entries = buckets[id]
     if (!entries.length) continue
-    const summary = entries.map(({ item }) => realmEntryTitle(item)).filter(Boolean).join(' · ')
+    const summary = entries.map(({ item }) => humanizeEntryTitle(item)).filter(Boolean).join(' · ')
     groups.push({
       id,
       label: realm?.group_labels?.[id] || REALM_GROUP_LABELS[id],

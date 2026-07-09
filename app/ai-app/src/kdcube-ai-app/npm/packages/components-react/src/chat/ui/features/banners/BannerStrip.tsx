@@ -39,8 +39,8 @@ function BannerStripImpl({
   /* Layout contract (k-banner-strip is a size container): wide containers
    * keep the single row — text, actions, dismiss; narrow containers stack —
    * full-width text first, the action buttons on their own row, the dismiss
-   * pinned top-right. The claims render as compact code chips after the
-   * sentence, so the text wraps cleanly in both layouts. */
+   * pinned top-right. Consent claim tokens are detail, not copy: they live
+   * in the text's tooltip, never as visible chips. */
   const hasActions = (banner: Banner) =>
     Boolean(
       (banner.consent && onOpenConnections)
@@ -53,14 +53,13 @@ function BannerStripImpl({
       {banners.map((banner) => (
         <div key={banner.id} className={noticeClass(banner.tone)}>
           <div className="k-banner-body min-w-0 flex-1">
-            <span>{banner.text}</span>
-            {banner.consentClaims?.length ? (
-              <span className="k-banner-claims">
-                {banner.consentClaims.map((claim) => (
-                  <code key={claim} className="k-banner-claim">{claim}</code>
-                ))}
-              </span>
-            ) : null}
+            <span
+              title={banner.consentClaims?.length
+                ? `Access involved: ${banner.consentClaims.join(', ')}`
+                : undefined}
+            >
+              {banner.text}
+            </span>
           </div>
           {hasActions(banner) ? (
             <div className="k-banner-actions">

@@ -389,27 +389,14 @@ a { color: inherit; }
    fitting: ~200px readable text + "Approve access" (~110px) + "Turn off the
    tools that need it" (~215px) + dismiss (28px) + gaps/padding (~50px) — the
    banner stacks: full-width text, actions on their own wrapping row, dismiss
-   pinned top-right with the text padded clear of it. Claims render as
-   compact code chips after the sentence, so wrapping reads cleanly in both
-   layouts. */
+   pinned top-right with the text padded clear of it. Consent claim tokens
+   are detail, not copy: they live in the text's tooltip, never as visible
+   chips. */
 .k-banner-strip { container-type: inline-size; }
 .k-banner-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; flex: 0 0 auto; }
-.k-banner-claims { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-left: 6px; vertical-align: baseline; }
-.k-banner-claim {
-  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
-  font-size: 11px;
-  line-height: 1.4;
-  padding: 0 6px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--surface);
-  color: var(--text-2);
-  overflow-wrap: anywhere;
-}
 @container (max-width: 599px) {
   .k-banner-strip .k-notice { display: block; padding-right: 34px; }
   .k-banner-strip .k-banner-body { display: block; }
-  .k-banner-strip .k-banner-claims { display: flex; margin: 6px 0 0; }
   .k-banner-strip .k-banner-actions { margin-top: 8px; }
   .k-banner-strip .k-banner-actions .k-notice-action { margin-left: 0; }
   .k-banner-strip .k-banner-dismiss { position: absolute; top: 5px; right: 5px; }
@@ -2160,6 +2147,13 @@ a { color: inherit; }
   text-transform: uppercase;
   color: var(--muted);
 }
+/* Per-agent clarity: the head names WHICH agent these choices configure. */
+.k-menu-head-agent {
+  margin-left: 5px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
 .k-menu-head .k-tinybtn svg { width: 12px; height: 12px; }
 
 /* Expanded presentation: the SAME picker inside the canvas-modal shell.
@@ -2236,8 +2230,9 @@ a { color: inherit; }
 }
 
 /* Advertised-but-excluded realm entries (enabled_for_agent: false): present
-   but greyed — no toggle, no consent chip; the subline carries the admin
-   fix ("not enabled for this agent — an app admin can enable it"). */
+   but greyed — no toggle, no consent chip; the subline carries only the
+   entry's own description/declared reason (the admin fix path lives once,
+   on the summary line's tooltip). */
 .k-menu-row-excluded { opacity: 0.75; }
 .k-menu-row-excluded .k-menu-row-label,
 .k-menu-row-excluded .k-menu-row-label code { color: var(--muted); }
@@ -2250,7 +2245,8 @@ a { color: inherit; }
 .k-menu-group > .k-menu-row-child:not(:first-child) .k-menu-row-main { padding-left: 40px; }
 
 /* Collapsed excluded wall: one quiet, expandable line stands in for the greyed
-   rows; opening it reveals them (each carrying the admin phrasing + tooltip). */
+   rows; opening it reveals them (descriptions only — the admin fix path lives
+   once, on this line's tooltip). */
 .k-menu-excluded-summary { margin-top: 2px; }
 .k-menu-excluded-toggle {
   width: 100%;

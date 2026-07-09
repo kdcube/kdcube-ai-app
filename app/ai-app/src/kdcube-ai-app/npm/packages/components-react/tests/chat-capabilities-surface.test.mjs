@@ -260,9 +260,13 @@ test('advertised-but-excluded realm entries render greyed with NO toggle and NO 
   const block = menu.slice(start, menu.indexOf('\nfunction ', start + 10))
   assert.doesNotMatch(block, /MenuRow|onToggle|ConsentAside/)
   assert.match(block, /k-menu-row-excluded/)
-  // The quiet admin line + the exact descriptor key in the tooltip.
-  assert.match(block, /an app admin can enable it/)
-  assert.match(block, /namespaces\.\$\{namespace\}\.allowed/)
+  // No admin-speak on the rows: the fix path lives ONCE, in the summary
+  // line's tooltip (with the exact descriptor key), never repeated per row.
+  assert.doesNotMatch(block, /app admin/)
+  const summaryStart = menu.indexOf('function ExcludedSummary')
+  const summaryBlock = menu.slice(summaryStart, menu.indexOf('\nfunction ', summaryStart + 10))
+  assert.match(summaryBlock, /An app admin can enable these/)
+  assert.match(summaryBlock, /namespaces\.\$\{namespace\}\.allowed/)
   // The whole excluded wall now collapses behind ONE quiet line per service.
   assert.match(menu, /function ExcludedSummary/)
   // Excluded entries never contribute toggle keys / namespace state (only the

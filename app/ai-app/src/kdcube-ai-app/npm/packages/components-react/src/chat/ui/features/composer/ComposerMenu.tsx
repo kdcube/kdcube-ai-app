@@ -28,6 +28,7 @@ import type {
 } from '@kdcube/components-core/chat'
 import {
   buildRealmGroups,
+  humanizeEntryTitle,
   isMcpToolDisabled,
   isModelPicked,
   mergeSelectionPatches,
@@ -56,24 +57,25 @@ export interface ComposerMenuSectionContext {
   close: () => void
 }
 
-/** Cache-cost notice shown when the user picks a DIFFERENT model: provider
- *  prompt caches are per model, so the next turn rebuilds the cache. Exported
- *  so hosts and tests reference the shipped copy. */
+/** Cost notice shown when the user picks a DIFFERENT model: provider prompt
+ *  caches are per model, so the next turn rebuilds the cache — said here in
+ *  user words (time + money), never cache mechanics. Exported so hosts and
+ *  tests reference the shipped copy. */
 export const MODEL_SWITCH_CACHE_NOTICE =
-  'Switching the model starts a fresh context cache — the next turn is billed at full input rates while the cache rebuilds.'
+  'Switching the model makes the next reply re-read the whole conversation, so it takes a little longer and costs more.'
 
-/** Milder cache-cost notice for the first tool/skill/MCP/namespace toggle in
- *  one menu-open: the tool catalog renders inside the cached prompt slice. */
+/** Milder cost notice for the first tool/skill toggle in one menu-open: the
+ *  tool catalog renders inside the cached prompt slice. */
 export const CAPABILITY_TOGGLE_CACHE_NOTICE =
-  'Changing tools or skills re-caches part of the context at full input cost on the next turn.'
+  'Changing tools or skills makes the next reply re-read part of the conversation, which adds a small one-time cost.'
 
 /** The confirm picker's choices — the decision moment IS the policy picker. */
 export const CONFIRM_APPLY_NOW = 'Apply now'
 export const CONFIRM_APPLY_NEXT_CONVERSATION = 'Apply from next conversation'
-export const CONFIRM_APPLY_WHEN_COLD = 'Apply when cache is cold'
+export const CONFIRM_APPLY_WHEN_COLD = 'Apply later, when it costs nothing extra'
 export const CONFIRM_REMEMBER = 'Remember my choice'
-export const PENDING_NEXT_CONVERSATION_NOTICE = 'A saved change applies from your next conversation.'
-export const PENDING_WHEN_COLD_NOTICE = 'A saved change applies when the context cache is cold.'
+export const PENDING_NEXT_CONVERSATION_NOTICE = 'Your change is saved — it applies from your next conversation.'
+export const PENDING_WHEN_COLD_NOTICE = 'Your change is saved — it applies at the next moment it costs nothing extra.'
 
 /** One menu section. Ordered ascending by `order`; each renders its own rows
  *  (or null to stay hidden). Extension point: new capability surfaces slot in
@@ -103,6 +105,7 @@ function ChevronIcon({ open }: { open: boolean }) {
 function MenuRow({
   label,
   sub,
+  hint,
   checked,
   onToggle,
   expandable,
@@ -114,6 +117,9 @@ function MenuRow({
 }: {
   label: ReactNode
   sub?: string
+  /** Tooltip-only detail (config identifiers and the like) — never rendered
+   *  in the default view. `sub` wins as the tooltip when both are set. */
+  hint?: string
   checked: 'on' | 'off' | 'partial'
   onToggle: () => void
   expandable?: boolean
@@ -131,7 +137,7 @@ function MenuRow({
         role="menuitemcheckbox"
         aria-checked={checked === 'on' ? 'true' : checked === 'partial' ? 'mixed' : 'false'}
         className="k-menu-row-main"
-        title={sub || undefined}
+        title={sub || hint || undefined}
         onClick={onToggle}
       >
         <span className="k-menu-row-text">
@@ -277,6 +283,18 @@ function firstLine(text: string): string {
   return String(text || '').split('\n')[0].trim()
 }
 
+/** Every child row titles itself in words (the declared label, else the
+ *  humanized token); the raw token demotes to a small mono hint — tokens are
+ *  never titles, even inside expanded details. */
+function EntryTitle({ name, label }: { name: string; label?: string }) {
+  return (
+    <>
+      {humanizeEntryTitle({ name, label })}
+      <code className="k-menu-entry-token">{name}</code>
+    </>
+  )
+}
+
 function namespaceLabel(namespace: string, styles: NamespaceStyleMap): string {
   const style = namespaceStyleForKey(namespace, styles)
   const label = (style?.label || namespace).trim()
@@ -328,7 +346,7 @@ function ModelsSection({ vm }: ComposerMenuSectionContext) {
                 {pendingModel && pending?.model && pending.model.model === row.model ? <PendingTag /> : null}
               </>
             }
-            sub={`${row.provider} · ${row.model}`}
+            hint={`${row.provider} · ${row.model}`}
             checked={active ? 'on' : 'off'}
             onToggle={() => {
               if (active) return
@@ -443,7 +461,7 @@ function ToolGroupsSection({ inventory, disabled, toggle, pending, spotlight, on
                   <MenuRow
                     key={tool.name}
                     child
-                    label={<code>{tool.name}</code>}
+                    label={<EntryTitle name={tool.name} />}
                     sub={firstLine(tool.description)}
                     checked={isToolDisabled(disabled, group.alias, tool.name) ? 'off' : 'on'}
                     onToggle={() => toggle(toolTogglePatch(group, disabled, tool.name))}
@@ -464,7 +482,7 @@ function McpSection({ inventory, disabled, toggle }: CapabilityRowsProps) {
   if (!inventory.mcp.length) return null
   return (
     <div>
-      <SectionTitle>MCP servers</SectionTitle>
+      <SectionTitle>Extensions</SectionTitle>
       {inventory.mcp.map((server) => {
         const entries = server.tool_entries ?? []
         const isOpen = Boolean(expanded[server.server_id])
@@ -483,7 +501,7 @@ function McpSection({ inventory, disabled, toggle }: CapabilityRowsProps) {
                   <MenuRow
                     key={tool.name}
                     child
-                    label={<code>{tool.name}</code>}
+                    label={<EntryTitle name={tool.name} />}
                     sub={firstLine(tool.description)}
                     checked={isMcpToolDisabled(disabled, server.server_id, tool.name) ? 'off' : 'on'}
                     onToggle={() => toggle(mcpToolTogglePatch(server, disabled, tool.name))}
@@ -543,16 +561,7 @@ function RealmEntryRow({
   return (
     <MenuRow
       child
-      label={
-        entry.label
-          ? (
-              <>
-                {entry.label}
-                <code className="k-menu-entry-token">{entry.name}</code>
-              </>
-            )
-          : <code>{entry.name}</code>
-      }
+      label={<EntryTitle name={entry.name} label={entry.label} />}
       sub={sub || undefined}
       checked={isNamespaceEntryDisabled(disabled, namespace, entryKey) ? 'off' : 'on'}
       onToggle={() => toggle(namespaceEntryTogglePatch(namespace, entryKeys, disabled, entryKey))}
@@ -614,24 +623,30 @@ function RequirementLine({ requirement }: {
     openFallback()
   }
   const hasAffordance = Boolean(targetSurface || url)
+  const statusChip = requirement.status === 'granted'
+    ? <span className="k-menu-tag k-menu-tag-ok">granted</span>
+    : requirement.status === 'missing'
+      ? <span className="k-menu-tag k-menu-tag-consent">missing</span>
+      : null
   return (
     <div className="k-menu-row k-menu-row-child k-menu-requirement">
       <span className="k-menu-requirement-text" title={`${heading} — ${requirement.description}`}>
         <span className="k-menu-requirement-head">{heading}</span>
         <span className="k-menu-requirement-desc">{requirement.description}</span>
       </span>
-      <span className="k-menu-requirement-aside">
-        {requirement.status === 'granted' ? (
-          <span className="k-menu-tag k-menu-tag-ok">granted</span>
-        ) : requirement.status === 'missing' ? (
-          <span className="k-menu-tag k-menu-tag-consent">missing</span>
-        ) : null}
-        {hasAffordance ? (
-          <button type="button" className="k-menu-consent" onClick={onActivate}>
-            {affordanceLabel}
-          </button>
-        ) : null}
-      </span>
+      {/* A purely informational requirement stays one quiet sentence — the
+          aside (and its flex gap) exists only when there is a state to show
+          or a surface that genuinely changes access. */}
+      {statusChip || hasAffordance ? (
+        <span className="k-menu-requirement-aside">
+          {statusChip}
+          {hasAffordance ? (
+            <button type="button" className="k-menu-consent" onClick={onActivate}>
+              {affordanceLabel}
+            </button>
+          ) : null}
+        </span>
+      ) : null}
     </div>
   )
 }
@@ -653,31 +668,19 @@ type RealmEntryItem = {
  *  toggle, no consent chip — nothing clickable a user cannot act on. A
  *  DECLARED exclusion renders its own reason ("Reading rides the context
  *  tools — the agent pulls refs directly") — the capability is served, by
- *  design, through another path. An undeclared one reuses the denial card's
- *  admin phrasing; its tooltip names the exact descriptor key an admin
- *  would change. */
-function ExcludedEntryRow({ namespace, entry }: { namespace: string; entry: RealmEntryItem }) {
+ *  design, through another path. The admin fix path is NOT restated here:
+ *  it lives once, on the summary line's tooltip. */
+function ExcludedEntryRow({ entry }: { entry: RealmEntryItem }) {
   const note = String(entry.excluded_note || '').trim()
+  const sub = [entry.description, note].filter(Boolean).join(' · ')
   return (
-    <div
-      className="k-menu-row k-menu-row-child k-menu-row-excluded"
-      {...(note ? {} : { title: `An app admin can enable it under namespaces.${namespace}.allowed` })}
-    >
+    <div className="k-menu-row k-menu-row-child k-menu-row-excluded">
       <span className="k-menu-row-static">
         <span className="k-menu-row-text">
           <span className="k-menu-row-label">
-            {entry.label
-              ? (
-                  <>
-                    {entry.label}
-                    <code className="k-menu-entry-token">{entry.name}</code>
-                  </>
-                )
-              : <code>{entry.name}</code>}
+            <EntryTitle name={entry.name} label={entry.label} />
           </span>
-          <span className="k-menu-row-sub">
-            {[entry.description, note || 'an app admin can enable it'].filter(Boolean).join(' · ')}
-          </span>
+          {sub ? <span className="k-menu-row-sub">{sub}</span> : null}
         </span>
       </span>
     </div>
@@ -743,9 +746,9 @@ function ExcludedSummary({ namespace, excluded }: { namespace: string; excluded:
   const [open, setOpen] = useState(false)
   if (!excluded.length) return null
   const count = excluded.length
-  // When EVERY excluded entry declares its reason, the collapsed line speaks
-  // design, not a pending admin task; a single undeclared entry keeps the
-  // admin affordance visible.
+  // When EVERY excluded entry declares its reason, the collapsed line says the
+  // work is covered elsewhere; otherwise the visible line stays neutral and
+  // the admin fix path lives HERE, once, in the tooltip (never in the rows).
   const allDeclared = excluded.every((item) => String(item.excluded_note || '').trim())
   return (
     <div className="k-menu-excluded-summary">
@@ -755,19 +758,19 @@ function ExcludedSummary({ namespace, excluded }: { namespace: string; excluded:
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
         title={allDeclared
-          ? 'These operations ride other paths by design — each row says which'
-          : `These operations exist but this agent isn't set up to use them — an app admin can enable them under namespaces.${namespace}.allowed`}
+          ? 'Covered through other tools — each row says which'
+          : `An app admin can enable these for this agent (namespaces.${namespace}.allowed)`}
       >
         <span className="k-menu-card-line">
           {count} more operation{count === 1 ? '' : 's'} {allDeclared
-            ? `ride${count === 1 ? 's' : ''} other paths by design`
-            : 'exist, ready for an app admin to enable'}
+            ? 'covered through other tools'
+            : 'available to add'}
         </span>
         <span className="k-menu-excluded-chevron"><ChevronIcon open={open} /></span>
       </button>
       {open
         ? excluded.map((item) => (
-            <ExcludedEntryRow key={item.name} namespace={namespace} entry={item} />
+            <ExcludedEntryRow key={item.name} entry={item} />
           ))
         : null}
     </div>
@@ -826,7 +829,7 @@ function ServicesSection({ inventory, disabled, toggle, namespaceStyles, spotlig
               />
             ) : null}
             {isOpen && !realm ? (
-              <ServiceCardLine text="This service hasn't described itself yet." />
+              <ServiceCardLine text="This service turns on and off as one." />
             ) : null}
             {isOpen
               ? groups.map((group) => (
@@ -857,7 +860,7 @@ function ConnectorsSection({ vm, close }: ComposerMenuSectionContext) {
   if (!vm.connections.available()) return null
   return (
     <div>
-      <SectionTitle>Connectors</SectionTitle>
+      <SectionTitle>Connections</SectionTitle>
       <div className="k-menu-row">
         <button
           type="button"
@@ -1132,7 +1135,7 @@ export function useCapabilityPickerBody({
       </div>
     </>
   ) : (
-    <div className="k-menu-status">This agent uses its full configured set.</div>
+    <div className="k-menu-status">Everything this agent uses is always on.</div>
   )
 }
 
@@ -1252,6 +1255,13 @@ export function ComposerMenu({
 
   const close = () => setOpen(false)
 
+  /* Choices here are PER AGENT, so every shell names the agent it configures
+   * (the inventory's agent id, else the widget's configured one). */
+  const agentName = vm.capabilities.inventory?.agent || vm.agentId || ''
+  const agentScopeLine = agentName
+    ? `what the ${agentName} agent may use for you`
+    : 'what this agent may use for you'
+
   const body = useCapabilityPickerBody({
     vm,
     namespaceStyles,
@@ -1285,7 +1295,10 @@ export function ComposerMenu({
           <div className="k-menu-backdrop" onClick={close} aria-hidden="true" />
           <div className="k-composer-menu" role="menu" aria-label="Tools and skills">
             <div className="k-menu-head">
-              <span className="k-menu-head-label">Capabilities</span>
+              <span className="k-menu-head-label">
+                Capabilities
+                {agentName ? <span className="k-menu-head-agent">· {agentName} agent</span> : null}
+              </span>
               <CanvasExpandButton
                 onClick={() => {
                   void openCapabilitiesOnHost(
@@ -1316,7 +1329,7 @@ export function ComposerMenu({
                 <div className="k-canvas-modal-head">
                   <div className="k-canvas-modal-title">
                     <span className="k-text">Capabilities</span>
-                    <span className="k-micro">what this agent may use for you</span>
+                    <span className="k-micro">{agentScopeLine}</span>
                   </div>
                   <button
                     type="button"
