@@ -33,6 +33,33 @@ consumer app
   renders through shared contracts
 ```
 
+## The Human Layer (Required Authoring Step)
+
+A realm ships with TWO readers: the agent (reads `about`/`object_schema` and
+works the grammar) and the user (reads the capability picker's service card
+and narrows the realm per operation/action). The card renders declared text
+only, so authoring includes the presentation:
+
+```text
+spec.metadata
+  presentation.about          purpose sentence in user terms
+  presentation.works_with     internal realm: what it operates on
+    (or presentation.third_party for a provider-backed realm)
+  presentation.operations     {op: {label, description}} in user terms
+  presentation.actions        {action: {label, description}}
+  object_kinds                {kind: one-liner}
+```
+
+Provider-backed realms (acting through a user's external account) also
+declare `metadata.connected_accounts` — provider/connector ids, claims,
+`claims_by_operation` where the realm truly differentiates, and human
+`claim_labels`. Field-by-field reference:
+[Providers — The Presentation Layer](../../sdk/namespace-services/providers-README.md);
+what users see and control:
+[Per-User Agent Capabilities](../../sdk/solutions/user-settings/capabilities-README.md);
+consent semantics (demand-driven at the attempt, scoped claims, deep links):
+[Delegated Accounts](../../sdk/solutions/connections/delegated-accounts/delegated-accounts-README.md).
+
 ## Object Actions
 
 Scene open routing uses provider-backed actions:

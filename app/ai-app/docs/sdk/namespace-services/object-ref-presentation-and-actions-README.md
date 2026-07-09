@@ -47,6 +47,11 @@ provider resolver still owns open/download/preview semantics.
 
 ## Boundary
 
+Scope note: this doc is about presenting one OBJECT (a search hit, a pinned
+card, a viewer row). The realm-level presentation a service card renders
+(purpose, works-with, operation/action labels) is a different declaration —
+see [Providers — The Presentation Layer](providers-README.md).
+
 ```text
 component / scene / canvas / chat
   owns: mount, display, drag/drop, selected action UI

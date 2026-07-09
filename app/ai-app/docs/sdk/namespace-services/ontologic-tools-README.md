@@ -233,6 +233,17 @@ them without reading each schema in detail.
 rules are **shipped** on the task realm. Other surface improvements below remain
 proposed.
 
+## Teach It To Humans Too
+
+The schema teaches the MODEL; the same spec now also teaches the USER: the
+capability picker renders the realm's declared presentation (purpose,
+works-with, human labels per operation/action, object-kind one-liners) as a
+service card the user understands and narrows. A realm is well-modeled when
+both readers pass: the agent can work it from `about`/`object_schema`, and a
+user can read the card and control it. Declarations in
+[Providers — The Presentation Layer](providers-README.md); rendering in
+[Per-User Agent Capabilities](../solutions/user-settings/capabilities-README.md).
+
 ## Improvements (PROPOSED — not shipped)
 
 These tighten the surface without adding domain tools. They are conventions and

@@ -549,6 +549,19 @@ links, the agent then cites that returned provider ref in a separate
 `named_services.upsert_object` call. Hosting the file and mutating the domain
 object are different operations.
 
+## Consent On The Named-Service Path
+
+A provider-backed realm's tool call can fail on a missing connected-account
+claim. The error is the standard structured consent envelope
+(`needs_connected_account_consent`: scoped claims, labeled candidates,
+absolute Connection Hub deep link, retry hint, agent instructions), and the
+in-chat path records the demand + raises the scoped banner exactly like a
+dedicated tool — consent is demand-driven at the ATTEMPT, never a turn-start
+sweep. Semantics owned by
+[Delegated Accounts](../solutions/connections/delegated-accounts/delegated-accounts-README.md);
+what users see and narrow in the picker by
+[Per-User Agent Capabilities](../solutions/user-settings/capabilities-README.md).
+
 ## Resolver Use
 
 Canvas and chat object actions use a configured resolver registry:

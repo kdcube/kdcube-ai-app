@@ -129,6 +129,36 @@ These adapters do not own task semantics. They only know:
   Discovery can find the provider when a request happens
 ```
 
+## The Two Readers Of One Self-Description
+
+The discovery record's spec is read by two very different consumers, and a
+realm integrates fully only when it serves both:
+
+```text
+spec (rides discovery)
+  about/schema/intro ------------> AGENT: learns the grammar and works the realm
+  metadata.presentation
+  metadata.object_kinds ---------> USER: the capability picker's service card —
+  metadata.connected_accounts       purpose, works-with, human entry labels,
+                                    per-entry access lines, consent chips,
+                                    per-operation/action narrowing
+```
+
+- The agent path is this doc's flows below (roster intro, tool catalog,
+  object operations).
+- The human path: the picker resolves the same discovery entry, renders the
+  declared presentation verbatim (an undeclared realm shows the honest
+  "hasn't described itself yet"), decorates rows with connected-account
+  coverage derived from `metadata.connected_accounts`, and enforces the
+  user's per-operation/action denies at named-service dispatch. Owned by
+  [Per-User Agent Capabilities](../solutions/user-settings/capabilities-README.md).
+- Consent is DEMAND-DRIVEN: nothing is asked at turn start; the tool attempt
+  that hits a missing provider claim returns the structured consent envelope
+  (scoped claims, labeled candidates, an absolute Connection Hub deep link,
+  retry hint, agent instructions) and the chat raises the scoped banner.
+  Semantics owned by
+  [Delegated Accounts](../solutions/connections/delegated-accounts/delegated-accounts-README.md).
+
 ## Search Scope Discovery And Tool Catalog Flow
 
 Search scopes are provider-declared object spaces. They are carried by provider

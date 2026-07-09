@@ -382,6 +382,86 @@ For where the intro lands in the registry and how it is read back, see
 [Discovery Registry](discovery-README.md). For how a consumer renders the roster
 into agent instructions, see [Clients](clients-README.md).
 
+### The Presentation Layer (The Human Reader)
+
+A realm now has TWO readers. The agent reads `provider.about` + `object.schema`
+and works the service; a USER reads the capability picker's service card and
+must understand — and control — the same contract. The card renders ONLY
+declared text, so the human layer is part of authoring, not decoration:
+missing text is a realm defect the UI never papers over.
+
+Declare it in the spec's `metadata` (it rides discovery with the rest of the
+spec):
+
+```python
+metadata={
+    "presentation": {
+        "about": "Save, search, and manage the durable notes this workspace keeps about you.",
+        # INTERNAL realm: works_with states what it operates on.
+        "works_with": "Works with your saved memories in this workspace.",
+        # Provider-backed realm instead declares the dependency plainly:
+        #   "third_party": "Works with your mailbox through your connected Google account.",
+        "operations": {
+            "object.search": {"label": "Search memories", "description": "Search your saved memory notes."},
+            "object.upsert": {"label": "Save a memory note", "description": "Save a new memory note or update one of yours."},
+        },
+        "actions": {
+            "retire": {"label": "Retire a memory", "description": "Retire a memory note that no longer applies."},
+        },
+    },
+    "object_kinds": {
+        "memory.record": "One durable memory note this workspace keeps about you.",
+    },
+    # Machine list of the named actions (name -> description) for catalog
+    # consumers; usually derived from the schema's actions block.
+    "actions": {"retire": "Retire a memory note that no longer applies."},
+}
+```
+
+| Key | What it renders |
+| --- | --- |
+| `presentation.about` | The purpose line under the realm label, in user terms. |
+| `presentation.works_with` / `presentation.third_party` | The works-with line: what an internal realm operates on, or the third-party dependency of a provider-backed realm. Declare exactly one; neither declared = no line. |
+| `presentation.operations` / `presentation.actions` | Human label + user-terms description per entry ("Send email", "Pin to a board"). |
+| `object_kinds` (name → one-liner) | The card's compact objects line. |
+
+Provider-backed realms additionally declare their connected-account
+requirements (below); internal realms declare none — nothing is invented.
+Shipped exemplars: `integrations/mail/named_service.py` (differentiated
+claims), `integrations/slack/named_service.py` (flat claim set),
+`context/memory/named_service.py` (internal). The card-side rendering and
+the granularity users control are owned by
+[Per-User Agent Capabilities](../solutions/user-settings/capabilities-README.md).
+
+### Connected-Account Requirements (Provider-Backed Realms)
+
+A realm whose operations act through a user's external account declares the
+requirement machine-readably in spec `metadata` — the same constants its own
+claim resolution uses:
+
+```python
+"connected_accounts": [
+    {
+        "provider_id": "google",
+        "connector_app_id": "gmail",
+        "provider_label": "Google",
+        "claims": ["gmail:read", "gmail:send"],
+        # Declare per-operation differentiation ONLY when real; a flat
+        # `claims` list is shown whole (consumers never invent granularity).
+        "claims_by_operation": {
+            "object.list": ["gmail:read"],
+            "object.action.send": ["gmail:send"],
+        },
+        "claim_labels": {"gmail:read": "read mail", "gmail:send": "send mail"},
+    }
+],
+```
+
+Catalog consumers derive coverage/consent decoration from this block; the
+consent semantics themselves (demand-driven at the ATTEMPT, scoped claims,
+deep links) are owned by
+[Delegated Accounts](../solutions/connections/delegated-accounts/delegated-accounts-README.md).
+
 ### Search Scope Filters And Relevance Tuning
 
 A search scope may declare a `filters` schema — the params a client can pass to

@@ -71,7 +71,7 @@ Each provider stored in discovery is a `NamedServiceDiscoveryEntry`: a provider
 | `label` | Short human label. |
 | `description` | Human description. |
 | `intro` | Roster intro string for the namespace (see the read path below). |
-| `metadata` | Provider metadata; `metadata.priority` participates in ranking. |
+| `metadata` | Provider metadata; `metadata.priority` participates in ranking. Also carries the realm's human layer for catalog consumers: `presentation` (purpose, works-with, entry labels/descriptions), `object_kinds` one-liners, an `actions` name→description map, and — for provider-backed realms — `connected_accounts` requirements (with `claims_by_operation`/`claim_labels` where real). Declared in the spec, published verbatim (see [Providers](providers-README.md)). |
 
 Compact reference for one entry:
 

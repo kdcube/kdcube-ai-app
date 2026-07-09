@@ -158,6 +158,14 @@ In that example:
 Block-production and rendering policies decide which refs become visible in
 timeline or ANNOUNCE.
 
+Two lane-protocol facts hold for every authored event: the TRANSPORT kind is
+uniformly `external_event` (the semantic type rides `payload.event.type` —
+publishing a semantic type as the transport kind makes the event invisible to
+the fold), and folding is TOTAL — an event the fold cannot render still
+advances the handler cursor and is acked, so it can never wedge a turn's
+completion. Details in
+[App Conversation Events](../bundle/bundle-conversation-events-and-react-output-README.md).
+
 ## Built-In User Events
 
 Built-in conversation events are external events at ingress. ReAct projects

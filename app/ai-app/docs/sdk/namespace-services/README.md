@@ -132,7 +132,7 @@ and provider-backed refs gain a live cross-app/object-owner bridge.
 | --- | --- |
 | [Components Ecosystem Architecture](../solutions/ecosystem-component/components-ecosystem-README.md) | End-to-end architecture map for provider apps, consumer apps, scene, ReAct, Pinboard, chat, events, data bus, and config. |
 | [Ontologic Tools](ontologic-tools-README.md) | The model-facing tool surface for operating any realm by satisfying schemas: how the nine tools compose, the schema `tools` block as affordance, and the per-field `update` strategy. |
-| [Providers](providers-README.md) | Provider contract, operation vocabulary, auth context, and transport adapters. |
+| [Providers](providers-README.md) | Provider contract, operation vocabulary, auth context, transport adapters, the presentation layer (the realm's human reader), and connected-account requirement declarations. |
 | [Clients](clients-README.md) | Client config, tool exposure, current resolver behavior, and client ids. |
 | [Integration](integration-README.md) | Visual provider-host/client-app flow using task-tracker and workspace. |
 | [Discovery Registry](discovery-README.md) | The per-tenant/project Redis discovery table: the provider record, key schema, TTL/expiry, the registration write path, and the rule that reads go through the discovery module. |

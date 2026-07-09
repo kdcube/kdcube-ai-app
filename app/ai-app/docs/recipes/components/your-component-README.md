@@ -15,6 +15,8 @@ your app
   server side
     optional @api / @mcp surface
     optional named-service provider
+      + presentation metadata (the service card's human layer)
+      + connected_accounts requirements when it acts through a user's account
     optional @cron / @on_job producer
     optional widget static route
     optional Event Bus/Data Bus producers
@@ -125,6 +127,17 @@ standalone
 ```
 
 A widget that already owns a stream should not also subscribe through the scene unless the config explicitly asks for both.
+
+## Named-Service Provider Extras
+
+If your component registers a realm, authoring is complete only when BOTH
+readers pass: the agent works it from `about`/`object_schema`, and the
+capability picker's service card explains it (purpose, works-with, human
+labels per operation/action, object-kind one-liners — declared in
+`spec.metadata`, never invented by UI). Provider-backed realms also declare
+their connected-account requirements. See
+[Recipe: Named-Service App](named-service-README.md) and
+[Providers — The Presentation Layer](../../sdk/namespace-services/providers-README.md).
 
 ## Related Docs
 
