@@ -6,6 +6,7 @@ import {
     CircleDollarSign,
     CreditCard,
     Database,
+    DatabaseZap,
     MessageSquareMore,
 } from "lucide-react";
 import IconContainer from "../../components/IconContainer.tsx";
@@ -28,7 +29,13 @@ import {
 import {ArtifactsPanel} from "./ArtifactsPanel.tsx";
 import {SidePanel, useSidePanelContext} from "./sidePanelContext.ts";
 import {useGetBundleWidgets} from "../bundles/widgetReducer.tsx";
+import {selectMainViewActive} from "../bundles/bundlesSlice.ts";
 import {getBundleWidgetPanelId} from "../bundles/utils.ts";
+import {SERVICES_APP_ID} from "../widgetPanels/widgetPanels.ts";
+
+// The services app's storage browser rides the side rail like the other
+// platform admin panels.
+const STORAGE_WIDGET_ALIAS = "bundle_storage";
 
 interface MenuButtonProps {
     children: ReactNode | ReactNode[];
@@ -60,7 +67,8 @@ const ChatSidePanel = () => {
 
     const sidePanelContext = useSidePanelContext()
 
-    const {currentBundleId, widgets, defaultChat} = useGetBundleWidgets()
+    const {currentBundleId, widgets} = useGetBundleWidgets()
+    const mainViewActive = useAppSelector(selectMainViewActive)
 
     const visiblePanel = useMemo(() => {
         return sidePanelContext.panelId
@@ -85,9 +93,10 @@ const ChatSidePanel = () => {
     }, [user])
 
     const bundlePanels = useMemo(() => {
-        // Apps without the chat surface show their widgets on the main scene;
-        // the side panel keeps only the kdcube-services panels for them.
-        if (!currentBundleId || !defaultChat) {
+        // An app showing its own main view keeps its widgets reachable as
+        // side panels (summoned by the header chips). The automatic scene
+        // carries its own widget chips, so scene apps skip these.
+        if (!currentBundleId || !mainViewActive) {
             return null
         }
         return widgets.map((widget) => {
@@ -98,7 +107,7 @@ const ChatSidePanel = () => {
                                       widgetAlias={widget.alias}
                                       className={"w-full h-full absolute left-0 top-0"}/>
         })
-    }, [currentBundleId, defaultChat, visiblePanel, widgets])
+    }, [currentBundleId, mainViewActive, visiblePanel, widgets])
 
     const [maxWidth, setMaxWidth] = useState<number>(window.innerWidth / 2)
 
@@ -167,6 +176,13 @@ const ChatSidePanel = () => {
                         onPanelButtonClick("redis_browser");
                     }}
                 >
+                    <IconContainer icon={DatabaseZap} size={1.5}/>
+                </MenuButton>
+                <MenuButton
+                    onClick={() => {
+                        onPanelButtonClick("storage");
+                    }}
+                >
                     <IconContainer icon={Database} size={1.5}/>
                 </MenuButton>
                 {showDebugControls && <MenuButton
@@ -199,6 +215,10 @@ const ChatSidePanel = () => {
                                            className={"w-full h-full absolute left-0 top-0"}/>
                         <EconomicUsagePanel visible={visiblePanel === "economic_usage"}
                                             className={"w-full h-full absolute left-0 top-0"}/>
+                        <BundleWidgetPanel visible={visiblePanel === "storage"}
+                                           bundleId={SERVICES_APP_ID}
+                                           widgetAlias={STORAGE_WIDGET_ALIAS}
+                                           className={"w-full h-full absolute left-0 top-0"}/>
                         {bundlePanels}
                         {showDebugControls && <DebugPanel visible={visiblePanel === "debug"}
                                                           className={"w-full h-full absolute left-0 top-0"}/>}

@@ -23,7 +23,7 @@ const BundleWidgetTag = "bundle_widget"
 
 // Platform admin apps are served by the always-running services app,
 // not by whichever app is currently the default.
-const SERVICES_APP_ID = "kdcube-services@1-0";
+export const SERVICES_APP_ID = "kdcube-services@1-0";
 
 export type GetWidgetParams = ChatScope
 export interface GetBundleWidgetParams extends ChatScope {

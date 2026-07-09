@@ -8,6 +8,7 @@ export type SidePanel =
     | "gateway"
     | "conv_browser"
     | "redis_browser"
+    | "storage"
     | "economic_usage"
     | "bundle_widget"
     | "debug"

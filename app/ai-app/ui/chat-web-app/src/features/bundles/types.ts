@@ -48,4 +48,5 @@ export interface BundlesInfo {
 
 export interface BundlesState {
     currentBundle: string | null;
+    mainViewActive: boolean;
 }

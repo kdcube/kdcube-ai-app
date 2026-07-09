@@ -9,12 +9,20 @@ const bundlesSlice = createSlice({
     name: "bundles",
     initialState: (): BundlesState => {
         return {
-            currentBundle: null
+            currentBundle: null,
+            mainViewActive: false
         }
     },
     reducers: {
         setCurrentBundle: (state, action: PayloadAction<string>): void => {
             state.currentBundle = action.payload;
+            state.mainViewActive = false;
+        },
+        // Whether the current app's own main view is shown as the app
+        // surface (probed by the host). Header widget chips and side widget
+        // panels accompany the main view; the automatic scene has its own.
+        setMainViewActive: (state, action: PayloadAction<boolean>): void => {
+            state.mainViewActive = action.payload;
         }
     },
     extraReducers: (builder) => {
@@ -44,9 +52,11 @@ const bundlesSlice = createSlice({
 })
 
 export const {
-    setCurrentBundle
+    setCurrentBundle,
+    setMainViewActive
 } = bundlesSlice.actions
 
 export const selectCurrentBundle = (state: RootState) => state.bundles.currentBundle
+export const selectMainViewActive = (state: RootState) => state.bundles.mainViewActive
 
 export default bundlesSlice.reducer

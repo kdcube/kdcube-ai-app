@@ -1,7 +1,9 @@
 import {useMemo} from "react";
 import IconContainer from "../../components/IconContainer.tsx";
 import {Blocks} from "lucide-react";
+import {useAppSelector} from "../../app/store.ts";
 import {useSidePanelContext} from "../chatSidePanel/sidePanelContext.ts";
+import {selectMainViewActive} from "../bundles/bundlesSlice.ts";
 import {getBundleWidgetPanelId} from "../bundles/utils.ts";
 import {getLucideIconComponent} from "../../components/DynamicLucideIcon/utils.ts";
 import {useGetBundleWidgets} from "../bundles/widgetReducer.tsx";
@@ -9,12 +11,14 @@ import {useGetBundleWidgets} from "../bundles/widgetReducer.tsx";
 const BundleControls = () => {
     const sidePanelContext = useSidePanelContext();
 
-    const {currentBundleId, widgets, defaultChat} = useGetBundleWidgets()
+    const {currentBundleId, widgets} = useGetBundleWidgets()
+    const mainViewActive = useAppSelector(selectMainViewActive)
 
     return useMemo(() => {
-        // Apps without the default chat surface show their widgets as the
-        // main scene's chips; header chips would duplicate them.
-        if (currentBundleId && widgets.length > 0 && defaultChat) {
+        // An app showing its own main view keeps its widgets reachable via
+        // header chips (side panels). The automatic scene carries its own
+        // widget chips, so scene apps skip the header set.
+        if (currentBundleId && widgets.length > 0 && mainViewActive) {
             return <div className={"flex flex-row items-center gap-1"}>
                 {widgets.map((widget) => {
                     const widgetPanelId = getBundleWidgetPanelId(currentBundleId, widget.alias)
@@ -39,7 +43,7 @@ const BundleControls = () => {
             </div>
         }
         return null
-    }, [currentBundleId, widgets, defaultChat, sidePanelContext])
+    }, [currentBundleId, widgets, mainViewActive, sidePanelContext])
 }
 
 export default BundleControls

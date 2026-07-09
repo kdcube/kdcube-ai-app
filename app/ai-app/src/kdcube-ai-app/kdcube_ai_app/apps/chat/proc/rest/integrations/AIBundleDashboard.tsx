@@ -862,7 +862,7 @@ const CardHeader: React.FC<{ title: string; subtitle?: string; action?: React.Re
                 <h2 className="text-[15px] font-semibold text-[#0D1E2C]">{title}</h2>
                 {subtitle && <p className="mt-1 text-[13px] text-[#3A5672] leading-relaxed">{subtitle}</p>}
             </div>
-            {action && <div className="pt-1">{action}</div>}
+            {action && <div className="shrink-0 pt-0.5">{action}</div>}
         </div>
     </div>
 );
@@ -888,7 +888,7 @@ const Button: React.FC<{
             type={type}
             onClick={onClick}
             disabled={disabled}
-            className={`px-3.5 py-2 rounded-[6px] text-sm font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#01BEB2]/40 disabled:opacity-50 disabled:cursor-not-allowed ${variants[variant]}`}
+            className={`inline-flex h-8 items-center px-3 rounded-[6px] text-[12.5px] font-semibold whitespace-nowrap transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#01BEB2]/40 disabled:opacity-50 disabled:cursor-not-allowed ${variants[variant]}`}
         >
             {children}
         </button>
@@ -2230,7 +2230,7 @@ const AIBundleDashboard: React.FC = () => {
                         title="Registered apps"
                         subtitle={`Current apps stored in the registry. ${authorityDescription} This replaces the runtime registry and descriptor-backed app props from that source.`}
                         action={
-                            <div className="flex gap-2">
+                            <div className="flex shrink-0 items-center gap-2">
                                 <Button variant="secondary" onClick={loadBundles}>Refresh</Button>
                                 <Button variant="secondary" onClick={reloadFromAuthority}>{reloadAuthorityLabel}</Button>
                                 <Button variant="secondary" onClick={cleanupBundles}>Cleanup old versions</Button>

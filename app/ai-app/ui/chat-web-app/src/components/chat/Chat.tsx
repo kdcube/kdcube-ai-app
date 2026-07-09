@@ -12,7 +12,7 @@ import ChatSidePanel from "../../features/chatSidePanel/ChatSidePanel.tsx";
 import ChatHeader from "../../features/header/ChatHeader.tsx";
 import AppScene from "../../features/bundles/AppScene.tsx";
 import useSharedConfigProvider from "../../features/sharedConfigProvider/sharedConfigProvider.tsx";
-import {selectCurrentBundle} from "../../features/bundles/bundlesSlice.ts";
+import {selectCurrentBundle, setMainViewActive} from "../../features/bundles/bundlesSlice.ts";
 import {selectProject, selectTenant} from "../../features/chat/chatSettingsSlice.ts";
 import {connectChat} from "../../features/chat/chatServiceMiddleware.ts";
 import SidePanelContext, {SidePanel, SidePanelContextValue} from "../../features/chatSidePanel/sidePanelContext.ts";
@@ -88,6 +88,10 @@ const SingleChatApp: React.FC = () => {
         if (!stayConnected)
             dispatch(connectChat())
     }, [dispatch, stayConnected]);
+
+    useEffect(() => {
+        dispatch(setMainViewActive(bundleUiAvailable === true))
+    }, [bundleUiAvailable, dispatch]);
 
 
     return useMemo(() => {
