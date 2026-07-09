@@ -670,24 +670,45 @@ def _normalize_requirement_declaration(
     surface = raw.get("surface")
     if isinstance(surface, Mapping):
         kind = _norm(surface.get("kind"))
+        # A declared on-scene target lets the affordance prefer summoning a real
+        # scene window over a new-tab navigation; the URL stays the honest
+        # fallback for hosts that declare no such surface.
+        target_surface = _norm(surface.get("target_surface") or surface.get("surface"))
+        surface_ui_event = surface.get("ui_event")
+        surface_ui_event = dict(surface_ui_event) if isinstance(surface_ui_event, Mapping) else {}
+
+        def _with_scene(entry: dict[str, Any]) -> dict[str, Any]:
+            if target_surface:
+                entry["target_surface"] = target_surface
+                if surface_ui_event:
+                    entry["ui_event"] = surface_ui_event
+            return entry
+
         if kind == "widget" and tenant and project:
             bundle_id = _norm(surface.get("bundle_id"))
             widget_alias = _norm(surface.get("widget_alias"))
             if bundle_id and widget_alias:
-                req_out["surface"] = {
+                req_out["surface"] = _with_scene({
                     "kind": "url",
                     "url": (
                         f"/api/integrations/bundles/{tenant}/{project}/"
                         f"{bundle_id}/widgets/{widget_alias}"
                     ),
                     "label": _norm(surface.get("label")) or "Open",
-                }
+                })
         elif kind == "url" and _norm(surface.get("url")):
-            req_out["surface"] = {
+            req_out["surface"] = _with_scene({
                 "kind": "url",
                 "url": _norm(surface.get("url")),
                 "label": _norm(surface.get("label")) or "Open",
-            }
+            })
+        elif kind in ("scene", "surface") and target_surface:
+            # A pure on-scene affordance (optional URL fallback for standalone).
+            entry = {"kind": "url", "label": _norm(surface.get("label")) or "Open"}
+            url = _norm(surface.get("url"))
+            if url:
+                entry["url"] = url
+            req_out["surface"] = _with_scene(entry)
         elif kind == "capabilities":
             req_out["surface"] = {"kind": "capabilities"}
     return req_out

@@ -88,6 +88,21 @@ export function openConnectionsOnHost(
   return emitSurfaceOpenAndAwaitAck(surface, ui_event, 'connhub', options)
 }
 
+/** Ask the HOST to summon an arbitrary declared scene surface (a requirement
+ *  affordance's on-scene target, e.g. `task_tracker.issue_list`). Same ack
+ *  semantics as `openCapabilitiesOnHost` — resolves true only on an explicit
+ *  positive ack, so the caller falls back to its absolute-URL new tab on
+ *  false. Never throws. */
+export function openSurfaceOnHost(
+  targetSurface: string,
+  ui_event: Record<string, unknown> = {},
+  options: { source?: string; widget?: string; timeoutMs?: number; win?: WindowLike | null } = {},
+): Promise<boolean> {
+  const surface = String(targetSurface || '').trim()
+  if (!surface) return Promise.resolve(false)
+  return emitSurfaceOpenAndAwaitAck(surface, ui_event, 'surface', options)
+}
+
 /** Shared emitter: post one `open` surface command to the parent frame and
  *  resolve true only on an explicit `{command_id, ok: true}` ack. */
 function emitSurfaceOpenAndAwaitAck(

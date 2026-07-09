@@ -15,7 +15,7 @@
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { chatActions, consentOpenForClaims, openCapabilitiesOnHost } from '@kdcube/components-core/chat'
+import { chatActions, consentOpenForClaims, openCapabilitiesOnHost, openSurfaceOnHost } from '@kdcube/components-core/chat'
 import type { AgentCapabilityConsent, ConnectionsConsentOpen } from '@kdcube/components-core/chat'
 import { useAppDispatch } from '../../support/hooks.ts'
 import type {
@@ -24,16 +24,18 @@ import type {
   AgentSelectionPatch,
   AgentSelectionPending,
   NamespaceStyleMap,
+  RealmGroupView,
 } from '@kdcube/components-core/chat'
 import {
+  buildRealmGroups,
   isMcpToolDisabled,
   isModelPicked,
   mergeSelectionPatches,
   isNamespaceEntryDisabled,
   isSkillDisabled,
   isToolDisabled,
-  namespaceEntryKey,
   namespaceEntryTogglePatch,
+  namespaceGroupTogglePatch,
   namespaceState,
   namespaceTogglePatch,
   preferredMenuPresentation,
@@ -573,31 +575,61 @@ function ServiceCardLine({ text, title }: { text: string; title?: string }) {
 }
 
 /** A declared access requirement inside the expanded service card — the
- *  proactive twin of the denial card: what the agent needs BEFORE chatting,
- *  with the realm's own affordance (deep link) when one honestly exists and
- *  a status chip only when the platform resolved one. */
+ *  proactive twin of the denial card: what the agent needs BEFORE chatting.
+ *  The text and the affordance sit IN-FLOW (the chip never overlaps the text):
+ *  the description flexes and truncates, the affordance keeps its own space.
+ *  The affordance prefers an on-scene summon when the host declared a target
+ *  surface for the requirement's widget, and falls back to opening its
+ *  absolute URL in a new tab. */
 function RequirementLine({ requirement }: {
-  requirement: { id: string; label?: string; description: string; status?: string; surface?: { kind: string; url?: string; label?: string } }
+  requirement: {
+    id: string
+    label?: string
+    description: string
+    status?: string
+    surface?: { kind: string; url?: string; label?: string; target_surface?: string; ui_event?: Record<string, unknown> }
+  }
 }) {
   const heading = requirement.label || requirement.id
-  const url = requirement.surface?.kind === 'url' ? requirement.surface.url || '' : ''
+  const surface = requirement.surface
+  const url = surface?.kind === 'url' ? surface.url || '' : ''
+  const targetSurface = String(surface?.target_surface || '').trim()
+  const affordanceLabel = surface?.label || 'Open'
+  const openFallback = () => {
+    if (!url) return
+    try {
+      window.open(url, '_blank', 'noopener,noreferrer')
+    } catch {
+      /* pop-up blocked or standalone context — nothing else to do */
+    }
+  }
+  const onActivate = () => {
+    if (targetSurface) {
+      void openSurfaceOnHost(targetSurface, surface?.ui_event ?? {}, { source: 'capabilities-requirement' })
+        .then((acked) => {
+          if (!acked) openFallback()
+        })
+      return
+    }
+    openFallback()
+  }
+  const hasAffordance = Boolean(targetSurface || url)
   return (
-    <div className="k-menu-row k-menu-row-child">
-      <span className="k-menu-row-static">
-        <span className="k-menu-card-line" title={`${heading} — ${requirement.description}`}>
-          Needs: {heading} — {requirement.description}
-        </span>
+    <div className="k-menu-row k-menu-row-child k-menu-requirement">
+      <span className="k-menu-requirement-text" title={`${heading} — ${requirement.description}`}>
+        <span className="k-menu-requirement-head">{heading}</span>
+        <span className="k-menu-requirement-desc">{requirement.description}</span>
       </span>
-      <span className="k-menu-row-state">
+      <span className="k-menu-requirement-aside">
         {requirement.status === 'granted' ? (
           <span className="k-menu-tag k-menu-tag-ok">granted</span>
         ) : requirement.status === 'missing' ? (
           <span className="k-menu-tag k-menu-tag-consent">missing</span>
         ) : null}
-        {url ? (
-          <a className="k-menu-consent" href={url} target="_blank" rel="noreferrer">
-            {requirement.surface?.label || 'Open'}
-          </a>
+        {hasAffordance ? (
+          <button type="button" className="k-menu-consent" onClick={onActivate}>
+            {affordanceLabel}
+          </button>
         ) : null}
       </span>
     </div>
@@ -614,30 +646,6 @@ type RealmEntryItem = {
   via?: string
   claims?: string[]
   enabled_for_agent?: boolean
-}
-
-/** A namespace's card entries in realm order. TOGGLEABLE internals are the
- *  entries the agent config enables; advertised-but-excluded entries
- *  (`enabled_for_agent: false`) ride along for rendering but never
- *  contribute toggle keys or namespace state. */
-function namespaceInternals(entry: { realm?: { operations?: RealmEntryItem[]; actions?: RealmEntryItem[] } }): {
-  item: RealmEntryItem
-  key: string
-  excluded: boolean
-}[] {
-  const realm = entry.realm
-  return [
-    ...(realm?.operations ?? []).map((item) => ({
-      item,
-      key: namespaceEntryKey('operation', item.name),
-      excluded: item.enabled_for_agent === false,
-    })),
-    ...(realm?.actions ?? []).map((item) => ({
-      item,
-      key: namespaceEntryKey('action', item.name),
-      excluded: item.enabled_for_agent === false,
-    })),
-  ]
 }
 
 /** An advertised-but-excluded realm entry: present, greyed, honest. No
@@ -663,10 +671,92 @@ function ExcludedEntryRow({ namespace, entry }: { namespace: string; entry: Real
               : <code>{entry.name}</code>}
           </span>
           <span className="k-menu-row-sub">
-            {[entry.description, 'not enabled for this agent — an app admin can enable it'].filter(Boolean).join(' · ')}
+            {[entry.description, 'an app admin can enable it'].filter(Boolean).join(' · ')}
           </span>
         </span>
       </span>
+    </div>
+  )
+}
+
+/** A capability GROUP (Read / Create & update / Actions) inside a service
+ *  card: the group heading + a human summary of what it covers, toggleable as
+ *  ONE unit. The grammar entries demote to an expandable "Details" the curious
+ *  user opens — no tokens until then. */
+function RealmGroupRow({
+  namespace,
+  entryKeys,
+  group,
+  disabled,
+  toggle,
+  consent,
+  onConsent,
+}: {
+  namespace: string
+  entryKeys: string[]
+  group: RealmGroupView
+  disabled: AgentSelectionDisabled
+  toggle: (patch: AgentSelectionPatch) => void
+  consent?: AgentCapabilityConsent
+  onConsent?: (open: ConnectionsConsentOpen) => void
+}) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="k-menu-group">
+      <MenuRow
+        child
+        label={group.label}
+        sub={group.summary}
+        checked={namespaceState(namespace, group.keys, disabled)}
+        onToggle={() => toggle(namespaceGroupTogglePatch(namespace, entryKeys, group.keys, disabled))}
+        expandable={group.entries.length > 0}
+        expanded={open}
+        onExpand={() => setOpen((value) => !value)}
+      />
+      {open
+        ? group.entries.map(({ item, key }) => (
+            <RealmEntryRow
+              key={key}
+              namespace={namespace}
+              entryKeys={entryKeys}
+              entryKey={key}
+              entry={item}
+              disabled={disabled}
+              toggle={toggle}
+              consent={consent}
+              onConsent={onConsent}
+            />
+          ))
+        : null}
+    </div>
+  )
+}
+
+/** One quiet, expandable line standing in for the whole excluded wall: the
+ *  greyed rows leave the default view; the count invites the curious in. */
+function ExcludedSummary({ namespace, excluded }: { namespace: string; excluded: RealmEntryItem[] }) {
+  const [open, setOpen] = useState(false)
+  if (!excluded.length) return null
+  const count = excluded.length
+  return (
+    <div className="k-menu-excluded-summary">
+      <button
+        type="button"
+        className="k-menu-row-static k-menu-excluded-toggle"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+        title={`These operations exist but this agent isn't set up to use them — an app admin can enable them under namespaces.${namespace}.allowed`}
+      >
+        <span className="k-menu-card-line">
+          {count} more operation{count === 1 ? '' : 's'} exist, ready for an app admin to enable
+        </span>
+        <span className="k-menu-excluded-chevron"><ChevronIcon open={open} /></span>
+      </button>
+      {open
+        ? excluded.map((item) => (
+            <ExcludedEntryRow key={item.name} namespace={namespace} entry={item} />
+          ))
+        : null}
     </div>
   )
 }
@@ -682,8 +772,8 @@ function ServicesSection({ inventory, disabled, toggle, namespaceStyles, spotlig
       <SectionTitle>Services</SectionTitle>
       {inventory.named_services.map((entry) => {
         const realm = entry.realm
-        const internals = namespaceInternals(entry)
-        const entryKeys = internals.filter(({ excluded }) => !excluded).map(({ key }) => key)
+        const { groups, excluded } = buildRealmGroups(realm)
+        const entryKeys = groups.flatMap((group) => group.keys)
         const isOpen = Boolean(expanded[entry.namespace])
         const objectsLine = (realm?.objects ?? [])
           .map((kind) => kind.name.split('.').pop() || kind.name)
@@ -726,24 +816,20 @@ function ServicesSection({ inventory, disabled, toggle, namespaceStyles, spotlig
               <ServiceCardLine text="This service hasn't described itself yet." />
             ) : null}
             {isOpen
-              ? internals.map(({ item, key, excluded }) => (
-                  excluded
-                    ? <ExcludedEntryRow key={key} namespace={entry.namespace} entry={item} />
-                    : (
-                        <RealmEntryRow
-                          key={key}
-                          namespace={entry.namespace}
-                          entryKeys={entryKeys}
-                          entryKey={key}
-                          entry={item}
-                          disabled={disabled}
-                          toggle={toggle}
-                          consent={entry.consent}
-                          onConsent={onConsent}
-                        />
-                      )
+              ? groups.map((group) => (
+                  <RealmGroupRow
+                    key={group.id}
+                    namespace={entry.namespace}
+                    entryKeys={entryKeys}
+                    group={group}
+                    disabled={disabled}
+                    toggle={toggle}
+                    consent={entry.consent}
+                    onConsent={onConsent}
+                  />
                 ))
               : null}
+            {isOpen ? <ExcludedSummary namespace={entry.namespace} excluded={excluded} /> : null}
           </div>
         )
       })}

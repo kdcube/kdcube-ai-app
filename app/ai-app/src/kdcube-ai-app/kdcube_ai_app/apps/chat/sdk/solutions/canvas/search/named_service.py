@@ -1021,6 +1021,10 @@ def _patch_from_typed_object(obj: Mapping[str, Any], object_kind: str) -> dict[s
     label="Canvas",
     description="Named-service provider for canvas boards, cards, hosted objects, and card search.",
     intro=CANVAS_NAMESPACE_INTRO,
+    metadata={
+        "presentation": CANVAS_PRESENTATION,
+        "object_kinds": dict(CANVAS_OBJECT_KIND_DESCRIPTIONS),
+    },
 )
 class CanvasPinSearchNamedServiceProvider(NamedServiceProvider):
     """Provider facade for canvas search and upsert.

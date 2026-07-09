@@ -974,6 +974,86 @@ async def test_internal_realms_declare_their_human_contract():
     assert cnv_realm["actions"] == []
 
 
+def test_canvas_decorator_spec_carries_presentation_metadata():
+    """The canvas provider's DECORATOR registration must carry the same
+    presentation metadata as its instance spec — discovery publishes whichever
+    spec the runtime registers, so a decorator without presentation stripped
+    the card's human labels (canvas rendered raw grammar tokens). Both surfaces
+    now declare it; this guards the regression."""
+    from kdcube_ai_app.apps.chat.sdk.solutions.canvas.search.named_service import (
+        CanvasPinSearchNamedServiceProvider,
+        _provider_spec as canvas_provider_spec,
+    )
+
+    decorator_spec = getattr(
+        CanvasPinSearchNamedServiceProvider, "__kdcube_named_service_provider__", None
+    )
+    assert decorator_spec is not None
+    presented = (decorator_spec.metadata or {}).get("presentation") or {}
+    ops = presented.get("operations") or {}
+    assert ops.get("object.upsert", {}).get("label") == "Pin to a board"
+    # Parity with the instance spec so the two can never drift apart again.
+    instance_presented = (canvas_provider_spec().metadata or {}).get("presentation") or {}
+    assert instance_presented.get("operations", {}).get("object.upsert", {}).get("label") == "Pin to a board"
+
+
+@pytest.mark.asyncio
+async def test_realm_requirement_scene_surface_passthrough():
+    """A requirement whose surface declares an on-scene `target_surface` keeps
+    it in the payload (plus its ui_event and the URL fallback) so the card's
+    affordance can prefer summoning a scene window over a new-tab navigation."""
+    from kdcube_ai_app.apps.chat.sdk.runtime.agent_inventory import (
+        enrich_catalog_named_service_realms,
+    )
+    from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers.types import (
+        NamedServiceProviderSpec,
+    )
+
+    spec = NamedServiceProviderSpec(
+        provider_id="task.issue",
+        bundle_id="task-tracker@1-0",
+        namespace="task",
+        label="Tasks",
+        description="Issues and their attachments.",
+        metadata={
+            "presentation": {
+                "about": "Create, search, and update the issues in your task tracker.",
+                "requirements": [
+                    {
+                        "id": "task.board_access",
+                        "label": "Task board access",
+                        "description": "You see and change the issues you created.",
+                        "surface": {
+                            "kind": "widget",
+                            "bundle_id": "task-tracker@1-0",
+                            "widget_alias": "task_tracker_tasks",
+                            "label": "Open tasks",
+                            "target_surface": "task_tracker.issue_list",
+                            "ui_event": {"action": "refresh"},
+                        },
+                    },
+                ],
+            },
+        },
+    )
+    catalog = {
+        "named_services": [
+            {"namespace": "task", "alias": "named_services", "operations": ["object.list"]},
+        ]
+    }
+    out = await enrich_catalog_named_service_realms(
+        catalog,
+        discovery=_FakeDiscovery({"task": spec}),
+        tenant="demo-tenant",
+        project="demo-project",
+    )
+    surface = out["named_services"][0]["realm"]["requirements"][0]["surface"]
+    assert surface["target_surface"] == "task_tracker.issue_list"
+    assert surface["ui_event"] == {"action": "refresh"}
+    assert surface["url"].endswith("/task-tracker@1-0/widgets/task_tracker_tasks")
+    assert surface["label"] == "Open tasks"
+
+
 @pytest.mark.asyncio
 async def test_realm_without_any_works_with_line_renders_none():
     """A realm that declares neither third_party nor works_with produces a

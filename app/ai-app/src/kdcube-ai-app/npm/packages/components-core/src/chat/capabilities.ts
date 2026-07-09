@@ -90,6 +90,9 @@ export interface AgentCapabilityRealm {
   objects?: { name: string; description?: string }[]
   operations?: AgentCapabilityRealmEntry[]
   actions?: AgentCapabilityRealmEntry[]
+  /** Optional per-group heading overrides (read/write/actions) a realm may
+   *  declare through its presentation. Absent = the neutral defaults. */
+  group_labels?: { read?: string; write?: string; actions?: string }
   connected_accounts?: {
     provider_id: string
     connector_app_id?: string
@@ -107,7 +110,9 @@ export interface AgentCapabilityRealm {
     description: string
     actor?: string
     status?: 'granted' | 'missing'
-    surface?: { kind: string; url?: string; label?: string }
+    /** `target_surface` (when the host declares one) makes the affordance
+     *  summon a real scene window; `url` is the absolute new-tab fallback. */
+    surface?: { kind: string; url?: string; label?: string; target_surface?: string; ui_event?: Record<string, unknown> }
   }[]
 }
 
@@ -493,6 +498,144 @@ export function namespaceEntryTogglePatch(
       ? current.filter((key) => key !== entryKey)
       : [...current, entryKey]
   }
+  if (nextOff.length === 0) return { named_services: { [namespace]: false } }
+  if (entryKeys.length > 0 && entryKeys.every((key) => nextOff.includes(key))) {
+    return { named_services: { [namespace]: true } }
+  }
+  return { named_services: { [namespace]: nextOff } }
+}
+
+// ── service-card grant-style groups (read / write / actions) ─────────────────
+
+/** The three human capability groups a service card presents — the same
+ *  read/write/action shape the delegated consent window uses. Grammar tokens
+ *  (`object.upsert`) demote to an expandable "details" under each group. */
+export type RealmGroupId = 'read' | 'write' | 'actions'
+
+/** Default human group headings. A realm may override per-group copy via its
+ *  presentation; these are the neutral fallbacks. */
+export const REALM_GROUP_LABELS: Record<RealmGroupId, string> = {
+  read: 'Read',
+  write: 'Create & update',
+  actions: 'Actions',
+}
+
+export const REALM_GROUP_ORDER: RealmGroupId[] = ['read', 'write', 'actions']
+
+/** Canonical operation → group classification. Named actions always fall in
+ *  the actions group; operation tokens map by their verb, with a write-leaning
+ *  heuristic fallback so an undeclared mutating op never reads as "read". */
+const REALM_OPERATION_GROUP: Record<string, RealmGroupId> = {
+  'provider.about': 'read',
+  'provider.capabilities': 'read',
+  'object.list': 'read',
+  'object.search': 'read',
+  'object.get': 'read',
+  'object.schema': 'read',
+  'object.upsert': 'write',
+  'object.host_file': 'write',
+  'object.delete': 'write',
+  'object.action': 'actions',
+}
+
+export function classifyRealmEntry(kind: 'operation' | 'action', name: string): RealmGroupId {
+  if (kind === 'action') return 'actions'
+  const token = String(name || '').trim().toLowerCase()
+  const mapped = REALM_OPERATION_GROUP[token]
+  if (mapped) return mapped
+  if (/(delete|remove|upsert|write|create|update|host_file|host|send|post|upload|archive|publish)/.test(token)) {
+    return 'write'
+  }
+  return 'read'
+}
+
+export interface RealmEntryLike {
+  name: string
+  label?: string
+  description?: string
+  via?: string
+  claims?: string[]
+  enabled_for_agent?: boolean
+}
+
+export interface RealmGroupView {
+  id: RealmGroupId
+  label: string
+  /** Human summary line (member titles joined) — no grammar tokens. */
+  summary: string
+  /** The toggleable entries in this group (excluded ones are not here). */
+  entries: { item: RealmEntryLike; key: string }[]
+  /** Deny keys for this group (subset of the namespace's entry keys). */
+  keys: string[]
+}
+
+/** Humanize a member title without leaking the grammar token. */
+function realmEntryTitle(item: RealmEntryLike): string {
+  const label = String(item.label || '').trim()
+  if (label) return label
+  const token = String(item.name || '').trim()
+  const tail = token.split('.').pop() || token
+  return tail.replace(/[_-]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+}
+
+/** Split a realm's operations + actions into the read/write/actions groups
+ *  (toggleable) plus the advertised-but-excluded entries (collapsed line). */
+export function buildRealmGroups(
+  realm: { operations?: RealmEntryLike[]; actions?: RealmEntryLike[]; group_labels?: Partial<Record<RealmGroupId, string>> } | null | undefined,
+): { groups: RealmGroupView[]; excluded: RealmEntryLike[] } {
+  const buckets: Record<RealmGroupId, { item: RealmEntryLike; key: string }[]> = {
+    read: [], write: [], actions: [],
+  }
+  const excluded: RealmEntryLike[] = []
+  const push = (kind: 'operation' | 'action', item: RealmEntryLike) => {
+    if (item.enabled_for_agent === false) {
+      excluded.push(item)
+      return
+    }
+    const key = namespaceEntryKey(kind, item.name)
+    buckets[classifyRealmEntry(kind, item.name)].push({ item, key })
+  }
+  for (const op of realm?.operations ?? []) push('operation', op)
+  for (const action of realm?.actions ?? []) push('action', action)
+  const groups: RealmGroupView[] = []
+  for (const id of REALM_GROUP_ORDER) {
+    const entries = buckets[id]
+    if (!entries.length) continue
+    const summary = entries.map(({ item }) => realmEntryTitle(item)).filter(Boolean).join(' · ')
+    groups.push({
+      id,
+      label: realm?.group_labels?.[id] || REALM_GROUP_LABELS[id],
+      summary: summary || `${entries.length} operation${entries.length === 1 ? '' : 's'}`,
+      entries,
+      keys: entries.map(({ key }) => key),
+    })
+  }
+  return { groups, excluded }
+}
+
+/** The patch a GROUP master toggle produces: on → deny every group key;
+ *  off/partial → re-enable every group key. Collapses to the whole-namespace
+ *  form when the result covers everything (`true`) or nothing (`false`). */
+export function namespaceGroupTogglePatch(
+  namespace: string,
+  entryKeys: string[],
+  groupKeys: string[],
+  disabled: AgentSelectionDisabled,
+): AgentSelectionPatch {
+  const entry = disabled.named_services?.[namespace]
+  const currentOff = new Set<string>(
+    entry === true
+      ? entryKeys
+      : Array.isArray(entry)
+        ? entry.filter((key) => entryKeys.includes(key))
+        : [],
+  )
+  const groupOn = namespaceState(namespace, groupKeys, disabled) === 'on'
+  for (const key of groupKeys) {
+    if (groupOn) currentOff.add(key)
+    else currentOff.delete(key)
+  }
+  const nextOff = entryKeys.filter((key) => currentOff.has(key))
   if (nextOff.length === 0) return { named_services: { [namespace]: false } }
   if (entryKeys.length > 0 && entryKeys.every((key) => nextOff.includes(key))) {
     return { named_services: { [namespace]: true } }

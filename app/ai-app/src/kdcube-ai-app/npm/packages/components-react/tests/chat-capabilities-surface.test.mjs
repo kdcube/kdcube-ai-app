@@ -245,9 +245,11 @@ test('the service card renders declared access requirements with honest affordan
   const menu = readFileSync(new URL('../src/chat/ui/features/composer/ComposerMenu.tsx', import.meta.url), 'utf8')
   assert.match(menu, /function RequirementLine/)
   assert.match(menu, /realm\?\.requirements \?\? \[\]/)
-  // Only a resolved status renders a chip; only a url surface renders a link.
+  // Only a resolved status renders a chip; a url or on-scene surface renders
+  // the affordance (summon-first, url new-tab fallback).
   assert.match(menu, /requirement\.status === 'granted'/)
-  assert.match(menu, /requirement\.surface\?\.kind === 'url'/)
+  assert.match(menu, /surface\?\.kind === 'url'/)
+  assert.match(menu, /openSurfaceOnHost\(targetSurface/)
 })
 
 test('advertised-but-excluded realm entries render greyed with NO toggle and NO consent chip', () => {
@@ -259,10 +261,13 @@ test('advertised-but-excluded realm entries render greyed with NO toggle and NO 
   assert.doesNotMatch(block, /MenuRow|onToggle|ConsentAside/)
   assert.match(block, /k-menu-row-excluded/)
   // The quiet admin line + the exact descriptor key in the tooltip.
-  assert.match(block, /not enabled for this agent — an app admin can enable it/)
+  assert.match(block, /an app admin can enable it/)
   assert.match(block, /namespaces\.\$\{namespace\}\.allowed/)
-  // Excluded entries never contribute toggle keys / namespace state.
-  assert.match(menu, /internals\.filter\(\(\{ excluded \}\) => !excluded\)\.map\(\(\{ key \}\) => key\)/)
+  // The whole excluded wall now collapses behind ONE quiet line per service.
+  assert.match(menu, /function ExcludedSummary/)
+  // Excluded entries never contribute toggle keys / namespace state (only the
+  // enabled group keys do).
+  assert.match(menu, /const entryKeys = groups\.flatMap\(\(group\) => group\.keys\)/)
 })
 
 test('the greyed styling exists in both stylesheet twins', () => {

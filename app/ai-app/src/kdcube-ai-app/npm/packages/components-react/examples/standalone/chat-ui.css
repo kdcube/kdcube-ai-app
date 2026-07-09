@@ -2242,6 +2242,70 @@ a { color: inherit; }
 .k-menu-row-excluded .k-menu-row-label,
 .k-menu-row-excluded .k-menu-row-label code { color: var(--muted); }
 .k-menu-row-excluded .k-menu-row-sub { font-style: italic; }
+
+/* Capability GROUP (Read / Create & update / Actions) inside a service card:
+   a toggleable heading; its grammar entries nest one level deeper when the
+   "details" chevron opens. */
+.k-menu-group > .k-menu-row-child:first-child .k-menu-row-label { font-weight: 600; }
+.k-menu-group > .k-menu-row-child:not(:first-child) .k-menu-row-main { padding-left: 40px; }
+
+/* Collapsed excluded wall: one quiet, expandable line stands in for the greyed
+   rows; opening it reveals them (each carrying the admin phrasing + tooltip). */
+.k-menu-excluded-summary { margin-top: 2px; }
+.k-menu-excluded-toggle {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  border-radius: 6px;
+}
+.k-menu-excluded-toggle:hover { background: var(--surface-2); }
+.k-menu-excluded-toggle .k-menu-card-line { flex: 1 1 auto; text-align: left; }
+.k-menu-excluded-chevron { flex: none; color: var(--muted); display: inline-flex; align-items: center; }
+
+/* Declared access requirement row: text and affordance sit IN-FLOW — the
+   description flexes and truncates, the chip keeps its own space (never
+   overlapping the text). */
+.k-menu-requirement {
+  align-items: flex-start;
+  gap: 8px;
+  padding: 4px 8px 6px 10px;
+}
+.k-menu-requirement-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.k-menu-requirement-head {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.k-menu-requirement-desc {
+  font-size: 10.5px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.k-menu-requirement-aside {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.k-menu-expanded .k-menu-requirement-head,
+.k-menu-expanded .k-menu-requirement-desc {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  line-height: 1.4;
+}
 .k-menu-row-state {
   margin-left: auto;
   flex: none;
