@@ -470,6 +470,9 @@ deep links) are owned by
 
 ### Access Requirements (Internal Realms)
 
+**Declare a `surface` only when acting at the target changes the access** (consent flows, admin grant pages). A requirement explaining how access works (ownership, sharing) is informational: description only, no button — an affordance that fixes nothing is a false door.
+
+
 The same principle covers internal access: a user should see and obtain
 everything the agent needs BEFORE chatting, from the Capabilities card —
 never by hitting denials. A realm with internal access requirements
