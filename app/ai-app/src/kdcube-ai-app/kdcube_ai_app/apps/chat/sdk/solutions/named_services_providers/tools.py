@@ -29,6 +29,10 @@ from .client_tools import (
 from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers.consent import (
     raise_named_service_consent_demand as _raise_named_service_consent_demand,
 )
+from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers.contract_gate import (
+    record_contract_read,
+    register_write_attempt,
+)
 from .discovery import get_current_named_service_discovery
 from .transports.api_client import NamedServiceEndpoint, call_named_service_endpoint
 from .types import (
@@ -626,6 +630,31 @@ async def _call(
             requested_namespace=ns,
             action=action,
             client_id=_client_id(),
+        )
+    # Contract-first gate: an action/upsert payload is a realm-defined named
+    # protocol only the namespace's contract states. The FIRST action/upsert
+    # on a namespace whose contract has not been read in this conversation
+    # returns one instructive protocol rejection (fix actor `agent` — no user
+    # banner); the nudge is recorded, so the retry proceeds.
+    if operation in (OBJECT_SCHEMA, PROVIDER_ABOUT):
+        record_contract_read(base_ns)
+    elif operation in (OBJECT_ACTION, OBJECT_UPSERT) and register_write_attempt(base_ns):
+        contract_kind = "action" if operation == OBJECT_ACTION else "object"
+        return _error(
+            "named_service_contract_not_read",
+            f"Read the {contract_kind} contract first: call "
+            f"named_services.object_schema(namespace={base_ns!r}) — then retry with the documented arguments.",
+            fix={
+                "actor": "agent",
+                "summary": (
+                    f"Actions and upserts on {base_ns!r} carry realm-defined payload contracts. Call "
+                    f"named_services.object_schema(namespace={base_ns!r}) (or provider_about when the namespace "
+                    "serves no schema), then retry this call built from the documented arguments."
+                ),
+            },
+            namespace=base_ns,
+            requested_namespace=ns,
+            tool=tool_name,
         )
     endpoint = _endpoint(ns)
     if isinstance(endpoint, dict):
