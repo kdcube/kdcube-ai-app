@@ -220,18 +220,28 @@ def _lexical_search(
         summary = (entry.summary or "").lower()
         tags = " ".join(entry.tags).lower()
         score = 0
+        matched = 0
         for token in tokens:
+            hit = False
             if token in title:
                 score += 3
+                hit = True
             if token in tags:
                 score += 2
+                hit = True
             if token in summary:
                 score += 1
+                hit = True
+            matched += 1 if hit else 0
         if score > 0:
-            scored.append((score, entry.published_at or "", entry))
-    # best score first; newest first among equals
-    scored.sort(key=lambda row: (row[0], row[1]), reverse=True)
-    return [row[2] for row in scored]
+            scored.append((matched, score, entry.published_at or "", entry))
+    # All-terms-first: entries matching every query word are the result set
+    # when any exist; otherwise any-term matches answer (never "the whole
+    # catalog, reordered" for a query sharing one common word with everything).
+    strict = [row for row in scored if row[0] == len(tokens)]
+    pool = strict or scored
+    pool.sort(key=lambda row: (row[1], row[2]), reverse=True)
+    return [row[3] for row in pool]
 
 
 async def _search_hook_slugs(
@@ -322,6 +332,7 @@ async def _serve_catalog_page(
     offset = _as_offset(query_params.get("offset"))
     page_size = catalog.page_size
 
+    search_tier = ""
     if query:
         slugs = await _search_hook_slugs(
             workflow=workflow,
@@ -333,9 +344,11 @@ async def _serve_catalog_page(
         )
         if slugs is None:
             results = _lexical_search(all_entries, query)
+            search_tier = "basic"
         else:
             by_slug = {e.slug: e for e in all_entries}
             results = [by_slug[s] for s in slugs if s in by_slug]
+            search_tier = "engine"
         total = len(results)
         window = results[offset:offset + page_size]
         searched = True
@@ -356,6 +369,7 @@ async def _serve_catalog_page(
         item_url_for=_url_for_slug,
         total_in_catalog=total,
         searched=searched,
+        search_tier=search_tier,
     )
     return _binary(page, _HTML)
 

@@ -227,9 +227,11 @@ class HybridIndex:
 
     # ---- internals ----
     @staticmethod
-    def _fts_query(query: str) -> str:
+    def _fts_query(query: str, *, all_terms: bool = False) -> str:
         tokens = re.findall(r"[A-Za-z0-9]+", str(query or "").lower())
-        return " OR ".join(f"{t}*" for t in tokens)
+        # FTS5: space-separated terms are an implicit AND; OR is explicit.
+        joiner = " " if all_terms else " OR "
+        return joiner.join(f"{t}*" for t in tokens)
 
     @staticmethod
     def _filter_sql(filters: Dict[str, Any] | None, alias: str) -> tuple[str, list]:
@@ -245,17 +247,31 @@ class HybridIndex:
         return ((" AND " + " AND ".join(clauses)) if clauses else ""), params
 
     def _lexical(self, conn, query, limit, filters) -> List[str]:
-        match = self._fts_query(query)
-        if not match:
-            return []
         fclause, fparams = self._filter_sql(filters, "d")
         sql = (
             "SELECT d.id AS id, bm25(docs_fts) AS rank "
             "FROM docs_fts JOIN docs d ON d.rowid = docs_fts.rowid "
             f"WHERE docs_fts MATCH ?{fclause} ORDER BY rank LIMIT ?"
         )
-        rows = conn.execute(sql, [match, *fparams, limit]).fetchall()
-        return [r["id"] for r in rows]
+
+        def _run(match: str) -> List[str]:
+            rows = conn.execute(sql, [match, *fparams, limit]).fetchall()
+            return [r["id"] for r in rows]
+
+        # All-terms-first (see IndexConfig.lexical_all_terms_first): the strict
+        # every-word pass keeps multi-word queries selective; an empty strict
+        # pass widens to any-term so the search still answers.
+        if self.cfg.lexical_all_terms_first:
+            strict = self._fts_query(query, all_terms=True)
+            if not strict:
+                return []
+            ids = _run(strict)
+            if ids:
+                return ids
+        match = self._fts_query(query)
+        if not match:
+            return []
+        return _run(match)
 
     async def _semantic_allowed(self, query: str) -> bool:
         """Whether to run the semantic arm. Returns False (→ lexical + recency only,

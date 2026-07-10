@@ -166,8 +166,44 @@ async def _run_model_service_query_embed() -> None:
     print("test_model_service_query_embed: ALL PASS")
 
 
+async def _run_all_terms_first() -> None:
+    """A multi-word query returns the docs matching EVERY word when any exist —
+    not the whole corpus reordered (previously each doc sharing one common
+    word with the query matched). An unmatchable strict pass widens to
+    any-term so the search still answers."""
+    with tempfile.TemporaryDirectory() as d:
+        tmp = Path(d)
+        idx = _index(tmp)
+        await _seed(idx)
+
+        # strict pass: only d2 contains BOTH beta and delta
+        hits = await idx.search("beta delta", top_k=10, mode="lexical")
+        assert sorted(h.id for h in hits) == ["d2"], [h.id for h in hits]
+
+        # widening: no doc has both delta and zeta -> any-term answers (d2, d4)
+        hits = await idx.search("delta zeta", top_k=10, mode="lexical")
+        assert sorted(h.id for h in hits) == ["d2", "d4"], [h.id for h in hits]
+
+        # opt-out restores the historical any-term behavior
+        loose = HybridIndex(IndexConfig(
+            db_path=tmp / "idx.sqlite",
+            embed_fn=fake_embed,
+            dim=len(VOCAB),
+            vector_store=BruteForceVectorStore(),
+            lexical_all_terms_first=False,
+        ))
+        hits = await loose.search("beta delta", top_k=10, mode="lexical")
+        assert sorted(h.id for h in hits) == ["d1", "d2"], [h.id for h in hits]
+
+    print("test_all_terms_first: ALL PASS")
+
+
 def test_hybrid_index():
     asyncio.run(_run_all())
+
+
+def test_all_terms_first():
+    asyncio.run(_run_all_terms_first())
 
 
 def test_guard():

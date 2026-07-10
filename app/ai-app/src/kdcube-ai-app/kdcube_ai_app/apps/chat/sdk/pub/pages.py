@@ -376,12 +376,16 @@ def render_catalog_page(
     item_url_for: Callable[[str], str],
     total_in_catalog: int,
     searched: bool,
+    search_tier: str = "",
 ) -> str:
     """The server-rendered catalog page.
 
     ``entries`` is the already-windowed page slice when browsing, or the
     ranked result list when ``searched``; ``total_in_catalog`` is the full
-    catalog size (browse) / result count (search).
+    catalog size (browse) / result count (search). ``search_tier`` names what
+    answered a search: ``engine`` (the app's declared search hook) or
+    ``basic`` (the platform's match over the index cards) — the results hint
+    states it so the reader knows the search depth.
     """
     theme = catalog_theme(catalog)
     page_size = catalog.page_size
@@ -427,8 +431,13 @@ def render_catalog_page(
         "<button type=\"submit\">Search</button></form>"
     )
     if searched:
+        depth = (
+            "matched over titles, summaries and tags"
+            if search_tier == "basic"
+            else "searched across titles, summaries, tags and full article text"
+        )
         hint = (
-            f'{total_in_catalog} results for “{_esc(query)}” · '
+            f'{total_in_catalog} results for “{_esc(query)}” · {depth} · '
             f'<a href="{_esc(catalog_url)}">clear search</a>'
         )
     else:

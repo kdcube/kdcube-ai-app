@@ -78,3 +78,12 @@ class IndexConfig:
     # where the budget/quota enforcement plugs in.
     semantic_guard: Callable[[str], "bool | Awaitable[bool]"] | None = None
     query_cache_size: int = 128                # LRU of query→vector (avoid re-embedding repeats)
+
+    # --- lexical matching semantics ---
+    # All-terms-first: a multi-word query first requires EVERY word (prefix)
+    # to match, so results are a relevant subset rather than "anything sharing
+    # one common word with the query" (which returns the whole corpus, merely
+    # reordered). When the strict pass matches nothing, the query transparently
+    # widens to any-term so the search still answers. Single-word queries are
+    # unaffected.
+    lexical_all_terms_first: bool = True

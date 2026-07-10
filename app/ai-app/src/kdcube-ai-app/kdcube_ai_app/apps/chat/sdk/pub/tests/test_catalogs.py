@@ -176,6 +176,8 @@ def test_catalog_search_uses_declared_hook_order(tmp_path):
     assert page.index("Alpha article") < page.index("Gamma article")
     assert "Beta article" not in page
     assert "results" in page and "noindex" in page
+    # tier-honest hint: the app's engine answered
+    assert "full article text" in page
 
 
 def test_catalog_search_degrades_to_lexical_without_hook(tmp_path):
@@ -185,6 +187,8 @@ def test_catalog_search_degrades_to_lexical_without_hook(tmp_path):
         query_params={"q": "delegated credentials"},
     ).content.decode("utf-8")
     assert "Alpha article" in page and "Beta article" not in page
+    # tier-honest hint: the basic index-card match answered
+    assert "titles, summaries and tags" in page
 
 
 def test_catalog_search_degrades_to_lexical_when_hook_raises(tmp_path):
