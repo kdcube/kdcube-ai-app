@@ -808,3 +808,39 @@ async def test_no_consent_attempt_records_no_conversation_demand(monkeypatch):
     assert response.error.code == "needs_connected_account_consent"
     assert demand_calls == []
     assert prop_writes == []
+
+
+@pytest.mark.asyncio
+async def test_schema_teaches_ref_upload_to_in_chat_agents(monkeypatch):
+    """In a chat turn the upload contract teaches file_path refs (conv:fi: /
+    workspace path) and staged_ref; content_base64 stays out of the
+    agent-facing advertisement."""
+    import kdcube_ai_app.apps.chat.sdk.integrations.inline_files as inline_files
+
+    monkeypatch.setattr(inline_files, "has_turn_workspace", lambda: True)
+    provider = _Provider()
+    schema = await provider.object_schema(
+        _ctx(), NamedServiceRequest(operation=OBJECT_SCHEMA, namespace=SLACK_NAMESPACE)
+    )
+    upload = schema.ret["extra"]["schema"]["actions"][ACTION_UPLOAD_FILE]["description"]
+
+    assert "file_path" in upload
+    assert "conv:fi:" in upload
+    assert "staged_ref" in upload
+    assert "content_base64" not in upload
+
+
+@pytest.mark.asyncio
+async def test_schema_keeps_staged_and_inline_forms_for_turnless_clients(monkeypatch):
+    import kdcube_ai_app.apps.chat.sdk.integrations.inline_files as inline_files
+
+    monkeypatch.setattr(inline_files, "has_turn_workspace", lambda: False)
+    provider = _Provider()
+    schema = await provider.object_schema(
+        _ctx(), NamedServiceRequest(operation=OBJECT_SCHEMA, namespace=SLACK_NAMESPACE)
+    )
+    upload = schema.ret["extra"]["schema"]["actions"][ACTION_UPLOAD_FILE]["description"]
+
+    assert "staged_ref" in upload
+    assert "content_base64" in upload
+    assert "last resort" in upload

@@ -280,8 +280,8 @@ MAIL_SCHEMA = {
                 "chat workspace ride attachment_paths=[<KDCube file path>] — pass the "
                 "logical or physical path and the service reads the bytes itself. "
                 "Elsewhere attach via attachments=[{staged_ref}] after request_upload; "
-                "tiny generated files may ride inline as {filename, content_base64} "
-                "(10MB/file, 25MB total)."
+                "as a last resort a tiny generated file may ride inline as "
+                "{filename, content_base64} (10MB/file, 25MB total)."
             ),
             "object_ref": "mail:<provider>:<account_id> or omit account_id in payload when only one account can send",
             "payload": ["to", "subject", "body_markdown", "cc", "bcc", "body_html", "attachments", "attachment_paths", "account_id"],
@@ -307,6 +307,58 @@ MAIL_SCHEMA = {
         }
     },
 }
+
+
+# Agent-facing (in-chat) action contracts. Inside a chat turn files travel by
+# workspace path/ref and the service reads the bytes itself; the schema an
+# agent quotes must teach exactly that form. Encoded inline entries stay in
+# the turn-less (MCP) contract only — those callers hold raw bytes themselves.
+_MAIL_ACTION_DESCRIPTIONS_IN_CHAT: dict[str, str] = {
+    ACTION_SEND: (
+        "Send a new email from a connected mail account. Attach workspace files "
+        "by ref: attachment_paths=[<KDCube file path>] — pass the logical "
+        "(conv:fi:...) or physical path a pull/exec returned and the service "
+        "reads the bytes itself. attachments=[{staged_ref}] carries files "
+        "staged earlier via request_upload."
+    ),
+    ACTION_FORWARD: (
+        "Forward an existing message. include_original_attachments=true carries "
+        "the original files. Extra workspace files ride "
+        "attachment_paths=[<KDCube file path>]; attachments=[{staged_ref}] "
+        "carries files staged earlier via request_upload."
+    ),
+    ACTION_REQUEST_UPLOAD: (
+        "Reserve an upload slot for one outbound file whose bytes are NOT in "
+        "the chat workspace. Returns {upload_url, staged_ref, expires_at}: "
+        "PUT/POST the raw file bytes to upload_url over plain HTTP, then "
+        "reference the staged_ref in a send/forward attachments entry. "
+        "Workspace files skip this — attach them via attachment_paths."
+    ),
+}
+
+
+def mail_schema_for_surface() -> dict[str, Any]:
+    """MAIL_SCHEMA with action contracts phrased for the calling surface.
+
+    Inside a chat turn the send/forward/upload descriptions teach the
+    ref-based attachment form (attachment_paths / staged_ref). On turn-less
+    transports the base schema applies unchanged.
+    """
+    try:
+        from kdcube_ai_app.apps.chat.sdk.integrations.inline_files import has_turn_workspace
+
+        in_chat = has_turn_workspace()
+    except Exception:
+        in_chat = False
+    if not in_chat:
+        return MAIL_SCHEMA
+    schema = dict(MAIL_SCHEMA)
+    actions = {name: dict(meta or {}) for name, meta in (MAIL_SCHEMA.get("actions") or {}).items()}
+    for name, description in _MAIL_ACTION_DESCRIPTIONS_IN_CHAT.items():
+        if name in actions:
+            actions[name]["description"] = description
+    schema["actions"] = actions
+    return schema
 
 
 def _operations() -> dict[str, Any]:
@@ -868,7 +920,7 @@ class MailNamedServiceProvider(NamedServiceProvider):
                     "Call object.action download_attachments/send/forward for bounded mail actions.",
                 ],
                 "providers": MAIL_PROVIDER_CATALOG,
-                "schema": MAIL_SCHEMA,
+                "schema": mail_schema_for_surface(),
             },
         )
 
@@ -895,7 +947,7 @@ class MailNamedServiceProvider(NamedServiceProvider):
         return NamedServiceResponse.ok_response(
             provider=self._provider_identity(),
             namespace=request.namespace or MAIL_NAMESPACE,
-            extra={"schema": MAIL_SCHEMA},
+            extra={"schema": mail_schema_for_surface()},
         )
 
     async def object_list(self, ctx: NamedServiceContext, request: NamedServiceRequest) -> NamedServiceResponse:
@@ -1292,6 +1344,7 @@ __all__ = [
     "account_ref",
     "attachment_ref",
     "mail_named_service_spec",
+    "mail_schema_for_surface",
     "make_mail_named_service_provider",
     "message_ref",
     "parse_mail_ref",

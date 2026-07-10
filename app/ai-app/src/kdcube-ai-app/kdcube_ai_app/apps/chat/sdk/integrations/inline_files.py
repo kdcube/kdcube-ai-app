@@ -166,6 +166,17 @@ def _current_turn_id() -> str:
     return str(getattr(getattr(ctx, "routing", None), "turn_id", "") or "").strip()
 
 
+def has_turn_workspace() -> bool:
+    """True when the caller runs inside a chat turn with a bound artifact workspace.
+
+    Providers use this to speak the right file contract per surface: in a turn,
+    files travel by workspace path/ref; on turn-less transports (MCP), callers
+    hold the bytes themselves and stage them via upload or inline entries.
+    """
+    existing_outdir = str(run_ctx.OUTDIR_CV.get("") or "").strip()
+    return bool(existing_outdir and _current_turn_id())
+
+
 @contextlib.contextmanager
 def inline_files_workspace() -> Iterator[pathlib.Path]:
     """Yield an artifact root the workspace-coupled tools will resolve against.
@@ -205,6 +216,7 @@ __all__ = [
     "InlineFileError",
     "MAX_INLINE_FILE_BYTES",
     "MAX_INLINE_TOTAL_BYTES",
+    "has_turn_workspace",
     "inline_files_workspace",
     "materialize_inline_files",
     "resolve_payload_file_entries",

@@ -501,6 +501,39 @@ def _later_timeline_event_cursor(
     return current
 
 
+def _scrub_encoded_blobs_in_message_blocks(
+    msg_blocks: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Render-side guard: elide large base64 runs from model-bound text parts.
+
+    Deterministic (pure function of the text), so repeated renders stay
+    cache-stable. Image/document parts carry their payload outside ``text``
+    and pass through untouched.
+    """
+    from kdcube_ai_app.apps.chat.sdk.solutions.react.encoded_blobs import (
+        ENCODED_BLOB_MIN_CHARS,
+        elide_encoded_blobs,
+    )
+
+    for part in msg_blocks or []:
+        if part.get("type") != "text":
+            continue
+        text = part.get("text")
+        if not isinstance(text, str) or len(text) < ENCODED_BLOB_MIN_CHARS:
+            continue
+        scrubbed, elided = elide_encoded_blobs(text)
+        if elided:
+            part["text"] = scrubbed
+            try:
+                logging.getLogger("kdcube.react.timeline").warning(
+                    "[react.encoded_blobs] elided %s encoded chars from rendered context",
+                    elided,
+                )
+            except Exception:
+                pass
+    return msg_blocks
+
+
 def _first_user_message_ts(blocks: List[Dict[str, Any]]) -> str:
     for blk in blocks or []:
         if not isinstance(blk, dict):
@@ -7483,7 +7516,7 @@ class Timeline:
             if current_round_id and _is_round_terminal_block(b):
                 current_round_accepts_external = False
         _close_current_round()
-        return out
+        return _scrub_encoded_blobs_in_message_blocks(out)
 
     def _format_message_blocks_debug(self, msg_blocks: List[Dict[str, Any]]) -> str:
         """

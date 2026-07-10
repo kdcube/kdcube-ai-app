@@ -265,6 +265,19 @@ def _log_tool_block(block: Dict[str, Any]) -> None:
 
 def add_block(ctx_browser, block: Dict[str, Any]) -> None:
     try:
+        from kdcube_ai_app.apps.chat.sdk.solutions.react.encoded_blobs import scrub_block_text
+
+        scrubbed = scrub_block_text(block)
+        if scrubbed is not block:
+            _LOG.warning(
+                "[react.encoded_blobs] elided encoded blob from block type=%s path=%s",
+                block.get("type") or "",
+                block.get("path") or "",
+            )
+            block = scrubbed
+    except Exception:
+        pass
+    try:
         runtime_ctx = getattr(ctx_browser, "runtime_ctx", None)
         iteration = getattr(runtime_ctx, "_current_react_iteration", None) if runtime_ctx is not None else None
         if iteration is not None and (block.get("type") or "").strip() in {

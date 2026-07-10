@@ -317,3 +317,69 @@ async def test_pull_rejects_attachment_prefix_pull(tmp_path):
     }]
     assert "missing" not in payload
     assert "errors" not in payload
+
+
+@pytest.mark.asyncio
+async def test_pull_without_share_names_the_share_fix_in_user_delivery(tmp_path):
+    """Regression: a pull without share materializes locally only; the model
+    used to claim the files were delivered ("in the Files tab") and the user
+    saw nothing. The result now states what the user received and names the
+    fix (share=true on the exact file ref)."""
+    outdir = tmp_path / "out"
+    runtime = RuntimeCtx(turn_id="turn_pull", outdir=str(outdir), workdir=str(tmp_path / "work"))
+    ctx = FakeBrowser(runtime)
+    payload = base64.b64encode(b"SVGDATA").decode("utf-8")
+    ctx._turn_logs["turn_prev"] = {
+        "blocks": [
+            {
+                "type": "react.tool.result",
+                "mime": "image/svg+xml",
+                "path": "conv:fi:turn_prev.user.attachments/diagram-scene-hub.svg",
+                "base64": payload,
+                "turn_id": "turn_prev",
+                "meta": {
+                    "physical_path": "turn_prev/attachments/diagram-scene-hub.svg",
+                    "size_bytes": 7,
+                },
+            },
+        ]
+    }
+
+    class _Settings:
+        STORAGE_PATH = str(tmp_path)
+
+    import kdcube_ai_app.apps.chat.sdk.config as cfg
+    cfg.get_settings = lambda: _Settings()
+
+    state = {
+        "last_decision": {
+            "tool_call": {
+                "params": {
+                    "paths": ["conv:fi:turn_prev.user.attachments/diagram-scene-hub.svg"],
+                }
+            }
+        },
+        "outdir": str(outdir),
+    }
+
+    await handle_react_pull(ctx_browser=ctx, state=state, tool_call_id="pull_no_share")
+
+    payload = _latest_payload(ctx)
+    delivery = payload["user_delivery"]
+    assert delivery.startswith("none")
+    assert "share=true" in delivery
+    assert "attachment_paths" in delivery
+
+
+@pytest.mark.asyncio
+async def test_pull_tool_spec_teaches_share_decision_rule():
+    from kdcube_ai_app.apps.chat.sdk.solutions.react.v3.tools.pull import TOOL_SPEC
+
+    purpose = TOOL_SPEC["purpose"]
+    assert "share=true" in purpose
+    # All three destinations are taught at the decision point.
+    assert "read/analyze" in purpose or "reference material" in purpose
+    assert "Files tab" in purpose
+    assert "attachment_paths" in purpose
+    share_doc = TOOL_SPEC["args"]["share"]
+    assert "the user receives no file" in share_doc

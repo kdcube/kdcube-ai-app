@@ -813,3 +813,46 @@ async def test_actions_dispatch_to_gmail_transport():
         "send_gmail",
         "forward_gmail_message",
     ]
+
+
+@pytest.mark.asyncio
+async def test_schema_teaches_ref_attachments_to_in_chat_agents(monkeypatch):
+    """Regression: the agent-facing send contract advertised inline
+    {filename, content_base64} attachments, so the model base64-encoded a
+    pulled file into its own context to attach it. In a chat turn the schema
+    must teach the ref forms only — attachment_paths / staged_ref — and stop
+    offering content_base64."""
+    import kdcube_ai_app.apps.chat.sdk.integrations.inline_files as inline_files
+
+    monkeypatch.setattr(inline_files, "has_turn_workspace", lambda: True)
+    provider = _Provider()
+    schema = await provider.object_schema(
+        _ctx(), NamedServiceRequest(operation=OBJECT_SCHEMA, namespace=MAIL_NAMESPACE)
+    )
+    actions = schema.ret["extra"]["schema"]["actions"]
+
+    for action in (ACTION_SEND, ACTION_FORWARD):
+        description = actions[action]["description"]
+        assert "attachment_paths" in description
+        assert "staged_ref" in description
+        assert "content_base64" not in description
+    assert actions[ACTION_SEND]["description"].count("conv:fi:") >= 1
+    upload = actions["request_upload"]["description"]
+    assert "attachment_paths" in upload  # workspace files skip the upload path
+
+
+@pytest.mark.asyncio
+async def test_schema_keeps_staged_and_inline_forms_for_turnless_clients(monkeypatch):
+    import kdcube_ai_app.apps.chat.sdk.integrations.inline_files as inline_files
+
+    monkeypatch.setattr(inline_files, "has_turn_workspace", lambda: False)
+    provider = _Provider()
+    schema = await provider.object_schema(
+        _ctx(), NamedServiceRequest(operation=OBJECT_SCHEMA, namespace=MAIL_NAMESPACE)
+    )
+    send = schema.ret["extra"]["schema"]["actions"][ACTION_SEND]["description"]
+
+    assert "staged_ref" in send
+    # inline stays available for byte-holding clients, marked last resort
+    assert "content_base64" in send
+    assert "last resort" in send

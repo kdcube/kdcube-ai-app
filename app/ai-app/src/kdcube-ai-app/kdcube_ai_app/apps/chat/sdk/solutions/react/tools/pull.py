@@ -60,18 +60,20 @@ TOOL_SPEC = {
         "Produced files, user attachments, external-event attachments, and hosted binaries require exact refs. "
         "A conv:fi:conv_<conversation_id>.turn_<id>... path belongs to another conversation and is resolved in that conversation. "
         "Current-conversation conv:fi: paths use conv:fi:turn_<id>... without a conv_ scope segment. "
-        "share defaults to false; pull normally just materializes locally for your own use. "
-        "Set share=true ONLY in the rare case where you specifically want to hand the materialized file straight to the user now "
-        "(e.g. a binary DOCX/PDF/PPTX/image you cannot re-author through a text writer). It is not a routine step. "
+        "Choose share by where the pulled file goes next. "
+        "You read/analyze/edit the content yourself (react.read, react.rg, exec/code, rendering) -> share=false (default); the pull is local reference material and the user sees no file from it. "
+        "The USER should receive the file itself as a download (they asked for the file, or the deliverable IS this binary) -> share=true; the file is hosted and delivered to the user (Files tab). "
+        "The file goes to ANOTHER SERVICE (mail/slack attachment, host_file into a namespace) -> share=false; pass the returned logical_path/physical_path in that action's file field (e.g. attachment_paths, file_ref) — the service reads the bytes itself. "
         "share delivers exactly ONE file: pull a single exact file ref with share=true. A folder/subtree pull, or a pull of several "
         "refs at once, is NOT shared (the call reports that share was not applied)."
     ),
     "args": {
         "share": (
-            "bool. Optional, default false — the rare opt-in to also deliver. Leave false for ordinary pulls (reference/local use). "
-            "Set true only when you deliberately want to send ONE pulled file to the user right now: the single-file result is then "
-            "hosted and delivered as a downloadable file (visibility=external, kind=file). It applies to a single exact file ref only — "
-            "a folder/subtree pull or a multi-ref pull is never delivered."
+            "bool. Optional, default false. share=false materializes for your own use; the user receives no file. "
+            "share=true delivers the ONE pulled file to the user as a download (hosted, visibility=external, kind=file) — "
+            "use it when the user should get the file itself. It applies to a single exact file ref only — "
+            "a folder/subtree pull or a multi-ref pull is never delivered. "
+            "Sending a pulled file to another service needs no share: pass the returned path to that action's file field."
         ),
         "paths": (
             "list[str] of artifact refs to materialize locally. Each item is either a normal conv:fi: ref or an externally owned ref shown by the runtime. "
@@ -91,6 +93,7 @@ TOOL_SPEC = {
         "Exact file pulls return one logical_path/physical_path item. "
         "Externally owned refs return object_ref plus the resolved/rehosted conv:fi: logical_path, physical_path, materialization scope (surface), mime, size_bytes, and file_count when available. "
         "When share=true, each delivered file is also listed under shared with its logical_path. "
+        "user_delivery reports what the user received from this call. "
         "Diagnostics such as missing, invalid, and errors are included only when non-empty."
     ),
 }
@@ -489,6 +492,14 @@ async def handle_react_pull(*, react: Any = None, ctx_browser: Any, state: Dict[
     }
     if shared:
         payload["shared"] = shared
+        payload["user_delivery"] = "delivered to the user as downloadable file(s): " + ", ".join(shared)
+    elif pulled:
+        payload["user_delivery"] = (
+            "none — these files are local reference material for this turn; the user received no file from this call. "
+            "To hand ONE pulled file to the user as a download, pull its exact ref with share=true. "
+            "To send a pulled file to another service, pass its logical_path/physical_path in that action's "
+            "file field (e.g. attachment_paths, file_ref)."
+        )
     if missing:
         payload["missing"] = missing
     if invalid:

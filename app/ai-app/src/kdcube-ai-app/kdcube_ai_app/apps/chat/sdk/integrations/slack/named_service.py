@@ -281,8 +281,9 @@ SLACK_SCHEMA = {
         ACTION_UPLOAD_FILE: {
             "description": (
                 "Upload a file to Slack. In chat pass a KDCube artifact file_path; "
-                "elsewhere pass staged_ref from request_upload (preferred) or tiny "
-                "inline content_base64 with a filename (10MB limit). channel takes a "
+                "elsewhere pass staged_ref from request_upload (preferred) or, as a "
+                "last resort for a tiny generated file, inline content_base64 with a "
+                "filename (10MB limit). channel takes a "
                 "conversation id (C/G/D…) or a person's user id (U…) — a user id "
                 "shares into the direct conversation with that person (the connecting "
                 "user's own id is the account object's external_subject)."
@@ -304,6 +305,53 @@ SLACK_SCHEMA = {
     "grant_hints": SLACK_GRANT_HINTS,
     "connected_account_claims": SLACK_CONNECTED_ACCOUNT_CLAIMS,
 }
+
+
+# Agent-facing (in-chat) action contracts: files travel by workspace path/ref
+# and the service reads the bytes itself. Encoded inline entries stay in the
+# turn-less (MCP) contract only — those callers hold raw bytes themselves.
+_SLACK_ACTION_DESCRIPTIONS_IN_CHAT: dict[str, str] = {
+    ACTION_UPLOAD_FILE: (
+        "Upload a file to Slack. Pass the KDCube workspace file by ref in "
+        "file_path — the logical (conv:fi:...) or physical path a pull/exec "
+        "returned; the service reads the bytes itself. staged_ref carries a "
+        "file staged earlier via request_upload. channel takes a conversation "
+        "id (C/G/D…) or a person's user id (U…) — a user id shares into the "
+        "direct conversation with that person (the connecting user's own id "
+        "is the account object's external_subject)."
+    ),
+    ACTION_REQUEST_UPLOAD: (
+        "Reserve an upload slot for one file whose bytes are NOT in the chat "
+        "workspace. Returns {upload_url, staged_ref, expires_at}: PUT/POST "
+        "the raw file bytes to upload_url over plain HTTP, then pass the "
+        "staged_ref to upload_file. Workspace files skip this — pass their "
+        "path in file_path."
+    ),
+}
+
+
+def slack_schema_for_surface() -> dict[str, Any]:
+    """SLACK_SCHEMA with action contracts phrased for the calling surface.
+
+    Inside a chat turn the upload descriptions teach the ref-based file form
+    (file_path / staged_ref). On turn-less transports the base schema applies
+    unchanged.
+    """
+    try:
+        from kdcube_ai_app.apps.chat.sdk.integrations.inline_files import has_turn_workspace
+
+        in_chat = has_turn_workspace()
+    except Exception:
+        in_chat = False
+    if not in_chat:
+        return SLACK_SCHEMA
+    schema = dict(SLACK_SCHEMA)
+    actions = {name: dict(meta or {}) for name, meta in (SLACK_SCHEMA.get("actions") or {}).items()}
+    for name, description in _SLACK_ACTION_DESCRIPTIONS_IN_CHAT.items():
+        if name in actions:
+            actions[name]["description"] = description
+    schema["actions"] = actions
+    return schema
 
 
 def _operations() -> dict[str, Any]:
@@ -870,7 +918,7 @@ class SlackNamedServiceProvider(NamedServiceProvider):
                     "Call object.get with a slack:<account_id>:file:<file_id> ref to download a Slack file.",
                     "Call object.action post_message or upload_file for bounded write actions.",
                 ],
-                "schema": SLACK_SCHEMA,
+                "schema": slack_schema_for_surface(),
             },
         )
 
@@ -903,7 +951,7 @@ class SlackNamedServiceProvider(NamedServiceProvider):
         return NamedServiceResponse.ok_response(
             provider=self._provider_identity(),
             namespace=request.namespace or SLACK_NAMESPACE,
-            extra={"schema": SLACK_SCHEMA},
+            extra={"schema": slack_schema_for_surface()},
         )
 
     async def object_list(self, ctx: NamedServiceContext, request: NamedServiceRequest) -> NamedServiceResponse:
@@ -1325,6 +1373,7 @@ __all__ = [
     "file_ref",
     "make_slack_named_service_provider",
     "message_ref",
+    "slack_schema_for_surface",
     "parse_slack_ref",
     "slack_named_service_spec",
 ]
