@@ -36,8 +36,19 @@ from kdcube_ai_app.apps.chat.sdk.integrations.mail import make_mail_named_servic
 from kdcube_ai_app.apps.chat.sdk.integrations.mail.named_service import parse_mail_ref
 from kdcube_ai_app.apps.chat.sdk.integrations.slack import make_slack_named_service_provider
 from kdcube_ai_app.apps.chat.sdk.integrations.slack.named_service import parse_slack_ref
+from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers.relay import (
+    NAMED_SERVICE_RELAY_SUBJECT,
+    handle_named_service_relay,
+)
 from kdcube_ai_app.apps.chat.sdk.storage.conversation_store import ConversationStore
-from kdcube_ai_app.infra.plugin.bundle_loader import api, bundle_entrypoint, bundle_id, mcp, ui_widget
+from kdcube_ai_app.infra.plugin.bundle_loader import (
+    api,
+    bundle_entrypoint,
+    bundle_id,
+    data_bus_handler,
+    mcp,
+    ui_widget,
+)
 from kdcube_ai_app.infra.service_hub.inventory import BundleState, Config
 
 try:
@@ -198,6 +209,22 @@ class KDCubeServicesEntrypoint(BaseEntrypoint):
             request=request,
             bridge_factory=NamedServicesMcpBridge,
         )
+
+    @data_bus_handler(
+        subject=NAMED_SERVICE_RELAY_SUBJECT,
+        idempotency="required",
+    )
+    async def named_service_relay(self, ctx, message):
+        """Serve named-service calls relayed from detached runtimes.
+
+        The exec supervisor and subprocess runtimes hold no live registry
+        caller; they publish the request to this bundle's Data Bus stream.
+        The worker binds the message actor as the request context, this
+        handler dispatches through the bundle's own named-service registry,
+        and the recorded response answers redeliveries without re-running
+        the action.
+        """
+        return await handle_named_service_relay(ctx, message)
 
     # Publish the SDK conversation provider (read/export) as a named service.
     # The base entrypoint owns the registry, discovery, and on_bundle_load.

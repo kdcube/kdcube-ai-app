@@ -326,6 +326,11 @@ Per-user entry denials (the capability-picker selection) ride separately as
 part of the contextvars snapshot; the policy above is the configuration
 ceiling.
 
+Provider calls from isolated runtimes execute through the Data Bus relay —
+the request travels to the provider bundle's worker in the proc and runs
+there under the carried identity. Full round-trip reference:
+`docs/sdk/solutions/kdcube-services/orchestration-connections-events-from-isolated-runtime-README.md`.
+
 ## Bundle Call Context
 
 `bundle_call_context` is the bundle-owned part of the portable room. It is for

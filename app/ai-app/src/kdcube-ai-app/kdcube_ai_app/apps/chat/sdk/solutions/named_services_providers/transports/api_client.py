@@ -14,6 +14,7 @@ from kdcube_ai_app.apps.chat.sdk.infra.bundle_operations import (
     call_bundle_named_service,
     call_bundle_operation,
     call_bundle_operation_stream,
+    get_current_bundle_named_service_caller,
 )
 from kdcube_ai_app.apps.chat.sdk.infra.auth_context import AuthContext
 from kdcube_ai_app.apps.chat.sdk.runtime.http_ops import (
@@ -166,6 +167,30 @@ async def _call_bundle_registry_endpoint(
 ) -> NamedServiceResponse | NamedServiceStreamResult | BundleStreamResponse | BundleFileResponse | BundleBinaryResponse:
     if not endpoint.bundle_id:
         raise RuntimeError("bundle_registry named-service endpoint requires bundle_id")
+    if get_current_bundle_named_service_caller() is None:
+        # Detached runtime (exec supervisor, subprocess): the live registry
+        # caller exists only in the host proc. Relay the request over the
+        # Data Bus to the provider bundle's worker, which executes it in the
+        # proc under the carried request identity.
+        from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers.relay import (
+            relay_named_service_call,
+        )
+
+        LOGGER.info(
+            "Named-service endpoint has no request-bound caller; relaying over the Data Bus:\n"
+            "  bundle: %s\n"
+            "  namespace: %s\n"
+            "  operation: %s",
+            endpoint.bundle_id,
+            endpoint.namespace or request.namespace or "",
+            request.operation or "",
+        )
+        return await relay_named_service_call(
+            bundle_id=endpoint.bundle_id,
+            request=request,
+            tenant=endpoint.tenant or "",
+            project=endpoint.project or "",
+        )
     result = await call_bundle_named_service(
         tenant=endpoint.tenant,
         project=endpoint.project,
