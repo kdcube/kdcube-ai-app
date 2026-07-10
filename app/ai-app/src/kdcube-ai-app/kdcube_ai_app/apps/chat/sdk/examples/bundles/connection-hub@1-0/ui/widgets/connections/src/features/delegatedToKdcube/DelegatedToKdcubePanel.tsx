@@ -475,6 +475,10 @@ export function DelegatedToKdcubePanel() {
     </section>
   );
 
+  const managedAccount = managedAccountId
+    ? accounts.find((account) => account.account_id === managedAccountId)
+    : undefined;
+
   const connectPane = (
     <section className="card">
       <form
@@ -485,10 +489,29 @@ export function DelegatedToKdcubePanel() {
           if (!busy) void submit();
         }}
       >
-        <p className="muted" style={{ margin: 0 }}>
-          Pick the provider, choose what KDCube may do with the account, then
-          approve. The result appears in Connected accounts.
-        </p>
+        {managedAccount ? (
+          <p className="muted" style={{ margin: 0 }}>
+            Managing <strong>{accountTitle(managedAccount)}</strong> — the checked
+            access is what this account keeps after re-approval.{' '}
+            <button
+              type="button"
+              className="btn btn-ghost"
+              disabled={busy}
+              onClick={() => {
+                setManagedAccountId('');
+                setClaims([]);
+                setFormNotice('');
+              }}
+            >
+              Connect a different account instead
+            </button>
+          </p>
+        ) : (
+          <p className="muted" style={{ margin: 0 }}>
+            Pick the provider, choose what KDCube may do with the account, then
+            approve. The result appears in Connected accounts.
+          </p>
+        )}
         {formNotice ? <p className="notice success">{formNotice}</p> : null}
         <div className="inline-fields">
           <select className="input" value={selectedProviderId} onChange={(event) => changeProvider(event.target.value)}>
@@ -526,7 +549,9 @@ export function DelegatedToKdcubePanel() {
         {canStartOAuth ? (
           <div className="oauth-connect">
             <button className="btn" type="button" disabled={busy} onClick={() => void startOAuth()}>
-              Connect with {providerLabel(selectedProvider)}
+              {managedAccount
+                ? `Re-approve with ${providerLabel(selectedProvider)}`
+                : `Connect with ${providerLabel(selectedProvider)}`}
             </button>
             <span className="small">
               Opens {providerLabel(selectedProvider)}'s approval page in a new tab; the account
@@ -563,7 +588,7 @@ export function DelegatedToKdcubePanel() {
               />
             </div>
             <button className="btn" type="submit" disabled={busy || !selectedProviderId || !selectedConnectorAppId || !secretValue || selectedClaims.length === 0}>
-              Connect
+              {managedAccount ? 'Reconnect' : 'Connect'}
             </button>
           </>
         )}
@@ -575,7 +600,7 @@ export function DelegatedToKdcubePanel() {
     <PaneGroup
       panes={[
         { id: 'accounts', title: 'Connected accounts', content: existingPane },
-        { id: 'connect', title: 'Connect a new account', content: connectPane },
+        { id: 'connect', title: managedAccount ? 'Manage account access' : 'Connect a new account', content: connectPane },
       ]}
     />
   );
