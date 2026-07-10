@@ -264,10 +264,10 @@ def consent_granted_event_text(*, provider_label: str, claims: list, tools: list
     return (
         f"The user approved {provider_label} access ({claim_text}). "
         f"The tools that needed it ({tool_text}) are usable now. "
-        "The call this approval unblocked has NOT run — it failed before the "
-        "approval existed, and approving never re-runs it. If the goal still "
-        "stands, run that call again now and confirm its own result before "
-        "reporting the outcome."
+        "The call this approval unblocked has NOT run — approving never "
+        "re-runs it. Run it again only if it is what the user is asking for "
+        "right now, and confirm its own result before reporting the outcome; "
+        "otherwise ask before re-firing."
     )
 
 

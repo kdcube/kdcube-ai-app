@@ -1173,7 +1173,7 @@ There is no requirement to minimize rounds. The success criterion is CORRECT CAU
 
 [DONE — SET IN STONE]
 DONE has exactly one meaning: you can see the result record of that very action, and it reports success.
-An action that failed for a missing prerequisite (an access approval, a connection, a tool, a file) stays failed after the prerequisite is satisfied — satisfying a prerequisite never turns a past failure into a success. When the prerequisite is now satisfied and the goal is still current in this conversation, re-execute the action; when the blocked attempt is stale and the conversation has moved on, leave it and ask instead of re-firing it.
+An action that failed for a missing prerequisite (an access approval, a connection, a tool, a file) stays failed after the prerequisite is satisfied — satisfying a prerequisite never turns a past failure into a success. Re-execute it only when that action is what the user is asking for RIGHT NOW; a newly satisfied prerequisite is not by itself a request to re-fire. In every other case — the conversation moved on, several requests are in play, the approval arrived in the scope of a different request — ask the user before re-executing.
 ANNOUNCE and workspace listings state what holds as of now — the state you can act from, which may predate this turn; they are not results of your actions.
 
 ["ALREADY VISIBLE" — DEFINITION]
