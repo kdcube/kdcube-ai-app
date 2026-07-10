@@ -45,13 +45,18 @@ function accountTitle(account: DelegatedToKdcubeAccount): string {
 }
 
 function accountSubtitle(account: DelegatedToKdcubeAccount, provider?: DelegatedToKdcubeProvider): string | undefined {
+  // Granted claims render as prominent chips on the row; the subtitle keeps
+  // only the account's identity facts.
   const bits = [
     provider ? providerLabel(provider) : account.provider_id,
     account.email,
     account.workspace,
-    (account.claims || []).join(', '),
   ].filter(Boolean);
   return bits.length ? bits.join(' · ') : undefined;
+}
+
+function accountGrantedChips(account: DelegatedToKdcubeAccount, provider?: DelegatedToKdcubeProvider): string[] {
+  return (account.claims || []).map((claimId) => claimLabel(provider?.claims?.[claimId], claimId));
 }
 
 function formatCredentialDate(value?: number): string {
@@ -416,13 +421,11 @@ export function DelegatedToKdcubePanel() {
                   <div className="account-title">{providerLabel(provider)}</div>
                   {provider.adapter ? <div className="account-sub">{provider.adapter}</div> : null}
                 </div>
-                <div className="claim-list">
-                  {caps.map(([claimId, claim]) => (
-                    <span className="claim-chip" key={claimId}>
-                      {claimLabel(claim, claimId)}
-                    </span>
-                  ))}
-                </div>
+                {caps.length ? (
+                  <div className="account-sub claim-catalog">
+                    Can delegate: {caps.map(([claimId, claim]) => claimLabel(claim, claimId)).join(' · ')}
+                  </div>
+                ) : null}
               </div>
               {providerAccounts.length ? (
                 <ul className="accounts">
@@ -434,6 +437,7 @@ export function DelegatedToKdcubePanel() {
                         key={account.account_id}
                         title={accountTitle(account)}
                         subtitle={accountSubtitle(account, provider)}
+                        grantedChips={accountGrantedChips(account, provider)}
                         statusLabel={status.label}
                         statusTone={status.tone}
                         detail={status.detail}

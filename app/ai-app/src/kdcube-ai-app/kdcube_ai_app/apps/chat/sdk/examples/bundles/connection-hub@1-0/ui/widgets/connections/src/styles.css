@@ -554,6 +554,23 @@ h2 {
   overflow-wrap: anywhere;
 }
 
+/* What the account actually granted — the prominent fact on its row. */
+.claim-list-granted {
+  margin: 4px 0 2px;
+}
+
+.claim-chip-granted {
+  border-color: rgba(1, 190, 178, 0.45);
+  background: rgba(1, 190, 178, 0.1);
+  color: #06968c;
+  font-weight: 600;
+}
+
+/* The provider's full catalog — reference text, quiet on purpose. */
+.claim-catalog {
+  font-size: 11.5px;
+}
+
 .issued-token {
   margin: 12px 0 0;
   border: 1px solid rgba(var(--ok-rgb), 0.35);

@@ -17,6 +17,9 @@ export interface AccountRowProps {
   highlighted?: boolean;
   busy: boolean;
   actions?: ReactNode;
+  // What THIS account actually granted — the row's most important fact,
+  // rendered as prominent chips (the provider header only lists the catalog).
+  grantedChips?: string[];
   onDisconnect: () => void;
 }
 
@@ -30,6 +33,7 @@ export function AccountRow({
   highlighted,
   busy,
   actions,
+  grantedChips,
   onDisconnect,
 }: AccountRowProps) {
   return (
@@ -38,6 +42,13 @@ export function AccountRow({
         <div className="account-title">
           {title} <ConnectedBadge label={statusLabel || 'connected'} tone={statusTone || 'ok'} />
         </div>
+        {grantedChips && grantedChips.length ? (
+          <div className="claim-list claim-list-granted">
+            {grantedChips.map((chip) => (
+              <span className="claim-chip claim-chip-granted" key={chip}>{chip}</span>
+            ))}
+          </div>
+        ) : null}
         {subtitle ? <div className="account-sub">{subtitle}</div> : null}
         {detail ? <div className="account-detail">{detail}</div> : null}
         {lastError ? <div className="account-error">{lastError}</div> : null}
