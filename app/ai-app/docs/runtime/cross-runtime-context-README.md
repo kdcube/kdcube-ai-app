@@ -329,7 +329,7 @@ ceiling.
 Provider calls from isolated runtimes execute through the Data Bus relay —
 the request travels to the provider bundle's worker in the proc and runs
 there under the carried identity. Full round-trip reference:
-`docs/sdk/solutions/kdcube-services/orchestration-connections-events-from-isolated-runtime-README.md`.
+`docs/sdk/solutions/kdcube-services/named-services-from-isolated-runtime-README.md`.
 
 ## Bundle Call Context
 
