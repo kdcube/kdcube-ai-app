@@ -4,6 +4,7 @@ title: "Serving Local KDCube With Ngrok"
 summary: "Short operational recipe for exposing a local KDCube development stack through one ngrok HTTPS origin for Cognito, Telegram, and WebSocket/Data Bus testing."
 tags: ["service", "cicd", "local", "ngrok", "cognito", "telegram"]
 keywords: ["ngrok local kdcube", "kdcube web proxy", "caddy reverse proxy", "cognito callback ngrok", "telegram webhook ngrok", "socket.io websocket ngrok"]
+updated_at: 2026-06-24
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/service/cicd/cli-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/configuration/assembly-descriptor-README.md
