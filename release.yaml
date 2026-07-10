@@ -1,49 +1,23 @@
 platform:
   repo: "kdcube-ai-app"
-  ref: "2026.7.10.1445"
+  ref: "2026.7.10.1730"
   description: |
-    This release follows 2026.7.5.530 and rebuilds connected-account consent
-    around a demand-driven model while making agent capabilities a first-class,
-    user-comprehensible surface.
+    This release follows 2026.7.10.1445 on the same day and carries the ReAct
+    doneness semantics and the named-service relay for isolated runtimes.
 
-    Consent: the attempt is the ask. Turn-start no longer sweeps configured
-    tools or demands claim unions; a tool or named-service attempt with unmet
-    claims returns the structured consent contract (scoped to exactly that
-    tool's claims, with an absolute Connection Hub deep link and agent-facing
-    instructions — one contract across chat and MCP), raises one deduplicated
-    banner with two honest exits (approve the claims, or turn off the tools
-    that need them), and the approval itself becomes a conversation-lane event
-    that folds into the live turn so the agent circles back without a nudge.
-    Claim tiers give per-provider consent granularity (Slack read/write/files,
-    Gmail read/send); the consent plan lets users untick individual claims;
-    credentials read through the process secret cache so approvals are visible
-    immediately.
+    The DONE rule is set in stone: an action is done only when its own visible
+    successful result record says so — doneness evidence is the action's result,
+    never a matching permission, a prerequisite that succeeded, or a nearby
+    message. Re-execution requires a current request; ANNOUNCE is specified as a
+    snapshot of what holds rather than news, and the rule is distilled to five
+    lines in the agent's instructions.
 
-    Capabilities: one picker body serves three shells — the composer popover,
-    an expanded in-chat modal, and a served capabilities widget mounted on
-    scenes — showing per-agent capability groups in the grant vocabulary
-    (Read / Create & update / Actions), per-operation and per-named-action
-    narrowing enforced at dispatch, admin-excluded operations rendered as
-    information, and intentional exclusions that declare their alternative
-    path to the agent. Named-service realms carry a presentation layer
-    (purpose, works-with, object kinds, human labels, claim labels) so one
-    self-description serves two readers: the agent works the schema, the user
-    reads the service card. The Connection Hub gains an admin Access map of
-    resources, namespaces, and grants, plus tab-strip and frame-height fixes
-    for embedded hosts.
+    Isolated runtimes gain a named-service relay: exec-brokered code reaches
+    named-service providers over the Data Bus instead of holding direct clients.
+    The cross-runtime context documentation adds named-service client policy to
+    the portable room, and tier-1 builder docs gain the delegated-to-KDCube
+    building block plus a base-dependencies check before @venv use.
 
-    Files travel by ref. The mail and slack schemas speak per surface — the
-    in-chat contract teaches ref-based attachments and never offers inline
-    base64; react.pull teaches the share/onward-ref decision rule and reports
-    its user delivery; encoded-blob scrubbing at the tool-block and render
-    paths keeps base64 out of model context; reads ride react.pull everywhere
-    (get_object left the ReAct roster) with the full consent contract on the
-    pull path.
-
-    ReAct hardening: external-event folding is total (a consumed no-block
-    event advances the handler cursor — the completion livelock is fixed and
-    pinned), deferred completions render their outcome, equivalent completes
-    force-accept, answers collapse duplicates, and turn-start bookkeeping runs
-    under fail-open budgets with sync I/O off the serving event loop.
+    The Connection Hub account row now leads with what was granted.
 config:
-  version: "2026.7.10.1445"
+  version: "2026.7.10.1730"
