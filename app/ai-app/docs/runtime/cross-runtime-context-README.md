@@ -225,6 +225,9 @@ Host proc task
 |   BUNDLE_ID                              |
 |   BUNDLE_CALL_CONTEXT                    |
 |   NAMED_SERVICE_DISCOVERY                |
+| named_services_context                   |
+|   client_id                              |
+|   bundle_props (surfaces.as_consumer)    |
 +------------------+-----------------------+
                    |
                    | runtime bootstrap
@@ -292,6 +295,36 @@ Provider calls still run through a runtime bridge:
 The call must preserve request identity. The provider authorizes through the
 current `ExternalEventPayload` / `AuthContext`, not through a model-supplied
 user id.
+
+## Named Service Client Policy Context
+
+Discovery answers which providers exist; client policy answers what THIS
+client may call on them. The policy lives in the consumer descriptor
+(`surfaces.as_consumer.agents.<agent>.tools[named_service].namespaces.<ns>.allowed`)
+and is read from the tool registry's `bundle_props` with the acting
+`client_id`.
+
+The portable spec carries it as `named_services_context`:
+
+```json
+{
+  "client_id": "default.react.agent",
+  "bundle_props": {"surfaces": {"as_consumer": {"...": "..."}}}
+}
+```
+
+The host side builds it in `ToolSubsystem.build_portable_spec` (only the
+`surfaces.as_consumer` subtree plus the legacy `named_services` root — the
+exact subtree the policy reads, keeping the room small). The child side
+hydrates it in `bootstrap.make_registry`, so named-service tools running in a
+subprocess or ISO supervisor apply the same allowances as a direct in-host
+call — a `send`/`upsert` allowed for the agent works identically from
+generated code. A spec without this member leaves the child on the built-in
+read-only operation defaults.
+
+Per-user entry denials (the capability-picker selection) ride separately as
+part of the contextvars snapshot; the policy above is the configuration
+ceiling.
 
 ## Bundle Call Context
 
