@@ -1404,3 +1404,43 @@ async def test_descriptor_requirements_merge_over_realm_declarations_by_id():
     assert vpn["surface"]["url"] == (
         "/api/integrations/bundles/demo-tenant/demo-project/task-tracker@1-0/widgets/task_tracker_tasks"
     )
+
+
+def test_realm_card_presents_only_provider_served_operations():
+    """Surfaced case: the capabilities picker showed 'Host File' as live for
+    mail while the mail provider serves no object.host_file — the call died
+    with named_service_provider_not_found. The card's live surface is bounded
+    by the provider's declared operations; config cannot advertise past it."""
+    from types import SimpleNamespace
+
+    from kdcube_ai_app.apps.chat.sdk.runtime.agent_inventory import _realm_payload_from_spec
+
+    spec = SimpleNamespace(
+        provider_id="mail-provider",
+        label="Mail",
+        description="Provider-neutral mail namespace.",
+        operations={"provider.about": {}, "object.list": {}, "object.get": {}, "object.action": {}},
+        metadata={},
+    )
+
+    payload = _realm_payload_from_spec(
+        spec,
+        ["object.list", "object.host_file", "object.action"],
+    )
+    live = [
+        entry["name"]
+        for entry in payload["operations"]
+        if entry.get("enabled_for_agent") is not False
+    ]
+    assert "object.host_file" not in live
+    assert "object.list" in live
+
+    # A wildcard config expands to exactly the provider-served set.
+    wildcard = _realm_payload_from_spec(spec, ["*"])
+    wildcard_live = [
+        entry["name"]
+        for entry in wildcard["operations"]
+        if entry.get("enabled_for_agent") is not False
+    ]
+    assert "object.host_file" not in wildcard_live
+    assert set(wildcard_live) >= {"object.list", "object.get"}

@@ -742,6 +742,16 @@ def _realm_payload_from_spec(
     metadata = getattr(spec, "metadata", None)
     metadata = dict(metadata) if isinstance(metadata, Mapping) else {}
     allowed = [str(op or "").strip() for op in (allowed_operations or ()) if str(op or "").strip()]
+    # The provider's declaration bounds the live surface: a configured
+    # operation the provider does not serve cannot be exercised (the call
+    # would 404), so the card never presents it as available. Specs without
+    # a declaration bound nothing.
+    advertised = sorted(str(op) for op in (getattr(spec, "operations", None) or {}))
+    if advertised:
+        if any(op == "*" for op in allowed):
+            allowed = list(advertised)
+        else:
+            allowed = [op for op in allowed if _operation_key_allowed(op, advertised)]
 
     # Declared intentional exclusions: an excluded entry with a declared
     # `reason` renders that reason on the card (`excluded_note`); entries
