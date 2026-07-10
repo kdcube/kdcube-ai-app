@@ -263,8 +263,11 @@ def consent_granted_event_text(*, provider_label: str, claims: list, tools: list
     tool_text = ", ".join(sorted({str(t).rsplit(".", 1)[-1] for t in tools if str(t or "").strip()}))
     return (
         f"The user approved {provider_label} access ({claim_text}). "
-        f"The tools that needed it ({tool_text}) are usable now — retry what "
-        "was blocked if it is still wanted."
+        f"The tools that needed it ({tool_text}) are usable now. "
+        "The call this approval unblocked has NOT run — it failed before the "
+        "approval existed, and approving never re-runs it. If the goal still "
+        "stands, run that call again now and confirm its own result before "
+        "reporting the outcome."
     )
 
 
