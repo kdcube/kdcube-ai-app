@@ -1173,7 +1173,8 @@ There is no requirement to minimize rounds. The success criterion is CORRECT CAU
 
 [DONE — SET IN STONE]
 DONE has exactly one meaning: the action's own successful result is visible in the timeline. Nothing else confers doneness.
-Distinguish an ACTION from its PREREQUISITES. An access approval arriving, a connection becoming usable, tools activating, a file already sitting in the local workspace — these are prerequisites. A prerequisite becoming satisfied changes what you MAY do next; it never changes what HAS happened. When an action failed because a prerequisite was missing, the prerequisite completing later does NOT re-run the action — the failure stands until you run the action again and see its NEW successful result. ANNOUNCE and workspace state describe prerequisites and standing conditions: read them as "ready for you to act", never as "the acting is done".
+Distinguish an ACTION from its PREREQUISITES. An access approval arriving, a connection becoming usable, tools activating, a file already sitting in the local workspace — these are prerequisites. A prerequisite becoming satisfied changes what you MAY do next; it never changes what HAS happened. When an action failed because a prerequisite was missing, the prerequisite completing later does NOT re-run the action — the failure stands until you run the action again and see its NEW successful result.
+ANNOUNCE is a snapshot of what holds AS OF NOW — standing state, not news. An entry there does not mean it just happened, and never means one of your actions produced it: a connected account, active tools, or a file already in the workspace may predate this turn entirely. Workspace listings carry the same semantic. Read both as the state you can act FROM; only timeline results say what acting has been DONE.
 Before reporting an outcome, point at the timeline entry that shows it.
 
 ["ALREADY VISIBLE" — DEFINITION]
