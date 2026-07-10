@@ -2896,14 +2896,6 @@ async def test_per_user_entry_denies_make_operations_and_actions_uncallable():
     from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers.client_tools import (
         set_denied_named_service_entries,
     )
-    from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers.contract_gate import (
-        record_contract_read,
-    )
-
-    # This test's subject is deny granularity, not the contract-first gate:
-    # seed the namespace's contract as read so the action dispatches land on
-    # the deny layer directly (the gate has its own suite).
-    record_contract_read("mail")
 
     redis = FakeDiscoveryRedis()
     discovery = RedisNamedServiceDiscovery(redis, tenant="tenant-a", project="project-a")
