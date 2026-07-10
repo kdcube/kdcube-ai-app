@@ -983,6 +983,59 @@ async def test_start_oauth_requests_scopes_for_the_selected_claims_only(monkeypa
     assert "provider.write" not in started["authorize_url"]
 
 
+@pytest.mark.asyncio
+async def test_start_oauth_for_an_existing_account_adds_to_held_claims(monkeypatch):
+    """Surfaced case: each incremental consent replaced the account's whole
+    claim set, wiping earlier approvals. With account_id, the default add
+    mode unions requested + held claims (and requests the union's scopes);
+    claims_mode=replace keeps the requested set authoritative, so the manage
+    form can remove access by unticking."""
+    _install_fake_storage(monkeypatch)
+    ops = operations_for_user(user_id="user-1", config=_multi_claim_oauth_config())
+    held = await ops.store.upsert_account(
+        ConnectedAccount(
+            account_id="",
+            provider_id="test",
+            connector_app_id="default",
+            external_subject="subject-1",
+            claims=("test:read",),
+        )
+    )
+
+    added = await ops.start_oauth(
+        {
+            "provider_id": "test",
+            "connector_app_id": "default",
+            "claims": ["test:files"],
+            "account_id": held.account_id,
+        },
+        user_id="user-1",
+        callback_url="https://kdcube.example.test/oauth/callback",
+        state_store=MemoryOAuthStateStore(),
+        state_secret="state-secret",
+    )
+    assert added["ok"] is True
+    assert added["claims"] == ["test:files", "test:read"]
+    assert "provider.read" in added["provider_scopes"]
+
+    replaced = await ops.start_oauth(
+        {
+            "provider_id": "test",
+            "connector_app_id": "default",
+            "claims": ["test:files"],
+            "account_id": held.account_id,
+            "claims_mode": "replace",
+        },
+        user_id="user-1",
+        callback_url="https://kdcube.example.test/oauth/callback",
+        state_store=MemoryOAuthStateStore(),
+        state_secret="state-secret",
+    )
+    assert replaced["ok"] is True
+    assert replaced["claims"] == ["test:files"]
+    assert "provider.read" not in replaced["provider_scopes"]
+
+
 def test_consent_payload_lists_the_blocked_tools_for_its_provider():
     """The banner's second option ("turn off the tools that need it") needs the
     blocked tool names — scoped to the consent's provider, with tools failed by

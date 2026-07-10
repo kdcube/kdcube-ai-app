@@ -346,6 +346,27 @@ class DelegatedToKdcubeOperations:
         claims = _clean_claims(provider, connector_app_id, payload.get("claims"))
         if not claims:
             raise ValueError("at least one provider claim is required")
+        # Re-approving an existing account ADDS to its held claims by default:
+        # the authorize request carries scopes for the union, and the callback
+        # records the union — an incremental consent never drops access the
+        # user already approved. claims_mode="replace" makes the requested set
+        # authoritative (the hub's manage form: unticking removes a claim).
+        claims_mode = as_str(payload.get("claims_mode") or "add").lower()
+        account_id = as_str(payload.get("account_id"))
+        if account_id and claims_mode != "replace":
+            existing = await self.store.get_account(account_id)
+            if (
+                existing is not None
+                and existing.provider_id == provider_id
+                and (not existing.connector_app_id or existing.connector_app_id == connector_app_id)
+            ):
+                app_ceiling = set(connector_app.allowed_claims or ())
+                held = tuple(
+                    item
+                    for item in (existing.claims or ())
+                    if item in set(provider.claims) and (not app_ceiling or item in app_ceiling)
+                )
+                claims = tuple(sorted({*claims, *held}))
         redirect_uri = connector_app.redirect_uri or as_str(callback_url)
         if not redirect_uri:
             raise ValueError("OAuth callback URL is not available")

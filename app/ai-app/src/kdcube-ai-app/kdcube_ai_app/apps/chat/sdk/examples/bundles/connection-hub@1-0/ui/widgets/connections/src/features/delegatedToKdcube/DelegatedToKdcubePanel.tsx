@@ -166,15 +166,25 @@ export function DelegatedToKdcubePanel() {
   const [secretKind, setSecretKind] = useState<ConnectCredentialArgs['secretKind']>('app_password');
   const [secretValue, setSecretValue] = useState('');
   const [formNotice, setFormNotice] = useState('');
+  // Account whose access the form is managing; its checked set replaces the
+  // account's claims on approval. Empty = connecting a new account.
+  const [managedAccountId, setManagedAccountId] = useState('');
   const formRef = useRef<HTMLFormElement | null>(null);
   const canStartOAuth = oauthEnabled(selectedProvider, selectedConnectorAppId) && selectedClaims.length > 0;
 
-  const launchOAuth = async (targetProviderId: string, targetConnectorAppId: string, targetClaims: string[]) => {
+  const launchOAuth = async (
+    targetProviderId: string,
+    targetConnectorAppId: string,
+    targetClaims: string[],
+    opts?: {accountId?: string; claimsMode?: 'add' | 'replace'},
+  ) => {
     const result = await dispatch(startDelegatedToKdcubeOAuth({
       providerId: targetProviderId,
       connectorAppId: targetConnectorAppId,
       claims: targetClaims,
       returnHint: window.location.href,
+      accountId: opts?.accountId,
+      claimsMode: opts?.claimsMode,
     })).unwrap().catch(() => undefined);
     if (result?.authorize_url) {
       // Arms the one-shot focus refresh in App: when the user returns from
@@ -196,15 +206,19 @@ export function DelegatedToKdcubePanel() {
     const appId = account.connector_app_id || firstConnectorAppId(provider);
     const accountClaims = account.claims?.length ? account.claims : defaultClaims(provider, appId);
     if (oauthEnabled(provider, appId)) {
-      void launchOAuth(account.provider_id, appId, accountClaims);
+      void launchOAuth(account.provider_id, appId, accountClaims, {
+        accountId: account.account_id,
+        claimsMode: 'replace',
+      });
       return;
     }
     prefillForAccount(account, accountClaims, 'Enter a fresh credential to reconnect this account.');
   };
 
-  // Claims upgrade: prefill the form with the account's current claims
-  // checked so the user adds what is missing, then re-approves.
-  const upgradeAccess = (account: DelegatedToKdcubeAccount) => {
+  // Manage access: prefill the form with the account's current claims
+  // checked. The checked set is authoritative on re-approval — ticking adds
+  // access, unticking removes it.
+  const manageAccess = (account: DelegatedToKdcubeAccount) => {
     const provider = providers[account.provider_id];
     const appId = account.connector_app_id || firstConnectorAppId(provider);
     const merged = Array.from(new Set([
@@ -214,13 +228,14 @@ export function DelegatedToKdcubePanel() {
     prefillForAccount(
       account,
       merged.length ? merged : defaultClaims(provider, appId),
-      'Check the additional access this account should approve, then reconnect it.',
+      'This account keeps exactly the checked access: tick to add, untick to remove, then reconnect.',
     );
   };
 
   const prefillForAccount = (account: DelegatedToKdcubeAccount, targetClaims: string[], notice: string) => {
     setProviderId(account.provider_id);
     setConnectorAppId(account.connector_app_id || '');
+    setManagedAccountId(account.account_id);
     setClaims(targetClaims);
     setEmail(account.email || '');
     setDisplayName(account.display_name || '');
@@ -277,7 +292,12 @@ export function DelegatedToKdcubePanel() {
     if (!planAccount) return;
     const accountAppId = planAccount.connector_app_id || appId;
     if (oauthEnabled(planProvider, accountAppId)) {
-      void launchOAuth(planProvider.provider_id, accountAppId, targetClaims);
+      // A consent-plan approval ADDS to the account's held access; the
+      // server unions the claims so nothing already approved is dropped.
+      void launchOAuth(planProvider.provider_id, accountAppId, targetClaims, {
+        accountId: planAccount.account_id,
+        claimsMode: action === 'reconnect' ? 'replace' : 'add',
+      });
       return;
     }
     prefillForAccount(
@@ -303,12 +323,14 @@ export function DelegatedToKdcubePanel() {
     setConnectorAppId('');
     setClaims([]);
     setFormNotice('');
+    setManagedAccountId('');
   };
 
   const changeConnectorApp = (nextConnectorAppId: string) => {
     setConnectorAppId(nextConnectorAppId);
     setClaims([]);
     setFormNotice('');
+    setManagedAccountId('');
   };
 
   const submit = async () => {
@@ -335,7 +357,12 @@ export function DelegatedToKdcubePanel() {
 
   const startOAuth = async () => {
     if (!selectedProviderId || !selectedConnectorAppId || !canStartOAuth) return;
-    await launchOAuth(selectedProviderId, selectedConnectorAppId, selectedClaims);
+    await launchOAuth(
+      selectedProviderId,
+      selectedConnectorAppId,
+      selectedClaims,
+      managedAccountId ? {accountId: managedAccountId, claimsMode: 'replace'} : undefined,
+    );
   };
 
   const disconnect = (accountId: string) => {
@@ -427,9 +454,9 @@ export function DelegatedToKdcubePanel() {
                               className="btn btn-ghost"
                               type="button"
                               disabled={busy}
-                              onClick={() => upgradeAccess(account)}
+                              onClick={() => manageAccess(account)}
                             >
-                              Add access
+                              Manage access
                             </button>
                           </>
                         )}

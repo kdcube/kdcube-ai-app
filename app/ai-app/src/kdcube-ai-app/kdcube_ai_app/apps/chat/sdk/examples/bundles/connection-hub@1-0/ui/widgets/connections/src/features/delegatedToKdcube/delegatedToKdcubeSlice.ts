@@ -90,6 +90,11 @@ export interface StartOAuthArgs {
   connectorAppId: string;
   claims: string[];
   returnHint?: string;
+  // Existing account this approval belongs to. With claimsMode "add" (the
+  // default) the server unions the claims with the account's held set; with
+  // "replace" the passed claims become the account's exact set.
+  accountId?: string;
+  claimsMode?: 'add' | 'replace';
 }
 
 export const startDelegatedToKdcubeOAuth = createAsyncThunk<
@@ -105,6 +110,8 @@ export const startDelegatedToKdcubeOAuth = createAsyncThunk<
         connector_app_id: args.connectorAppId,
         claims: args.claims,
         return_hint: args.returnHint || window.location.href,
+        ...(args.accountId ? {account_id: args.accountId} : {}),
+        ...(args.claimsMode ? {claims_mode: args.claimsMode} : {}),
       });
       if (res?.ok === false) return rejectWithValue(resultError(res, 'Failed to start OAuth connection'));
       return res || {};
