@@ -14,7 +14,7 @@ keywords:
     "which doc to read next",
     "bundle docs map",
   ]
-updated_at: 2026-07-09
+updated_at: 2026-07-10
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/how-to-integrate-with-kdcube-apps-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-index-README.md
@@ -37,6 +37,7 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/workspace-reference-bundle-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/user-settings/capabilities-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/providers-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/recipes/connections/README.md
   - repo:kdcube-ai-app/app/ai-app/docs/recipes/components/scene-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/scene/scene-surface-commands-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/hosting/hosting-README.md
@@ -126,6 +127,7 @@ Conditional additions:
 | Integrating a host product or server with KDCube app surfaces, deciding iframe vs direct client vs backend-only app | [../../../how-to-integrate-with-kdcube-apps-README.md](../../../how-to-integrate-with-kdcube-apps-README.md) |
 | Exposing a namespace of objects for other bundles, or consuming another bundle's namespace (canvas pins / chat chips / agent tools) | [../../namespace-services/README.md](../../namespace-services/README.md) |
 | Declaring a realm's self-description: presentation texts (service card) and connected-account requirements | [../../namespace-services/providers-README.md](../../namespace-services/providers-README.md) |
+| Acting on a signed-in user's own external account (Google/Sheets/Drive, Slack, iCloud) on their behalf — delegated consent/token/refresh, no bundle-owned OAuth or service account | [../../../recipes/connections/README.md](../../../recipes/connections/README.md), then [../../solutions/connections/connection-hub-solution-README.md](../../solutions/connections/connection-hub-solution-README.md) |
 | Per-user agent customization: composer "+" menu, capability picker shells, selection enforcement | [../../solutions/user-settings/capabilities-README.md](../../solutions/user-settings/capabilities-README.md) |
 | One mounted widget summons and directs another (surface command contract) | [../../../recipes/components/scene-surface-command-README.md](../../../recipes/components/scene-surface-command-README.md), then [../../solutions/scene/scene-surface-commands-README.md](../../solutions/scene/scene-surface-commands-README.md) |
 | Moving file bytes in/out on turn-less transports (MCP, integrations): signed slots/URLs, staging | [../../solutions/hosting/hosting-README.md](../../solutions/hosting/hosting-README.md), [../../../recipes/resource_sharing/hosting-README.md](../../../recipes/resource_sharing/hosting-README.md) |
@@ -149,6 +151,7 @@ Conditional additions:
 | How do I mount an existing SDK subsystem correctly? | [../bundle-subsystem-integration-README.md](../bundle-subsystem-integration-README.md) |
 | How does one bundle call another bundle's objects/actions (e.g. canvas shows a `task:` pin)? | [../../namespace-services/README.md](../../namespace-services/README.md) |
 | How do users pick tools/skills/model per agent, and how is the pick enforced at runtime? | [../../solutions/user-settings/capabilities-README.md](../../solutions/user-settings/capabilities-README.md) |
+| How does my bundle act on a user's own Google/Slack/iCloud account without owning OAuth or a service account? | [../../../recipes/connections/README.md](../../../recipes/connections/README.md) |
 | How do I compose served widgets into one scene, or mount another app's widget? | [../../../recipes/components/scene-README.md](../../../recipes/components/scene-README.md), [../../solutions/scene/config/README.md](../../solutions/scene/config/README.md) |
 | How do I write or structure a bundle? | [how-to-write-bundle-README.md](how-to-write-bundle-README.md) |
 | Which entrypoint base or mixin should I use? | [../bundle-entrypoint-classes-README.md](../bundle-entrypoint-classes-README.md) |

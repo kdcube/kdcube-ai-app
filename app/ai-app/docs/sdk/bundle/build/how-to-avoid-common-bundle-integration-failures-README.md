@@ -16,7 +16,7 @@ keywords:
     "authored external events",
     "resolver ownership",
   ]
-updated_at: 2026-07-09
+updated_at: 2026-07-10
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/how-to-integrate-with-kdcube-apps-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/recipes/components/scene-README.md
@@ -59,6 +59,7 @@ canvas, tasks, Telegram, delivery, or another reusable SDK subsystem, also read
 | Browser-to-bundle durable mutations | Data Bus and conversation events have different ownership and ordering. |
 | ReAct timeline/ANNOUNCE rendering | authored events and tool results need event-source policies, and conversation events cross lane/wake/processor/bundle-load/ReAct fences. |
 | Canvas/task/memory/file refs | resolver ownership belongs to the namespace owner, not the composition bundle. |
+| A third-party library, or adding `@venv` | a package that imports in your test `.venv` may not be in the proc base image; deciding membership by import ships undeclared or transitive deps. |
 | Semantic search, background jobs, or task execution | economics must be wired at the operation boundary and visible through `[economics.enforcement]` traces. |
 
 For the client-shape decision behind those failures, read
@@ -446,6 +447,25 @@ Read:
 
 - [Bundle Runtime](../bundle-runtime-README.md) — the async access contract
 
+## Recipe: A `.venv` Import Is Not Base-Image Membership
+
+The test `.venv` you prove locally is not the chat-processor container. A
+successful `import <pkg>` there proves nothing about the base image — the
+package may be a local or merely transitive install, which is exactly how an
+undeclared dependency ships green in tests and then fails in proc. Deciding base
+membership by import is the trap; the only authoritative test is a name grep of
+the *declared* proc requirements.
+
+Fix in one line: grep the package name in `requirements-chat-processor.txt`
+(plus the shared `requirements-chat.txt`) — a hit on a top-level, pinned line is
+declared and safe to import in-proc; no hit means own it via `@venv` +
+`requirements.txt`, even if it imports in your `.venv`.
+
+Read:
+
+- [How To Assemble A Bundle With SDK Building Blocks](how-to-assemble-bundle-with-sdk-building-blocks-README.md) — the base-deps check before reaching for `@venv`
+- [Bundle Venv](../bundle-venv-README.md)
+
 ## Triage Table
 
 | Symptom | First Check |
@@ -454,6 +474,7 @@ Read:
 | Static bundle loads HTML but assets 404 | built asset URLs are `/assets/...` instead of `./assets/...`. |
 | Widget calls wrong host | API client used embedding page origin instead of runtime base URL. |
 | Bundle import works in one process and fails in runtime | bundle-local imports are top-level instead of package-relative. |
+| Third-party import works in tests but fails in proc runtime | the package is in your local `.venv`, not in the declared `requirements-chat-processor.txt` — own it via `@venv`, do not assume the base image. |
 | Agent sees a JSON blob instead of useful context | missing event-source policy. |
 | `react.pull` cannot resolve a compact ref | namespace rehoster or resolver was not registered in a loaded module. |
 | UI mutation hangs or duplicates | Data Bus subject/object_ref/handler contract is incomplete. |

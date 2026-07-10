@@ -4,7 +4,7 @@ title: "How To Assemble A Bundle With SDK Building Blocks"
 summary: "Tier 1 bundle-builder map for choosing reusable KDCube SDK and platform blocks before writing custom bundle services: tools, event sources, agents, storage, widgets, jobs, integrations, and solutions."
 tags: ["sdk", "bundle", "tier-1", "building-blocks", "integrations", "solutions", "tools"]
 keywords: ["bundle building blocks", "sdk integrations", "sdk solutions", "bundle assembly map", "reuse sdk components", "telegram integration", "email integration", "automations solution", "delivery integration", "shared sdk widget components", "built in tools", "react tools", "bundle events", "event sources", "artifact rehosters"]
-updated_at: 2026-07-09
+updated_at: 2026-07-10
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/how-to-integrate-with-kdcube-apps-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-navigate-kdcube-docs-README.md
@@ -44,6 +44,9 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/user-settings/capabilities-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/recipes/components/scene-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/recipes/components/chat-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/recipes/connections/README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/connection-hub-solution-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/recipes/connections/use-connected-identities-in-product-feature-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/memory/memory-widget-solution-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/canvas/canvas-sdk-solution-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/events/event-subsystem-README.md
@@ -134,6 +137,7 @@ ownership.
 | Economics-aware chat turns, semantic search, memory reconciliation, canvas pin search, and automation execution | `BaseEntrypointWithEconomics`, `search_model_service(flow=...)`, and `EconomicsGuard` | [Bundle Economics Integration](../bundle-economics-integration-README.md), [Economic Enforcement Engine](../../../economics/economic-enforcement-engine-README.md) |
 | Gmail/iCloud accounts, OAuth/settings, email attachment materialization, Email MCP, Claude Code email processing | `kdcube_ai_app.apps.chat.sdk.integrations.email` | [Email Integration](../../integrations/email/README.md) |
 | Telegram webhook, Bot API rendering, progress streaming, Mini App auth, widget operations, user registry, signed downloads | `kdcube_ai_app.apps.chat.sdk.integrations.telegram` | [Telegram Integration](../../integrations/telegram/README.md) |
+| Act on a signed-in user's own external account (Google/Sheets/Drive, Slack, iCloud, …) on their behalf — consent, token exchange, and refresh are handled for you; **no bundle-owned service account, no OAuth/auth libraries** | Connection Hub **delegated-to-KDCube** connected accounts; `connected_accounts.resolve_connected_account_claim` / `DelegatedToKdcubeClient.ensure_claim` | [Connection Recipes](../../../recipes/connections/README.md), [Connection Hub Solution](../../solutions/connections/connection-hub-solution-README.md), [Use Connected Identities](../../../recipes/connections/use-connected-identities-in-product-feature-README.md) |
 | Local public HTTPS origin for provider callbacks, Telegram webhooks, OAuth callbacks, and remote-control style integrations while KDCube runs on localhost | one ngrok HTTPS URL through a local reverse proxy into frontend, ingress, and proc | [Serving Local KDCube With Ngrok](../../../service/cicd/ngrok-README.md) |
 | Explicit report delivery to email/Telegram with delivered-file metadata | `kdcube_ai_app.apps.chat.sdk.integrations.delivery` | [Email Integration](../../integrations/email/email-README.md), [Telegram Integration](../../integrations/telegram/telegram-README.md) |
 | Web search and web fetch with source-pool provenance | `web_tools` | [SDK Tools](../../tools/sdk-tools-README.md) |
@@ -166,6 +170,27 @@ ownership.
 | Local mutable files, generated indexes, git working copies, runtime caches | bundle storage helpers, `BundleArtifactStorage`, KV cache, git helpers | [Bundle Storage And Cache](../bundle-storage-and-cache-README.md) |
 | Node/TypeScript backend inside a bundle | Python bundle shell + Node sidecar bridge | [Bundle Node Backend Bridge](../bundle-node-backend-bridge-README.md) |
 | Bundle-specific Python dependencies | `@venv(...)` | [Bundle Venv](../bundle-venv-README.md) |
+
+**Before adding `@venv`, check the base image — grep the declared proc
+requirements; do not decide from a `.venv` import.** The `.venv` you proved for
+tests is not the proc container, so `import <pkg>` succeeding there proves nothing
+about the base image — the package may be a local or merely *transitive* install,
+which is exactly how an undeclared dependency ships. The authoritative membership
+test is a name grep of the *declared* requirements. Resolve these `repo:` refs to
+local paths, then grep by package name:
+
+```
+rg -i '^<pkg>' \
+  <repo>/app/ai-app/src/kdcube-ai-app/requirements-chat-processor.txt \
+  <repo>/app/ai-app/src/kdcube-ai-app/requirements-chat.txt
+```
+
+(`repo:kdcube-ai-app/app/ai-app/src/kdcube-ai-app/requirements-chat-processor.txt`
+plus the shared `requirements-chat.txt`.) A hit on a top-level, pinned line =
+**declared** → safe to import in-proc. No hit = **not in the base**, even if it
+imports in your `.venv` (that is a local/transitive artifact, not a contract) →
+own it via `@venv` + `requirements.txt`, or do not rely on it. Use `@venv` only
+for libraries genuinely absent from the declared list.
 
 ## Where Blocks Are Wired
 
