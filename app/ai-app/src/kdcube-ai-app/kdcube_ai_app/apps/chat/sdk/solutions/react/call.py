@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import copy
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 from kdcube_ai_app.apps.chat.sdk.solutions.react.tools import (
     READ_SPEC,
@@ -16,6 +16,8 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.tools import (
     HIDE_SPEC,
     RG_SPEC,
     PLAN_SPEC,
+    DELEGATE_SPEC,
+    CONTRIBUTE_SPEC,
     handle_react_read,
     handle_react_pull,
     handle_react_checkout,
@@ -25,11 +27,20 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.tools import (
     handle_react_hide,
     handle_react_rg,
     handle_react_plan,
+    handle_react_delegate,
+    handle_react_contribute,
     handle_external_tool,
 )
 
 
-def get_react_tools_catalog() -> List[Dict[str, object]]:
+def get_react_tools_catalog(*, subagent_role: Optional[str] = None) -> List[Dict[str, object]]:
+    """The react tool catalog.
+
+    ``subagent_role`` keys the subagent tools' availability: ``"parent"``
+    (an agent whose runtime carries a spawner) adds ``react.delegate``;
+    ``"child"`` (a subagent conversation) adds ``react.contribute``;
+    ``None`` adds neither.
+    """
     specs = [
         READ_SPEC,
         PULL_SPEC,
@@ -41,6 +52,10 @@ def get_react_tools_catalog() -> List[Dict[str, object]]:
         RG_SPEC,
         PLAN_SPEC,
     ]
+    if subagent_role == "parent":
+        specs.append(DELEGATE_SPEC)
+    elif subagent_role == "child":
+        specs.append(CONTRIBUTE_SPEC)
     strategy_by_id = {
         "react.read": ["exploration"],
         "react.pull": ["exploration"],
@@ -51,6 +66,8 @@ def get_react_tools_catalog() -> List[Dict[str, object]]:
         "react.hide": ["neutral"],
         "react.rg": ["exploration"],
         "react.plan": ["neutral"],
+        "react.delegate": ["neutral"],
+        "react.contribute": ["neutral"],
     }
     out: List[Dict[str, object]] = []
     for spec in specs:
@@ -73,5 +90,7 @@ __all__ = [
     "handle_react_hide",
     "handle_react_rg",
     "handle_react_plan",
+    "handle_react_delegate",
+    "handle_react_contribute",
     "handle_external_tool",
 ]

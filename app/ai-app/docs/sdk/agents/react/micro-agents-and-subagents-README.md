@@ -5,6 +5,7 @@ summary: "How separate agent calls affect rendered context, prompt caching, and 
 tags: ["sdk", "agents", "react", "context", "caching", "subagents"]
 keywords: ["subagent", "micro-agent", "prompt cache", "system instruction", "handoff", "announce"]
 see_also:
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/work-with-subagents-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/subagents/subagents-runtime-bootstrap-and-reduce-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/context-caching-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/context-layout.md
@@ -18,6 +19,16 @@ A micro-agent or subagent is a separate model call. It may be launched from a
 main ReAct turn, but it does not inherit the main agent's prompt cache for free.
 It has its own system/instruction envelope, its own rendered context, and its
 own cache story.
+
+This document is the prompt-shape and cache-economics contract for ANY
+separate agent call, and it stays the reference for in-turn fan-out: calls
+launched from within a turn whose results fold back into the same timeline.
+The chartered subagent — a child CONVERSATION spawned with `react.delegate`,
+running in the background with its own timeline, budget, and lane-event
+reporting — is specified in
+[work-with-subagents-README.md](work-with-subagents-README.md); every cache
+and handoff rule below applies to its child calls too. The boundary: in-turn
+fan-out lives inside the parent's turn; the chartered subagent outlives it.
 
 ## Model Input Shape
 

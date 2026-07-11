@@ -15,6 +15,8 @@ if TYPE_CHECKING:
     from .hide import TOOL_SPEC as HIDE_SPEC, handle_react_hide
     from .rg import TOOL_SPEC as RG_SPEC, handle_react_rg
     from .plan import TOOL_SPEC as PLAN_SPEC, handle_react_plan
+    from .delegate import TOOL_SPEC as DELEGATE_SPEC, handle_react_delegate
+    from .contribute import TOOL_SPEC as CONTRIBUTE_SPEC, handle_react_contribute
     from .external import TOOL_SPEC as EXTERNAL_SPEC, handle_external_tool
 
 """
@@ -34,6 +36,8 @@ __all__ = [
     "HIDE_SPEC",
     "RG_SPEC",
     "PLAN_SPEC",
+    "DELEGATE_SPEC",
+    "CONTRIBUTE_SPEC",
     "EXTERNAL_SPEC",
     "handle_react_read",
     "handle_react_pull",
@@ -44,6 +48,8 @@ __all__ = [
     "handle_react_hide",
     "handle_react_rg",
     "handle_react_plan",
+    "handle_react_delegate",
+    "handle_react_contribute",
     "handle_external_tool",
 ]
 
@@ -66,6 +72,10 @@ _LAZY_ATTRS = {
     "handle_react_rg": ("rg", "handle_react_rg"),
     "PLAN_SPEC": ("plan", "TOOL_SPEC"),
     "handle_react_plan": ("plan", "handle_react_plan"),
+    "DELEGATE_SPEC": ("delegate", "TOOL_SPEC"),
+    "handle_react_delegate": ("delegate", "handle_react_delegate"),
+    "CONTRIBUTE_SPEC": ("contribute", "TOOL_SPEC"),
+    "handle_react_contribute": ("contribute", "handle_react_contribute"),
     "EXTERNAL_SPEC": ("external", "TOOL_SPEC"),
     "handle_external_tool": ("external", "handle_external_tool"),
 }

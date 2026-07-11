@@ -2837,7 +2837,20 @@ class BaseWorkflow():
                     event_source_specs: Optional[List[Dict[str, Any]]] = None,
                     story_snapshots_enabled: Optional[bool] = None,
                     include_tool_catalog: Optional[bool] = None,
-                    include_skill_gallery: Optional[bool] = None) -> Any:
+                    include_skill_gallery: Optional[bool] = None,
+                    *,
+                    comm_override: Optional[Any] = None,
+                    comm_context_override: Optional[Any] = None,
+                    ctx_browser_override: Optional[Any] = None,
+                    hosting_service_override: Optional[Any] = None) -> Any:
+        # The overrides keep this ONE construction path serving both the
+        # user-facing agent (self.* state) and a spawned subagent (a child
+        # conversation's browser/comm, same tool+skill configuration).
+        comm = comm_override or self.comm
+        comm_context = comm_context_override or self.comm_context
+        ctx_browser = ctx_browser_override or self.ctx_browser
+        hosting_service = hosting_service_override or self.hosting_service
+        runtime_ctx = getattr(ctx_browser, "runtime_ctx", None) or self.runtime_ctx
 
         bundle_root = self.bundle_root()
         react_version = _react_agent_version()
@@ -2856,7 +2869,7 @@ class BaseWorkflow():
 
         tool_subsystem, mcp_subsystem = create_tool_subsystem_with_mcp(
             service=self.model_service,
-            comm=self.comm,
+            comm=comm,
             logger=self.logger,
             bundle_spec=self.config.ai_bundle_spec,
             context_rag_client=self.ctx_client,
@@ -2865,9 +2878,9 @@ class BaseWorkflow():
                 "pg_pool": self.pg_pool,
                 "redis": self.redis,
                 "bundle_props": self.bundle_props,
-                "comm_context": self.comm_context,
+                "comm_context": comm_context,
                 "config": self.config,
-                "client_id": getattr(getattr(self, "runtime_ctx", None), "agent_id", None),
+                "client_id": getattr(runtime_ctx, "agent_id", None),
             },
             raw_tool_specs=mod_tools_spec,
             tool_runtime=tools_runtime,
@@ -2876,12 +2889,12 @@ class BaseWorkflow():
             mcp_tool_specs=mcp_tools_spec or [],
             mcp_services_config=self._resolve_mcp_services_config(),
             mcp_env_json=os.environ.get("MCP_SERVICES") or "",
-            hosting_service=self.hosting_service,
+            hosting_service=hosting_service,
         )
 
         tools = tool_subsystem or ToolSubsystem(
             service=self.model_service,
-            comm=self.comm,
+            comm=comm,
             bundle_spec=self.config.ai_bundle_spec,
             logger=self.logger,
             context_rag_client=self.ctx_client,
@@ -2890,18 +2903,18 @@ class BaseWorkflow():
                 "pg_pool": self.pg_pool,
                 "redis": self.redis,
                 "bundle_props": self.bundle_props,
-                "comm_context": self.comm_context,
+                "comm_context": comm_context,
                 "config": self.config,
-                "client_id": getattr(getattr(self, "runtime_ctx", None), "agent_id", None),
+                "client_id": getattr(runtime_ctx, "agent_id", None),
             },
             mcp_subsystem=mcp_subsystem,
             tool_runtime=tools_runtime,
             tool_traits=tool_traits,
             event_specs=event_source_specs,
-            hosting_service=self.hosting_service,
+            hosting_service=hosting_service,
         )
         try:
-            self.runtime_ctx.event_sources = getattr(tools, "event_sources", None)
+            runtime_ctx.event_sources = getattr(tools, "event_sources", None)
         except Exception:
             pass
         skills = SkillsSubsystem(
@@ -2915,7 +2928,7 @@ class BaseWorkflow():
             value, _source = _react_config_lookup(
                 self.bundle_props or {},
                 *keys,
-                agent_id=getattr(getattr(self, "runtime_ctx", None), "agent_id", None),
+                agent_id=getattr(runtime_ctx, "agent_id", None),
                 default=default,
             )
             return value
@@ -2980,7 +2993,7 @@ class BaseWorkflow():
         effective_story_snapshots_enabled = (
             bool(story_snapshots_enabled)
             if story_snapshots_enabled is not None
-            else bool(getattr(self.runtime_ctx, "story_snapshots_enabled", False))
+            else bool(getattr(runtime_ctx, "story_snapshots_enabled", False))
         )
         if effective_story_snapshots_enabled:
             try:
@@ -3035,10 +3048,10 @@ class BaseWorkflow():
             logger=self.logger,
             tools_subsystem=tools,     # exposes .tools to React
             skills_subsystem=skills,
-            comm=self.comm,
-            comm_context=self.comm_context,
-            hosting_service=self.hosting_service,
-            ctx_browser=self.ctx_browser,
+            comm=comm,
+            comm_context=comm_context,
+            hosting_service=hosting_service,
+            ctx_browser=ctx_browser,
             scratchpad=scratchpad,
             additional_instructions=extra_instructions or None,
             instruction_body=custom_instruction_body or None,
@@ -3049,13 +3062,79 @@ class BaseWorkflow():
         try:
             self.logger.log(
                 f"[react.{react_version}] build_react version={react_version} "
-                f"multi_action_mode={getattr(self.runtime_ctx, 'multi_action_mode', None)} "
+                f"multi_action_mode={getattr(runtime_ctx, 'multi_action_mode', None)} "
                 f"story_snapshots_enabled={effective_story_snapshots_enabled}",
                 level="INFO",
             )
         except Exception:
             pass
+        try:
+            self._install_subagent_spawner(
+                runtime_ctx=runtime_ctx,
+                build_template={
+                    "mod_tools_spec": mod_tools_spec,
+                    "mcp_tools_spec": mcp_tools_spec,
+                    "tools_runtime": tools_runtime,
+                    "tool_traits": tool_traits,
+                    "custom_skills_root": custom_skills_root,
+                    "skills_visibility_agents_config": skills_visibility_agents_config,
+                    "additional_instructions": extra_instructions or None,
+                    "instruction_body": custom_instruction_body or None,
+                    "instruction_blocks": custom_instruction_blocks or None,
+                    "event_source_specs": event_source_specs,
+                    "story_snapshots_enabled": effective_story_snapshots_enabled,
+                    "include_tool_catalog": bool(include_tool_catalog),
+                    "include_skill_gallery": bool(include_skill_gallery),
+                },
+            )
+        except Exception:
+            self.logger.log(
+                f"[react.{react_version}] subagent spawner installation failed\n{traceback.format_exc()}",
+                level="ERROR",
+            )
         return react
+
+    def _install_subagent_spawner(
+        self,
+        *,
+        runtime_ctx: Any,
+        build_template: Dict[str, Any],
+    ) -> None:
+        """Wire ``react.delegate`` for a user-facing agent.
+
+        A spawner on ``runtime_ctx.subagent_spawner`` is what makes the tool
+        appear in the decision catalog; the spawner reuses THIS workflow's
+        build/persist path for the child. A subagent runtime (depth >= 1)
+        gets no spawner — a subagent completes its own charter.
+        """
+        if runtime_ctx is None:
+            return
+        if int(getattr(runtime_ctx, "subagent_depth", 0) or 0) >= 1:
+            return
+        agent_id = getattr(runtime_ctx, "agent_id", None)
+        enabled_raw, _src = _react_config_lookup(
+            self.bundle_props or {},
+            "subagents.enabled",
+            agent_id=agent_id,
+        )
+        enabled = _bool_or_none(enabled_raw)
+        if enabled is False:
+            runtime_ctx.subagent_spawner = None
+            return
+        defaults_raw, _src = _react_config_lookup(
+            self.bundle_props or {},
+            "subagents",
+            agent_id=agent_id,
+        )
+        runtime_ctx.subagent_defaults = dict(defaults_raw) if isinstance(defaults_raw, dict) else {}
+        from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.react_subagents import (
+            ReactSubagentSpawner,
+        )
+
+        runtime_ctx.subagent_spawner = ReactSubagentSpawner(
+            workflow=self,
+            build_template=dict(build_template or {}),
+        )
 
     # -------------------- Create solver --------------------
     async def report_timings(self, scratchpad: CTurnScratchpad, ms0u, total_ms):

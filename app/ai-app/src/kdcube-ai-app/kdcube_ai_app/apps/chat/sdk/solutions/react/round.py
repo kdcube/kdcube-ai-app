@@ -601,6 +601,10 @@ class ReactRound:
                 return await react_tools.handle_react_plan(react=react, ctx_browser=ctx_browser, state=state, tool_call_id=tool_call_id)
             if tool_id == "react.write":
                 return await react_tools.handle_react_write(react=react, ctx_browser=ctx_browser, state=state, tool_call_id=tool_call_id)
+            if tool_id == "react.delegate":
+                return await react_tools.handle_react_delegate(react=react, ctx_browser=ctx_browser, state=state, tool_call_id=tool_call_id)
+            if tool_id == "react.contribute":
+                return await react_tools.handle_react_contribute(react=react, ctx_browser=ctx_browser, state=state, tool_call_id=tool_call_id)
             return await react_tools.handle_external_tool(react=react, ctx_browser=ctx_browser, state=state, tool_call_id=tool_call_id)
 
         started_ms = int(time.time() * 1000)

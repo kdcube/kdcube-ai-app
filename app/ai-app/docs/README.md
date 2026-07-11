@@ -71,6 +71,8 @@ Curated index of platform, service, and SDK documentation.
 * ReAct Tools: [react-tools-README.md](sdk/agents/react/react-tools-README.md)
 * ReAct Compaction: [compaction-README.md](sdk/agents/react/compaction-README.md)
 * ReAct Context Caching: [context-caching-README.md](sdk/agents/react/context-caching-README.md)
+* ReAct Subagents: [work-with-subagents-README.md](sdk/agents/react/work-with-subagents-README.md)
+* Timeline Fork: [fork-README.md](sdk/solutions/timeline/fork-README.md)
 * Artifact Discovery: [artifact-discovery-README.md](sdk/agents/react/artifact-discovery-README.md)
 * Tool Subsystem: [tool-subsystem-README.md](sdk/tools/tool-subsystem-README.md)
 * Custom Tools: [custom-tools-README.md](sdk/tools/custom-tools-README.md)

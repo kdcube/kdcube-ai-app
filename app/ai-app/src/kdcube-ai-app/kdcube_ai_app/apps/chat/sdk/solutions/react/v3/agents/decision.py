@@ -254,6 +254,7 @@ def build_decision_system_text(
     include_skill_gallery: bool = True,
     multi_action_mode: str = "off",
     skill_consumer: str = "solver.react.v2.decision.v2.strong",
+    subagent_role: Optional[str] = None,
 ) -> str:
     json_hint = (
         "{\n"
@@ -433,6 +434,7 @@ def build_decision_system_text(
         instruction_blocks=instruction_blocks,
         include_tool_catalog=include_tool_catalog,
         include_skill_gallery=include_skill_gallery,
+        subagent_role=subagent_role,
     )
     extra_instructions = str(additional_instructions or "").strip()
     if extra_instructions:

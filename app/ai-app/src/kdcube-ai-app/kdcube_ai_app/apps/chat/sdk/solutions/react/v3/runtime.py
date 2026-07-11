@@ -2023,7 +2023,14 @@ class ReactSolverV2:
         if not tid:
             return {}
         try:
-            for spec in get_react_tools_catalog():
+            # Traits lookup spans every react tool regardless of this agent's
+            # subagent role (the role only gates catalog VISIBILITY).
+            specs = list(get_react_tools_catalog(subagent_role="parent"))
+            specs += [
+                spec for spec in get_react_tools_catalog(subagent_role="child")
+                if str(spec.get("id") or "") == "react.contribute"
+            ]
+            for spec in specs:
                 if str(spec.get("id") or "").strip() == tid and isinstance(spec.get("tool_traits"), dict):
                     return dict(spec.get("tool_traits") or {})
         except Exception:
@@ -2770,12 +2777,29 @@ class ReactSolverV2:
         with bind_current_bundle_call_context_patch({"role_models": merged}):
             yield
 
+    def _subagent_role(self) -> Optional[str]:
+        """Which subagent tool this agent's catalog carries: ``"child"`` when
+        this runtime IS a subagent (it contributes back), ``"parent"`` when a
+        spawner is wired (it can delegate), else ``None``."""
+        runtime_ctx = getattr(self.ctx_browser, "runtime_ctx", None) if self.ctx_browser else None
+        if runtime_ctx is None:
+            return None
+        if int(getattr(runtime_ctx, "subagent_depth", 0) or 0) >= 1:
+            return "child"
+        if getattr(runtime_ctx, "subagent_spawner", None) is not None:
+            return "parent"
+        return None
+
     async def run(
         self,
         *,
         allowed_plugins: List[str],
         allowed_tool_names_by_alias: Dict[str, Any] | None = None,
     ):
+        # Captured so react.delegate can hand the SAME run configuration to a
+        # spawned subagent (the child inherits the parent's tool selection).
+        self._run_allowed_plugins = list(allowed_plugins or [])
+        self._run_allowed_tool_names_by_alias = allowed_tool_names_by_alias
         with self._bind_runtime_role_models():
             return await self._run_impl(
                 allowed_plugins=allowed_plugins,
@@ -3320,7 +3344,7 @@ class ReactSolverV2:
         try:
             state["skill_tool_catalog"] = (
                 build_tool_catalog(announced_adapters + extra_adapters_for_decision, exclude_tool_ids=[])
-                + get_react_tools_catalog()
+                + get_react_tools_catalog(subagent_role=self._subagent_role())
             )
         except Exception:
             state["skill_tool_catalog"] = []
@@ -3402,6 +3426,7 @@ class ReactSolverV2:
                         include_tool_catalog=self.include_tool_catalog,
                         include_skill_gallery=self.include_skill_gallery,
                         multi_action_mode=self.multi_action_mode,
+                        subagent_role=self._subagent_role(),
                     ),
                     render_params=render_params,
                     agent_fn=_decision_agent,

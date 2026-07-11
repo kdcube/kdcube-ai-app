@@ -174,6 +174,7 @@ def compose_decision_system_text(
     instruction_blocks: Optional[Iterable[str]] = None,
     include_tool_catalog: bool = True,
     include_skill_gallery: bool = True,
+    subagent_role: Optional[str] = None,
 ) -> str:
     """Compose a full ReAct decision system prompt.
 
@@ -195,7 +196,7 @@ def compose_decision_system_text(
             adapters + infra_adapters,
             exclude_tool_ids=[],
         )
-        react_tool_catalog = get_react_tools_catalog()
+        react_tool_catalog = get_react_tools_catalog(subagent_role=subagent_role)
         tool_catalog = availability_tool_catalog if include_tool_catalog else []
         parts.append(
             build_instruction_catalog_block(
