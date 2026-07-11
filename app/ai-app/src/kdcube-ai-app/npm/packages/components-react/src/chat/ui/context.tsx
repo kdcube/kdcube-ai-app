@@ -55,6 +55,7 @@ export function ChatViewModelProvider({ children, kdcubePreview = false }: ChatV
     newChat: engine.newChat,
     deleteConversation: engine.deleteConversation,
     refreshConversationList: engine.refreshConversations,
+    searchConversations: engine.searchConversations,
 
     attachContext: engine.attachContext,
     removeContext: (ids) => engine.removeContext(ids),

@@ -10,7 +10,7 @@
  *   <ChatStoreProvider config={...}><MyOwnChatUI /></ChatStoreProvider>
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { BannerTone, ConnectionsConsentOpen, ConversationSummary, NamespaceStyleMap } from '@kdcube/components-core/chat'
+import type { BannerTone, ConnectionsConsentOpen, ConversationSearchHit, ConversationSummary, NamespaceStyleMap } from '@kdcube/components-core/chat'
 import type { ChatTurn } from '@kdcube/components-core/chat'
 import { findActiveTurn } from '@kdcube/components-core/chat'
 import { useAppDispatch, useStableCallback } from './support/hooks.ts'
@@ -18,6 +18,9 @@ import { chatActions } from '@kdcube/components-core/chat'
 import { useChatViewModel } from './context.tsx'
 import { BannerStrip } from './features/banners/BannerStrip.tsx'
 import { ConversationsSidebar } from './features/conversations/ConversationsSidebar.tsx'
+import { useConversationSearch } from './features/conversations/useConversationSearch.ts'
+import { ConversationSearchControls } from './features/conversations/ConversationSearchControls.tsx'
+import { ConversationSearchResults } from './features/conversations/ConversationSearchResults.tsx'
 import { Composer } from './features/composer/Composer.tsx'
 import { TurnView } from './features/chat/TurnView.tsx'
 import { FileDropZone } from './components/FileDropZone.tsx'
@@ -120,7 +123,10 @@ export function ChatShell({
   } = dryRun
 
   /* View-local state. */
-  const [conversationQuery, setConversationQuery] = useState('')
+  const conversationSearch = useConversationSearch({
+    search: engine.searchConversations,
+    activeConversationId: state.conversationId,
+  })
   const [leftPaneMode, setLeftPaneMode] = useState<'chats' | 'webapp' | 'collapsed'>('chats')
   const [webappModalOpen, setWebappModalOpen] = useState(false)
   const [convMenuOpen, setConvMenuOpen] = useState(false)
@@ -270,15 +276,67 @@ export function ChatShell({
   }, [scrollSignature, hostView])
 
   const hasPendingTurn = Boolean(findActiveTurn(state.turns))
+  /* Titles scope = free local title filtering while typing. The deep search
+   * scopes leave the list untouched (their results render as their own pane). */
+  const titlesFilter = conversationSearch.scope === 'titles' ? conversationSearch.query.trim().toLowerCase() : ''
   const filteredConversations = useMemo(() => {
-    const query = conversationQuery.trim().toLowerCase()
     const items = state.conversations.slice().sort((left, right) => (right.lastActivityAt || 0) - (left.lastActivityAt || 0))
-    if (!query) return items
+    if (!titlesFilter) return items
     return items.filter((item) => {
       const haystack = `${item.title || ''} ${item.id}`.toLowerCase()
-      return haystack.includes(query)
+      return haystack.includes(titlesFilter)
     })
-  }, [conversationQuery, state.conversations])
+  }, [titlesFilter, state.conversations])
+
+  /* ---- "Bring me here": jump from a search hit to its turn in this view. ----
+   * Same conversation → scroll + flash immediately. Different conversation →
+   * load it, then a pending-anchor effect waits for the turn anchors to render
+   * before scrolling. Search hit `turn_id`s equal the UI `turn.id`s (hydration
+   * keeps the backend turn ids), which TurnView exposes as data-turn-anchor. */
+  const [pendingJump, setPendingJump] = useState<{ conversationId: string; turnId: string } | null>(null)
+
+  const flashTurnAnchor = useStableCallback((turnId: string): boolean => {
+    const container = scrollContainerRef.current
+    if (!container) return false
+    const escaped = typeof CSS !== 'undefined' && typeof CSS.escape === 'function'
+      ? CSS.escape(turnId)
+      : turnId.replace(/"/g, '\\"')
+    const anchor = container.querySelector<HTMLElement>(`[data-turn-anchor="${escaped}"]`)
+    if (!anchor) return false
+    autoScrollRef.current = false
+    anchor.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    anchor.classList.remove('kcs-turn-flash')
+    void anchor.offsetWidth
+    anchor.classList.add('kcs-turn-flash')
+    window.setTimeout(() => anchor.classList.remove('kcs-turn-flash'), 2400)
+    return true
+  })
+
+  const handleJumpToHit = useStableCallback((hit: ConversationSearchHit) => {
+    /* Park the stick-to-bottom follower so hydration doesn't yank the view
+     * to the newest turn before we land on the target one. */
+    autoScrollRef.current = false
+    if (state.conversationId === hit.conversation_id) {
+      window.requestAnimationFrame(() => {
+        flashTurnAnchor(hit.turn_id)
+      })
+      return
+    }
+    setPendingJump({ conversationId: hit.conversation_id, turnId: hit.turn_id })
+    engine.loadConversation(hit.conversation_id)
+  })
+
+  useEffect(() => {
+    if (!pendingJump) return
+    if (state.conversationId !== pendingJump.conversationId) return
+    const frame = window.requestAnimationFrame(() => {
+      const landed = flashTurnAnchor(pendingJump.turnId)
+      /* Once the load settled, stop waiting even if the anchor never appears
+       * (e.g. the matched turn hydrated without a user bubble). */
+      if (landed || state.conversationLoadingId === null) setPendingJump(null)
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [pendingJump, state.conversationId, state.conversationLoadingId, visibleTurns.length, flashTurnAnchor])
 
   /* Host view-form controls (engine owns the state + host messaging). */
   const toggleHostView = () => engine.setHostView(hostView === 'expanded' ? 'compact' : 'expanded')
@@ -322,6 +380,13 @@ export function ChatShell({
   const handleCompactConvSelect = useStableCallback((conversationId: string) => {
     setConvMenuOpen(false)
     engine.loadConversation(conversationId)
+  })
+  /* Compact "bring me here": the menu is an overlay covering the transcript, so
+   * close it first — the jump target and its flash must be visible. Results
+   * persist in the shared search vm, so reopening the menu restores them. */
+  const handleCompactJumpToHit = useStableCallback((hit: ConversationSearchHit) => {
+    setConvMenuOpen(false)
+    handleJumpToHit(hit)
   })
   const handleCompactNewChat = useStableCallback(() => {
     setConvMenuOpen(false)
@@ -675,7 +740,7 @@ export function ChatShell({
               aria-hidden="true"
             />
             <div
-              className="absolute inset-x-2 top-[50px] z-30 flex flex-col overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--surface)] shadow-lg"
+              className="absolute inset-x-2 top-[50px] z-30 flex max-h-[min(72vh,520px)] flex-col overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--surface)] shadow-lg"
               role="menu"
             >
               <button type="button" className="k-conv-menu-item k-conv-menu-new" onClick={handleCompactNewChat}>
@@ -684,29 +749,42 @@ export function ChatShell({
                 </svg>
                 New chat
               </button>
-              <div className="max-h-[240px] overflow-y-auto border-t border-[var(--line-soft)]">
-                {filteredConversations.length === 0 ? (
-                  <div className="px-3 py-2 text-[12px] text-[var(--muted)]">
-                    {state.conversationsLoading ? 'Loading chats…' : 'No saved chats yet.'}
-                  </div>
-                ) : (
-                  filteredConversations.map((conversation) => (
-                    <button
-                      key={conversation.id}
-                      type="button"
-                      className={`k-conv-menu-item ${conversation.id === state.conversationId ? 'is-active' : ''}`}
-                      onClick={() => handleCompactConvSelect(conversation.id)}
-                      title={conversation.title || conversation.id}
-                    >
-                      <span className="truncate">{conversation.title || 'Untitled conversation'}</span>
-                      {(() => {
-                        const when = formatConversationDate(conversation.lastActivityAt ?? conversation.startedAt)
-                        return when ? <span className="k-conv-menu-date">{when}</span> : null
-                      })()}
-                    </button>
-                  ))
-                )}
+              {/* Same search surface as the persistent sidebar — one shared vm,
+                  so scope/results survive switching between the two views. */}
+              <div className="border-t border-[var(--line-soft)] pb-2">
+                <ConversationSearchControls vm={conversationSearch} disabled={hasPendingTurn} />
               </div>
+              {conversationSearch.mode === 'results' ? (
+                <ConversationSearchResults
+                  vm={conversationSearch}
+                  onOpenConversation={handleCompactConvSelect}
+                  onJumpToHit={handleCompactJumpToHit}
+                />
+              ) : (
+                <div className="min-h-0 flex-1 overflow-y-auto border-t border-[var(--line-soft)]">
+                  {filteredConversations.length === 0 ? (
+                    <div className="px-3 py-2 text-[12px] text-[var(--muted)]">
+                      {state.conversationsLoading ? 'Loading chats…' : 'No saved chats yet.'}
+                    </div>
+                  ) : (
+                    filteredConversations.map((conversation) => (
+                      <button
+                        key={conversation.id}
+                        type="button"
+                        className={`k-conv-menu-item ${conversation.id === state.conversationId ? 'is-active' : ''}`}
+                        onClick={() => handleCompactConvSelect(conversation.id)}
+                        title={conversation.title || conversation.id}
+                      >
+                        <span className="truncate">{conversation.title || 'Untitled conversation'}</span>
+                        {(() => {
+                          const when = formatConversationDate(conversation.lastActivityAt ?? conversation.startedAt)
+                          return when ? <span className="k-conv-menu-date">{when}</span> : null
+                        })()}
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
             </div>
           </>
         ) : null}
@@ -735,18 +813,18 @@ export function ChatShell({
             {leftPaneVisible && leftPaneMode === 'chats' ? (
               <ConversationsSidebar
                 conversations={filteredConversations}
-                query={conversationQuery}
+                search={conversationSearch}
                 activeConversationId={state.conversationId}
                 disabled={hasPendingTurn}
                 loading={state.conversationsLoading}
                 error={state.conversationsError}
                 loadingConversationId={state.conversationLoadingId}
                 deletingConversationId={state.conversationDeletingId}
-                onQueryChange={setConversationQuery}
                 onRefresh={handleConversationRefresh}
                 onSelect={handleConversationSelect}
                 onStartNew={handleStartNewChat}
                 onDelete={handleConversationDelete}
+                onJumpToHit={handleJumpToHit}
               />
             ) : null}
 

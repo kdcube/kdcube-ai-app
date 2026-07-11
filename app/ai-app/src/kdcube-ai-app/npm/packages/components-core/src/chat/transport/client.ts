@@ -18,6 +18,11 @@ import type {
 } from '../capabilities.ts'
 import { buildRequestHeaders, downloadBlobAsFile, requireScope } from './http.ts'
 import type {
+  ConversationSearchParams,
+  ConversationSearchRequest,
+  ConversationSearchResponse,
+} from '../conversationSearch.ts'
+import type {
   ConversationDTO,
   ConversationListResponse,
   ConversationSummary,
@@ -112,6 +117,42 @@ export async function listBundleConversations(runtime: EngineRuntime, bundleId: 
     startedAt: item.started_at ? Date.parse(item.started_at) : null,
     lastActivityAt: item.last_activity_at ? Date.parse(item.last_activity_at) : null,
   }))
+}
+
+/** Deep conversation search (or query-less time-range browse). POSTs the
+ *  search contract with `bundle_id` filled from the caller; hits come back
+ *  relevance-ranked (or `score: null` per hit in browse mode). */
+export async function searchConversations(
+  runtime: EngineRuntime,
+  bundleId: string,
+  request: ConversationSearchParams,
+): Promise<ConversationSearchResponse> {
+  const { tenant, project } = requireScope(runtime)
+  const body: ConversationSearchRequest = { ...request, bundle_id: bundleId }
+  /* Unset optionals are omitted (not sent as JSON null) — the backend models
+   * them as defaulted plain fields, and "absent" is what "unset" means here. */
+  for (const key of Object.keys(body) as Array<keyof ConversationSearchRequest>) {
+    if (body[key] === null || body[key] === undefined) delete body[key]
+  }
+  const response = await fetch(
+    `${runtime.baseUrl}/api/cb/conversations/${tenant}/${project}/search`,
+    {
+      method: 'POST',
+      credentials: runtime.credentials,
+      headers: await buildRequestHeaders(runtime, { 'Content-Type': 'application/json' }),
+      body: JSON.stringify(body),
+    },
+  )
+  if (!response.ok) {
+    const detail = await response.text().catch(() => response.statusText)
+    throw new Error(`Failed to search conversations (${response.status}): ${detail}`)
+  }
+  const data = (await response.json()) as ConversationSearchResponse
+  return {
+    ...data,
+    hits: Array.isArray(data.hits) ? data.hits : [],
+    conversations: data.conversations && typeof data.conversations === 'object' ? data.conversations : {},
+  }
 }
 
 export async function fetchConversationById(runtime: EngineRuntime, conversationId: string): Promise<ConversationDTO> {

@@ -14,15 +14,17 @@ Backed by `api.run_conversation_search`. Identity is EXPLICIT: the registering
 bundle supplies a `context_factory` (builds a `ConversationSearchContext` from
 the named-service `NamedServiceContext` — i.e. from request auth) and a
 `search_backend_factory` (builds a backend bound to the caller's tenant/project
-schema). This is what lets a future public/site API call the same search by
-SETTING the context, rather than relying on ambient runtime state.
+schema). This is what lets any non-runtime caller (e.g. a public/site API) call
+the same search by SETTING the context, rather than relying on ambient runtime
+state.
 
 Registration: a bundle that service-provides `conv` constructs
 `make_conversation_search_named_service_provider(...)` (or instantiates the
 class) the same way it constructs the memory provider; the decorator metadata
 (`__kdcube_named_service_provider__`) lets the registry pick it up like the
-others. This module is defined-but-not-yet-connected: it is intentionally NOT
-wired into any bundle.
+others. The kdcube-services app registers it this way (see its
+`services/conversations/named_service.py`), publishing `conv` on its
+named-services MCP surface.
 """
 
 from __future__ import annotations

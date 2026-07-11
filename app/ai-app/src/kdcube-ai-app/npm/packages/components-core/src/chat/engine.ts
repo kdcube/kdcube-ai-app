@@ -39,6 +39,7 @@ import {
   openChatStream,
   previewReactContext,
   requestConversationStatus,
+  searchConversations as searchConversationsRequest,
   submitAgentSelectionUpdate,
   submitChatMessage,
   submitTurnFeedback,
@@ -845,6 +846,9 @@ export function createChatEngine(config: EngineConfig): ChatEngine {
     },
     refreshConversations() {
       void refreshConversationList()
+    },
+    searchConversations(request) {
+      return searchConversationsRequest(runtime, bundleId, request)
     },
     attachContext(contexts: AttachContextInput | AttachContextInput[]) {
       const list = Array.isArray(contexts) ? contexts : [contexts]

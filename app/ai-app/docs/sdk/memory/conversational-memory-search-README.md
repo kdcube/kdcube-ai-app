@@ -5,6 +5,7 @@ summary: "Cross-conversation searchable memory of agent activity: what is indexe
 tags: ["sdk", "memory", "memsearch", "retrieval", "hybrid-search", "bm25", "rrf", "pgvector"]
 keywords: ["react.memsearch", "conversational memory", "cross-conversation search", "hybrid retrieval", "BM25F", "Reciprocal Rank Fusion", "Retrieval-anchors", "search_tsv", "ts_rank_cd", "scope user", "working summary", "turn catalog"]
 see_also:
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/conversation/search-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/memory/how-react-remembers-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/memory/user-memories-overview-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/memory/user-memories-react-integration-README.md
@@ -36,8 +37,12 @@ every internal note, every user attachment — written into `conv_messages` as t
 agent operates, and made retrievable later when the agent itself decides it
 needs to recover something it cannot already see.
 
-`react.memsearch` is the only access path. There is no other read API and no
-widget. Bundle code is not expected to query this index directly.
+`react.memsearch` is the agent's access path into this index. The same engine
+behind it also serves the `conv` named service, a REST endpoint, and the
+chat-widget search UI — the doors are mapped in
+[Conversation Search](../solutions/conversation/search-README.md); this
+document owns the retrieval mechanics they all share. App code reads the index
+through those doors.
 
 From the agent's point of view, this conversational memory is one of the user's
 **memory realms** — alongside durable memories (`mem`) and context boards / the

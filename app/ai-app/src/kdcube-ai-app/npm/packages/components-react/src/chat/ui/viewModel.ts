@@ -47,6 +47,8 @@ export interface ChatViewModel {
   newChat: ChatEngine['newChat']
   deleteConversation: ChatEngine['deleteConversation']
   refreshConversationList: ChatEngine['refreshConversations']
+  /** Deep conversation search (or query-less time-range browse). */
+  searchConversations: ChatEngine['searchConversations']
 
   attachContext: ChatEngine['attachContext']
   removeContext: (ids: string | string[]) => void

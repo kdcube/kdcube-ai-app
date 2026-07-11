@@ -8,6 +8,7 @@ File: api/conversations/__init__.py
 from fastapi import FastAPI
 
 from .conversations import router as conversations_router
+from .search import router as conversations_search_router
 
 
 def mount_conversations_router(app: FastAPI):
@@ -19,13 +20,15 @@ def mount_conversations_router(app: FastAPI):
         auth_manager: AuthManager instance
     """
 
-    # Mount content rebuild router
-    conversations_router.state = app.state
-    app.include_router(
-        conversations_router,
-        prefix="/api/cb/conversations",
-        tags=["CB Conversations"],
-    )
+    # Search router first: its literal "/search" tail must win over the
+    # sibling router's "/{conversation_id}"-style path parameters.
+    for _router in (conversations_search_router, conversations_router):
+        _router.state = app.state
+        app.include_router(
+            _router,
+            prefix="/api/cb/conversations",
+            tags=["CB Conversations"],
+        )
     return app
 
 

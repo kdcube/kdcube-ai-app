@@ -5,6 +5,7 @@ import type { ReactContextPreviewResponse, TurnReaction } from './protocol.ts'
 import type { ConversationSummary } from './protocol.ts'
 import type { ChatStore } from './store.ts'
 import type { AgentSelectionPatch } from './capabilities.ts'
+import type { ConversationSearchParams, ConversationSearchResponse } from './conversationSearch.ts'
 
 /** Input accepted by attachContext — the structured context object a host drops
  *  or pins into chat. */
@@ -72,6 +73,10 @@ export interface ChatEngine extends Pick<HostEventEmitter, 'on'> {
   newChat(): void
   deleteConversation(conversation: ConversationSummary): void
   refreshConversations(): void
+  /** Deep search across the user's conversations (or the open one). The engine
+   *  fills `bundle_id` from its runtime; a blank `query` with a time range is a
+   *  chronological BROWSE (hits carry `score: null`). */
+  searchConversations(request: ConversationSearchParams): Promise<ConversationSearchResponse>
 
   attachContext(contexts: AttachContextInput | AttachContextInput[]): void
   /** Remove attached context chip(s). `silent` suppresses the `context-removed`

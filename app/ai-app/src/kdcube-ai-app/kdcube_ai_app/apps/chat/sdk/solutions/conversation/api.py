@@ -47,6 +47,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Protocol
 
+from kdcube_ai_app.apps.chat.sdk.context.retrieval.ctx_rag import normalize_rank_weights
 from kdcube_ai_app.apps.chat.sdk.solutions.react.timeline import (
     TimelineView,
     build_timeline_payload,
@@ -208,6 +209,10 @@ class ConversationSearchParams:
     days: Optional[int] = None
     mode: str = ""
     include_recovery_sessions: bool = False
+    # Optional {semantic, lexical, recency} weights for the hybrid fusion,
+    # already normalized/clamped to [0, 2] (see ctx_rag.normalize_rank_weights).
+    # None keeps the default scoring path byte-identical.
+    rank_weights: Optional[Dict[str, float]] = None
 
     @classmethod
     def from_tool_params(cls, params: Dict[str, Any]) -> "ConversationSearchParams":
@@ -236,6 +241,7 @@ class ConversationSearchParams:
         if order not in ALLOWED_ORDERS:
             order = ORDER_ASC
         days = _as_int(params.get("days"))
+        rank_weights = normalize_rank_weights(params.get("rank_weights") or params.get("weights"))
         return cls(
             query=query,
             targets=targets,
@@ -248,6 +254,7 @@ class ConversationSearchParams:
             days=days,
             mode=mode,
             include_recovery_sessions=bool(params.get("include_recovery_sessions")),
+            rank_weights=rank_weights,
         )
 
     def is_agent_scoped(self) -> bool:
@@ -531,11 +538,15 @@ async def run_conversation_search(
         )
 
     # --- Hybrid (topic) path ---
-    # search_context expects list[dict] with {"where","query"}; map targets to that shape.
+    # search_context expects list[dict] with {"where","query"}; map targets to
+    # that shape. "summary" stays its own arm: the retriever scopes it to
+    # working-summary rows (assistant-role rows tagged kind:working.summary)
+    # and labels its hits matched_via_role="summary", so a summary-targeted
+    # search matches summary content only — never plain assistant completions.
     search_targets: List[Dict[str, Any]] = []
     seen_where = set()
     for t in targets:
-        where = "user" if t == "attachment" else "assistant" if t == "summary" else "notes" if t == "notes" else t
+        where = "user" if t == "attachment" else t
         if not where or where in seen_where:
             continue
         search_targets.append({"where": where, "query": params.query})
@@ -558,6 +569,9 @@ async def run_conversation_search(
             with_payload=True,
             timestamp_filters=params.timestamp_filters(),
             include_recovery_sessions=params.include_recovery_sessions,
+            # Forwarded ONLY when set so backends without the knob keep working
+            # and the default scoring path stays byte-identical.
+            **({"rank_weights": dict(params.rank_weights)} if params.rank_weights else {}),
         )
     except Exception:
         LOGGER.exception(
@@ -591,21 +605,38 @@ async def run_conversation_search(
     want_summary = "summary" in targets
     want_notes = "notes" in targets
 
+    # Hits whose snippet text came from the retrieval row because the turn log
+    # produced no text (missing/unmaterializable/blank blocks). Surfaced as a
+    # response warning so a mis-wired conversation store is visible, not silent.
+    fallback_turn_ids: List[str] = []
+
     for h in (hits or []):
         tid = (h.get("turn_id") or "").strip()
         if not tid:
             continue
         hit_conversation_id = _as_str(h.get("conversation_id") or conversation_id)
+        # Turn-log materialization is best-effort: when the turn log cannot be
+        # fetched the hit is NOT dropped — snippet assembly falls back to the
+        # matched row text below instead of shipping a blank result.
+        blocks: List[Dict[str, Any]] = []
         try:
             turn_log = await search_backend.get_turn_log(turn_id=tid, conversation_id=hit_conversation_id)
-            blocks = list(turn_log.get("blocks") or [])
-            timeline_payload = build_timeline_payload(
-                blocks=blocks,
-                sources_pool=turn_log.get("sources_pool") or [],
-            )
-            TimelineView.from_payload(timeline_payload)
+            blocks = list((turn_log or {}).get("blocks") or [])
+            if blocks:
+                timeline_payload = build_timeline_payload(
+                    blocks=blocks,
+                    sources_pool=(turn_log or {}).get("sources_pool") or [],
+                )
+                TimelineView.from_payload(timeline_payload)
         except Exception:
-            continue
+            LOGGER.warning(
+                "[conversation.search] turn log unavailable turn_id=%s conversation_id=%s; "
+                "falling back to retrieval-row snippet",
+                tid,
+                hit_conversation_id,
+                exc_info=True,
+            )
+            blocks = []
 
         snippets: List[Dict[str, Any]] = []
 
@@ -725,6 +756,28 @@ async def run_conversation_search(
                     "meta": dict(att),
                 })
 
+        # Fallback: the retrieval row (with_payload) carries the matched
+        # message text. When turn-log assembly yielded no snippet text at all,
+        # ship that text instead of a blank hit — labeled with the matched
+        # target vocabulary so UI kind chips stay honest.
+        if not any(_as_str(sn.get("text")) for sn in snippets):
+            fallback_text = _clip(h.get("text"))
+            if fallback_text:
+                matched_label = _as_str(h.get("matched_via_role")) or "assistant"
+                fallback_role = (
+                    "attachment" if matched_label == "artifact" and want_attachment else matched_label
+                )
+                total_tokens += token_count(fallback_text)
+                snippets = [{
+                    "conversation_id": hit_conversation_id,
+                    "role": fallback_role,
+                    "path": f"conv:ar:{tid}.react.turn.index",
+                    "text": fallback_text,
+                    "ts": h["ts"].isoformat() if hasattr(h.get("ts"), "isoformat") else (h.get("ts") or ""),
+                    "meta": {"source": "retrieval_row"},
+                }]
+                fallback_turn_ids.append(tid)
+
         hit_out_meta = {
             "conversation_id": hit_conversation_id,
             "turn_id": tid,
@@ -742,6 +795,18 @@ async def run_conversation_search(
             if key in h:
                 hit_out_meta[key] = h[key]
         search_hits_formatted.append(hit_out_meta)
+
+    if fallback_turn_ids:
+        warnings.append(
+            f"turn log snippets unavailable for {len(fallback_turn_ids)} hit(s); "
+            f"showing the matched message text from the search index"
+        )
+        LOGGER.warning(
+            "[conversation.search] snippet fallback engaged user_id=%s turn_ids=%s "
+            "(turn-log materialization yielded no text; check conversation store wiring)",
+            user,
+            fallback_turn_ids,
+        )
 
     LOGGER.info(
         "[conversation.search] done user_id=%s conversation_id=%s effective_mode=%s "

@@ -2499,3 +2499,394 @@ button.k-menu-status:hover { background: var(--surface-2); }
   cursor: pointer;
 }
 .k-menu-confirm-remember input { accent-color: var(--accent); }
+
+/* ─── Conversation search (sidebar + compact conversations menu) ───
+   Search controls, settings panel (WHERE/WHEN/HOW/RANK), grouped results
+   with hit cards, the ranking info overlay, and the "bring me here" turn
+   flash. Visual values follow the approved interactive mock; the settings
+   panel is a CSS container so the layout adapts to the hosting surface:
+   labels stack ABOVE their controls on narrow surfaces (the persistent
+   sidebar is ~260px → ~230px panel content) and move beside them from
+   300px of panel width up, where the mock's side-by-side layout fits. */
+
+.kcs-search-wrap { display: flex; gap: 6px; padding: 10px 10px 0; min-width: 0; }
+.kcs-search-wrap .k-input { flex: 1; min-width: 0; }
+
+.kcs-settings {
+  margin: 7px 10px 0;
+  padding: 8px 10px 9px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  min-width: 0;
+  container-type: inline-size;
+}
+.kcs-settings-title {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 7px;
+}
+/* Narrow-first: label line above the control group. */
+.kcs-row {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  padding: 0 0 8px;
+  min-width: 0;
+}
+.kcs-lab {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+/* An empty label (the date row's) contributes nothing when stacked. */
+.kcs-lab:empty { display: none; }
+.kcs-controls {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+/* From 300px of panel width the mock's side-by-side layout fits. */
+@container (min-width: 300px) {
+  .kcs-row { flex-direction: row; align-items: center; gap: 5px; padding: 0 0 6px; }
+  .kcs-lab { width: 40px; flex-shrink: 0; }
+  .kcs-lab:empty { display: inline-flex; }
+  .kcs-controls { flex: 1; }
+}
+
+/* WHERE scope chips */
+.kcs-chip {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 12px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text-2);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.kcs-chip:hover { border-color: var(--line-strong); color: var(--ink); }
+.kcs-chip.kcs-on { background: var(--surface-2); border-color: var(--line-strong); color: var(--ink); font-weight: 700; }
+
+/* WHEN */
+.kcs-time-sel {
+  height: 24px;
+  font: inherit;
+  font-size: 11px;
+  color: var(--text-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  padding: 0 4px;
+  outline: none;
+}
+/* Custom date range (directly under WHEN). The inputs shrink with the panel:
+   side by side when there's room, else two aligned from/to sub-rows — never
+   past the panel border, so the native pickers stay reachable. */
+.kcs-date-stack { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; width: 100%; min-width: 0; }
+.kcs-date-lab {
+  flex: 1 1 128px;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-2);
+}
+.kcs-dl { flex-shrink: 0; width: 26px; font-size: 10.5px; color: var(--muted); }
+.kcs-date-in {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+  max-width: 100%;
+  height: 24px;
+  font: inherit;
+  font-size: 11px;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  padding: 0 4px;
+  outline: none;
+}
+.kcs-date-in:focus { border-color: var(--blue); }
+
+/* HOW kind pills (opt-out; tinted while ON) */
+.kcs-kchip {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 12px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text-2);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.kcs-kchip:hover { border-color: var(--line-strong); color: var(--ink); }
+.kcs-kchip.kcs-on { background: var(--surface-2); border-color: var(--line-strong); color: var(--ink); font-weight: 700; }
+.kcs-kchip.kcs-on.kcs-you { background: rgba(227, 237, 255, 0.7); border-color: rgba(67, 114, 195, 0.25); color: var(--blue-dark); }
+.kcs-kchip.kcs-on.kcs-assistant { background: rgba(198, 243, 241, 0.45); border-color: rgba(1, 190, 178, 0.25); color: var(--teal-dark); }
+.kcs-kchip.kcs-on.kcs-summary { background: rgba(255, 243, 214, 0.7); border-color: rgba(185, 138, 24, 0.25); color: #B98A18; }
+
+/* RANK sliders */
+.kcs-wstack { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.kcs-wrow { display: flex; align-items: center; gap: 6px; }
+.kcs-wl { width: 52px; flex-shrink: 0; font-size: 10.5px; color: var(--text-2); }
+.kcs-wrow input[type="range"] { flex: 1; min-width: 0; height: 3px; accent-color: var(--teal-dark); margin: 0; }
+.kcs-wv { width: 22px; flex-shrink: 0; font-size: 10px; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+.kcs-wreset {
+  align-self: flex-end;
+  border: 0;
+  background: none;
+  padding: 0;
+  font-size: 10px;
+  color: var(--teal-dark);
+  cursor: pointer;
+  text-decoration: none;
+}
+.kcs-wreset:hover { text-decoration: underline; }
+
+.kcs-hint { padding: 6px 2px 0; color: var(--muted); font-size: 11px; }
+
+/* Rank info ⓘ + overlay */
+.kcs-info-btn {
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 700;
+  font-style: italic;
+  font-family: Georgia, serif;
+  text-transform: none;
+  cursor: pointer;
+  line-height: 1;
+}
+.kcs-info-btn:hover { color: var(--ink); border-color: var(--muted); }
+.kcs-info-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(13, 30, 44, 0.14);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.kcs-info-panel {
+  width: 600px;
+  max-width: 94vw;
+  max-height: 86vh;
+  display: flex;
+  flex-direction: column;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 18px 50px rgba(13, 30, 44, 0.14);
+}
+.kcs-info-head {
+  display: flex;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+  font-weight: 600;
+  font-size: 13.5px;
+}
+.kcs-info-close {
+  margin-left: auto;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1;
+}
+.kcs-info-close:hover { color: var(--ink); border-color: var(--line-strong); }
+.kcs-info-body { overflow-y: auto; padding: 14px 18px 18px; font-size: 12.5px; line-height: 1.6; color: var(--text-2); }
+.kcs-info-body b { color: var(--ink); }
+.kcs-step { margin: 0 0 14px; }
+.kcs-step-t {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.kcs-formula {
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-size: 11.5px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: 6px 10px;
+  color: var(--ink);
+  margin: 6px 0;
+}
+.kcs-arm {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: 8px 10px;
+  margin: 5px 0;
+  background: var(--paper);
+}
+.kcs-arm .kcs-kind { margin-top: 1px; }
+.kcs-arm-q { color: var(--ink); font-weight: 600; }
+.kcs-ex-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-size: 10.5px;
+  margin: 6px 0;
+}
+.kcs-ex-table th,
+.kcs-ex-table td { border: 1px solid var(--line); padding: 4px 7px; text-align: left; color: var(--text-2); white-space: nowrap; }
+.kcs-ex-table th { background: var(--surface-2); color: var(--muted); font-weight: 600; }
+.kcs-ex-note { font-size: 11px; color: var(--muted); }
+
+/* Results pane (replaces the chat list while active) */
+.kcs-results { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 8px 10px; }
+.kcs-meta { padding: 4px 4px 8px; color: var(--muted); font-size: 11.5px; line-height: 1.5; }
+.kcs-meta b { color: var(--ink); }
+.kcs-link {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: var(--teal-dark);
+  cursor: pointer;
+  text-decoration: none;
+}
+.kcs-link:hover { text-decoration: underline; }
+.kcs-sort .kcs-link { color: var(--muted); font-weight: 500; }
+.kcs-sort .kcs-link.kcs-on { color: var(--teal-dark); font-weight: 700; text-decoration: none; }
+
+.kcs-grp { margin-bottom: 12px; }
+.kcs-grp-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 6px 4px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  border-radius: var(--r-md);
+}
+.kcs-grp-head:hover .kcs-grp-title { text-decoration: underline; }
+.kcs-grp-title {
+  font-weight: 600;
+  font-size: 12.5px;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.kcs-grp-sub { font-size: 11px; color: var(--muted); flex-shrink: 0; margin-left: auto; }
+
+/* Hit cards ("bring me here") */
+.kcs-hit {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: 8px 10px;
+  margin: 4px 0;
+  cursor: pointer;
+  transition: border-color 0.12s;
+}
+.kcs-hit:hover { border-color: var(--line-strong); background: var(--surface-2); }
+.kcs-hit.kcs-visited { background: rgba(198, 243, 241, 0.12); border-color: var(--line-strong); }
+.kcs-hit-top { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; min-width: 0; }
+/* Badges never wrap or shrink; the timestamp yields (truncates) instead. */
+.kcs-kind {
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 1.5px 9px;
+  border-radius: var(--r-md);
+  border: 1px solid transparent;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.kcs-kind.kcs-you { background: rgba(227, 237, 255, 0.7); color: var(--blue-dark); border-color: rgba(67, 114, 195, 0.25); }
+.kcs-kind.kcs-assistant { background: rgba(198, 243, 241, 0.45); color: var(--teal-dark); border-color: rgba(1, 190, 178, 0.25); }
+.kcs-kind.kcs-summary { background: rgba(255, 243, 214, 0.7); color: #B98A18; border-color: rgba(185, 138, 24, 0.25); }
+.kcs-kind.kcs-attachment { background: rgba(239, 234, 251, 0.7); color: #7B61C9; border-color: rgba(123, 97, 201, 0.25); }
+.kcs-best {
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 1.5px 9px;
+  border-radius: var(--r-md);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  color: var(--ink);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.kcs-hit-pos {
+  font-size: 10.5px;
+  color: var(--muted);
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kcs-hit-text {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-2);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin-bottom: 5px;
+}
+.kcs-hit-text mark { background: rgba(1, 190, 178, 0.16); color: var(--ink); border-radius: 2px; padding: 0 1px; }
+/* Defensive placeholder when a hit arrives without snippet text. */
+.kcs-hit-text-empty { color: var(--muted); font-style: italic; }
+
+/* Relevance whisper */
+.kcs-rel { display: flex; align-items: center; justify-content: flex-end; gap: 5px; margin-top: 2px; }
+.kcs-rel-bar { display: block; width: 34px; flex: none; height: 2px; border-radius: 1px; background: var(--line); overflow: hidden; }
+.kcs-rel-fill { display: block; height: 100%; border-radius: 1px; background: var(--teal); opacity: 0.35; }
+.kcs-rel-num { font-size: 9.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.kcs-empty { padding: 18px 10px; color: var(--muted); font-size: 12.5px; }
+
+/* "Bring me here" turn flash — a teal pulse on the landed turn anchor. */
+@keyframes kcs-flash-turn {
+  0% { box-shadow: 0 0 0 3px rgba(1, 190, 178, 0.55); background: rgba(198, 243, 241, 0.30); }
+  70% { box-shadow: 0 0 0 3px rgba(1, 190, 178, 0.30); background: rgba(198, 243, 241, 0.14); }
+  100% { box-shadow: 0 0 0 0 rgba(1, 190, 178, 0); background: transparent; }
+}
+.kcs-turn-flash { animation: kcs-flash-turn 2.2s ease-out 1; border-radius: var(--r-lg); }

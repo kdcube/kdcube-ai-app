@@ -25,6 +25,40 @@ from kdcube_ai_app.apps.chat.sdk.runtime.user_inputs import iter_turn_user_input
 logger = logging.getLogger(__name__)
 TURN_LOG_TAGS_BASE = ["kind:turn.log", "artifact:turn.log"]
 
+# --- Rank-weight knob for rrf_hybrid fusion (see search_context) ---
+# Keys callers may tune. `semantic` scales the semantic (embedding) arm's RRF
+# contribution, `lexical` scales BOTH the lexical (BM25F) and trigram arms,
+# `recency` scales the recency lift. All default to 1.0, which reproduces the
+# unweighted fusion math exactly.
+RANK_WEIGHT_KEYS = ("semantic", "lexical", "recency")
+RANK_WEIGHT_MIN = 0.0
+RANK_WEIGHT_MAX = 2.0
+
+
+def normalize_rank_weights(raw: Any) -> Optional[Dict[str, float]]:
+    """Normalize a loose rank-weights mapping into {semantic|lexical|recency: float}.
+
+    - None / empty / non-mapping input -> None (callers then omit the knob so
+      the default scoring path stays byte-identical).
+    - Unknown keys and non-numeric values are dropped.
+    - Values are clamped to [RANK_WEIGHT_MIN, RANK_WEIGHT_MAX] ([0, 2]).
+    - Returns None when nothing usable remains.
+    """
+    if not isinstance(raw, dict) or not raw:
+        return None
+    out: Dict[str, float] = {}
+    for key in RANK_WEIGHT_KEYS:
+        if key not in raw:
+            continue
+        try:
+            value = float(raw[key])
+        except (TypeError, ValueError):
+            continue
+        if value != value:  # NaN
+            continue
+        out[key] = min(RANK_WEIGHT_MAX, max(RANK_WEIGHT_MIN, value))
+    return out or None
+
 UI_ARTIFACT_TAGS = {
     "artifact:conv.artifacts.stream",
     "artifact:user.attachment",
@@ -2946,10 +2980,16 @@ async def search_context(
         timestamp_filters: Optional[List[Dict[str, Any]]] = None,
         include_recovery_sessions: bool = False,
         agent_id: Optional[str] = None,
+        rank_weights: Optional[Dict[str, float]] = None,
         logger = None,
 ) -> tuple[str | None, list[dict]]:
     """
     Unified search across turn logs with flexible scoring.
+
+    rank_weights (rrf_hybrid only): optional {semantic, lexical, recency} floats,
+    clamped to [0, 2]. `semantic` scales the semantic arm's RRF contribution,
+    `lexical` scales the lexical AND trigram arms, `recency` scales the recency
+    lift. None (or all-1.0) reproduces the unweighted math exactly.
 
     Materialization strategy:
     - Collects all hits from all targets
@@ -2962,7 +3002,14 @@ async def search_context(
 
     def _resolve_roles_and_tags(where: str):
         search_tags = None
-        if where in ("notes", "react_note", "react.notes"):
+        if where in ("summary", "working_summary", "working.summary"):
+            # Working summaries are indexed as assistant-role rows tagged
+            # kind:working.summary / chat:summary (see fetch_turn_catalog's ws
+            # join). Scoping the arm to those tags makes a summary-targeted
+            # search match summary content only, not every assistant row.
+            where = "assistant"
+            search_tags = ["kind:working.summary", "chat:summary"]
+        elif where in ("notes", "react_note", "react.notes"):
             where = "artifact"
             search_tags = ["kind:react.note"]
         elif where in ("assistant_artifact", "artifact", "project_log"):
@@ -3059,6 +3106,27 @@ async def search_context(
     _RRF_K = 60
     _RECENCY_LIFT = 1.0
 
+    # Optional per-arm weights for the rrf_hybrid fusion. Normalized/clamped
+    # here so every caller gets the same semantics; missing keys stay 1.0 (the
+    # unweighted math, byte-identical to passing no weights at all).
+    _weights = normalize_rank_weights(rank_weights) or {}
+    w_sem = _weights.get("semantic", 1.0)
+    w_lex = _weights.get("lexical", 1.0)
+    w_rec = _weights.get("recency", 1.0)
+
+    # Tag-scoped virtual targets ride other index roles (summaries on assistant
+    # rows, notes on artifact rows). A hit produced by such an arm is labeled
+    # with the TARGET vocabulary so callers/UIs see what was actually matched,
+    # not the storage role it happens to ride on.
+    _VIRTUAL_TARGET_LABELS = {
+        "summary": "summary",
+        "working_summary": "summary",
+        "working.summary": "summary",
+        "notes": "notes",
+        "react_note": "notes",
+        "react.notes": "notes",
+    }
+
     def _row_to_hit(r: dict, *, query: str, where: str, score_override: Optional[float] = None,
                      sim_override: Optional[float] = None, rec_override: Optional[float] = None,
                      extra: Optional[dict] = None) -> dict:
@@ -3086,7 +3154,7 @@ async def search_context(
             "rec": rec,
             "score": final_score,
             "original_score": score,
-            "matched_via_role": r.get("matched_role"),
+            "matched_via_role": _VIRTUAL_TARGET_LABELS.get(where) or r.get("matched_role"),
             "source_query": query,
             "source_where": where,
             "text": r.get("text", ""),
@@ -3149,15 +3217,19 @@ async def search_context(
                     by_tid[tid] = ("trgm", r)
 
             for tid, (origin, row) in by_tid.items():
+                # Weighted RRF: semantic weight scales the semantic arm;
+                # lexical weight scales BOTH lexical and trigram arms (they are
+                # two faces of the same text-match signal); recency weight
+                # scales the recency lift. All 1.0 -> exactly the classic sum.
                 rrf_score = 0.0
                 if tid in sem_rank:
-                    rrf_score += 1.0 / (_RRF_K + sem_rank[tid])
+                    rrf_score += w_sem * (1.0 / (_RRF_K + sem_rank[tid]))
                 if tid in lex_rank:
-                    rrf_score += 1.0 / (_RRF_K + lex_rank[tid])
+                    rrf_score += w_lex * (1.0 / (_RRF_K + lex_rank[tid]))
                 if tid in trgm_rank:
-                    rrf_score += 1.0 / (_RRF_K + trgm_rank[tid])
+                    rrf_score += w_lex * (1.0 / (_RRF_K + trgm_rank[tid]))
                 rec = float(row.get("rec") or 0.0)
-                final_score = rrf_score * (1.0 + _RECENCY_LIFT * rec)
+                final_score = rrf_score * (1.0 + w_rec * _RECENCY_LIFT * rec)
                 extra = {
                     "rrf_score": rrf_score,
                     "sem_rank": sem_rank.get(tid),

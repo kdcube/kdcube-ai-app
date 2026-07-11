@@ -1692,9 +1692,24 @@ class ContextBrowser:
             )
             turn_log_env = mat.get("turn_log") or {}
             payload = unwrap_payload(turn_log_env or {})
+            if not (payload or {}).get("blocks"):
+                # Diagnosable, not silent: the turn matched in the index but its
+                # turn-log artifact did not materialize into blocks (missing row,
+                # unreadable hosted_uri, or blockless payload).
+                self.log.log(
+                    f"get_turn_log: no blocks materialized for turn={turn_id} "
+                    f"conv={effective_conversation_id} "
+                    f"(turn_log_row={'yes' if turn_log_env else 'no'}, "
+                    f"hosted_uri={ (turn_log_env or {}).get('hosted_uri') or '-' })",
+                    "WARN",
+                )
             self._turn_log_cache[cache_key] = payload or {}
             return payload or {}
-        except Exception:
+        except Exception as e:
+            self.log.log(
+                f"get_turn_log failed for turn={turn_id} conv={effective_conversation_id}: {e}",
+                "WARN",
+            )
             return {}
 
     # ---------------------------------------------------------------------
@@ -1933,12 +1948,16 @@ class ContextBrowser:
             timestamp_filters: Optional[List[Dict[str, Any]]] = None,
             include_recovery_sessions: bool = False,
             agent_id: Optional[str] = None,
+            rank_weights: Optional[Dict[str, float]] = None,
             conv_idx: Optional[Any] = None,
             ctx_client: Optional[ContextRAGClient] = None,
             model_service: Optional[Any] = None,
     ) -> tuple[Optional[str], List[dict]]:
         """
         Convenience wrapper around ctx_rag.search_context.
+
+        rank_weights: optional {semantic, lexical, recency} floats for the
+        rrf_hybrid fusion; None keeps the default scoring exactly.
         """
         ctx_client = ctx_client or self.ctx_client
         conv_idx = conv_idx or (getattr(ctx_client, "idx", None) if ctx_client else None)
@@ -1964,6 +1983,7 @@ class ContextBrowser:
             timestamp_filters=timestamp_filters,
             include_recovery_sessions=include_recovery_sessions,
             agent_id=agent_id,
+            rank_weights=rank_weights,
             logger=self.log,
         )
 
