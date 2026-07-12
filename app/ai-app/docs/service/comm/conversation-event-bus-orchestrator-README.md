@@ -79,6 +79,14 @@ by proc or the Reader/Consumer. It is not derived from processor heartbeat.
 | Turn finalization | Persist turn artifacts after the ReAct handler has closed. |
 | ContextBrowser post-save handoff | After persistence and before releasing the Reader/Consumer, inspect lane/table state and publish a wake through `EventLaneWakePublisher` when reactive work remains. |
 
+Subagent delegation authors `subagent.*` events onto conversation lanes through
+this orchestrator (charter on the child lane, contribution/completions on the
+parent lane). One comm-level fact is separate from lane sync: a
+`visibility: thread` child's live emissions are delivered to the **parent**
+conversation's room while keeping the **child's** event identity — the
+stamping pass-through noted in [Comm System](comm-system.md). The client-facing
+contract is [Subagent Participant Protocol](../../sdk/solutions/chat/subagent-participant-protocol-README.md).
+
 ## Flow
 
 ```text

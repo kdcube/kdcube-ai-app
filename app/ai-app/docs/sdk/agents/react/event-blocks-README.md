@@ -53,6 +53,12 @@ Blocks are dicts with:
 - `stage.clarification`
 - `stage.clarification.resolved`
 
+Subagent lane events (`subagent.charter` / `subagent.contribution` /
+`subagent.converged` / `subagent.failed`) fold in as generic accepted-event
+blocks — no bespoke block type. Their client-facing thread/persona rendering
+contract is in
+[Subagent Participant Protocol](../../solutions/chat/subagent-participant-protocol-README.md).
+
 ## Tool Call / Result Blocks
 1) Tool Call
    - `type`: `react.tool.call`

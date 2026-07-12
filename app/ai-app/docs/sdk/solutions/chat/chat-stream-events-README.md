@@ -17,6 +17,7 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-event-recording-and-sinks-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-frontend-awareness-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-interfaces-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/chat/subagent-participant-protocol-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/service/comm/comm-system.md
   - repo:kdcube-ai-app/app/ai-app/docs/arch/architecture-long.md
   - repo:kdcube-ai-app/app/ai-app/docs/economics/rate-limit-simulation-playbook.md
@@ -59,6 +60,11 @@ It is intended for:
 For app code that records selected comm events and sends bounded batches to
 a sink, use
 [App Event Recording And Sinks](../../bundle/bundle-event-recording-and-sinks-README.md).
+
+For the subagent-aware surface — folding a helper agent's live stream into its
+own thread by the `subagent` envelope stamp, and rendering the user-vs-agent
+persona on a turn's triggering input — use
+[Subagent Participant Protocol](subagent-participant-protocol-README.md).
 
 It reflects the current server implementation (ingress + processor split) and the default client implementation in `ChatService.ts`.
 

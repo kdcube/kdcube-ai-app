@@ -38,6 +38,12 @@ projection from metadata on that fact. Canvas uses this pattern: `canvas.read`
 stores a compact read fact, and the canvas announce policy renders the board
 map for a limited number of render rounds.
 
+`subagent.*` lane events (charter, contribution, converged/failed) fold through
+the generic accepted-event path — no bespoke block-production or render support;
+the fold renders them and advances the lane cursor like any event. Their
+client-facing thread/persona contract is in
+[Subagent Participant Protocol](../../../solutions/chat/subagent-participant-protocol-README.md).
+
 ## Phase Matrix
 
 | # | Spot | Current implementation | `tool_call_validation` | `block_production` | `timeline_projection` | `announce_production` | `compaction_projection` | Status |

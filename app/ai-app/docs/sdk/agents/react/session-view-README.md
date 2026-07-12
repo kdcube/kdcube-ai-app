@@ -53,6 +53,7 @@ This document describes how the session view is derived from the timeline when c
 - User/assistant blocks are eligible for pruning when they are older than `keep_recent_turns` (they remain intact in the recent windows). This applies per block, so multiple prompt-like user entries or assistant completions from one older turn can be pruned independently.
 - Internal Memory Beacons (`react.note`, `react.note.preserved`) and `conv.working.summary` blocks are not hidden by TTL pruning.
 - External `user.followup`, `user.steer`, and their preserved copies are also not hidden by TTL pruning.
+- A subagent delegation's fork marker and folded `subagent.*` completions are ordinary timeline blocks in the parent's session view, pruned by the same rules; the client-facing thread/persona surface is separate, in [Subagent Participant Protocol](../../solutions/chat/subagent-participant-protocol-README.md).
 - If compaction also ran, older plan history may still remain directly reopenable through stable `conv:ar:plan.latest:<plan_id>` refs that sit behind the visible history summaries.
 - A system notice is appended when pruning runs:
   - Announce stack: `[SYSTEM MESSAGE] Context was pruned...`

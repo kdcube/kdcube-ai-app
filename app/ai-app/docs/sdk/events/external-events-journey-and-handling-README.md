@@ -48,6 +48,11 @@ When debugging where a turn id or lane cursor came from, use
 [Event Ingress To React Turn](event-ingress-to-react-turn-README.md); this
 journey page stays at the protocol-flow level.
 
+Subagent delegation authors `subagent.*` events into a conversation lane through
+this same journey (charter on the child lane, contribution/completions on the
+parent lane); the client-facing thread/persona contract is in
+[Subagent Participant Protocol](../solutions/chat/subagent-participant-protocol-README.md).
+
 ## Identities
 
 Every accepted lane event belongs to one lane identity:

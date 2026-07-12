@@ -164,6 +164,12 @@ T.consumer.status = none
 T.consumer.status_at = now
 ```
 
+A subagent completion (`subagent.converged` / `subagent.failed`) rides this same
+lane as a promotable event: a live parent turn folds it and the promoter acks,
+and only an idle lane promotes it into a parent continuation turn — the
+promote-only-if-unconsumed rule this table enforces. See
+[Subagent Participant Protocol](../solutions/chat/subagent-participant-protocol-README.md).
+
 ## Freshness
 
 Freshness is calculated from table values and configured TTLs:

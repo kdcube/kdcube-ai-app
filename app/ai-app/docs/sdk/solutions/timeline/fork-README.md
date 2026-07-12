@@ -57,8 +57,8 @@ fork relationship live in the store, where conversation fetch reads them.
 of the stored relationship, so a client rebuilds fork threads on reload:
 
 - **Source side:** each turn that forked carries
-  `forks: [{child_conversation_id, charter_goal, forked_at}]` on its turn
-  entry in the fetch response.
+  `forks: [{child_conversation_id, charter_goal, agent_title, forked_at}]` on
+  its turn entry in the fetch response.
 - **Forked side:** the forked conversation's fetch response carries a
   top-level `forked_from: {conversation_id, turn_id}`.
 - **One endpoint:** the forked conversation belongs to the same

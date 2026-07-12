@@ -71,6 +71,11 @@ This page explains the followup/steer behavior after those fields exist.
   generation in the same turn — e.g. one a followup started.
 - if no live owner consumes the event, processor promotes it from that same retained source into a normal scheduled turn
 
+Subagent completions (`subagent.converged` / `subagent.failed`) travel this same
+fold-or-promote path on the parent lane; their client-facing thread/persona
+contract is in
+[Subagent Participant Protocol](../../solutions/chat/subagent-participant-protocol-README.md).
+
 Current boundary:
 - the shared external-event source is Redis-backed retained operational state,
   not permanent conversation/artifact storage

@@ -427,6 +427,39 @@ canvas item positions. The selection event tells ReAct what context was active;
 the read-oriented projection for ANNOUNCE or compact context; `event.user.prompt`
 is the wake-up/request text that renders as the chat user message.
 
+## Subagent Events
+
+When a ReAct agent delegates to a subagent, the runtime authors `subagent.*`
+events into a conversation's event lane through this same envelope. They are the
+lane-event half of the subagent protocol; the client-facing rendering contract
+(the thread, the participant card) is in
+[Subagent Participant Protocol](../solutions/chat/subagent-participant-protocol-README.md).
+
+Four semantic types ride the lane: `subagent.charter` (child accepted; on the
+child lane), `subagent.contribution` (milestone report; on the parent lane),
+and `subagent.converged` / `subagent.failed` (terminal; on the parent lane).
+Each follows the accepted-event shape above:
+
+- the **transport kind** is `external_event`, and the semantic type rides in
+  `payload.event.type` (not in a top-level `kind`);
+- every `subagent.*` event carries `reactive: false` in its nested event — a
+  live turn folds it without buying ReAct iteration credit;
+- **promotability is the separate axis, selected by `task_payload`**. A
+  contribution carries no task payload (passive — it can only fold into a live
+  turn, or wait as context for the next one). A completion carries a task
+  payload (promotable — when no parent turn is live, it starts a parent
+  continuation turn; a live turn folds it instead). The promotion is
+  once-only: a live fold consumes it and the promoter acks.
+
+The nested `payload.event` body carries a model-facing `text` plus the
+structured **facts**. Every `subagent.*` event's facts carry the top-level
+`subagent` stamp
+(`{child_conversation_id, forked_from_conversation_id, forked_from_turn_id,
+charter_goal, agent_title}`), so a client anchors the traffic into the right
+thread without parsing text. Completion facts additionally carry the persona a
+continuation turn renders from: `authored_by: "agent"`, `agent_title`, and an
+optional `handoff`.
+
 ## Policy Implication
 
 Timeline and ANNOUNCE are derived from stored event blocks and event-source

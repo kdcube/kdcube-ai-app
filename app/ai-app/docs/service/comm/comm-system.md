@@ -188,6 +188,17 @@ the package should be **emitted or suppressed**.
 
 See: [docs/sdk/bundle/bundle-firewall-README.md](../../sdk/bundle/bundle-firewall-README.md)
 
+### Subagent thread-visibility pass-through
+
+When a subagent runs with `visibility: thread`, its child turn emits through a
+thin `ChatCommunicator` wrapper that keeps one comm-level invariant: every
+emission is delivered to the **parent** conversation's room (the user's existing
+socket), while the envelope keeps the **child's** event identity
+(`conversation.conversation_id` / `turn_id`) and gains a top-level `subagent`
+stamp at the choke point. The relay carries it from whatever worker runs the
+child. The client-facing thread/persona contract for that stamp is in
+[Subagent Participant Protocol](../../sdk/solutions/chat/subagent-participant-protocol-README.md).
+
 ---
 
 ## Delivery Scopes
