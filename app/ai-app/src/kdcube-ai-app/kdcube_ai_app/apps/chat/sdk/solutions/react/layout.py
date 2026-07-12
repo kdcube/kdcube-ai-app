@@ -1592,6 +1592,7 @@ def _delegation_status_by_child(timeline_blocks: List[Dict[str, Any]]) -> Dict[s
                 continue
             rows[child_id] = {
                 "caption": str(meta.get("charter_summary") or "").strip(),
+                "agent_title": str(meta.get("agent_title") or "").strip(),
                 "agent_alias": str(meta.get("agent_alias") or "").strip(),
                 "agent_class": str(meta.get("agent_class") or "").strip(),
                 "contributions": 0,
@@ -1693,7 +1694,12 @@ def build_announce_delegation_lines(
             else:
                 status = "running"
             caption = _shorten(str(row.get("caption") or "") or f"conv_{child_id}", 100)
-            entry = f"    - {caption}"
+            # Lead with the title the delegating agent named in its own
+            # react.delegate call, so it recognizes this live row as the
+            # helper it launched without decoding conversation ids.
+            title = str(row.get("agent_title") or "").strip()
+            label = f"{title} — {caption}" if title else caption
+            entry = f"    - {label}"
             alias = str(row.get("agent_alias") or "").strip()
             klass = str(row.get("agent_class") or "").strip()
             if alias:

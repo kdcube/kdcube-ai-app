@@ -2323,3 +2323,30 @@ def test_protocol_validator_recognizes_subagent_tools():
     # the core tools remain recognized
     for core in ("react.read", "react.pull", "react.write", "react.plan"):
         assert core in ids
+
+
+def test_announce_delegation_row_leads_with_the_agent_title():
+    """The live-delegation row leads with the agent_title the delegating
+    agent named in its own react.delegate call, so it recognizes the running
+    helper without decoding conversation ids."""
+    from kdcube_ai_app.apps.chat.sdk.solutions.react.layout import (
+        build_announce_delegation_lines,
+    )
+
+    marker = build_fork_marker_block(
+        parent_turn_id="turn_parent",
+        child_conversation_id="sub_run",
+        child_turn_id="turn_r1",
+        charter_summary="Research the top 2 science news",
+        max_rounds=8,
+        agent_alias="strong_agent",
+        agent_class="strong",
+        agent_title="Science news researcher",
+    )
+    text = "\n".join(build_announce_delegation_lines(
+        runtime_ctx=_parent_delegation_ctx(), timeline_blocks=[marker],
+    ))
+    assert (
+        "Science news researcher — Research the top 2 science news — "
+        "strong_agent [strong] — running" in text
+    )
