@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from types import ModuleType, SimpleNamespace
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from starlette.responses import JSONResponse
 from starlette.requests import Request
@@ -1255,6 +1255,80 @@ async def test_call_bundle_op_inner_binds_request_scoped_peer_operation_caller(m
 
     assert result["proxy"]["ok"] is True
     assert result["proxy"]["peer"]["echo"] == {"ok": True, "value": "BUG-123", "user_id": "user-1"}
+
+
+@pytest.mark.asyncio
+async def test_public_webhook_can_resolve_identity_through_internal_peer_operation(monkeypatch):
+    class _WebhookWorkflow:
+        @api(method="POST", alias="telegram_webhook", route="public")
+        async def telegram_webhook(self, **kwargs):
+            resolved = await call_bundle_operation(
+                bundle_id="connection-hub@1-0",
+                operation="identity_resolve",
+                data={
+                    "provider": "telegram",
+                    "provider_subject": kwargs.get("telegram_user_id"),
+                },
+            )
+            return {"ok": True, "resolved": resolved}
+
+    class _ConnectionHubWorkflow:
+        @api(method="POST", alias="identity_resolve", route="operations")
+        async def identity_resolve(self, **kwargs):
+            return {
+                "ok": True,
+                "provider": kwargs.get("provider"),
+                "provider_subject": kwargs.get("provider_subject"),
+                "principal": {"platform_user_id": "platform-user"},
+            }
+
+    async def _load_bundle_workflow(**kwargs):
+        if kwargs.get("bundle_id") == "connection-hub@1-0":
+            return _ConnectionHubWorkflow(), SimpleNamespace(id="connection-hub@1-0"), "tenant-a", "project-a"
+        return _WebhookWorkflow(), SimpleNamespace(id="bundle.webhook"), "tenant-a", "project-a"
+
+    monkeypatch.setattr(integrations, "_load_bundle_workflow", _load_bundle_workflow)
+    anonymous = _session(user_type="anonymous")
+    anonymous.user_id = None
+    anonymous.roles = []
+    request = _request(
+        method="POST",
+        path="/api/integrations/bundles/tenant-a/project-a/bundle.webhook/public/telegram_webhook",
+    )
+
+    result = await integrations._call_bundle_op_inner(
+        tenant="tenant-a",
+        project="project-a",
+        bundle_id="bundle.webhook",
+        payload=integrations.BundleSuggestionsRequest(data={"telegram_user_id": "434804821"}),
+        request=request,
+        operation="telegram_webhook",
+        route="public",
+        session=anonymous,
+    )
+
+    assert result["telegram_webhook"]["resolved"]["identity_resolve"] == {
+        "ok": True,
+        "provider": "telegram",
+        "provider_subject": "434804821",
+        "principal": {"platform_user_id": "platform-user"},
+    }
+
+    with pytest.raises(HTTPException) as exc_info:
+        await integrations._call_bundle_op_inner(
+            tenant="tenant-a",
+            project="project-a",
+            bundle_id="connection-hub@1-0",
+            payload=integrations.BundleSuggestionsRequest(
+                data={"provider": "telegram", "provider_subject": "434804821"}
+            ),
+            request=request,
+            operation="identity_resolve",
+            route="operations",
+            session=anonymous,
+        )
+
+    assert exc_info.value.status_code == 401
 
 
 @pytest.mark.asyncio

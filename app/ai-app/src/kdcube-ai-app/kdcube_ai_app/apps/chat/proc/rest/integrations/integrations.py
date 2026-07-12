@@ -4255,6 +4255,7 @@ async def _call_bundle_mcp_inner(
                 route=call.route or "operations",
                 session=resolved_session,
                 method_override=call.http_method or "POST",
+                _internal_peer_call=True,
             )
 
         peer_redis = _get_app_redis(request)
@@ -4681,6 +4682,7 @@ async def _call_bundle_op_inner(
         session: UserSession,
         path_tail: Optional[str] = None,
         method_override: Optional[str] = None,
+        _internal_peer_call: bool = False,
 ):
     uploaded_files = list(uploaded_files or [])
     workflow, spec_resolved, tenant_id, project_id, comm_context = _unpack_loaded_bundle_workflow(
@@ -4752,7 +4754,11 @@ async def _call_bundle_op_inner(
             bundle_id=spec_resolved.id,
             operation=endpoint_spec.alias,
         )
-    elif route == "operations":
+    elif route == "operations" and not _internal_peer_call:
+        # Direct operations HTTP requests require an authenticated user. A
+        # nested server-side app call has already crossed its caller's route
+        # boundary; target visibility below remains authoritative for the peer
+        # operation itself.
         _ensure_operations_session_authorized(session)
     if not _endpoint_visible(endpoint_spec.user_types, endpoint_spec.roles, session, endpoint_auth):
         raise HTTPException(status_code=403, detail=f"Bundle operation {operation} is not visible to this user")
@@ -4798,6 +4804,7 @@ async def _call_bundle_op_inner(
                 route=call.route or "operations",
                 session=session,
                 method_override=call.http_method or "POST",
+                _internal_peer_call=True,
             )
 
         peer_redis = _get_app_redis(request)
