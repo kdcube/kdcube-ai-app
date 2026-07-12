@@ -2056,3 +2056,23 @@ def test_send_path_threads_subagent_role_into_the_catalog():
     assert "react.delegate" not in none
     # the derived roster and the entry agree (one list)
     assert "react.delegate." in parent  # roster tail
+
+
+def test_protocol_validator_recognizes_subagent_tools():
+    """Regression: the decision protocol validator must accept react.delegate
+    (parent) and react.contribute (child) — they were wired into the catalog
+    the model reads but omitted from the validator's hardcoded id list, so a
+    correctly-formed delegate call was rejected as unknown_tool_id and the
+    whole round aborted. The sets are now derived from the specs."""
+    from kdcube_ai_app.apps.chat.sdk.solutions.react.v3.runtime import (
+        _known_react_tool_validation_sets,
+    )
+
+    ids, params = _known_react_tool_validation_sets()
+    assert "react.delegate" in ids
+    assert "react.contribute" in ids
+    assert params["react.delegate"] == {"charter", "agent_alias"}
+    assert params["react.contribute"] == {"report", "refs"}
+    # the core tools remain recognized
+    for core in ("react.read", "react.pull", "react.write", "react.plan"):
+        assert core in ids

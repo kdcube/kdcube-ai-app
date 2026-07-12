@@ -88,6 +88,25 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.round import ReactRound, emit_r
 from kdcube_ai_app.apps.chat.sdk.solutions.react.proto import ReactStateSnapshot
 
 
+def _known_react_tool_validation_sets() -> tuple[frozenset, Dict[str, set]]:
+    """Every react tool id the protocol validator must accept, plus its
+    declared param names — derived from the tool specs (both subagent roles),
+    so a newly wired react tool (react.delegate for parents, react.contribute
+    for children) is recognized automatically. A hardcoded list here drifts
+    behind the catalog and rejects a real, correctly-called tool as unknown."""
+    ids: set = set()
+    params: Dict[str, set] = {}
+    for role in ("parent", "child"):
+        for spec in get_react_tools_catalog(subagent_role=role):
+            tid = str(spec.get("id") or "").strip()
+            if not tid:
+                continue
+            ids.add(tid)
+            args = spec.get("args") if isinstance(spec.get("args"), dict) else {}
+            params.setdefault(tid, set()).update(str(k) for k in args.keys())
+    return frozenset(ids), params
+
+
 class ReactSolverV2:
     MODULE_AGENT_NAME = "solver.react.v2"
     MAX_ACTIONS_PER_ROUND = 2
@@ -2585,18 +2604,8 @@ class ReactSolverV2:
                 "message": "tool_call.tool_id is missing or empty",
             })
         else:
-            react_tool_ids = {
-                "react.read",
-                "react.pull",
-                "react.checkout",
-                "react.write",
-                "react.plan",
-                "react.hide",
-                "react.memsearch",
-                "react.patch",
-                "react.rg",
-            }
-            if tool_id not in adapters_by_id and tool_id not in react_tool_ids:
+            known_react_ids, _react_param_map = _known_react_tool_validation_sets()
+            if tool_id not in adapters_by_id and tool_id not in known_react_ids:
                 violations.append({
                     "code": "unknown_tool_id",
                     "message": f"tool_id '{tool_id}' is not in adapters/available tools",
@@ -2632,6 +2641,11 @@ class ReactSolverV2:
                 allowed_params.update({"root", "name_regex", "pattern", "context_lines", "max_bytes", "max_matches", "max_files"})
             else:
                 allowed_params.update({"path", "channel", "content", "kind"})
+        elif tool_id in _known_react_tool_validation_sets()[1]:
+            # react.delegate / react.contribute and any future react tool:
+            # accept the params their specs declare (the same spec the model
+            # reads), so the wiring cannot drift behind the catalog.
+            allowed_params.update(_known_react_tool_validation_sets()[1].get(tool_id) or set())
         else:
             adapter = adapters_by_id.get(tool_id) if tool_id else None
             if adapter:
