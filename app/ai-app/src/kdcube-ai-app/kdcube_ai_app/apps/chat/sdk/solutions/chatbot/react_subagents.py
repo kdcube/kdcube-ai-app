@@ -32,9 +32,11 @@ from kdcube_ai_app.apps.chat.ids import new_turn_id, timestamped_id
 from kdcube_ai_app.apps.chat.sdk.solutions.react.subagents.child_turn import (
     SUBAGENT_ACCOUNTING_AGENT,
     SubagentChildTurnContext,
+    subagent_stamp_from_context,
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.react.subagents.comm_policy import (
     build_subagent_child_comm,
+    normalize_subagent_visibility,
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.react.subagents.events import (
     SUBAGENT_CHARTER_EVENT_KIND,
@@ -126,6 +128,7 @@ class ReactSubagentSpawner:
             parent_user=self._parent_user_dict(comm_context),
             allowed_plugins=list(request.allowed_plugins or []),
             allowed_tool_names_by_alias=request.allowed_tool_names_by_alias,
+            visibility=self._visibility(),
         )
         task_payload = build_child_task_payload(
             parent_payload=comm_context,
@@ -162,6 +165,7 @@ class ReactSubagentSpawner:
                     "charter": charter.to_dict(),
                     "parent_conversation_id": parent.conversation_id,
                     "parent_turn_id": parent.turn_id,
+                    "subagent": subagent_stamp_from_context(context),
                 },
                 author=f"agent:conv_{parent.conversation_id}/{parent.turn_id}",
                 target_turn_id=child_turn_id,
@@ -189,6 +193,20 @@ class ReactSubagentSpawner:
         )
 
     # ---- internals ----
+
+    def _visibility(self) -> str:
+        """The child's live-emission visibility, decided at delegate time.
+
+        Read from the agent's resolved subagents defaults
+        (``react.agents.<id>.subagents.visibility`` via
+        ``react_subagents_config``, stashed on the runtime context by the
+        spawner install). Travels with the assignment so the child proc
+        applies the same policy the delegating agent's config declared."""
+        defaults = getattr(
+            getattr(self.workflow, "runtime_ctx", None), "subagent_defaults", None
+        )
+        raw = (defaults or {}).get("visibility") if isinstance(defaults, dict) else None
+        return normalize_subagent_visibility(raw)
 
     def _queue(self) -> Any:
         if self._queue_manager is None:

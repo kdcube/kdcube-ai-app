@@ -77,6 +77,27 @@ def test_subagents_config_per_agent_dict_form_merges_defaults():
     assert defaults == {"model": "claude-sonnet-4-6", "other": 1}
 
 
+def test_subagents_visibility_rides_the_defaults_and_defaults_silent():
+    from kdcube_ai_app.apps.chat.sdk.solutions.react.subagents.comm_policy import (
+        normalize_subagent_visibility,
+    )
+
+    props = {
+        "react": {
+            "agents": {"main": {"subagents": {"enabled": True, "visibility": "thread"}}},
+        }
+    }
+    enabled, defaults = workflow_mod._react_subagents_config(props, agent_id="main")
+    assert enabled is True
+    assert normalize_subagent_visibility(defaults.get("visibility")) == "thread"
+
+    # a bool opt-in says nothing about visibility: the knob resolves silent
+    _, bare_defaults = workflow_mod._react_subagents_config(
+        {"react": {"agents": {"main": {"subagents": True}}}}, agent_id="main",
+    )
+    assert normalize_subagent_visibility(bare_defaults.get("visibility")) == "silent"
+
+
 def _install_spawner(props, *, agent_id="main", depth=0, user_denied=False):
     runtime_ctx = RuntimeCtx(agent_id=agent_id, subagent_depth=depth)
     stub = SimpleNamespace(bundle_props=props, _user_subagents_denied=user_denied)
@@ -583,3 +604,356 @@ async def test_turn_exception_authors_failed_completion(monkeypatch):
     assert len(published) == 1
     assert published[0]["ok"] is False
     assert "decision model unavailable" in str(published[0]["reason"])
+
+
+# ------------------------------------------ economics boundary + helper spend
+
+
+def _charter_payload_model(*, child_conversation_id="sub_x", child_turn_id="turn_c1"):
+    from kdcube_ai_app.apps.chat.sdk.protocol import ExternalEventPayload
+    from kdcube_ai_app.apps.chat.sdk.solutions.react.subagents.schedule import (
+        build_child_task_payload,
+    )
+
+    context = _child_context()
+    context.child_conversation_id = child_conversation_id
+    context.child_turn_id = child_turn_id
+    data = build_child_task_payload(
+        parent_payload=None,
+        charter=context.charter,
+        parent=context.parent,
+        child_conversation_id=child_conversation_id,
+        child_turn_id=child_turn_id,
+        subagent_context=context.to_dict(),
+    )
+    return ExternalEventPayload.model_validate(data)
+
+
+def _completion_payload_model(*, child_conversation_id="sub_x", child_turn_id="turn_c1"):
+    from kdcube_ai_app.apps.chat.sdk.protocol import ExternalEventPayload
+    from kdcube_ai_app.apps.chat.sdk.solutions.react.subagents.events import (
+        SUBAGENT_CONVERGED_EVENT_KIND,
+    )
+    from kdcube_ai_app.apps.chat.sdk.solutions.react.subagents.schedule import (
+        build_completion_task_payload,
+    )
+
+    context = _child_context()
+    data = build_completion_task_payload(
+        child_payload=None,
+        semantic_type=SUBAGENT_CONVERGED_EVENT_KIND,
+        text="[SUBAGENT CONVERGED]\ndone",
+        facts={
+            "child_conversation_id": child_conversation_id,
+            "child_turn_id": child_turn_id,
+            "charter_goal": "Research X",
+        },
+        parent=context.parent,
+        parent_session_id="sess_parent",
+        parent_user={"user_type": "privileged", "user_id": "user_1"},
+    )
+    return ExternalEventPayload.model_validate(data)
+
+
+def _entrypoint_stub(comm_context, *, comm=None, redis=None):
+    from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint import BaseEntrypoint
+
+    ep = BaseEntrypoint.__new__(BaseEntrypoint)
+    ep.logger = SimpleNamespace(log=lambda *a, **k: None)
+    ep.config = SimpleNamespace(ai_bundle_spec=SimpleNamespace(id="bundle@1"))
+    ep._comm_context = comm_context
+    ep._comm = comm
+    ep.redis = redis
+    return ep
+
+
+@pytest.mark.asyncio
+async def test_denied_charter_turn_authors_failed_via_completion_hook(monkeypatch):
+    """An economics denial raised inside run() kills the charter turn before
+    any workflow exists; the platform turn-completed hook still authors
+    subagent.failed with the denial reason — exactly once."""
+    from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint import BaseEntrypoint
+    from kdcube_ai_app.apps.chat.sdk.solutions.react.subagents import child_turn as child_turn_mod
+
+    published = []
+
+    async def _fake_publish(**kwargs):
+        published.append(kwargs)
+
+    monkeypatch.setattr(child_turn_mod, "publish_child_completion", _fake_publish)
+
+    payload = _charter_payload_model(
+        child_conversation_id="sub_denied1", child_turn_id="turn_d1",
+    )
+    ep = _entrypoint_stub(payload, redis=object())
+
+    await BaseEntrypoint.on_turn_completed(
+        ep,
+        state={},
+        error=RuntimeError("chat: no funding source for user"),
+        status="error",
+        reason="EconomicsLimitException",
+    )
+    assert len(published) == 1
+    call = published[0]
+    assert call["ok"] is False
+    assert "no funding source" in str(call["reason"])
+    assert call["context"].parent.conversation_id == "conv_parent"
+    assert call["child_payload"] is payload
+
+    # the workflow already reported for this turn: the hook stays quiet
+    child_turn_mod._register_published_completion("sub_denied2", "turn_d2")
+    payload2 = _charter_payload_model(
+        child_conversation_id="sub_denied2", child_turn_id="turn_d2",
+    )
+    ep2 = _entrypoint_stub(payload2, redis=object())
+    await BaseEntrypoint.on_turn_completed(
+        ep2, state={}, error=RuntimeError("boom"), status="error",
+    )
+    assert len(published) == 1
+
+    # a non-charter turn (e.g. the continuation) never reports
+    ep3 = _entrypoint_stub(_completion_payload_model(), redis=object())
+    await BaseEntrypoint.on_turn_completed(
+        ep3, state={}, error=RuntimeError("boom"), status="error",
+    )
+    assert len(published) == 1
+
+    # success never reports
+    await BaseEntrypoint.on_turn_completed(ep, state={}, status="completed")
+    assert len(published) == 1
+
+
+def test_spend_helpers_parse_charter_and_completion_payloads():
+    from kdcube_ai_app.apps.chat.sdk.solutions.react.subagents.spend import (
+        build_helpers_block,
+        completed_helper_refs,
+        subagent_usage_metadata,
+    )
+
+    charter_model = _charter_payload_model()
+    marker = subagent_usage_metadata(charter_model)
+    assert marker is not None
+    assert marker["helper"] is True
+    assert marker["subagent"]["parent_conversation_id"] == "conv_parent"
+    assert marker["subagent"]["parent_turn_id"] == "turn_parent"
+    assert completed_helper_refs(charter_model) == []
+
+    completion_model = _completion_payload_model(
+        child_conversation_id="sub_h1", child_turn_id="turn_h1",
+    )
+    assert subagent_usage_metadata(completion_model) is None
+    refs = completed_helper_refs(completion_model)
+    assert refs == [{
+        "child_conversation_id": "sub_h1",
+        "child_turn_id": "turn_h1",
+        "charter_goal": "Research X",
+        "outcome": "converged",
+    }]
+
+    assert build_helpers_block([]) is None
+    block = build_helpers_block([
+        {**refs[0], "cost_usd": 0.5, "weighted_tokens": 100},
+        {"child_conversation_id": "sub_h2", "cost_usd": 0.25, "weighted_tokens": 50},
+    ])
+    assert block["cost_total_usd"] == 0.75
+    assert block["weighted_tokens"] == 150
+    assert block["count"] == 2
+
+
+def _fake_turn_costs(cost, weighted):
+    return {
+        "cost_total_usd": cost,
+        "cost_breakdown": [],
+        "agent_costs": {},
+        "token_summary": {
+            "llm_input_sum": 0,
+            "llm_cache_creation_sum": 0,
+            "llm_cache_read_sum": 0,
+            "llm_output_sum": 0,
+            "total_input_tokens": 0,
+            "weighted_tokens": weighted,
+            "billable_equivalent_tokens": weighted,
+            "llm_equivalent_tokens": weighted,
+        },
+    }
+
+
+class _RecordingComm:
+    def __init__(self):
+        self.events = []
+
+    async def event(self, **kwargs):
+        self.events.append(("event", kwargs))
+
+    async def service_event(self, **kwargs):
+        self.events.append(("service_event", kwargs))
+
+
+@pytest.mark.asyncio
+async def test_apply_accounting_rolls_helper_spend_into_the_parent_view(monkeypatch):
+    """The continuation turn's usage event presents 'turn total X, of which
+    helpers Y': its own settlement figures stay own; the completed helper
+    turn's spend rides a distinguishable `helpers` block."""
+    from kdcube_ai_app.apps.chat.sdk.solutions.chatbot import entrypoint as entrypoint_mod
+
+    calc_calls = []
+
+    class _FakeCalc:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def calculate_turn_costs(self, **kwargs):
+            calc_calls.append(kwargs)
+            if str(kwargs.get("conversation_id") or "").startswith("sub_"):
+                return _fake_turn_costs(0.25, 500)
+            return _fake_turn_costs(1.0, 2000)
+
+    monkeypatch.setattr(entrypoint_mod, "RateCalculator", _FakeCalc)
+    monkeypatch.setattr(entrypoint_mod, "create_storage_backend", lambda *a, **k: None)
+
+    comm = _RecordingComm()
+    payload = _completion_payload_model(
+        child_conversation_id="sub_h1", child_turn_id="turn_h1",
+    )
+    ep = _entrypoint_stub(payload, comm=comm)
+
+    ranked, _result = await ep.apply_accounting(
+        tenant="tenant",
+        project="project",
+        user_id="user_1",
+        user_type="privileged",
+        thread_id="conv_parent",
+        turn_id="turn_cont1",
+        usage_from="2026-07-12",
+    )
+
+    # own settlement figures stay own (helpers never inflate ranked tokens)
+    assert ranked == 2000
+    # the helper turn was costed by its own conversation/turn refs
+    helper_calls = [c for c in calc_calls if c.get("conversation_id") == "sub_h1"]
+    assert helper_calls and helper_calls[0]["turn_id"] == "turn_h1"
+
+    service_events = [kw for kind, kw in comm.events if kind == "service_event"]
+    assert service_events
+    data = service_events[-1]["data"]
+    assert data["cost_total_usd"] == 1.0
+    helpers = data["helpers"]
+    assert helpers["cost_total_usd"] == 0.25
+    assert helpers["count"] == 1
+    assert helpers["items"][0]["child_conversation_id"] == "sub_h1"
+    assert helpers["items"][0]["outcome"] == "converged"
+    # the parent view stays the parent's; no helper marker on its metadata
+    assert "helper" not in data["metadata"]
+
+
+@pytest.mark.asyncio
+async def test_apply_accounting_marks_child_turn_usage_as_helper_spend(monkeypatch):
+    """A subagent child turn's own usage event carries the parent backref +
+    helper marker, so per-turn/per-conversation views can roll it up under
+    the parent turn while keeping it distinguishable."""
+    from kdcube_ai_app.apps.chat.sdk.solutions.chatbot import entrypoint as entrypoint_mod
+
+    class _FakeCalc:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def calculate_turn_costs(self, **kwargs):
+            return _fake_turn_costs(0.25, 500)
+
+    monkeypatch.setattr(entrypoint_mod, "RateCalculator", _FakeCalc)
+    monkeypatch.setattr(entrypoint_mod, "create_storage_backend", lambda *a, **k: None)
+
+    comm = _RecordingComm()
+    payload = _charter_payload_model(
+        child_conversation_id="sub_h3", child_turn_id="turn_h3",
+    )
+    ep = _entrypoint_stub(payload, comm=comm)
+
+    await ep.apply_accounting(
+        tenant="tenant",
+        project="project",
+        user_id="user_1",
+        user_type="privileged",
+        thread_id="sub_h3",
+        turn_id="turn_h3",
+        usage_from="2026-07-12",
+    )
+
+    service_events = [kw for kind, kw in comm.events if kind == "service_event"]
+    assert service_events
+    data = service_events[-1]["data"]
+    assert data["metadata"]["helper"] is True
+    assert data["metadata"]["subagent"]["parent_conversation_id"] == "conv_parent"
+    assert data["metadata"]["subagent"]["parent_turn_id"] == "turn_parent"
+    assert "helpers" not in data
+
+
+def test_spawner_install_computes_model_facts_for_the_delegate_entry():
+    """The delegate catalog entry names the agent's own model and the
+    admin's capability tiers — resolved at spawner install."""
+    props = {
+        "react": {
+            "agents": {"main": {"subagents": {
+                "allowed": True,
+                "models": {
+                    "strong": {"provider": "anthropic", "model": "claude-sonnet-4-6"},
+                    "fast": {"provider": "anthropic", "model": "claude-haiku-4-5"},
+                },
+                "model": "strong",
+            }}},
+        }
+    }
+    runtime_ctx = RuntimeCtx(
+        agent_id="main",
+        agent_role_models={
+            "solver.react.v2.decision.v2.strong": {
+                "provider": "anthropic",
+                "model": "claude-haiku-4-5",
+            }
+        },
+    )
+    stub = SimpleNamespace(bundle_props=props, _user_subagents_denied=False)
+    BaseWorkflow._install_subagent_spawner(stub, runtime_ctx=runtime_ctx, build_template={})
+
+    facts = runtime_ctx.subagent_model_facts
+    assert facts["own"]["model"] == "claude-haiku-4-5"
+    assert facts["default"] == {
+        "label": "strong", "provider": "anthropic", "model": "claude-sonnet-4-6",
+    }
+    assert [(t["label"], t["model"]) for t in facts["tiers"]] == [
+        ("strong", "claude-sonnet-4-6"), ("fast", "claude-haiku-4-5"),
+    ]
+
+    # the facts render into the entry the decision agent reads
+    from kdcube_ai_app.apps.chat.sdk.solutions.react.call import get_react_tools_catalog
+
+    entry = next(
+        c for c in get_react_tools_catalog(
+            subagent_role="parent", delegate_model_facts=facts,
+        )
+        if c["id"] == "react.delegate"
+    )
+    assert (
+        "You reason with claude-haiku-4-5; a subagent reasons with claude-sonnet-4-6"
+        in entry["purpose"]
+    )
+    assert "one of: strong (claude-sonnet-4-6), fast (claude-haiku-4-5)" in entry["args"]["model"]
+    assert "Omit to use the default tier (strong)." in entry["args"]["model"]
+
+
+def test_subagents_allowed_key_controls_availability():
+    """`allowed:` is the documented availability key (`enabled:` and the bare
+    bool stay accepted)."""
+    enabled, defaults = workflow_mod._react_subagents_config(
+        {"react": {"agents": {"main": {"subagents": {"allowed": True}}}}},
+        agent_id="main",
+    )
+    assert enabled is True
+    assert "allowed" not in defaults
+
+    enabled, _ = workflow_mod._react_subagents_config(
+        {"react": {"agents": {"main": {"subagents": {"allowed": False}}}}},
+        agent_id="main",
+    )
+    assert enabled is False

@@ -150,12 +150,14 @@ def react_subagents_config(
     """The admin side of subagent delegation: availability + shared defaults.
 
     ``subagents:`` in the agent's react config block — a bool, or a dict with
-    ``enabled:`` — puts the ability in the agent's pickable inventory,
-    DEFAULT ON for users (absent = not in the inventory at all). Blocks read
-    most-specific-first; the first explicit signal decides. Every dict form
-    contributes defaults (``model`` etc.), most specific key winning, so the
-    bundle-level ``react.subagents:`` block keeps serving shared defaults
-    (and its ``enabled:`` opts the bundle's agents in as a group).
+    ``allowed:`` (``enabled:`` is accepted as an alias) — puts the ability in
+    the agent's pickable inventory, DEFAULT ON for users (absent = not in the
+    inventory at all). Blocks read most-specific-first; the first explicit
+    signal decides. Every dict form contributes defaults (``models`` tier
+    map, ``model`` default tier, ``visibility``...), most specific key
+    winning, so the bundle-level ``react.subagents:`` block keeps serving
+    shared defaults (and its ``allowed:`` opts the bundle's agents in as a
+    group).
     """
     enabled: bool | None = None
     defaults: dict[str, Any] = {}
@@ -179,14 +181,64 @@ def react_subagents_config(
                 enabled = False
             continue
         if isinstance(raw, Mapping):
-            block_enabled = raw.get("enabled")
+            block_enabled = raw.get("allowed", raw.get("enabled"))
             if block_enabled is not None and enabled is None:
                 enabled = bool(block_enabled) if isinstance(block_enabled, bool) else str(block_enabled).strip().lower() in {"1", "true", "yes", "y", "on"}
             for key, value in raw.items():
-                if key == "enabled":
+                if key in ("allowed", "enabled"):
                     continue
                 defaults.setdefault(str(key), value)
     return (bool(enabled) if enabled is not None else False), defaults
+
+
+def subagent_model_tiers(
+    defaults: Mapping[str, Any] | None,
+) -> dict[str, dict[str, str]]:
+    """The admin's capability-tier map for subagent models.
+
+    Config shape, under the agent's ``subagents:`` block::
+
+        subagents:
+          allowed: true
+          models:
+            strong: {provider: anthropic, model: claude-sonnet-4-6}
+            fast: {provider: anthropic, model: claude-haiku-4-5}
+          model: strong        # default tier when a charter names none
+
+    The tier label is the vocabulary ``react.delegate``'s ``model`` argument
+    speaks; the mapping stays the admin's. Invalid rows drop.
+    """
+    raw = (defaults or {}).get("models")
+    out: dict[str, dict[str, str]] = {}
+    if not isinstance(raw, Mapping):
+        return out
+    for label, row in raw.items():
+        name = str(label or "").strip()
+        pick = normalize_model_pick(row)
+        if name and pick:
+            out[name] = pick
+    return out
+
+
+def subagent_default_pick(
+    defaults: Mapping[str, Any] | None,
+    tiers: Mapping[str, dict[str, str]] | None = None,
+) -> tuple[str | None, dict[str, str] | None]:
+    """The (tier label, model pick) a charter without ``model`` runs on.
+
+    ``model:`` under ``subagents:`` names a tier label from ``models`` (the
+    documented form) or carries a direct pick; absent both, the child
+    inherits the parent's role models — ``(None, None)``.
+    """
+    tiers = dict(tiers if tiers is not None else subagent_model_tiers(defaults))
+    configured = (defaults or {}).get("model")
+    if isinstance(configured, str) and configured.strip():
+        label = configured.strip()
+        if label in tiers:
+            return label, dict(tiers[label])
+        return None, normalize_model_pick({"model": label})
+    pick = normalize_model_pick(configured)
+    return None, pick
 
 
 def subagents_denied(disabled: Mapping[str, Any] | None) -> bool:
@@ -1812,5 +1864,7 @@ __all__ = [
     "react_supported_models",
     "selection_deltas",
     "selection_snapshot",
+    "subagent_default_pick",
+    "subagent_model_tiers",
     "subagents_denied",
 ]

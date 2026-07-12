@@ -2890,3 +2890,144 @@ button.k-menu-status:hover { background: var(--surface-2); }
   100% { box-shadow: 0 0 0 0 rgba(1, 190, 178, 0); background: transparent; }
 }
 .kcs-turn-flash { animation: kcs-flash-turn 2.2s ease-out 1; border-radius: var(--r-lg); }
+
+/* ---------------------------------------------------------------------- */
+/*  Subagent threads — collapsible sub-conversations anchored under the   */
+/*  parent turn they forked from. Inline in the message flow (the chat    */
+/*  viewport owns its content: no reserved columns); a teal left rail     */
+/*  marks the nesting.                                                    */
+/* ---------------------------------------------------------------------- */
+.k-subthreads {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.k-subthread {
+  border: 1px solid var(--line-soft);
+  border-left: 2px solid rgba(1, 190, 178, 0.45);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  padding: 4px 8px;
+}
+.k-subthread-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border: 0;
+  background: none;
+  padding: 2px 0;
+  font: inherit;
+  text-align: left;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+}
+.k-subthread-head:hover { color: var(--text-2); }
+.k-subthread-icon {
+  flex: 0 0 auto;
+  color: var(--teal-dark);
+}
+.k-subthread-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.k-subthread-kicker {
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--teal-dark);
+}
+.k-subthread-goal {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.k-subthread-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+.k-subthread-count {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.k-subthread-head .k-workitem-caret {
+  flex: 0 0 auto;
+  width: 13px;
+  height: 13px;
+  transition: transform 120ms ease;
+}
+.k-subthread-head[aria-expanded="true"] .k-workitem-caret { transform: rotate(90deg); }
+.k-subthread-milestones {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 4px 0 2px;
+  padding: 0 0 0 8px;
+  border-left: 1px solid var(--line-soft);
+}
+.k-subthread-milestone {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding-left: 10px;
+  font-size: 12px;
+  color: var(--text-2);
+  min-width: 0;
+}
+.k-subthread-milestone-dot {
+  position: absolute;
+  left: -3px;
+  top: 4px;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--teal);
+}
+.k-subthread-milestone-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.k-subthread-milestone-time {
+  flex: 0 0 auto;
+  font-size: 10.5px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.k-subthread-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 8px 2px 4px;
+  border-top: 1px solid var(--line-soft);
+}
+.k-subthread-turn {
+  border-radius: var(--r-md);
+  background: var(--surface);
+  padding: 6px 8px;
+}
+.k-subthread-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+  padding: 2px 0;
+}

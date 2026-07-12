@@ -52,6 +52,7 @@ export function ChatViewModelProvider({ children, kdcubePreview = false }: ChatV
     send: engine.send,
     steer: engine.steer,
     loadConversation: engine.loadConversation,
+    loadSubagentThread: engine.loadSubagentThread,
     newChat: engine.newChat,
     deleteConversation: engine.deleteConversation,
     refreshConversationList: engine.refreshConversations,

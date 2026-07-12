@@ -46,6 +46,27 @@ SUBAGENT_CONVERGED_EVENT_KIND = "subagent.converged"
 SUBAGENT_FAILED_EVENT_KIND = "subagent.failed"
 
 
+def build_subagent_stamp(
+    *,
+    child_conversation_id: str,
+    parent_conversation_id: str,
+    parent_turn_id: str,
+    charter_goal: str,
+) -> Dict[str, Any]:
+    """The subagent envelope stamp — one shape everywhere.
+
+    Rides as the top-level ``subagent`` key on every thread-mode live
+    emission AND inside the structured ``facts`` of every ``subagent.*``
+    lane event (charter, contribution, converged/failed), so clients anchor
+    subagent traffic into threads without parsing text."""
+    return {
+        "child_conversation_id": str(child_conversation_id or ""),
+        "forked_from_conversation_id": str(parent_conversation_id or ""),
+        "forked_from_turn_id": str(parent_turn_id or ""),
+        "charter_goal": str(charter_goal or ""),
+    }
+
+
 @dataclass
 class ParentLaneAddress:
     """The full lane address a subagent reports back to."""

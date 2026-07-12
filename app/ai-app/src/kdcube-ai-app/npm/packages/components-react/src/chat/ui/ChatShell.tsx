@@ -12,7 +12,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { BannerTone, ConnectionsConsentOpen, ConversationSearchHit, ConversationSummary, NamespaceStyleMap } from '@kdcube/components-core/chat'
 import type { ChatTurn } from '@kdcube/components-core/chat'
-import { findActiveTurn } from '@kdcube/components-core/chat'
+import { findActiveTurn, subagentThreadsForTurn } from '@kdcube/components-core/chat'
 import { useAppDispatch, useStableCallback } from './support/hooks.ts'
 import { chatActions } from '@kdcube/components-core/chat'
 import { useChatViewModel } from './context.tsx'
@@ -23,6 +23,7 @@ import { ConversationSearchControls } from './features/conversations/Conversatio
 import { ConversationSearchResults } from './features/conversations/ConversationSearchResults.tsx'
 import { Composer } from './features/composer/Composer.tsx'
 import { TurnView } from './features/chat/TurnView.tsx'
+import { SubagentThreads } from './features/chat/SubagentThreads.tsx'
 import { FileDropZone } from './components/FileDropZone.tsx'
 import { CopyButton } from './components/CopyButton.tsx'
 import { WebappPane, WebappModal } from './components/WebappPane.tsx'
@@ -267,7 +268,16 @@ export function ChatShell({
     if (visibleTurns.length > 1) wakeTurnNav()
   }, [visibleTurns.length, wakeTurnNav])
   const lastTurn = visibleTurns[visibleTurns.length - 1]
-  const scrollSignature = `${visibleTurns.length}:${lastTurn?.id ?? ''}:${lastTurn?.answer.length ?? 0}:${lastTurn?.timeline.length ?? 0}:${lastTurn?.artifacts.length ?? 0}:${state.banners.length}:${ready ? 1 : 0}`
+  /* Subagent threads grow the transcript too (live stamped traffic streams in
+   * below their fork turns), so their progress participates in the
+   * stick-to-bottom signature like main-lane content. */
+  const threadSignature = useMemo(
+    () => Object.values(state.threads)
+      .map((thread) => `${thread.childConversationId}:${thread.status}:${thread.turns.length}:${thread.contributions.length}`)
+      .join('|'),
+    [state.threads],
+  )
+  const scrollSignature = `${visibleTurns.length}:${lastTurn?.id ?? ''}:${lastTurn?.answer.length ?? 0}:${lastTurn?.timeline.length ?? 0}:${lastTurn?.artifacts.length ?? 0}:${state.banners.length}:${ready ? 1 : 0}:${threadSignature}`
   useEffect(() => {
     if (!autoScrollRef.current) return
     const scroller = activeScroller()
@@ -402,6 +412,8 @@ export function ChatShell({
     }))
   })
   const handleTurnFeedback = engine.submitFeedback
+  /* Expanding a reloaded thread stub fetches the child conversation. */
+  const handleLoadSubagentThread = engine.loadSubagentThread
   const handleTurnFollowup = useStableCallback((text: string) => {
     if (state.inputLocked || state.connection === 'booting') return
     dispatch(chatActions.setComposerText(text))
@@ -911,18 +923,28 @@ export function ChatShell({
                 ) : (
                   <div className="flex flex-col gap-4">
                     {visibleTurns.map((turn) => (
-                      <TurnView
-                        key={turn.id}
-                        turn={turn}
-                        conversationId={state.conversationId}
-                        sendingDisabled={sendingDisabled}
-                        reaction={state.feedback[turn.id] ?? null}
-                        onFeedback={handleTurnFeedback}
-                        onDownloadError={handleTurnDownloadError}
-                        onContextActionError={handleContextActionError}
-                        onFollowup={handleTurnFollowup}
-                        namespaceStyles={namespaceStyles}
-                      />
+                      <div key={turn.id} className="flex flex-col gap-2">
+                        <TurnView
+                          turn={turn}
+                          conversationId={state.conversationId}
+                          sendingDisabled={sendingDisabled}
+                          reaction={state.feedback[turn.id] ?? null}
+                          onFeedback={handleTurnFeedback}
+                          onDownloadError={handleTurnDownloadError}
+                          onContextActionError={handleContextActionError}
+                          onFollowup={handleTurnFollowup}
+                          namespaceStyles={namespaceStyles}
+                        />
+                        {/* Subagent threads forked from this turn: collapsible
+                            sub-conversations inline in the message flow (live
+                            stamped traffic and reload `forks` stubs alike). */}
+                        <SubagentThreads
+                          threads={subagentThreadsForTurn(state.threads, turn.id)}
+                          loadThread={handleLoadSubagentThread}
+                          onDownloadError={handleTurnDownloadError}
+                          namespaceStyles={namespaceStyles}
+                        />
+                      </div>
                     ))}
                   </div>
                 )}

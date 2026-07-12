@@ -98,6 +98,19 @@ def unwrap_payload(p: dict) -> dict:
         cur = cur.get("payload") or {}
     return cur or {}
 
+
+def _timeline_forked_from(timeline_metadata: Any) -> Optional[Dict[str, Any]]:
+    """The conversation's fork backref from its timeline index metadata.
+
+    A fork-seeded conversation (subagent child) stores
+    ``forked_from: {conversation_id, turn_id}`` on its timeline artifact;
+    conversation fetch/list/details surface it so clients can anchor the
+    conversation under its parent."""
+    forked_from = (timeline_metadata or {}).get("forked_from") if isinstance(timeline_metadata, dict) else None
+    if isinstance(forked_from, dict) and forked_from.get("conversation_id"):
+        return forked_from
+    return None
+
 class ContextRAGClient:
     def __init__(self, *,
                  conv_idx: ConvIndex,
@@ -2031,6 +2044,12 @@ class ContextRAGClient:
             }
             if include_titles and title:
                 item["title"] = str(title).strip()
+            # A fork-seeded conversation (subagent child) carries its backref
+            # on the timeline; expose it so clients can render the row under
+            # its parent instead of as a top-level conversation.
+            forked_from = _timeline_forked_from(parsed)
+            if forked_from:
+                item["forked_from"] = forked_from
             by_conv[cid] = item
 
         items = list(by_conv.values())
@@ -2072,6 +2091,7 @@ class ContextRAGClient:
         conversation_started_at = None
         sources_pool = []
         timeline_bundle_id = None
+        conversation_forked_from = None
         try:
             res_ws = await self.recent(
                 kinds=[f"artifact:{TIMELINE_KIND}"],
@@ -2096,9 +2116,11 @@ class ContextRAGClient:
                 conversation_started_at = (timeline_metadata.get("conversation_started_at") or "").strip() or None
                 if isinstance(timeline_metadata.get("sources_pool"), list):
                     sources_pool = timeline_metadata.get("sources_pool") or []
+                conversation_forked_from = _timeline_forked_from(timeline_metadata)
         except Exception:
             conversation_title = None
             conversation_started_at = None
+            conversation_forked_from = None
         ui_artifacts_tags = UI_ARTIFACT_TAGS
         # 3) Get raw turn-tag occurrences (chronological, duplicates preserved)
         occurrences = await self.idx.get_conversation_turn_ids_from_tags(
@@ -2165,6 +2187,8 @@ class ContextRAGClient:
             "turns": turns,
             "sources_pool": sources_pool
         }
+        if conversation_forked_from:
+            result["forked_from"] = conversation_forked_from
         if bundle_ids:
             result["bundle_ids"] = bundle_ids
             if len(bundle_ids) == 1:
@@ -2271,6 +2295,7 @@ class ContextRAGClient:
 
         conversation_title = None
         timeline_sources_pool: List[Dict[str, Any]] = []
+        conversation_forked_from = None
         try:
             # Fetch timeline artifact and read conversation_title from its payload
             res_ws = await self.recent(
@@ -2295,6 +2320,7 @@ class ContextRAGClient:
                     conversation_title = title
                 if isinstance(timeline_metadata.get("sources_pool"), list):
                     timeline_sources_pool = timeline_metadata.get("sources_pool") or []
+                conversation_forked_from = _timeline_forked_from(timeline_metadata)
                 logger.info(
                     "fetch_conversation_artifacts: timeline title=%s conversation_id=%s items=%d",
                     "set" if conversation_title else "missing",
@@ -2309,14 +2335,18 @@ class ContextRAGClient:
         except Exception:
             timeline_sources_pool = []
             conversation_title = None
+            conversation_forked_from = None
 
         if not occ and not (turn_ids or []):
-            return {
+            result = {
                 "user_id": user_id,
                 "conversation_id": conversation_id,
                 "conversation_title": conversation_title,
                 "turns": []
             }
+            if conversation_forked_from:
+                result["forked_from"] = conversation_forked_from
+            return result
 
         turns_map: Dict[str, Dict[str, Any]] = {}
         order: List[str] = []
@@ -2389,7 +2419,7 @@ class ContextRAGClient:
         async def _materialize_turn_log_artifacts(
             tid: str,
             sources_pool_for_conv: List[Dict[str, Any]],
-        ) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]], Dict[str, bool]]:
+        ) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]], Dict[str, bool], List[Dict[str, Any]]]:
             mat = await self.materialize_turn(
                 turn_id=tid,
                 scope="conversation",
@@ -2403,11 +2433,19 @@ class ContextRAGClient:
             turn_log_item = mat.get("turn_log") or {}
             turn_log_payload = unwrap_payload(turn_log_item)
             if not isinstance(turn_log_payload, dict):
-                return [], [], {}
+                return [], [], {}, []
 
             ts = turn_log_payload.get("ts") or turn_log_item.get("ts")
             out: List[Dict[str, Any]] = []
             sources_pool = turn_log_payload.get("sources_pool") or []
+            # Structured fork descriptors written at the turn's end
+            # (react.delegate fork markers lifted onto the turn log):
+            # [{child_conversation_id, charter_goal, forked_at}] — what
+            # clients use to inline child-conversation threads at this turn.
+            forks = [
+                f for f in (turn_log_payload.get("forks") or [])
+                if isinstance(f, dict) and f.get("child_conversation_id")
+            ]
 
             blocks = turn_log_payload.get("blocks")
             if not isinstance(blocks, list):
@@ -2613,14 +2651,14 @@ class ContextRAGClient:
 
             # Per-file artifacts are emitted above; no grouped solver.program.files artifact.
 
-            return out, sources_pool, replace_types
+            return out, sources_pool, replace_types, forks
 
         if order:
             sem = asyncio.Semaphore(MAX_CONCURRENT_ARTIFACT_FETCHES)
 
             async def _build_turn_artifacts(
                 tid: str,
-            ) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]], Dict[str, bool]]:
+            ) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]], Dict[str, bool], List[Dict[str, Any]]]:
                 async with sem:
                     return await _materialize_turn_log_artifacts(tid, timeline_sources_pool)
 
@@ -2628,13 +2666,15 @@ class ContextRAGClient:
             sources_pool_by_turn: Dict[str, List[Dict[str, Any]]] = {}
             replace_by_turn: Dict[str, Dict[str, bool]] = {}
             for tid, result in zip(order, turn_artifacts):
-                artifacts, sources_pool, replace_types = result
+                artifacts, sources_pool, replace_types, turn_forks = result
                 if artifacts:
                     turns_map[tid]["artifacts"].extend(artifacts)
                 if isinstance(sources_pool, list) and sources_pool:
                     sources_pool_by_turn[tid] = sources_pool
                 if replace_types:
                     replace_by_turn[tid] = replace_types
+                if turn_forks:
+                    turns_map[tid]["forks"] = turn_forks
 
             if replace_by_turn:
                 for tid, rep in replace_by_turn.items():
@@ -2698,6 +2738,8 @@ class ContextRAGClient:
             "conversation_title": conversation_title,
             "turns": [turns_map[tid] for tid in order],
         }
+        if conversation_forked_from:
+            result["forked_from"] = conversation_forked_from
         if bundle_ids:
             result["bundle_ids"] = bundle_ids
             if len(bundle_ids) == 1:

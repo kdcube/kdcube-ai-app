@@ -44,6 +44,14 @@ class ConversationListItem(BaseModel):
     last_activity_at: Optional[str] = None
     started_at: Optional[str] = None
     title: Optional[str] = None
+    forked_from: Optional[dict] = Field(
+        default=None,
+        description=(
+            "Present on fork-seeded conversations (subagent children): "
+            "{conversation_id, turn_id} of the parent turn that spawned it. "
+            "Clients render such rows under their parent conversation."
+        ),
+    )
 
 class ConversationListResponse(BaseModel):
     user_id: str
@@ -371,8 +379,16 @@ async def fetch_conversation(
     #   "conversation_id": ...,
     #   "bundle_id": "...",      # present only when all returned artifacts share one bundle
     #   "bundle_ids": ["..."],   # inferred distinct bundle ids from fetched rows
+    #   "forked_from": {"conversation_id": "...", "turn_id": "..."},
+    #                            # present when this conversation is a fork-seeded
+    #                            # (subagent child) conversation
     #   "turns": [
-    #       {"turn_id": "t1", "artifacts": [
+    #       {"turn_id": "t1",
+    #        "forks": [{"child_conversation_id": "...", "charter_goal": "...", "forked_at": "..."}],
+    #                            # present when the turn delegated subagents;
+    #                            # each child conversation is fetchable through
+    #                            # this same endpoint by the same user
+    #        "artifacts": [
     #           {"message_id": "...", "type": "...", "ts": "...", "hosted_uri": "...", "bundle_id": "...", ["data": {...}]}
     #       ]},
     #       ...

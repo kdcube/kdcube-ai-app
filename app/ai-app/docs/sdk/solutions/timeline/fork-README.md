@@ -51,6 +51,29 @@ load mode exists. The persisted timeline carries a queryable
 record carries the matching `forks` descriptors -- both directions of the
 fork relationship live in the store, where conversation fetch reads them.
 
+## Client Reconstruction: The Fetch Contract
+
+`POST /{tenant}/{project}/{conversation_id}/fetch` surfaces both directions
+of the stored relationship, so a client rebuilds fork threads on reload:
+
+- **Source side:** each turn that forked carries
+  `forks: [{child_conversation_id, charter_goal, forked_at}]` on its turn
+  entry in the fetch response.
+- **Forked side:** the forked conversation's fetch response carries a
+  top-level `forked_from: {conversation_id, turn_id}`.
+- **One endpoint:** the forked conversation belongs to the same
+  tenant/project/user and the same app, so the client fetches it through
+  the SAME endpoint with the same auth and inlines it as the thread
+  anchored at the fork turn.
+- **Lists:** conversation list rows (`GET /{tenant}/{project}`) carry the
+  same `forked_from` marker on forked conversations, so clients group them
+  under their source conversation.
+
+Reload and live streaming agree because both render the same source: the
+forked conversation's own turns, anchored by the fork refs (live threading
+is the subagent visibility contract in
+[work-with-subagents-README.md](../../agents/react/work-with-subagents-README.md)).
+
 ## Ref Semantics
 
 Every conversation-scoped ref the runtime emits is conversation-qualified at

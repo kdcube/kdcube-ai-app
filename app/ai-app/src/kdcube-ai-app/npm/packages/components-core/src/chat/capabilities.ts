@@ -140,6 +140,17 @@ export interface AgentCapabilitySkill {
   namespace: string
 }
 
+/** The helper-agents (subagent delegation) inventory entry. Present when the
+ *  admin offered the ability (`react.agents.<id>.subagents: true`) — absent
+ *  means the ability is outside the inventory and no row renders. The server
+ *  owns the picker copy (`label` + `description`, the quality-vs-spend
+ *  trade-off); the UI renders it verbatim. */
+export interface AgentCapabilitySubagents {
+  available: boolean
+  label?: string
+  description?: string
+}
+
 /** An admin-allowed model row (mirrors the economics price-table naming). */
 export interface AgentSupportedModel {
   model: string
@@ -191,6 +202,8 @@ export interface AgentCapabilitiesInventory {
   supported_models?: AgentSupportedModel[]
   /** The configured default for the strong decision role (what runs with no pick). */
   default_model?: AgentModelPick | null
+  /** Helper-agents entry; `null`/absent = the ability is not offered. */
+  subagents?: AgentCapabilitySubagents | null
 }
 
 /** The saved deny-list. Absent key/entry = enabled (full configured set). */
@@ -201,6 +214,8 @@ export interface AgentSelectionDisabled {
    *  operations (`object.search`) / named actions (`object.action.send`). */
   named_services?: Record<string, true | string[]>
   skills?: string[]
+  /** `true` turns helper-agent delegation off for this user's turns. */
+  subagents?: boolean
 }
 
 /** A partial toggle patch (what one interaction changes). Dict categories take
@@ -211,6 +226,9 @@ export interface AgentSelectionPatch {
   mcp?: Record<string, boolean | string[]>
   named_services?: Record<string, boolean | string[]>
   skills?: Record<string, boolean>
+  /** Helper-agents toggle: `true` denies delegation, `false` re-enables;
+   *  omitted keeps state. Rides the deny map like the other categories. */
+  subagents?: boolean
   /** The single model PICK: a `{provider, model}` sets it, `null` clears back
    *  to the configured default; omitted keeps the stored pick. */
   model?: AgentModelPick | null
@@ -263,6 +281,7 @@ export function applySelectionPatch(
     ...(disabled.mcp ? { mcp: { ...disabled.mcp } } : {}),
     ...(disabled.named_services ? { named_services: { ...disabled.named_services } } : {}),
     ...(disabled.skills ? { skills: [...disabled.skills] } : {}),
+    ...(disabled.subagents ? { subagents: true as const } : {}),
   }
   for (const category of DICT_CATEGORIES) {
     const raw = patch[category]
@@ -289,6 +308,10 @@ export function applySelectionPatch(
     if (skills.size > 0) out.skills = [...skills]
     else delete out.skills
   }
+  if (patch.subagents !== undefined) {
+    if (patch.subagents) out.subagents = true
+    else delete out.subagents
+  }
   return out
 }
 
@@ -305,6 +328,8 @@ export function mergeSelectionPatches(
   }
   const skills = { ...(base.skills ?? {}), ...(next.skills ?? {}) }
   if (Object.keys(skills).length > 0) out.skills = skills
+  if (next.subagents !== undefined) out.subagents = next.subagents
+  else if (base.subagents !== undefined) out.subagents = base.subagents
   if (next.model !== undefined) out.model = next.model
   else if (base.model !== undefined) out.model = base.model
   return out
@@ -655,6 +680,16 @@ export function namespaceGroupTogglePatch(
 
 export function isSkillDisabled(disabled: AgentSelectionDisabled, skillId: string): boolean {
   return Boolean(disabled.skills?.includes(skillId))
+}
+
+export function isSubagentsDisabled(disabled: AgentSelectionDisabled): boolean {
+  return disabled.subagents === true
+}
+
+/** The patch the helper-agents row toggle produces: on → deny (`true`),
+ *  off → re-enable (`false`, which clears the stored key). */
+export function subagentsTogglePatch(disabled: AgentSelectionDisabled): AgentSelectionPatch {
+  return { subagents: !isSubagentsDisabled(disabled) }
 }
 
 /** Which presentation a spotlight request should open the capability picker

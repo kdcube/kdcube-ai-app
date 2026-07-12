@@ -46,8 +46,11 @@ import {
 } from './transport/index.ts'
 import { mergeSelectionPatches } from './capabilities.ts'
 import type { AgentSelectionPatch } from './capabilities.ts'
+import { subagentStampOf } from './subagents.ts'
+import type { SubagentStreamKind } from './subagents.ts'
 import type { AttachedContext } from './state.ts'
 import type {
+  BaseEnvelope,
   ConversationSummary,
   ChatServiceEnvelope,
   ChatStepEnvelope,
@@ -271,6 +274,26 @@ export function createChatEngine(config: EngineConfig): ChatEngine {
     dispatch(chatActions.setConversationLoadingId(null))
   }
 
+  /* Expand a reconstructed thread stub: the child conversation fetches
+   * through the SAME conversation endpoint (same user owns it) and hydrates
+   * into the thread's turn list. Live threads and already-fetched threads
+   * skip; an errored fetch may retry. */
+  const loadSubagentThread = async (childConversationId: string) => {
+    const thread = getChat().threads[childConversationId]
+    if (!thread) return
+    if (thread.hydration !== 'stub' && thread.hydration !== 'error') return
+    dispatch(chatActions.subagentThreadLoading(childConversationId))
+    try {
+      const conversation = await fetchConversationById(runtime, childConversationId)
+      dispatch(chatActions.subagentThreadHydrated({ childConversationId, conversation }))
+    } catch (error) {
+      dispatch(chatActions.subagentThreadLoadError({
+        childConversationId,
+        error: messageForError(error),
+      }))
+    }
+  }
+
   const deleteConversation = async (conversation: ConversationSummary) => {
     // The host confirms before calling (irreversible). Core does not pop a dialog.
     dispatch(chatActions.setConversationDeletingId(conversation.id))
@@ -343,9 +366,20 @@ export function createChatEngine(config: EngineConfig): ChatEngine {
     scheduleStreamReconnect(reason)
   }
 
+  /* Subagent multiplexing: a child conversation's emissions arrive on THIS
+   * conversation's channel stamped with the fork envelope (`env.subagent`).
+   * Stamped traffic routes into its thread (keyed by child conversation id)
+   * instead of the main-lane reducers — same pipeline, nested turn list. */
+  const routeSubagentEnvelope = (kind: SubagentStreamKind, env: BaseEnvelope): boolean => {
+    if (!subagentStampOf(env)) return false
+    dispatch(chatActions.subagentStreamEvent({ kind, envelope: env }))
+    return true
+  }
+
   const handleServiceEvent = (env: ChatServiceEnvelope) => {
     const projectedStep = projectServiceEventToChatStep(env)
     if (projectedStep) {
+      if (routeSubagentEnvelope('step', projectedStep)) return
       dispatch(chatActions.chatStep(projectedStep))
       return
     }
@@ -430,17 +464,30 @@ export function createChatEngine(config: EngineConfig): ChatEngine {
       dispatch(chatActions.setConnectionState('connecting'))
       const transport = await openChatStream(runtime, {
         sessionId,
-        onChatStart: (env) => dispatch(chatActions.chatStarted(env)),
+        onChatStart: (env) => {
+          if (routeSubagentEnvelope('start', env)) return
+          dispatch(chatActions.chatStarted(env))
+        },
         onChatStep: (env) => {
+          if (routeSubagentEnvelope('step', env)) return
           dispatch(chatActions.chatStep(env))
           forwardCanvasPatchEvent(env)
         },
-        onChatDelta: (env) => dispatch(chatActions.chatDelta(env)),
+        onChatDelta: (env) => {
+          if (routeSubagentEnvelope('delta', env)) return
+          dispatch(chatActions.chatDelta(env))
+        },
         onChatComplete: (env) => {
+          /* A completing CHILD stays inside its thread — the main lane's
+           * conversation list refresh is a parent-turn concern. */
+          if (routeSubagentEnvelope('complete', env)) return
           dispatch(chatActions.chatCompleted(env))
           void refreshConversationList()
         },
-        onChatError: (env) => dispatch(chatActions.chatErrored(env)),
+        onChatError: (env) => {
+          if (routeSubagentEnvelope('error', env)) return
+          dispatch(chatActions.chatErrored(env))
+        },
         onConversationStatus: (env) => dispatch(chatActions.convStatusUpdated(env)),
         onChatService: handleServiceEvent,
         onDisconnect: handleStreamDisconnect,
@@ -837,6 +884,9 @@ export function createChatEngine(config: EngineConfig): ChatEngine {
     },
     loadConversation(conversationId) {
       void loadConversation(conversationId)
+    },
+    loadSubagentThread(childConversationId) {
+      void loadSubagentThread(childConversationId)
     },
     newChat() {
       startNewChat()

@@ -3,7 +3,7 @@ id: repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/work-with-subagents-READ
 title: "Work With Subagents"
 summary: "The charter-scoped subagent contract: react.delegate spawns a child conversation, react.contribute and subagent.* lane events carry results back."
 tags: ["sdk", "agents", "react", "subagents", "delegation"]
-keywords: ["react.delegate", "react.contribute", "charter", "subagent.contribution", "subagent.converged", "subagent.failed", "fork", "child conversation"]
+keywords: ["react.delegate", "react.contribute", "charter", "subagent.contribution", "subagent.converged", "subagent.failed", "fork", "child conversation", "visibility", "subagent thread"]
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/timeline/fork-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/micro-agents-and-subagents-README.md
@@ -60,12 +60,19 @@ agent's config block declare:
 react:
   agents:
     main:
-      subagents: true
-  subagents:            # shared defaults for opted-in agents
-    model: claude-haiku-4-5
+      subagents:
+        allowed: true
+        models:                 # capability tiers the agent delegates to
+          strong:
+            provider: anthropic
+            model: claude-sonnet-4-6
+          fast:
+            provider: anthropic
+            model: claude-haiku-4-5
+        model: strong           # default tier when a charter names none
 ```
 
-`subagents: true` puts the ability in the agent's pickable inventory,
+`allowed: true` puts the ability in the agent's pickable inventory,
 **default ON** for users. Delegation can raise the quality of hard tasks,
 and every delegation is additional model spend on the user's account — the
 user pays, so the user decides: the capability picker exposes the toggle
@@ -79,12 +86,20 @@ their own price/quality point. See
 A turn where delegation is on (offered and not denied) carries
 `react.delegate` in the tool catalog and the delegation guidance in the
 instructions; every other turn's catalog and instructions are assembled
-without them. With the flag absent (or `false`) the ability is outside the
-inventory entirely — users cannot enable it. The bundle-level
-`react.subagents:` block keeps serving the shared defaults (for example the
-child's default model), and a bundle-level `react.subagents.enabled: true`
-offers it for the bundle's agents as a group; the per-agent flag decides
-when both are present.
+without them. With the flag absent (or `allowed: false`) the ability is
+outside the inventory entirely — users cannot enable it. The bundle-level
+`react.subagents:` block keeps serving the shared defaults (the `models`
+tier map, the default tier, `visibility`), and a bundle-level
+`react.subagents.allowed: true` offers it for the bundle's agents as a
+group; the per-agent declaration decides when both are present. A bare
+`subagents: true` and the `enabled:` key stay accepted as shorthand for
+`allowed: true`.
+
+The `models` map defines **capability tiers**: the label (`strong`, `fast`,
+whatever the admin chooses) is the vocabulary the agent's `model` argument
+speaks; the `provider`/`model` mapping behind each label stays the admin's.
+Tier models are the admin's delegation choices — independent of the
+user-pickable `supported_models` list.
 
 ## Spawn: react.delegate
 
@@ -99,11 +114,24 @@ when both are present.
     child's iteration budget; reactive iteration credit is disabled on the
     child, so nothing extends it.
   - `contribute`: what to send back and when.
-- `model` (optional): model override for the subagent's strong decision
-  role. It must name a model from the agent's admin-allowed
-  `supported_models` list; otherwise the configured subagent default
-  (`react.subagents.model`) applies, and with neither the child inherits the
-  parent's role models.
+- `model` (optional): the capability tier for the subagent's strong decision
+  role — a label from the agent's `subagents.models` map. A tier-less
+  charter runs on the default tier (`subagents.model`); with no tiers
+  configured the child inherits the parent's role models. An unknown label
+  resolves to the default (the spawn never fails on naming).
+
+The catalog entry the agent reads carries model self-knowledge, resolved at
+spawner install: the agent's own effective decision model (the user's pick
+already applied), and each tier label with the model behind it — for example
+`strong (claude-sonnet-4-6), fast (claude-haiku-4-5)` — so the agent judges
+delegation against models it can actually name. The delegation guidance keys
+off the pair: when the default tier is a different model, the entry frames
+delegation around assignments that deserve that model's reasoning (dense
+synthesis, strategy over unfamiliar service schemas, sizable drafting); when
+both reason with the same model, it frames a subagent as a parallel worker
+with its own round budget and keeps synthesis with the agent itself. With no
+tiers configured, the `model` argument is absent from the entry — the
+charter runs on the configured default.
 
 The tool returns immediately with a launch ticket
 (`child_conversation_id`, `child_conversation_ref`, `child_turn_id`,
@@ -211,16 +239,60 @@ them buys iteration credit inside a live turn. Promotability-when-idle is
 the separate axis, and the completions (plus the charter, as the child's
 inception) carry it; contributions stay passive.
 
-## Silent-v1 Visibility
+## Visibility: silent | thread
 
-The user sees exactly three things from a subagent: the fork marker on the
-parent timeline, the contribution events, and the terminal
-converged/failed event -- all as parent-conversation context. The child's
-own streaming (thinking deltas, tool events, canvas writes) reaches no one:
-the child's communicator carries a deny-all event filter at the emission
-choke point, and its routing has no socket. The child conversation itself is
-fully persisted (timeline, workspace artifacts, final answer), so its work
-is inspectable by ref and by conversation id after the fact.
+The agent's config block declares how much of the child's live stream the
+user sees:
+
+```yaml
+react:
+  agents:
+    main:
+      subagents:
+        enabled: true
+        visibility: thread    # silent (default) | thread
+```
+
+**`silent`** (the default) shows the user exactly three things from a
+subagent: the fork marker on the parent timeline, the contribution events,
+and the terminal converged/failed event -- all as parent-conversation
+context. The child's own streaming (thinking deltas, tool events, canvas
+writes) is filtered at the child communicator's emission choke point. This
+is the default because it works with every deployed chat widget: a client
+that renders one conversation stream receives one conversation stream. The
+child conversation itself is fully persisted (timeline, workspace
+artifacts, final answer), so its work is inspectable by ref and by
+conversation id after the fact.
+
+**`thread`** streams the child live, as a thread inside the parent
+conversation, for clients that render threads. Every child emission --
+deltas, steps, events, the turn's chat.start/chat.complete boundaries -- is
+delivered to the PARENT conversation's channel (the user's existing socket;
+the relay carries it from whatever worker runs the child), keeps the
+CHILD's event identity (`conversation.conversation_id` / `turn_id`), and
+carries a top-level stamp:
+
+```json
+"subagent": {
+  "child_conversation_id": "sub_...",
+  "forked_from_conversation_id": "conv_...",
+  "forked_from_turn_id": "turn_...",
+  "charter_goal": "..."
+}
+```
+
+The client multiplexes on the stamp: stamped events render as a
+collapsible subagent thread anchored under the fork turn, with the same
+delta/step/event treatment as a regular turn -- it IS a regular turn, drawn
+indented. The same stamp shape rides inside the structured facts of every
+`subagent.*` lane event (charter, contribution, converged/failed), so the
+thread's milestones anchor without text parsing, and conversation fetch
+rebuilds the same threads on reload (the fetch contract is in
+[fork-README.md](../../solutions/timeline/fork-README.md)).
+
+Visibility is resolved at delegate time from the delegating agent's config
+and travels with the assignment, so the child applies the declared policy
+on whatever worker claims its turn.
 
 ## Cost
 

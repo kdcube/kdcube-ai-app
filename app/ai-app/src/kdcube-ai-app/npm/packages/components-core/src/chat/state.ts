@@ -299,6 +299,44 @@ export interface ChatTurn {
   elapsedMs?: number | null
 }
 
+/** Thread lifecycle over the two sources that can populate it:
+ *  `live` = stamped emissions are streaming in on the parent channel;
+ *  `stub` = only the fork descriptor is known (reload) — expanding fetches;
+ *  `loading`/`ready`/`error` = the child-conversation fetch states. */
+export type SubagentThreadHydration = 'live' | 'stub' | 'loading' | 'ready' | 'error'
+
+/** Live status from the `subagent.charter`/`.converged`/`.failed` lane
+ *  events; `running` until a terminal one arrives; `unknown` for reloaded
+ *  stubs whose completion the stored parent hasn't surfaced. */
+export type SubagentThreadStatus = 'running' | 'converged' | 'failed' | 'unknown'
+
+/** One `react.contribute` milestone the child sent back mid-run. */
+export interface SubagentContribution {
+  id: string
+  timestamp: number
+  text: string
+  refs?: string[]
+}
+
+/** A subagent thread: the child conversation rendered as a collapsible
+ *  sub-conversation anchored under the parent turn it forked from. Keyed by
+ *  `childConversationId` in `ChatState.threads`; the child's turns reuse the
+ *  SAME `ChatTurn` model (and reducers) as the main lane. */
+export interface SubagentThread {
+  childConversationId: string
+  parentTurnId: string
+  parentConversationId?: string | null
+  charterGoal: string
+  forkedAt: number
+  status: SubagentThreadStatus
+  /** Terminal note: the converged report line or the failure reason. */
+  statusDetail?: string | null
+  contributions: SubagentContribution[]
+  turns: ChatTurn[]
+  hydration: SubagentThreadHydration
+  hydrationError?: string | null
+}
+
 export interface ChatState {
   connection: ConnectionState
   sessionId: string | null
@@ -328,6 +366,10 @@ export interface ChatState {
   /** Per-user agent capability inventory + selection (the composer "+" menu).
    *  Lazy: loaded on first menu open; `disabled` is the user's deny-list. */
   capabilities: AgentCapabilitiesState
+  /** Subagent threads of the OPEN conversation, keyed by child conversation
+   *  id. Fed live by stamped emissions and on reload by the parent turns'
+   *  `forks` descriptors. Reset on conversation switch. */
+  threads: Record<string, SubagentThread>
 }
 
 export const initialState: ChatState = {
@@ -351,4 +393,5 @@ export const initialState: ChatState = {
   conversationLoadingId: null,
   conversationDeletingId: null,
   capabilities: initialCapabilitiesState,
+  threads: {},
 }

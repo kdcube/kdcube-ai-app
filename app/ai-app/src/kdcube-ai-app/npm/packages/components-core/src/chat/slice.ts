@@ -18,6 +18,7 @@ import { createSlice } from '@reduxjs/toolkit'
 import type { PayloadAction } from '@reduxjs/toolkit'
 import type {
   BannerTone,
+  BaseEnvelope,
   ChatCompleteEnvelope,
   ChatDeltaEnvelope,
   ChatErrorEnvelope,
@@ -37,6 +38,7 @@ import type {
   ChatState,
   ChatTurn,
   ConnectionState,
+  SubagentThread,
 } from './state.ts'
 import {
   addBanner,
@@ -48,6 +50,12 @@ import {
   applyConvStatus,
   hydrateHistoricalConversation,
 } from './reducers.ts'
+import {
+  applySubagentEnvelope,
+  hydrateSubagentThread,
+  subagentThreadsFromConversation,
+} from './subagents.ts'
+import type { SubagentStreamKind } from './subagents.ts'
 import { applySelectionPatch } from './capabilities.ts'
 import type {
   AgentCachePolicy,
@@ -144,6 +152,44 @@ const slice = createSlice({
     },
     convStatusUpdated(state, action: PayloadAction<ConvStatusEnvelope>) {
       return applyConvStatus(state as ChatState, action.payload)
+    },
+
+    // --- Subagent threads (stamped child-conversation traffic) ---
+    /** One stamped envelope, routed by the engine instead of the main-lane
+     *  reducers: ensures the thread and runs the child's stream through the
+     *  same apply* pipeline over the thread's own turn list. */
+    subagentStreamEvent(
+      state,
+      action: PayloadAction<{ kind: SubagentStreamKind; envelope: BaseEnvelope }>,
+    ) {
+      return applySubagentEnvelope(state as ChatState, action.payload.kind, action.payload.envelope)
+    },
+    subagentThreadLoading(state, action: PayloadAction<string>) {
+      const thread = state.threads[action.payload]
+      if (!thread) return
+      thread.hydration = 'loading'
+      thread.hydrationError = null
+    },
+    /** A fetched child conversation folds into its thread (reload expand). */
+    subagentThreadHydrated(
+      state,
+      action: PayloadAction<{ childConversationId: string; conversation: ConversationDTO }>,
+    ) {
+      const thread = state.threads[action.payload.childConversationId]
+      if (!thread) return
+      state.threads[action.payload.childConversationId] = hydrateSubagentThread(
+        thread as SubagentThread,
+        action.payload.conversation,
+      )
+    },
+    subagentThreadLoadError(
+      state,
+      action: PayloadAction<{ childConversationId: string; error: string }>,
+    ) {
+      const thread = state.threads[action.payload.childConversationId]
+      if (!thread) return
+      thread.hydration = 'error'
+      thread.hydrationError = action.payload.error
     },
 
     // --- Connection lifecycle ---
@@ -269,6 +315,7 @@ const slice = createSlice({
         state.conversationId = null
         state.conversationTitle = null
         state.turns = []
+        state.threads = {}
       }
     },
 
@@ -280,6 +327,7 @@ const slice = createSlice({
       state.feedback = {}
       state.dismissedConsentSignatures = []
       state.toolSpotlight = null
+      state.threads = {}
     },
     appendTurn(state, action: PayloadAction<ChatTurn>) {
       state.turns = [...state.turns, action.payload]
@@ -300,6 +348,9 @@ const slice = createSlice({
     ) {
       const conv = action.payload.conversation
       state.turns = hydrateHistoricalConversation(conv)
+      /* Reload half of the thread contract: parent turns' `forks` descriptors
+       * become collapsed thread stubs; expanding fetches the child. */
+      state.threads = subagentThreadsFromConversation(conv)
       /* Cleared here; App re-hydrates the map via fetchTurnFeedbacks once
        * the conversation turns are in place. */
       state.feedback = {}

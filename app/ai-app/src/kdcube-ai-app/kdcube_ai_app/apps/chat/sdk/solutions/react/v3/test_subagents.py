@@ -464,6 +464,12 @@ async def test_contribute_authors_parent_lane_event_that_folds_into_live_parent_
     _, parent_browser = _parent_browser(tmp_path, parent_lane)
     await parent_browser.load_timeline()
     try:
+        child_stamp = {
+            "child_conversation_id": "sub_child",
+            "forked_from_conversation_id": "conv_parent",
+            "forked_from_turn_id": "turn_parent",
+            "charter_goal": "Research X",
+        }
         child_ctx = SimpleNamespace(
             conversation_id="sub_child",
             turn_id="turn_c1",
@@ -476,6 +482,7 @@ async def test_contribute_authors_parent_lane_event_that_folds_into_live_parent_
                 "turn_id": "turn_parent",
                 "agent_id": "main",
             },
+            subagent_stamp=dict(child_stamp),
         )
         child_browser = _StubChildBrowser(child_ctx)
         state = _tool_state("react.contribute", {
@@ -491,6 +498,11 @@ async def test_contribute_authors_parent_lane_event_that_folds_into_live_parent_
         # child records its own call + result blocks
         assert any(b.get("type") == "react.tool.call" for b in child_browser.blocks)
         assert any(b.get("type") == "react.tool.result" for b in child_browser.blocks)
+
+        # the contribution's structured facts carry the envelope stamp
+        lane_events = await parent_lane.read_since(None)
+        contribution_event = lane_events[-1]
+        assert (contribution_event.payload or {}).get("subagent") == child_stamp
 
         # the parent folds the contribution as a visible block + cursor advance
         before_seq = int(parent_browser.timeline.last_external_event_seq or 0)
@@ -866,6 +878,16 @@ async def test_spawn_persists_seed_and_schedules_promotable_charter(tmp_path):
     assert sub_ctx["depth"] == 1
     assert sub_ctx["charter"]["goal"] == "Research X"
     assert sub_ctx["allowed_plugins"] == ["some_plugin"]
+    # visibility defaults silent when the agent's subagents config says nothing
+    assert sub_ctx["visibility"] == "silent"
+    # the charter's structured facts carry the envelope stamp
+    charter_stamp = (charter_event.payload or {}).get("subagent") or {}
+    assert charter_stamp == {
+        "child_conversation_id": child_id,
+        "forked_from_conversation_id": "conv_parent",
+        "forked_from_turn_id": "turn_parent",
+        "charter_goal": "Research X",
+    }
 
     # the kickoff is the promotion: one lane wakeup rides the processor queue
     wakeups = _enqueued_wakeups(workflow.redis)
@@ -890,6 +912,30 @@ async def test_spawn_persists_seed_and_schedules_promotable_charter(tmp_path):
 
     # nothing ran in-proc, and nothing reached the parent lane at spawn time
     assert await _parent_lane_semantic_types(workflow.redis) == []
+
+
+@pytest.mark.asyncio
+async def test_spawn_carries_thread_visibility_from_agent_defaults(tmp_path):
+    """``react.agents.<id>.subagents.visibility: thread`` (resolved into the
+    subagent defaults at spawner install) travels with the assignment."""
+    from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.react_subagents import (
+        ReactSubagentSpawner,
+    )
+
+    workflow = _StubWorkflow(tmp_path)
+    workflow.runtime_ctx.subagent_defaults = {"model": "claude-haiku-4-5", "visibility": "thread"}
+    queue = _FakeAtomicQueueManager(workflow.redis)
+    spawner = ReactSubagentSpawner(workflow=workflow, build_template={}, queue_manager=queue)
+
+    ticket = await spawner.spawn(_launch_request(_fork_blocks()))
+
+    child_lane = _lane(workflow.redis, ticket.child_conversation_id)
+    charter_event = (await child_lane.read_since(None))[0]
+    sub_ctx = ((charter_event.task_payload or {}).get("bundle_call_context") or {}).get(
+        SUBAGENT_CALL_CONTEXT_KEY
+    ) or {}
+    assert sub_ctx["visibility"] == "thread"
+    assert charter_turn_context(charter_event.task_payload).visibility == "thread"
 
 
 @pytest.mark.asyncio
@@ -1044,6 +1090,13 @@ def test_apply_child_runtime_overrides_sets_budget_depth_and_parent_lane():
     assert runtime.subagent_parent["conversation_id"] == "conv_parent"
     assert runtime.subagent_parent_lane is not None
     assert runtime.subagent_parent_lane.conversation_id == "conv_parent"
+    # the envelope stamp is available for mid-turn subagent traffic
+    assert runtime.subagent_stamp == {
+        "child_conversation_id": "sub_x",
+        "forked_from_conversation_id": "conv_parent",
+        "forked_from_turn_id": "turn_parent",
+        "charter_goal": "Research X",
+    }
     # configured subagent default model lands on the user-model role
     from kdcube_ai_app.apps.chat.sdk.runtime.agent_inventory import USER_MODEL_TARGET_ROLE
 
@@ -1062,19 +1115,100 @@ def test_bind_child_turn_accounting_stamps_task_identity():
         assert enrichment.get("metadata", {}).get("subagent", {}).get(
             "parent_conversation_id"
         ) == "conv_parent"
+        # the parent backref is FIRST-CLASS on every child accounting event:
+        # context keys, exported to the event root (queryable without
+        # metadata scans)
+        assert accounting.get_context().get("parent_conversation_id") == "conv_parent"
+        assert accounting.get_context().get("parent_turn_id") == "turn_parent"
+        assert "parent_conversation_id" in accounting.CONTEXT_EXPORT_KEYS
+        assert "parent_turn_id" in accounting.CONTEXT_EXPORT_KEYS
     finally:
         accounting.clear_context()
 
 
-def test_child_comm_policy_is_silent_and_roomless():
-    from kdcube_ai_app.apps.chat.emitters import ChatCommunicator
-    from kdcube_ai_app.apps.chat.sdk.solutions.react.subagents.comm_policy import (
-        DenyAllEventFilter,
-        build_subagent_child_comm,
+def test_child_payload_carries_the_parent_economics_identity():
+    """The economics boundary reads its subject from the payload's user block
+    (identity_authority / roles / permissions / user_id) with actor
+    tenant/project; the child and continuation payloads must carry the
+    parent's, verbatim — same subject, same lane, same bypass decision."""
+    from kdcube_ai_app.apps.chat.sdk.protocol import ExternalEventPayload
+    from kdcube_ai_app.apps.chat.sdk.solutions.react.subagents.schedule import (
+        build_completion_task_payload,
     )
 
-    base = ChatCommunicator(
-        emitter=SimpleNamespace(),
+    parent_payload = ExternalEventPayload.model_validate({
+        "meta": {"task_id": "task_parent", "created_at": 1.0, "instance_id": "inst-1"},
+        "routing": {
+            "bundle_id": "bundle@1",
+            "session_id": "sess_parent",
+            "conversation_id": "conv_parent",
+            "turn_id": "turn_parent",
+        },
+        "actor": {"tenant_id": "tenant", "project_id": "project"},
+        "user": {
+            "user_type": "registered",
+            "user_id": "user_1",
+            "username": "elena",
+            "email": "user@example.test",
+            "fingerprint": "fp_1",
+            "roles": ["kdcube:role:member"],
+            "permissions": ["chat:write"],
+            "timezone": "Europe/Berlin",
+            "identity_authority": {
+                "platform_user_id": "user_1",
+                "platform_roles": ["kdcube:role:member"],
+            },
+        },
+        "request": {"external_events": [], "request_id": "req_parent"},
+        "config": {"values": {"tenant": "tenant", "project": "project"}},
+        "accounting": {"envelope": {"request_id": "req_parent", "metadata": {}}},
+    })
+    context = _child_context()
+    child = build_child_task_payload(
+        parent_payload=parent_payload,
+        charter=context.charter,
+        parent=context.parent,
+        child_conversation_id="sub_x",
+        child_turn_id="turn_c1",
+        subagent_context=context.to_dict(),
+    )
+    parent_user = parent_payload.user.model_dump()
+    assert child["user"] == parent_user
+    assert child["actor"] == {"tenant_id": "tenant", "project_id": "project"}
+    # the exact fields the run() authority projection reads
+    for key in ("identity_authority", "roles", "permissions", "user_id", "user_type"):
+        assert child["user"][key] == parent_user[key]
+    # config values travel too (the child's ConfigRequest = the parent's)
+    assert child["config"] == parent_payload.config.model_dump()
+
+    completion = build_completion_task_payload(
+        child_payload=ExternalEventPayload.model_validate(child),
+        semantic_type=SUBAGENT_CONVERGED_EVENT_KIND,
+        text="done",
+        facts={"child_conversation_id": "sub_x", "child_turn_id": "turn_c1"},
+        parent=context.parent,
+        parent_session_id="sess_parent",
+        parent_user=parent_user,
+    )
+    assert completion["user"] == parent_user
+    assert completion["actor"] == {"tenant_id": "tenant", "project_id": "project"}
+
+
+class _RecordingEmitter:
+    """Captures what ChatCommunicator.emit forwards to the relay."""
+
+    def __init__(self):
+        self.calls = []
+
+    async def emit(self, **kwargs):
+        self.calls.append(kwargs)
+
+
+def _child_base_comm(emitter=None):
+    from kdcube_ai_app.apps.chat.emitters import ChatCommunicator
+
+    return ChatCommunicator(
+        emitter=emitter or _RecordingEmitter(),
         tenant="tenant",
         project="project",
         user_id="user_1",
@@ -1084,11 +1218,166 @@ def test_child_comm_policy_is_silent_and_roomless():
         room="sub_x",
         target_sid=None,
     )
-    child = build_subagent_child_comm(base)
+
+
+def _stamp():
+    return {
+        "child_conversation_id": "sub_x",
+        "forked_from_conversation_id": "conv_parent",
+        "forked_from_turn_id": "turn_parent",
+        "charter_goal": "Research X",
+    }
+
+
+def test_child_comm_policy_default_visibility_is_silent():
+    from kdcube_ai_app.apps.chat.sdk.solutions.react.subagents.comm_policy import (
+        DenyAllEventFilter,
+        build_subagent_child_comm,
+        normalize_subagent_visibility,
+    )
+
+    # the knob's vocabulary: anything that is not "thread" resolves silent
+    assert normalize_subagent_visibility(None) == "silent"
+    assert normalize_subagent_visibility("") == "silent"
+    assert normalize_subagent_visibility("THREAD") == "thread"
+    assert normalize_subagent_visibility("loud") == "silent"
+
+    child = build_subagent_child_comm(_child_base_comm())
     assert isinstance(child.event_filter, DenyAllEventFilter)
     assert child.event_filter.allow_event(type="chat.delta") is False
     assert child.target_sid is None
     assert child.conversation["conversation_id"] == "sub_x"
+
+
+@pytest.mark.asyncio
+async def test_child_comm_silent_mode_emits_nothing():
+    from kdcube_ai_app.apps.chat.sdk.solutions.react.subagents.comm_policy import (
+        build_subagent_child_comm,
+    )
+
+    emitter = _RecordingEmitter()
+    child = build_subagent_child_comm(
+        _child_base_comm(emitter),
+        subagent=_stamp(),
+        parent_session_id="sess_parent",
+    )
+    await child.start(message="charter")
+    await child.delta(text="chunk", index=0)
+    await child.complete(data={"ok": True})
+    assert emitter.calls == []
+
+
+@pytest.mark.asyncio
+async def test_child_comm_thread_mode_stamps_every_emission_and_routes_to_parent_room():
+    from kdcube_ai_app.apps.chat.sdk.solutions.react.subagents.comm_policy import (
+        build_subagent_child_comm,
+    )
+
+    emitter = _RecordingEmitter()
+    stamp = _stamp()
+    child = build_subagent_child_comm(
+        _child_base_comm(emitter),
+        visibility="thread",
+        parent_session_id="sess_parent",
+        subagent=stamp,
+    )
+    await child.start(message="charter")
+    await child.step(step="workflow_start", status="started")
+    await child.delta(text="chunk", index=0)
+    await child.event(agent="main", type="chat.followups", data={}, auto_markdown=False)
+    await child.service_event(
+        type="accounting.usage", step="accounting", status="completed", auto_markdown=False,
+    )
+    await child.complete(data={"ok": True})
+    await child.error(message="boom")
+
+    assert len(emitter.calls) == 7
+    for call in emitter.calls:
+        env = call["data"]
+        # every emission carries the subagent envelope stamp
+        assert env["subagent"] == stamp
+        # delivery: the PARENT conversation's room, session-broadcast
+        assert call["session_id"] == "sess_parent"
+        assert call["room"] == "sess_parent"
+        assert call["target_sid"] is None
+        # event identity stays the CHILD's
+        conv = env["conversation"]
+        assert conv["conversation_id"] == "sub_x"
+        assert conv["turn_id"] == "turn_c1"
+        assert conv["session_id"] == "sess_parent"
+    assert [c["data"]["type"] for c in emitter.calls] == [
+        "chat.start", "chat.step", "chat.delta", "chat.followups",
+        "accounting.usage", "chat.complete", "chat.error",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_child_comm_thread_mode_without_parent_session_stays_silent():
+    from kdcube_ai_app.apps.chat.sdk.solutions.react.subagents.comm_policy import (
+        DenyAllEventFilter,
+        build_subagent_child_comm,
+    )
+
+    emitter = _RecordingEmitter()
+    child = build_subagent_child_comm(
+        _child_base_comm(emitter), visibility="thread", subagent=_stamp(),
+    )
+    assert isinstance(child.event_filter, DenyAllEventFilter)
+    await child.start(message="charter")
+    assert emitter.calls == []
+
+
+def test_child_context_round_trips_visibility_and_defaults_silent():
+    default_ctx = _child_context()
+    assert default_ctx.visibility == "silent"
+    assert default_ctx.to_dict()["visibility"] == "silent"
+
+    thread_ctx = SubagentChildTurnContext.from_dict(
+        _child_context(visibility="thread").to_dict()
+    )
+    assert thread_ctx.visibility == "thread"
+
+    # unknown values normalize back to the silent default
+    junk_ctx = SubagentChildTurnContext.from_dict(
+        {**_child_context().to_dict(), "visibility": "loud"}
+    )
+    assert junk_ctx.visibility == "silent"
+
+
+def test_processor_lifecycle_comm_follows_the_child_policy():
+    """The processor's chat.start / workflow_start / complete / error around
+    a child task ride the same policy as the child's own stream: thread ⇒
+    stamped to the parent room; silent ⇒ filtered; continuation ⇒ plain."""
+    from kdcube_ai_app.apps.chat.processor import EnhancedChatRequestProcessor
+    from kdcube_ai_app.apps.chat.sdk.solutions.react.subagents.comm_policy import (
+        DenyAllEventFilter,
+        SubagentThreadComm,
+    )
+
+    def _payload(context=None):
+        call_context = {}
+        if context is not None:
+            call_context[SUBAGENT_CALL_CONTEXT_KEY] = context.to_dict()
+        return SimpleNamespace(bundle_call_context=call_context)
+
+    base = _child_base_comm()
+
+    threaded = EnhancedChatRequestProcessor._apply_subagent_comm_policy(
+        _payload(_child_context(visibility="thread")), base,
+    )
+    assert isinstance(threaded, SubagentThreadComm)
+    assert threaded.room == "sess_parent"
+    assert threaded.subagent_stamp == _stamp()
+    assert threaded.conversation["conversation_id"] == "sub_x"
+
+    silent = EnhancedChatRequestProcessor._apply_subagent_comm_policy(
+        _payload(_child_context()), base,
+    )
+    assert isinstance(silent.event_filter, DenyAllEventFilter)
+
+    # a parent continuation turn carries no assignment: the comm is untouched
+    plain = EnhancedChatRequestProcessor._apply_subagent_comm_policy(_payload(), base)
+    assert plain is base
 
 
 # ---------------------------------------------------------------- completion
@@ -1119,17 +1408,36 @@ async def test_converged_completion_is_promotable_on_parent_lane():
     stored = await parent_lane.get_event(event.message_id)
     nested = ((stored.payload or {}).get("event") or {}).get("payload") or {}
     assert "Charter complete." in str((nested.get("event") or {}).get("final_answer") or "")
+    # the completion's structured facts carry the envelope stamp
+    assert (stored.payload or {}).get("subagent") == {
+        "child_conversation_id": "sub_x",
+        "forked_from_conversation_id": "conv_parent",
+        "forked_from_turn_id": "turn_parent",
+        "charter_goal": "Research X",
+    }
     # promotable: the task payload describes the parent's continuation turn
     task_payload = stored.task_payload or {}
     assert task_payload["routing"]["conversation_id"] == "conv_parent"
     assert task_payload["routing"]["session_id"] == "sess_parent"
     request_events = (task_payload.get("request") or {}).get("external_events") or []
     assert request_events and request_events[0]["type"] == SUBAGENT_CONVERGED_EVENT_KIND
+    # the completion names the helper turn (spend attribution key)
+    completion_facts = (request_events[0].get("payload") or {}).get("event") or {}
+    assert completion_facts.get("child_conversation_id") == "sub_x"
+    assert completion_facts.get("child_turn_id") == "turn_c1"
     # ...and one wakeup rides the processor queue for it
     wakeups = _enqueued_wakeups(redis)
     assert len(wakeups) == 1
     assert wakeups[0][1]["event_lane"]["conversation_id"] == "conv_parent"
     assert wakeups[0][1]["event_lane"]["event_id"] == stored.message_id
+
+    # the process-local exactly-once registry recorded the report
+    from kdcube_ai_app.apps.chat.sdk.solutions.react.subagents.child_turn import (
+        completion_already_published,
+    )
+
+    assert completion_already_published("sub_x", "turn_c1") is True
+    assert completion_already_published("sub_never", "turn_never") is False
 
 
 @pytest.mark.asyncio
@@ -1155,6 +1463,7 @@ async def test_failed_completion_is_authored_and_promotable():
     parent_lane = _lane(redis, "conv_parent")
     stored = await parent_lane.get_event(event.message_id)
     assert "decision model unavailable" in str(stored.text or "")
+    assert ((stored.payload or {}).get("subagent") or {}).get("child_conversation_id") == "sub_x"
     task_payload = stored.task_payload or {}
     request_events = (task_payload.get("request") or {}).get("external_events") or []
     assert request_events and request_events[0]["type"] == SUBAGENT_FAILED_EVENT_KIND
@@ -1254,3 +1563,135 @@ async def test_completion_wake_promotes_only_if_unconsumed():
     stored.promoted_at = 1.0
     assert wake_ignore_reason(stored, EventLaneState()) == "event_already_promoted"
 
+
+
+# ---------------------------------------------------------------------------
+# Delegate catalog entry: model self-knowledge
+# ---------------------------------------------------------------------------
+
+
+def test_delegate_spec_names_both_models_when_the_default_tier_differs():
+    from kdcube_ai_app.apps.chat.sdk.solutions.react.tools.delegate import (
+        build_delegate_tool_spec,
+    )
+
+    spec = build_delegate_tool_spec({
+        "own": {"provider": "anthropic", "model": "claude-haiku-4-5-20251001"},
+        "default": {"label": "strong", "provider": "anthropic", "model": "claude-sonnet-4-6"},
+        "tiers": [
+            {"label": "strong", "provider": "anthropic", "model": "claude-sonnet-4-6"},
+            {"label": "fast", "provider": "anthropic", "model": "claude-haiku-4-5-20251001"},
+        ],
+    })
+    assert (
+        "You reason with claude-haiku-4-5-20251001; a subagent reasons with "
+        "claude-sonnet-4-6" in spec["purpose"]
+    )
+    # the model arg speaks tier labels, each with the model behind it
+    assert (
+        "one of: strong (claude-sonnet-4-6), fast (claude-haiku-4-5-20251001)"
+        in spec["args"]["model"]
+    )
+    assert "Omit to use the default tier (strong)." in spec["args"]["model"]
+
+
+def test_delegate_spec_frames_equal_models_as_a_parallel_worker():
+    from kdcube_ai_app.apps.chat.sdk.solutions.react.tools.delegate import (
+        build_delegate_tool_spec,
+    )
+
+    spec = build_delegate_tool_spec({
+        "own": {"provider": "anthropic", "model": "claude-sonnet-4-6"},
+        "tiers": [{"label": "strong", "provider": "anthropic", "model": "claude-sonnet-4-6"}],
+    })
+    assert "both reason with claude-sonnet-4-6" in spec["purpose"]
+    assert "parallel worker" in spec["purpose"]
+    assert "one of: strong (claude-sonnet-4-6)" in spec["args"]["model"]
+    assert "Omit to reason with your model (claude-sonnet-4-6)." in spec["args"]["model"]
+
+
+def test_delegate_spec_without_tiers_carries_no_model_arg():
+    from kdcube_ai_app.apps.chat.sdk.solutions.react.tools.delegate import (
+        build_delegate_tool_spec,
+    )
+
+    spec = build_delegate_tool_spec({"own": {"model": "claude-sonnet-4-6"}})
+    assert "model" not in spec["args"]
+    assert "charter" in spec["args"]
+
+
+def test_delegate_spec_without_facts_is_the_base_spec():
+    from kdcube_ai_app.apps.chat.sdk.solutions.react.tools.delegate import (
+        TOOL_SPEC,
+        build_delegate_tool_spec,
+    )
+
+    spec = build_delegate_tool_spec(None)
+    assert spec["purpose"] == TOOL_SPEC["purpose"]
+    assert set(spec["args"]) == set(TOOL_SPEC["args"])
+
+
+def test_catalog_renders_model_facts_into_the_delegate_entry():
+    from kdcube_ai_app.apps.chat.sdk.solutions.react.call import get_react_tools_catalog
+
+    catalog = get_react_tools_catalog(
+        subagent_role="parent",
+        delegate_model_facts={
+            "own": {"model": "model-a"},
+            "default": {"label": "strong", "model": "model-b"},
+            "tiers": [{"label": "strong", "model": "model-b"}],
+        },
+    )
+    entry = next(c for c in catalog if c["id"] == "react.delegate")
+    assert "You reason with model-a; a subagent reasons with model-b" in entry["purpose"]
+    assert "one of: strong (model-b)" in entry["args"]["model"]
+    assert entry["tool_traits"]["strategy"] == ["neutral"]
+    # no facts -> the base entry stands
+    base = next(
+        c for c in get_react_tools_catalog(subagent_role="parent")
+        if c["id"] == "react.delegate"
+    )
+    assert "You reason with" not in base["purpose"]
+
+
+def test_resolve_child_model_speaks_tier_labels():
+    from kdcube_ai_app.apps.chat.sdk.solutions.react.subagents.child_turn import (
+        resolve_child_model,
+    )
+    from kdcube_ai_app.apps.chat.sdk.solutions.react.subagents.charter import (
+        SubagentCharter,
+    )
+
+    defaults = {
+        "models": {
+            "strong": {"provider": "anthropic", "model": "claude-sonnet-4-6"},
+            "fast": {"provider": "anthropic", "model": "claude-haiku-4-5"},
+        },
+        "model": "strong",
+    }
+    pick = resolve_child_model(
+        SubagentCharter(goal="g", model="fast"),
+        bundle_props={}, agent_id="main", subagent_defaults=defaults,
+    )
+    assert pick == {"provider": "anthropic", "model": "claude-haiku-4-5"}
+
+    # tier-less charter runs on the default tier
+    pick = resolve_child_model(
+        SubagentCharter(goal="g"),
+        bundle_props={}, agent_id="main", subagent_defaults=defaults,
+    )
+    assert pick == {"provider": "anthropic", "model": "claude-sonnet-4-6"}
+
+    # an unknown label resolves to the default tier (spawn never fails on naming)
+    pick = resolve_child_model(
+        SubagentCharter(goal="g", model="galactic"),
+        bundle_props={}, agent_id="main", subagent_defaults=defaults,
+    )
+    assert pick == {"provider": "anthropic", "model": "claude-sonnet-4-6"}
+
+    # no tiers and no default: the child inherits the parent's role models
+    pick = resolve_child_model(
+        SubagentCharter(goal="g"),
+        bundle_props={}, agent_id="main", subagent_defaults={},
+    )
+    assert pick is None

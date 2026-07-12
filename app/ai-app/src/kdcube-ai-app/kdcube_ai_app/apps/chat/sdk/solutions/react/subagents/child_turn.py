@@ -20,11 +20,16 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from kdcube_ai_app.apps.chat.sdk.solutions.react.subagents.charter import SubagentCharter
+from kdcube_ai_app.apps.chat.sdk.solutions.react.subagents.comm_policy import (
+    SUBAGENT_VISIBILITY_SILENT,
+    normalize_subagent_visibility,
+)
 from kdcube_ai_app.apps.chat.sdk.solutions.react.subagents.events import (
     SUBAGENT_CONVERGED_EVENT_KIND,
     SUBAGENT_FAILED_EVENT_KIND,
     ParentLaneAddress,
     build_lane_source,
+    build_subagent_stamp,
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.react.subagents.schedule import (
     SUBAGENT_CALL_CONTEXT_KEY,
@@ -40,6 +45,26 @@ LOGGER = logging.getLogger("kdcube.react.subagents")
 # Component/metadata tag under which subagent spend is identifiable.
 SUBAGENT_ACCOUNTING_AGENT = "react.subagent"
 
+# Terminal reports already authored by THIS process, keyed by
+# (child_conversation_id, child_turn_id). The workflow's end-of-turn/exception
+# paths and the entrypoint-level turn-completed hook both report; the turn ran
+# in exactly one process, so a process-local registry is the exactly-once
+# guard between them. Bounded: oldest keys fall away.
+_PUBLISHED_COMPLETIONS: "dict[tuple[str, str], bool]" = {}
+_PUBLISHED_COMPLETIONS_MAX = 1024
+
+
+def _register_published_completion(child_conversation_id: str, child_turn_id: str) -> None:
+    key = (str(child_conversation_id or ""), str(child_turn_id or ""))
+    _PUBLISHED_COMPLETIONS[key] = True
+    while len(_PUBLISHED_COMPLETIONS) > _PUBLISHED_COMPLETIONS_MAX:
+        _PUBLISHED_COMPLETIONS.pop(next(iter(_PUBLISHED_COMPLETIONS)))
+
+
+def completion_already_published(child_conversation_id: str, child_turn_id: str) -> bool:
+    """Whether this process already authored the terminal report for the turn."""
+    return (str(child_conversation_id or ""), str(child_turn_id or "")) in _PUBLISHED_COMPLETIONS
+
 
 @dataclass
 class SubagentChildTurnContext:
@@ -54,6 +79,11 @@ class SubagentChildTurnContext:
     parent_user: Optional[Dict[str, Any]] = None
     allowed_plugins: List[str] = field(default_factory=list)
     allowed_tool_names_by_alias: Optional[Dict[str, Any]] = None
+    # Resolved at delegate time from the parent agent's subagents config
+    # (react_subagents_config defaults) and carried with the assignment, so
+    # the child proc applies the same emission policy without re-reading
+    # config: "silent" or "thread".
+    visibility: str = SUBAGENT_VISIBILITY_SILENT
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -67,6 +97,7 @@ class SubagentChildTurnContext:
             "parent_user": dict(self.parent_user) if self.parent_user else None,
             "allowed_plugins": list(self.allowed_plugins or []),
             "allowed_tool_names_by_alias": self.allowed_tool_names_by_alias,
+            "visibility": normalize_subagent_visibility(self.visibility),
         }
 
     @classmethod
@@ -97,6 +128,7 @@ class SubagentChildTurnContext:
                 if isinstance(raw.get("allowed_tool_names_by_alias"), dict)
                 else None
             ),
+            visibility=normalize_subagent_visibility(raw.get("visibility")),
         )
 
 
@@ -116,6 +148,20 @@ def charter_turn_context(payload: Any) -> Optional[SubagentChildTurnContext]:
     return SubagentChildTurnContext.from_dict(call_context.get(SUBAGENT_CALL_CONTEXT_KEY))
 
 
+def subagent_stamp_from_context(
+    context: SubagentChildTurnContext,
+    *,
+    child_conversation_id: str = "",
+) -> Dict[str, Any]:
+    """The child turn's envelope stamp, derived from its assignment."""
+    return build_subagent_stamp(
+        child_conversation_id=child_conversation_id or context.child_conversation_id,
+        parent_conversation_id=context.parent.conversation_id,
+        parent_turn_id=context.parent.turn_id,
+        charter_goal=context.charter.summary_line(),
+    )
+
+
 def resolve_child_model(
     charter: SubagentCharter,
     *,
@@ -123,29 +169,37 @@ def resolve_child_model(
     agent_id: Any,
     subagent_defaults: Optional[Dict[str, Any]],
 ) -> Optional[Dict[str, str]]:
-    """The child's strong-decision model: the charter's override when it
-    names an admin-allowed model, else the configured subagent default,
-    else None (inherit the parent's role models)."""
+    """The child's strong-decision model, resolved from the charter's tier.
+
+    ``charter.model`` names a capability tier from the agent's
+    ``subagents.models`` map; the admin owns the label → model mapping. A
+    tier-less charter runs on the configured default tier; with no default
+    the child inherits the parent's role models. Direct model names from the
+    admin-allowed ``supported_models`` list also resolve."""
     from kdcube_ai_app.apps.chat.sdk.runtime.agent_inventory import (
         match_supported_model,
-        normalize_model_pick,
         react_supported_models,
+        subagent_default_pick,
+        subagent_model_tiers,
     )
 
+    tiers = subagent_model_tiers(subagent_defaults)
     if charter.model:
+        label = str(charter.model).strip()
+        if label in tiers:
+            return dict(tiers[label])
         supported = react_supported_models(dict(bundle_props or {}), agent_id)
-        matched = match_supported_model({"model": charter.model}, supported)
+        matched = match_supported_model({"model": label}, supported)
         if matched:
             return matched
         LOGGER.warning(
-            "[react.subagents] charter model %r is not in the admin-allowed list; "
-            "using the configured subagent default",
+            "[react.subagents] charter model %r matches no configured tier %s; "
+            "using the configured default",
             charter.model,
+            sorted(tiers) or "(none configured)",
         )
-    configured = (subagent_defaults or {}).get("model")
-    if isinstance(configured, str) and configured.strip():
-        configured = {"model": configured.strip()}
-    return normalize_model_pick(configured)
+    _label, pick = subagent_default_pick(subagent_defaults, tiers)
+    return pick
 
 
 def apply_child_runtime_overrides(
@@ -166,6 +220,9 @@ def apply_child_runtime_overrides(
 
     runtime_ctx.subagent_depth = max(1, int(context.depth or 1))
     runtime_ctx.subagent_parent = context.parent.to_dict()
+    # The envelope stamp, available wherever the runtime authors subagent
+    # traffic mid-turn (react.contribute rides it into contribution facts).
+    runtime_ctx.subagent_stamp = subagent_stamp_from_context(context)
     if redis is not None:
         runtime_ctx.subagent_parent_lane = build_lane_source(
             redis=redis, address=context.parent,
@@ -193,8 +250,13 @@ def bind_child_turn_accounting(context: SubagentChildTurnContext) -> None:
     The processor binds a fresh ``AccountingContext`` per task, so the child
     turn's context is isolated by construction; this stamps ``agent`` and the
     ``subagent`` metadata block onto it so child spend is separable in the
-    ledgers. ``event_enrichment`` has no public field setter; the context
-    object is the sanctioned mutation point for task-lifetime identity."""
+    ledgers. The parent backref also lands as FIRST-CLASS context keys
+    (``parent_conversation_id`` / ``parent_turn_id``, exported to the event
+    root): the accounting store is file-shaped and per-turn queries are
+    prefix-driven, so a root-level backref is what keeps helper spend
+    attributable to the parent turn without metadata scans.
+    ``event_enrichment`` has no public field setter; the context object is
+    the sanctioned mutation point for task-lifetime identity."""
     from kdcube_ai_app.infra import accounting as _accounting
 
     subagent_meta = {
@@ -202,7 +264,12 @@ def bind_child_turn_accounting(context: SubagentChildTurnContext) -> None:
         "parent_turn_id": context.parent.turn_id,
         "charter_goal": context.charter.summary_line(),
     }
-    _accounting.set_context(agent=SUBAGENT_ACCOUNTING_AGENT)
+    _accounting.register_context_keys("parent_conversation_id", "parent_turn_id")
+    _accounting.set_context(
+        agent=SUBAGENT_ACCOUNTING_AGENT,
+        parent_conversation_id=context.parent.conversation_id,
+        parent_turn_id=context.parent.turn_id,
+    )
     ctx = _accounting._get_context()
     enrichment = dict(ctx.event_enrichment or {})
     metadata = dict(enrichment.get("metadata") or {})
@@ -258,6 +325,9 @@ async def publish_child_completion(
     final_answer = str(final_answer or "").strip()
     ok = bool(ok and final_answer)
     directive = _completion_directive(parent.turn_id)
+    stamp = subagent_stamp_from_context(
+        context, child_conversation_id=child_conversation_id,
+    )
     if ok:
         semantic_type = SUBAGENT_CONVERGED_EVENT_KIND
         text = "\n".join([
@@ -271,8 +341,10 @@ async def publish_child_completion(
         facts = {
             "child_conversation_id": child_conversation_id,
             "child_conversation_ref": f"conv_{child_conversation_id}",
+            "child_turn_id": child_turn_id,
             "final_answer": final_answer,
             "charter_goal": context.charter.summary_line(),
+            "subagent": stamp,
         }
     else:
         semantic_type = SUBAGENT_FAILED_EVENT_KIND
@@ -286,8 +358,10 @@ async def publish_child_completion(
         facts = {
             "child_conversation_id": child_conversation_id,
             "child_conversation_ref": f"conv_{child_conversation_id}",
+            "child_turn_id": child_turn_id,
             "reason": reason,
             "charter_goal": context.charter.summary_line(),
+            "subagent": stamp,
         }
 
     task_payload = build_completion_task_payload(
@@ -326,4 +400,5 @@ async def publish_child_completion(
             semantic_type,
             parent.conversation_id,
         )
+    _register_published_completion(child_conversation_id, child_turn_id)
     return event

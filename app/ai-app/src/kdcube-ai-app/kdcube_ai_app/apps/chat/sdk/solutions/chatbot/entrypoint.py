@@ -2098,10 +2098,85 @@ class BaseEntrypoint:
         Optional per-turn finalization hook.
 
         The proc runner calls this after the bundle handler exits, errors, or is
-        cancelled. Keep implementations fast and idempotent; platform cleanup
-        such as browser-session cleanup also runs independently.
+        cancelled. Keep implementations fast and idempotent (overrides chain
+        ``super()``); platform cleanup such as browser-session cleanup also
+        runs independently.
         """
+        await self._report_failed_subagent_turn(
+            status=status,
+            error=error,
+            reason=reason,
+            comm_context=kwargs.get("comm_context"),
+        )
         return None
+
+    async def _report_failed_subagent_turn(
+        self,
+        *,
+        status: str,
+        error: Optional[BaseException],
+        reason: Optional[str],
+        comm_context: Any = None,
+    ) -> None:
+        """A subagent charter turn that dies BEFORE its workflow reports —
+        e.g. an economics denial raised inside run(), ahead of any workflow
+        construction — still authors ``subagent.failed`` to the parent lane
+        with the denial reason. Failures are authored, never silenced.
+
+        Turns whose workflow already reported (converged or failed) are
+        skipped via the process-local published registry; cancelled turns
+        stay quiet (the inflight recovery requeues them)."""
+        if status != "error" or error is None:
+            return
+        try:
+            from kdcube_ai_app.apps.chat.sdk.solutions.react.subagents.child_turn import (
+                charter_turn_context,
+                completion_already_published,
+                publish_child_completion,
+            )
+
+            payload = comm_context or self.comm_context
+            context = charter_turn_context(payload)
+            if context is None:
+                return
+            routing = getattr(payload, "routing", None)
+            child_conversation_id = (
+                str(getattr(routing, "conversation_id", "") or "")
+                or context.child_conversation_id
+            )
+            child_turn_id = (
+                str(getattr(routing, "turn_id", "") or "") or context.child_turn_id
+            )
+            if completion_already_published(child_conversation_id, child_turn_id):
+                return
+            redis = getattr(self, "redis", None)
+            if redis is None:
+                self.logger.log(
+                    "[react.subagents] cannot author subagent.failed for a denied "
+                    "charter turn: redis unavailable",
+                    "ERROR",
+                )
+                return
+            failure_reason = str(error) or str(reason or "") or "turn failed before running"
+            await publish_child_completion(
+                redis=redis,
+                runtime_ctx=None,
+                context=context,
+                child_payload=payload,
+                ok=False,
+                reason=failure_reason,
+            )
+            self.logger.log(
+                f"[react.subagents] authored subagent.failed for a turn that died "
+                f"before its workflow reported: conversation={child_conversation_id} "
+                f"reason={failure_reason!r}",
+                "WARNING",
+            )
+        except Exception:
+            self.logger.log(
+                "[react.subagents] failed-turn report failed\n" + traceback.format_exc(),
+                "ERROR",
+            )
 
     async def report_turn_error(
         self,
@@ -2519,6 +2594,59 @@ class BaseEntrypoint:
             f"Cost by agent: {json.dumps({k: v['total_cost_usd'] for k, v in agent_costs.items()}, ensure_ascii=False)}"
         )
 
+        # ── subagent spend attribution ────────────────────────────────────
+        # Helper (subagent) turns settle their own economics under the CHILD
+        # conversation; the usage EVENTS keep that spend attributable on the
+        # parent's views: a child turn's event carries the parent backref
+        # (+ helper marker), and a parent continuation turn computes the
+        # completed helpers' spend so its event can present
+        # "turn total X, of which helpers Y" — distinguishable, never mixed
+        # into this turn's own settlement figures (ranked_tokens stay own).
+        usage_metadata: Dict[str, Any] = {
+            "agent_id": agent_id,
+            "bundle_id": bundle_id,
+            "conversation_id": thread_id,
+            "turn_id": turn_id,
+        }
+        helpers_block = None
+        try:
+            from kdcube_ai_app.apps.chat.sdk.solutions.react.subagents.spend import (
+                build_helpers_block,
+                completed_helper_refs,
+                subagent_usage_metadata,
+            )
+
+            helper_marker = subagent_usage_metadata(self.comm_context)
+            if helper_marker:
+                usage_metadata.update(helper_marker)
+            helper_items = []
+            for ref in completed_helper_refs(self.comm_context):
+                child_turn = str(ref.get("child_turn_id") or "").strip()
+                if not child_turn:
+                    continue
+                child_costs = await calc.calculate_turn_costs(
+                    tenant_id=tenant,
+                    project_id=project,
+                    conversation_id=ref["child_conversation_id"],
+                    turn_id=child_turn,
+                    app_bundle_id=bundle_id,
+                    date_from=usage_from,
+                    date_to=date_to,
+                    service_types=["llm", "embedding", "web_search"],
+                    use_memory_cache=True,
+                    ref_provider=ref_provider,
+                    ref_model=ref_model,
+                )
+                child_tokens = child_costs.get("token_summary") or {}
+                helper_items.append({
+                    **ref,
+                    "cost_usd": float(child_costs.get("cost_total_usd") or 0.0),
+                    "weighted_tokens": int(child_tokens.get("weighted_tokens") or 0),
+                })
+            helpers_block = build_helpers_block(helper_items)
+        except Exception:
+            self.logger.log(traceback.format_exc(), "WARNING")
+
         cost_markdown = _format_cost_table_markdown(
             cost_breakdown=cost_breakdown,
             total_cost=cost_total_usd,
@@ -2526,6 +2654,11 @@ class BaseEntrypoint:
         )
         agent_markdown = _format_agent_breakdown_markdown(agent_costs, cost_total_usd)
         full_markdown = cost_markdown + "\n\n" + agent_markdown
+        if helpers_block:
+            full_markdown += (
+                f"\n\n**Helpers:** ${helpers_block['cost_total_usd']:.6f} "
+                f"across {helpers_block['count']} subagent turn(s)."
+            )
 
         compact_summary = _format_cost_summary_compact(
             cost_breakdown=cost_breakdown,
@@ -2535,28 +2668,28 @@ class BaseEntrypoint:
             llm_output_sum=token_summary["llm_output_sum"],
         )
 
+        usage_event_data = {
+            "breakdown": cost_breakdown,
+            "cost_total_usd": cost_total_usd,
+            "weighted_tokens": weighted_tokens,
+            "ranked_tokens": ranked_tokens,
+            "total_input_tokens": token_summary["total_input_tokens"],
+            "llm_output_sum": token_summary["llm_output_sum"],
+            "summary": compact_summary,
+            "agent_costs": agent_costs,
+            "metadata": dict(usage_metadata),
+            # Completed subagent spend delivered by this turn, kept separate
+            # from this turn's own figures: turn total X, of which helpers Y.
+            **({"helpers": helpers_block} if helpers_block else {}),
+        }
+
         if emit_turn_event:
             await self.comm.event(
                 agent=agent_id,
                 type="accounting.usage",
                 title=f"💰 Turn Cost: ${cost_total_usd:.6f}",
                 step="accounting",
-                data={
-                    "breakdown": cost_breakdown,
-                    "cost_total_usd": cost_total_usd,
-                    "weighted_tokens": weighted_tokens,
-                    "ranked_tokens": ranked_tokens,
-                    "total_input_tokens": token_summary["total_input_tokens"],
-                    "llm_output_sum": token_summary["llm_output_sum"],
-                    "summary": compact_summary,
-                    "agent_costs": agent_costs,
-                    "metadata": {
-                        "agent_id": agent_id,
-                        "bundle_id": bundle_id,
-                        "conversation_id": thread_id,
-                        "turn_id": turn_id,
-                    },
-                },
+                data=dict(usage_event_data),
                 markdown=full_markdown,
                 status="completed",
             )
@@ -2566,22 +2699,7 @@ class BaseEntrypoint:
             step="accounting",
             status="completed",
             title=f"💰 Turn Cost: ${cost_total_usd:.6f}",
-            data={
-                "breakdown": cost_breakdown,
-                "cost_total_usd": cost_total_usd,
-                "weighted_tokens": weighted_tokens,
-                "ranked_tokens": ranked_tokens,
-                "total_input_tokens": token_summary["total_input_tokens"],
-                "llm_output_sum": token_summary["llm_output_sum"],
-                "summary": compact_summary,
-                "agent_costs": agent_costs,
-                "metadata": {
-                    "agent_id": agent_id,
-                    "bundle_id": bundle_id,
-                    "conversation_id": thread_id,
-                    "turn_id": turn_id,
-                },
-            },
+            data=dict(usage_event_data),
             agent=agent_id,
             markdown=full_markdown,
             broadcast=True,

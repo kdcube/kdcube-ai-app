@@ -1137,7 +1137,47 @@ class EnhancedChatRequestProcessor:
             user_id=payload.user.user_id,
             user_type=payload.user.user_type,
         )
+        comm = self._apply_subagent_comm_policy(payload, comm)
         return request_id, svc, conv, comm
+
+    @staticmethod
+    def _apply_subagent_comm_policy(
+        payload: ExternalEventPayload, comm: ChatCommunicator
+    ) -> ChatCommunicator:
+        """A subagent child task's processor-level emissions follow the same
+        policy as the child workflow's own stream.
+
+        The lifecycle envelopes _process_task emits around the turn
+        (chat.start, the workflow_start step, chat.complete / chat.error)
+        are the child thread's turn boundaries: in thread visibility they
+        are delivered to the parent conversation's room carrying the
+        subagent stamp, exactly like the child's deltas and steps; in silent
+        visibility they are filtered at the emission choke point. Parent
+        continuation turns carry no assignment and keep the plain comm."""
+        try:
+            from kdcube_ai_app.apps.chat.sdk.solutions.react.subagents.child_turn import (
+                charter_turn_context,
+                subagent_stamp_from_context,
+            )
+            from kdcube_ai_app.apps.chat.sdk.solutions.react.subagents.comm_policy import (
+                build_subagent_child_comm,
+            )
+
+            context = charter_turn_context(payload)
+            if context is None:
+                return comm
+            return build_subagent_child_comm(
+                comm,
+                visibility=context.visibility,
+                parent_session_id=context.parent_session_id,
+                subagent=subagent_stamp_from_context(context),
+            )
+        except Exception:
+            logger.warning(
+                "Failed to apply subagent comm policy; keeping plain communicator",
+                exc_info=True,
+            )
+            return comm
 
     def _external_event_source_for(self, payload: ExternalEventPayload):
         event_ctx = getattr(payload, "event", None)

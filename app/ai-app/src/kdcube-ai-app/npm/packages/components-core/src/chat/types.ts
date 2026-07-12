@@ -70,6 +70,11 @@ export interface ChatEngine extends Pick<HostEventEmitter, 'on'> {
   steer(): void
 
   loadConversation(conversationId: string): void
+  /** Hydrate a reconstructed subagent-thread stub: fetch the child
+   *  conversation (same conversation-fetch endpoint, same user auth) and fold
+   *  its turns into `state.threads[childConversationId]`. No-op for live or
+   *  already-hydrated threads; an errored fetch may retry. */
+  loadSubagentThread(childConversationId: string): void
   newChat(): void
   deleteConversation(conversation: ConversationSummary): void
   refreshConversations(): void

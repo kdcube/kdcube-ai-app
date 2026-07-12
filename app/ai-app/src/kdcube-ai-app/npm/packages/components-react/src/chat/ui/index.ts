@@ -16,3 +16,4 @@ export {
   type StandaloneCapabilityRuntime,
   type StandaloneSelectionWriteOptions,
 } from './features/composer/CapabilityPickerStandalone.tsx'
+export { SubagentThreads } from './features/chat/SubagentThreads.tsx'

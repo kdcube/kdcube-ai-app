@@ -377,6 +377,48 @@ def _react_subagents_config(
     return react_subagents_config(bundle_props or {}, agent_id)
 
 
+def _subagent_model_facts(
+    *,
+    bundle_props: Dict[str, Any],
+    runtime_ctx: Any,
+    defaults: Dict[str, Any],
+    agent_id: Any,
+) -> Optional[Dict[str, Any]]:
+    """The model self-knowledge react.delegate's catalog entry renders.
+
+    ``own`` is the agent's effective strong-decision model (config with the
+    user's pick already overlaid on ``agent_role_models``); ``tiers`` is the
+    admin's capability-tier map (label → pick) the delegate ``model``
+    argument speaks; ``default`` is the tier a charter without ``model``
+    runs on (absent = the child inherits ``own``)."""
+    from kdcube_ai_app.apps.chat.sdk.runtime.agent_inventory import (
+        USER_MODEL_TARGET_ROLE,
+        normalize_model_pick,
+        subagent_default_pick,
+        subagent_model_tiers,
+    )
+
+    try:
+        role_models = getattr(runtime_ctx, "agent_role_models", None) or {}
+        own = normalize_model_pick(role_models.get(USER_MODEL_TARGET_ROLE))
+        tiers = subagent_model_tiers(defaults)
+        default_label, default = subagent_default_pick(defaults, tiers)
+        facts: Dict[str, Any] = {}
+        if own:
+            facts["own"] = own
+        if tiers:
+            facts["tiers"] = [
+                {"label": label, **pick} for label, pick in tiers.items()
+            ]
+        if default:
+            facts["default"] = (
+                {"label": default_label, **default} if default_label else default
+            )
+        return facts or None
+    except Exception:
+        return None
+
+
 def _subagent_fork_records_from_blocks(blocks: Any) -> List[Dict[str, Any]]:
     """Lift the structured fork records from a turn's fork marker blocks.
 
@@ -685,6 +727,7 @@ class BaseWorkflow():
         from kdcube_ai_app.apps.chat.sdk.solutions.react.subagents.child_turn import (
             bind_child_turn_accounting,
             charter_turn_context,
+            subagent_stamp_from_context,
         )
 
         self._subagent_child_context = charter_turn_context(comm_context)
@@ -693,7 +736,12 @@ class BaseWorkflow():
                 build_subagent_child_comm,
             )
 
-            self.comm = build_subagent_child_comm(self.comm)
+            self.comm = build_subagent_child_comm(
+                self.comm,
+                visibility=self._subagent_child_context.visibility,
+                parent_session_id=self._subagent_child_context.parent_session_id,
+                subagent=subagent_stamp_from_context(self._subagent_child_context),
+            )
             bind_child_turn_accounting(self._subagent_child_context)
 
         self.model_service = model_service
@@ -3229,6 +3277,12 @@ class BaseWorkflow():
             runtime_ctx.subagent_spawner = None
             return
         runtime_ctx.subagent_defaults = dict(defaults)
+        runtime_ctx.subagent_model_facts = _subagent_model_facts(
+            bundle_props=self.bundle_props or {},
+            runtime_ctx=runtime_ctx,
+            defaults=defaults,
+            agent_id=agent_id,
+        )
         from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.react_subagents import (
             ReactSubagentSpawner,
         )

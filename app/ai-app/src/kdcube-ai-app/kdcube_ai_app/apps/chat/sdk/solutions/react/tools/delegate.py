@@ -3,9 +3,10 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import traceback
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from kdcube_ai_app.apps.chat.sdk.solutions.react.subagents.charter import (
     DEFAULT_SUBAGENT_MAX_ROUNDS,
@@ -58,8 +59,8 @@ TOOL_SPEC = {
             "ref plus a 5-line summary')}."
         ),
         "model": (
-            "str (SECOND FIELD, optional). Model override for the subagent's decision "
-            "agent; omit to use the configured subagent default."
+            "str (SECOND FIELD, optional). Capability tier for the subagent's "
+            "decision agent; omit to use the configured default."
         ),
     },
     "returns": (
@@ -67,6 +68,64 @@ TOOL_SPEC = {
         "status} — the subagent runs as its own scheduled turn after this returns"
     ),
 }
+
+
+def build_delegate_tool_spec(
+    model_facts: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """The delegate catalog entry, carrying the agent's model self-knowledge.
+
+    The delegation decision hinges on who would reason about the assignment:
+    the agent weighs delegating against doing the work itself, so the entry
+    names the agent's own decision model and the capability tiers the
+    ``model`` argument speaks — each tier label with the model behind it.
+    Without facts the base spec stands.
+    """
+    spec = copy.deepcopy(TOOL_SPEC)
+    facts = model_facts if isinstance(model_facts, dict) else {}
+    if not facts:
+        return spec
+    own = str(((facts.get("own") or {}).get("model")) or "").strip()
+    default_row = facts.get("default") or {}
+    default_model = str(default_row.get("model") or "").strip()
+    default_label = str(default_row.get("label") or "").strip()
+    tiers = [
+        (str(row.get("label") or "").strip(), str(row.get("model") or "").strip())
+        for row in (facts.get("tiers") or [])
+        if isinstance(row, dict)
+        and str(row.get("label") or "").strip()
+        and str(row.get("model") or "").strip()
+    ]
+    if own and default_model and default_model != own:
+        spec["purpose"] += (
+            f" You reason with {own}; a subagent reasons with {default_model} by "
+            "default. Delegate assignments that deserve that model's reasoning: "
+            "dense synthesis, strategy over unfamiliar service schemas, sizable "
+            "drafting. Keep orchestration and quick work yourself."
+        )
+    elif own:
+        spec["purpose"] += (
+            f" You and a subagent both reason with {own}: delegation adds a parallel "
+            "worker with its own round budget. Delegate work that genuinely runs "
+            "alongside yours, and do the synthesis yourself."
+        )
+    if tiers:
+        rendered = ", ".join(f"{label} ({model})" for label, model in tiers)
+        if default_label:
+            omit_text = f" Omit to use the default tier ({default_label})."
+        elif default_model:
+            omit_text = f" Omit to use the default ({default_model})."
+        elif own:
+            omit_text = f" Omit to reason with your model ({own})."
+        else:
+            omit_text = " Omit to use the configured default."
+        spec["args"]["model"] = (
+            "str (SECOND FIELD, optional). Capability tier for the subagent's "
+            f"decision agent, one of: {rendered}.{omit_text}"
+        )
+    else:
+        spec["args"].pop("model", None)
+    return spec
 
 
 async def handle_react_delegate(

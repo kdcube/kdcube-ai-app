@@ -204,6 +204,11 @@ class RuntimeCtx:
     # Parent-side defaults for spawned subagents, e.g. {"model_role": ...,
     # "max_rounds_default": int, "max_rounds_cap": int}.
     subagent_defaults: Optional[Dict[str, Any]] = None
+    # Model self-knowledge rendered into react.delegate's catalog entry:
+    # {"own": {"model": str}, "default": {"model": str} | None,
+    #  "allowed": [{"model", "provider", "label"}]}. The agent decides
+    # delegation against the models it can actually name.
+    subagent_model_facts: Optional[Dict[str, Any]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -274,6 +279,7 @@ class RuntimeCtx:
             "subagent_depth": int(self.subagent_depth or 0),
             "subagent_parent": copy.deepcopy(self.subagent_parent) if self.subagent_parent else None,
             "subagent_defaults": copy.deepcopy(self.subagent_defaults) if self.subagent_defaults else None,
+            "subagent_model_facts": copy.deepcopy(self.subagent_model_facts) if self.subagent_model_facts else None,
         }
 
 

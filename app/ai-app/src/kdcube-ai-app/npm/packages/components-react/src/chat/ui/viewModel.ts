@@ -44,6 +44,10 @@ export interface ChatViewModel {
   send: ChatEngine['send']
   steer: ChatEngine['steer']
   loadConversation: ChatEngine['loadConversation']
+  /** Hydrate a reconstructed subagent-thread stub (thread expand on a
+   *  reloaded conversation): fetches the child conversation into
+   *  `state.threads[childConversationId]`. */
+  loadSubagentThread: ChatEngine['loadSubagentThread']
   newChat: ChatEngine['newChat']
   deleteConversation: ChatEngine['deleteConversation']
   refreshConversationList: ChatEngine['refreshConversations']

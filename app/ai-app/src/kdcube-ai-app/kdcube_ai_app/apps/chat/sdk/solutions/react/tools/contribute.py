@@ -122,6 +122,12 @@ async def handle_react_contribute(
         "child_turn_id": turn_id,
         "refs": parent_refs,
     }
+    # The subagent envelope stamp (set by apply_child_runtime_overrides)
+    # rides in the facts so clients anchor the contribution into the child's
+    # thread without parsing text.
+    stamp = getattr(runtime_ctx, "subagent_stamp", None)
+    if isinstance(stamp, dict) and stamp:
+        facts["subagent"] = dict(stamp)
     try:
         event = await publish_subagent_event(
             lane_source=lane,

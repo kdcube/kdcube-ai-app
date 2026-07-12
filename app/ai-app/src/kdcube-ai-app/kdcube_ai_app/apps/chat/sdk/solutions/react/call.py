@@ -33,13 +33,19 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.tools import (
 )
 
 
-def get_react_tools_catalog(*, subagent_role: Optional[str] = None) -> List[Dict[str, object]]:
+def get_react_tools_catalog(
+    *,
+    subagent_role: Optional[str] = None,
+    delegate_model_facts: Optional[Dict[str, Any]] = None,
+) -> List[Dict[str, object]]:
     """The react tool catalog.
 
     ``subagent_role`` keys the subagent tools' availability: ``"parent"``
     (an agent whose runtime carries a spawner) adds ``react.delegate``;
     ``"child"`` (a subagent conversation) adds ``react.contribute``;
-    ``None`` adds neither.
+    ``None`` adds neither. ``delegate_model_facts`` renders the parent's
+    model self-knowledge into the delegate entry (own model, subagent
+    default, allowed overrides).
     """
     specs = [
         READ_SPEC,
@@ -53,7 +59,15 @@ def get_react_tools_catalog(*, subagent_role: Optional[str] = None) -> List[Dict
         PLAN_SPEC,
     ]
     if subagent_role == "parent":
-        specs.append(DELEGATE_SPEC)
+        from kdcube_ai_app.apps.chat.sdk.solutions.react.tools.delegate import (
+            build_delegate_tool_spec,
+        )
+
+        specs.append(
+            build_delegate_tool_spec(delegate_model_facts)
+            if delegate_model_facts
+            else DELEGATE_SPEC
+        )
     elif subagent_role == "child":
         specs.append(CONTRIBUTE_SPEC)
     strategy_by_id = {

@@ -26,6 +26,18 @@ export interface ConversationInfo {
   turn_id: string
 }
 
+/** Subagent envelope stamp — present on every child-conversation emission the
+ *  relay multiplexes through the PARENT conversation's channel. The envelope's
+ *  own `conversation` identity is the CHILD's; the stamp names the fork point
+ *  the client anchors the thread at. */
+export interface SubagentEnvelopeStamp {
+  child_conversation_id: string
+  forked_from_conversation_id?: string
+  forked_from_turn_id?: string
+  charter_goal?: string
+  [key: string]: unknown
+}
+
 export interface BaseEnvelope {
   type: string
   timestamp: string
@@ -39,6 +51,8 @@ export interface BaseEnvelope {
     markdown?: string
   }
   data?: Record<string, unknown>
+  /** Present only on subagent traffic (see `SubagentEnvelopeStamp`). */
+  subagent?: SubagentEnvelopeStamp | null
 }
 
 export interface ChatStartEnvelope extends BaseEnvelope {
@@ -133,9 +147,21 @@ export interface ConversationArtifactDTO {
   }
 }
 
+/** Fork descriptor on a stored parent turn — written at delegate time, lifted
+ *  onto the turn record at turn end. The client renders a collapsed thread
+ *  stub per descriptor; expanding fetches `child_conversation_id` through the
+ *  same conversation-fetch endpoint. */
+export interface ConversationTurnForkDTO {
+  child_conversation_id: string
+  charter_goal?: string
+  forked_at?: string
+}
+
 export interface ConversationTurnDTO {
   turn_id: string
   artifacts: ConversationArtifactDTO[]
+  /** Subagent forks opened from this turn (absent = none). */
+  forks?: ConversationTurnForkDTO[]
 }
 
 export interface ConversationDTO {
@@ -143,6 +169,8 @@ export interface ConversationDTO {
   conversation_title?: string | null
   bundle_id?: string | null
   turns: ConversationTurnDTO[]
+  /** Present on a CHILD conversation: the parent it forked from. */
+  forked_from?: { conversation_id: string; turn_id?: string } | null
 }
 
 export interface ChatHistoryItem {
