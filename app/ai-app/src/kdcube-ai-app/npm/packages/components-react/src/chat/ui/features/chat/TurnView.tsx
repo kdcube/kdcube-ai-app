@@ -240,7 +240,7 @@ function TurnViewImpl({
    * back to the delegating agent — as "<name> said: …". No contribution means
    * no handoff line; the persona simply returned. */
   const agentPersona = turn.authoredBy || null
-  const personaName = agentPersona ? (agentPersona.agentTitle || 'Helper agent') : null
+  const personaName = agentPersona ? (agentPersona.agentTitle || 'Sub-agent') : null
 
   return (
     <article className="flex flex-col gap-2">

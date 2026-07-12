@@ -369,23 +369,41 @@ test('reload: a stored agent-authored triggering input hydrates the persona', ()
   assert.equal(turn.authoredBy.handoff, 'Found three fresh sources on the topic.')
 })
 
-test('helper-agents deny key: toggle patch, optimistic flip, merge, and re-enable', () => {
-  // offered + untouched -> on; the toggle produces the deny patch
+test('sub-agents toggle: tri-state read/write, optimistic flip, merge', () => {
+  // no stored preference + default-on -> on; the toggle writes the explicit
+  // opt-OUT boolean
   assert.equal(isSubagentsDisabled({}), false)
   assert.deepEqual(subagentsTogglePatch({}), { subagents: true })
-  // optimistic flip mirrors the server merge
+  // optimistic flip mirrors the server merge — an explicit `true` is stored
   const off = applySelectionPatch({}, { subagents: true })
   assert.deepEqual(off, { subagents: true })
   assert.equal(isSubagentsDisabled(off), true)
-  // re-enable clears the stored key entirely
+  // turning it back ON writes the explicit opt-IN boolean (`false`), and that
+  // `false` is STORED (not a clear) — this is what activates a default-off ability
+  assert.deepEqual(subagentsTogglePatch(off), { subagents: false })
   const on = applySelectionPatch(off, subagentsTogglePatch(off))
-  assert.deepEqual(on, {})
+  assert.deepEqual(on, { subagents: false })
+  assert.equal(isSubagentsDisabled(on), false)
   // debounced saves merge; later toggle wins; other categories ride along
   const merged = mergeSelectionPatches({ subagents: true, skills: { s1: true } }, { subagents: false })
   assert.deepEqual(merged, { skills: { s1: true }, subagents: false })
-  // the persisted body is the patch minus the model pick — the deny key rides
+  // the persisted body is the patch minus the model pick — the preference rides
   // `disabled` exactly like the other categories
   const { model, ...disabled } = { ...merged, model: null }
   assert.equal(model, null)
   assert.deepEqual(disabled, { skills: { s1: true }, subagents: false })
+})
+
+test('sub-agents default_on seeds the unset state; an explicit preference always wins', () => {
+  // no stored preference: the admin `default_on` decides the rendered state
+  assert.equal(isSubagentsDisabled({}, true), false, 'default-on, unset -> on')
+  assert.equal(isSubagentsDisabled({}, false), true, 'default-off, unset -> off')
+  // toggling a default-OFF ability from its unset state writes the explicit
+  // opt-IN (`false`) — an admin default-off ability turns on
+  assert.deepEqual(subagentsTogglePatch({}, false), { subagents: false })
+  // toggling a default-ON ability from its unset state writes the opt-OUT (`true`)
+  assert.deepEqual(subagentsTogglePatch({}, true), { subagents: true })
+  // an explicit stored preference overrides `default_on` in both directions
+  assert.equal(isSubagentsDisabled({ subagents: false }, false), false, 'opted in beats default-off')
+  assert.equal(isSubagentsDisabled({ subagents: true }, true), true, 'opted out beats default-on')
 })

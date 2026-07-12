@@ -342,10 +342,10 @@ export interface SubagentThread {
   childConversationId: string
   parentTurnId: string
   parentConversationId?: string | null
-  /** The helper persona name the delegating agent chose (react.delegate
+  /** The sub-agent persona name the delegating agent chose (react.delegate
    *  `agent_title`), carried on the stamp and the reload fork descriptor.
    *  Names the thread header and the continuation-turn persona alike; empty
-   *  falls back to "Helper agent" at render. */
+   *  falls back to "Sub-agent" at render. */
   agentTitle: string
   charterGoal: string
   forkedAt: number

@@ -855,29 +855,32 @@ function ServicesSection({ inventory, disabled, toggle, namespaceStyles, spotlig
   )
 }
 
-/** Helper-agents entry: ONE top-level toggle over subagent delegation,
- *  rendered only when the inventory carries the `subagents` entry (the admin
- *  offered the ability; default on for users). Label and description come
- *  from the payload — the server owns the quality-vs-spend copy — and the
- *  toggle writes the `subagents` deny key through the same optimistic +
- *  debounced selection flow as every other category. */
+/** Sub-agents entry: ONE top-level toggle over subagent delegation, rendered
+ *  only when the inventory carries the `subagents` entry (the admin offered the
+ *  ability). Tri-state: the toggle's state with no stored preference follows the
+ *  payload's `default_on` (an admin can offer it default-OFF); toggling writes
+ *  the explicit boolean (opt-out `true` / opt-in `false`) through the same
+ *  optimistic + debounced selection flow as every other category. Label and
+ *  description come from the payload — the server owns the quality-vs-spend
+ *  copy. */
 function HelperAgentsSection({ inventory, disabled, toggle, pending }: CapabilityRowsProps) {
   const entry = inventory.subagents
   if (!entry?.available) return null
-  const off = isSubagentsDisabled(disabled)
+  const defaultOn = entry.default_on !== false
+  const off = isSubagentsDisabled(disabled, defaultOn)
   const pendingSubagents = pending?.disabled?.subagents !== undefined
   return (
     <div>
       <MenuRow
         label={
           <>
-            {entry.label || 'Helper agents'}
+            {entry.label || 'Sub-agents'}
             {pendingSubagents ? <PendingTag /> : null}
           </>
         }
         sub={entry.description || undefined}
         checked={off ? 'off' : 'on'}
-        onToggle={() => toggle(subagentsTogglePatch(disabled))}
+        onToggle={() => toggle(subagentsTogglePatch(disabled, defaultOn))}
       />
     </div>
   )

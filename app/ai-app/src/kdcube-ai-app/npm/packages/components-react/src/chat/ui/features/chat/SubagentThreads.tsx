@@ -94,7 +94,7 @@ function SubagentThreadViewImpl({
   const goal = thread.charterGoal || 'Delegated task'
   /* The persona name the delegating agent chose; the thread header and the
    * continuation-turn persona show the SAME name. */
-  const personaName = thread.agentTitle || 'Helper agent'
+  const personaName = thread.agentTitle || 'Sub-agent'
   return (
     <section className="k-subthread" data-thread-anchor={thread.childConversationId}>
       <button
@@ -106,8 +106,10 @@ function SubagentThreadViewImpl({
       >
         <BranchIcon />
         <span className="k-subthread-title">
-          <span className="k-subthread-kicker">{personaName}</span>
-          <span className="k-subthread-goal">{goal}</span>
+          <span className="k-subthread-kicker">SUB-AGENT</span>
+          <span className="k-subthread-goal">
+            {thread.agentTitle ? `${personaName} · ${goal}` : goal}
+          </span>
         </span>
         <span className="k-subthread-meta">
           <ThreadStatusChip thread={thread} />
@@ -138,12 +140,12 @@ function SubagentThreadViewImpl({
           {thread.hydration === 'loading' || thread.hydration === 'stub' ? (
             <div className="k-subthread-status">
               <span className="k-status k-live" aria-hidden="true" />
-              <span>Opening the helper&rsquo;s conversation…</span>
+              <span>Opening the sub-agent&rsquo;s conversation…</span>
             </div>
           ) : null}
           {thread.hydration === 'error' ? (
             <div className="k-notice k-error">
-              <span>{thread.hydrationError || 'The helper’s conversation couldn’t be loaded.'}</span>
+              <span>{thread.hydrationError || 'The sub-agent’s conversation couldn’t be loaded.'}</span>
               <button
                 type="button"
                 className="k-btn k-sm"
@@ -167,7 +169,7 @@ function SubagentThreadViewImpl({
           {thread.hydration === 'live' && thread.turns.length === 0 ? (
             <div className="k-subthread-status">
               <span className="k-status k-live" aria-hidden="true" />
-              <span>The helper is starting up…</span>
+              <span>The sub-agent is starting up…</span>
             </div>
           ) : null}
           {thread.status === 'failed' && thread.statusDetail ? (

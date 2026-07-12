@@ -140,7 +140,7 @@ export interface AgentCapabilitySkill {
   namespace: string
 }
 
-/** The helper-agents (subagent delegation) inventory entry. Present when the
+/** The sub-agents (subagent delegation) inventory entry. Present when the
  *  admin offered the ability (`react.agents.<id>.subagents: true`) — absent
  *  means the ability is outside the inventory and no row renders. The server
  *  owns the picker copy (`label` + `description`, the quality-vs-spend
@@ -149,6 +149,10 @@ export interface AgentCapabilitySubagents {
   available: boolean
   label?: string
   description?: string
+  /** The toggle's initial state when the user has NO stored preference: `true`
+   *  (default) = on unless the user opts out; `false` = offered but off until
+   *  the user opts in (an admin-set default-off ability). */
+  default_on?: boolean
 }
 
 /** An admin-allowed model row (mirrors the economics price-table naming). */
@@ -214,7 +218,10 @@ export interface AgentSelectionDisabled {
    *  operations (`object.search`) / named actions (`object.action.send`). */
   named_services?: Record<string, true | string[]>
   skills?: string[]
-  /** `true` turns helper-agent delegation off for this user's turns. */
+  /** The user's explicit sub-agent delegation preference: `true` = opted out
+   *  (off), `false` = opted IN (on). Absent = no preference — the inventory's
+   *  `default_on` decides the rendered state. Both booleans are stored (an
+   *  explicit `false` is what enables an admin default-off ability). */
   subagents?: boolean
 }
 
@@ -226,8 +233,10 @@ export interface AgentSelectionPatch {
   mcp?: Record<string, boolean | string[]>
   named_services?: Record<string, boolean | string[]>
   skills?: Record<string, boolean>
-  /** Helper-agents toggle: `true` denies delegation, `false` re-enables;
-   *  omitted keeps state. Rides the deny map like the other categories. */
+  /** Sub-agents toggle: the explicit preference the user is writing — `true`
+   *  opts out (off), `false` opts in (on); omitted keeps state. Both booleans
+   *  are stored (an explicit `false` is a real opt-in, not a clear). Rides the
+   *  selection map like the other categories. */
   subagents?: boolean
   /** The single model PICK: a `{provider, model}` sets it, `null` clears back
    *  to the configured default; omitted keeps the stored pick. */
@@ -281,7 +290,7 @@ export function applySelectionPatch(
     ...(disabled.mcp ? { mcp: { ...disabled.mcp } } : {}),
     ...(disabled.named_services ? { named_services: { ...disabled.named_services } } : {}),
     ...(disabled.skills ? { skills: [...disabled.skills] } : {}),
-    ...(disabled.subagents ? { subagents: true as const } : {}),
+    ...(disabled.subagents !== undefined ? { subagents: disabled.subagents } : {}),
   }
   for (const category of DICT_CATEGORIES) {
     const raw = patch[category]
@@ -309,8 +318,9 @@ export function applySelectionPatch(
     else delete out.skills
   }
   if (patch.subagents !== undefined) {
-    if (patch.subagents) out.subagents = true
-    else delete out.subagents
+    // Store the explicit preference both ways — a `false` is an opt-IN, not a
+    // clear (it's what activates an admin default-off ability).
+    out.subagents = patch.subagents
   }
   return out
 }
@@ -682,14 +692,27 @@ export function isSkillDisabled(disabled: AgentSelectionDisabled, skillId: strin
   return Boolean(disabled.skills?.includes(skillId))
 }
 
-export function isSubagentsDisabled(disabled: AgentSelectionDisabled): boolean {
-  return disabled.subagents === true
+/** The effective OFF state of the sub-agents toggle. Tri-state: an explicit
+ *  stored preference wins (`true` = off, `false` = on); with no stored
+ *  preference the inventory's `default_on` decides — so an admin default-off
+ *  ability renders off until the user opts in. */
+export function isSubagentsDisabled(
+  disabled: AgentSelectionDisabled,
+  defaultOn: boolean = true,
+): boolean {
+  if (disabled.subagents !== undefined) return disabled.subagents === true
+  return !defaultOn
 }
 
-/** The patch the helper-agents row toggle produces: on → deny (`true`),
- *  off → re-enable (`false`, which clears the stored key). */
-export function subagentsTogglePatch(disabled: AgentSelectionDisabled): AgentSelectionPatch {
-  return { subagents: !isSubagentsDisabled(disabled) }
+/** The patch the sub-agents row toggle produces — the explicit boolean the
+ *  user is now choosing: turning it OFF writes `true`, turning it ON writes
+ *  `false` (an explicit opt-in). `defaultOn` seeds the current state when the
+ *  user has no stored preference yet. */
+export function subagentsTogglePatch(
+  disabled: AgentSelectionDisabled,
+  defaultOn: boolean = true,
+): AgentSelectionPatch {
+  return { subagents: !isSubagentsDisabled(disabled, defaultOn) }
 }
 
 /** Which presentation a spotlight request should open the capability picker
