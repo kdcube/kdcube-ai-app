@@ -4,7 +4,7 @@ title: "How To Test A Bundle"
 summary: "Testing guide for bundle authors and QA: local syntax/suite/pytest validation, runtime reload validation, widget/API/event-source checks, scheduled-job verification, and failure diagnosis in the local runtime."
 tags: ["sdk", "bundle", "testing", "pytest", "widget", "events", "runtime", "validation"]
 keywords: ["bundle testing workflow", "shared bundle suite", "local bundle tests", "widget and api validation", "event source validation", "artifact rehoster validation", "shared sdk widget source validation", "runtime reload verification", "scheduled job checks", "bundle failure diagnosis", "manual and automated test loop", "local qa for bundles", "integration qa for bundles"]
-updated_at: 2026-07-09
+updated_at: 2026-07-12
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/how-to-integrate-with-kdcube-apps-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-navigate-kdcube-docs-README.md
@@ -226,14 +226,22 @@ PYTHONPATH=app/ai-app/src/kdcube-ai-app \
   --bundle-path /abs/path/to/bundle
 ```
 
-## 1B. Skeleton-Stage Checks
+## 1B. Canonical Package-Stage Checks
 
-For a brand-new bundle skeleton, prove the contract before adding product logic:
+For a brand-new app package, prove the contract before adding product logic:
 
-- the bundle has the skeleton files from
-  [how-to-write-bundle-README.md#1b1-new-bundle-skeleton-checklist](how-to-write-bundle-README.md#1b1-new-bundle-skeleton-checklist)
+- the app has the declarations from
+  [how-to-write-bundle-README.md#1b1-canonical-app-package](how-to-write-bundle-README.md#1b1-canonical-app-package)
+- the app root contains only `entrypoint.py`, `__init__.py`, `README.md`,
+  `AGENTS.md`, `release.yaml`, optional `requirements.txt`, and declaration
+  folders; product implementation is in documented, responsibility-named
+  folders
 - `entrypoint.py` parses and loads through the KDCube loader or shared bundle
   suite in the project venv
+- `entrypoint.py` is composition rather than domain implementation
+- every lifecycle hook, decorated handler, service operation, and I/O call
+  chain is async end to end; no synchronous filesystem/database/Redis/HTTP/
+  subprocess/sleep operation runs on the proc event loop
 - `config/bundles.template.yaml` makes clear whether `path:` is a seed/source
   descriptor host path or a staged runtime/container path
 - seed/source descriptors used by local CLI setup or IntelliJ/proc host runs
@@ -241,13 +249,14 @@ For a brand-new bundle skeleton, prove the contract before adding product logic:
 - deployment-scoped secrets are documented in `config/bundles.secrets.template.yaml`
 - user-owned secrets, such as a user's personal email credentials, are not in
   descriptor templates
-- `docs/design/` and `docs/journal/journal.md` exist and are updated with the
-  first implementation decisions
+- `docs/README.md`, `docs/storage/README.md`, and
+  `docs/journal/{README.md,journal.md}` exist and describe the package/module
+  map, storage ownership, and first implementation decisions
 - configured event modules and event-source specs parse if the first milestone
   has wizard/canvas/snapshot events, tool event-source policies, or custom
   artifact namespace rehosters
 
-Do this before building UI, tools, or scheduler logic. A clean skeleton makes
+Do this before building UI, tools, or scheduler logic. A clean package makes
 later failures narrower.
 
 Do not validate bundle-local imports only with

@@ -4,7 +4,7 @@ title: "How To Configure And Run A Bundle"
 summary: "Current bundle-development runtime workflow: tenant/project environment setup, descriptor staging, local-path and git bundles, configuration translation, start/stop/reload loop, configuration/secret scopes, bundle events, and the rule that one machine may hold many local deployment snapshots but should not be treated as running many local compose-backed KDCubes at once."
 tags: ["sdk", "bundle", "configuration", "runtime", "cli", "bundles.yaml"]
 keywords: ["local bundle development workflow", "tenant project environment boundary", "descriptor driven runtime setup", "local path bundle loop", "git bundle loop", "bundle reload workflow", "runtime sandbox selection", "bundle config and secret scopes", "shared sdk widget sources", "bundle events", "event sources", "artifact rehosters", "bundle configurator workflow", "bundle deployer workflow", "current kdcube cli workflow", "multiple local runtime snapshots", "single active local compose deployment", "run multiple kdcubes on one machine", "kdcube bundle command", "patch bundle config cli", "patch bundle secret cli"]
-updated_at: 2026-06-11
+updated_at: 2026-07-12
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/how-to-integrate-with-kdcube-apps-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-navigate-kdcube-docs-README.md
@@ -1233,11 +1233,11 @@ This means:
   `workdir/config/` may be rewritten to the container-visible mount path
 - `module` is resolved inside that root
 
-For a brand-new bundle skeleton, keep the documentary descriptor shapes inside
-the bundle as `config/bundles.template.yaml` and
+For a brand-new app package, keep the documentary descriptor shapes inside the
+app as `config/bundles.template.yaml` and
 `config/bundles.secrets.template.yaml`, then copy/adapt those values into the
-active deployment descriptors. The skeleton checklist lives in
-[how-to-write-bundle-README.md#1b1-new-bundle-skeleton-checklist](how-to-write-bundle-README.md#1b1-new-bundle-skeleton-checklist).
+active deployment descriptors. The canonical package contract lives in
+[how-to-write-bundle-README.md#1b1-canonical-app-package](how-to-write-bundle-README.md#1b1-canonical-app-package).
 
 Do not keep these on the same entry:
 

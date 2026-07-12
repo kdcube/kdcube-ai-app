@@ -4,7 +4,7 @@ title: "Tier 1 Bundle Pack For Build-With-KDCube Plugins"
 summary: "Short handoff note for Claude Code and Codex plugin engineers describing the Tier 1 bundle-doc pack, bundle events, the agent task facets it must support, and the minimal integration contract."
 tags: ["sdk", "bundle", "plugins", "claude-code", "codex", "handoff", "tier-1"]
 keywords: ["tier 1 bundle pack", "build with kdcube plugin", "claude code plugin", "codex plugin", "bundle docs pack", "bundle agent facets", "shared sdk widget source", "bundle events", "event sources", "artifact rehosters", "plugin doc links update"]
-updated_at: 2026-07-09
+updated_at: 2026-07-12
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/how-to-integrate-with-kdcube-apps-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-navigate-kdcube-docs-README.md
@@ -251,7 +251,14 @@ The plugin should steer agents away from these recurring mistakes:
 
 - do not recommend bare `python3` or bare `pytest` before proving the project venv
 - do not interpret async test failures until `pytest-asyncio` is installed in the active venv
-- do not start a new bundle without the skeleton files from `how-to-write-bundle-README.md#1b1-new-bundle-skeleton-checklist`
+- do not start a new app without the package declarations from
+  `how-to-write-bundle-README.md#1b1-canonical-app-package`
+- keep the app root sparse: only package declarations/composition and optional
+  `requirements.txt` belong there; implementation belongs in documented,
+  responsibility-named folders
+- all lifecycle hooks, decorated handlers, service operations, and I/O call
+  chains must be async end to end; `async def` around blocking I/O still blocks
+  the concurrent proc event loop
 - do not reimplement provider/runtime mechanics before checking the SDK
   building-block map
 - do not register bundle-local tools with `module: "tools.name"`; use

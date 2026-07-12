@@ -329,14 +329,23 @@ Practical hook rule:
 
 Async rule:
 
-- lifecycle hooks should be `async def`
-- prefer `async def` for `@api`, `@mcp`, `@ui_widget`, `@data_bus_handler`,
-  and `@cron` methods
-- `@on_job` must be `async def`
+- KDCube proc is a concurrent asyncio service; every platform-invoked lifecycle
+  hook, decorated handler, service operation, storage/network operation, and
+  request-path call chain must be async end to end
+- lifecycle hooks and `@api`, `@mcp`, `@ui_widget`, `@data_bus_handler`,
+  `@cron`, and `@on_job` methods must be `async def`
+- use async SDK/store/database/Redis/HTTP clients and `await` every I/O boundary;
+  an `async def` wrapper that calls blocking code still blocks the proc event loop
+- when a bounded blocking library has no async replacement, isolate that call
+  with `await asyncio.to_thread(...)`; move long CPU-bound or operational work to
+  an appropriate worker/job instead of keeping it on the proc event loop
+- small pure in-memory helpers may remain synchronous; making a pure helper
+  `async def` does not make blocking I/O or CPU work safe
 - in bundle code, use awaited secret helpers:
   `get_secret(...)`, `get_secret("u:...")`,
   `set_user_secret(...)`, and `delete_user_secret(...)`
-- do not run blocking setup in a request path
+- do not use synchronous filesystem, database, Redis, HTTP, subprocess, sleep,
+  or SDK calls in a runtime path
 - if expensive work is only needed once for shared bundle storage, make it idempotent and guard it with a storage signature plus a cross-process lock
 
 `BaseEntrypoint` hook inheritance rule:
@@ -371,6 +380,7 @@ normative for a maintained KDCube app (bundle), including apps with no chat UI:
   README.md
   AGENTS.md
   release.yaml
+  requirements.txt                 # only when app-local Python dependencies exist
 
   config/
     bundles.template.yaml
@@ -392,6 +402,33 @@ normative for a maintained KDCube app (bundle), including apps with no chat UI:
   tests/
     ...
 ```
+
+### Sparse root and modular implementation
+
+Keep the app root deliberately small. Root-level files are package declarations
+and composition only:
+
+- `entrypoint.py`, `__init__.py`, `README.md`, `AGENTS.md`, and `release.yaml`
+- `requirements.txt` only when the app has app-local Python dependencies
+- declaration folders such as `config/`, `interface/`, `docs/`, and `tests/`
+
+Do not place domain services, transport handlers, agent implementations,
+storage adapters, tool implementations, event policies, or general utility
+modules beside `entrypoint.py`. Put implementation in responsibility-named
+folders and modules. `entrypoint.py` wires those modules into platform surfaces;
+it does not become the implementation merely because decorators live there.
+
+Module and folder names must describe ownership and purpose. Prefer names such
+as `services/conversations/export.py`, `surfaces/mcp/conversations.py`, and
+`events/telegram.py` over root files or vague buckets such as `logic.py`,
+`helpers.py`, `misc.py`, or `utils.py`. A genuinely shared helper module is
+acceptable only when its bounded responsibility is clear from its name.
+
+Document the module map in the root `README.md` and `docs/README.md`. Every
+top-level implementation folder must have a stated owner and purpose; important
+subsystems should have a local README, and non-obvious modules need concise
+module docstrings. Tests should mirror the implementation boundaries rather
+than concentrating unrelated app behavior in one test file.
 
 Every maintained app carries these declarations even when the declaration says
 "none": an app with no owned persistent state still has `docs/storage/README.md`
@@ -425,6 +462,7 @@ Add implementation folders only when their ownership is real:
 | `README.md` | Product role, boundaries, current surfaces, high-level dataflow, package layout, runtime notes, and links to config/interface/design/storage/journal/test instructions. Include front matter with id, title, summary, status, tags, module, singleton expectation, and primary surfaces. |
 | `AGENTS.md` | Local builder-agent read order, ownership rules, invariants, forbidden shortcuts, and exact validation commands. It supplements this platform guide; it must not invent conflicting platform semantics. |
 | `release.yaml` | Release source repo/ref plus release description, highlights, validation, and known follow-ups. Before the first release, keep `ref: unreleased`; do not omit the file or use it as an ongoing journal. |
+| `requirements.txt` | Conditional root declaration for app-local Python dependencies. Include it only when needed, keep dependencies app-owned and intentional, and pair it with the app's `@venv(...)` contract and isolated-environment tests. |
 | `config/bundles.template.yaml` | Complete non-secret app descriptor example: identity, module, singleton, declared surfaces, feature gates, UI source/build config, and safe placeholder values. |
 | `config/bundles.secrets.template.yaml` | Complete deployment-secret key shape using placeholders only. Never place real values, user credentials, generated tokens, or user state here. |
 | `interface/README.md` | Human contract for every API, MCP, named-service, widget, main UI, Data Bus handler, external event, cron, job, artifact namespace, auth boundary, request/response shape, and controlling config key. |
@@ -450,7 +488,8 @@ Minimum sections:
 2. **Read first** — ordered files the agent must inspect before editing.
 3. **Product shape** — compact ASCII map of surfaces and module owners.
 4. **Implementation rules** — app-specific invariants, ownership boundaries,
-   required SDK reuse, and prohibited shortcuts.
+   required SDK reuse, the folder/module ownership map, sparse-root rule, and
+   prohibited shortcuts.
 5. **Configuration and storage rules** — authoritative config/secret paths and
    which stores are owned, read-through, or ephemeral.
 6. **Change synchronization** — which docs, templates, interface files, tests,
@@ -546,6 +585,10 @@ entrypoint decorators
 
 Also preserve these rules:
 
+- keep the app root sparse; product implementation belongs in documented,
+  responsibility-named folders rather than beside `entrypoint.py`
+- keep all runtime-facing operations async end to end; blocking I/O in an
+  `async def` handler is still an event-loop blocking defect
 - user-owned credentials and user state never belong in descriptor templates
 - generated files such as `.DS_Store`, `__pycache__`, `.pytest_cache`,
   `node_modules`, built UI output, runtime storage, and local secret files do not
@@ -1057,10 +1100,12 @@ An agent creating a new app follows this order:
    documented platform setting; every placeholder must be safe to publish.
 5. **Build the thin entrypoint.** Add app identity, constructor injection,
    configuration defaults, surface decorators, lifecycle hooks, and composition
-   into `services/`, `agents/`, and SDK components.
+   into responsibility-named `services/`, `agents/`, `surfaces/`, `events/`, and
+   SDK components. Do not add product implementation modules at the app root.
 6. **Implement domain modules and optional UI.** Keep transport adapters thin;
-   keep domain behavior independently testable. Build UI only through the
-   loader-provided output directory.
+   keep domain behavior independently testable; use names that identify each
+   module's owner and purpose; document the module map. Build UI only through
+   the loader-provided output directory.
 7. **Add contract and regression tests.** Verify manifest discovery, interface
    alias/method/route parity, authorization, config mapping, storage behavior,
    lifecycle/reload behavior, and each primary user journey.
@@ -2763,6 +2808,12 @@ Before considering the bundle “implemented”, verify:
 - canonical package declarations exist: `README.md`, `AGENTS.md`,
   `release.yaml`, config templates, interface README/OpenAPI, docs index,
   storage map, journal indexes, and tests
+- the root contains only package declarations/composition and optional
+  `requirements.txt`; implementation is modular, responsibility-named, and
+  documented under folders
+- lifecycle hooks, decorated handlers, services, and all I/O call chains are
+  async end to end, with unavoidable bounded blocking calls isolated from the
+  proc event loop
 - entrypoint decorators are correct
 - decorator aliases/methods/routes match interface docs and OpenAPI
 - every code-read config/secret path appears in the correct descriptor template
