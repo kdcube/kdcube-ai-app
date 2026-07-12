@@ -902,6 +902,55 @@ async def test_prefetch_git_bundles_resolves_missing_paths_and_collects_errors(m
     ]
 
 
+def test_queue_order_covers_every_gateway_admitted_user_type():
+    # The gateway admits tasks for every user_type in QUEUE_USER_TYPES; a
+    # queue missing from QUEUE_ORDER is admitted but never polled, so its
+    # tasks sit in redis forever (production incident: "external" tasks from
+    # unconnected Telegram users were admitted and never consumed).
+    from kdcube_ai_app.infra.gateway.backpressure import QUEUE_USER_TYPES
+
+    assert set(QUEUE_USER_TYPES) == set(EnhancedChatRequestProcessor.QUEUE_ORDER)
+    # external is polled last: lowest priority, matching how backpressure
+    # gates it with the anonymous capacity ratio
+    assert EnhancedChatRequestProcessor.QUEUE_ORDER[-1] == "external"
+
+
+@pytest.mark.asyncio
+async def test_pop_any_queue_fair_polls_external_queue():
+    redis = _MinimalRedis()
+    processor = _build_processor(redis)
+    polled = []
+
+    async def _queue_claim(ready_key, inflight_key):
+        del inflight_key
+        polled.append(ready_key)
+        return None
+
+    processor._queue_claim = _queue_claim
+
+    result = await processor._legacy_pop_any_queue_fair()
+
+    assert result is None
+    assert polled == [f"queue:{ut}" for ut in EnhancedChatRequestProcessor.QUEUE_ORDER]
+    assert "queue:external" in polled
+
+
+@pytest.mark.asyncio
+async def test_requeue_stale_inflight_task_covers_external_queue():
+    redis = _MinimalRedis()
+    processor = _build_processor(redis)
+    raw_payload = json.dumps(
+        _build_task_payload("stale-external-task", user_type="external")
+    ).encode("utf-8")
+    redis.seed_list("queue:inflight:external", [raw_payload])
+
+    reclaimed = await processor._requeue_stale_inflight_tasks()
+
+    assert reclaimed == 1
+    assert redis.lists["queue:inflight:external"] == []
+    assert redis.lists["queue:external"] == [raw_payload]
+
+
 @pytest.mark.asyncio
 async def test_pop_any_queue_fair_requeues_item_if_drain_starts_after_claim():
     redis = _MinimalRedis()

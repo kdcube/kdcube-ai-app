@@ -378,7 +378,12 @@ class EnhancedChatRequestProcessor:
       - Handles graceful shutdown
     """
 
-    QUEUE_ORDER: Iterable[str] = ("privileged", "registered", "anonymous", "paid")
+    # Must cover every user_type the gateway admits into the prompt queues
+    # (see infra/gateway/backpressure.QUEUE_USER_TYPES) — a queue that is
+    # admitted but absent here is never polled, so its tasks are never
+    # consumed. "external" is polled last (lowest priority), mirroring how
+    # backpressure gates it with the anonymous capacity ratio.
+    QUEUE_ORDER: Iterable[str] = ("privileged", "registered", "anonymous", "paid", "external")
 
     def __init__(
             self,
