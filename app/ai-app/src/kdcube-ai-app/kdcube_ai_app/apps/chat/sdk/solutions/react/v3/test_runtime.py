@@ -514,7 +514,10 @@ async def test_decision_node_binds_code_to_immediately_preceding_exec_decision(m
     solver._adapters_index = lambda adapters: {a["id"]: a for a in adapters}
     solver._short_json = lambda obj, max_len=800: str(obj)
     solver._protocol_violation_message = lambda **kwargs: "protocol"
-    solver._record_dropped_multi_action_items = lambda **kwargs: None
+    async def _record_dropped_multi_action_items(**kwargs):
+        del kwargs
+
+    solver._record_dropped_multi_action_items = _record_dropped_multi_action_items
     solver.scratchpad = SimpleNamespace(
         turn_id="turn-1",
         register_agentic_response=lambda *args, **kwargs: None,

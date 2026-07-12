@@ -9,7 +9,12 @@ from typing import Any, Callable, TypeVar
 
 TOOL_TRAITS_ATTR = "__kdcube_tool_traits__"
 STRATEGY_TRAIT = "strategy"
+EXECUTION_TRAIT = "execution"
 UNKNOWN_STRATEGY = "unknown"
+EXECUTION_TRIGGER_TOOL_CALL_COMPLETE = "tool_call_complete"
+EXECUTION_CONCURRENCY_PARALLEL_WITH_GENERATION = "parallel_with_generation"
+EXECUTION_RESULT_DETACHED = "detached"
+EXECUTION_REPLAY_AT_MOST_ONCE_PER_ROUND = "at_most_once_per_round"
 VALID_STRATEGIES = frozenset({"exploration", "exploitation", "neutral", UNKNOWN_STRATEGY})
 STRATEGY_COMPATIBILITY_MATRIX: dict[str, dict[str, bool]] = {
     "exploration": {
@@ -82,9 +87,31 @@ def normalize_tool_traits(value: Any) -> dict[str, Any]:
             continue
         if trait_name == STRATEGY_TRAIT:
             out[trait_name] = normalize_strategy(raw)
+        elif trait_name == EXECUTION_TRAIT and isinstance(raw, Mapping):
+            policy = dict(raw)
+            for field in ("trigger", "concurrency", "result_dependency", "replay"):
+                if field in policy:
+                    policy[field] = str(policy.get(field) or "").strip().lower()
+            out[trait_name] = policy
         else:
             out[trait_name] = raw
     return out
+
+
+def execution_policy(traits: Any) -> dict[str, Any]:
+    normalized = normalize_tool_traits(traits)
+    policy = normalized.get(EXECUTION_TRAIT)
+    return dict(policy) if isinstance(policy, Mapping) else {}
+
+
+def executes_parallel_on_tool_call_complete(traits: Any) -> bool:
+    policy = execution_policy(traits)
+    return bool(
+        policy.get("trigger") == EXECUTION_TRIGGER_TOOL_CALL_COMPLETE
+        and policy.get("concurrency") == EXECUTION_CONCURRENCY_PARALLEL_WITH_GENERATION
+        and policy.get("result_dependency") == EXECUTION_RESULT_DETACHED
+        and policy.get("replay") == EXECUTION_REPLAY_AT_MOST_ONCE_PER_ROUND
+    )
 
 
 def merge_tool_traits(*sources: Any) -> dict[str, Any]:
@@ -146,12 +173,19 @@ def strategies_compatible(first: Any, second: Any) -> bool:
 
 
 __all__ = [
+    "EXECUTION_CONCURRENCY_PARALLEL_WITH_GENERATION",
+    "EXECUTION_REPLAY_AT_MOST_ONCE_PER_ROUND",
+    "EXECUTION_RESULT_DETACHED",
+    "EXECUTION_TRAIT",
+    "EXECUTION_TRIGGER_TOOL_CALL_COMPLETE",
     "STRATEGY_TRAIT",
     "STRATEGY_COMPATIBILITY_MATRIX",
     "TOOL_TRAITS_ATTR",
     "UNKNOWN_STRATEGY",
     "VALID_STRATEGIES",
     "configured_tool_traits",
+    "executes_parallel_on_tool_call_complete",
+    "execution_policy",
     "get_tool_traits",
     "merge_tool_traits",
     "normalize_strategy",

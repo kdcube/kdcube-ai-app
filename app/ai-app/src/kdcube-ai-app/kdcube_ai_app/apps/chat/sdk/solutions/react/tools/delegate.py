@@ -17,6 +17,12 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.subagents.fork import (
     build_fork_projection,
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.react.subagents.launch import SubagentLaunchRequest
+from kdcube_ai_app.apps.chat.sdk.runtime.tool_traits import (
+    EXECUTION_CONCURRENCY_PARALLEL_WITH_GENERATION,
+    EXECUTION_REPLAY_AT_MOST_ONCE_PER_ROUND,
+    EXECUTION_RESULT_DETACHED,
+    EXECUTION_TRIGGER_TOOL_CALL_COMPLETE,
+)
 from kdcube_ai_app.apps.chat.sdk.solutions.react.tools.common import (
     add_block,
     notice_block,
@@ -30,6 +36,15 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.tools.common import (
 # rendered per round in the announce block's DELEGATION section.
 TOOL_SPEC = {
     "id": "react.delegate",
+    "tool_traits": {
+        "strategy": ["neutral"],
+        "execution": {
+            "trigger": EXECUTION_TRIGGER_TOOL_CALL_COMPLETE,
+            "concurrency": EXECUTION_CONCURRENCY_PARALLEL_WITH_GENERATION,
+            "result_dependency": EXECUTION_RESULT_DETACHED,
+            "replay": EXECUTION_REPLAY_AT_MOST_ONCE_PER_ROUND,
+        },
+    },
     "purpose": (
         "Hand a self-contained assignment to a separate agent similar to you. "
         "It runs in parallel in its own conversation: it opens with a copy of "

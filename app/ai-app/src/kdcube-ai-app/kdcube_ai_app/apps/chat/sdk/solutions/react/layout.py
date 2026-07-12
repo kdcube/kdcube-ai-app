@@ -2301,8 +2301,15 @@ def build_tools_block(
                         lines.append(f"             - {scope_ns}{suffix}{filter_suffix}")
             if tool_traits:
                 for trait_name, trait_value in tool_traits.items():
-                    values = trait_value if isinstance(trait_value, list) else [trait_value]
-                    text = ", ".join(str(item) for item in values if str(item or "").strip())
+                    if isinstance(trait_value, dict):
+                        text = ", ".join(
+                            f"{key}={value}"
+                            for key, value in trait_value.items()
+                            if str(key or "").strip() and str(value or "").strip()
+                        )
+                    else:
+                        values = trait_value if isinstance(trait_value, list) else [trait_value]
+                        text = ", ".join(str(item) for item in values if str(item or "").strip())
                     if text:
                         if trait_name == "strategy" and isinstance(tool_traits_by_namespace, dict) and tool_traits_by_namespace:
                             text = f"{text} (default)"

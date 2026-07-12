@@ -1,14 +1,15 @@
 ---
 id: repo:kdcube-ai-app/app/ai-app/docs/sdk/tools/tool-subsystem-README.md
 title: "Tool Subsystem"
-summary: "Canonical runtime flow for agent-scoped tool wiring: surfaces.as_consumer config, descriptor adapters, dynamic loading, binding, and execution in in-memory and isolated modes."
-tags: ["sdk", "tools", "subsystem", "runtime", "descriptor", "isolation", "mcp", "binding"]
-keywords: ["surfaces.as_consumer", "agent tool config", "ToolSubsystem", "resolve_codegen_tools_specs", "io_tools.tool_call", "ToolStub", "py_code_exec_entry.py", "rewrite_runtime_globals_for_bundle", "bind_module_target", "_SERVICE", "_INTEGRATIONS"]
+summary: "Canonical runtime flow for agent-scoped tool wiring: surfaces.as_consumer config, tool traits, descriptor adapters, dynamic loading, binding, and execution in in-memory and isolated modes."
+tags: ["sdk", "tools", "subsystem", "runtime", "descriptor", "traits", "isolation", "mcp", "binding"]
+keywords: ["surfaces.as_consumer", "agent tool config", "ToolSubsystem", "tool_traits", "strategy", "execution", "resolve_codegen_tools_specs", "io_tools.tool_call", "ToolStub", "py_code_exec_entry.py", "rewrite_runtime_globals_for_bundle", "bind_module_target", "_SERVICE", "_INTEGRATIONS"]
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/tools/custom-tools-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/tools/mcp-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/tools/named-services-tools-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/multi-action/tool-strategy-traits-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/multi-action/tool-execution-policy-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/online-strategic-governance-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/events/event-subsystem-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/event-source/event-source-README.md
@@ -80,6 +81,20 @@ surfaces:
                 strategy: [exploitation]
               delete_object:
                 strategy: [exploitation]
+
+          - id: background_jobs
+            kind: python
+            ref: tools/background_jobs.py
+            alias: background_jobs
+            allowed: [launch]
+            tool_traits:
+              launch:
+                strategy: [neutral]
+                execution:
+                  trigger: tool_call_complete
+                  concurrency: parallel_with_generation
+                  result_dependency: detached
+                  replay: at_most_once_per_round
 ```
 
 `surfaces.as_consumer.agents.<agent_id>.tools` is a list. Each list item is one
@@ -113,20 +128,125 @@ Named-service catalog entries render only `namespaces applicable`, so ReAct can
 see which configured namespaces support each generic tool without seeing
 provider protocol operation ids.
 
-`tool_traits` is per connection and keyed by that connection's callable names.
-The runtime qualifies those names with the connection alias and stores them in
-tool metadata. The `strategy` trait drives ReAct multi-action compatibility:
-`exploration`, `exploitation`, `neutral`, or `unknown` when no trait is present.
-MCP connections may use `"*"` as a wildcard trait for all tools from that
-server. See
-`repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/multi-action/tool-strategy-traits-README.md`.
+## Tool Traits
 
-For ReAct agents, treat `tool_traits.strategy` as part of the tool connection
-contract. It gives the online governance harness enough information to accept
-safe same-round moves and interrupt incompatible later moves before their
-streamed payloads reach the user. If a visible tool has no strategy, it is
-`unknown` and runs alone. Bundle authors should mark custom and connected tools
-when they expose them to ReAct; see
+`tool_traits` is runtime policy attached to concrete model-callable tools. The
+current subsystem carries two trait families:
+
+| Trait | Shape | Question it answers |
+| --- | --- | --- |
+| `strategy` | list of strategy values | How may this action be ordered with other actions in the same ReAct round? |
+| `execution` | execution-policy mapping | When may this complete call start, and what dependency/replay contract makes that safe? |
+
+Traits are per connection and keyed by that connection's callable names. The
+runtime qualifies those names with the connection alias and stores the resolved
+traits in tool metadata.
+
+```text
+tool code / connected source             agent consumer config
+  intrinsic traits                         deployment policy
+          \                                  /
+           +---- agent_tool_config_from_bundle_props
+                              |
+                              v
+                     qualified tool metadata
+                              |
+                 +------------+-------------+
+                 |                          |
+                 v                          v
+          catalog presentation       ReAct runtime policy
+                                     ordering + execution
+```
+
+Consumer config is authoritative for the active agent. It can assign traits to
+external tools and override traits discovered from Python code. MCP connections
+may use `"*"` as a wildcard when every exposed tool genuinely has the same
+traits. Prefer callable-specific entries for servers with mixed behavior.
+
+### `strategy`: ordered multi-action meaning
+
+`strategy` classifies what the call does relative to the agent's current answer
+premise:
+
+```text
+exploration   obtains information: search, read, inspect, pull
+exploitation  mutates state or produces durable output: write, patch, delete
+neutral       independent bookkeeping or detached scheduling
+unknown       no precise trait was resolved; the tool runs alone
+```
+
+ReAct's online action overseer uses this trait while output is still streaming.
+It accepts safe same-round ordering and interrupts incompatible later moves
+before a large payload is emitted. For example, exploration followed by a write
+is rejected because the write cannot consume a search result that does not exist
+until the next round. A visible tool with no strategy resolves to `unknown` and
+runs alone.
+
+See
+`repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/multi-action/tool-strategy-traits-README.md`
+for the ordered compatibility matrix and named-service namespace overrides.
+
+### `execution`: completed-call scheduling
+
+`execution` is an explicit policy mapping rather than a boolean. The currently
+supported profile starts a complete, independent call while the model may still
+be streaming later sibling actions:
+
+```yaml
+strategy: [neutral]
+execution:
+  trigger: tool_call_complete
+  concurrency: parallel_with_generation
+  result_dependency: detached
+  replay: at_most_once_per_round
+```
+
+The runtime activates this profile only when all four fields match and strategy
+is exactly `neutral`. The complete action must pass the ordinary action overseer,
+decision, protocol, and parameter-signature checks before it starts. A
+deterministic round/action identity prevents a provider or compaction retry from
+executing the same irreversible call twice; post-generation processing still
+counts the action, but does not validate, write, or execute it again.
+
+Use this profile only when no sibling in the same round consumes the result and
+the call does not consume a sibling's result. `react.delegate` is the first
+built-in user: scheduling the helper can overlap continued generation without
+making delegation a special case in the runtime.
+
+See
+`repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/multi-action/tool-execution-policy-README.md`
+for the full safety and retry contract.
+
+### Sources and callable names
+
+Python tools can declare intrinsic traits with `@tool_trait(...)`; built-in
+catalog tools can own the same mapping in their static tool specification.
+Python, MCP, and named-service connections can all assign traits in
+`surfaces.as_consumer.agents.<agent_id>.tools[].tool_traits`.
+
+```python
+from kdcube_ai_app.apps.chat.sdk.runtime.tool_traits import tool_trait
+
+@tool_trait(
+    strategy=["neutral"],
+    execution={
+        "trigger": "tool_call_complete",
+        "concurrency": "parallel_with_generation",
+        "result_dependency": "detached",
+        "replay": "at_most_once_per_round",
+    },
+)
+async def launch(...):
+    ...
+```
+
+For named-service connections, key traits by the ReAct-facing generic callable
+name, such as `search_objects` or `upsert_object`, rather than the provider
+operation id. For MCP, key by the tool name returned by that server. The
+examples at the start of this document show all three connection kinds.
+
+Bundle authors should mark custom and connected tools when they expose them to
+ReAct; see
 `repo:kdcube-ai-app/app/ai-app/docs/sdk/tools/custom-tools-README.md#21-make-react-tools-governable-with-strategy-traits`.
 
 At runtime, `agent_tool_config_from_bundle_props(...)` converts this config

@@ -6,6 +6,7 @@ from __future__ import annotations
 import copy
 from typing import Dict, Any, List, Optional
 
+from kdcube_ai_app.apps.chat.sdk.runtime.tool_traits import merge_tool_traits
 from kdcube_ai_app.apps.chat.sdk.solutions.react.tools import (
     READ_SPEC,
     PULL_SPEC,
@@ -71,7 +72,6 @@ def get_react_tools_catalog(
         "react.hide": ["neutral"],
         "react.rg": ["exploration"],
         "react.plan": ["neutral"],
-        "react.delegate": ["neutral"],
         "react.contribute": ["neutral"],
     }
     out: List[Dict[str, object]] = []
@@ -79,7 +79,10 @@ def get_react_tools_catalog(
         item = copy.deepcopy(spec)
         tool_id = str(item.get("id") or "")
         if tool_id in strategy_by_id:
-            item["tool_traits"] = {"strategy": strategy_by_id[tool_id]}
+            item["tool_traits"] = merge_tool_traits(
+                item.get("tool_traits"),
+                {"strategy": strategy_by_id[tool_id]},
+            )
         out.append(item)
     return out
 

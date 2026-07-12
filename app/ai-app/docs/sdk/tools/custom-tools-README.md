@@ -116,7 +116,15 @@ agents.
 Use the detailed policy docs for the full matrix and stream interruption path:
 
 - [Tool Strategy Traits](../solutions/multi-action/tool-strategy-traits-README.md)
+- [Tool Execution Policy](../solutions/multi-action/tool-execution-policy-README.md)
 - [ReAct Online Strategic Governance](../agents/react/online-strategic-governance-README.md)
+
+A neutral tool whose complete call is independent of all same-round siblings
+may additionally declare an `execution` policy. The supported detached profile
+starts the tool when its action block closes and overlaps it with continued
+model generation. This is an explicit four-field contract, not a tool-name
+allow-list; the execution-policy document defines its replay and causality
+requirements.
 
 ### Strategy values
 

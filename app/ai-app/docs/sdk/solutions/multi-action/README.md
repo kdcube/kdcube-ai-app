@@ -6,6 +6,7 @@ tags: ["sdk", "react", "streaming", "multi-action", "overseer", "gating"]
 keywords: ["RoundActionOverseer", "ActionStreamGate", "TimelineStreamer", "ToolContentStreamerBase", "DecisionExecCodeStreamer", "StreamPolicyViolation"]
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/multi-action/tool-strategy-traits-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/multi-action/tool-execution-policy-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/streaming/governed-streaming-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/online-strategic-governance-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/streaming/channeled-streamer-README.md
@@ -57,6 +58,12 @@ RoundActionOverseer
 ActionStreamGate
   owns: buffered outbound deltas for one lane
   states: pending -> allowed | denied
+
+EarlyToolExecutionListener
+  owns: completed-call trigger for tools that opt into detached execution
+  requires: accepted action, neutral strategy, complete execution policy,
+            protocol/signature validation, round-scoped replay identity
+  schedules: tracked task that overlaps continued model generation
 ```
 
 ## Flow
@@ -196,6 +203,12 @@ DecisionExecCodeStreamer
 
 The final-answer lane is intentionally separate. A non-neutral tool action may
 be allowed while the answer lane for that same action remains denied.
+
+An accepted action can also opt into detached execution after its complete tool
+call is parsed. That path is controlled by `tool_traits.execution`, remains
+limited to neutral tools, and rejoins the ordinary state machine as an already
+consumed action. See
+[Tool Execution Policy](tool-execution-policy-README.md).
 
 ## Violation Handling
 

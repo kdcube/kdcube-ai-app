@@ -5,6 +5,7 @@ summary: "The charter-scoped subagent contract: react.delegate spawns a child co
 tags: ["sdk", "agents", "react", "subagents", "delegation"]
 keywords: ["react.delegate", "react.contribute", "charter", "agent_alias", "helper alias", "strength class", "subagent.contribution", "subagent.converged", "subagent.failed", "fork", "child conversation", "visibility", "subagent thread"]
 see_also:
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/multi-action/tool-execution-policy-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/timeline/fork-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/micro-agents-and-cache-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/shared-timeline-event-bus-steer-followup-README.md
@@ -174,6 +175,34 @@ descriptors on the parent turn's stored record (the turn log), and the child
 conversation's stored timeline carries the matching
 `forked_from: {conversation_id, turn_id}` backref -- both sides queryable, so
 conversation fetch can reconstruct the fork relationship on reload.
+
+### Delegate Starts When Its Action Block Closes
+
+`react.delegate` declares the generic early-execution tool policy:
+
+```yaml
+tool_traits:
+  strategy: [neutral]
+  execution:
+    trigger: tool_call_complete
+    concurrency: parallel_with_generation
+    result_dependency: detached
+    replay: at_most_once_per_round
+```
+
+When the streamed delegate action closes, ReAct parses the complete call,
+checks the ordinary action overseer, protocol, and parameter signature, then
+starts the existing delegate handler in a tracked task. The decision model can
+continue streaming a later sibling action while the helper is being scheduled
+and begins work. At generation end, ReAct settles the tracked call and the
+normal state machine counts it without validating, executing, or writing it a
+second time.
+
+This is a tool-trait behavior rather than a delegate-specific runtime branch.
+The runtime nevertheless requires `strategy: [neutral]` and the full detached
+execution profile. See
+[Tool Execution Policy](../../solutions/multi-action/tool-execution-policy-README.md)
+for the opt-in contract and replay boundary.
 
 Delegate itself does exactly the work that needs the parent's in-memory,
 not-yet-persisted timeline, then returns:

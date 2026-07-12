@@ -6,6 +6,7 @@ tags: ["sdk", "tools", "traits", "react", "multi-action"]
 keywords: ["tool_traits", "tool_trait", "strategy", "exploration", "exploitation", "neutral", "unknown"]
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/multi-action/README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/multi-action/tool-execution-policy-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/online-strategic-governance-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/streaming/governed-streaming-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/tools/tool-subsystem-README.md
@@ -13,8 +14,10 @@ see_also:
 ---
 # Tool Strategy Traits
 
-Tool traits are metadata attached to concrete model-callable tools. The first
-runtime trait used by ReAct multi-action policy is `strategy`.
+Tool traits are metadata attached to concrete model-callable tools. `strategy`
+governs ordered multi-action compatibility. The separate `execution` policy
+can opt a neutral, detached tool into execution at completed-tool-call time;
+see [Tool Execution Policy](tool-execution-policy-README.md).
 
 ## Strategy Values
 

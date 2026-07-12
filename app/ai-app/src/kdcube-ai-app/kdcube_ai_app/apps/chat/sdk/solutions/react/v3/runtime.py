@@ -64,12 +64,20 @@ from kdcube_ai_app.apps.chat.sdk.solutions.widgets.canvas import (
 from kdcube_ai_app.apps.chat.sdk.runtime.tool_subsystem import ToolSubsystem
 from kdcube_ai_app.apps.chat.sdk.runtime.tool_traits import (
     UNKNOWN_STRATEGY,
+    executes_parallel_on_tool_call_complete,
     normalize_tool_traits,
     strategies_compatible,
     strategy_values,
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v3.action_overseer import (
     RoundActionOverseer,
+)
+from kdcube_ai_app.apps.chat.sdk.solutions.react.v3.early_tool_execution import (
+    EarlyToolExecutionListener,
+    consumed_early_tool_record,
+    drain_early_tool_executions,
+    early_tool_execution_identity,
+    resolved_early_tool_call_id,
 )
 from kdcube_ai_app.apps.chat.sdk.streaming.stream_policy import StreamPolicyViolation
 from kdcube_ai_app.infra.accounting import with_accounting
@@ -2093,6 +2101,23 @@ class ReactSolverV2:
             tool_params=tool_params,
         )))
 
+    def _tool_executes_early(
+        self,
+        tool_id: str,
+        *,
+        adapters_by_id: Optional[Dict[str, Dict[str, Any]]] = None,
+        tool_params: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        traits = self._tool_traits_for_id(
+            tool_id,
+            adapters_by_id=adapters_by_id,
+            tool_params=tool_params,
+        )
+        return bool(
+            strategy_values(traits) == {"neutral"}
+            and executes_parallel_on_tool_call_complete(traits)
+        )
+
     def _is_known_multi_action_tool(
         self,
         tool_id: str,
@@ -2247,7 +2272,11 @@ class ReactSolverV2:
         bundle: List[Dict[str, Any]],
         adapters_by_id: Dict[str, Dict[str, Any]],
         allow_single_exec_with_code: bool = False,
+        prevalidated_action_indices: Optional[Set[int]] = None,
+        accepted_action_indices_out: Optional[List[int]] = None,
     ) -> tuple[List[Dict[str, Any]], Optional[str], Optional[Dict[str, Any]]]:
+        if accepted_action_indices_out is not None:
+            accepted_action_indices_out.clear()
         if len(bundle) < 2:
             return [], "multi_action_bundle_too_small", {"count": len(bundle)}
         accepted: List[Dict[str, Any]] = []
@@ -2258,6 +2287,7 @@ class ReactSolverV2:
         final_idx: Optional[int] = None
         exec_indices = self._exec_indices_in_bundle(bundle)
         max_actions = int(getattr(self, "MAX_ACTIONS_PER_ROUND", 2) or 2)
+        prevalidated_indices = set(prevalidated_action_indices or ())
 
         def _reject(idx: int, code: str, extra: Optional[Dict[str, Any]] = None, decision: Optional[Dict[str, Any]] = None) -> None:
             tool_call = (decision or {}).get("tool_call") if isinstance(decision, dict) else {}
@@ -2307,6 +2337,7 @@ class ReactSolverV2:
             tool_call = decision.get("tool_call") or {}
             tool_id = (tool_call.get("tool_id") or "").strip()
             tool_params = tool_call.get("params") if isinstance(tool_call.get("params"), dict) else {}
+            prevalidated = idx in prevalidated_indices
             exec_complete_in_bundle = (
                 allow_single_exec_with_code
                 and len(exec_indices) == 1
@@ -2330,19 +2361,25 @@ class ReactSolverV2:
                     ) or {UNKNOWN_STRATEGY}),
                 }, decision)
                 continue
-            verdict = self._validate_tool_call_protocol(
-                tool_call=tool_call,
-                adapters_by_id=adapters_by_id,
-            )
-            if not verdict.get("ok"):
-                _reject(idx, "tool_call_invalid", {
-                    "index": idx,
-                    "tool_id": tool_id,
-                    "violations": verdict.get("violations") or [],
-                }, decision)
-                continue
+            if not prevalidated:
+                verdict = self._validate_tool_call_protocol(
+                    tool_call=tool_call,
+                    adapters_by_id=adapters_by_id,
+                )
+                if not verdict.get("ok"):
+                    _reject(idx, "tool_call_invalid", {
+                        "index": idx,
+                        "tool_id": tool_id,
+                        "violations": verdict.get("violations") or [],
+                    }, decision)
+                    continue
             filtered_params = tool_call.get("params") or {}
-            if tool_id and not tool_id.startswith("react.") and self.tools_subsystem is not None:
+            if (
+                not prevalidated
+                and tool_id
+                and not tool_id.startswith("react.")
+                and self.tools_subsystem is not None
+            ):
                 try:
                     tv = await self.tools_subsystem.validate_tool_params(tool_id=tool_id, params=filtered_params)
                 except Exception:
@@ -2564,6 +2601,8 @@ class ReactSolverV2:
                 final_extra = {"final_decision": final_decision, "final_index": final_idx}
 
         if accepted or final_extra:
+            if accepted_action_indices_out is not None:
+                accepted_action_indices_out.extend(accepted_idxs)
             extra: Dict[str, Any] = {}
             if rejected:
                 extra["rejected"] = rejected
@@ -3099,6 +3138,8 @@ class ReactSolverV2:
             sources_list = []
         timeline_agent_prefix = f"{role}.timeline.{state.get('turn_id') or ''}.{iteration}"
         decision_stream_instances: Dict[int, Dict[str, Any]] = {}
+        early_tool_execution_tasks: Dict[str, asyncio.Task[Any]] = {}
+        early_tool_state_lock = asyncio.Lock()
         record_streamers: List[Any] = []
         timeline_streamer: Optional[Any] = None
         code_stream_state: Dict[str, Any] = {
@@ -3119,6 +3160,112 @@ class ReactSolverV2:
             ),
             max_actions=self.MAX_ACTIONS_PER_ROUND,
         )
+
+        def _stream_action_was_accepted(action_index: int, action: str, tool_id: str) -> bool:
+            return any(
+                observed.index == int(action_index)
+                and observed.action == str(action or "").strip()
+                and observed.tool_id == str(tool_id or "").strip()
+                for observed in action_overseer.accepted_actions()
+            )
+
+        def _tool_is_early_safe(decision: Dict[str, Any]) -> bool:
+            tool_call = decision.get("tool_call") if isinstance(decision.get("tool_call"), dict) else {}
+            tool_id = str(tool_call.get("tool_id") or "").strip()
+            params = tool_call.get("params") if isinstance(tool_call.get("params"), dict) else {}
+            return self._tool_executes_early(
+                tool_id,
+                adapters_by_id=adapters_by_id_for_stream,
+                tool_params=params,
+            )
+
+        async def _validate_early_tool_call(tool_call: Any) -> Dict[str, Any]:
+            verdict = self._validate_tool_call_protocol(
+                tool_call=tool_call,
+                adapters_by_id=adapters_by_id_for_stream,
+            )
+            if not bool(verdict.get("ok")):
+                return verdict
+            tc = tool_call if isinstance(tool_call, dict) else {}
+            tool_id = str(tc.get("tool_id") or "").strip()
+            params = tc.get("params") if isinstance(tc.get("params"), dict) else {}
+            if tool_id and not tool_id.startswith("react.") and self.tools_subsystem is not None:
+                try:
+                    signature = await self.tools_subsystem.validate_tool_params(
+                        tool_id=tool_id,
+                        params=params,
+                    )
+                except Exception as exc:
+                    return {
+                        **verdict,
+                        "ok": False,
+                        "violations": [
+                            *(verdict.get("violations") or []),
+                            {
+                                "code": "tool_signature_validation_failed",
+                                "message": str(exc),
+                                "tool_id": tool_id,
+                            },
+                        ],
+                    }
+                if signature.get("status") == "red":
+                    return {
+                        **verdict,
+                        "ok": False,
+                        "violations": [
+                            *(verdict.get("violations") or []),
+                            *(signature.get("issues") or []),
+                        ],
+                    }
+                filtered_params = signature.get("params")
+                if isinstance(filtered_params, dict):
+                    tc["params"] = filtered_params
+            return verdict
+
+        async def _execute_early_tool(
+            tool_decision: Dict[str, Any],
+            tool_call_id: str,
+        ) -> Optional[Dict[str, Any]]:
+            async with early_tool_state_lock:
+                sentinel = object()
+                previous_decision = state.get("last_decision", sentinel)
+                previous_call_id = state.get("pending_tool_call_id", sentinel)
+                previous_origin_iteration = state.get("pending_tool_origin_iteration", sentinel)
+                state["last_decision"] = copy.deepcopy(tool_decision)
+                state["pending_tool_call_id"] = tool_call_id
+                state["pending_tool_origin_iteration"] = iteration
+                try:
+                    result_state = await ReactRound.execute(react=self, state=state)
+                finally:
+                    if previous_decision is sentinel:
+                        state.pop("last_decision", None)
+                    else:
+                        state["last_decision"] = previous_decision
+                    if previous_call_id is sentinel:
+                        state.pop("pending_tool_call_id", None)
+                    else:
+                        state["pending_tool_call_id"] = previous_call_id
+                    if previous_origin_iteration is sentinel:
+                        state.pop("pending_tool_origin_iteration", None)
+                    else:
+                        state["pending_tool_origin_iteration"] = previous_origin_iteration
+            result = result_state.get("last_tool_result")
+            return dict(result) if isinstance(result, dict) else None
+
+        async def _early_tool_consumed(record: Dict[str, Any]) -> None:
+            del record
+            try:
+                await self._update_announce(
+                    iteration=iteration,
+                    max_iterations=int(state.get("max_iterations") or 0),
+                    base_max_iterations=int(state.get("base_max_iterations") or 0),
+                    reactive_iteration_credit=int(state.get("reactive_iteration_credit") or 0),
+                )
+            except Exception:
+                self.log.log(
+                    f"[react.v3] early tool announce update failed: {traceback.format_exc()}",
+                    level="ERROR",
+                )
 
         async def _exec_emit_delta(**kwargs: Any) -> None:
             instance_state = code_stream_state.get("bound_exec_instance")
@@ -3241,6 +3388,19 @@ class ReactSolverV2:
                 "parse_error": None,
                 "completed": False,
             }
+            early_tool_listener = EarlyToolExecutionListener(
+                state=state,
+                turn_id=str(state.get("turn_id") or ""),
+                iteration=iteration,
+                action_index=safe_idx,
+                validate_decision=self._validate_decision,
+                validate_protocol=_validate_early_tool_call,
+                action_accepted=_stream_action_was_accepted,
+                execution_policy_allows=_tool_is_early_safe,
+                execute_tool=_execute_early_tool,
+                execution_tasks=early_tool_execution_tasks,
+                on_consumed=_early_tool_consumed,
+            )
 
             async def _emit_instance_json(text: str = "", completed: bool = False, **_kwargs) -> None:
                 if text:
@@ -3255,6 +3415,13 @@ class ReactSolverV2:
                     instance_state["parsed_decision"] = parsed_decision
                     instance_state["parse_error"] = parse_error
                     instance_state["completed"] = True
+                    early_decision = copy.deepcopy(parsed_decision) if isinstance(parsed_decision, dict) else None
+                    if isinstance(early_decision, dict):
+                        self._suppress_tool_call_final_answer(early_decision)
+                    await early_tool_listener.on_action_completed(
+                        decision=early_decision,
+                        parse_error=parse_error,
+                    )
                     tool_call = parsed_decision.get("tool_call") if isinstance(parsed_decision, dict) else {}
                     tool_id = (tool_call.get("tool_id") or "").strip() if isinstance(tool_call, dict) else ""
                     is_exec = (
@@ -3461,6 +3628,7 @@ class ReactSolverV2:
                 pass
             self._stash_interrupted_generation_snapshot()
         finally:
+            await drain_early_tool_executions(early_tool_execution_tasks)
             if self._active_phase_cancelled_by_steer or self._steer_interrupt_requested:
                 self._stash_interrupted_generation_snapshot()
             self._clear_active_generation_capture()
@@ -3624,6 +3792,7 @@ class ReactSolverV2:
         action = None
         tool_id = ""
         protocol_entry = None
+        early_tool_record: Optional[Dict[str, Any]] = None
 
         if error:
             error_summary, error_diagnostic = self._schema_error_diagnostics(error)
@@ -3725,10 +3894,32 @@ class ReactSolverV2:
 
             if len(decision_bundle) > 1 and self._multi_action_enabled():
                 adapters_by_id = self._adapters_index(state.get("adapters") or [])
+                prevalidated_early_tool_indices: Set[int] = set()
+                accepted_action_indices: List[int] = []
+                for action_index, bundled_decision in enumerate(decision_bundle):
+                    if not isinstance(bundled_decision, dict):
+                        continue
+                    bundled_tool_call = (
+                        bundled_decision.get("tool_call")
+                        if isinstance(bundled_decision.get("tool_call"), dict)
+                        else {}
+                    )
+                    if not str(bundled_tool_call.get("tool_id") or "").strip():
+                        continue
+                    identity = early_tool_execution_identity(
+                        turn_id=str(state.get("turn_id") or ""),
+                        iteration=iteration,
+                        action_index=action_index,
+                        decision=bundled_decision,
+                    )
+                    if consumed_early_tool_record(state=state, identity=identity) is not None:
+                        prevalidated_early_tool_indices.add(action_index)
                 accepted_bundle, bundle_error, bundle_extra = await self._prepare_safe_multi_action_bundle(
                     bundle=decision_bundle,
                     adapters_by_id=adapters_by_id,
                     allow_single_exec_with_code=self._exec_streamer_is_complete(exec_streamer_widget),
+                    prevalidated_action_indices=prevalidated_early_tool_indices,
+                    accepted_action_indices_out=accepted_action_indices,
                 )
                 if bundle_error:
                     notice_message = self._protocol_violation_message(
@@ -3804,14 +3995,43 @@ class ReactSolverV2:
                         bundle_mode = False
                     else:
                         decision = {"action": "exit", "final_answer": "Decision validation failed."}
-                    state["pending_tool_bundle"] = [
-                        {
+                    pending_tool_bundle: List[Dict[str, Any]] = []
+                    for accepted_position, item in enumerate(accepted_bundle):
+                        source_action_index = (
+                            accepted_action_indices[accepted_position]
+                            if accepted_position < len(accepted_action_indices)
+                            else accepted_position
+                        )
+                        item_tool_call = item.get("tool_call") if isinstance(item.get("tool_call"), dict) else {}
+                        item_tool_id = str(item_tool_call.get("tool_id") or "").strip()
+                        item_tool_call_id = f"tc_{uuid.uuid4().hex[:12]}"
+                        item_tool_params = (
+                            item_tool_call.get("params")
+                            if isinstance(item_tool_call.get("params"), dict)
+                            else {}
+                        )
+                        if self._tool_executes_early(
+                            item_tool_id,
+                            adapters_by_id=adapters_by_id,
+                            tool_params=item_tool_params,
+                        ):
+                            identity = early_tool_execution_identity(
+                                turn_id=str(state.get("turn_id") or ""),
+                                iteration=iteration,
+                                action_index=source_action_index,
+                                decision=item,
+                            )
+                            item_tool_call_id = resolved_early_tool_call_id(
+                                state=state,
+                                identity=identity,
+                            )
+                        pending_tool_bundle.append({
                             "decision": item,
-                            "tool_call_id": f"tc_{uuid.uuid4().hex[:12]}",
+                            "tool_call_id": item_tool_call_id,
                             "iteration": iteration,
-                        }
-                        for item in accepted_bundle
-                    ]
+                            "action_index": source_action_index,
+                        })
+                    state["pending_tool_bundle"] = pending_tool_bundle
                     state["last_decision_bundle"] = accepted_for_log
             else:
                 decision = decision_packet.get("agent_response") or {}
@@ -3899,6 +4119,28 @@ class ReactSolverV2:
             notes = (decision.get("notes") or "").strip()
             tool_call = decision.get("tool_call") or {}
             tool_id = (tool_call.get("tool_id") or "").strip()
+            if not bundle_mode and action == "call_tool" and tool_id:
+                identity = early_tool_execution_identity(
+                    turn_id=str(state.get("turn_id") or ""),
+                    iteration=iteration,
+                    action_index=0,
+                    decision=decision,
+                )
+                early_tool_record = consumed_early_tool_record(
+                    state=state,
+                    identity=identity,
+                )
+                single_adapters_by_id = self._adapters_index(state.get("adapters") or [])
+                single_tool_params = tool_call.get("params") if isinstance(tool_call.get("params"), dict) else {}
+                if early_tool_record is not None or self._tool_executes_early(
+                    tool_id,
+                    adapters_by_id=single_adapters_by_id,
+                    tool_params=single_tool_params,
+                ):
+                    pending_tool_call_id = resolved_early_tool_call_id(
+                        state=state,
+                        identity=identity,
+                    )
             if action == "complete" and (decision.get("final_answer") or "").strip():
                 state["retry_decision"] = False
 
@@ -4004,7 +4246,7 @@ class ReactSolverV2:
                             "notes": "tool_not_allowed_in_react",
                         }
                         action = "exit"
-                if action == "call_tool":
+                if action == "call_tool" and early_tool_record is None:
                     adapters_by_id = self._adapters_index(state.get("adapters") or [])
                     verdict = self._validate_tool_call_protocol(
                         tool_call=tool_call,
@@ -4090,7 +4332,11 @@ class ReactSolverV2:
                 sig_issues: List[Dict[str, Any]] = []
                 filtered_params = tool_call.get("params") if isinstance(tool_call, dict) else {}
                 try:
-                    if tool_id and not str(tool_id).startswith("react."):
+                    if (
+                        early_tool_record is None
+                        and tool_id
+                        and not str(tool_id).startswith("react.")
+                    ):
                         tv = await self.tools_subsystem.validate_tool_params(tool_id=tool_id, params=filtered_params)
                         sig_status = tv.get("status")
                         sig_issues = tv.get("issues") or []
@@ -4481,10 +4727,12 @@ class ReactSolverV2:
         if isinstance(pending_bundle, list) and pending_bundle:
             bundle_size = len(pending_bundle)
             for action_index, item in enumerate(pending_bundle):
-                if await self._apply_steer_interrupt_if_requested(state, checkpoint="tool.before_execute"):
-                    return state
                 decision = item.get("decision") if isinstance(item, dict) else None
                 tool_call_id = (item.get("tool_call_id") or "").strip() if isinstance(item, dict) else ""
+                try:
+                    source_action_index = int(item.get("action_index")) if isinstance(item, dict) else action_index
+                except Exception:
+                    source_action_index = action_index
                 try:
                     origin_iteration = int(item.get("iteration")) if isinstance(item, dict) and item.get("iteration") is not None else int(state.get("pending_tool_origin_iteration"))
                 except Exception:
@@ -4497,6 +4745,18 @@ class ReactSolverV2:
                 notes = (decision.get("notes") or "").strip()
                 tool_call = decision.get("tool_call") or {}
                 tool_id = (tool_call.get("tool_id") or "").strip()
+                consumed_early_tool = None
+                if tool_id:
+                    identity = early_tool_execution_identity(
+                        turn_id=str(state.get("turn_id") or ""),
+                        iteration=origin_iteration,
+                        action_index=source_action_index,
+                        decision=decision,
+                    )
+                    consumed_early_tool = consumed_early_tool_record(
+                        state=state,
+                        identity=identity,
+                    )
                 if notes:
                     try:
                         ReactRound.note(
@@ -4509,6 +4769,28 @@ class ReactSolverV2:
                         )
                     except Exception:
                         pass
+                if consumed_early_tool is not None:
+                    result = consumed_early_tool.get("result")
+                    if isinstance(result, dict):
+                        state["last_tool_result"] = dict(result)
+                    state["session_log"].append({
+                        "type": "early_tool_consumed",
+                        "iteration": origin_iteration,
+                        "timestamp": time.time(),
+                        "action_index": source_action_index,
+                        "tool_id": str(consumed_early_tool.get("tool_id") or tool_id),
+                        "tool_call_id": str(consumed_early_tool.get("tool_call_id") or tool_call_id),
+                        "status": str(consumed_early_tool.get("status") or "consumed"),
+                    })
+                    await self._drain_external_events(call_hooks=True)
+                    if await self._apply_steer_interrupt_if_requested(state, checkpoint="tool.after_execute"):
+                        return state
+                    await _merge_pending_sources(state)
+                    if state.get("exit_reason"):
+                        return state
+                    continue
+                if await self._apply_steer_interrupt_if_requested(state, checkpoint="tool.before_execute"):
+                    return state
                 interrupted, result = await self._run_cancellable_phase(
                     phase="tool_execution",
                     coro=ReactRound.execute(react=self, state=state),
@@ -4538,12 +4820,48 @@ class ReactSolverV2:
                 state["suggested_followups"] = pending_final.get("suggested_followups") or []
             return state
 
-        if await self._apply_steer_interrupt_if_requested(state, checkpoint="tool.before_execute"):
-            return state
         try:
             state.setdefault("pending_tool_origin_iteration", max(0, int(state.get("iteration") or 0) - 1))
         except Exception:
             state.setdefault("pending_tool_origin_iteration", 0)
+        single_decision = state.get("last_decision") if isinstance(state.get("last_decision"), dict) else {}
+        single_tool_call = (
+            single_decision.get("tool_call")
+            if isinstance(single_decision.get("tool_call"), dict)
+            else {}
+        )
+        single_tool_id = str(single_tool_call.get("tool_id") or "").strip()
+        if single_tool_id:
+            origin_iteration = int(state.get("pending_tool_origin_iteration") or 0)
+            identity = early_tool_execution_identity(
+                turn_id=str(state.get("turn_id") or ""),
+                iteration=origin_iteration,
+                action_index=0,
+                decision=single_decision,
+            )
+            consumed_early_tool = consumed_early_tool_record(state=state, identity=identity)
+            if consumed_early_tool is not None:
+                result = consumed_early_tool.get("result")
+                if isinstance(result, dict):
+                    state["last_tool_result"] = dict(result)
+                state["pending_tool_call_id"] = None
+                state["session_log"].append({
+                    "type": "early_tool_consumed",
+                    "iteration": origin_iteration,
+                    "timestamp": time.time(),
+                    "action_index": 0,
+                    "tool_id": str(consumed_early_tool.get("tool_id") or single_tool_id),
+                    "tool_call_id": str(consumed_early_tool.get("tool_call_id") or ""),
+                    "status": str(consumed_early_tool.get("status") or "consumed"),
+                })
+                await self._drain_external_events(call_hooks=True)
+                if await self._apply_steer_interrupt_if_requested(state, checkpoint="tool.after_execute"):
+                    return state
+                await _merge_pending_sources(state)
+                state.pop("pending_tool_origin_iteration", None)
+                return state
+        if await self._apply_steer_interrupt_if_requested(state, checkpoint="tool.before_execute"):
+            return state
         interrupted, result = await self._run_cancellable_phase(
             phase="tool_execution",
             coro=ReactRound.execute(react=self, state=state),
