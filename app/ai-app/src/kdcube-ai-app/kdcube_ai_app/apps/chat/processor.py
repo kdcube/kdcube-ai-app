@@ -378,7 +378,11 @@ class EnhancedChatRequestProcessor:
       - Handles graceful shutdown
     """
 
-    QUEUE_ORDER: Iterable[str] = ("privileged", "registered", "anonymous", "paid")
+    # Must cover every user_type the gateway admits into the prompt queues
+    # (see infra/gateway/backpressure.QUEUE_USER_TYPES). A queue that is
+    # admitted but absent here is never claimed or reaped. Tuple order defines
+    # the round-robin rotation only; it is not a priority ranking.
+    QUEUE_ORDER: Iterable[str] = ("privileged", "registered", "anonymous", "paid", "external")
 
     def __init__(
             self,
