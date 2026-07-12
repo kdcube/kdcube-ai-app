@@ -15,7 +15,8 @@ Selection record shape (deny-list; absent key/entry = enabled):
       "tools": {"<alias>": true | ["<tool_name>", ...]},
       "mcp": {"<server_id>": true | ["<tool_name>", ...]},
       "named_services": {"<namespace>": true},
-      "skills": ["<namespace>.<skill_id>", ...]
+      "skills": ["<namespace>.<skill_id>", ...],
+      "subagents": true
     }
 
 The user can only remove; nothing outside the configured inventory can ever be
@@ -129,6 +130,69 @@ def _react_agent_config_blocks(
                 blocks.append(agents[key])
         blocks.append(root)
     return blocks
+
+
+# Picker copy for the subagents ability. The register is the user's: helpers
+# may raise quality, they definitely add spend, and the paying user decides —
+# the same principle as the per-user model pick.
+SUBAGENTS_CAPABILITY_LABEL = "Helper agents"
+SUBAGENTS_CAPABILITY_DESCRIPTION = (
+    "The agent may hand sizable sub-tasks to helper agents that work in "
+    "parallel and report back. Helpers can raise the quality of hard tasks; "
+    "each helper runs on its own model calls, billed to your account."
+)
+
+
+def react_subagents_config(
+    bundle_props: Mapping[str, Any] | None,
+    agent_id: str | None,
+) -> tuple[bool, dict[str, Any]]:
+    """The admin side of subagent delegation: availability + shared defaults.
+
+    ``subagents:`` in the agent's react config block — a bool, or a dict with
+    ``enabled:`` — puts the ability in the agent's pickable inventory,
+    DEFAULT ON for users (absent = not in the inventory at all). Blocks read
+    most-specific-first; the first explicit signal decides. Every dict form
+    contributes defaults (``model`` etc.), most specific key winning, so the
+    bundle-level ``react.subagents:`` block keeps serving shared defaults
+    (and its ``enabled:`` opts the bundle's agents in as a group).
+    """
+    enabled: bool | None = None
+    defaults: dict[str, Any] = {}
+    for block in _react_agent_config_blocks(bundle_props, agent_id):
+        raw = block.get("subagents") if isinstance(block, Mapping) else None
+        if raw is None:
+            continue
+        if isinstance(raw, bool):
+            if enabled is None:
+                enabled = raw
+            continue
+        if isinstance(raw, (int, float)) and not isinstance(raw, bool):
+            if enabled is None:
+                enabled = bool(raw)
+            continue
+        if isinstance(raw, str):
+            text = raw.strip().lower()
+            if enabled is None and text in {"1", "true", "yes", "y", "on"}:
+                enabled = True
+            elif enabled is None and text in {"0", "false", "no", "n", "off"}:
+                enabled = False
+            continue
+        if isinstance(raw, Mapping):
+            block_enabled = raw.get("enabled")
+            if block_enabled is not None and enabled is None:
+                enabled = bool(block_enabled) if isinstance(block_enabled, bool) else str(block_enabled).strip().lower() in {"1", "true", "yes", "y", "on"}
+            for key, value in raw.items():
+                if key == "enabled":
+                    continue
+                defaults.setdefault(str(key), value)
+    return (bool(enabled) if enabled is not None else False), defaults
+
+
+def subagents_denied(disabled: Mapping[str, Any] | None) -> bool:
+    """The user's subagents toggle: truthy ``disabled.subagents`` turns the
+    ability off for that user's turns."""
+    return bool((disabled or {}).get("subagents")) if isinstance(disabled, Mapping) else False
 
 
 def react_supported_models(
@@ -246,6 +310,7 @@ _DISABLED_REASONS = (
     ("mcp", "mcp_toggle"),
     ("named_services", "namespace_toggle"),
     ("skills", "skill_toggle"),
+    ("subagents", "subagents_toggle"),
 )
 
 
@@ -261,6 +326,8 @@ def _category_norm(disabled: Mapping[str, Any] | None, key: str) -> Any:
     raw = (disabled or {}).get(key) if isinstance(disabled, Mapping) else None
     if key == "skills":
         return sorted(_string_list(raw))
+    if key == "subagents":
+        return bool(raw)
     if not isinstance(raw, Mapping):
         return {}
     out: dict[str, Any] = {}
@@ -579,6 +646,8 @@ def agent_capabilities_catalog(
         default_agent_id=default_agent_id,
     )
 
+    subagents_enabled, _subagent_defaults = react_subagents_config(bundle_props, agent_id)
+
     return {
         "agent": _norm(agent_id) or default_agent_id,
         "tools": tools_out,
@@ -590,6 +659,18 @@ def agent_capabilities_catalog(
         # role the pick overrides.
         "supported_models": react_supported_models(bundle_props, agent_id),
         "default_model": configured_strong_model(bundle_props, agent_id),
+        # Subagent delegation: admin `subagents: true` puts it in the
+        # inventory, default ON for users; the user's toggle decides use
+        # (deny key `subagents: true`). Absent from the config = not offered.
+        "subagents": (
+            {
+                "available": True,
+                "label": SUBAGENTS_CAPABILITY_LABEL,
+                "description": SUBAGENTS_CAPABILITY_DESCRIPTION,
+            }
+            if subagents_enabled
+            else None
+        ),
     }
 
 
@@ -1346,6 +1427,14 @@ def clamp_selection(
         if skill_id in skill_ids and skill_id not in out_skills:
             out_skills.append(skill_id)
 
+    # The subagents toggle is only storable when the admin inventory actually
+    # offers the ability (narrows, never widens — and never references an
+    # ability the agent does not have).
+    subagents_entry = catalog.get("subagents")
+    subagents_offered = bool(
+        isinstance(subagents_entry, Mapping) and subagents_entry.get("available")
+    )
+
     out: dict[str, Any] = {}
     if out_tools:
         out["tools"] = out_tools
@@ -1355,6 +1444,8 @@ def clamp_selection(
         out["named_services"] = out_namespaces
     if out_skills:
         out["skills"] = out_skills
+    if subagents_offered and disabled.get("subagents"):
+        out["subagents"] = True
     return out
 
 
@@ -1686,6 +1777,7 @@ def selection_deltas(disabled: Mapping[str, Any] | None) -> dict[str, Any]:
         "mcp_off": sorted(_disabled_flag_set(disabled, "mcp")),
         "named_services_off": sorted(_disabled_flag_set(disabled, "named_services", namespace=True)),
         "skills_off": _string_list((disabled or {}).get("skills")),
+        "subagents_off": subagents_denied(disabled),
     }
 
 
@@ -1698,6 +1790,8 @@ __all__ = [
     "SELECTION_CHANGE_CAPABILITY",
     "SELECTION_CHANGE_MODEL",
     "SELECTION_CHANGE_POLICIES",
+    "SUBAGENTS_CAPABILITY_DESCRIPTION",
+    "SUBAGENTS_CAPABILITY_LABEL",
     "SYSTEM_TOOL_ALIASES",
     "USER_MODEL_TARGET_ROLE",
     "agent_capabilities_catalog",
@@ -1714,7 +1808,9 @@ __all__ = [
     "narrow_agent_tool_config",
     "normalize_model_pick",
     "react_selection_change_policy",
+    "react_subagents_config",
     "react_supported_models",
     "selection_deltas",
     "selection_snapshot",
+    "subagents_denied",
 ]

@@ -361,6 +361,47 @@ def _react_role_models(bundle_props: Dict[str, Any], *, agent_id: Any = None) ->
     return dict(raw) if isinstance(raw, dict) else {}
 
 
+def _react_subagents_config(
+    bundle_props: Dict[str, Any], *, agent_id: Any = None
+) -> tuple[bool, Dict[str, Any]]:
+    """The admin side of subagent delegation for one agent.
+
+    ``subagents: true`` in the agent's config block puts the ability in the
+    agent's pickable inventory, default ON for that agent's users; absent =
+    not offered (default OFF). The resolution — and the picker inventory
+    entry it feeds — is owned by ``runtime.agent_inventory``; this is the
+    workflow-side accessor. Returns ``(offered, shared defaults)``.
+    """
+    from kdcube_ai_app.apps.chat.sdk.runtime.agent_inventory import react_subagents_config
+
+    return react_subagents_config(bundle_props or {}, agent_id)
+
+
+def _subagent_fork_records_from_blocks(blocks: Any) -> List[Dict[str, Any]]:
+    """Lift the structured fork records from a turn's fork marker blocks.
+
+    Written into the turn log payload as ``forks`` so conversation fetch can
+    hand clients the child conversation descriptors of the turn."""
+    from kdcube_ai_app.apps.chat.sdk.solutions.react.subagents.fork import (
+        FORK_MARKER_BLOCK_TYPE,
+    )
+
+    out: List[Dict[str, Any]] = []
+    for block in blocks or []:
+        if not isinstance(block, dict) or str(block.get("type") or "") != FORK_MARKER_BLOCK_TYPE:
+            continue
+        meta = block.get("meta") if isinstance(block.get("meta"), dict) else {}
+        child_conversation_id = str(meta.get("child_conversation_id") or "").strip()
+        if not child_conversation_id:
+            continue
+        out.append({
+            "child_conversation_id": child_conversation_id,
+            "charter_goal": str(meta.get("charter_summary") or ""),
+            "forked_at": str(block.get("ts") or ""),
+        })
+    return out
+
+
 def _react_event_source_pipeline_enabled(bundle_props: Dict[str, Any], settings: Any, *, agent_id: Any = None) -> bool:
     raw, _ = _react_config_lookup(
         bundle_props,
@@ -630,6 +671,30 @@ class BaseWorkflow():
         self.kb = kb
         self.comm = comm
         self.comm_context = comm_context
+
+        # A promoted subagent.charter turn carries its assignment in the task
+        # payload's call context. Detect it before anything derives from
+        # self.comm: the child communicator policy (one seam, comm_policy)
+        # and the task's accounting identity apply to the whole turn.
+        self._subagent_child_context = None
+        self._subagent_completion_published = False
+        # The user's subagents toggle, captured from the APPLIED selection
+        # (apply_user_agent_selection) — the admin flag is the default and
+        # the ceiling; the user decides use.
+        self._user_subagents_denied = False
+        from kdcube_ai_app.apps.chat.sdk.solutions.react.subagents.child_turn import (
+            bind_child_turn_accounting,
+            charter_turn_context,
+        )
+
+        self._subagent_child_context = charter_turn_context(comm_context)
+        if self._subagent_child_context is not None:
+            from kdcube_ai_app.apps.chat.sdk.solutions.react.subagents.comm_policy import (
+                build_subagent_child_comm,
+            )
+
+            self.comm = build_subagent_child_comm(self.comm)
+            bind_child_turn_accounting(self._subagent_child_context)
 
         self.model_service = model_service
         self.store = store
@@ -958,6 +1023,30 @@ class BaseWorkflow():
         if not runtime_ctx.memory_announce_enabled:
             runtime_ctx.memory_hotset = []
             runtime_ctx.memory_hotset_error = None
+        # Applied LAST: a subagent child turn's overrides (charter budget as
+        # max_iterations, depth, parent lane, model pick) survive every
+        # config-driven resync of this runtime ctx.
+        self._apply_subagent_child_overrides(runtime_ctx)
+
+    def _apply_subagent_child_overrides(self, runtime_ctx: Any) -> None:
+        context = getattr(self, "_subagent_child_context", None)
+        if context is None or runtime_ctx is None:
+            return
+        from kdcube_ai_app.apps.chat.sdk.solutions.react.subagents.child_turn import (
+            apply_child_runtime_overrides,
+        )
+
+        _enabled, subagent_defaults = _react_subagents_config(
+            self.bundle_props or {},
+            agent_id=getattr(runtime_ctx, "agent_id", None),
+        )
+        apply_child_runtime_overrides(
+            runtime_ctx,
+            context,
+            bundle_props=self.bundle_props or {},
+            subagent_defaults=subagent_defaults,
+            redis=self.redis,
+        )
 
     def _register_workflow_external_event_hook(self) -> None:
         ctx_browser = getattr(self, "ctx_browser", None)
@@ -2747,6 +2836,14 @@ class BaseWorkflow():
                     except Exception:
                         pass
 
+            # ── subagents toggle ───────────────────────────────────────────────
+            # Captured from the APPLIED (post-pinning) selection so a deferred
+            # change and every later config resync see the same decision;
+            # _install_subagent_spawner enforces admin-offered AND NOT denied.
+            from kdcube_ai_app.apps.chat.sdk.runtime.agent_inventory import subagents_denied
+
+            self._user_subagents_denied = subagents_denied(disabled)
+
             # ── model pick (independent of the deny-list) ─────────────────────
             # Turn-local: rebase agent_role_models from config FIRST so a
             # cleared/stale pick on a reused workflow falls back to the
@@ -3107,33 +3204,31 @@ class BaseWorkflow():
         runtime_ctx: Any,
         build_template: Dict[str, Any],
     ) -> None:
-        """Wire ``react.delegate`` for a user-facing agent.
+        """Wire ``react.delegate`` for an agent whose user has it on.
 
-        A spawner on ``runtime_ctx.subagent_spawner`` is what makes the tool
-        appear in the decision catalog; the spawner reuses THIS workflow's
-        build/persist path for the child. A subagent runtime (depth >= 1)
-        gets no spawner — a subagent completes its own charter.
+        The admin's ``subagents: true`` in the agent's config block puts the
+        ability in the inventory, default ON for users; the user's selection
+        may turn it off (helpers can raise quality AND add spend — the user
+        pays, the user decides). Effective = offered AND NOT denied. Only
+        then does the spawner land on ``runtime_ctx.subagent_spawner`` —
+        which is what puts ``react.delegate`` in the decision catalog and its
+        guidance in the instructions; turns without it carry neither. A
+        subagent runtime (depth >= 1) gets no spawner — a subagent completes
+        its own charter.
         """
         if runtime_ctx is None:
             return
         if int(getattr(runtime_ctx, "subagent_depth", 0) or 0) >= 1:
             return
         agent_id = getattr(runtime_ctx, "agent_id", None)
-        enabled_raw, _src = _react_config_lookup(
+        offered, defaults = _react_subagents_config(
             self.bundle_props or {},
-            "subagents.enabled",
             agent_id=agent_id,
         )
-        enabled = _bool_or_none(enabled_raw)
-        if enabled is False:
+        if not offered or getattr(self, "_user_subagents_denied", False):
             runtime_ctx.subagent_spawner = None
             return
-        defaults_raw, _src = _react_config_lookup(
-            self.bundle_props or {},
-            "subagents",
-            agent_id=agent_id,
-        )
-        runtime_ctx.subagent_defaults = dict(defaults_raw) if isinstance(defaults_raw, dict) else {}
+        runtime_ctx.subagent_defaults = dict(defaults)
         from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.react_subagents import (
             ReactSubagentSpawner,
         )
@@ -3209,6 +3304,12 @@ class BaseWorkflow():
                                      attachments=attachments,
                                      gate_out_class=self.gate_out_class)
         scratchpad.user_ts = self._ctx["conversation"].get("ts")
+        subagent_context = getattr(self, "_subagent_child_context", None)
+        if subagent_context is not None and not (scratchpad.user_text or "").strip():
+            # The charter is the child turn's task text (the same statement
+            # the lane's charter event folds into the timeline).
+            scratchpad.user_text = subagent_context.charter.charter_text()
+            scratchpad.short_text = _shorten(scratchpad.user_text, 1000)
         return scratchpad
 
     async def _ingest_user_attachments(self, *, attachments: list) -> list:
@@ -3510,6 +3611,11 @@ class BaseWorkflow():
                           }})
         self.logger.log_step("recv_user_message", {"len": len(scratchpad.user_text)})
 
+        # A subagent child turn's input IS the charter event folded from the
+        # lane above; the scratchpad text drives gate/title/summaries only.
+        if getattr(self, "_subagent_child_context", None) is not None:
+            event_reader_materialized_input = True
+
         if not event_reader_materialized_input:
             await self._materialize_current_turn_user_attachments(scratchpad)
             try:
@@ -3787,6 +3893,12 @@ class BaseWorkflow():
                 tokens=total_tokens,
             )
             payload = tlog.to_dict()
+            # Structured fork records (written by react.delegate as fork
+            # marker blocks) become the turn record's `forks` descriptors —
+            # what conversation fetch hands clients to inline child threads.
+            forks = _subagent_fork_records_from_blocks(contrib_log)
+            if forks:
+                payload["forks"] = forks
             # sources_pool is stored in timeline artifact, not in turn log
         except Exception:
             payload = {"turn_id": turn_id, "ts": (scratchpad.started_at or ""), "blocks": []}
@@ -3833,6 +3945,12 @@ class BaseWorkflow():
             )
         except Exception:
             self.logger.log(traceback.format_exc(), "ERROR")
+
+        # A subagent child turn reports its terminal event to the parent lane
+        # ONLY after the end-of-turn persistence above (turn log + timeline):
+        # every ref the completion names must be pullable when the parent
+        # reads it.
+        await self._publish_subagent_completion(scratchpad, ok=ok)
         # (19) done
 
         total_ms = int((time.perf_counter() - t_turn0) * 1000)
@@ -3878,6 +3996,44 @@ class BaseWorkflow():
                     _cleanup_turn_workspace(browser_ctx, self.logger)
         except Exception:
             self.logger.log(traceback.format_exc(), "ERROR")
+
+    async def _publish_subagent_completion(
+        self,
+        scratchpad: TurnScratchpad,
+        *,
+        ok: bool,
+        reason: str = "",
+    ) -> None:
+        """Author the child's terminal event to the parent lane, exactly once.
+
+        ``subagent.converged`` carries the final answer; ``subagent.failed``
+        carries the reason. Both are promotable (task payload = the parent's
+        continuation turn) and are authored — a failing child reports its
+        failure the same way a converging one reports its answer."""
+        context = getattr(self, "_subagent_child_context", None)
+        if context is None or getattr(self, "_subagent_completion_published", False):
+            return
+        self._subagent_completion_published = True
+        from kdcube_ai_app.apps.chat.sdk.solutions.react.subagents.child_turn import (
+            publish_child_completion,
+        )
+
+        final_answer = str(getattr(scratchpad, "answer", "") or "").strip()
+        try:
+            await publish_child_completion(
+                redis=self.redis,
+                runtime_ctx=self.runtime_ctx,
+                context=context,
+                child_payload=self.comm_context,
+                ok=bool(ok) and bool(final_answer),
+                final_answer=final_answer,
+                reason=reason,
+            )
+        except Exception:
+            self.logger.log(
+                "[react.subagents] completion publish failed\n" + traceback.format_exc(),
+                "ERROR",
+            )
 
     async def _handle_turn_exception(self,
                                      exc: Exception,
@@ -4085,6 +4241,19 @@ class BaseWorkflow():
                     await close_external_event_handler()
         except Exception:
             self.logger.log(traceback.format_exc(), "ERROR")
+
+        # A subagent child turn authors its failure to the parent lane — a
+        # failing child reports the same way a converging one does. A
+        # superseded child turn stays quiet: the superseding turn owns the
+        # charter now and will report for it.
+        if not isinstance(exc, ExternalEventLaneTurnSuperseded):
+            # The reason is written for the delegating AGENT (the parent),
+            # so it carries the raw failure, not the user-facing message.
+            await self._publish_subagent_completion(
+                scratchpad,
+                ok=False,
+                reason=str(exc) or error_type,
+            )
 
         # ---- rollback ----
         try:

@@ -13,7 +13,8 @@ One record per (user, REAL bundle_id, agent): ``subsystem='agents'``,
         "tools": {"<alias>": true | ["<tool_name>", ...]},
         "mcp": {"<server_id>": true | ["<tool_name>", ...]},
         "named_services": {"<namespace>": true},
-        "skills": ["<namespace>.<skill_id>", ...]
+        "skills": ["<namespace>.<skill_id>", ...],
+        "subagents": true
       },
       "model": {"provider": "<provider>", "model": "<model_id>"},
       "cache_policy": {"<change class>": "<policy>"},
@@ -72,7 +73,9 @@ def merge_selection_patch(
     ``true`` or a non-empty name list sets/replaces the denial, ``false`` /
     ``null`` / empty list removes it; keys absent from the patch keep their
     current state. Skills accept either a list (replaces the whole denied set)
-    or a ``{skill_id: bool}`` mapping (per-skill toggles).
+    or a ``{skill_id: bool}`` mapping (per-skill toggles). ``subagents`` is
+    one bare toggle: ``true`` denies delegation, ``false``/``null``
+    re-enables it, absent keeps the stored state.
     """
     out: dict[str, Any] = {}
     current = current or {}
@@ -125,6 +128,12 @@ def merge_selection_patch(
         skills = [str(s or "").strip() for s in raw_skills if str(s or "").strip()]
     if skills:
         out["skills"] = skills
+
+    subagents = bool(current.get("subagents"))
+    if "subagents" in patch:
+        subagents = bool(patch.get("subagents"))
+    if subagents:
+        out["subagents"] = True
     return out
 
 
@@ -161,6 +170,9 @@ def _merge_patch_over_patch(
                     skills[skill_id] = True
     if skills:
         out["skills"] = skills
+    for source in (base, patch):
+        if isinstance(source, Mapping) and "subagents" in source:
+            out["subagents"] = bool(source.get("subagents"))
     return out
 
 

@@ -9,12 +9,17 @@ The child reports back through the conversation event lane (the same authored
 external-event primitive user followups and consent grants ride on).
 
 Modules:
-- ``charter``  — the charter contract (goal, deliverables, budget, contribute).
-- ``events``   — authoring ``subagent.*`` events into the parent's lane.
-- ``fork``     — the fork projection (current-turn blocks + working summaries)
-                 and the charter block authored into the child timeline.
-- ``launch``   — the launch request/handle contract between the react tool and
-                 the host workflow's spawner.
+- ``charter``     — the charter contract (goal, deliverables, budget, contribute).
+- ``events``      — authoring ``subagent.*`` events into a conversation lane.
+- ``fork``        — the fork projection (current-turn blocks + working summaries)
+                    and the fork marker block on the parent timeline.
+- ``launch``      — the launch request/handle contract between the react tool
+                    and the host workflow's spawner.
+- ``schedule``    — the child as a fair-scheduled turn: seed persist, the
+                    promotable charter/completion task payloads, lane wakeups.
+- ``child_turn``  — the child side: assignment detection on a promoted turn,
+                    runtime/accounting overrides, the terminal report.
+- ``comm_policy`` — the child communicator policy (chosen in one place).
 """
 
 from kdcube_ai_app.apps.chat.sdk.solutions.react.subagents.charter import (

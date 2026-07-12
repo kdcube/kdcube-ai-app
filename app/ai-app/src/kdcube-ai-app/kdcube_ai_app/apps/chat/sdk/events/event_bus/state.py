@@ -206,6 +206,27 @@ class EventLaneState:
         return timestamp_lte(ts, self.last_processed_event_timestamp)
 
 
+def wake_ignore_reason(event: Any, state: "EventLaneState") -> str:
+    """Promote-only-if-unconsumed: why a lane wakeup for ``event`` must be
+    acked instead of promoted. ``""`` means promote.
+
+    A live turn that folded the event recorded consumption on the event
+    itself (``consumed_at``, via ``mark_consumed_up_to``) and advanced the
+    lane's processed-event cursors — either record is enough to ack, so a
+    promotable event starts at most one turn (exactly-once)."""
+    if getattr(event, "consumed_at", None) is not None:
+        return "event_already_consumed"
+    if getattr(event, "promoted_at", None) is not None:
+        return "event_already_promoted"
+    if getattr(event, "failed_at", None) is not None:
+        return "event_failed"
+    if timestamp_lte(event_timestamp(event), state.last_processed_reactive_event_timestamp):
+        return "wake_already_processed"
+    if state.event_was_processed(event):
+        return "wake_already_processed"
+    return ""
+
+
 class RedisEventLaneStateTable:
     """Redis-backed event-lane coordination record.
 

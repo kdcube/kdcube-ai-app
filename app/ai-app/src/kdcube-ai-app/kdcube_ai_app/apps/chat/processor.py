@@ -69,7 +69,7 @@ from kdcube_ai_app.apps.chat.sdk.protocol import (
 from kdcube_ai_app.apps.chat.sdk.event_identity import DEFAULT_REACT_AGENT_ID, normalize_agent_id, safe_event_lane_part
 from kdcube_ai_app.apps.chat.sdk.events.event_bus import ExternalEventLaneWakeIgnored
 from kdcube_ai_app.apps.chat.sdk.events.event_bus.orchestrator import ConversationEventBusOrchestrator
-from kdcube_ai_app.apps.chat.sdk.events.event_bus.state import event_timestamp, timestamp_lte
+from kdcube_ai_app.apps.chat.sdk.events.event_bus.state import event_timestamp, wake_ignore_reason
 from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers.discovery import (
     RedisNamedServiceDiscovery,
     bind_named_service_discovery,
@@ -1226,8 +1226,12 @@ class EnhancedChatRequestProcessor:
         orchestrator = ConversationEventBusOrchestrator.for_source(source)
         wake_ts = event_timestamp(event)
         state = await orchestrator.state()
-        if timestamp_lte(wake_ts, state.last_processed_reactive_event_timestamp):
-            raise ExternalEventLaneWakeIgnored("wake_already_processed")
+        # Promote only if unconsumed (exactly-once): a live turn that folded
+        # the event already recorded consumption on it (mark_consumed_up_to)
+        # or advanced the lane's processed-event cursors; ack instead.
+        ignore_reason = wake_ignore_reason(event, state)
+        if ignore_reason:
+            raise ExternalEventLaneWakeIgnored(ignore_reason)
         payload = event.task_payload_model()
         decision = await orchestrator.schedule_consumer_from_wake(wake_event_timestamp=wake_ts)
         if not decision.scheduled:

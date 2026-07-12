@@ -28,18 +28,21 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.tools.common import (
 TOOL_SPEC = {
     "id": "react.delegate",
     "purpose": (
-        "Spawn a subagent: a full ReAct agent working a scoped assignment in its own "
-        "conversation, silently and in parallel with you. The subagent opens with a fork "
-        "of your visible context (this conversation's working summaries plus your "
-        "in-progress turn) and your charter as its task; it inherits your tool and skill "
-        "configuration. The call returns immediately with the child conversation ref; a "
-        "fork marker block records the spawn on your timeline. The subagent's reports "
-        "arrive on this conversation's event lane as subagent.contribution events and a "
-        "final subagent.converged (or subagent.failed) event; contributed refs are "
-        "pullable with react.pull as written. Delegate work that is self-contained and "
-        "worth its own budget: a sizable research or drafting assignment you would "
-        "otherwise interleave with your main thread. A subagent cannot spawn subagents. "
-        "Each subagent round is a full model call billed like yours: prefer one "
+        "Delegate a scoped assignment to a subagent: a full ReAct agent scheduled as "
+        "its own turn in its own conversation, in parallel with you. The subagent opens "
+        "with a fork of your visible context (this conversation's working summaries "
+        "plus your in-progress turn) and your charter as its task; it inherits your "
+        "tool and skill configuration. The call returns immediately with the child "
+        "conversation ref; a fork marker block records the spawn on your timeline, and "
+        "you continue your own work — finish your turn whenever you are done, even with "
+        "subagents still running. The subagent's reports arrive on this conversation's "
+        "event lane as subagent.contribution events and a final subagent.converged (or "
+        "subagent.failed) event; if you have already finished, the final event starts a "
+        "follow-up turn that delivers the outcome. Contributed refs are pullable with "
+        "react.pull as written. Delegate work that is self-contained and worth its own "
+        "budget: a sizable research or drafting assignment you would otherwise "
+        "interleave with your main thread. A subagent cannot spawn subagents. Each "
+        "subagent round is a full model call billed like yours: prefer one "
         "well-chartered subagent over many small ones, and prefer doing quick work "
         "yourself."
     ),
@@ -61,7 +64,7 @@ TOOL_SPEC = {
     },
     "returns": (
         "launch ticket {child_conversation_id, child_conversation_ref, child_turn_id, "
-        "status} — the subagent keeps working after this returns"
+        "status} — the subagent runs as its own scheduled turn after this returns"
     ),
 }
 
@@ -165,6 +168,16 @@ async def handle_react_delegate(
                 log.log(f"[react.delegate] spawn failed: {traceback.format_exc()}", level="ERROR")
         except Exception:
             pass
+        from kdcube_ai_app.apps.chat.sdk.solutions.react.subagents.schedule import (
+            SubagentEnqueueRejected,
+        )
+
+        if isinstance(exc, SubagentEnqueueRejected):
+            return _fail(
+                "delegate_queue_saturated",
+                f"The task queue declined the subagent right now ({exc.reason}). "
+                "Continue with your own work and delegate again later if still worthwhile.",
+            )
         return _fail("delegate_spawn_failed", f"Subagent spawn failed: {exc}")
 
     marker = build_fork_marker_block(

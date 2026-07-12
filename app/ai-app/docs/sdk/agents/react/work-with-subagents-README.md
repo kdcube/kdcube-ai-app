@@ -14,33 +14,81 @@ see_also:
 # Work With Subagents
 
 A subagent is a full ReAct agent that works a scoped assignment in its OWN
-conversation, opened from a parent turn. The parent stays interactive; the
-subagent runs in the background under the same tenant/project/user, inherits
-the parent's tool and skill configuration, and reports back through the
-parent conversation's event lane. Phase 1 ships the complete spawn/report
-loop with silent execution (nothing the subagent does streams to the user).
+conversation, opened from a parent turn. The child is a first-class turn
+submitted for fair scheduling on the cluster — the same paradigm as async
+webhook ingress — so gates, throttling, per-user capacity, and accounting
+apply to it exactly as to any submitted turn; five fanned-out subagents are
+five turns on the queue, fairly interleaved. The parent stays interactive
+and fully unpinned: delegate is a kickoff, and the parent may finish its
+turn with children still running. The child runs under the same
+tenant/project/user, inherits the parent's tool and skill configuration,
+and reports back through the parent conversation's event lane; its terminal
+report is promotable, so a finished parent picks the outcome up as a
+continuation turn.
 
 ## The Contract In One Pass
 
 ```
 PARENT CONVERSATION                    CHILD CONVERSATION (fresh id)
 
-turn ...                               (seeded before the child starts)
+turn ...                               (seeded at delegate time)
   react.delegate(charter) ----------->   [fork: working summaries +
   fork marker block on timeline           parent's in-progress turn]
-  ... parent keeps working ...            [SUBAGENT CHARTER] event
-                                          (author = agent:<parent ref>)
+  ... parent keeps working,             [SUBAGENT CHARTER] event with a
+  finishes whenever it is done ...        task payload — its promotion IS
+                                          the kickoff: the child turn is
+                                          fair-scheduled like any
+                                          reactive-event turn
   <---- subagent.contribution events    react rounds under the charter
         (live fold or next-turn           budget; react.contribute sends
         context)                          partial results back
-  <---- subagent.converged / .failed    child timeline + workspace persist
+  <---- subagent.converged / .failed    child persists (completion blocks,
+        with a task payload: a live       workspace, timeline), THEN
+        parent turn folds it; an idle     authors the terminal event
+        parent lane promotes it into
+        a continuation turn that
+        responds to the user
 ```
+
+## Availability And The User's Decision
+
+Delegation follows the capabilities model (ceiling → pick → enforcement):
+the admin sets availability and the default, the user decides use. In the
+agent's config block declare:
+
+```yaml
+react:
+  agents:
+    main:
+      subagents: true
+  subagents:            # shared defaults for opted-in agents
+    model: claude-haiku-4-5
+```
+
+`subagents: true` puts the ability in the agent's pickable inventory,
+**default ON** for users. Delegation can raise the quality of hard tasks,
+and every delegation is additional model spend on the user's account — the
+user pays, so the user decides: the capability picker exposes the toggle
+(`agent_capabilities` carries the `subagents` inventory entry with exactly
+that trade-off as its description; `agent_selection_update` stores the
+choice as `subagents: true` in the deny map). It is the same principle as
+the per-user model pick — the admin declares what is allowed, the user picks
+their own price/quality point. See
+[Per-User Agent Capabilities](../../solutions/user-settings/capabilities-README.md).
+
+A turn where delegation is on (offered and not denied) carries
+`react.delegate` in the tool catalog and the delegation guidance in the
+instructions; every other turn's catalog and instructions are assembled
+without them. With the flag absent (or `false`) the ability is outside the
+inventory entirely — users cannot enable it. The bundle-level
+`react.subagents:` block keeps serving the shared defaults (for example the
+child's default model), and a bundle-level `react.subagents.enabled: true`
+offers it for the bundle's agents as a group; the per-agent flag decides
+when both are present.
 
 ## Spawn: react.delegate
 
-`react.delegate` is available to an agent whose runtime carries a spawner
-(the host workflow wires it; `react.subagents.enabled: false` in the agent's
-bundle config removes it). Arguments:
+`react.delegate` is available on turns where delegation is on. Arguments:
 
 - `charter` -- the assignment contract:
   - `goal` (required): what the subagent must achieve, self-contained. The
@@ -58,14 +106,36 @@ bundle config removes it). Arguments:
   parent's role models.
 
 The tool returns immediately with a launch ticket
-(`child_conversation_id`, `child_conversation_ref`, `child_turn_id`) and
-records a `react.subagent.fork` marker block on the parent timeline -- the
-parent model's durable knowledge of what it spawned, with the charter
-summary and budget.
+(`child_conversation_id`, `child_conversation_ref`, `child_turn_id`,
+`status: scheduled`) and records a `react.subagent.fork` marker block on the
+parent timeline -- the parent model's durable knowledge of what it spawned,
+with the charter summary and budget. At turn end the marker blocks become
+structured `forks: [{child_conversation_id, charter_goal, forked_at}]`
+descriptors on the parent turn's stored record (the turn log), and the child
+conversation's stored timeline carries the matching
+`forked_from: {conversation_id, turn_id}` backref -- both sides queryable, so
+conversation fetch can reconstruct the fork relationship on reload.
 
-Guards: a subagent cannot spawn subagents (depth 1 in phase 1; the tool
-refuses with `delegate_depth_limit` and the child's catalog carries no
-`react.delegate` at all). A spawn failure surfaces as the tool result
+Delegate itself does exactly the work that needs the parent's in-memory,
+not-yet-persisted timeline, then returns:
+
+1. the fork projection is persisted as the child conversation's seed
+   timeline (durable, as-of delegate time -- the seed travels via the
+   persist, never via the queue payload, so queue-time staleness is correct
+   by construction);
+2. the `[SUBAGENT CHARTER]` event is authored onto the child's lane WITH a
+   task payload, atomically with the processor wakeup through the gateway's
+   admission (the same atomic enqueue chat ingress uses), under a session
+   derived from the parent's user identity with the delegate source marker.
+   The promotion is the kickoff: the child's turn runs through the same
+   admission, gates, and fair scheduling as any submitted turn, on whatever
+   worker claims it.
+
+Guards: a subagent cannot spawn subagents (the tool refuses with
+`delegate_depth_limit`, and the child's catalog carries no `react.delegate`).
+A backpressure rejection fails the delegate with the gateway's reason
+(`delegate_queue_saturated`) and removes the seed -- a rejected delegate
+leaves no child state. A spawn failure surfaces as the tool result
 (`delegate_spawn_failed`), and a child that dies later authors
 `subagent.failed` -- failures are always authored, never silent.
 
@@ -80,10 +150,19 @@ fork primitive -- see
 
 After the fork, the charter arrives as an authored event on the child's own
 event lane (`payload.event.type = subagent.charter`, author
-`agent:conv_<parent id>/<parent turn>`), folded into the child's first turn
-by the ordinary external-event fold. The charter text names the goal,
+`agent:conv_<parent id>/<parent turn>`, targeted at the child turn id minted
+at delegate time). When the promoted child turn runs, the ordinary timeline
+load finds the seed as prior history and the external-event fold
+materializes the charter inside the turn. The charter text names the goal,
 deliverables, budget, and the contribute expectation; it is the child's
 task, while the forked blocks above it are context.
+
+The child turn itself runs with the charter's overrides: `max_rounds` IS the
+iteration budget (reactive iteration credit is off, so nothing extends it),
+the depth guard and parent lane address are wired for `react.contribute`,
+and the child's session/actor derive from the parent's user identity with
+the delegate source marker (`react.subagent.delegate`) -- authored by the
+agent, owned by the same user.
 
 ## Report Back: react.contribute And subagent.* Events
 
@@ -105,11 +184,32 @@ iteration credit. A LIVE parent turn folds it mid-flight through the lane
 watcher (fold totality renders it and advances the cursor); an idle parent
 receives it as context at its next turn.
 
-At child completion the runtime authors one terminal event the same way:
+At child completion — AFTER the child's end-of-turn persistence (completion
+blocks, workspace, timeline), so every ref the report names is pullable —
+the runtime authors one terminal event:
 
 - `subagent.converged` -- carries the child's final answer.
 - `subagent.failed` -- carries the failure reason (budget exhausted without
   an answer, or an exception).
+
+The terminal events carry a task payload: the parent's continuation turn
+(fold the completion, pull the deliverable refs, respond to the user). Two
+consumption modes, exactly once:
+
+- a LIVE parent turn folds the event through the lane watcher — fold
+  totality records the consumption, and the promoter acks the wakeup;
+- an idle parent lane promotes it — the continuation turn is fair-scheduled
+  like any reactive-event turn and delivers the outcome to the user.
+
+A completion is never lost: the lane publish is unconditional, and the
+wakeup then goes through the gateway's admission like every turn. A wakeup
+the admission declines leaves the completion resting in the lane, where the
+parent's next turn folds it — degraded liveness, zero loss.
+
+`reactive: false` stays universal across every `subagent.*` event: none of
+them buys iteration credit inside a live turn. Promotability-when-idle is
+the separate axis, and the completions (plus the charter, as the child's
+inception) carry it; contributions stay passive.
 
 ## Silent-v1 Visibility
 

@@ -4,7 +4,7 @@ title: "Per-User Agent Capabilities"
 summary: "How users control what an agent may use for them: the admin inventory as the ceiling, per-user selection that narrows within it, runtime narrowing that makes denied capabilities uncallable, the capability picker's three shells (composer popover, expanded modal, served `capabilities` widget), and the service cards realms self-describe into."
 status: current
 tags: ["sdk", "solutions", "user-settings", "capabilities", "agent-selection", "named-services", "picker", "widget"]
-updated_at: 2026-07-09
+updated_at: 2026-07-12
 keywords:
   [
     "agent_capabilities",
@@ -25,6 +25,7 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/delegated-accounts/delegated-accounts-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/providers-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/context-caching-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/work-with-subagents-README.md
 ---
 # Per-User Agent Capabilities
 
@@ -78,10 +79,23 @@ config source is owned by
 | Namespace | `named_services: {<ns>: true}` | The realm leaves the roster and dispatch entirely. |
 | Namespace operation | `named_services: {<ns>: ["object.search", ...]}` | The operation is rejected at named-service dispatch for this user's turns. |
 | Named action | `named_services: {<ns>: ["object.action.<name>"]}` | Exactly that action name is rejected at dispatch; sibling actions still ride `object.action`. |
+| Subagents | `subagents: true` | Delegation leaves the agent's turns: the spawner is not installed, `react.delegate` is absent from the catalog, and the delegation guidance is absent from the instructions. |
 
 Deny keys clamp on write against the live inventory: operations clamp to the
-configuration's allowed set, actions to the realm's declared action names —
-a stored selection never references anything outside the grant.
+configuration's allowed set, actions to the realm's declared action names,
+the subagents toggle to the ability actually being offered — a stored
+selection never references anything outside the grant.
+
+Most of the pickable inventory comes from what the admin granted under
+`surfaces.as_consumer.agents.<id>`. Subagent delegation joins it from the
+react agent config: `react: agents: <id>: subagents: true` puts the ability
+in the inventory, default ON for users (absent = not offered; see
+[Work With Subagents](../../agents/react/work-with-subagents-README.md)).
+The catalog exposes it as the `subagents` entry with its picker copy —
+helpers can raise the quality of hard tasks, and each helper runs on
+additional model calls billed to the user's account, so the paying user
+decides — the same principle as the model pick, where the admin declares the
+allowed list and the user picks their own price/quality point.
 
 ## The picker: one body, three shells
 

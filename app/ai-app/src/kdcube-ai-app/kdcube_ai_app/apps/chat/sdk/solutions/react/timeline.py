@@ -226,6 +226,7 @@ def build_timeline_payload(
     agent_selection_snapshot: Optional[Dict[str, Any]] = None,
     last_known_feedback_ts: Optional[str] = None,
     include_sources_pool: bool = True,
+    forked_from: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     last_activity_at = _tail_ts(blocks or [])
     return {
@@ -236,6 +237,9 @@ def build_timeline_payload(
         "turn_ids": extract_turn_ids_from_blocks(blocks or []),
         "conversation_title": conversation_title or "",
         "conversation_started_at": conversation_started_at or "",
+        # Fork backref: {conversation_id, turn_id} of the conversation/turn
+        # this conversation was forked from (subagent children carry it).
+        "forked_from": dict(forked_from) if isinstance(forked_from, dict) and forked_from else None,
         "last_activity_at": last_activity_at or "",
         "last_external_event_id": last_external_event_id or "",
         "last_external_event_seq": last_external_event_seq,
@@ -295,6 +299,9 @@ def parse_timeline_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         last_known_feedback_ts = last_known_feedback_ts.strip()
     else:
         last_known_feedback_ts = ""
+    forked_from = payload.get("forked_from")
+    if not isinstance(forked_from, dict) or not forked_from:
+        forked_from = None
     return {
         "blocks": blocks,
         "sources_pool": sources_pool,
@@ -311,6 +318,7 @@ def parse_timeline_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         "cache_last_ttl_seconds": cache_last_ttl_seconds,
         "agent_selection_snapshot": agent_selection_snapshot,
         "last_known_feedback_ts": last_known_feedback_ts,
+        "forked_from": forked_from,
     }
 
 
@@ -1806,6 +1814,10 @@ class Timeline:
     # cache-colding deltas; persists with the conversation.
     agent_selection_snapshot: Optional[Dict[str, Any]] = None
     last_known_feedback_ts: str = ""
+    # Fork backref: {conversation_id, turn_id} this conversation was forked
+    # from. Seeded at fork-persist time, carried on every later persist, and
+    # stamped onto the timeline artifact as a queryable field + index tag.
+    forked_from: Optional[Dict[str, Any]] = None
 
     def __post_init__(self) -> None:
         self.blocks = list(self.blocks or [])
@@ -1879,6 +1891,7 @@ class Timeline:
             cache_last_ttl_seconds=parsed.get("cache_last_ttl_seconds"),
             agent_selection_snapshot=parsed.get("agent_selection_snapshot"),
             last_known_feedback_ts=parsed.get("last_known_feedback_ts") or "",
+            forked_from=parsed.get("forked_from"),
         )
         cursor = parsed.get("last_rendered_event_cursor")
         if isinstance(cursor, TimelineEventCursor):
@@ -1898,6 +1911,7 @@ class Timeline:
             cache_last_ttl_seconds=self.cache_last_ttl_seconds,
             agent_selection_snapshot=self.agent_selection_snapshot,
             last_known_feedback_ts=self.last_known_feedback_ts,
+            forked_from=self.forked_from,
         )
 
     def _blocks_for_persist(self) -> List[Dict[str, Any]]:
@@ -1927,6 +1941,7 @@ class Timeline:
                 agent_selection_snapshot=self.agent_selection_snapshot,
                 last_known_feedback_ts=self.last_known_feedback_ts,
                 include_sources_pool=True,
+                forked_from=self.forked_from,
             )
             out_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         except Exception:
@@ -7673,9 +7688,14 @@ class Timeline:
             agent_selection_snapshot=self.agent_selection_snapshot,
             last_known_feedback_ts=self.last_known_feedback_ts,
             include_sources_pool=True,
+            forked_from=self.forked_from,
         )
         turn_ids = payload.get("turn_ids") or []
         extra_tags = [f"turn:{tid}" for tid in turn_ids if isinstance(tid, str) and tid]
+        forked_from = payload.get("forked_from") if isinstance(payload.get("forked_from"), dict) else None
+        if forked_from and forked_from.get("conversation_id"):
+            # Queryable backref for fork reconstruction (conversation fetch).
+            extra_tags.append(f"forked_from:{forked_from.get('conversation_id')}")
         # Keep index text minimal to avoid bloating conv_messages.text.
         compact_text = json.dumps(
             {
@@ -7686,6 +7706,7 @@ class Timeline:
                 "sources_pool_count": len(self.sources_pool or []),
                 "sources_pool": _compact_sources_pool_for_index(self.sources_pool or []),
                 "turn_ids": turn_ids,
+                "forked_from": forked_from,
             },
             ensure_ascii=False,
         )

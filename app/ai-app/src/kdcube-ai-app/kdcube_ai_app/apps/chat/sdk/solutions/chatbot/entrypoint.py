@@ -640,9 +640,11 @@ class BaseEntrypoint:
         """Merge-write partial selection toggles, clamped to the live inventory.
 
         Body: ``{"data": {"agent": "main", "disabled": {"tools": {"web_tools": true},
-        "mcp": {}, "named_services": {}, "skills": [...]}}}``. Per-key toggles:
-        ``true``/name-list disables, ``false`` re-enables; keys absent from the
-        patch keep their state. ``replace: true`` swaps the whole record.
+        "mcp": {}, "named_services": {}, "skills": [...], "subagents": true}}}``.
+        Per-key toggles: ``true``/name-list disables, ``false`` re-enables; keys
+        absent from the patch keep their state. ``replace: true`` swaps the
+        whole record. ``subagents`` is the one bare toggle (delegation on/off
+        for this user; storable only while the admin inventory offers it).
 
         The single model pick rides the same body: ``"model": {"provider": …,
         "model": …}`` sets it (clamped to the agent's ``supported_models``),

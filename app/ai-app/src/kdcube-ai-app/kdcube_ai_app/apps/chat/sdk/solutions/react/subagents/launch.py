@@ -7,8 +7,9 @@ The react runtime never constructs a child agent itself: the host workflow
 (the layer that builds react agents) injects a spawner onto
 ``runtime_ctx.subagent_spawner``. The tool handler builds a
 ``SubagentLaunchRequest`` and awaits ``spawner.spawn(request)``, which
-returns a ``SubagentLaunchTicket`` immediately — the child runs on in the
-background.
+returns a ``SubagentLaunchTicket`` immediately — the child conversation is
+seeded and its charter turn is scheduled on the cluster; the delegating
+turn proceeds fully unpinned.
 """
 
 from __future__ import annotations
@@ -39,7 +40,7 @@ class SubagentLaunchRequest:
 class SubagentLaunchTicket:
     child_conversation_id: str
     child_turn_id: str
-    status: str = "started"
+    status: str = "scheduled"
     error: str = ""
 
     def to_dict(self) -> Dict[str, Any]:

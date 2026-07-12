@@ -7,15 +7,24 @@ The pipe is the sanctioned inception primitive consent grants ride on: a
 ``ConversationExternalEvent`` published into the per-conversation lane via
 ``RedisConversationExternalEventSource.publish``. The transport ``kind`` is
 uniformly ``"external_event"``; the semantic type rides nested in
-``payload.event.type``. Passive by construction, exactly like the consent
-grant: published with ``task_payload=None`` (so the stored task envelope
-carries no request to run) and ``reactive: False`` in the nested event (so a
-live turn folds it without buying iteration credit) — a subagent event can
-never start anything resembling a turn by itself. A LIVE parent turn folds
-it through the lane watcher; otherwise it rests in the lane as passive
-context the next turn folds in. The react timeline fold renders every folded
-event and advances the lane cursor (fold totality), so no ``subagent.*``
-type needs bespoke render support.
+``payload.event.type``.
+
+Every ``subagent.*`` event keeps ``reactive: False`` in the nested event: a
+live turn folds it without buying iteration credit. Promotability is the
+separate axis, selected per event by the ``task_payload``:
+
+- ``task_payload=None`` — passive (``subagent.contribution``): the promoter
+  acks it; a LIVE turn folds it through the lane watcher, an idle lane holds
+  it as context the next turn folds in.
+- ``task_payload`` set — promotable (the charter on the child lane, the
+  ``subagent.converged``/``subagent.failed`` completions on the parent
+  lane): when no turn is live on the lane, the promoter starts the described
+  turn; a live turn that folds it first consumes it, and the promoter acks
+  instead (exactly-once).
+
+The react timeline fold renders every folded event and advances the lane
+cursor (fold totality), so no ``subagent.*`` type needs bespoke render
+support.
 """
 
 from __future__ import annotations
@@ -24,6 +33,8 @@ import datetime as _dt
 import logging
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
+
+from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import qualify_conversation_ref
 
 LOGGER = logging.getLogger("kdcube.react.subagents")
 
@@ -99,7 +110,7 @@ def _utc_iso() -> str:
     return _dt.datetime.now(_dt.timezone.utc).isoformat().replace("+00:00", "Z")
 
 
-async def publish_subagent_event(
+async def prepare_subagent_event(
     *,
     lane_source: Any,
     semantic_type: str,
@@ -107,18 +118,18 @@ async def publish_subagent_event(
     facts: Optional[Dict[str, Any]] = None,
     author: str = "",
     target_turn_id: Optional[str] = None,
+    task_payload: Optional[Dict[str, Any]] = None,
 ) -> Any:
-    """Author one ``subagent.*`` event into ``lane_source``'s conversation.
+    """Build one ``subagent.*`` event, prepared but not yet in the lane.
 
-    ``facts`` is the structured body (child conversation ref, contributed
-    refs, charter summary...). It lands both beside the text in the nested
-    model-facing event body and at the payload top level for programmatic
-    consumers. The published event carries ``task_payload=None`` — passive by
-    construction (permanently unpromotable).
+    Used by the atomic scheduling path: the gateway's atomic enqueue script
+    writes the lane occurrence itself, all-or-nothing with the processor
+    wakeup, so the event must arrive prepared rather than published.
+    :func:`publish_subagent_event` is the direct-publish counterpart.
     """
     facts = dict(facts or {})
     event_ts = _utc_iso()
-    event = await lane_source.publish(
+    return await lane_source.prepare_event(
         kind=SUBAGENT_EVENT_TRANSPORT_KIND,
         source=author or SUBAGENT_EVENT_SOURCE_ID,
         event_source_id=SUBAGENT_EVENT_SOURCE_ID,
@@ -144,10 +155,47 @@ async def publish_subagent_event(
             },
             **facts,
         },
-        # Passive by construction: no task payload means the promoter acks
-        # the event; it can never start a turn.
-        task_payload=None,
+        task_payload=task_payload,
     )
+
+
+async def publish_subagent_event(
+    *,
+    lane_source: Any,
+    semantic_type: str,
+    text: str,
+    facts: Optional[Dict[str, Any]] = None,
+    author: str = "",
+    target_turn_id: Optional[str] = None,
+    task_payload: Optional[Dict[str, Any]] = None,
+) -> Any:
+    """Author one ``subagent.*`` event into ``lane_source``'s conversation.
+
+    ``facts`` is the structured body (child conversation ref, contributed
+    refs, charter summary...). It lands both beside the text in the nested
+    model-facing event body and at the payload top level for programmatic
+    consumers.
+
+    ``task_payload`` selects the event's promotability axis. ``None`` (the
+    default) authors a passive event: the promoter acks it, a live turn folds
+    it, it can never start a turn (``subagent.contribution`` stays here).
+    A non-None task payload (an ``ExternalEventPayload``-shaped dict) makes
+    the event promotable: when no turn is live on the lane, the promoter
+    starts the described turn from it (the charter on the child lane, the
+    completions on the parent lane). Both kinds keep ``reactive: False`` in
+    the nested event — a subagent event never buys iteration credit inside a
+    live turn; promotability-when-idle is the separate axis.
+    """
+    event = await prepare_subagent_event(
+        lane_source=lane_source,
+        semantic_type=semantic_type,
+        text=text,
+        facts=facts,
+        author=author,
+        target_turn_id=target_turn_id,
+        task_payload=task_payload,
+    )
+    await lane_source.publish_prepared_events([event])
     LOGGER.info(
         "[react.subagents] event authored: conversation=%s type=%s author=%s seq=%s",
         getattr(lane_source, "conversation_id", ""),
@@ -161,24 +209,20 @@ async def publish_subagent_event(
 def contribution_refs_for_parent(
     *, refs: List[str], child_conversation_id: str
 ) -> List[str]:
-    """Conversation-qualify the child's logical refs for the parent.
+    """Return the child's logical refs carrying their home conversation scope.
 
-    Bare react refs are turn-qualified (``conv:fi:turn_x...``); resolvers
-    treat them as belonging to the CURRENT conversation. Inserting the
-    ``conv_<child id>.`` scope segment right after the namespace makes the
-    same ref resolvable from the parent conversation (react.pull routes the
-    lookup by the embedded conversation id).
+    Each conversation-scoped ref crosses to the parent with the
+    ``conv_<child id>.`` segment right after its namespace, so resolvers in the
+    parent conversation route the lookup to the child's store (react.pull
+    routes by the embedded conversation id). Delegates to the canonical
+    :func:`qualify_conversation_ref`, so refs that already carry a scope
+    segment keep it (idempotent) and non-conversation refs pass through
+    unchanged.
     """
     out: List[str] = []
-    conv_scope = f"conv_{child_conversation_id}."
     for raw in refs or []:
         ref = str(raw or "").strip()
         if not ref:
             continue
-        if ref.startswith("conv:") and conv_scope not in ref:
-            ns, _, rest = ref.partition(":")
-            kind, _, tail = rest.partition(":")
-            if kind and tail and not tail.startswith("conv_"):
-                ref = f"{ns}:{kind}:{conv_scope[:-1]}.{tail}"
-        out.append(ref)
+        out.append(qualify_conversation_ref(ref, child_conversation_id))
     return out

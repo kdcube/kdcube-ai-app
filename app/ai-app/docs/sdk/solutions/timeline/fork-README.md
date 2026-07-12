@@ -16,7 +16,7 @@ A fork seeds a NEW conversation with a projection copy of an existing one:
 the source conversation's working summaries plus its in-progress turn become
 the new conversation's pre-existing history. The copy is by value -- two
 timelines share no state afterward; each persists and compacts on its own.
-Phase 1's consumer is the subagent spawn
+The primary consumer is the subagent spawn
 ([work-with-subagents-README.md](../../agents/react/work-with-subagents-README.md)),
 and the primitive itself is agnostic of who reads the fork.
 
@@ -45,7 +45,11 @@ The seed is persisted as the new conversation's timeline artifact
 (`conv.timeline.v1`) BEFORE the new conversation's first turn, so the
 ordinary `load_timeline` path finds it as prior history, sets the
 current-turn offset after it, and appends the new turn header -- no special
-load mode exists.
+load mode exists. The persisted timeline carries a queryable
+`forked_from: {conversation_id, turn_id}` backref (also stamped as a
+`forked_from:<conversation id>` index tag), and the source turn's stored
+record carries the matching `forks` descriptors -- both directions of the
+fork relationship live in the store, where conversation fetch reads them.
 
 ## Ref Semantics
 
@@ -72,12 +76,15 @@ Resolution in the child:
 ## The Charter As First Event
 
 The fork carries context; the assignment arrives separately, as the new
-conversation's first authored event. The spawner publishes it onto the new
-conversation's own event lane (transport kind `external_event`, semantic
-type `subagent.charter` nested in `payload.event.type`, author
-`agent:conv_<source id>/<source turn>`, targeted at the new turn) before the
-timeline load; the ordinary external-event fold then materializes it inside
-the first turn. Keeping charter and fork separate preserves the reading
-order the child needs -- history first, task last -- and gives the charter the
-full event-lane provenance (sequence, author, timestamp) instead of being
-one more copied block.
+conversation's first authored event. At delegate time the spawner publishes
+it onto the new conversation's own event lane (transport kind
+`external_event`, semantic type `subagent.charter` nested in
+`payload.event.type`, author `agent:conv_<source id>/<source turn>`,
+targeted at the new conversation's first turn) WITH a task payload — the
+charter's promotion is what schedules and runs that first turn. When the
+promoted turn runs, the ordinary timeline load finds the seed as prior
+history and the external-event fold materializes the charter inside the
+turn. Keeping charter and fork separate preserves the reading order the
+child needs -- history first, task last -- and gives the charter the full
+event-lane provenance (sequence, author, timestamp) instead of being one
+more copied block.

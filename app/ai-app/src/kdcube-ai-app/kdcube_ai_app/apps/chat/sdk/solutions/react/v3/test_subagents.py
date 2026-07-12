@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -15,14 +16,31 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.subagents.charter import (
     SubagentCharter,
     parse_charter,
 )
+from kdcube_ai_app.apps.chat.sdk.events.event_bus.state import (
+    EventLaneState,
+    wake_ignore_reason,
+)
+from kdcube_ai_app.apps.chat.sdk.solutions.react.subagents.child_turn import (
+    SUBAGENT_ACCOUNTING_AGENT,
+    SubagentChildTurnContext,
+    apply_child_runtime_overrides,
+    bind_child_turn_accounting,
+    charter_turn_context,
+    publish_child_completion,
+)
 from kdcube_ai_app.apps.chat.sdk.solutions.react.subagents.events import (
     SUBAGENT_CHARTER_EVENT_KIND,
     SUBAGENT_CONTRIBUTION_EVENT_KIND,
+    SUBAGENT_CONVERGED_EVENT_KIND,
     SUBAGENT_EVENT_SOURCE_ID,
     SUBAGENT_FAILED_EVENT_KIND,
     ParentLaneAddress,
     contribution_refs_for_parent,
     publish_subagent_event,
+)
+from kdcube_ai_app.apps.chat.sdk.solutions.react.subagents.schedule import (
+    SUBAGENT_CALL_CONTEXT_KEY,
+    build_child_task_payload,
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.react.subagents.fork import (
     FORK_HEADER_BLOCK_TYPE,
@@ -88,6 +106,17 @@ class _FakeRedis:
     async def delete(self, key):
         self._kv.pop(key, None)
 
+    async def rpush(self, key, value):
+        self._kv.setdefault(key, [])
+        self._kv[key].append(value)
+        return len(self._kv[key])
+
+    async def lrange(self, key, start, stop):
+        items = list(self._kv.get(key) or [])
+        if stop == -1:
+            return items[start:]
+        return items[start:stop + 1]
+
 
 class _FakeCtxClient:
     """Minimal ctx client: timeline artifacts round-trip through memory."""
@@ -99,10 +128,24 @@ class _FakeCtxClient:
     def __init__(self):
         self.store = self._Store()
         self.saved = []  # (kind, conversation_id, content)
+        self.deleted_turns = []
 
     async def save_artifact(self, *, kind, conversation_id, content, **kwargs):
-        self.saved.append({"kind": kind, "conversation_id": conversation_id, "content": content})
+        self.saved.append({
+            "kind": kind,
+            "conversation_id": conversation_id,
+            "content": content,
+            "turn_id": kwargs.get("turn_id"),
+        })
         return {"ok": True}
+
+    async def delete_turn(self, *, conversation_id, turn_id, **kwargs):
+        self.deleted_turns.append({"conversation_id": conversation_id, "turn_id": turn_id, **kwargs})
+        self.saved = [
+            row for row in self.saved
+            if not (row["conversation_id"] == conversation_id and row.get("turn_id") == turn_id)
+        ]
+        return {"deleted_messages": 1}
 
     async def recent(self, *, kinds=(), conversation_id=None, **kwargs):
         wanted = {str(k).split(":", 1)[-1] for k in (kinds or ())}
@@ -305,30 +348,70 @@ def test_fork_marker_block_names_child_and_charter():
 
 
 @pytest.mark.asyncio
-async def test_charter_event_is_authored_passive_external_event():
+async def test_subagent_event_default_is_passive_external_event():
     redis = _FakeRedis()
-    lane = _lane(redis, "conv_child")
-    charter = SubagentCharter(goal="Research X", max_rounds=5)
+    lane = _lane(redis, "conv_parent")
     event = await publish_subagent_event(
         lane_source=lane,
-        semantic_type=SUBAGENT_CHARTER_EVENT_KIND,
-        text=charter.charter_text(),
-        facts={"charter": charter.to_dict()},
-        author="agent:conv_parent/turn_3",
-        target_turn_id="turn_c1",
+        semantic_type=SUBAGENT_CONTRIBUTION_EVENT_KIND,
+        text="[SUBAGENT CONTRIBUTION]\npartial result",
+        facts={"child_conversation_id": "sub_child"},
+        author="agent:conv_sub_child/turn_c1",
+        target_turn_id="turn_parent",
     )
     stored = await lane.get_event(event.message_id)
     assert stored is not None
     # transport kind is uniformly external_event; the semantic type is nested
     assert stored.kind == "external_event"
     nested = (stored.payload or {}).get("event") or {}
-    assert nested.get("type") == SUBAGENT_CHARTER_EVENT_KIND
+    assert nested.get("type") == SUBAGENT_CONTRIBUTION_EVENT_KIND
     assert nested.get("event_source_id") == SUBAGENT_EVENT_SOURCE_ID
     assert nested.get("reactive") is False
-    assert stored.source == "agent:conv_parent/turn_3"
-    assert stored.target_turn_id == "turn_c1"
+    assert stored.source == "agent:conv_sub_child/turn_c1"
+    assert stored.target_turn_id == "turn_parent"
     # passive: the stored task envelope carries no request to run
     assert "request" not in (stored.task_payload or {})
+
+
+@pytest.mark.asyncio
+async def test_charter_event_is_promotable_but_never_reactive():
+    redis = _FakeRedis()
+    lane = _lane(redis, "sub_child")
+    charter = SubagentCharter(goal="Research X", max_rounds=5)
+    parent = ParentLaneAddress(
+        tenant="tenant",
+        project="project",
+        user_id="user_1",
+        conversation_id="conv_parent",
+        turn_id="turn_parent",
+        agent_id="main",
+    )
+    task_payload = build_child_task_payload(
+        parent_payload=None,
+        charter=charter,
+        parent=parent,
+        child_conversation_id="sub_child",
+        child_turn_id="turn_c1",
+        subagent_context={"kind": "charter"},
+    )
+    event = await publish_subagent_event(
+        lane_source=lane,
+        semantic_type=SUBAGENT_CHARTER_EVENT_KIND,
+        text=charter.charter_text(),
+        facts={"charter": charter.to_dict()},
+        author="agent:conv_conv_parent/turn_parent",
+        target_turn_id="turn_c1",
+        task_payload=task_payload,
+    )
+    stored = await lane.get_event(event.message_id)
+    assert stored is not None
+    # promotable: the stored task envelope carries the run request...
+    request = (stored.task_payload or {}).get("request") or {}
+    events = request.get("external_events") or []
+    assert events and events[0]["type"] == SUBAGENT_CHARTER_EVENT_KIND
+    # ...while the lane occurrence stays non-reactive (no live-turn credit)
+    nested = (stored.payload or {}).get("event") or {}
+    assert nested.get("reactive") is False
 
 
 def test_contribution_refs_are_conversation_qualified():
@@ -547,7 +630,7 @@ async def test_delegate_spawns_and_marks_fork_on_parent_timeline():
         tool_call_id="tc5",
     )
     result = state["last_tool_result"]
-    assert result["status"] == "started"
+    assert result["status"] == "scheduled"
     assert result["child_conversation_ref"] == "conv_sub_abc"
     assert launches and launches[0].charter.goal == "Research X"
     assert launches[0].charter.max_rounds == 4
@@ -580,7 +663,16 @@ class _StubWorkflowBase:
             service={"tenant": "tenant", "project": "project", "user": "user_1"},
             conversation={"session_id": "sess", "conversation_id": "conv_parent", "turn_id": "turn_parent"},
         )
-        self.comm_context = None
+        self.comm_context = SimpleNamespace(
+            user={
+                "user_type": "privileged",
+                "user_id": "user_1",
+                "username": "elena",
+                "timezone": "UTC",
+                "roles": ["kdcube:role:super-admin"],
+            },
+            routing=SimpleNamespace(session_id="sess_parent"),
+        )
         self.runtime_ctx = RuntimeCtx(
             tenant="tenant",
             project="project",
@@ -619,162 +711,546 @@ async def _parent_lane_semantic_types(redis):
     return [((e.payload or {}).get("event") or {}).get("type") for e in events]
 
 
-@pytest.mark.asyncio
-async def test_spawner_refuses_depth_and_runs_child_that_fails_authoring_failed_event(tmp_path, monkeypatch):
-    from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.react_subagents import ReactSubagentSpawner
-    from kdcube_ai_app.infra import accounting
+def _enqueued_wakeups(redis):
+    out = []
+    for key, value in redis._kv.items():
+        if not isinstance(value, list):
+            continue
+        for item in value:
+            try:
+                data = json.loads(item)
+            except Exception:
+                continue
+            if isinstance(data, dict) and data.get("kind") == "external_event_lane_wakeup":
+                out.append((key, data))
+    return out
 
-    seen = {}
 
-    class _StubWorkflow(_StubWorkflowBase):
-        def build_react(self, scratchpad, **kwargs):
-            seen["accounting_context"] = dict(accounting.get_context() or {})
-            seen["accounting_enrichment"] = dict(accounting.get_enrichment() or {})
-            seen["build_kwargs"] = kwargs
-            raise RuntimeError("decision model unavailable")
+class _FakeAtomicQueueManager:
+    """The gateway admission seam: writes lane events + wakeup like the
+    atomic Lua script (all-or-nothing), or rejects with a reason."""
 
-    monkeypatch.setattr(
-        "kdcube_ai_app.apps.chat.sdk.solutions.react.browser.get_exec_workspace_root",
-        lambda: tmp_path,
-    )
-    workflow = _StubWorkflow(tmp_path)
-    spawner = ReactSubagentSpawner(
-        workflow=workflow,
-        build_template={"mod_tools_spec": None, "story_snapshots_enabled": False},
-    )
+    def __init__(self, redis, *, admit=True, reason="queue_size_exceeded"):
+        self.redis = redis
+        self.admit = admit
+        self.reason = reason
+        self.lane_calls = []
+        self.wake_calls = []
 
-    # depth guard at the spawner boundary too
-    deep = _launch_request()
-    deep.parent_depth = 1
-    with pytest.raises(RuntimeError):
-        await spawner.spawn(deep)
+    @staticmethod
+    def _queue_key(user_type):
+        return f"kdcube:test:prompt:queue:{getattr(user_type, 'value', user_type)}"
 
-    fork_blocks = [{
+    async def enqueue_chat_task_with_lane_events_atomic(
+        self, user_type, chat_task_data, session, context, endpoint, *,
+        lane_log_key, lane_events,
+    ):
+        self.lane_calls.append({
+            "user_type": user_type,
+            "chat_task_data": chat_task_data,
+            "session": session,
+            "context": context,
+            "endpoint": endpoint,
+            "lane_log_key": lane_log_key,
+            "lane_events": list(lane_events or []),
+        })
+        if not self.admit:
+            return False, self.reason, {}
+        stream_ids = []
+        for item in lane_events or []:
+            event = dict(item.get("event") or {})
+            stream_id = await self.redis.xadd(lane_log_key, {"message_id": event.get("message_id")})
+            await self.redis.set(item["event_key"], json.dumps(event, ensure_ascii=False))
+            stream_ids.append(stream_id)
+        await self.redis.rpush(
+            self._queue_key(user_type), json.dumps(chat_task_data, ensure_ascii=False),
+        )
+        return True, "admitted", {"lane_stream_ids": stream_ids}
+
+    async def enqueue_chat_task_atomic(self, user_type, chat_task_data, session, context, endpoint):
+        self.wake_calls.append({
+            "user_type": user_type,
+            "chat_task_data": chat_task_data,
+            "session": session,
+            "context": context,
+            "endpoint": endpoint,
+        })
+        if not self.admit:
+            return False, self.reason, {}
+        await self.redis.rpush(
+            self._queue_key(user_type), json.dumps(chat_task_data, ensure_ascii=False),
+        )
+        return True, "admitted", {}
+
+
+class _StubWorkflow(_StubWorkflowBase):
+    """A delegate-side workflow: any attempt to build/run a child in-proc fails."""
+
+    def build_react(self, scratchpad, **kwargs):
+        raise AssertionError("v2 delegate must not build a child agent in-proc")
+
+
+def _fork_blocks():
+    return [{
         "type": FORK_HEADER_BLOCK_TYPE,
         "turn_id": "turn_parent",
         "path": "conv:ar:turn_parent.subagent.fork.header",
         "text": "[FORK] context",
         "meta": {},
     }]
-    await spawner._run_child(
-        request=_launch_request(fork_blocks),
-        redis=workflow.redis,
-        child_conversation_id="sub_test1",
-        child_turn_id="turn_c1",
-    )
-
-    # charter authored onto the CHILD lane
-    child_lane = _lane(workflow.redis, "sub_test1")
-    child_events = await child_lane.read_since(None)
-    child_types = [((e.payload or {}).get("event") or {}).get("type") for e in child_events]
-    assert SUBAGENT_CHARTER_EVENT_KIND in child_types
-    charter_event = child_events[child_types.index(SUBAGENT_CHARTER_EVENT_KIND)]
-    assert charter_event.source == "agent:conv_conv_parent/turn_parent"
-
-    # the fork seed was persisted as the child conversation's timeline
-    assert any(
-        row["conversation_id"] == "sub_test1" and row["kind"] == "conv.timeline.v1"
-        for row in workflow.ctx_client.saved
-    )
-    seeded = next(
-        row for row in workflow.ctx_client.saved
-        if row["conversation_id"] == "sub_test1" and row["kind"] == "conv.timeline.v1"
-    )
-    assert any(b.get("type") == FORK_HEADER_BLOCK_TYPE for b in seeded["content"]["blocks"])
-    assert seeded["content"]["blocks"][0]["meta"]["child_conversation_id"] == "sub_test1"
-
-    # the failure was authored to the PARENT lane, never silenced
-    parent_types = await _parent_lane_semantic_types(workflow.redis)
-    assert SUBAGENT_FAILED_EVENT_KIND in parent_types
-
-    # accounting: child spend accounts under the child conversation with the
-    # identifiable subagent tag
-    assert seen["accounting_context"].get("conversation_id") == "sub_test1"
-    assert seen["accounting_context"].get("turn_id") == "turn_c1"
-    assert seen["accounting_context"].get("agent") == "react.subagent"
-    assert seen["accounting_enrichment"].get("metadata", {}).get("subagent", {}).get(
-        "parent_conversation_id"
-    ) == "conv_parent"
-
-    # the child was built through the SAME path with the child overrides
-    kwargs = seen["build_kwargs"]
-    assert kwargs["ctx_browser_override"].runtime_ctx.conversation_id == "sub_test1"
-    assert kwargs["ctx_browser_override"].runtime_ctx.subagent_depth == 1
-    assert kwargs["comm_override"] is not None
 
 
 @pytest.mark.asyncio
-async def test_spawner_child_budget_and_silence_and_converged_event(tmp_path, monkeypatch):
+async def test_spawn_refuses_depth_beyond_one(tmp_path):
     from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.react_subagents import (
         ReactSubagentSpawner,
-        _DenyAllEventFilter,
-    )
-    from kdcube_ai_app.apps.chat.sdk.solutions.react.subagents.events import (
-        SUBAGENT_CONVERGED_EVENT_KIND,
     )
 
-    captured = {}
-
-    class _StubReact:
-        def __init__(self):
-            self.persisted = False
-
-        async def run(self, *, allowed_plugins, allowed_tool_names_by_alias=None):
-            captured["allowed_plugins"] = list(allowed_plugins or [])
-            return SimpleNamespace(ok=True, final_answer="Charter complete.", error=None)
-
-        async def persist_workspace(self):
-            self.persisted = True
-
-    class _StubWorkflow(_StubWorkflowBase):
-        def build_react(self, scratchpad, **kwargs):
-            captured["kwargs"] = kwargs
-            captured["scratchpad_text"] = scratchpad.user_text
-            return _StubReact()
-
-    monkeypatch.setattr(
-        "kdcube_ai_app.apps.chat.sdk.solutions.react.browser.get_exec_workspace_root",
-        lambda: tmp_path,
-    )
     workflow = _StubWorkflow(tmp_path)
-    spawner = ReactSubagentSpawner(workflow=workflow, build_template={})
+    spawner = ReactSubagentSpawner(
+        workflow=workflow,
+        build_template={},
+        queue_manager=_FakeAtomicQueueManager(workflow.redis),
+    )
+    deep = _launch_request()
+    deep.parent_depth = 1
+    with pytest.raises(RuntimeError):
+        await spawner.spawn(deep)
 
-    await spawner._run_child(
-        request=_launch_request(),
-        redis=workflow.redis,
-        child_conversation_id="sub_test2",
-        child_turn_id="turn_c1",
+
+@pytest.mark.asyncio
+async def test_spawn_persists_seed_and_schedules_promotable_charter(tmp_path):
+    from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.react_subagents import (
+        ReactSubagentSpawner,
     )
 
-    kwargs = captured["kwargs"]
-    child_ctx = kwargs["ctx_browser_override"].runtime_ctx
-    # budget: the charter budget IS the iteration budget, with no reactive credit
-    assert child_ctx.max_iterations == 4
-    assert child_ctx.reactive_event_iteration_credit_enabled is False
-    # depth + parent address wired for react.contribute
-    assert child_ctx.subagent_depth == 1
-    assert child_ctx.subagent_parent["conversation_id"] == "conv_parent"
-    assert child_ctx.subagent_parent_lane is not None
-    # silent-until-contribution: the child's communicator denies every event
-    silent_comm = kwargs["comm_override"]
-    assert isinstance(silent_comm.event_filter, _DenyAllEventFilter)
-    assert silent_comm.target_sid is None
-    # the charter is the child's task text
-    assert "[SUBAGENT CHARTER]" in captured["scratchpad_text"]
-    # tool selection inherited from the parent run
-    assert captured["allowed_plugins"] == ["some_plugin"]
+    workflow = _StubWorkflow(tmp_path)
+    queue = _FakeAtomicQueueManager(workflow.redis)
+    spawner = ReactSubagentSpawner(
+        workflow=workflow, build_template={}, queue_manager=queue,
+    )
+    fork_blocks = _fork_blocks()
 
-    # converged authored to the parent lane with the final answer
-    lane = _lane(workflow.redis, "conv_parent")
-    events = await lane.read_since(None)
-    types = [((e.payload or {}).get("event") or {}).get("type") for e in events]
-    assert SUBAGENT_CONVERGED_EVENT_KIND in types
-    converged = events[types.index(SUBAGENT_CONVERGED_EVENT_KIND)]
-    nested = ((converged.payload or {}).get("event") or {}).get("payload") or {}
-    assert "Charter complete." in str((nested.get("event") or {}).get("final_answer") or "")
+    ticket = await spawner.spawn(_launch_request(fork_blocks))
 
-    # the child conversation's timeline was persisted at completion
-    assert any(
-        row["conversation_id"] == "sub_test2" and row["kind"] == "conv.timeline.v1"
+    assert ticket.status == "scheduled"
+    child_id = ticket.child_conversation_id
+
+    # the fork seed was persisted as the child conversation's timeline, with
+    # the queryable forked_from backref promoted out of the header meta
+    seeded = next(
+        row for row in workflow.ctx_client.saved
+        if row["conversation_id"] == child_id and row["kind"] == "conv.timeline.v1"
+    )
+    assert seeded["content"]["forked_from"] == {
+        "conversation_id": "conv_parent",
+        "turn_id": "turn_parent",
+    }
+    assert any(b.get("type") == FORK_HEADER_BLOCK_TYPE for b in seeded["content"]["blocks"])
+    assert seeded["content"]["blocks"][0]["meta"]["child_conversation_id"] == child_id
+
+    # the charter is authored onto the CHILD lane WITH the run request
+    child_lane = _lane(workflow.redis, child_id)
+    child_events = await child_lane.read_since(None)
+    child_types = [((e.payload or {}).get("event") or {}).get("type") for e in child_events]
+    assert child_types == [SUBAGENT_CHARTER_EVENT_KIND]
+    charter_event = child_events[0]
+    assert charter_event.source == "agent:conv_conv_parent/turn_parent"
+    assert charter_event.target_turn_id == ticket.child_turn_id
+    task_payload = charter_event.task_payload or {}
+    assert task_payload["routing"]["conversation_id"] == child_id
+    assert task_payload["routing"]["turn_id"] == ticket.child_turn_id
+    request_events = (task_payload.get("request") or {}).get("external_events") or []
+    assert request_events and request_events[0]["type"] == SUBAGENT_CHARTER_EVENT_KIND
+    sub_ctx = (task_payload.get("bundle_call_context") or {}).get(SUBAGENT_CALL_CONTEXT_KEY) or {}
+    assert sub_ctx["depth"] == 1
+    assert sub_ctx["charter"]["goal"] == "Research X"
+    assert sub_ctx["allowed_plugins"] == ["some_plugin"]
+
+    # the kickoff is the promotion: one lane wakeup rides the processor queue
+    wakeups = _enqueued_wakeups(workflow.redis)
+    assert len(wakeups) == 1
+    _queue_key, wake = wakeups[0]
+    assert wake["event_lane"]["conversation_id"] == child_id
+    assert wake["event_lane"]["event_id"] == charter_event.message_id
+
+    # lane event + wakeup went through the atomic admission as ONE call,
+    # with the session/actor derived from the parent's user identity and
+    # the delegate source marker
+    assert len(queue.lane_calls) == 1
+    call = queue.lane_calls[0]
+    assert call["endpoint"] == "react.delegate"
+    assert call["lane_events"][0]["event"]["message_id"] == charter_event.message_id
+    session = call["session"]
+    assert session.user_id == "user_1"
+    assert session.user_type.value == "privileged"
+    assert session.session_id == child_id
+    assert session.request_context.user_agent == "react.subagent.delegate"
+    assert sub_ctx["parent_session_id"] == "sess_parent"
+
+    # nothing ran in-proc, and nothing reached the parent lane at spawn time
+    assert await _parent_lane_semantic_types(workflow.redis) == []
+
+
+@pytest.mark.asyncio
+async def test_spawn_rejected_by_backpressure_leaves_no_child_state(tmp_path):
+    from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.react_subagents import (
+        ReactSubagentSpawner,
+        SubagentEnqueueRejected,
+    )
+
+    workflow = _StubWorkflow(tmp_path)
+    queue = _FakeAtomicQueueManager(workflow.redis, admit=False, reason="queue_size_exceeded")
+    spawner = ReactSubagentSpawner(
+        workflow=workflow, build_template={}, queue_manager=queue,
+    )
+
+    with pytest.raises(SubagentEnqueueRejected) as exc_info:
+        await spawner.spawn(_launch_request(_fork_blocks()))
+    assert exc_info.value.reason == "queue_size_exceeded"
+
+    # the atomic script wrote nothing, and the seed was cleaned up: a
+    # rejected delegate leaves no child state
+    assert _enqueued_wakeups(workflow.redis) == []
+    assert workflow.ctx_client.deleted_turns
+    assert not any(
+        row["kind"] == "conv.timeline.v1" and str(row["conversation_id"]).startswith("sub")
         for row in workflow.ctx_client.saved
     )
+
+
+@pytest.mark.asyncio
+async def test_delegate_reports_queue_saturation_as_structured_rejection():
+    from kdcube_ai_app.apps.chat.sdk.solutions.react.subagents.schedule import (
+        SubagentEnqueueRejected,
+    )
+
+    class _RejectedSpawner:
+        async def spawn(self, request):
+            raise SubagentEnqueueRejected("hard_limit_exceeded")
+
+    ctx = SimpleNamespace(
+        conversation_id="conv_parent",
+        turn_id="turn_parent",
+        subagent_depth=0,
+        subagent_spawner=_RejectedSpawner(),
+        tenant="tenant",
+        project="project",
+        user_id="user_1",
+        agent_id="main",
+    )
+    browser = _StubChildBrowser(ctx)
+    browser.current_turn_blocks = lambda: []
+    state = await handle_react_delegate(
+        ctx_browser=browser,
+        state=_tool_state("react.delegate", {"charter": {"goal": "Research X"}}),
+        tool_call_id="tc6",
+    )
+    result = state["last_tool_result"]
+    assert result["code"] == "delegate_queue_saturated"
+    assert "hard_limit_exceeded" in result["message"]
+
+
+# ---------------------------------------------------------------- child turn
+
+
+def _child_context(**overrides):
+    kwargs = dict(
+        charter=SubagentCharter(goal="Research X", max_rounds=4),
+        parent=ParentLaneAddress(
+            tenant="tenant",
+            project="project",
+            user_id="user_1",
+            conversation_id="conv_parent",
+            turn_id="turn_parent",
+            agent_id="main",
+        ),
+        depth=1,
+        child_conversation_id="sub_x",
+        child_turn_id="turn_c1",
+        parent_session_id="sess_parent",
+        parent_user={"user_type": "privileged", "user_id": "user_1"},
+        allowed_plugins=["some_plugin"],
+    )
+    kwargs.update(overrides)
+    return SubagentChildTurnContext(**kwargs)
+
+
+def test_charter_task_payload_round_trips_through_the_promoter_shape():
+    from kdcube_ai_app.apps.chat.sdk.protocol import ExternalEventPayload
+    from kdcube_ai_app.apps.chat.sdk.solutions.react.subagents.schedule import (
+        build_completion_task_payload,
+    )
+
+    context = _child_context()
+    task_payload = build_child_task_payload(
+        parent_payload=None,
+        charter=context.charter,
+        parent=context.parent,
+        child_conversation_id="sub_x",
+        child_turn_id="turn_c1",
+        subagent_context=context.to_dict(),
+    )
+    model = ExternalEventPayload.model_validate(task_payload)
+    parsed = charter_turn_context(model)
+    assert parsed is not None
+    assert parsed.charter.goal == "Research X"
+    assert parsed.charter.max_rounds == 4
+    assert parsed.parent.conversation_id == "conv_parent"
+    assert parsed.parent_session_id == "sess_parent"
+    assert parsed.allowed_plugins == ["some_plugin"]
+    assert parsed.depth == 1
+
+    # a completion payload describes a NORMAL parent turn: no assignment
+    completion = build_completion_task_payload(
+        child_payload=model,
+        semantic_type=SUBAGENT_CONVERGED_EVENT_KIND,
+        text="done",
+        facts={},
+        parent=context.parent,
+        parent_session_id="sess_parent",
+        parent_user=context.parent_user,
+    )
+    completion_model = ExternalEventPayload.model_validate(completion)
+    assert charter_turn_context(completion_model) is None
+    assert completion["routing"]["conversation_id"] == "conv_parent"
+    assert completion["routing"]["session_id"] == "sess_parent"
+    assert completion["user"]["user_id"] == "user_1"
+
+
+def test_apply_child_runtime_overrides_sets_budget_depth_and_parent_lane():
+    runtime = RuntimeCtx(
+        tenant="tenant",
+        project="project",
+        user_id="user_1",
+        conversation_id="sub_x",
+        turn_id="turn_c1",
+        agent_id="main",
+        max_iterations=15,
+    )
+    context = _child_context()
+    apply_child_runtime_overrides(
+        runtime,
+        context,
+        bundle_props={},
+        subagent_defaults={"model": "claude-haiku-4-5"},
+        redis=_FakeRedis(),
+    )
+    # budget: the charter budget IS the iteration budget, no reactive credit
+    assert runtime.max_iterations == 4
+    assert runtime.reactive_event_iteration_credit_enabled is False
+    # depth + parent address wired for react.contribute
+    assert runtime.subagent_depth == 1
+    assert runtime.subagent_parent["conversation_id"] == "conv_parent"
+    assert runtime.subagent_parent_lane is not None
+    assert runtime.subagent_parent_lane.conversation_id == "conv_parent"
+    # configured subagent default model lands on the user-model role
+    from kdcube_ai_app.apps.chat.sdk.runtime.agent_inventory import USER_MODEL_TARGET_ROLE
+
+    assert runtime.agent_role_models[USER_MODEL_TARGET_ROLE]["model"] == "claude-haiku-4-5"
+
+
+def test_bind_child_turn_accounting_stamps_task_identity():
+    from kdcube_ai_app.infra import accounting
+
+    fresh = accounting.AccountingContext()
+    accounting._set_context(fresh)
+    try:
+        bind_child_turn_accounting(_child_context())
+        assert accounting.get_context().get("agent") == SUBAGENT_ACCOUNTING_AGENT
+        enrichment = accounting.get_enrichment()
+        assert enrichment.get("metadata", {}).get("subagent", {}).get(
+            "parent_conversation_id"
+        ) == "conv_parent"
+    finally:
+        accounting.clear_context()
+
+
+def test_child_comm_policy_is_silent_and_roomless():
+    from kdcube_ai_app.apps.chat.emitters import ChatCommunicator
+    from kdcube_ai_app.apps.chat.sdk.solutions.react.subagents.comm_policy import (
+        DenyAllEventFilter,
+        build_subagent_child_comm,
+    )
+
+    base = ChatCommunicator(
+        emitter=SimpleNamespace(),
+        tenant="tenant",
+        project="project",
+        user_id="user_1",
+        user_type="privileged",
+        service={"request_id": "req", "tenant": "tenant", "project": "project", "user": "user_1"},
+        conversation={"session_id": "sub_x", "conversation_id": "sub_x", "turn_id": "turn_c1"},
+        room="sub_x",
+        target_sid=None,
+    )
+    child = build_subagent_child_comm(base)
+    assert isinstance(child.event_filter, DenyAllEventFilter)
+    assert child.event_filter.allow_event(type="chat.delta") is False
+    assert child.target_sid is None
+    assert child.conversation["conversation_id"] == "sub_x"
+
+
+# ---------------------------------------------------------------- completion
+
+
+@pytest.mark.asyncio
+async def test_converged_completion_is_promotable_on_parent_lane():
+    redis = _FakeRedis()
+    context = _child_context()
+    runtime = SimpleNamespace(
+        conversation_id="sub_x", turn_id="turn_c1", subagent_parent_lane=None,
+    )
+
+    queue = _FakeAtomicQueueManager(redis)
+    event = await publish_child_completion(
+        redis=redis,
+        runtime_ctx=runtime,
+        context=context,
+        child_payload=None,
+        ok=True,
+        final_answer="Charter complete.",
+        queue_manager=queue,
+    )
+
+    types = await _parent_lane_semantic_types(redis)
+    assert types == [SUBAGENT_CONVERGED_EVENT_KIND]
+    parent_lane = _lane(redis, "conv_parent")
+    stored = await parent_lane.get_event(event.message_id)
+    nested = ((stored.payload or {}).get("event") or {}).get("payload") or {}
+    assert "Charter complete." in str((nested.get("event") or {}).get("final_answer") or "")
+    # promotable: the task payload describes the parent's continuation turn
+    task_payload = stored.task_payload or {}
+    assert task_payload["routing"]["conversation_id"] == "conv_parent"
+    assert task_payload["routing"]["session_id"] == "sess_parent"
+    request_events = (task_payload.get("request") or {}).get("external_events") or []
+    assert request_events and request_events[0]["type"] == SUBAGENT_CONVERGED_EVENT_KIND
+    # ...and one wakeup rides the processor queue for it
+    wakeups = _enqueued_wakeups(redis)
+    assert len(wakeups) == 1
+    assert wakeups[0][1]["event_lane"]["conversation_id"] == "conv_parent"
+    assert wakeups[0][1]["event_lane"]["event_id"] == stored.message_id
+
+
+@pytest.mark.asyncio
+async def test_failed_completion_is_authored_and_promotable():
+    redis = _FakeRedis()
+    context = _child_context()
+    runtime = SimpleNamespace(
+        conversation_id="sub_x", turn_id="turn_c1", subagent_parent_lane=None,
+    )
+
+    event = await publish_child_completion(
+        redis=redis,
+        runtime_ctx=runtime,
+        context=context,
+        child_payload=None,
+        ok=False,
+        reason="decision model unavailable",
+        queue_manager=_FakeAtomicQueueManager(redis),
+    )
+
+    types = await _parent_lane_semantic_types(redis)
+    assert types == [SUBAGENT_FAILED_EVENT_KIND]
+    parent_lane = _lane(redis, "conv_parent")
+    stored = await parent_lane.get_event(event.message_id)
+    assert "decision model unavailable" in str(stored.text or "")
+    task_payload = stored.task_payload or {}
+    request_events = (task_payload.get("request") or {}).get("external_events") or []
+    assert request_events and request_events[0]["type"] == SUBAGENT_FAILED_EVENT_KIND
+    assert len(_enqueued_wakeups(redis)) == 1
+
+
+@pytest.mark.asyncio
+async def test_converged_without_final_answer_is_authored_as_failed():
+    redis = _FakeRedis()
+    context = _child_context()
+    runtime = SimpleNamespace(
+        conversation_id="sub_x", turn_id="turn_c1", subagent_parent_lane=None,
+    )
+    await publish_child_completion(
+        redis=redis,
+        runtime_ctx=runtime,
+        context=context,
+        child_payload=None,
+        ok=True,
+        final_answer="",
+        queue_manager=_FakeAtomicQueueManager(redis),
+    )
+    assert await _parent_lane_semantic_types(redis) == [SUBAGENT_FAILED_EVENT_KIND]
+
+
+@pytest.mark.asyncio
+async def test_completion_survives_a_rejected_wakeup():
+    """The lane publish is unconditional; a backpressure-rejected wakeup
+    leaves the completion resting in the lane (folded on the parent's next
+    turn) — degraded liveness, zero loss."""
+    redis = _FakeRedis()
+    context = _child_context()
+    runtime = SimpleNamespace(
+        conversation_id="sub_x", turn_id="turn_c1", subagent_parent_lane=None,
+    )
+    queue = _FakeAtomicQueueManager(redis, admit=False, reason="hard_limit_exceeded")
+    event = await publish_child_completion(
+        redis=redis,
+        runtime_ctx=runtime,
+        context=context,
+        child_payload=None,
+        ok=True,
+        final_answer="Charter complete.",
+        queue_manager=queue,
+    )
+    # the completion IS in the lane, promotable-by-shape and foldable...
+    assert await _parent_lane_semantic_types(redis) == [SUBAGENT_CONVERGED_EVENT_KIND]
+    parent_lane = _lane(redis, "conv_parent")
+    stored = await parent_lane.get_event(event.message_id)
+    assert (stored.task_payload or {}).get("request")
+    assert wake_ignore_reason(stored, EventLaneState()) == ""
+    # ...and no wakeup was enqueued (the admission declined it)
+    assert _enqueued_wakeups(redis) == []
+    assert len(queue.wake_calls) == 1
+
+
+# ------------------------------------------------- promote only if unconsumed
+
+
+@pytest.mark.asyncio
+async def test_completion_wake_promotes_only_if_unconsumed():
+    redis = _FakeRedis()
+    context = _child_context()
+    runtime = SimpleNamespace(
+        conversation_id="sub_x", turn_id="turn_c1", subagent_parent_lane=None,
+    )
+    event = await publish_child_completion(
+        redis=redis,
+        runtime_ctx=runtime,
+        context=context,
+        child_payload=None,
+        ok=True,
+        final_answer="Charter complete.",
+        queue_manager=_FakeAtomicQueueManager(redis),
+    )
+    parent_lane = _lane(redis, "conv_parent")
+    stored = await parent_lane.get_event(event.message_id)
+
+    # no live parent turn touched it: the wake promotes
+    assert wake_ignore_reason(stored, EventLaneState()) == ""
+
+    # a live parent turn folded it (fold totality marks consumption on the
+    # event): the wake is acked, never double-started
+    await parent_lane.mark_consumed_up_to(
+        max_sequence=int(stored.sequence or 0), turn_id="turn_parent",
+    )
+    folded = await parent_lane.get_event(event.message_id)
+    assert folded.consumed_at is not None
+    assert folded.consumed_by_turn_id == "turn_parent"
+    assert wake_ignore_reason(folded, EventLaneState()) == "event_already_consumed"
+
+    # the lane's processed-event cursor alone also acks a non-reactive event
+    state = EventLaneState(last_processed_event_timestamp="2099-01-01T00:00:00Z")
+    assert wake_ignore_reason(stored, state) == "wake_already_processed"
+
+    # an already-promoted duplicate wake is acked too
+    stored.promoted_at = 1.0
+    assert wake_ignore_reason(stored, EventLaneState()) == "event_already_promoted"
+
