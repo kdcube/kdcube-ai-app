@@ -1361,7 +1361,6 @@ the user follow visible progress. They are usually telegraphic, but may carry a 
 markdown update when something substantive and directly useful to the user surfaces mid-turn. Keep
 notes empty for clean final-answer rounds and for internal recovery from protocol mistakes.
 
-[ON BUILT-IN TOOLS]
 [CONTENT STREAMING AND CAPTURING TOOLS (HARD)]
 You have following tools to capture content which you produce in the named and distributable artifacts:
 - react.write: use to generate artifact.
