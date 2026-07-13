@@ -7,4 +7,5 @@ status: active
 
 # Journal Index
 
-See [README.md](README.md).
+- [2026-07-13: Versioned Site Catalog And CDN Routing](2026-07-13-versioned-site-catalog-and-cdn.md)
+- [2026-07-13: Application-Hosted Local Website](2026-07-13-application-hosted-local-website.md)

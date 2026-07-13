@@ -113,10 +113,9 @@ from kdcube_ai_app.apps.chat.sdk.solutions.chat import (
     default_chat_widget_config,
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.sites import (
-    ApplicationSite,
+    ApplicationSiteCatalog,
     SiteRegistryError,
-    application_site_from_props,
-    resolve_application_site,
+    application_site_catalog_runtime,
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oauth.surface_guard import (
     authorize_delegated_mcp_request,
@@ -267,6 +266,27 @@ def _inject_kdcube_resize_reporter(content: str, *, base_href: str | None = None
     if _HTML_BODY_CLOSE_RE.search(content):
         return _HTML_BODY_CLOSE_RE.sub(lambda match: f"{injection}{match.group(0)}", content, count=1)
     return f"{injection}{content}"
+
+
+def _inject_application_site_context(content: str, context: Mapping[str, Any]) -> str:
+    payload = json.dumps(
+        dict(context),
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).replace("<", "\\u003c")
+    script = (
+        '<script id="kdcube-site-context" type="application/json">'
+        f"{payload}"
+        "</script>"
+    )
+    if _HTML_HEAD_OPEN_RE.search(content):
+        return _HTML_HEAD_OPEN_RE.sub(
+            lambda match: f"{match.group(1)}{script}",
+            content,
+            count=1,
+        )
+    return f"{script}{content}"
 
 
 _integrations_limit: Optional[int] = None
@@ -1375,13 +1395,16 @@ async def _load_bundle_props_defaults(
         request: Request,
         session: UserSession,
         evict_before_load: bool = True,
+        resolved_spec: Optional[BundleSpec] = None,
 ) -> Dict[str, Any]:
-    spec_resolved = await _resolve_bundle_spec_from_runtime(
-        request=request,
-        tenant=tenant,
-        project=project,
-        bundle_id=bundle_id,
-    )
+    spec_resolved = resolved_spec
+    if spec_resolved is None:
+        spec_resolved = await _resolve_bundle_spec_from_runtime(
+            request=request,
+            tenant=tenant,
+            project=project,
+            bundle_id=bundle_id,
+        )
     if not spec_resolved:
         raise HTTPException(status_code=404, detail=f"Bundle {bundle_id} not found")
 
@@ -2789,6 +2812,8 @@ async def serve_static_asset(
         request: Request,
         path: str = "index.html",
         base_href: Optional[str] = None,
+        html_context: Optional[Mapping[str, Any]] = None,
+        resolved_spec: Optional[BundleSpec] = None,
         session: UserSession = Depends(require_auth(RequireUser())),
 ):
     """
@@ -2802,12 +2827,14 @@ async def serve_static_asset(
     from kdcube_ai_app.infra.plugin.bundle_storage import storage_for_spec
 
     tenant_id, project_id = _resolve_path_scope(tenant=tenant, project=project)
-    spec = await _resolve_bundle_spec_from_runtime(
-        request=request,
-        tenant=tenant_id,
-        project=project_id,
-        bundle_id=bundle_id,
-    )
+    spec = resolved_spec
+    if spec is None:
+        spec = await _resolve_bundle_spec_from_runtime(
+            request=request,
+            tenant=tenant_id,
+            project=project_id,
+            bundle_id=bundle_id,
+        )
     if not spec:
         raise HTTPException(status_code=404, detail=f"Bundle '{bundle_id}' not found")
 
@@ -2831,6 +2858,7 @@ async def serve_static_asset(
                 request=request,
                 session=session,
                 evict_before_load=False,
+                resolved_spec=spec,
             ),
         )
         storage_root = storage_for_spec(spec=spec, tenant=tenant_id, project=project_id, ensure=False)
@@ -2913,6 +2941,7 @@ async def serve_static_asset(
                 request=request,
                 session=session,
                 evict_before_load=False,
+                resolved_spec=spec,
             ),
         )
         storage_root = storage_for_spec(spec=spec, tenant=tenant_id, project=project_id, ensure=False)
@@ -2937,13 +2966,15 @@ async def serve_static_asset(
         if not target.exists():
             raise HTTPException(status_code=404, detail="Not found")
 
-    # For index.html: inject <base> so that relative asset paths (./assets/...)
-    # resolve correctly when the HTML is embedded via srcDoc in an iframe.
-    if target.name == "index.html":
+    # Site pages need a public base and runtime context on every HTML document;
+    # regular app main views retain the historical index-only behavior.
+    if target.name == "index.html" or (html_context is not None and target.suffix.lower() == ".html"):
         from fastapi.responses import HTMLResponse
         resolved_base = base_href or f"/api/integrations/static/{tenant}/{project}/{bundle_id}/"
         content = target.read_text(encoding="utf-8")
         content = _inject_kdcube_resize_reporter(content, base_href=resolved_base)
+        if html_context is not None:
+            content = _inject_application_site_context(content, html_context)
         return _index_html_response(content, request)
 
     rel_parts = target.relative_to(ui_root).parts
@@ -3022,29 +3053,12 @@ def _platform_chat_path() -> str:
 
 async def _application_site_catalog(
     request: Request,
-) -> tuple[str, str, list[ApplicationSite]]:
-    settings = get_settings()
-    tenant = str(settings.TENANT or "").strip()
-    project = str(settings.PROJECT or "").strip()
-    redis = _get_app_redis(request)
-    registry = await load_registry(redis, tenant, project)
-
-    sites: list[ApplicationSite] = []
-    for application_id in sorted(registry.bundles or {}):
-        props = _authoritative_bundle_props(
-            tenant=tenant,
-            project=project,
-            bundle_id=application_id,
-        )
-        if not is_bundle_enabled(props):
-            continue
-        site = application_site_from_props(
-            application_id=application_id,
-            props=props,
-        )
-        if site is not None:
-            sites.append(site)
-    return tenant, project, sites
+) -> ApplicationSiteCatalog:
+    del request
+    catalog = application_site_catalog_runtime.snapshot()
+    if catalog is None:
+        raise RuntimeError("application site catalog is not initialized")
+    return catalog
 
 
 async def _serve_application_site(
@@ -3054,14 +3068,13 @@ async def _serve_application_site(
     path: str = "index.html",
 ) -> Response:
     try:
-        tenant, project, sites = await _application_site_catalog(request)
+        catalog = await _application_site_catalog(request)
         forwarded_host = (
             str(request.headers.get("x-forwarded-host") or "")
             .split(",", 1)[0]
             .strip()
         )
-        site = resolve_application_site(
-            sites,
+        site = catalog.resolve(
             alias=site_alias,
             host=forwarded_host or request.headers.get("host", ""),
         )
@@ -3077,16 +3090,35 @@ async def _serve_application_site(
             return RedirectResponse(url=_platform_chat_path(), status_code=307)
         raise HTTPException(status_code=404, detail=f"Application site '{site_alias}' not found")
 
+    public_base = f"/sites/{site.alias}/" if site_alias else "/"
+    if site.target is None or not site.target.path:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Application site owner '{site.application_id}' is unavailable",
+        )
+    site_spec = BundleSpec(
+        path=site.target.path,
+        module=site.target.module,
+        singleton=site.target.singleton,
+    )
+
     return await serve_static_asset(
-        tenant=tenant,
-        project=project,
+        tenant=catalog.tenant,
+        project=catalog.project,
         bundle_id=site.application_id,
         path=path or "index.html",
         request=request,
-        base_href=(
-            f"/api/integrations/bundles/{tenant}/{project}/"
-            f"{site.application_id}/public/static/"
-        ),
+        base_href=public_base,
+        html_context={
+            "schema_version": 1,
+            "tenant": catalog.tenant,
+            "project": catalog.project,
+            "application_id": site.application_id,
+            "site_alias": site.alias,
+            "public_base": public_base,
+            "catalog_revision": catalog.revision,
+        },
+        resolved_spec=site_spec,
         session=_build_public_api_request_session(request),
     )
 
@@ -3096,6 +3128,15 @@ async def application_site_landing(request: Request):
     return await _serve_application_site(
         request=request,
         site_alias="",
+    )
+
+
+@router.get("/site-root/{path:path}")
+async def application_site_landing_path(path: str, request: Request):
+    return await _serve_application_site(
+        request=request,
+        site_alias="",
+        path=path,
     )
 
 

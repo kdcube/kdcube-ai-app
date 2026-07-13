@@ -13,3 +13,7 @@ bundle:
       handshake.
     - Registers a unique `/sites/{alias}` route and can participate in
       host-first, default-second root resolution.
+    - Projects descriptor site declarations into a versioned Redis snapshot
+      and routes requests from an immutable proc-local catalog.
+    - Supports multipage files, SPA fallback, and CDN host-path rewrites through
+      the reserved `/api/integrations/site-root/{path}` surface.

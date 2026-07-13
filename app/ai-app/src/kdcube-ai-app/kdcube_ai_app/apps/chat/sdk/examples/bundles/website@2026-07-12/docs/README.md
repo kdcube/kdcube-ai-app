@@ -26,14 +26,17 @@ The platform owns:
 - building and serving app main views.
 
 The platform runtime owns the site registry. OpenResty forwards stable root and
-alias routes to proc; proc resolves the active app descriptors at request time.
-No proxy regeneration is needed when site declarations change.
+alias routes to proc. Proc projects active app descriptors into Redis on
+startup/config changes, and every proc worker routes requests from an immutable
+in-memory catalog. No proxy regeneration, request-time Redis read, or
+request-time descriptor scan is needed when site declarations change.
 
 ```text
 bundles.yaml
   website.ui.main_view.site
           |
-          +--> proc site registry: alias + hosts + default
+          +--> validated, versioned Redis site projection
+          +--> proc hot site catalog: alias + hosts + default
           |
           +--> website public/site_config
                          |
@@ -43,6 +46,7 @@ browser ----------------+--> /api/cp-frontend-config
 
 OpenResty / ---------------------> proc /api/integrations/site-root
 OpenResty /sites/{alias}/{path} -> proc /api/integrations/sites/{alias}/{path}
+Site CDN /{path} ---------------> proc /api/integrations/site-root/{path}
 ```
 
 No site selection or scene composition belongs in `assembly.yaml`.
@@ -59,3 +63,7 @@ registry states and return `503` rather than selecting an arbitrary site.
 The website uses the normal main-view cache policy: entry HTML and root-level
 non-hashed shell files revalidate, while content-hashed `assets/` files are
 immutable. The public-content publication subsystem is not involved.
+
+The CDN preserves `Host` or `X-Forwarded-Host`; proc uses it to select the site.
+The CDN stores no catalog and may cache the returned HTML/assets according to
+the platform headers.

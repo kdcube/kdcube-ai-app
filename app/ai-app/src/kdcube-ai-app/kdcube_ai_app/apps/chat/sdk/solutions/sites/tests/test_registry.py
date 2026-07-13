@@ -3,8 +3,11 @@ from __future__ import annotations
 import pytest
 
 from kdcube_ai_app.apps.chat.sdk.solutions.sites.registry import (
+    ApplicationSiteCatalog,
     SiteRegistryError,
     application_site_from_props,
+    build_application_site_catalog,
+    compile_application_site_catalog,
     resolve_application_site,
 )
 
@@ -50,13 +53,24 @@ def test_rejects_ambiguous_registry() -> None:
         resolve_application_site(
             [_site("a@1", "a", default=True), _site("b@1", "b", default=True)]
         )
-    with pytest.raises(SiteRegistryError, match="multiple application sites match host"):
+    with pytest.raises(SiteRegistryError, match="overlapping application site host patterns"):
         resolve_application_site(
             [
                 _site("a@1", "a", hosts=["site.example.com"]),
                 _site("b@1", "b", hosts=["site.example.com"]),
             ],
             host="site.example.com",
+        )
+
+
+def test_rejects_wildcard_host_overlap() -> None:
+    with pytest.raises(SiteRegistryError, match="overlapping application site host patterns"):
+        resolve_application_site(
+            [
+                _site("a@1", "a", hosts=["*.example.com"]),
+                _site("b@1", "b", hosts=["*.preview.example.com"]),
+            ],
+            host="a.preview.example.com",
         )
 
 
@@ -68,3 +82,64 @@ def test_enabled_site_requires_explicit_alias() -> None:
 def test_enabled_site_requires_application_id() -> None:
     with pytest.raises(SiteRegistryError, match="requires an application id"):
         _site("", "site")
+
+
+def test_catalog_revision_is_deterministic_and_round_trips() -> None:
+    catalog = compile_application_site_catalog(
+        tenant="tenant-a",
+        project="project-a",
+        sites=[
+            _site("z@1", "z", hosts=["z.example.com"]),
+            _site("a@1", "a", default=True),
+        ],
+    )
+    same = compile_application_site_catalog(
+        tenant="tenant-a",
+        project="project-a",
+        sites=list(reversed(catalog.sites)),
+    )
+
+    restored = ApplicationSiteCatalog.from_dict(catalog.to_dict())
+
+    assert catalog.revision == same.revision
+    assert restored == catalog
+    assert restored.resolve(host="z.example.com").application_id == "z@1"
+
+
+def test_catalog_rejects_tampered_revision() -> None:
+    catalog = compile_application_site_catalog(
+        tenant="tenant-a",
+        project="project-a",
+        sites=[_site("site@1", "site")],
+    )
+    payload = catalog.to_dict()
+    payload["revision"] = "not-the-content-revision"
+
+    with pytest.raises(SiteRegistryError, match="revision"):
+        ApplicationSiteCatalog.from_dict(payload)
+
+
+def test_disabled_application_is_not_projected() -> None:
+    catalog = build_application_site_catalog(
+        tenant="tenant-a",
+        project="project-a",
+        application_props={
+            "disabled@1": {
+                "enabled": {"bundle": False},
+                "ui": {
+                    "main_view": {
+                        "site": {"enabled": True, "alias": "disabled"},
+                    },
+                },
+            },
+            "enabled@1": {
+                "ui": {
+                    "main_view": {
+                        "site": {"enabled": True, "alias": "enabled"},
+                    },
+                },
+            },
+        },
+    )
+
+    assert [site.alias for site in catalog.sites] == ["enabled"]

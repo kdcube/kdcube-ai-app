@@ -935,6 +935,8 @@ async def lifespan(app: FastAPI):
         app.state.redis_async = get_shared_async_redis_client()
         app.state.redis_async_decode = None
         app.state.redis_sync = None
+        app.state.application_site_catalog_stop = asyncio.Event()
+        app.state.application_site_catalog_task = None
         logger.info("Redis pool ready (shared async only)")
     except Exception:
         logger.exception("Failed to initialize shared async Redis pool")
@@ -1192,7 +1194,10 @@ async def lifespan(app: FastAPI):
         try:
             from kdcube_ai_app.infra.plugin.bundle_store import load_registry as _load_store_registry
             from kdcube_ai_app.infra.plugin.bundle_store import force_env_reset_if_requested
-            from kdcube_ai_app.infra.plugin.bundle_registry import set_registry_async as _set_mem_registry
+            from kdcube_ai_app.infra.plugin.bundle_registry import (
+                get_all as _get_mem_registry,
+                set_registry_async as _set_mem_registry,
+            )
             reg = None
             try:
                 reg = await force_env_reset_if_requested(
@@ -1208,10 +1213,36 @@ async def lifespan(app: FastAPI):
                 reg = await _load_store_registry(redis_async)
             bundles_dict = {bid: entry.model_dump() for bid, entry in reg.bundles.items()}
             await _set_mem_registry(bundles_dict, reg.default_bundle_id)
+            from kdcube_ai_app.apps.chat.sdk.solutions.sites import (
+                application_site_catalog_runtime,
+                refresh_application_site_catalog,
+                subscribe_application_site_catalog_updates,
+            )
+
+            site_catalog = await refresh_application_site_catalog(
+                redis_async,
+                tenant=settings.TENANT,
+                project=settings.PROJECT,
+                applications=_get_mem_registry(),
+                runtime=application_site_catalog_runtime,
+            )
+            app.state.application_site_catalog_task = asyncio.create_task(
+                subscribe_application_site_catalog_updates(
+                    redis_async,
+                    tenant=settings.TENANT,
+                    project=settings.PROJECT,
+                    runtime=application_site_catalog_runtime,
+                    stop_event=app.state.application_site_catalog_stop,
+                ),
+                name="application-site-catalog-listener",
+            )
             logger.info(
-                "Bundles registry loaded from active registry: %s items (default=%s)",
+                "Bundles registry loaded from active registry: %s items (default=%s); "
+                "application sites=%s revision=%s",
                 len(bundles_dict),
                 reg.default_bundle_id,
+                len(site_catalog.sites),
+                site_catalog.revision,
             )
         except Exception as e:
             logger.warning(
@@ -1273,6 +1304,15 @@ async def lifespan(app: FastAPI):
         except asyncio.CancelledError:
             pass
         app.state.bundle_cleanup_task = None
+    if getattr(app.state, "application_site_catalog_stop", None):
+        app.state.application_site_catalog_stop.set()
+    if getattr(app.state, "application_site_catalog_task", None):
+        await _safe_shutdown_step(
+            "application_site_catalog_task",
+            app.state.application_site_catalog_task,
+            timeout=5.0,
+        )
+        app.state.application_site_catalog_task = None
     await _safe_shutdown_step(
         "bundle_sidecars.shutdown",
         shutdown_all_local_sidecars(terminate_timeout_sec=10.0, kill_timeout_sec=3.0),

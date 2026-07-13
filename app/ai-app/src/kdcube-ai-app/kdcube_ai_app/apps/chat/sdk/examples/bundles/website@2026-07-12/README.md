@@ -25,7 +25,7 @@ keep their normal ownership:
 ```text
 /                         -> host match, then the default site
 /sites/workspace          -> website@2026-07-12 public main view
-/sites/workspace/<path>   -> the same site with SPA fallback
+/sites/workspace/<path>   -> files, directory indexes, then SPA fallback
 /platform/* -> platform frontend
 /api/*      -> platform/application APIs
 ```

@@ -1970,7 +1970,7 @@ class EnhancedChatRequestProcessor:
     async def _config_listener_loop(self):
         import kdcube_ai_app.infra.namespaces as namespaces
         from kdcube_ai_app.apps.chat.sdk.config import get_settings
-        from kdcube_ai_app.infra.plugin.bundle_registry import set_registry_async
+        from kdcube_ai_app.infra.plugin.bundle_registry import get_all, set_registry_async
         from kdcube_ai_app.infra.plugin.bundle_loader import (
             BundleSpec,
             evict_bundle_scope,
@@ -2036,6 +2036,27 @@ class EnhancedChatRequestProcessor:
                 current.default_bundle_id,
                 source=reason,
             )
+            try:
+                from kdcube_ai_app.apps.chat.sdk.solutions.sites import (
+                    application_site_catalog_runtime,
+                    refresh_application_site_catalog,
+                )
+
+                await refresh_application_site_catalog(
+                    self.redis,
+                    tenant=tenant,
+                    project=project,
+                    applications=get_all(),
+                    runtime=application_site_catalog_runtime,
+                )
+            except Exception:
+                logger.warning(
+                    "Application site catalog refresh failed: reason=%s tenant=%s project=%s",
+                    reason,
+                    tenant,
+                    project,
+                    exc_info=True,
+                )
             normalized_changed_bundle_ids = sorted(
                 str(bid).strip() for bid in (changed_bundle_ids or set()) if str(bid).strip()
             )
@@ -2479,6 +2500,29 @@ class EnhancedChatRequestProcessor:
                             except Exception:
                                 logger.warning("Bundle runtime reconcile failed after props update", exc_info=True)
                         bundle_id = str(evt.get("bundle_id") or "").strip()
+                        try:
+                            from kdcube_ai_app.apps.chat.sdk.solutions.sites import (
+                                application_site_catalog_runtime,
+                                refresh_application_site_catalog,
+                            )
+
+                            current = await store_load(self.redis, tenant, project)
+                            await refresh_application_site_catalog(
+                                self.redis,
+                                tenant=tenant,
+                                project=project,
+                                applications=get_all(),
+                                runtime=application_site_catalog_runtime,
+                            )
+                        except Exception:
+                            logger.warning(
+                                "Application site catalog refresh failed after props update: "
+                                "tenant=%s project=%s bundle=%s",
+                                tenant,
+                                project,
+                                bundle_id,
+                                exc_info=True,
+                            )
                         if bundle_id:
                             _invalidate_config_secret_cache(
                                 reason="bundles.props.update",

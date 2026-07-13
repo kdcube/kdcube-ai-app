@@ -91,6 +91,11 @@ class REDIS:
         REGISTRY = "kdcube:registry"
 
 class CONFIG:
+    class SITES:
+        CATALOG_KEY_FMT = "kdcube:config:sites:catalog:{{{tenant}:{project}}}"
+        GENERATION_KEY_FMT = "kdcube:config:sites:generation:{{{tenant}:{project}}}"
+        UPDATE_CHANNEL_FMT = "kdcube:config:sites:update:{tenant}:{project}"
+
     class BUNDLES:
         BUNDLE_MAPPING_KEY_FMT = "kdcube:config:bundles:mapping:{tenant}:{project}"
         UPDATE_CHANNEL = "kdcube:config:bundles:update:{tenant}:{project}"

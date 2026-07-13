@@ -16,6 +16,8 @@ Rules:
   `assembly.yaml`.
 - Keep each enabled site alias unique. Root selection is host first, then one
   explicit default; do not add site interpretation to the CLI or OpenResty.
+- Keep descriptor-to-catalog projection off the request path. Redis distributes
+  generated catalog revisions; request handlers use the proc-local snapshot.
 - Read platform/auth configuration from `/api/cp-frontend-config`; do not
   duplicate provider-specific browser config.
 - Treat `/profile` as the authoritative session state.

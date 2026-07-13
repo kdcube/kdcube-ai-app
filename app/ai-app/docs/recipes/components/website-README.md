@@ -226,10 +226,36 @@ OpenResty contains no application list. Its stable routes are:
 /sites/{alias}/*   -> proc /api/integrations/sites/{alias}/*
 ```
 
-Proc reads the active Redis app registry and authoritative app props, resolves
-the owning application, and delegates to the standard main-view static server.
-Descriptor reloads can add, remove, or remap sites without regenerating proxy
-configuration.
+At startup and after application/config updates, proc validates the current
+descriptor declarations and publishes a generated site catalog to Redis. Every
+proc subscribes to catalog generations and keeps an immutable copy in memory.
+Requests resolve that hot copy and do not access Redis or `bundles.yaml`.
+Descriptor reloads can therefore add, remove, or remap sites without
+regenerating proxy configuration.
+
+```text
+bundles.yaml
+    -> versioned Redis projection + update event
+    -> proc in-memory SiteCatalog
+    -> request-time alias/host lookup
+```
+
+For a multipage site, include the complete output tree in the main-view build.
+Existing files and directory `index.html` files are served directly; an unknown
+path falls back to the root `index.html` for SPA routers.
+
+For a dedicated CDN hostname, add the hostname to `site.hosts` and configure
+the CDN origin behavior to preserve that host and rewrite the viewer path:
+
+```text
+https://docs.example.com/<path>
+  -> /api/integrations/site-root/<path>
+  -> host-selected application site
+```
+
+The CDN is not a catalog owner and does not query Redis. It only forwards and
+caches. Keep HTML revalidating and allow content-hashed `assets/` to use the
+immutable cache headers returned by the platform.
 
 The standard cache policy applies:
 
@@ -287,8 +313,10 @@ type; it does not need application-specific website logic.
 
 Add site declarations to the environment's `bundles.yaml` and publish the
 descriptor through the normal deployment procedure. Domain-based selection
-requires those domains to reach the same KDCube proxy and appear in the site's
-`hosts` list.
+requires those domains to reach the KDCube runtime, appear in the site's
+`hosts` list, and preserve the viewer host. For full multipage host routing,
+rewrite `/<path>` to `/api/integrations/site-root/<path>` at the CDN behavior,
+as described above.
 
 ## Diagnostics
 

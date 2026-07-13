@@ -22,7 +22,13 @@ path. The site registry also exposes it at `/sites/{alias}`. The proxy forwards
 GET /sites/{alias}
 GET /sites/{alias}/{path}
 GET /                         # host match, then default
+GET /api/integrations/site-root/{path}  # CDN host-path rewrite target
 ```
+
+Site HTML receives an internal `kdcube-site-context` JSON block containing the
+resolved tenant, project, application id, alias, public base, and catalog
+revision. Browser code uses this context instead of deriving application
+identity from an internal static URL.
 
 ## Site Configuration
 

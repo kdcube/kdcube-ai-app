@@ -22,6 +22,19 @@ function unwrap(payload, key) {
 }
 
 function routeContext() {
+  const contextNode = document.getElementById('kdcube-site-context')
+  if (contextNode) {
+    try {
+      const context = asObject(JSON.parse(contextNode.textContent || '{}'))
+      if (context.tenant && context.project && context.application_id) {
+        return {
+          tenant: String(context.tenant),
+          project: String(context.project),
+          applicationId: String(context.application_id),
+        }
+      }
+    } catch (_error) {}
+  }
   const match = String(document.baseURI || '').match(
     /\/api\/integrations\/bundles\/([^/]+)\/([^/]+)\/([^/]+)\/public\/static\//,
   )
