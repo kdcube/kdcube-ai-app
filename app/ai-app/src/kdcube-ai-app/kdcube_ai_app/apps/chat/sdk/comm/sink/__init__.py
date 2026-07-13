@@ -1,4 +1,5 @@
 from .telemetry import (
+    STATS_COMM_DATA_KEYS,
     STATS_COMM_EVENT_SELECTOR,
     StatsTelemetrySink,
     StatsTelemetryTarget,
@@ -8,6 +9,7 @@ from .telemetry import (
 )
 
 __all__ = [
+    "STATS_COMM_DATA_KEYS",
     "STATS_COMM_EVENT_SELECTOR",
     "StatsTelemetrySink",
     "StatsTelemetryTarget",

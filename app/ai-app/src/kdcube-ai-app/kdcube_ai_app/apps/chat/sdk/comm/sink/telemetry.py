@@ -80,6 +80,8 @@ STATS_COMM_DATA_KEYS = [
     "produced_file_count",
     "provider",
     "query_len",
+    "labels",
+    "reported_metrics",
     "requested_count",
     "reported_values",
     "resolved_count",
@@ -499,6 +501,17 @@ def _comm_event(item: Mapping[str, Any], ctx: Mapping[str, str]) -> Dict[str, An
     ev = _mapping(item.get("event"))
     data = _mapping(item.get("data"))
     status = _status(item)
+    # Any app event that isn't one of the typed shapes above still ships its
+    # self-describing reported-metrics bag (and its context labels) so an
+    # app-owned dashboard can read them back. The emitter identity rides the
+    # `type` dimension + source_bundle below.
+    payload_data: Dict[str, Any] = {}
+    reported = _reported_metrics(data.get("reported_metrics"))
+    if reported:
+        payload_data["reported_metrics"] = reported
+        labels = _clean_mapping(_mapping(data.get("labels")))
+        if labels:
+            payload_data["labels"] = labels
     return _base_event(
         item,
         ctx,
@@ -512,6 +525,7 @@ def _comm_event(item: Mapping[str, Any], ctx: Mapping[str, str]) -> Dict[str, An
         },
         metrics=_metrics(data, include_latency=True),
         status=status,
+        data=payload_data or None,
     )
 
 
@@ -781,6 +795,36 @@ def _reported_values(value: Any) -> List[Dict[str, str]]:
         reported_value = _safe(item.get("value"), max_len=500)
         if concept and reported_value:
             out.append({"concept": concept, "value": reported_value})
+    return out
+
+
+_REPORTED_METRIC_AGGS = {"sum", "avg", "last", "max", "min", "count"}
+
+
+def _reported_metrics(value: Any) -> Dict[str, Dict[str, Any]]:
+    """Ship an app's self-describing metric bag verbatim (value + agg/display
+    hints). Open by design — no metric name is enumerated here. See
+    docs/sdk/solutions/telemetry/reported-events-conventions-README.md."""
+    if not isinstance(value, Mapping):
+        return {}
+    out: Dict[str, Dict[str, Any]] = {}
+    for key, item in list(value.items())[:32]:
+        name = _safe(key, max_len=80)
+        if not name or not isinstance(item, Mapping):
+            continue
+        try:
+            num = float(item.get("value"))
+        except (TypeError, ValueError):
+            continue
+        desc: Dict[str, Any] = {"value": num}
+        agg = _safe(item.get("agg"), max_len=12).lower()
+        if agg in _REPORTED_METRIC_AGGS:
+            desc["agg"] = agg
+        for hint in ("label", "format", "unit"):
+            hint_value = _safe(item.get(hint), max_len=80)
+            if hint_value:
+                desc[hint] = hint_value
+        out[name] = desc
     return out
 
 
