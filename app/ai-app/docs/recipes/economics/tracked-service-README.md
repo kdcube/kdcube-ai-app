@@ -23,6 +23,7 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/economics/economic-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/economics/economic-enforcement-engine-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/configuration/economics-descriptor-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/claude/claude-code-accounting-README.md
 ---
 
 # Recipe: Implement a Self-Tracked Service
@@ -231,6 +232,24 @@ model (`llm_reference_service()`), converting each event's USD into reference
 tokens; you never compute that — reporting an accurate `cost_usd` (or a correct
 price-table entry) is enough.
 
+### The Claude Code runtime is this pattern in production
+
+You do not have to imagine the reported-cost path — the built-in **Claude Code
+runtime** already runs on it. A Claude Code turn is accounted as a standard LLM
+event through the same `@track_llm` mechanism: `service_type="llm"`,
+`provider="anthropic"`, `model_or_service=<resolved Claude model>`, and
+`metadata.runtime="claude_code"`. Its usage — input/output/thinking/cache tokens,
+`requests`, and a `cost_usd` — is parsed from the Claude CLI's `stream-json`
+output into a `ServiceUsage`, with the dollar figure **self-reported** (the CLI's
+own `cost_usd`). Because it emits under the priced `llm` type, the calculator
+prices it two ways: an alias-aware price-table lookup (so `sonnet` / `opus`
+resolve to canonical entries) when the model is priced, and the reported
+`cost_usd` as the fallback otherwise — so spend stays visible even for a model
+with no pinned price entry, or an alias name. It is the reference implementation
+of the reported-cost lever above: emit under a priced service type and carry the
+real cost. See
+[Claude Code Accounting](../../sdk/agents/claude/claude-code-accounting-README.md).
+
 ## 5. Attribute the usage (bind context)
 
 An event's `who / where / which-turn` comes from the `AccountingContext`. Inside a
@@ -310,3 +329,4 @@ present.
 - [Economics Model](../../economics/economic-README.md) — how per-turn USD becomes reservations, quota, and settlement.
 - [Economics Enforcement Engine](../../economics/economic-enforcement-engine-README.md) — the guard/preflight API a tracked service runs under.
 - [Economics Descriptor](../../configuration/economics-descriptor-README.md) — the `economics.yaml` `price_tables` and reference-model sections read live at runtime.
+- [Claude Code Accounting](../../sdk/agents/claude/claude-code-accounting-README.md) — the built-in Claude Code runtime as a production instance of this pattern.
