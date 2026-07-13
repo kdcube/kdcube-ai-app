@@ -149,7 +149,9 @@ a {
 #workspace-scene {
   display: block;
   width: 100%;
-  height: 100%;
+  /* The site owns this viewport. Nested widget resize messages can cross the
+     Scene bridge, while the top-level Scene frame remains grid-sized. */
+  height: 100% !important;
   border: 0;
   background: var(--surface-muted);
 }

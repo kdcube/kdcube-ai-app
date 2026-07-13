@@ -67,3 +67,5 @@ The site:
 6. announces session transitions with `kdcube-auth-changed`;
 7. opens the backend-provided login URL, or the configured platform frontend
    when the active authority uses the platform browser flow.
+8. owns the viewport height and keeps the configured Scene iframe grid-sized
+   while nested surfaces exchange content-resize messages.

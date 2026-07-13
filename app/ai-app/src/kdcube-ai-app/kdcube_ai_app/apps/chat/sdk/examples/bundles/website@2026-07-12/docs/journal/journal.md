@@ -7,5 +7,6 @@ status: active
 
 # Journal Index
 
+- [2026-07-13: Viewport-Bound Scene Height](2026-07-13-viewport-bound-scene-height.md)
 - [2026-07-13: Versioned Site Catalog And CDN Routing](2026-07-13-versioned-site-catalog-and-cdn.md)
 - [2026-07-13: Application-Hosted Local Website](2026-07-13-application-hosted-local-website.md)

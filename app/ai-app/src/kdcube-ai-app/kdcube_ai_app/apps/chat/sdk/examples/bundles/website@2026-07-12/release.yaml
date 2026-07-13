@@ -17,3 +17,5 @@ bundle:
       and routes requests from an immutable proc-local catalog.
     - Supports multipage files, SPA fallback, and CDN host-path rewrites through
       the reserved `/api/integrations/site-root/{path}` surface.
+    - Keeps the embedded Scene viewport-sized when nested widgets publish
+      content-resize messages.

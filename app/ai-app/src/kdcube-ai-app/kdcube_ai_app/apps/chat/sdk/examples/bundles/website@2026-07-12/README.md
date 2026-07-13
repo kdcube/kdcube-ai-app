@@ -18,6 +18,10 @@ It builds a public `ui.main_view`, reads platform/auth metadata from
 `/api/cp-frontend-config`, reads its composition from `public/site_config`, and
 hosts the configured app scene.
 
+The website shell is viewport-bound. It owns the embedded Scene iframe height,
+while content-sized widgets retain the platform resize-reporter behavior inside
+their owning surfaces.
+
 Every enabled site has a unique public alias. The runtime can also select a root
 site by request host and then by one explicit default. Platform and API paths
 keep their normal ownership:

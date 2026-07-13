@@ -67,3 +67,12 @@ immutable. The public-content publication subsystem is not involved.
 The CDN preserves `Host` or `X-Forwarded-Host`; proc uses it to select the site.
 The CDN stores no catalog and may cache the returned HTML/assets according to
 the platform headers.
+
+## Viewport Ownership
+
+The website shell fills its browser or host frame and keeps the configured
+Scene in the remaining viewport below the site header. Its HTML carries the
+`data-kdcube-resize-reporter="opt-out"` marker, and `#workspace-scene` has a
+stylesheet-owned `height: 100% !important`. Nested widget resize messages can
+therefore size their local Scene windows while the outer Scene keeps the
+website viewport dimensions.
