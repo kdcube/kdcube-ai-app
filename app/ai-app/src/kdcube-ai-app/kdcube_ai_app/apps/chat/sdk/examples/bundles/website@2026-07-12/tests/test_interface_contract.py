@@ -40,3 +40,12 @@ def test_site_script_accepts_site_and_control_plane_main_view_routes() -> None:
     assert "/\\/api\\/integrations\\/static\\/" in source
     assert "/\\/api\\/integrations\\/bundles\\/" in source
     assert "kdcube-site-context" in source
+
+
+def test_site_keeps_a_definite_height_chain_for_the_embedded_scene() -> None:
+    source = (ROOT / "ui" / "site" / "styles.css").read_text()
+    assert "height: 100%;" in source
+    assert "height: 100dvh;" in source
+    assert "grid-template-rows: auto minmax(0, 1fr);" in source
+    assert "#workspace-scene" in source
+    assert "height: 100%;" in source.split("#workspace-scene", 1)[1]
