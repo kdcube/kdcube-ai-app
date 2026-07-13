@@ -141,6 +141,8 @@ GET …/bundles/{tenant}/{project}/{bundle_id}/public/__content__
       → JSON descriptor list of enabled alias sitemaps (host federation)
 GET …/public/__content__/{alias}/sitemap.xml
       → the per-alias sitemap (catalog pages + published items, accurate lastmod)
+GET …/public/__content__/{alias}/{catalog-prefix}/sitemap.xml
+      → a filtered sitemap for one configured catalog (catalog page + its items)
 GET …/public/__content__/{alias}/{catalog-prefix}[?q=…&offset=…]
       → a configured catalog: the server-rendered listing page
 GET …/public/__content__/{alias}/{slug…}
@@ -219,8 +221,11 @@ Behavior and guarantees:
   — chrome styles are namespaced (`kdcpub-`) and self-contained, so article
   CSS and chrome cannot bleed into each other. Canonical/OG/JSON-LD are
   unchanged. Items not covered by any catalog serve exactly as before.
-- **Sitemap**: each catalog page joins the alias sitemap with `lastmod` =
-  newest covered item.
+- **Sitemaps**: each catalog page joins the alias sitemap with `lastmod` =
+  newest covered item. Every configured catalog also receives a filtered
+  child sitemap at `{catalog-prefix}/sitemap.xml`, generated from the same hot
+  index. A host can submit that child sitemap independently for section-level
+  Search Console coverage without duplicating content storage or publication.
 - Shell failures degrade to the plain item page — an article never 500s
   because the index is momentarily unavailable.
 
@@ -249,9 +254,9 @@ a public page never hard-fails.
 
 Host-level artifacts stay **host/deployment-owned**: `robots.txt` and the
 site's sitemap **index** belong to whoever owns the domain root. The
-solution provides what the host references — per-alias sitemaps plus the
-descriptor list route, so a host generates its index entries without
-scraping.
+solution provides what the host references — per-alias and per-catalog
+sitemaps plus the descriptor list route. Each alias descriptor includes its
+`catalog_sitemaps`, so a host generates index entries without scraping.
 
 ## Deployment Topology: Split Origin (host site + runtime)
 
@@ -280,7 +285,7 @@ The three configuration pieces, each in its owner's home:
 | --- | --- | --- |
 | `canonical_base` | runtime descriptor (`public_content.<alias>` block) | `https://site.example/news` — item pages, JSON-LD `url`, and sitemap `<loc>` all use it |
 | path behavior + URI-rewrite function | the **site's** CDN distribution | maps the clean prefix to the `__content__` route (CDN routes by path but does not rewrite it — a small viewer-request function does) |
-| federation | the website build | `Sitemap: https://site.example/news/sitemap.xml` in `robots.txt`; one `<sitemap>` entry in the site's `sitemap.xml` index |
+| federation | the website build | `Sitemap: https://site.example/news/sitemap.xml` plus any independently monitored catalog sitemap in `robots.txt`; matching `<sitemap>` entries in the site's sitemap index |
 
 Result for a crawler: `robots.txt` → site sitemap index → the app's
 runtime-generated sitemap (accurate `lastmod`) → clean item URLs, each

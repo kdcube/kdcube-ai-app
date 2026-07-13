@@ -10,9 +10,9 @@ Glue between the app surface and the SDK primitives:
 - constructs the tiered :class:`PublicContentRegistry` for an app;
 - ensures hot indexes on app load (Moment A — many workers race; guarded);
 - serves the crawlable artifacts for the reserved public route
-  ``public/__content__/…``: item pages, per-alias ``sitemap.xml``, and the
-  machine-readable sitemap descriptor list a host uses to federate its own
-  top-level sitemap index;
+  ``public/__content__/…``: item pages, per-alias and per-catalog sitemaps,
+  and the machine-readable sitemap descriptor list a host uses to federate
+  its own top-level sitemap index;
 - optional Data Bus change notification. The Data Bus message is a
   notification hook only — the durable registry/generation marker stays
   authoritative and consumers must resync from durable records when they miss
@@ -394,6 +394,7 @@ async def serve_public_content(
     - ``""`` — machine-readable descriptor list of all enabled alias sitemaps
       (what a host reads to build its top-level sitemap index);
     - ``<alias>/sitemap.xml`` — the per-alias sitemap;
+    - ``<alias>/<catalog-prefix>/sitemap.xml`` — one filtered catalog sitemap;
     - ``<alias>/<catalog-prefix>`` — a configured catalog: the server-rendered,
       paginated (``?offset=``), searchable (``?q=``) listing page;
     - ``<alias>/<slug…>`` — the crawlable item page (410 when retracted);
@@ -451,14 +452,29 @@ async def serve_public_content(
     if rest == "sitemap.xml":
         if not config.sitemap:
             return _not_found(f"Sitemap is not enabled for alias {alias}")
-        index = await registry.read_index()
-        if index is None:
-            # Cold hot-tier (fresh instance): build once, guarded fleet-wide.
-            await registry.ensure_hot_index()
-            index = await registry.read_index()
+        index = await _current_index(registry)
         if index is None:
             return _not_found(f"No content index for alias {alias}")
         xml = render_sitemap_xml(index, config=config, fallback_base_url=_alias_base(alias))
+        return _binary(xml, _XML)
+
+    catalog_sitemap_suffix = "/sitemap.xml"
+    if rest.endswith(catalog_sitemap_suffix):
+        if not config.sitemap:
+            return _not_found(f"Sitemap is not enabled for alias {alias}")
+        catalog_prefix = rest[: -len(catalog_sitemap_suffix)].strip("/")
+        catalog = config.catalog(catalog_prefix)
+        if catalog is None:
+            return _not_found(f"Public content catalog {catalog_prefix} is not available")
+        index = await _current_index(registry)
+        if index is None:
+            return _not_found(f"No content index for alias {alias}")
+        xml = render_sitemap_xml(
+            index,
+            config=config,
+            fallback_base_url=_alias_base(alias),
+            catalog=catalog,
+        )
         return _binary(xml, _XML)
 
     if not rest:

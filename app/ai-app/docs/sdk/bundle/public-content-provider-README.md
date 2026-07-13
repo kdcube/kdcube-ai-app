@@ -124,6 +124,8 @@ Once declared + enabled, with no further app code:
 ```text
 GET …/public/__content__                         descriptor list (host federation)
 GET …/public/__content__/{alias}/sitemap.xml     per-alias sitemap
+GET …/public/__content__/{alias}/{catalog-prefix}/sitemap.xml
+                                                  filtered catalog sitemap
 GET …/public/__content__/{alias}/{slug…}         crawlable item page / 410 / 404
 ```
 
@@ -136,6 +138,10 @@ curl -i "$BASE/public/__content__/articles/my/first-post"
 
 curl -i "$BASE/public/__content__/articles/sitemap.xml"
 # expect: 200 urlset with <loc> + <lastmod>
+
+# when `articles` configures a `journal` catalog:
+curl -i "$BASE/public/__content__/articles/journal/sitemap.xml"
+# expect: 200 urlset containing only the catalog page + published journal items
 
 # after registry.retract(...):
 curl -i "$BASE/public/__content__/articles/my/first-post"   # expect: 410

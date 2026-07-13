@@ -7,8 +7,8 @@
 Apps declare and publish public, discoverable content; the platform generates
 and serves the discoverability artifacts (crawlable HTML, JSON-LD,
 canonical/OG/Twitter metadata, per-alias sitemaps) and — when the alias
-configures catalogs — the browsable listing pages with search, pagination,
-site chrome, and the article-page side rail.
+configures catalogs — filtered catalog sitemaps plus browsable listing pages
+with search, pagination, site chrome, and the article-page side rail.
 """
 
 from kdcube_ai_app.apps.chat.sdk.pub.model import (

@@ -7,6 +7,7 @@ hot-index schema upgrade path."""
 from __future__ import annotations
 
 import asyncio
+import json
 import pathlib
 
 from kdcube_ai_app.apps.chat.sdk.pub.model import INDEX_SCHEMA, PublicContentItem
@@ -223,6 +224,34 @@ def test_sitemap_includes_catalog_urls(tmp_path):
     assert "<loc>https://kdcube.tech/news/kdcube/blogs</loc>" in xml
     assert "<loc>https://kdcube.tech/news/kdcube/journal</loc>" in xml
     assert "<loc>https://kdcube.tech/news/kdcube/blogs/2026-07-01-alpha</loc>" in xml
+
+
+def test_catalog_sitemap_contains_only_its_catalog(tmp_path):
+    _seed(tmp_path)
+    xml = _serve(tmp_path, "news/kdcube/journal/sitemap.xml").content.decode("utf-8")
+    assert "<loc>https://kdcube.tech/news/kdcube/journal</loc>" in xml
+    assert "<loc>https://kdcube.tech/news/kdcube/journal/2026-07-04-delta</loc>" in xml
+    assert "kdcube/blogs" not in xml
+    assert "industry/ai" not in xml
+
+
+def test_catalog_sitemap_is_discoverable_from_descriptor_list(tmp_path):
+    _seed(tmp_path)
+    payload = json.loads(_serve(tmp_path, "").content)
+    catalogs = payload["sitemaps"][0]["catalog_sitemaps"]
+    journal = next(item for item in catalogs if item["prefix"] == "kdcube/journal")
+    assert journal == {
+        "prefix": "kdcube/journal",
+        "label": "Journal",
+        "sitemap_url": f"{_BASE}/news/kdcube/journal/sitemap.xml",
+        "item_count": 1,
+        "lastmod": "2026-07-04",
+    }
+
+
+def test_unknown_catalog_sitemap_is_404(tmp_path):
+    _seed(tmp_path)
+    assert _serve(tmp_path, "news/unknown/sitemap.xml").status_code == 404
 
 
 def test_old_schema_hot_index_is_rebuilt_on_catalog_serve(tmp_path):

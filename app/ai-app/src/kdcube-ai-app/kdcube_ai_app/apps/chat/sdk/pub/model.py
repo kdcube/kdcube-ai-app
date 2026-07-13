@@ -7,7 +7,7 @@
 An app declares public, discoverable content items (articles, docs, catalog
 entries, reports). The platform owns the discoverability artifacts generated
 from these items: crawlable HTML pages, JSON-LD, canonical/OG/Twitter metadata,
-and per-alias sitemaps.
+per-alias sitemaps, and filtered sitemaps for configured catalogs.
 
 Visibility vocabulary: an item is exposed because its alias is explicitly
 public and the item's publication state is ``published`` — scoped by
@@ -175,8 +175,9 @@ class OpenGraphDefaults(BaseModel):
 
 class PublicContentCatalogConfig(BaseModel):
     """One browsable catalog (fold) of an alias: a slug prefix served as a
-    server-rendered, paginated, searchable listing page, and the same data
-    rendered as the article-page side rail.
+    server-rendered, paginated, searchable listing page, the same data
+    rendered as the article-page side rail, and a filtered sitemap generated
+    from the alias index.
 
     Declared under ``public_content.<alias>.catalogs`` keyed by prefix::
 
