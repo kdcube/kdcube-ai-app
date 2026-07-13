@@ -35,9 +35,14 @@ function routeContext() {
       }
     } catch (_error) {}
   }
-  const match = String(document.baseURI || '').match(
-    /\/api\/integrations\/bundles\/([^/]+)\/([^/]+)\/([^/]+)\/public\/static\//,
-  )
+  const baseUri = String(document.baseURI || '')
+  const routePatterns = [
+    /\/api\/integrations\/static\/([^/]+)\/([^/]+)\/([^/]+)(?:\/|$)/,
+    /\/api\/integrations\/bundles\/([^/]+)\/([^/]+)\/([^/]+)\/public\/static(?:\/|$)/,
+  ]
+  const match = routePatterns
+    .map((pattern) => baseUri.match(pattern))
+    .find(Boolean)
   if (!match) return null
   return {
     tenant: decodeURIComponent(match[1]),

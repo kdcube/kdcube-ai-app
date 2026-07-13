@@ -32,3 +32,11 @@ def test_entrypoint_keeps_site_config_public_and_async() -> None:
     assert '@api(method="GET", alias="site_config", route="public")' in source
     assert "async def site_config" in source
     assert '"src_folder": "ui/site"' in source
+
+
+def test_site_script_accepts_site_and_control_plane_main_view_routes() -> None:
+    source = (ROOT / "ui" / "site" / "site.js").read_text()
+    assert "const routePatterns = [" in source
+    assert "/\\/api\\/integrations\\/static\\/" in source
+    assert "/\\/api\\/integrations\\/bundles\\/" in source
+    assert "kdcube-site-context" in source
