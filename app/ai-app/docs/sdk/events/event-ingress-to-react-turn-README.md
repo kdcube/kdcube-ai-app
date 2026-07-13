@@ -24,6 +24,7 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/events/external-events-journey-and-handling-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/events/external-event-envelope-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/events/conversation-event-lane-state-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/events/reactive-turn-delivery-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/shared-timeline-event-bus-steer-followup-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-conversation-events-and-react-output-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/arch/ingress/events-inception-README.md
