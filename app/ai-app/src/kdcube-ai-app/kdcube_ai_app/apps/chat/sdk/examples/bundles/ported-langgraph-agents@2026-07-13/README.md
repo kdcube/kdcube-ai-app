@@ -48,7 +48,9 @@ ported-langgraph-agents@2026-07-13/
     capabilities.py      per-turn, per-agent model pick (role_models overlay)
     tool_pick.py         lg-react's tool inventory (admin ∩ user-enabled, per turn)
     tools_mcp.py         lg-react's MCP tools seam
-    code_exec.py         lg-react's code-execution tool (files hosted into the conversation)
+    code_exec.py         lg-react's code-execution tool: files hosted into the conversation,
+                         the live exec widget (solutions/widgets/exec.py), and CLASSIFIED
+                         errors to the model (runtime/retryable vs program)
     telegram.py          the shared Telegram ingress (drives the default agent)
   entrypoint.py        ← composition root: execute_core DISPATCHES on agent_id
 ```

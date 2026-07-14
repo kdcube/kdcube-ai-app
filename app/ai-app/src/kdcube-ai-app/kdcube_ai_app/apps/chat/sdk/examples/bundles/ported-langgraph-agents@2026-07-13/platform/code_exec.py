@@ -98,6 +98,10 @@ class CodeExecContext:
     # side-effects exec). Signature mirrors run_exec_tool_side_effects kwargs.
     exec_runner: Optional[Callable[..., Awaitable[Dict[str, Any]]]] = None
     logger: Any = LOGGER
+    # Every file hosted this turn (compact refs). execute_core copies these onto
+    # `state["hosted_files"]` after the run so the turn recorder persists file refs
+    # for reload + later pull.
+    hosted_files: List[Dict[str, Any]] = field(default_factory=list)
 
 
 # The per-turn handle a tool running inside `code_exec_scope` resolves through.
@@ -195,6 +199,14 @@ def _safe_seg(value: str) -> str:
 
 # ── context construction (production) ────────────────────────────────────────
 
+def _svc(service: Any, key: str) -> str:
+    """A field from the communicator's service dict (the request identity surface
+    the React host path reads), or '' when absent."""
+    if isinstance(service, dict):
+        return str(service.get(key) or "")
+    return ""
+
+
 def build_code_exec_context(ep: Any, state: Dict[str, Any], agent_id: str) -> CodeExecContext:
     """Build the per-turn code-exec context from the entrypoint.
 
@@ -241,6 +253,15 @@ def build_code_exec_context(ep: Any, state: Dict[str, Any], agent_id: str) -> Co
 
     sandbox_root = _bootstrap_sandbox(conversation_id=conversation_id, turn_id=turn_id)
 
+    LOGGER.info(
+        "[ported-langgraph] code_exec: identity (svc-first, like React) tenant=%s project=%s "
+        "owner=%s(user_type=%s) conv=%s turn=%s — owner keys the hosted file's download path",
+        (_svc(service, "tenant") or getattr(comm, "tenant", None) or ""),
+        (_svc(service, "project") or getattr(comm, "project", None) or ""),
+        (_svc(service, "user") or getattr(comm, "user_id", None) or ""),
+        (_svc(service, "user_type") or getattr(comm, "user_type", None) or ""),
+        conversation_id, turn_id,
+    )
     return CodeExecContext(
         enabled=True,
         comm=comm,
@@ -251,11 +272,17 @@ def build_code_exec_context(ep: Any, state: Dict[str, Any], agent_id: str) -> Co
         sandbox_root=sandbox_root,
         turn_id=turn_id,
         conversation_id=conversation_id,
-        tenant=str(getattr(comm, "tenant", None) or "").strip(),
-        project=str(getattr(comm, "project", None) or "").strip(),
-        user_id=str(getattr(comm, "user_id", None) or "").strip(),
-        user_type=str(getattr(comm, "user_type", None) or "").strip(),
-        request_id=str((service.get("request_id") if isinstance(service, dict) else "") or "").strip(),
+        # Identity is sourced from `comm.service` FIRST (with comm-attr fallbacks) —
+        # EXACTLY like the React host path (react/tools/common.py, bundle_tool_context).
+        # The download-critical field is the OWNER: `service["user"]` is the request's
+        # user_id OR its fingerprint; the download resolver reconstructs the storage
+        # key with that same owner. Using `comm.user_id` alone stored fingerprint-owned
+        # (anonymous) turns under "unknown", so the hosted file failed to download.
+        tenant=str(_svc(service, "tenant") or getattr(comm, "tenant", None) or "").strip(),
+        project=str(_svc(service, "project") or getattr(comm, "project", None) or "").strip(),
+        user_id=str(_svc(service, "user") or getattr(comm, "user_id", None) or "").strip(),
+        user_type=str(_svc(service, "user_type") or getattr(comm, "user_type", None) or "").strip(),
+        request_id=str(_svc(service, "request_id") or "").strip(),
         exec_runtime=cfg["exec_runtime"],
         timeout_s=cfg["timeout_s"],
         logger=getattr(ep, "logger", None) or LOGGER,
@@ -531,19 +558,101 @@ async def _host_artifacts(
     for row in hosted:
         if not isinstance(row, dict):
             continue
+        # `logical_path` is the React-style `fi:conv_…` link the chat UI downloads
+        # by and the model can cite back to the user (built by host_files_to_conversation
+        # from the SAME conversation_id the bytes were stored under).
         refs.append(
             {
                 "rn": row.get("rn") or "",
                 "hosted_uri": row.get("hosted_uri") or "",
+                "logical_path": row.get("logical_path") or "",
                 "mime": row.get("mime") or "application/octet-stream",
                 "filename": row.get("filename") or "",
             }
         )
+        LOGGER.info(
+            "[ported-langgraph] code_exec: hosted file filename=%s owner=%s conv=%s turn=%s "
+            "physical_path=%s logical_path=%s rn=%s",
+            row.get("filename"), ctx.user_id, ctx.conversation_id, ctx.turn_id,
+            row.get("physical_path"), row.get("logical_path"), row.get("rn"),
+        )
     return refs
 
 
-def _error_result(message: str, *, code: str = "code_exec_unavailable") -> Dict[str, Any]:
-    return {"ok": False, "stdout": "", "stderr": message, "error": code, "files": []}
+def _error_result(message: str, *, code: str = "code_exec_unavailable", kind: str = "runtime") -> Dict[str, Any]:
+    # `error` is the CODE (kept for back-compat); `error_kind` classifies the failure
+    # so the model can react correctly — "runtime" = a PLATFORM/sandbox failure (not a
+    # defect in the model's code, usually transient/retryable), "program" = the model's
+    # own code raised. `error_message` is the human-readable line. Mirrors the SDK exec
+    # contract (docs/exec/exec-logging-error-propagation-README.md).
+    return {
+        "ok": False, "stdout": "", "stderr": message, "files": [],
+        "error": code, "error_kind": kind, "error_message": message,
+    }
+
+
+# ── live code-exec widget ─────────────────────────────────────────────────────
+# The SAME streaming widget the React decision loop drives (solutions/widgets/exec.py):
+# it emits `code_exec.*` subsystem deltas (program name, the code, status gen→exec→
+# done/error) keyed by an execution_id, and the reusable chat component renders the
+# live exec panel from them. React feeds it from a `<channel:code>` stream; a
+# create_agent tool call carries the code as an argument, so we drive the widget
+# directly around the run. Best-effort: a widget failure never affects the exec.
+
+def _program_name_from_code(code: str) -> str:
+    """A short label for the exec panel. Prefer a leading `# name` comment; else a
+    generic name (the tool takes no explicit prog_name)."""
+    for line in (code or "").splitlines():
+        s = line.strip()
+        if s.startswith("#"):
+            name = s.lstrip("#").strip()
+            if name:
+                return name[:80]
+        elif s:
+            break
+    return "Python program"
+
+
+async def _begin_exec_widget(ctx: "CodeExecContext", exec_id: str, code: str) -> Tuple[Optional[Any], float]:
+    """Create + prime the live code-exec widget: program name, the code, and the
+    gen→exec transition, BEFORE the run. Returns (widget|None, t0). Fail-open."""
+    import time as _time
+    t0 = _time.perf_counter()
+    comm = getattr(ctx, "comm", None)
+    emit_delta = getattr(comm, "delta", None) if comm is not None else None
+    if not callable(emit_delta):
+        return None, t0
+    try:
+        from kdcube_ai_app.apps.chat.sdk.solutions.widgets.exec import DecisionExecCodeStreamer
+        widget = DecisionExecCodeStreamer(
+            emit_delta=emit_delta,
+            agent="lg-react.code_exec",
+            artifact_name=f"exec.{exec_id}",
+            execution_id=exec_id,
+            turn_id=str(getattr(ctx, "turn_id", "") or ""),
+        )
+        await widget.emit_program_name(_program_name_from_code(code))
+        await widget.feed_code(code, completed=True)   # streams `code_exec.code` (activates, emits gen)
+        await widget.emit_status(status="exec")
+        return widget, t0
+    except Exception:
+        LOGGER.info("[ported-langgraph] code_exec: exec widget begin failed (non-fatal)", exc_info=True)
+        return None, t0
+
+
+async def _end_exec_widget(widget: Optional[Any], t0: float, *, ok: bool, error: Optional[Dict[str, Any]]) -> None:
+    """Close the widget: exec timing + the terminal done/error status. Fail-open."""
+    if widget is None:
+        return
+    import time as _time
+    try:
+        widget.set_timings(exec_ms=int((_time.perf_counter() - t0) * 1000))
+        await widget.emit_status(
+            status=("done" if ok else "error"),
+            error=None if ok else (error or {"message": "execution failed", "where": "exec_execution"}),
+        )
+    except Exception:
+        LOGGER.info("[ported-langgraph] code_exec: exec widget end failed (non-fatal)", exc_info=True)
 
 
 async def run_code_and_host(
@@ -587,6 +696,9 @@ async def run_code_and_host(
     wrapped = _wrap_code(code, turn_id=ctx.turn_id)
     runner = ctx.exec_runner or _default_exec_runner
 
+    # Drive the live code-exec widget (same one React streams) around the run.
+    exec_widget, _widget_t0 = await _begin_exec_widget(ctx, exec_id, code)
+
     LOGGER.info(
         "[ported-langgraph] code_exec: EXEC start exec_id=%s runner=%s runtime=%s timeout_s=%s workdir=%s outdir=%s",
         exec_id, getattr(runner, "__name__", type(runner).__name__),
@@ -606,10 +718,22 @@ async def run_code_and_host(
         )
     except Exception as exc:  # never let a sandbox-harness failure crash the turn
         LOGGER.warning("[ported-langgraph] code_exec: exec runner failed", exc_info=True)
-        return _error_result(f"Code execution failed to run: {type(exc).__name__}: {exc}")
+        await _end_exec_widget(
+            exec_widget, _widget_t0, ok=False,
+            error={"code": "sandbox_execution_failed", "message": f"{type(exc).__name__}: {exc}", "where": "exec_runner"},
+        )
+        return _error_result(
+            f"The code sandbox failed to run your program (a platform error, not a defect "
+            f"in your code; usually transient — you may retry): {type(exc).__name__}: {exc}",
+            code="sandbox_execution_failed", kind="runtime",
+        )
 
     if not isinstance(envelope, dict):
-        return _error_result("Code execution returned no result.")
+        await _end_exec_widget(exec_widget, _widget_t0, ok=False, error={"code": "sandbox_execution_failed", "message": "no result", "where": "exec_execution"})
+        return _error_result(
+            "The code sandbox returned no result (a platform error; usually transient — you may retry).",
+            code="sandbox_execution_failed", kind="runtime",
+        )
 
     stdout = str(envelope.get("user_out_tail") or "").strip()
     stderr_parts = [
@@ -625,6 +749,10 @@ async def run_code_and_host(
         "[ported-langgraph] code_exec: EXEC done exec_id=%s ok=%s stdout_len=%d stderr_len=%d",
         exec_id, ok, len(stdout), len(stderr),
     )
+    await _end_exec_widget(
+        exec_widget, _widget_t0, ok=ok,
+        error=(err if isinstance(err, dict) else ({"message": stderr[:400], "where": "exec_execution"} if not ok else None)),
+    )
 
     files: List[Dict[str, Any]] = []
     try:
@@ -634,6 +762,9 @@ async def run_code_and_host(
             len(artifacts), exec_id,
         )
         files = await _host_artifacts(ctx, artifacts)
+        # Remember every hosted file for the turn so execute_core can persist the
+        # refs (reload + later pull); the model still only sees the compact refs.
+        ctx.hosted_files.extend(files)
         LOGGER.info(
             "[ported-langgraph] code_exec: HOSTED %d file(s) → conversation storage + chat event exec_id=%s rns=%s",
             len(files), exec_id, [f.get("rn") for f in files],
@@ -641,4 +772,19 @@ async def run_code_and_host(
     except Exception:
         LOGGER.warning("[ported-langgraph] code_exec: hosting produced files failed", exc_info=True)
 
-    return {"ok": ok, "stdout": stdout, "stderr": stderr, "files": files}
+    result: Dict[str, Any] = {"ok": ok, "stdout": stdout, "stderr": stderr, "files": files}
+    if not ok:
+        # Classify so the model reacts correctly (retry a platform failure; fix its own
+        # code on a program error). A managed error dict from the runtime = a runtime/
+        # platform failure; otherwise a non-zero exit is the model's program failing.
+        if isinstance(err, dict) and (err.get("code") or err.get("managed")):
+            result["error"] = str(err.get("code") or "sandbox_execution_failed")
+            result["error_kind"] = "runtime"
+            result["error_message"] = str(
+                err.get("message") or err.get("description") or (stderr[:400] or "runtime error")
+            ).strip()
+        else:
+            result["error"] = "program_error"
+            result["error_kind"] = "program"
+            result["error_message"] = (stderr[:800] or "your program exited with an error").strip()
+    return result

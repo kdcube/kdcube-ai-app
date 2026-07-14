@@ -40,18 +40,45 @@ def _format_result(result: dict) -> str:
     ok = bool(result.get("ok"))
     lines: List[str] = [f"Status: {'success' if ok else 'error'}"]
 
-    err = str(result.get("error") or "").strip()
-    if err and not ok:
-        lines.append(f"Error: {err}")
+    if not ok:
+        # Propagate the error CLASSIFICATION so the model reacts correctly: a runtime/
+        # sandbox failure is a platform problem it may retry; a program error is its own
+        # code and must be fixed. (See docs/exec/exec-logging-error-propagation-README.md.)
+        kind = str(result.get("error_kind") or "").strip().lower()
+        code = str(result.get("error") or "").strip()
+        msg = str(result.get("error_message") or result.get("stderr") or "").strip()
+        if kind == "runtime":
+            lines.append(
+                f"Runtime/sandbox error ({code or 'sandbox_execution_failed'}) — a PLATFORM problem, "
+                f"not a defect in your code; usually transient, so you MAY RETRY."
+            )
+            if msg:
+                lines.append(f"Details: {msg}")
+        elif kind == "program":
+            lines.append(
+                f"Program error ({code or 'program_error'}) — YOUR code raised. Read the program log "
+                f"below, fix the code, and retry."
+            )
+            if msg:
+                lines.append(f"Details: {msg}")
+        elif code or msg:
+            lines.append(f"Error{f' ({code})' if code else ''}: {msg}".rstrip())
 
     files = result.get("files") or []
     if files:
-        lines.append(f"Created files ({len(files)}) — hosted, cite by rn:")
+        lines.append(
+            f"Created files ({len(files)}) — hosted and delivered to the user. Reference each "
+            f"by its link so the user can download it:"
+        )
         for f in files:
             rn = str(f.get("rn") or "").strip()
+            link = str(f.get("logical_path") or "").strip()
             filename = str(f.get("filename") or "").strip() or "(file)"
             mime = str(f.get("mime") or "").strip() or "application/octet-stream"
-            lines.append(f"- {filename} [{mime}] rn={rn}")
+            # Prefer the downloadable `fi:conv_…` link (what the chat UI resolves);
+            # fall back to the rn if the link is unavailable.
+            ref = f"link={link}" if link else f"rn={rn}"
+            lines.append(f"- {filename} [{mime}] {ref}")
     else:
         lines.append("Created files: none")
 
@@ -83,8 +110,9 @@ def build_run_python_tool() -> Any:
         access is disabled.
 
         Returns a short report: success/error, the created files as references
-        (filename + mime + rn — cite files by their rn), and truncated
-        stdout/stderr. Large outputs must be written to files, not printed.
+        (filename + mime + a downloadable link — reference each file by its link so
+        the user can download it), and truncated stdout/stderr. Large outputs must be
+        written to files, not printed.
         """
         # Lazy, package-relative import: keeps this module import-light and avoids
         # pulling the exec seam into offline tool-list construction.

@@ -17,6 +17,7 @@ Fully offline — no DB, no docker, no API key.
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -57,6 +58,8 @@ class _FakeHosting:
             rows.append({
                 "rn": f"rn:{name}",
                 "hosted_uri": f"s3://bucket/{conversation_id}/{turn_id}/{name}",
+                # The React-style downloadable link host_files_to_conversation returns.
+                "logical_path": f"fi:conv_{conversation_id}.{turn_id}.files/{name}",
                 "mime": out.get("mime") or "application/octet-stream",
                 "filename": name,
                 "physical_path": out.get("path"),
@@ -141,9 +144,15 @@ def test_run_code_and_host_hosts_created_file_and_returns_refs(tmp_path: Path) -
     assert ref["mime"] == "text/plain"
     assert ref["rn"] == "rn:hello.txt"
     assert ref["hosted_uri"].endswith("hello.txt")
+    # the React-style downloadable link is surfaced so the model can hand it to the user
+    assert ref["logical_path"] == "fi:conv_conv-1.turn_test.files/hello.txt"
     # the file was passed to hosting as a file artifact, and delivered to chat
     assert hosting.hosted_files and hosting.hosted_files[0]["output"]["path"] == "turn_test/files/hello.txt"
     assert hosting.emitted_files is not None
+    # the tool report cites the downloadable link (not just the rn)
+    from types import SimpleNamespace as _NS  # noqa: F401 (keep offline-light)
+    report = _code_exec_tool_module()._format_result(result)
+    assert "link=fi:conv_conv-1.turn_test.files/hello.txt" in report
 
 
 def test_run_code_and_host_maps_stderr_on_failure(tmp_path: Path) -> None:
@@ -181,6 +190,95 @@ def test_run_code_and_host_survives_exec_runner_exception(tmp_path: Path) -> Non
     result = asyncio.run(mod.run_code_and_host("x = 1", ctx=ctx))
     assert result["ok"] is False
     assert "sandbox down" in result["stderr"]
+
+
+# ── live code-exec widget stream ─────────────────────────────────────────────
+
+def test_run_code_and_host_streams_the_exec_widget(tmp_path: Path) -> None:
+    """The live code-exec widget: run_code_and_host drives the SAME `code_exec.*`
+    subsystem stream React emits — program name + the ORIGINAL code + status
+    transitions ending in `done` — keyed by ONE execution_id, so the reusable chat
+    renders the exec panel."""
+    mod = _code_exec_module()
+    ctx = _make_ctx(mod, tmp_path=tmp_path, exec_runner=_make_side_effects_runner())
+    captured: list = []
+
+    async def _delta(**kwargs):
+        captured.append(kwargs)
+
+    ctx.comm.delta = _delta  # the widget's emit path (== React's comm.delta)
+    result = asyncio.run(
+        mod.run_code_and_host("# my program\nopen('hello.txt','w').write('hi')", ctx=ctx)
+    )
+    assert result["ok"] is True
+
+    subtypes = [d.get("sub_type") for d in captured]
+    assert "code_exec.program.name" in subtypes
+    assert "code_exec.code" in subtypes
+    assert "code_exec.status" in subtypes
+
+    exec_ids = {d.get("execution_id") for d in captured if d.get("execution_id")}
+    assert len(exec_ids) == 1 and next(iter(exec_ids))
+
+    statuses = [json.loads(d["text"]).get("status") for d in captured if d.get("sub_type") == "code_exec.status"]
+    assert "done" in statuses
+    code_deltas = [str(d.get("text") or "") for d in captured if d.get("sub_type") == "code_exec.code"]
+    assert any("open('hello.txt'" in t for t in code_deltas)
+
+
+def test_run_code_and_host_widget_terminal_error_on_failure(tmp_path: Path) -> None:
+    """A failed exec closes the widget with status=error, not done."""
+    mod = _code_exec_module()
+    ctx = _make_ctx(mod, tmp_path=tmp_path, exec_runner=_make_side_effects_runner(ok=False))
+    captured: list = []
+
+    async def _delta(**kwargs):
+        captured.append(kwargs)
+
+    ctx.comm.delta = _delta
+    asyncio.run(mod.run_code_and_host("x = 1", ctx=ctx))
+    statuses = [json.loads(d["text"]).get("status") for d in captured if d.get("sub_type") == "code_exec.status"]
+    assert "error" in statuses and "done" not in statuses
+
+
+# ── error propagation (runtime vs program) ───────────────────────────────────
+
+def test_run_code_and_host_classifies_program_vs_runtime_error(tmp_path: Path) -> None:
+    """A non-zero exit is a PROGRAM error (the model's code); a sandbox/runner failure
+    is a RUNTIME error (platform, retryable). The classification rides the result so
+    the model can react correctly."""
+    mod = _code_exec_module()
+
+    ctx = _make_ctx(mod, tmp_path=tmp_path, exec_runner=_make_side_effects_runner(ok=False))
+    prog = asyncio.run(mod.run_code_and_host("boom", ctx=ctx))
+    assert prog["ok"] is False
+    assert prog["error_kind"] == "program"
+    assert prog["error"] == "program_error"
+
+    async def _boom(**_kwargs):
+        raise RuntimeError("sandbox down")
+
+    ctx2 = _make_ctx(mod, tmp_path=tmp_path, exec_runner=_boom)
+    rt = asyncio.run(mod.run_code_and_host("x = 1", ctx=ctx2))
+    assert rt["ok"] is False
+    assert rt["error_kind"] == "runtime"
+    assert rt["error"] == "sandbox_execution_failed"
+
+
+def test_run_python_report_distinguishes_error_class() -> None:
+    """The model-facing report tells a retryable platform failure apart from a program
+    error the model must fix."""
+    tool_mod = _code_exec_tool_module()
+    prog = tool_mod._format_result(
+        {"ok": False, "error": "program_error", "error_kind": "program",
+         "error_message": "NameError: x is not defined", "stderr": "NameError: x", "files": []}
+    )
+    assert "Program error" in prog and "fix the code" in prog
+    rt = tool_mod._format_result(
+        {"ok": False, "error": "sandbox_execution_failed", "error_kind": "runtime",
+         "error_message": "docker: permission denied", "files": []}
+    )
+    assert "Runtime/sandbox error" in rt and "RETRY" in rt
 
 
 # ── code wrapping + artifact conversion ──────────────────────────────────────
@@ -262,7 +360,8 @@ def test_run_python_tool_returns_report(tmp_path: Path) -> None:
     text = asyncio.run(_run())
     assert "Status: success" in text
     assert "hello.txt" in text
-    assert "rn=rn:hello.txt" in text
+    # Cites the downloadable React-style link so the user can fetch the file.
+    assert "link=fi:conv_conv-1.turn_test.files/hello.txt" in text
 
 
 def test_run_python_tool_reports_disabled(tmp_path: Path) -> None:

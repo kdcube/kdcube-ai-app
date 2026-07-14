@@ -62,7 +62,7 @@ Before touching code, state three things in `README.md` and `docs/README.md`
 1. **The solution's job** — what one request/turn does (in: user input; out: an
    answer, maybe streamed).
 2. **What KDCube adds** — hosting at scale, streaming to the chat component,
-   per-user isolation, a conversation record. The solution's own framework and
+   concurrent-user isolation, a conversation record. The solution's own framework and
    persistence stay yours and internal.
 3. **What is out of scope for the first pass** — everything not needed to serve a
    streamed chat turn (extra ingress surfaces, custom UI, model routing) is a
@@ -170,9 +170,9 @@ not restate it — read it if you need a marker other than `answer`.
 ### 3c. Per-user isolation — `identity.py` (the gate)
 
 This is the least-obvious and most-important step. The solution ran for one user
-on one machine; hosted, the **same process serves many users across many
-tenants** concurrently. Map the platform identity onto the solution's per-user
-keys so no two users share state:
+on one machine. A KDCube deployment is bound to one tenant/project, but each
+worker process can serve many users concurrently. Map the bound platform
+identity onto the solution's per-user keys so no two users share state:
 
 - `state["tenant"] / state["project"] / state["user"]` → the solution's per-user
   key (the worked instance folds them into `t:p:user`, so the same raw user id in
@@ -194,12 +194,17 @@ invisible to the next turn on another worker and silently drifts.
 - Build the graph **inside** `execute_core` (worked instance: `_build_graph(agent_id,
   disabled_tools)` per turn), not once at load. A first-port instinct is to cache the
   compiled graph "for speed" — don't; correctness beats the microseconds, and the
-  per-turn build is also what lets per-user tool opt-outs (§5) narrow the graph.
+  per-turn build is also what lets the current conversation's saved tool
+  selection (§5) narrow the graph.
 - Reuse only true **connections** — a DB pool, a checkpointer connection opened once
   (worked instance: `_open_checkpointer`, idempotent) — because a connection is not
   rebuildable per-turn state.
 - Keep nothing per-turn on `self`; every mutable byte lives in shared storage keyed
   by (user, conversation).
+
+The graph instance exists only for the current turn. This is a lifecycle and
+concurrency boundary, not the generated-code sandbox: when the graph invokes
+open-ended code execution, that code runs through the separate ISO executor.
 
 This is what lets any worker serve any turn. The runtime restores only its context
 room across boundaries, never your cached Python objects — see
@@ -352,7 +357,21 @@ runtime — do NOT invent a sandbox. Root the per-turn workspace at
 the React path uses via `resolve_exec_runtime_profile`) so files the code produces are
 hosted into the conversation like attachments — reload + Download then work via the
 Persistence-split machinery. It runs wherever the platform runs code; no separate
-Docker requirement (worked instance: `platform/code_exec.py`).
+Docker requirement (worked instance: `platform/code_exec.py`). Two things make it feel
+native:
+
+- **Live exec widget.** Drive the reusable `solutions/widgets/exec.py`
+  streamer (`comm.delta(marker="subsystem", sub_type="code_exec.*")`, keyed by an
+  `execution_id`) around the run — emit the program name, the code, and status
+  `gen → exec → done|error`. The chat renders the same exec panel React shows; no
+  client change. React feeds it from a decision `<channel:code>` stream; a
+  create_agent tool call carries the code as an argument, so drive the widget directly.
+- **Propagate errors, classified.** Return a structured error the model can act on:
+  a **runtime/sandbox** failure (`sandbox_execution_failed`) is a *platform* problem it
+  may RETRY; a **program** error is its own code to fix. Surface both in the tool's
+  text result (Status + class + program-log tail) — a silent failure lets the agent
+  assume success. Contract:
+  [exec-logging-error-propagation-README.md](../../exec/exec-logging-error-propagation-README.md).
 
 ### Ingress beyond chat (optional)
 
