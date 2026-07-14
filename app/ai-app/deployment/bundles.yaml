@@ -1124,6 +1124,103 @@ bundles:
             enabled: true
             src_folder: sdk://context/memory/ui/widget/memories
             build_command: npm install --no-package-lock && OUTDIR=<VI_BUILD_DEST_ABSOLUTE_PATH> npm run build
+  - id: ported-langgraph-agents@2026-07-13
+    singleton: false
+    config:
+      role_models:
+        lg-solution.answer:
+          provider: anthropic
+          model: claude-sonnet-4-5-20250929
+        lg-react.answer:
+          provider: anthropic
+          model: claude-haiku-4-5-20251001
+      surfaces:
+        as_provider:
+          bundle:
+            default_chat: true
+            visibility:
+              allowed_roles: []
+        as_consumer:
+          default_agent: lg-solution
+          agents:
+            lg-solution:
+              capability_provider: simple_model_pick
+              capabilities:
+                models:
+                  role: lg-solution.answer
+                  default: claude-sonnet-4-5-20250929
+                  supported:
+                    - {model: claude-sonnet-4-5-20250929, provider: anthropic, label: Sonnet 4.5}
+                    - {model: claude-haiku-4-5-20251001, provider: anthropic, label: Haiku 4.5}
+            lg-react:
+              capability_provider: simple_model_pick
+              capabilities:
+                models:
+                  role: lg-react.answer
+                  default: claude-haiku-4-5-20251001
+                  supported:
+                    - {model: claude-haiku-4-5-20251001, provider: anthropic, label: Haiku 4.5}
+                    - {model: claude-sonnet-4-5-20250929, provider: anthropic, label: Sonnet 4.5}
+              tools:
+                - {name: calc, kind: python, alias: calc, allowed: [calc]}
+                - {name: unit_convert, kind: python, alias: unit_convert, allowed: [unit_convert]}
+                - {name: kb_search, kind: python, alias: kb_search, allowed: [kb_search]}
+                - name: code_exec
+                  kind: python
+                  alias: code_exec
+                  allowed: [run_python]
+                  code_exec:
+                    timeout_s: 120
+      ui:
+        main_view:
+          src_folder: ui/scene
+          build_command: npm install --no-package-lock && OUTDIR=<VI_BUILD_DEST_ABSOLUTE_PATH> npm run build
+          shared_sources:
+            components_react_scene:
+              src_folder: npm://components-react/src/scene
+              target: _shared/components-react/scene
+            components_core_scene:
+              src_folder: npm://components-core/src/scene
+              target: _shared/components-core/scene
+            components_core_events:
+              src_folder: npm://components-core/src/events
+              target: _shared/components-core/events
+            components_core_shared:
+              src_folder: npm://components-core/src/shared
+              target: _shared/components-core/shared
+        widgets:
+          chat_lg_solution:
+            src_folder: sdk://solutions/chat/ui/widget
+            engine: package-ui
+            build_command: npm install --no-package-lock && VITE_CHAT_AGENT_ID="lg-solution" VITE_CHAT_BRAND_LABEL="lg-solution" VITE_CHAT_WIDGET_ID="chat_lg_solution" VITE_CHAT_CONFIG_IDENTITY="BUNDLE_LG_SOLUTION_CHAT_VIEW" VITE_CHAT_EVENT_PREFIX="lg_solution" OUTDIR=<VI_BUILD_DEST_ABSOLUTE_PATH> npm run build
+          chat_lg_react:
+            src_folder: sdk://solutions/chat/ui/widget
+            engine: package-ui
+            build_command: npm install --no-package-lock && VITE_CHAT_AGENT_ID="lg-react" VITE_CHAT_BRAND_LABEL="lg-react" VITE_CHAT_WIDGET_ID="chat_lg_react" VITE_CHAT_CONFIG_IDENTITY="BUNDLE_LG_REACT_CHAT_VIEW" VITE_CHAT_EVENT_PREFIX="lg_react" OUTDIR=<VI_BUILD_DEST_ABSOLUTE_PATH> npm run build
+      visibility:
+        widget:
+          chat_lg_solution: {user_types: [], roles: []}
+          chat_lg_react: {user_types: [], roles: []}
+      enabled:
+        api:
+          public.telegram_webhook.POST: true
+      integrations:
+        telegram.default:
+          provider: telegram
+          where: built-in
+          enabled: true
+          secret_refs:
+            bot_token: integrations.telegram_default.definition.bot_token
+            webhook_secret: integrations.telegram_default.definition.webhook_secret
+          definition:
+            bot_name: <FILL_ME>
+            bot_username: <FILL_ME>
+            webhook:
+              url: https://<PUBLIC_HOST>/api/integrations/bundles/<TENANT>/<PROJECT>/ported-langgraph-agents@2026-07-13/public/telegram_webhook?integration_id=telegram.default
+              send_responses: true
+              stream_activity: true
+              stream_activity_display: true
+            web_app_auth_max_age_seconds: 86400
   - id: workspace@2026-03-31-13-36
     singleton: false
     config:
