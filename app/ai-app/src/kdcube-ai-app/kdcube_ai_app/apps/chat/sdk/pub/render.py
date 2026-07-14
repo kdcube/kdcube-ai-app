@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import html
 import json
+import re
 from typing import Any, Dict, List, Optional
 
 from kdcube_ai_app.apps.chat.sdk.pub.model import (
@@ -27,6 +28,17 @@ from kdcube_ai_app.apps.chat.sdk.pub.model import (
 
 def _esc(value: str) -> str:
     return html.escape(str(value or ""), quote=True)
+
+
+_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def _plain(value: str) -> str:
+    """Flatten a possibly-HTML string to plain text — for the summary, which is a
+    description (meta/OG/JSON-LD) and the intro line, never rendered markup."""
+    text = _TAG_RE.sub(" ", str(value or ""))
+    text = html.unescape(text)
+    return " ".join(text.split()).strip()
 
 
 def _meta(name_attr: str, name: str, content: str) -> str:
@@ -51,7 +63,7 @@ def build_jsonld(
         "dateModified": item.lastmod,
     }
     if item.summary:
-        doc["description"] = item.summary
+        doc["description"] = _plain(item.summary)
     if canonical_url:
         doc["mainEntityOfPage"] = {"@type": "WebPage", "@id": canonical_url}
         doc["url"] = canonical_url
@@ -134,11 +146,12 @@ def render_item_page(
             break
     og_image = og_image or og.image
 
+    summary_text = _plain(item.summary)
     head_parts: List[str] = [
         '<meta charset="utf-8" />',
         '<meta name="viewport" content="width=device-width, initial-scale=1" />',
         f"<title>{_esc(item.title)}</title>",
-        _meta("name", "description", item.summary),
+        _meta("name", "description", summary_text),
     ]
     if canonical_url:
         head_parts.append(f'<link rel="canonical" href="{_esc(canonical_url)}" />')
@@ -146,7 +159,7 @@ def render_item_page(
         [
             _meta("property", "og:type", "article"),
             _meta("property", "og:title", item.title),
-            _meta("property", "og:description", item.summary),
+            _meta("property", "og:description", summary_text),
             _meta("property", "og:url", canonical_url),
             _meta("property", "og:site_name", og.site_name),
             _meta("property", "og:image", og_image),
@@ -154,7 +167,7 @@ def render_item_page(
             _meta("property", "article:modified_time", item.lastmod),
             _meta("name", "twitter:card", "summary_large_image" if og_image else "summary"),
             _meta("name", "twitter:title", item.title),
-            _meta("name", "twitter:description", item.summary),
+            _meta("name", "twitter:description", summary_text),
             _meta("name", "twitter:image", og_image),
             _meta("name", "twitter:site", og.twitter_site),
         ]
@@ -186,7 +199,7 @@ def render_item_page(
     if item.headline_in_body:
         header_html = ""
     else:
-        summary_html = f"<p>{_esc(item.summary)}</p>\n" if item.summary else ""
+        summary_html = f"<p>{_esc(summary_text)}</p>\n" if summary_text else ""
         header_html = f"<h1>{_esc(item.title)}</h1>\n{summary_html}"
     body_open = f'<body class="{_esc(body_class)}">' if body_class else "<body>"
     return (
