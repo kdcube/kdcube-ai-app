@@ -1644,21 +1644,16 @@ class BaseWorkflow():
     async def emit_conversation_title(self, conversation_id: str, turn_id: str, title: str) -> None:
         """
         Emits a chat event for conversation title update.
+
+        Delegates to the shared SDK emitter so the payload stays identical to the
+        run-to-completion bundle path (one canonical ``chat.conversation.title``).
         """
-        if title:
-            await self._emit({
-                "type": "chat.conversation.title",
-                "agent": "system",
-                "step": "conversation_title",
-                "status": "completed",
-                "title": "Conversation Title Updated",
-                "data": {
-                    "conversation_id": conversation_id,
-                    "turn_id": turn_id,
-                    "title": title
-                },
-                "broadcast": True
-            })
+        from kdcube_ai_app.apps.chat.sdk.tools.backends.summary.conversation_title import (
+            emit_conversation_title_event,
+        )
+        await emit_conversation_title_event(
+            self.comm, conversation_id=conversation_id, turn_id=turn_id, title=title,
+        )
 
     async def _emit_agent_error(self, *, origin: str, err: Exception, step: str, extra: Optional[dict] = None):
         """
@@ -4330,6 +4325,16 @@ class BaseWorkflow():
         else:
             # Keep it out of timeline; still produce an "answer" bubble
             await self.comm.delta(text=message, index=0, marker="answer", agent="turn_exception", completed=True)
+
+        # This handler owns the failed turn's outcome (surfaced or deliberately
+        # suppressed above, plus the rollback below), then re-raises. Mark the
+        # per-turn flag so the platform's run() backstop does not double-emit or
+        # re-record a failure this workflow already handled.
+        try:
+            from kdcube_ai_app.apps.chat.sdk.runtime.turn_recording import mark_turn_error_surfaced
+            mark_turn_error_surfaced()
+        except Exception:
+            pass
 
         # no-op (kept for alignment with prior error handling)
 

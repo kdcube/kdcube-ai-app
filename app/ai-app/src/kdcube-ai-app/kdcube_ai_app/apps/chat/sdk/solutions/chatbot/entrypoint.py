@@ -64,6 +64,9 @@ from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.turn_reporting import (
     _format_cost_summary_compact,
     _format_agent_breakdown_markdown,
 )
+from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.reactive_lane import (
+    finalize_reactive_event_lane,
+)
 from kdcube_ai_app.storage.storage import create_storage_backend
 from kdcube_ai_app.infra.accounting.calculator import RateCalculator
 from kdcube_ai_app.apps.chat.sdk.viz.tsx_transpiler import ClientSideTSXTranspiler
@@ -2291,6 +2294,17 @@ class BaseEntrypoint:
         if "external_events" in params:
             state["external_events"] = params.get("external_events") or []
 
+        # Framework-neutral conversation recording: start each turn with a clean
+        # "no turn log written yet" flag. Whoever persists a turn log this turn —
+        # the React workflow's finish_turn, or the fallback at the end of run() —
+        # marks it; the fallback records a minimal log only when nothing else did.
+        from kdcube_ai_app.apps.chat.sdk.runtime.turn_recording import (
+            reset_turn_log_recorded,
+            reset_turn_error_surfaced,
+        )
+        reset_turn_log_recorded()
+        reset_turn_error_surfaced()
+
         tenant = state.get("tenant")
         project = state.get("project")
         user_id = state.get("user") or state.get("fingerprint")
@@ -2346,22 +2360,289 @@ class BaseEntrypoint:
             await self.refresh_bundle_props(state=state)
             await self.pre_run_hook(state=state)
 
-            result = await self.execute_core(state=state, thread_id=thread_id, params=params)
-            result = result or {}
+            # This @on_reactive_event door owns finalizing the reactive-event
+            # lane reservation the wakeup dispatch set. The release is a
+            # state-conditional invariant that lives in reactive_lane; it runs on
+            # SUCCESS and ERROR, and is inert when execute_core already released
+            # the lane itself (the ReAct/BaseWorkflow path) — no agent-type check.
+            # Skipped on cancel so a cancelled turn stays on the recovery path.
+            turn_cancelled = False
+            try:
+                result = await self.execute_core(state=state, thread_id=thread_id, params=params)
+                result = result or {}
 
-            usage_from = datetime.utcnow().date().isoformat()
-            await self.run_accounting(
+                usage_from = datetime.utcnow().date().isoformat()
+                await self.run_accounting(
+                    tenant=tenant,
+                    project=project,
+                    user_id=user_id,
+                    user_type=accounting_label,
+                    thread_id=thread_id,
+                    turn_id=turn_id,
+                    usage_from=usage_from,
+                )
+
+                await self.post_run_hook(state=state, result=result)
+                await self._record_turn_log_fallback(
+                    result=result,
+                    tenant=tenant,
+                    project=project,
+                    user_id=user_id,
+                    user_type=accounting_label,
+                    thread_id=thread_id,
+                    turn_id=turn_id,
+                    bundle_id=bundle_id,
+                    agent_id=agent_id,
+                )
+                return self.project_app_state(result)
+            except asyncio.CancelledError:
+                turn_cancelled = True
+                raise
+            except EconomicsLimitException:
+                # Economics denials carry their own client event + processor
+                # contract; leave them untouched.
+                raise
+            except Exception as e:
+                # Backstop: a turn that raised without surfacing its own failure
+                # (e.g. a non-React execute_core) gets a user-visible chat.error
+                # and a FAILED turn-log so it saves + reloads as an error turn.
+                # Inert when the framework already surfaced (React marks the flag).
+                await self._surface_turn_failure(
+                    state=state,
+                    exc=e,
+                    tenant=tenant,
+                    project=project,
+                    user_id=user_id,
+                    user_type=accounting_label,
+                    thread_id=thread_id,
+                    turn_id=turn_id,
+                    bundle_id=bundle_id,
+                    agent_id=agent_id,
+                )
+                raise
+            finally:
+                if not turn_cancelled:
+                    await finalize_reactive_event_lane(
+                        redis=getattr(self, "redis", None),
+                        comm_context=self.comm_context,
+                        turn_id=str(turn_id or ""),
+                    )
+
+    async def _record_turn_log_fallback(
+        self,
+        *,
+        result: Dict[str, Any],
+        tenant: Optional[str],
+        project: Optional[str],
+        user_id: Optional[str],
+        user_type: str,
+        thread_id: str,
+        turn_id: Optional[str],
+        bundle_id: str,
+        agent_id: Optional[str],
+    ) -> None:
+        """Record a minimal turn log when nothing else did this turn.
+
+        The React workflow writes a rich turn log at finish_turn; a bundle that
+        serves turns with any other framework via ``execute_core`` writes none,
+        so its assistant answer would leave no fetchable conversation record.
+        This is the framework-neutral fallback: the platform (this app base)
+        records a minimal ``assistant.completion`` log for any turn that produced
+        a final answer without recording one. It runs in the turn's own async
+        context, so the per-turn flag set by whoever wrote a log is visible here;
+        it is a no-op when a log already exists or there is no answer. Recording
+        never fails the turn.
+        """
+        from kdcube_ai_app.apps.chat.sdk.runtime.turn_recording import (
+            record_minimal_turn_log_if_absent,
+            turn_log_was_recorded,
+        )
+
+        _already = turn_log_was_recorded()
+        final_answer = str((result or {}).get("final_answer") or "").strip()
+        # First-turn conversation title (set on `result`/`state` by a bundle's
+        # execute_core). Threaded through so the recorder persists it onto the
+        # conversation timeline the conversation list reads. Empty on later turns.
+        conversation_title = str((result or {}).get("conversation_title") or "").strip()
+        try:
+            self.logger.log(
+                f"[turn-log-fallback] enter conversation={thread_id} turn={turn_id} "
+                f"already_recorded={_already} final_answer_len={len(final_answer)} "
+                f"title={conversation_title!r} pg_pool={'set' if self.pg_pool else 'NONE'}",
+                "INFO",
+            )
+        except Exception:
+            pass
+        if _already:
+            return
+        if not final_answer:
+            return
+        try:
+            client = await self.get_ctx_client()
+            if client is None:
+                try:
+                    self.logger.log(
+                        f"[turn-log-fallback] SKIP no ctx client "
+                        f"(pg_pool={'set' if self.pg_pool else 'NONE'}) conversation={thread_id}",
+                        "WARNING",
+                    )
+                except Exception:
+                    pass
+                return
+            await record_minimal_turn_log_if_absent(
+                conversation_client=client,
                 tenant=tenant,
                 project=project,
-                user_id=user_id,
-                user_type=accounting_label,
-                thread_id=thread_id,
+                user=user_id,
+                user_type=user_type,
+                conversation_id=thread_id,
                 turn_id=turn_id,
-                usage_from=usage_from,
+                bundle_id=bundle_id,
+                agent_id=agent_id,
+                final_answer=final_answer,
+                steps=(result or {}).get("step_logs") or None,
+                conversation_title=conversation_title or None,
             )
+            try:
+                self.logger.log(
+                    f"[turn-log-fallback] recorded conversation={thread_id} turn={turn_id} "
+                    f"title={conversation_title!r}",
+                    "INFO",
+                )
+            except Exception:
+                pass
+        except Exception:
+            try:
+                self.logger.log(
+                    f"Framework-neutral turn-log recording failed "
+                    f"(conversation={thread_id} turn={turn_id})",
+                    "WARNING",
+                )
+            except Exception:
+                pass
 
-            await self.post_run_hook(state=state, result=result)
-            return self.project_app_state(result)
+    async def _surface_turn_failure(
+        self,
+        *,
+        state: Dict[str, Any],
+        exc: BaseException,
+        tenant: Optional[str],
+        project: Optional[str],
+        user_id: Optional[str],
+        user_type: str,
+        thread_id: str,
+        turn_id: Optional[str],
+        bundle_id: str,
+        agent_id: Optional[str],
+    ) -> None:
+        """Backstop for a turn that raised without surfacing its own failure.
+
+        A non-React ``execute_core`` (LangGraph, raw calls) that crashes
+        propagates a bare exception: the processor logs it but returns a silent
+        error result, so the client sees a blank "completed" turn and the
+        conversation saves nothing. This backstop emits the platform's
+        user-visible ``chat.error`` (via :meth:`report_turn_error`, the same
+        convention React uses) and records a minimal FAILED turn log so the turn
+        reloads as an error.
+
+        It is inert for a turn that already surfaced its own failure: the
+        React/BaseWorkflow error handler emits its ``chat.error`` and rolls the
+        turn back, marking the per-turn flag — the backstop then stays out of the
+        way (no double emit, no re-recording a rolled-back turn). Cancellations
+        and economics denials keep their own paths and are never handled here.
+        Never fails the turn.
+        """
+        from kdcube_ai_app.apps.chat.sdk.runtime.turn_recording import (
+            mark_turn_error_surfaced,
+            turn_error_was_surfaced,
+        )
+
+        if isinstance(exc, (asyncio.CancelledError, EconomicsLimitException)):
+            return
+        if turn_error_was_surfaced():
+            return
+
+        report_exc = exc if isinstance(exc, Exception) else RuntimeError(str(exc))
+        try:
+            await self.report_turn_error(state=state, exc=report_exc, title="Turn Error")
+        except EconomicsLimitException:
+            raise
+        except Exception:
+            try:
+                self.logger.log(
+                    "Turn-failure backstop failed to emit chat.error\n"
+                    + traceback.format_exc(),
+                    "ERROR",
+                )
+            except Exception:
+                pass
+        mark_turn_error_surfaced()
+
+        await self._record_failed_turn_log(
+            exc=exc,
+            tenant=tenant,
+            project=project,
+            user_id=user_id,
+            user_type=user_type,
+            thread_id=thread_id,
+            turn_id=turn_id,
+            bundle_id=bundle_id,
+            agent_id=agent_id,
+        )
+
+    async def _record_failed_turn_log(
+        self,
+        *,
+        exc: BaseException,
+        tenant: Optional[str],
+        project: Optional[str],
+        user_id: Optional[str],
+        user_type: str,
+        thread_id: str,
+        turn_id: Optional[str],
+        bundle_id: str,
+        agent_id: Optional[str],
+    ) -> None:
+        """Record a minimal FAILED turn log when nothing else did this turn.
+
+        The failure sibling of :meth:`_record_turn_log_fallback`: persists the
+        error as an ``assistant.completion`` block (marked ``error``) so a crashed
+        turn is still saved and reloadable as an errored turn. No-op when a log
+        already exists. Recording never fails the turn.
+        """
+        from kdcube_ai_app.apps.chat.sdk.runtime.turn_recording import (
+            record_error_turn_log_if_absent,
+            turn_log_was_recorded,
+        )
+
+        if turn_log_was_recorded():
+            return
+        try:
+            client = await self.get_ctx_client()
+            if client is None:
+                return
+            await record_error_turn_log_if_absent(
+                conversation_client=client,
+                tenant=tenant,
+                project=project,
+                user=user_id,
+                user_type=user_type,
+                conversation_id=thread_id,
+                turn_id=turn_id,
+                bundle_id=bundle_id,
+                agent_id=agent_id,
+                error_message=str(exc),
+                error_type=type(exc).__name__,
+            )
+        except Exception:
+            try:
+                self.logger.log(
+                    f"Framework-neutral failed-turn-log recording failed "
+                    f"(conversation={thread_id} turn={turn_id})",
+                    "WARNING",
+                )
+            except Exception:
+                pass
 
     def _bundle_root(self) -> Optional[str]:
         spec = getattr(self.config, "ai_bundle_spec", None)

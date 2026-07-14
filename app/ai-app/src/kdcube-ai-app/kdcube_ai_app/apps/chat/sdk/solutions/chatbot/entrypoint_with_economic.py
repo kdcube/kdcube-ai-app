@@ -20,6 +20,9 @@ from uuid import uuid4, UUID
 from kdcube_ai_app.apps.chat.sdk.protocol import ExternalEventPayload
 from kdcube_ai_app.apps.chat.sdk.event_identity import DEFAULT_REACT_AGENT_ID, normalize_agent_id
 from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint import BaseEntrypoint
+from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.reactive_lane import (
+    finalize_reactive_event_lane,
+)
 from kdcube_ai_app.apps.chat.sdk.infra.economics.defaults import DEFAULT_QUOTA_POLICIES
 from kdcube_ai_app.apps.chat.sdk.infra.economics.plan_resolution import (
     resolve_plan_id,
@@ -624,6 +627,18 @@ class BaseEntrypointWithEconomics(BaseEntrypoint):
         state["turn_id"] = turn_id
         if "external_events" in params:
             state["external_events"] = params.get("external_events") or []
+
+        # Framework-neutral conversation recording: start each turn with clean
+        # per-turn flags (mirror BaseEntrypoint.run). Whoever persists a turn log
+        # this turn — React's finish_turn or the fallback at the end of run() —
+        # marks it; whoever surfaces a turn failure marks the error flag. Both
+        # gate the platform backstops below.
+        from kdcube_ai_app.apps.chat.sdk.runtime.turn_recording import (
+            reset_turn_log_recorded,
+            reset_turn_error_surfaced,
+        )
+        reset_turn_log_recorded()
+        reset_turn_error_surfaced()
 
         tenant = state.get("tenant")
         project = state.get("project")
@@ -1295,6 +1310,7 @@ class BaseEntrypointWithEconomics(BaseEntrypoint):
 
         result = None
         admit_snapshot_pre = dict(admit.snapshot or {})
+        turn_cancelled = False
 
         try:
             usage_from = datetime.utcnow().date().isoformat()
@@ -1655,11 +1671,32 @@ class BaseEntrypointWithEconomics(BaseEntrypoint):
                     snapshot=post_run_snapshot,
                 )
 
+        except asyncio.CancelledError:
+            turn_cancelled = True
+            raise
+
         except EconomicsLimitException:
             raise
 
         except Exception as e:
             _log("error", "Exception in run()", "ERROR", error=str(e))
+            # Backstop: a turn that raised without surfacing its own failure
+            # (e.g. a non-React execute_core crash) gets a user-visible chat.error
+            # and a FAILED turn-log so it saves + reloads as an error turn instead
+            # of a silent "completed". Inert when the framework already surfaced
+            # (React marks the flag); economics denials are re-raised above.
+            await self._surface_turn_failure(
+                state=state,
+                exc=e,
+                tenant=tenant,
+                project=project,
+                user_id=user_id,
+                user_type=compatibility_label,
+                thread_id=thread_id,
+                turn_id=turn_id,
+                bundle_id=bundle_id,
+                agent_id=agent_id,
+            )
             raise
 
         finally:
@@ -1672,7 +1709,33 @@ class BaseEntrypointWithEconomics(BaseEntrypoint):
             except Exception as e:
                 _log("cleanup", "Failed to clear accounting turn cache", "WARN", error=str(e))
 
+            # Same reactive-event door as BaseEntrypoint.run: finalize the lane
+            # reservation the wakeup dispatch set. State-conditional + inert for a
+            # ReAct execute_core (which released the lane itself); skipped on cancel
+            # so a cancelled turn stays on the recovery path. Runs on success/error.
+            if not turn_cancelled:
+                await finalize_reactive_event_lane(
+                    redis=getattr(self, "redis", None),
+                    comm_context=self.comm_context,
+                    turn_id=str(turn_id or ""),
+                )
+
         await self._invoke_post_run_hook(state=state, result=result, econ_ctx=econ_ctx)
+        # Framework-neutral conversation recording (mirror BaseEntrypoint.run):
+        # record a minimal turn log for a non-React execute_core so its answer
+        # leaves a fetchable conversation record. Idempotent — a no-op when React
+        # already wrote a rich turn log (the per-turn flag is set).
+        await self._record_turn_log_fallback(
+            result=result or {},
+            tenant=tenant,
+            project=project,
+            user_id=user_id,
+            user_type=compatibility_label,
+            thread_id=thread_id,
+            turn_id=turn_id,
+            bundle_id=bundle_id,
+            agent_id=agent_id,
+        )
         _log("done", "run() completed successfully", lane=lane)
         _log("economics", "--- END POST-RUN ECONOMICS ---")
         return self.project_app_state(result)
