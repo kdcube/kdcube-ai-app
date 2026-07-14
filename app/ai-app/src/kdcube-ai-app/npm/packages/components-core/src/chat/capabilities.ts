@@ -156,6 +156,19 @@ export interface AgentCapabilitySubagents {
   default_on?: boolean
 }
 
+/** Whether the agent CONSUMES the two mid-turn conversation affordances: a
+ *  followup the running turn folds in at a decision boundary, and a steer
+ *  (cancel + finalize). A ReAct agent consumes both; a run-to-completion
+ *  (ported) agent consumes neither — the platform promotes an unconsumed
+ *  followup to the NEXT turn instead. The server declares this per agent via
+ *  the capabilities provider. Absent from the inventory = UNKNOWN: the composer
+ *  keeps today's behavior (both enabled). Only an explicit `false` gates an
+ *  affordance off. */
+export interface AgentConversationCaps {
+  accepts_followup: boolean
+  accepts_steer: boolean
+}
+
 /** An admin-allowed model row (mirrors the economics price-table naming). */
 export interface AgentSupportedModel {
   model: string
@@ -209,6 +222,10 @@ export interface AgentCapabilitiesInventory {
   default_model?: AgentModelPick | null
   /** Helper-agents entry; `null`/absent = the ability is not offered. */
   subagents?: AgentCapabilitySubagents | null
+  /** Mid-turn affordance declaration (followup / steer). Absent = unknown, so
+   *  the composer keeps today's behavior (both enabled) — see
+   *  `agentAcceptsFollowup` / `agentAcceptsSteer`. */
+  conversation?: AgentConversationCaps | null
 }
 
 /** The saved deny-list. Absent key/entry = enabled (full configured set). */
@@ -717,6 +734,32 @@ export function subagentsTogglePatch(
   defaultOn: boolean = true,
 ): AgentSelectionPatch {
   return { subagents: !isSubagentsDisabled(disabled, defaultOn) }
+}
+
+// ── mid-turn conversation affordances (followup / steer) ─────────────────────
+
+/** Whether the composer should present a mid-turn message as JOINING the running
+ *  turn (a followup the agent folds in). Backward-compat: an absent inventory or
+ *  an absent `conversation` block reads as UNKNOWN → today's behavior (`true`).
+ *  Only an explicit `accepts_followup: false` gates it off — the composer then
+ *  presents the message as queued for the NEXT turn (never silently dropped). */
+export function agentAcceptsFollowup(
+  inventory: Pick<AgentCapabilitiesInventory, 'conversation'> | null | undefined,
+): boolean {
+  const conv = inventory?.conversation
+  if (!conv) return true
+  return conv.accepts_followup !== false
+}
+
+/** Whether the composer should offer the steer (cancel + finalize) affordance.
+ *  Backward-compat identical to `agentAcceptsFollowup`: absent = `true`; only an
+ *  explicit `accepts_steer: false` hides/disables the steer control. */
+export function agentAcceptsSteer(
+  inventory: Pick<AgentCapabilitiesInventory, 'conversation'> | null | undefined,
+): boolean {
+  const conv = inventory?.conversation
+  if (!conv) return true
+  return conv.accepts_steer !== false
 }
 
 /** Which presentation a spotlight request should open the capability picker
