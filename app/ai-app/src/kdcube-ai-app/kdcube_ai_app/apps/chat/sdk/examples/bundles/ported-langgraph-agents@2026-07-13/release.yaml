@@ -1,0 +1,92 @@
+bundle:
+  repo: "https://github.com/kdcube/kdcube-ai-app.git"
+  ref: "unreleased"
+  description: |
+    Release for ported-langgraph-agents@2026-07-13 (pre-release).
+
+    ONE KDCube app that hosts TWO ported LangGraph agents, both vendored unchanged
+    under `solution/`, dispatched by `agent_id` through a SINGLE `execute_core` —
+    the "one app, many agents" demonstration of the port recipe.
+
+    The two agents
+
+    - `lg-solution` — the rich research graph (KB retrieval + per-user pgvector
+      memory + a nested subagent), vendored under `solution/lg_solution/`. A linear
+      shape with a DEDICATED answer node.
+    - `lg-react` — the standard `langgraph.prebuilt.create_react_agent` (plain +
+      MCP tools), vendored under `solution/lg_prebuilt/`. A ReAct loop with a
+      LOOPING agent node and no dedicated answer node.
+
+    Highlights
+
+    - The dispatcher: `execute_core` resolves `agent_id = normalize(state.agent_id)
+      or DEFAULT_AGENT_ID` (unknown -> the default, lg-solution) and runs the right
+      agent from a per-agent registry (`AgentSpec`: build_graph, stream,
+      build_inputs, role, schema). A per-agent LAZY graph CACHE builds each agent's
+      graph once per process (its own deps/checkpointer/storage schema) and reuses
+      it — still stateless: per-turn state via thread_id. Adding an agent is adding
+      a spec; execute_core never branches on agent_id.
+    - Two stream adapters, selected by agent_id (the teaching point): different
+      agent shapes -> different stream adapters. `platform/stream_solution.py`
+      streams the DEDICATED answer node's tokens; `platform/stream_prebuilt.py`
+      streams ONLY the final turn of the LOOPING agent node and surfaces each tools
+      run as a step.
+    - Per-agent isolation: the shared identity gate (`platform/identity.py`) folds
+      the active `agent_id` into the per-user key
+      (`{tenant}:{project}:{agent}:{user}`) and scopes the checkpointer thread by
+      it, and each agent's own store is routed onto KDCube's SHARED Postgres in its
+      OWN schema (`ported_langgraph_agents__lg_solution` / `..._lg_prebuilt`) via
+      `platform/pg_target.agent_schema`. Two mechanisms guarantee the two agents'
+      memories never mix. Fallback chain kept: pg_pool -> own DATABASE_URL ->
+      in-memory saver.
+    - Capabilities model picker PER AGENT: each agent declares the generic
+      `simple_model_pick` provider on its own role (`lg-solution.answer` /
+      `lg-react.answer`); `resolve_turn_role_models(self, state, agent_id)`
+      applies the ACTIVE agent's pick per turn via
+      `bundle_call_context.role_models`, so a pick for one agent never cross-applies.
+    - lg-react tools, both ways (`config.tools.mode`: plain | mcp | both): the
+      vendored plain LangChain tools and/or KDCube-served MCP tools via
+      langchain-mcp-adapters (streamable_http), degrading to plain when absent.
+    - A shared Telegram Bot API webhook (`@api(route="public",
+      alias="telegram_webhook")`) drives the SAME `execute_core` for the DEFAULT
+      agent; all protocol mechanics reused from the Telegram SDK; the trust boundary
+      is the webhook secret.
+    - Economic ENFORCEMENT (backend loop closed): the app derives
+      `BaseEntrypointWithEconomics`, so the budget preflight + rate limiter wrap
+      every turn (either agent); lg-solution's retrieval/memory embeddings
+      additionally route through the economics-guarded search facade per embed.
+      Economics defaults are seeded at deploy from `economics.yaml` (no bundle
+      config keys).
+    - Degrades offline: no provider key -> each agent's deterministic stub; no
+      reachable Postgres -> empty retrieval + an in-memory checkpointer.
+
+    Validation
+
+    - `python -m py_compile` passes for the glue files and both vendored `solution/`
+      packages.
+    - The entrypoint loads through the dynamic module loader with the expected
+      `@bundle_entrypoint` / `@bundle_id` values.
+    - Bundle-local tests pass offline (no DB, no API key): the DISPATCH (both agents
+      run their own graph + stream adapter, an unknown agent_id falls back to the
+      default, and an offline smoke of `execute_core` runs BOTH agents end to end
+      with a non-empty final_answer); the identity + agent_id fold (the two agents
+      get different memory keys); the per-agent storage schema selection + the
+      statelessness invariant; the per-agent Capabilities pick (each agent's role,
+      no cross-apply); both stream adapters (dedicated answer node + looping agent
+      node); tools-both-ways resolution + MCP degradation; the Telegram webhook
+      boundary; and the interface/config/OpenAPI id agreement.
+
+    Retired + preserved
+
+    - The two single-agent source bundles (the standalone lg-solution port and the
+      standalone lg-react port) were removed — their solutions + stream adapters
+      are folded in here.
+    - The standalone POCs (`poc/lg-solution`, `poc/lg-react-agent`) are untouched.
+
+    Known follow-ups
+
+    - MCP path: `langchain-mcp-adapters` is an optional dependency, not installed in
+      the current environment. lg-react runs on plain tools until it is installed
+      and `config.tools.mcp.servers` points at a reachable KDCube-served MCP endpoint.
+    - Reactive tier: in-turn followup/steer is intentionally not implemented; both
+      agents are run-to-completion.

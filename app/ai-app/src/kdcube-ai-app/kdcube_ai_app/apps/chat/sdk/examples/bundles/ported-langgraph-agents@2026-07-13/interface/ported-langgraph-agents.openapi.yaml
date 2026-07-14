@@ -1,0 +1,104 @@
+openapi: 3.1.0
+info:
+  title: Ported LangGraph Agents App Interface
+  version: 0.1.0
+  description: |
+    Interface contract for ported-langgraph-agents@2026-07-13.
+
+    This ONE app hosts TWO ported LangGraph agents (`lg-solution` = a research
+    graph with a dedicated answer node; `lg-react` = the prebuilt
+    create_react_agent with a looping agent node), both vendored unchanged under
+    `solution/`, dispatched by `agent_id` through a SINGLE `execute_core`. It
+    exposes TWO ingresses that drive that same turn:
+
+      1. the reactive chat turn — each user message on the KDCube chat surface
+         dispatches on `agent_id` to the right vendored agent and streams its
+         answer to the chat component;
+      2. the Telegram Bot API webhook — `POST /public/telegram_webhook`, called by
+         Telegram, guarded by the Telegram webhook secret, that routes a Telegram
+         message into the same turn (the default agent) and delivers the answer
+         back over the Bot API.
+
+    The webhook is the one HTTP path (`paths` is no longer empty). It carries no
+    platform auth: the trust boundary is the `X-Telegram-Bot-Api-Secret-Token`
+    header, verified by the reusable Telegram SDK before any work. Both surfaces
+    are also declared under `x-kdcube-surfaces`. There is no MCP server, widget,
+    Data Bus handler, cron, or background job.
+x-kdcube-surfaces:
+  # Surface 1. The turn contract:
+  #   in  -> the user's text, delivered as platform external_events
+  #   out -> streamed step/delta events to the chat component, plus the turn's
+  #          final_answer, which the platform-owned conversation record persists
+  #          for reload.
+  chat_turn:
+    kind: reactive_chat_turn
+    entrypoint: execute_core
+    config_key: surfaces.as_provider.bundle
+    default_chat: true
+    description: >
+      Reactive chat turn. Dispatches on agent_id (default lg-solution) to one of
+      the two vendored LangGraph agents, runs it for one user message, and streams
+      the answer to the reusable chat component via the platform communicator
+      (comm_ctx) through that agent's own stream adapter. The app writes no KDCube
+      conversation records; the platform records a framework-neutral turn log.
+  # Surface 2. A second ingress onto the SAME execute_core.
+  telegram_webhook:
+    kind: public_api
+    entrypoint: telegram_webhook
+    route: public
+    method: POST
+    path: /public/telegram_webhook
+    alias: telegram_webhook
+    enabled_key: enabled.api.public.telegram_webhook.POST
+    integration_key: integrations.telegram.default
+    drives: execute_core
+    description: >
+      Telegram Bot API webhook. Called by Telegram and guarded by the Telegram
+      webhook secret header (not platform auth). The reusable Telegram SDK
+      verifies the secret, resolves the Telegram sender into the platform
+      identity telegram_<telegram_user_id>, drives the same turn for the default
+      agent (execute_core), and delivers the rendered answer back over the Bot API.
+servers:
+  - url: /api/integrations
+security:
+  - PlatformAuth: []
+paths:
+  /public/telegram_webhook:
+    post:
+      tags: [Public Callbacks]
+      summary: Telegram Bot API webhook.
+      description: >
+        Called by the Telegram Bot API and guarded by the Telegram webhook secret
+        header. Drives the same turn (the default agent) as the reactive chat
+        surface and delivers the answer back over the Bot API. New webhook registrations
+        should include the non-secret integration selector query parameter.
+      operationId: telegram_webhook
+      x-kdcube-result-alias: telegram_webhook
+      security: []
+      parameters:
+        - name: integration_id
+          in: query
+          required: false
+          description: >
+            Stable non-secret Telegram integration selector, for example
+            `telegram.default`. Lets the SDK validate the callback against the
+            intended Telegram integration row; runtime fallback validates by
+            webhook secret when the selector is absent.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Wrapped webhook acknowledgement.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          description: Missing or invalid Telegram webhook secret.
+components:
+  securitySchemes:
+    PlatformAuth:
+      type: apiKey
+      in: cookie
+      name: __Secure-LATC

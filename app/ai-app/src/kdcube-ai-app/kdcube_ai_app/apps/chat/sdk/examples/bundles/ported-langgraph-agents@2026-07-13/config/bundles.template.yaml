@@ -1,0 +1,208 @@
+bundles:
+  version: "1"
+  default_bundle_id: "ported-langgraph-agents@2026-07-13"
+  items:
+    - id: "ported-langgraph-agents@2026-07-13"
+      name: "Ported LangGraph Agents"
+      # Bundle-root shape: point `path` at this folder and use module "entrypoint".
+      # (Parent-dir shape also works: path=<parent>, module="ported-langgraph-agents@2026-07-13.entrypoint".)
+      path: "<LOCAL_HOST_BUNDLE_ROOT>"
+      module: "entrypoint"
+      # Not a singleton: one compiled graph PER AGENT is safe for many concurrent
+      # users because every turn is keyed per (agent, user, conversation) by the
+      # identity gate (platform/identity.py). Multiple processes may load it.
+      singleton: false
+      config:
+        surfaces:
+          as_provider:
+            # The reactive chat turn. The control plane serves the conversation
+            # surface for this app; each user message drives `execute_core`, which
+            # dispatches on `agent_id` to one of the two vendored LangGraph agents
+            # and streams its answer back to the reusable chat component.
+            bundle:
+              default_chat: true
+              visibility:
+                allowed_roles: []
+          # The chat component's Capabilities widget, declared PER AGENT. Neither
+          # agent is a ReAct agent, so each drives the generic `simple_model_pick`
+          # provider (a model picker declared entirely here, no adapter code). The
+          # picker is ACTIVE — a user's per-conversation model choice narrows the
+          # ACTIVE agent's answer model at runtime. The platform serves the
+          # `agent_capabilities` + `agent_selection_update` operations (inherited
+          # from BaseEntrypoint); `entrypoint.py` applies the saved pick per turn by
+          # binding the chosen answer role onto `bundle_call_context.role_models`
+          # around the graph run (the model router overlays it on that agent's
+          # `get_client("<agent>.answer")`).
+          as_consumer:
+            # The agent dispatched when a turn declares no agent_id (both ingresses,
+            # incl. the Telegram webhook). Keep aligned with DEFAULT_AGENT_ID.
+            default_agent: lg-solution
+            agents:
+              # Agent 1 — the rich research graph (dedicated answer node).
+              lg-solution:
+                capability_provider: simple_model_pick
+                capabilities:
+                  models:
+                    # The router channel the pick rebases — lg-solution's answer role.
+                    role: lg-solution.answer
+                    default: claude-sonnet-4-5-20250929
+                    supported:
+                      - { model: claude-sonnet-4-5-20250929, provider: anthropic, label: "Sonnet 4.5" }
+                      - { model: claude-haiku-4-5-20251001, provider: anthropic, label: "Haiku 4.5" }
+              # Agent 2 — the prebuilt create_react agent (looping agent node).
+              lg-react:
+                capability_provider: simple_model_pick
+                capabilities:
+                  models:
+                    # The router channel the pick rebases — lg-react's answer role.
+                    role: lg-react.answer
+                    default: claude-haiku-4-5-20251001
+                    supported:
+                      - { model: claude-haiku-4-5-20251001, provider: anthropic, label: "Haiku 4.5" }
+                      - { model: claude-sonnet-4-5-20250929, provider: anthropic, label: "Sonnet 4.5" }
+        # ── lg-react TOOLS, BOTH WAYS ──────────────────────────────────────
+        # The prebuilt agent gets its tools two ways, selectable here:
+        #   mode: plain  (default) — the vendored plain LangChain tools only
+        #                            (calc, unit_convert, kb_search). External to the
+        #                            host and, running no accounted model call,
+        #                            unmetered. Works offline with no extra deps.
+        #   mode: mcp              — KDCube-served MCP tools only, loaded via
+        #                            langchain-mcp-adapters (falls back to plain if
+        #                            the lib/endpoint is unavailable).
+        #   mode: both             — plain tools + MCP tools bound together.
+        #
+        # ACCOUNTING (marked = counted): a plain tool, or an MCP tool that only does
+        # a lookup, runs no KDCube-marked model call and is NOT metered. An MCP tool
+        # whose implementation runs KDCube-marked model calls IS metered — the
+        # marking, not the MCP transport, is what makes it counted.
+        #
+        # This block applies to the lg-react agent only (lg-solution has no
+        # pickable tools). The KDCube-served MCP endpoint is reached over
+        # streamable_http at its published URL (optionally with a bearer header).
+        tools:
+          mode: plain
+          # mcp:
+          #   servers:
+          #     knowledge:
+          #       url: "https://<PUBLIC_HOST>/api/mcp/<TENANT>/<PROJECT>/<KNOWLEDGE_BUNDLE>/mcp"
+          #       transport: streamable_http
+          #       headers:
+          #         Authorization: "Bearer <MCP_ACCESS_TOKEN>"
+        # The Telegram Bot API webhook (a public @api that drives the SAME
+        # execute_core for the DEFAULT agent). `route="public"` exposes it at the
+        # proc layer; the trust boundary is the Telegram webhook secret, verified by
+        # the SDK. The public API must be explicitly enabled per deployment.
+        enabled:
+          api:
+            public.telegram_webhook.POST: true
+        # Telegram integration. Disabled by default: without a bot token + webhook
+        # secret (see bundles.secrets.template.yaml) every webhook call is rejected.
+        # Fill these + register the webhook with Telegram to turn the ingress on.
+        # Operator steps: docs/integrations/admin-integrational-homework.md.
+        integrations:
+          telegram.default:
+            provider: telegram
+            enabled: false
+            definition:
+              # Non-secret bot identity (from BotFather). Placeholders only.
+              bot_name: "<TELEGRAM_BOT_NAME>"
+              bot_username: "<TELEGRAM_BOT_USERNAME>"
+              webhook:
+                # The public webhook URL Telegram calls. The non-secret
+                # integration_id selector lets the SDK validate against this row.
+                url: "https://<PUBLIC_HOST>/api/integrations/bundles/<TENANT>/<PROJECT>/ported-langgraph-agents@2026-07-13/public/telegram_webhook?integration_id=telegram.default"
+                # Deliver the final answer back to the Telegram chat.
+                send_responses: true
+                # Stream live progress into one Telegram progress card while the
+                # turn runs (long turns stay visible).
+                stream_activity: true
+                stream_activity_display: true
+              web_app_auth_max_age_seconds: 86400
+        # ── THE APP'S MAIN VIEW: the two-agent scene ──────────────────────────
+        # Serving a `ui.main_view` makes it the app's DEFAULT landing surface: a
+        # user opening this app lands on the two agents side by side (the scene),
+        # not the bare single chat. `surfaces.as_provider.bundle.default_chat`
+        # above stays true — it powers the reactive turn + agent dispatch the two
+        # chat tiles connect to; the scene is what the landing renders.
+        ui:
+          main_view:
+            # The focused scene host (ui/scene): two dedicated chat tiles + rail +
+            # window manager + the CONFIG handshake. Built on refresh.
+            src_folder: ui/scene
+            build_command: npm install --no-package-lock && OUTDIR=<VI_BUILD_DEST_ABSOLUTE_PATH> npm run build
+            shared_sources:
+              # The reusable scene-host shell + its runtime deps, materialized so
+              # the scene's `@kdcube/components-*` imports resolve in the build.
+              components_react_scene:
+                src_folder: npm://components-react/src/scene
+                target: _shared/components-react/scene
+              components_core_scene:
+                src_folder: npm://components-core/src/scene
+                target: _shared/components-core/scene
+              components_core_events:
+                src_folder: npm://components-core/src/events
+                target: _shared/components-core/events
+              # components-core/scene reaches its siblings by relative import
+              # (subscriptions -> ../events, hostDrag -> ../shared), so both must
+              # be materialized alongside it for the build to resolve.
+              components_core_shared:
+                src_folder: npm://components-core/src/shared
+                target: _shared/components-core/shared
+          widgets:
+            # TWO dedicated, agent-bound chat widgets — one per hosted agent. Both
+            # build from the SAME SDK chat widget source (engine: package-ui); each
+            # is its OWN alias with a per-alias VITE bake that BINDS its agent,
+            # brand label, config identity, and event prefix. So the agent is a
+            # property of the widget's own build config, not a scene-appended
+            # ?agent_id= query. The scene mounts each by alias, side by side.
+            #
+            # (VITE_CHAT_AGENT_ID is read by the chat widget's settings; brand
+            # label / widget id / config identity / event prefix are the widget's
+            # standard VITE_CHAT_* knobs. engine: package-ui adds VITE_CHAT_ENGINE
+            # / VITE_CHAT_UI + the npm:// shared sources at build.)
+            chat_lg_solution:
+              src_folder: sdk://solutions/chat/ui/widget
+              engine: package-ui
+              build_command: >-
+                npm install --no-package-lock &&
+                VITE_CHAT_AGENT_ID="lg-solution"
+                VITE_CHAT_BRAND_LABEL="lg-solution"
+                VITE_CHAT_WIDGET_ID="chat_lg_solution"
+                VITE_CHAT_CONFIG_IDENTITY="BUNDLE_LG_SOLUTION_CHAT_VIEW"
+                VITE_CHAT_EVENT_PREFIX="lg_solution"
+                OUTDIR=<VI_BUILD_DEST_ABSOLUTE_PATH> npm run build
+            chat_lg_react:
+              src_folder: sdk://solutions/chat/ui/widget
+              engine: package-ui
+              build_command: >-
+                npm install --no-package-lock &&
+                VITE_CHAT_AGENT_ID="lg-react"
+                VITE_CHAT_BRAND_LABEL="lg-react"
+                VITE_CHAT_WIDGET_ID="chat_lg_react"
+                VITE_CHAT_CONFIG_IDENTITY="BUNDLE_LG_REACT_CHAT_VIEW"
+                VITE_CHAT_EVENT_PREFIX="lg_react"
+                OUTDIR=<VI_BUILD_DEST_ABSOLUTE_PATH> npm run build
+        # The two served chat widgets the scene mounts are visible to everyone
+        # (same open policy as the app's default chat).
+        visibility:
+          widget:
+            chat_lg_solution:
+              user_types: []
+              roles: []
+            chat_lg_react:
+              user_types: []
+              roles: []
+      # Long-term memory backend (lg-solution) needs NO bundle config key. It is
+      # env-driven inside the vendored agent: LG_MEMORY_BACKEND (custom |
+      # langgraph_store, default custom) is read from the process environment by
+      # solution/lg_solution/config.py, alongside OPENAI_API_KEY / DATABASE_URL. Set
+      # it as a solution env var (see bundles.secrets.template.yaml), not a config key.
+      #
+      # Per-turn context for lg-react is bounded by the vendored agent's
+      # pre_model_hook (LG_PREBUILT_CTX_TOKENS, default 3000) — KDCube does NOT prune
+      # the agent's context; the agent owns it. No bundle config key here either.
+      #
+      # Economic enforcement (T2b) needs NO bundle config here. Default quota
+      # policies + reservation defaults are seeded at deploy time from economics.yaml
+      # by the postgres-setup job, so the economics base entrypoint reads them at
+      # runtime. Do not invent quota/reservation keys here.

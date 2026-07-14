@@ -1,0 +1,30 @@
+# The UNION of both vendored agents' dependency sets (mirrors poc/lg-solution +
+# poc/lg-react-agent).
+#
+# Most of these already ship with the chat processor, because KDCube runs on the
+# same framework: requirements-chat-processor.txt already carries langgraph,
+# langchain(-core/-openai), and a Postgres driver. The entrypoint hard-requires
+# only langgraph (present), and both agents degrade cleanly without the rest.
+#
+# The actual delta a full deploy adds on top of the processor env:
+#   - langgraph-checkpoint-postgres  (the Postgres checkpointer, both agents)
+#   - psycopg[binary] v3             (the processor ships psycopg2 / v2)
+#   - pgvector                       (lg-solution's memory + KB)
+#   - langchain-anthropic            (only when lg-react runs on the anthropic provider)
+#
+# You own the platform, so supply those either way:
+#   1. add them to requirements-chat-processor.txt / requirements-chat.txt, or
+#   2. isolate them via the @venv contract using this file as the env spec.
+langgraph>=1.0.0
+langgraph-checkpoint-postgres>=2.0.0
+langchain-core>=1.0.0
+langchain-openai>=0.2.0
+# Conversation compaction (running-summary of older turns) for BOTH agents:
+# lg-react's SummarizationNode pre_model_hook + lg-solution's compact node. Absent,
+# both agents fall back to trim (the turn still runs).
+langmem>=0.0.30
+# Optional: only needed when LG_PREBUILT_PROVIDER=anthropic (lg-react).
+langchain-anthropic>=0.2.0
+psycopg[binary]>=3.1
+pgvector>=0.3.0
+pydantic>=2.0

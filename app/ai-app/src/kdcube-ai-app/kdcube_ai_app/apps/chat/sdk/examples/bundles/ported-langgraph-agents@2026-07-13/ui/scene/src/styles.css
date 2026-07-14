@@ -1,0 +1,4 @@
+/* The ported-agents scene uses the shared scene-host skin verbatim (rail,
+ * windows, docked stage, raise veil, --kdc-clip-bottom). Scene-specific style
+ * additions belong below the import. */
+@import '@kdcube/components-react/scene/sceneHost.css';
