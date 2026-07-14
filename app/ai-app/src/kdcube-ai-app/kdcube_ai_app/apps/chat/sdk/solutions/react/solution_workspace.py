@@ -1348,7 +1348,7 @@ class ApplicationHostingService:
         outdir: str | pathlib.Path | None,
         tenant: str,
         project: str,
-        user: str,
+        user: Optional[str] = None,
         conversation_id: str,
         user_type: str,
         turn_id: str,
@@ -1356,8 +1356,19 @@ class ApplicationHostingService:
         """
         Copy deliverable file artifacts from local outdir → ConversationStore.
         Returns rows: [{slot, key, hosted_uri, filename, mime, size, tool_id, description, owner_id, rn, physical_path}]
+
+        The file OWNER (``user``) is the download-critical key component: it must be
+        the same user the download resolver reconstructs. When a caller omits it, it
+        is resolved from the bound communicator's service context (the one canonical
+        source — see ``event_identity.resolve_request_identity``), so a file is always
+        hosted under the turn's real user. Every existing caller passes ``user``
+        explicitly, so this default only fills in for callers that don't.
         """
         import pathlib as _pathlib
+
+        if not str(user or "").strip():
+            from kdcube_ai_app.apps.chat.sdk.event_identity import resolve_request_identity
+            user = resolve_request_identity(self.comm).get("owner") or ""
 
         files_rehosted: List[Dict[str, Any]] = []
         base = artifact_outdir_for(_pathlib.Path(outdir), create=False) if outdir else None

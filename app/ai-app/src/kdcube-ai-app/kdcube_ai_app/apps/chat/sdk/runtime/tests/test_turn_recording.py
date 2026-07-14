@@ -3,6 +3,7 @@
 
 """Framework-neutral conversation recording (option A) — module + entrypoint wiring."""
 
+import asyncio
 import json
 
 import pytest
@@ -105,6 +106,35 @@ async def test_no_double_write_when_turn_log_already_recorded():
 
 
 @pytest.mark.asyncio
+async def test_recorded_signal_crosses_child_task_boundary():
+    # Regression (the overwrite bug): React persists its rich turn log inside a
+    # SEPARATE asyncio task. asyncio copies the context at task creation, so a
+    # `ContextVar.set(True)` there never reaches run()'s task and the fallback used
+    # to overwrite React's rich log with an assistant-only one. The signal now
+    # lives in a MUTABLE dict on the ContextVar: the child's copy shares the same
+    # dict object, so a mutation inside the child IS visible to the parent.
+    reset_turn_log_recorded()                       # bind the shared dict in THIS (parent) task
+
+    async def _child_persists():
+        # Runs in its own task (own copied context), exactly like React's persist.
+        mark_turn_log_recorded()
+
+    await asyncio.create_task(_child_persists())     # copies context -> shares the dict
+
+    # Parent task now sees the child's mutation — this is what was broken before.
+    assert turn_log_was_recorded() is True
+    client = _FakeConversationClient()
+    wrote = await record_minimal_turn_log_if_absent(
+        conversation_client=client,
+        tenant="t", project="p", user="u", user_type="registered",
+        conversation_id="conv-x", turn_id="turn-x", bundle_id="bundle.demo",
+        final_answer="Assistant-only log that must NOT overwrite React's rich log.",
+    )
+    assert wrote is False
+    assert client.calls == []
+
+
+@pytest.mark.asyncio
 async def test_empty_final_answer_is_not_recorded():
     reset_turn_log_recorded()
     client = _FakeConversationClient()
@@ -156,6 +186,81 @@ def test_build_minimal_turn_log_payload_carries_title():
         final_answer="Answer", turn_id="turn-9", conversation_title="  Weekend plans  ",
     )
     assert payload["conversation_title"] == "Weekend plans"
+
+
+def test_minimal_turn_log_records_user_prompt_attachments_and_files():
+    """So a run-to-completion turn reloads like React: the payload carries a
+    user.prompt block, a user.attachment.meta block (pullable conv:fi: ref), and a
+    react.tool.result file block (pullable conv:fi: ref) — the exact block types the
+    shared reload reader reconstructs the user bubble + attachments + files from."""
+    payload = build_minimal_turn_log_payload(
+        final_answer="Done.",
+        turn_id="turn-9",
+        user_prompt_text="  Use run_python to make primes.csv  ",
+        user_attachments=[{"filename": "data.xlsx", "mime": "application/vnd.ms-excel",
+                           "hosted_uri": "s3://b/u/c/t/data.xlsx", "rn": "rn:data"}],
+        assistant_files=[{"filename": "primes.csv", "mime": "text/csv",
+                          "logical_path": "conv:fi:conv-1.turn-9.files/primes.csv",
+                          "hosted_uri": "s3://b/u/c/t/primes.csv", "rn": "rn:primes"}],
+    )
+    by_type = {b["type"]: b for b in payload["blocks"]}
+
+    up = by_type["user.prompt"]
+    assert up["text"] == "Use run_python to make primes.csv"   # stripped
+    assert up["turn_id"] == "turn-9" and up["mime"] == "text/markdown"
+    assert up["path"] == "conv:ar:turn-9.user.prompt"
+
+    att = by_type["user.attachment.meta"]
+    assert att["path"] == "conv:fi:turn-9.user.attachments/data.xlsx"   # pullable ref
+    assert att["meta"]["hosted_uri"] == "s3://b/u/c/t/data.xlsx"
+    digest = json.loads(att["text"])
+    assert digest["kind"] == "file" and digest["visibility"] == "external"
+
+    fb = by_type["react.tool.result"]
+    meta_json = json.loads(fb["text"])
+    assert meta_json["kind"] == "file" and meta_json["visibility"] == "external"
+    assert meta_json["artifact_path"] == "conv:fi:conv-1.turn-9.files/primes.csv"   # pullable
+    assert meta_json["hosted_uri"] == "s3://b/u/c/t/primes.csv"
+    assert fb["path"] == "conv:tc:turn-9.code_exec_0.result"
+
+    # The final answer is still last.
+    assert payload["blocks"][-1]["type"] == ASSISTANT_COMPLETION_BLOCK_TYPE
+
+
+def test_minimal_turn_log_skips_empty_prompt_and_bad_refs():
+    """Empty prompt → no user.prompt block; an attachment without a filename or a
+    file without a ref is dropped (no malformed blocks that the reader can't use)."""
+    payload = build_minimal_turn_log_payload(
+        final_answer="Done.",
+        turn_id="turn-9",
+        user_prompt_text="   ",
+        user_attachments=[{"mime": "text/plain"}],                    # no filename
+        assistant_files=[{"filename": "x", "logical_path": ""}],      # no ref/path
+    )
+    types = {b["type"] for b in payload["blocks"]}
+    assert "user.prompt" not in types
+    assert "user.attachment.meta" not in types
+    assert "react.tool.result" not in types
+    assert types == {ASSISTANT_COMPLETION_BLOCK_TYPE}
+
+
+def test_resolve_request_identity_is_svc_first_with_comm_fallback():
+    from types import SimpleNamespace
+    from kdcube_ai_app.apps.chat.sdk.event_identity import resolve_request_identity
+    # svc carries the real user; comm.user_id is empty (the exact case that broke
+    # file download) — owner must come from svc so write + read agree.
+    comm = SimpleNamespace(
+        service={"tenant": "t", "project": "p", "user": "alice",
+                 "user_type": "registered", "conversation_id": "c1", "request_id": "r1"},
+        tenant="", project="", user_id="", user_type="",
+    )
+    ident = resolve_request_identity(comm)
+    assert ident == {"tenant": "t", "project": "p", "owner": "alice",
+                     "user_type": "registered", "conversation_id": "c1", "request_id": "r1"}
+    # Falls back to comm attributes when svc is empty.
+    comm2 = SimpleNamespace(service={}, tenant="t2", project="p2", user_id="bob", user_type="reg")
+    assert resolve_request_identity(comm2)["owner"] == "bob"
+    assert resolve_request_identity(comm2)["tenant"] == "t2"
 
 
 # ------------------------------------------------- conversation-title persist

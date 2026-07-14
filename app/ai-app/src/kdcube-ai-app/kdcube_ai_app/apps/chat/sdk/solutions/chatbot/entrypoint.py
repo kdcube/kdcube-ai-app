@@ -89,6 +89,13 @@ class BaseEntrypoint:
     _PERSIST_EVENTS_DEFAULT: list[str] = ["accounting.usage", "chat.turn.summary"]
     _PERSIST_EVENTS_ENABLED_DEFAULT: bool = True
     _TELEMETRY_EVENTS_ENABLED_DEFAULT: bool = True
+    # Dynamic conversation OBJECTS a turn emits through comm (not economics/stats):
+    # citations, progress steps, follow-ups. React carries these in its rich turn
+    # log; a framework-neutral turn does not, so we record them full-payload (they
+    # carry refs/light metadata, not bytes) and persist them into the events
+    # artifact the reload replays — so a reloaded lg-react turn shows the same
+    # objects it showed live. Files/answer/user message ride the turn log itself.
+    _CONVERSATION_EVENTS_DEFAULT: list[str] = ["chat.citations", "chat.step", "chat.followups"]
 
     def __init__(
         self,
@@ -2095,6 +2102,16 @@ class BaseEntrypoint:
             "privacy": {"data_keys": STATS_COMM_DATA_KEYS},
         }
 
+    def _conversation_event_types(self) -> list[str]:
+        """Dynamic conversation-object event types to capture full-payload for
+        reload (citations, steps, followups). Bundle props may override via
+        events.record.persist.conversation_selector."""
+        cfg = self._persist_events_config()
+        selector = cfg.get("conversation_selector")
+        if isinstance(selector, list):
+            return [str(t) for t in selector if t]
+        return list(self._CONVERSATION_EVENTS_DEFAULT)
+
     def _start_persist_events_recording(self) -> None:
         if not self._persist_events_enabled():
             return
@@ -2102,6 +2119,7 @@ class BaseEntrypoint:
         if not step_types:
             return
         from kdcube_ai_app.apps.chat.sdk.comm.sink.telemetry import STATS_COMM_DATA_KEYS
+        # Economics/timing events — stats-only privacy (the $ badge + elapsed time).
         self.comm.record(
             {
                 "include": {"types": step_types},
@@ -2109,6 +2127,16 @@ class BaseEntrypoint:
             },
             scope={"owner": "persist_events"},
         )
+        # Dynamic conversation objects (citations/steps/followups) — FULL payload,
+        # no stats privacy, so the refs/metadata survive to replay on reload. Only
+        # persisted for framework-neutral turns (see `_save_events_artifact`), so a
+        # React turn — whose rich turn log already carries these — never double-renders.
+        conv_types = self._conversation_event_types()
+        if conv_types:
+            self.comm.record(
+                {"include": {"types": conv_types}},
+                scope={"owner": "persist_conversation_events"},
+            )
 
     async def pre_run_hook(self, *, state: Dict[str, Any]) -> None:
         self._start_persist_events_recording()
@@ -2385,6 +2413,7 @@ class BaseEntrypoint:
                 await self.post_run_hook(state=state, result=result)
                 await self._record_turn_log_fallback(
                     result=result,
+                    state=state,
                     tenant=tenant,
                     project=project,
                     user_id=user_id,
@@ -2432,6 +2461,7 @@ class BaseEntrypoint:
         self,
         *,
         result: Dict[str, Any],
+        state: Optional[Dict[str, Any]] = None,
         tenant: Optional[str],
         project: Optional[str],
         user_id: Optional[str],
@@ -2477,6 +2507,48 @@ class BaseEntrypoint:
             return
         if not final_answer:
             return
+        # So a run-to-completion turn reloads like React: recover the user's message,
+        # its attachments, and any assistant-hosted files from the turn's inputs/outputs
+        # and record them as turn-log blocks (the reload reader rebuilds the user bubble
+        # + file cards from these). All best-effort — never fail the turn on recovery.
+        user_prompt_text = ""
+        user_attachments: list = []
+        assistant_files: list = []
+        try:
+            from kdcube_ai_app.apps.chat.sdk.protocol import (
+                external_events_text,
+                hosted_external_event_attachments,
+            )
+            events = (state or {}).get("external_events") or []
+            user_prompt_text = external_events_text(events) or ""
+            user_attachments = list(hosted_external_event_attachments(events) or [])
+        except Exception:
+            user_prompt_text, user_attachments = user_prompt_text, []
+        # Assistant files: a bundle that hosts files (e.g. code exec) surfaces them on
+        # `state["hosted_files"]` or `result["files"]` (compact rows: rn/hosted_uri/
+        # logical_path/mime/filename).
+        try:
+            raw_files = (state or {}).get("hosted_files") or (result or {}).get("files") or []
+            assistant_files = [f for f in raw_files if isinstance(f, dict)]
+        except Exception:
+            assistant_files = []
+        # DIAGNOSTIC (temporary): the one log that shows whether this code runs, whether
+        # the turn's external_events survive to here, and what user prompt / files we
+        # recovered. If this line is absent → my fix isn't deployed. If user_prompt_len=0
+        # with external_events missing from state_keys → the events don't reach the
+        # recorder (a state-threading problem, not the block builder).
+        try:
+            _ev = (state or {}).get("external_events") or []
+            self.logger.log(
+                f"[turn-log-blocks] conversation={thread_id} turn={turn_id} "
+                f"external_events={len(_ev) if isinstance(_ev, list) else 'NOTLIST'} "
+                f"user_prompt_len={len(user_prompt_text)} user_prompt={user_prompt_text[:80]!r} "
+                f"attachments={len(user_attachments)} files={len(assistant_files)} "
+                f"state_keys={sorted([str(k) for k in (state or {}).keys()])}",
+                "INFO",
+            )
+        except Exception:
+            pass
         try:
             client = await self.get_ctx_client()
             if client is None:
@@ -2502,6 +2574,9 @@ class BaseEntrypoint:
                 final_answer=final_answer,
                 steps=(result or {}).get("step_logs") or None,
                 conversation_title=conversation_title or None,
+                user_prompt_text=user_prompt_text,
+                user_attachments=user_attachments,
+                assistant_files=assistant_files,
             )
             try:
                 self.logger.log(
@@ -3101,7 +3176,18 @@ class BaseEntrypoint:
             bundle_id = str(getattr(getattr(self.config, "ai_bundle_spec", None), "id", "") or "")
             if not (tenant and project and user_id and conversation_id and turn_id):
                 return
-            raw_items = self.comm.export_recorded_events({"include": {"types": step_types}})
+            # A framework that wrote its own rich turn log (React) already carries
+            # citations/steps/followups in that log — persist only economics here to
+            # avoid double-rendering them on reload. A framework-neutral turn wrote no
+            # such log, so ALSO persist the recorded conversation objects; the reload
+            # replays them and the client renders them exactly as it did live.
+            from kdcube_ai_app.apps.chat.sdk.runtime.turn_recording import turn_log_was_recorded
+            export_types = list(step_types)
+            if not turn_log_was_recorded():
+                export_types = export_types + [
+                    t for t in self._conversation_event_types() if t not in export_types
+                ]
+            raw_items = self.comm.export_recorded_events({"include": {"types": export_types}})
             # accounting.usage is emitted on both comm.event() (chat_step) and
             # comm.service_event() (chat_service). Drop the chat_service copy to
             # avoid duplicates while keeping all other chat_service events intact

@@ -1271,15 +1271,35 @@ export function applyConvStatus(state: ChatState, env: ConvStatusEnvelope): Chat
   return { ...state, turns }
 }
 
+/* A conversation-title event is broadcast to EVERY subscriber of the user (so the
+ * conversations list can update across surfaces). A widget must therefore only
+ * apply the title when the event's conversation is the one it is showing —
+ * otherwise a title generated for another agent/conversation (or another open
+ * widget) leaks into this header. When the event carries no conversation id we
+ * fall back to best-effort apply (legacy/unscoped producers). */
+function titleTargetsActiveConversation(
+  state: ChatState,
+  env: { conversation?: { conversation_id?: string }; data?: Record<string, unknown> },
+): boolean {
+  const evConvId =
+    (env.conversation?.conversation_id && String(env.conversation.conversation_id)) ||
+    (typeof env.data?.conversation_id === 'string' ? (env.data.conversation_id as string) : '') ||
+    ''
+  if (!evConvId) return true
+  return evConvId === state.conversationId
+}
+
 export function applyChatStep(state: ChatState, env: ChatStepEnvelope): ChatState {
   /* The backend names the conversation mid-turn via a `conversation_title` step
    * (the title arrives in data.title). Apply it straight to the header so it
    * updates live, instead of waiting for the post-turn conversations-list
-   * refresh — and don't record it as a timeline step. Mirrors the OSS chat
-   * client (chat-web-app).
+   * refresh — and don't record it as a timeline step. Mirrors the reference
+   * chat client (chat-web-app). Only apply it to the conversation it targets (the
+   * event is broadcast to all of the user's surfaces).
    * Contract: docs/sdk/bundle/bundle-chat-stream-events-README.md
    * ("Conversation Title (`conversation_title`)"). */
   if (env.event?.step === 'conversation_title') {
+    if (!titleTargetsActiveConversation(state, env)) return state
     const title = typeof env.data?.title === 'string' ? env.data.title.trim() : ''
     return title ? { ...state, conversationTitle: title } : state
   }
@@ -1410,8 +1430,10 @@ export function applyChatStep(state: ChatState, env: ChatStepEnvelope): ChatStat
 
 export function applyChatDelta(state: ChatState, env: ChatDeltaEnvelope): ChatState {
   /* Some deployments emit `conversation_title` on the delta route; honor it
-   * here too so the header updates live (see applyChatStep). */
+   * here too so the header updates live (see applyChatStep) — same broadcast
+   * ownership guard. */
   if (env.event?.step === 'conversation_title') {
+    if (!titleTargetsActiveConversation(state, env)) return state
     const title = typeof env.data?.title === 'string' ? env.data.title.trim() : ''
     return title ? { ...state, conversationTitle: title } : state
   }

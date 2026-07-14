@@ -1724,9 +1724,12 @@ class BaseEntrypointWithEconomics(BaseEntrypoint):
         # Framework-neutral conversation recording (mirror BaseEntrypoint.run):
         # record a minimal turn log for a non-React execute_core so its answer
         # leaves a fetchable conversation record. Idempotent — a no-op when React
-        # already wrote a rich turn log (the per-turn flag is set).
+        # already wrote a rich turn log (the per-turn signal is set). `state` carries
+        # this turn's external_events (user message + attachments) and hosted_files,
+        # so the fallback captures the same conversation content React records.
         await self._record_turn_log_fallback(
             result=result or {},
+            state=state,
             tenant=tenant,
             project=project,
             user_id=user_id,

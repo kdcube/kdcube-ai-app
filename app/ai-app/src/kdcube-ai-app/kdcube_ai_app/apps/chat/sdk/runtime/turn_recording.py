@@ -16,10 +16,14 @@ final answer (and, optionally, its progress steps). The user message is not
 recorded here — it is persisted at ingress independent of the agent, and the
 turn-log materializer skips user blocks anyway.
 
-Idempotency is a context flag, not a store query: whoever writes a turn log
-(React, or this module) marks it recorded for the current turn; the platform
-fallback records the minimal log only when the flag is unset. Reset the flag
-at turn start.
+Idempotency uses a per-turn signal carried in a mutable dict on a ContextVar
+(``_TURN_STATE``): whoever writes a turn log (React, or this module) mutates
+``turn_log_recorded=True``; the platform fallback records the minimal log only
+when that signal is unset. The dict is MUTATED, never the ContextVar reassigned,
+so the signal crosses the asyncio task boundary React persists across — a child
+task's copy of the context shares the same dict object (see the note on
+``_TURN_STATE``). Reset at turn start, in run()'s task, before the framework
+spawns its work tasks.
 """
 
 from __future__ import annotations
@@ -33,50 +37,172 @@ from typing import Any, Dict, List, Optional, Sequence
 # (see ctx_rag ``materialize_turn``). Kept as the single source of truth here.
 ASSISTANT_COMPLETION_BLOCK_TYPE = "assistant.completion"
 
-# Per-turn "a turn log was written" flag. Set by any turn-log writer; checked by
-# the platform fallback. Reset at turn start.
-_TURN_LOG_RECORDED: ContextVar[bool] = ContextVar("kdcube_turn_log_recorded", default=False)
+# Per-turn signals ("a turn log was written", "the failure was surfaced") live as
+# keys in ONE mutable dict bound to this ContextVar at turn start. We MUTATE the
+# dict; we never reassign the ContextVar. That is the whole point: asyncio copies
+# the context when a task is created, and the copy shares the SAME dict object, so
+# a signal set inside a child task (React persists its rich log in one) is visible
+# to run()'s fallback check in the parent task. Reassigning a ContextVar *value*
+# would not cross that boundary — that was the overwrite bug. `reset_*` at turn
+# start binds the fresh dict in run()'s task, before the framework spawns its work.
+_TURN_STATE: ContextVar[Optional[Dict[str, bool]]] = ContextVar("kdcube_turn_state", default=None)
 
-# Per-turn "this turn's failure was already surfaced to the client" flag. Set by
-# whoever emits a user-visible turn error and owns the failed turn's fate (the
-# React/BaseWorkflow error handler emits its chat.error and rolls the turn back).
-# Checked by the platform's run() backstop so it never double-emits or re-records
-# a failure a framework already handled — it only fires for a turn that raised
-# raw (e.g. a non-React execute_core). Reset at turn start.
-_TURN_ERROR_SURFACED: ContextVar[bool] = ContextVar("kdcube_turn_error_surfaced", default=False)
+
+def _turn_state(create: bool = False) -> Optional[Dict[str, bool]]:
+    st = _TURN_STATE.get()
+    if st is None and create:
+        st = {}
+        _TURN_STATE.set(st)
+    return st
 
 
 def reset_turn_log_recorded() -> None:
-    """Call at turn start (before the bundle handles the turn)."""
-    _TURN_LOG_RECORDED.set(False)
+    """Call at turn start, in run()'s task, BEFORE the framework spawns work tasks.
+    Binds a fresh shared per-turn state dict they all inherit and mutate."""
+    _TURN_STATE.set({"turn_log_recorded": False, "turn_error_surfaced": False})
 
 
 def mark_turn_log_recorded() -> None:
-    """Call from any code path that persists a turn log for the current turn."""
-    _TURN_LOG_RECORDED.set(True)
+    """Call from any code path that persists a turn log for the current turn.
+    Mutates the shared per-turn dict, so run()'s fallback sees it even when this
+    runs in a different async task than run()."""
+    st = _turn_state(create=True)
+    st["turn_log_recorded"] = True
 
 
 def turn_log_was_recorded() -> bool:
-    return bool(_TURN_LOG_RECORDED.get())
+    st = _turn_state()
+    return bool(st and st.get("turn_log_recorded"))
 
 
 def reset_turn_error_surfaced() -> None:
     """Call at turn start (before the bundle handles the turn)."""
-    _TURN_ERROR_SURFACED.set(False)
+    _turn_state(create=True)["turn_error_surfaced"] = False
 
 
 def mark_turn_error_surfaced() -> None:
     """Call from any code path that surfaces a turn failure to the client and
-    owns the failed turn's outcome (emit + rollback/record)."""
-    _TURN_ERROR_SURFACED.set(True)
+    owns the failed turn's outcome (emit + rollback/record). Mutates the shared
+    per-turn dict so run()'s backstop sees it across task boundaries."""
+    _turn_state(create=True)["turn_error_surfaced"] = True
 
 
 def turn_error_was_surfaced() -> bool:
-    return bool(_TURN_ERROR_SURFACED.get())
+    st = _turn_state()
+    return bool(st and st.get("turn_error_surfaced"))
 
 
 def _utc_iso() -> str:
     return _dt.datetime.now(_dt.timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _user_prompt_block(text: str, *, turn_id: str, ts: str) -> Optional[Dict[str, Any]]:
+    """A ``user.prompt`` block — the reload reader (``iter_turn_user_input_entries``)
+    rebuilds the ``chat:user`` bubble from it, exactly like the React turn log."""
+    body = str(text or "").strip()
+    if not body:
+        return None
+    return {
+        "type": "user.prompt",
+        "author": "user",
+        "turn_id": turn_id,
+        "turn": turn_id,
+        "ts": ts,
+        "mime": "text/markdown",
+        "path": f"conv:ar:{turn_id}.user.prompt",
+        "text": body,
+        "meta": {"message_id": "m0", "event_type": "event.user.prompt", "turn_id": turn_id},
+    }
+
+
+def _user_attachment_meta_block(att: Dict[str, Any], *, turn_id: str, ts: str) -> Optional[Dict[str, Any]]:
+    """A ``user.attachment.meta`` block for one uploaded file — reloads as an
+    ``artifact:user.attachment`` row and carries a pullable ``conv:fi:`` ref, mirroring
+    the React user-attachment block. Requires a real basename filename."""
+    if not isinstance(att, dict):
+        return None
+    filename = str(att.get("filename") or "").strip()
+    if not filename:
+        return None
+    mime = str(att.get("mime") or "application/octet-stream").strip()
+    attachment_path = f"conv:fi:{turn_id}.user.attachments/{filename}"
+    physical_path = str(att.get("physical_path") or att.get("local_path") or "").strip()
+    digest = {
+        "artifact_path": attachment_path,
+        "physical_path": physical_path,
+        "mime": mime,
+        "kind": "file",
+        "visibility": "external",
+        "ts": ts,
+    }
+    meta: Dict[str, Any] = {"filename": filename, "mime": mime, "turn_id": turn_id, "message_id": "m0"}
+    for key in ("hosted_uri", "rn", "key"):
+        val = str(att.get(key) or "").strip()
+        if val:
+            meta[key] = val
+    if physical_path:
+        meta["physical_path"] = physical_path
+    summary = str(att.get("summary") or "").strip()
+    if summary:
+        meta["summary"] = summary
+    return {
+        "type": "user.attachment.meta",
+        "author": "user",
+        "turn_id": turn_id,
+        "turn": turn_id,
+        "ts": ts,
+        "mime": "application/json",
+        "path": attachment_path,
+        "text": json.dumps(digest, ensure_ascii=False),
+        "meta": meta,
+    }
+
+
+def _assistant_file_block(row: Dict[str, Any], *, turn_id: str, ts: str, index: int) -> Optional[Dict[str, Any]]:
+    """A ``react.tool.result`` JSON block for one assistant-hosted file — reloads as
+    an ``artifact:assistant.file`` row via ``extract_assistant_files_from_blocks``.
+    Requires an ``artifact_path`` (the ``logical_path`` / ``conv:fi:`` ref) and at
+    least one stored ref (hosted_uri/rn/key/physical_path)."""
+    if not isinstance(row, dict):
+        return None
+    artifact_path = str(row.get("logical_path") or row.get("artifact_path") or "").strip()
+    hosted_uri = str(row.get("hosted_uri") or "").strip()
+    rn = str(row.get("rn") or "").strip()
+    key = str(row.get("key") or "").strip()
+    physical_path = str(row.get("physical_path") or "").strip()
+    if not artifact_path or not (hosted_uri or rn or key or physical_path):
+        return None
+    call_id = f"code_exec_{index}"
+    meta_json: Dict[str, Any] = {
+        "artifact_path": artifact_path,
+        "physical_path": physical_path or str(row.get("filename") or ""),
+        "mime": str(row.get("mime") or "application/octet-stream"),
+        "kind": "file",
+        "visibility": "external",
+        "tool_call_id": call_id,
+        "filename": str(row.get("filename") or ""),
+        "ts": ts,
+    }
+    if hosted_uri:
+        meta_json["hosted_uri"] = hosted_uri
+    if rn:
+        meta_json["rn"] = rn
+    if key:
+        meta_json["key"] = key
+    tool_id = str(row.get("tool_id") or "").strip()
+    if tool_id:
+        meta_json["tool_id"] = tool_id
+    return {
+        "type": "react.tool.result",
+        "turn_id": turn_id,
+        "turn": turn_id,
+        "call_id": call_id,
+        "mime": "application/json",
+        "path": f"conv:tc:{turn_id}.{call_id}.result",
+        "text": json.dumps(meta_json, ensure_ascii=False),
+        "ts": ts,
+        "meta": {"tool_call_id": call_id},
+    }
 
 
 def build_minimal_turn_log_payload(
@@ -86,11 +212,16 @@ def build_minimal_turn_log_payload(
     steps: Optional[Sequence[Dict[str, Any]]] = None,
     ts: Optional[str] = None,
     conversation_title: Optional[str] = None,
+    user_prompt_text: str = "",
+    user_attachments: Optional[Sequence[Dict[str, Any]]] = None,
+    assistant_files: Optional[Sequence[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
-    """The smallest valid turn-log payload: an ``assistant.completion`` block
-    carrying the final answer, plus any progress-step blocks the agent chose to
-    record. Shape matches what ``ctx_rag.save_turn_log_as_artifact`` expects
-    (``V2TurnLog.from_dict``): ``{ts, blocks, blocks_count}``.
+    """The smallest valid turn-log payload. Records the assistant's final answer, and
+    now also — so a run-to-completion turn reloads like React — the USER prompt, any
+    USER attachment refs, and any assistant-hosted FILE refs. Block shapes match the
+    shared reload reader (``Timeline.build_turn_view`` + ``iter_turn_user_input_entries``).
+    Shape matches ``ctx_rag.save_turn_log_as_artifact`` (``V2TurnLog.from_dict``):
+    ``{ts, blocks, blocks_count}``.
 
     ``conversation_title`` (first turn only) is carried on the payload for symmetry
     with the React turn log; the conversation LIST reads the title from the
@@ -99,6 +230,16 @@ def build_minimal_turn_log_payload(
     """
     now = ts or _utc_iso()
     blocks: List[Dict[str, Any]] = []
+    # 1) the user's message (reloads the chat:user bubble)
+    user_block = _user_prompt_block(user_prompt_text, turn_id=turn_id, ts=now)
+    if user_block:
+        blocks.append(user_block)
+    # 2) the user's uploaded attachments (reload + pullable conv:fi: refs)
+    for att in user_attachments or []:
+        att_block = _user_attachment_meta_block(att, turn_id=turn_id, ts=now)
+        if att_block:
+            blocks.append(att_block)
+    # 3) the agent's progress steps
     for step in steps or []:
         if not isinstance(step, dict):
             continue
@@ -112,6 +253,12 @@ def build_minimal_turn_log_payload(
             "ts": str(step.get("ts") or now),
             "meta": {"status": str(step.get("status") or "")},
         })
+    # 4) files the agent produced (reload + pullable conv:fi: refs)
+    for i, row in enumerate(assistant_files or []):
+        file_block = _assistant_file_block(row, turn_id=turn_id, ts=now, index=i)
+        if file_block:
+            blocks.append(file_block)
+    # 5) the final answer
     blocks.append({
         "type": ASSISTANT_COMPLETION_BLOCK_TYPE,
         "turn": turn_id,
@@ -356,6 +503,9 @@ async def record_minimal_turn_log_if_absent(
     agent_id: Optional[str] = None,
     steps: Optional[Sequence[Dict[str, Any]]] = None,
     conversation_title: Optional[str] = None,
+    user_prompt_text: str = "",
+    user_attachments: Optional[Sequence[Dict[str, Any]]] = None,
+    assistant_files: Optional[Sequence[Dict[str, Any]]] = None,
 ) -> bool:
     """Record the minimal turn log when none was written this turn.
 
@@ -384,7 +534,24 @@ async def record_minimal_turn_log_if_absent(
     payload = build_minimal_turn_log_payload(
         final_answer=answer, turn_id=turn_id, steps=steps,
         conversation_title=conversation_title,
+        user_prompt_text=user_prompt_text,
+        user_attachments=user_attachments,
+        assistant_files=assistant_files,
     )
+    # DIAGNOSTIC (temporary): the actual blocks being written. If block_types lacks
+    # 'user.prompt' while user_prompt_len>0, the block builder dropped it; if
+    # user_prompt_len=0, nothing was passed in (see the entrypoint [turn-log-blocks] log).
+    try:
+        import logging as _lg
+        _lg.getLogger("kdcube.turn_recording").info(
+            "[turn-log-write] conv=%s turn=%s bundle=%s block_types=%s "
+            "(user_prompt_len=%d attachments=%d files=%d)",
+            conversation_id, turn_id, bundle_id,
+            [b.get("type") for b in payload.get("blocks", [])],
+            len(user_prompt_text or ""), len(user_attachments or []), len(assistant_files or []),
+        )
+    except Exception:
+        pass
     await save(
         tenant=tenant, project=project, user=user,
         conversation_id=conversation_id, user_type=user_type,
