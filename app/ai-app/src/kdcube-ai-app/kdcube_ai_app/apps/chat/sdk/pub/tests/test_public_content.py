@@ -288,6 +288,22 @@ def test_headline_in_body_omits_generated_header():
     assert "application/ld+json" in page
 
 
+def test_generated_header_gets_baseline_style():
+    """A bare fragment (no headline_in_body) ships only a scoped style, so the
+    platform must give the generated <h1>/summary a readable baseline — else the
+    header falls back to the browser default (serif, full-width) over a styled
+    body. The style is scoped to article-level element selectors."""
+    item = _item(body_html="<style>.card{max-width:920px}</style><div class='card'>x</div>")
+    page = render_item_page(item, config=PublicContentAliasConfig(alias="news", enabled=True))
+    head = page.split("</head>", 1)[0]
+    assert "article>h1{" in head            # baseline typography reached the head
+    assert "article{max-width:920px" in head
+    # ...and it must NOT be emitted when the authored body owns its header.
+    authored = render_item_page(_item(headline_in_body=True),
+                                config=PublicContentAliasConfig(alias="news", enabled=True))
+    assert "article>h1{" not in authored
+
+
 def test_gone_page_is_noindex():
     page = render_gone_page("kdcube/journal/lane")
     assert '<meta name="robots" content="noindex" />' in page

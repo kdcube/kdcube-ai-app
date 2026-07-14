@@ -47,6 +47,29 @@ def _meta(name_attr: str, name: str, content: str) -> str:
     return f'<meta {name_attr}="{_esc(name)}" content="{_esc(content)}" />'
 
 
+# Baseline typography for the generated <h1>/summary. A bare body fragment
+# ships its own scoped style (a card, a container) but no page-level rule, so
+# the generated header would otherwise fall back to the browser default —
+# full-width, serif, unstyled next to a styled body. This gives the document a
+# neutral readable column that lines up with a centered fragment. It is emitted
+# only when the page owns the header (never for headline_in_body authored
+# bodies, which carry their own page styling); element-level selectors keep the
+# specificity low enough for a fragment's own <style> to win any overlap.
+_HEADER_BASE_STYLE = (
+    "<style>"
+    "body{margin:0;padding:24px 16px;background:#F7F9F9;color:#0D1E2C;"
+    "font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"
+    "'Segoe UI',Roboto,sans-serif;line-height:1.56}"
+    "article{max-width:920px;margin:0 auto}"
+    "article>h1{margin:0 0 8px;padding:0 4px;font-size:26px;line-height:1.22;"
+    "font-weight:700;letter-spacing:-0.01em}"
+    "article>h1+p{margin:0 0 18px;padding:0 4px;color:#3A5672;font-size:15px;"
+    "line-height:1.5}"
+    "@media(max-width:720px){body{padding:12px}}"
+    "</style>"
+)
+
+
 def build_jsonld(
     item: PublicContentItem,
     *,
@@ -201,6 +224,7 @@ def render_item_page(
     else:
         summary_html = f"<p>{_esc(summary_text)}</p>\n" if summary_text else ""
         header_html = f"<h1>{_esc(item.title)}</h1>\n{summary_html}"
+        head = f"{head}\n{_HEADER_BASE_STYLE}"
     body_open = f'<body class="{_esc(body_class)}">' if body_class else "<body>"
     return (
         "<!doctype html>\n"
