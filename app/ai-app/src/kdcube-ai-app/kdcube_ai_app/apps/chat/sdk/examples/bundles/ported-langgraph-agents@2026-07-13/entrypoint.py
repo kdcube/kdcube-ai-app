@@ -82,6 +82,7 @@ from .platform.stream_solution import stream_graph_turn
 from .platform.stream_prebuilt import stream_react_turn
 from .platform.tools_mcp import resolve_tools
 from .platform.capabilities import resolve_turn_role_models
+from .platform.code_exec import build_code_exec_context, code_exec_scope, code_exec_enabled
 from .platform import telegram as telegram_ingress
 
 LOGGER = logging.getLogger("kdcube.ported_langgraph_agents")
@@ -236,17 +237,20 @@ async def _build_prebuilt_graph(ep: "LGPortedAgentsBundle") -> Any:
     model = ep._build_prebuilt_model(config)
     summary_model = ep._build_prebuilt_summary_model(config)
     tools_cfg = ep.bundle_prop("tools", {}) or {}
-    tools = await resolve_tools(tools_cfg, _prebuilt_plain_tools())
+    # Config-gated: append the platform `run_python` code-execution tool to the
+    # prebuilt agent's tool set when `tools.code_exec.enabled` is on. Additive —
+    # off by default, so the agent's behavior is unchanged unless enabled.
+    tools = await resolve_tools(tools_cfg, _prebuilt_plain_tools(code_exec_enabled(ep)))
     checkpointer = await ep._open_checkpointer("lg-react", config.database_url)
     return build_prebuilt_agent(
         config, model=model, tools=tools, checkpointer=checkpointer, summary_model=summary_model
     )
 
 
-def _prebuilt_plain_tools():
+def _prebuilt_plain_tools(include_code_exec: bool = False):
     # Imported lazily so a build for lg-solution never imports lg-react's tools.
     from .solution.lg_prebuilt.tools import build_plain_tools
-    return build_plain_tools()
+    return build_plain_tools(include_code_exec=include_code_exec)
 
 
 def _solution_inputs(
@@ -587,11 +591,24 @@ class LGPortedAgentsBundle(BaseEntrypointWithEconomics):
             title_role=spec.role,
         )
 
+        # (code execution) build the per-turn code-exec scope for the ACTIVE agent.
+        # When `tools.code_exec.enabled` is on, this stands up an isolated-runtime +
+        # hosting edge so a model-called `run_python` runs code and hosts the files
+        # it produces into conversation storage (exactly like a user attachment).
+        # Disabled / offline yields an inert context and the turn runs unchanged.
+        try:
+            code_exec_ctx = build_code_exec_context(self, state, agent_id)
+        except Exception:
+            LOGGER.warning("[ported-langgraph] code-exec context build failed", exc_info=True)
+            code_exec_ctx = None
+
         # (streaming) run the agent's own astream_events loop through ITS stream
         # adapter, redirected at the chat component via comm_ctx. Returns the
-        # answer in the shape the Telegram renderer reads.
+        # answer in the shape the Telegram renderer reads. The graph runs INSIDE the
+        # code-exec scope so `run_python`'s `host_files` resolves during the run.
         async def _run_turn() -> Dict[str, Any]:
-            answer = await spec.stream(graph, inputs, run_config)
+            async with code_exec_scope(code_exec_ctx):
+                answer = await spec.stream(graph, inputs, run_config)
             return {"answer": answer, "final_answer": answer}
 
         # Capabilities model pick for the ACTIVE agent (per user, per conversation).

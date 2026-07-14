@@ -123,7 +123,20 @@ def kb_search(query: str) -> str:
     return "\n\n".join(f"[{d['title']}] {d['text']}" for d in hits)
 
 
-def build_plain_tools() -> list:
+def build_plain_tools(*, include_code_exec: bool = False) -> list:
     """The default plain-tool set the agent binds. A single place so the graph
-    builder and any host stay free of tool-construction detail."""
-    return [calc, unit_convert, kb_search]
+    builder and any host stay free of tool-construction detail.
+
+    ``include_code_exec`` (config-gated by the host) appends the platform
+    ``run_python`` tool — a model-callable code-execution tool whose produced files
+    are hosted into conversation storage like a user attachment. It is additive:
+    off by default so the standalone plain-tool set is unchanged, and even when
+    bound it is inert unless a code-exec scope is active (see platform/code_exec)."""
+    tools = [calc, unit_convert, kb_search]
+    if include_code_exec:
+        # Package-relative, lazy: the standalone plain tools stay dependency-free
+        # and this import only happens when the host enables code execution.
+        from ...platform.code_exec_tool import build_run_python_tool
+
+        tools.append(build_run_python_tool())
+    return tools

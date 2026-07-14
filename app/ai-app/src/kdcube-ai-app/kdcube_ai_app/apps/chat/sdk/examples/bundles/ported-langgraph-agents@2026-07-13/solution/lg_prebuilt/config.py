@@ -14,6 +14,12 @@ from dataclasses import dataclass, field
 
 DEFAULT_DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/lg_prebuilt"
 
+# CODE EXECUTION (run_python) is a HOST feature, not a standalone-env knob: it is
+# configured on the bundle at `config.tools.code_exec` (enabled | runtime |
+# timeout_s) and read at runtime via bundle_prop by platform/code_exec.py — see
+# config/bundles.template.yaml. It is intentionally absent from this vendored
+# standalone Config (no isolated runtime / hosting edge exists offline).
+
 # Provider defaults. `provider` picks which LangChain chat model to build when a
 # key is present; the offline stub is used when no key is set for the provider.
 DEFAULT_PROVIDER = "openai"           # openai | anthropic

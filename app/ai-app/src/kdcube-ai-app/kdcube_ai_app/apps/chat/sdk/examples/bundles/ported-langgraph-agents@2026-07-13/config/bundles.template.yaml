@@ -88,6 +88,27 @@ bundles:
           #       transport: streamable_http
           #       headers:
           #         Authorization: "Bearer <MCP_ACCESS_TOKEN>"
+          # ── CODE EXECUTION (run_python) ──────────────────────────────────
+          # Adds a model-callable `run_python` tool that runs Python in an
+          # isolated runtime and HOSTS every file the code produces into this
+          # conversation's storage — exactly like a user attachment (the same
+          # ApplicationHostingService edge the React agent's host_files uses).
+          #
+          # OFF by default (additive, so agent behavior is unchanged). When on,
+          # `run_python` is bound to lg-react's tool set and the graph run is
+          # wrapped in the code-exec scope so hosting resolves.
+          #
+          #   enabled  — turn the tool on (default false).
+          #   runtime  — exec runtime mode: docker (default) | fargate | external.
+          #              The isolated runtime requires a reachable docker (or
+          #              distributed) executor; there is no in-process offline
+          #              mode. Fail-open: with no runtime the tool returns a clean
+          #              error and the turn still answers.
+          #   timeout_s— per-run wall-clock timeout in seconds (default 120).
+          code_exec:
+            enabled: false
+            runtime: docker
+            timeout_s: 120
         # The Telegram Bot API webhook (a public @api that drives the SAME
         # execute_core for the DEFAULT agent). `route="public"` exposes it at the
         # proc layer; the trust boundary is the Telegram webhook secret, verified by
