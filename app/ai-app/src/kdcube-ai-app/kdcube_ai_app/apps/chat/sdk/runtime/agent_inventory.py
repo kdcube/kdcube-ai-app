@@ -818,43 +818,70 @@ def agent_capabilities_catalog(
                 })
             continue
 
-    skills_out = _catalog_skills(
-        bundle_props,
-        agent_id,
-        bundle_root=bundle_root,
-        default_agent_id=default_agent_id,
-    )
-
-    subagents_enabled, _subagent_defaults = react_subagents_config(bundle_props, agent_id)
-
-    return {
+    catalog: dict[str, Any] = {
         "agent": _norm(agent_id) or default_agent_id,
         "tools": tools_out,
         "mcp": mcp_out,
         "named_services": namespaces_out,
-        "skills": skills_out,
-        # Per-user model choice: the admin-allowed list (empty = the feature
-        # stays invisible) and the configured default for the strong decision
-        # role the pick overrides.
-        "supported_models": react_supported_models(bundle_props, agent_id),
-        "default_model": configured_strong_model(bundle_props, agent_id),
-        # Subagent delegation: admin `subagents.allowed: true` puts it in the
-        # inventory; the user's toggle decides use (deny key `subagents`).
-        # Absent from the config = not offered. `default_on` (admin
-        # `subagents.default_on`, default true) is the toggle's default state
-        # when the user has no stored preference — false = offered but not
-        # active until the user opts in.
-        "subagents": (
-            {
-                "available": True,
-                "label": SUBAGENTS_CAPABILITY_LABEL,
-                "description": SUBAGENTS_CAPABILITY_DESCRIPTION,
-                "default_on": subagents_default_on(_subagent_defaults),
-            }
-            if subagents_enabled
-            else None
-        ),
     }
+
+    # The adapter-owned inventory blocks (skills / model pick / subagents) come
+    # from the agent's capabilities provider. The registry default kind is
+    # "react", so an unconfigured bundle resolves the ReAct adapter, whose
+    # `capability_blocks` reproduces the four fields byte-identically. A bundle
+    # that declares another provider contributes its blocks instead. If NOTHING
+    # resolves (no provider registered), fall back to the inline ReAct calls so
+    # the catalog never loses fields. `to_catalog_fields` orders its keys
+    # skills → supported_models → default_model → subagents, so the update over
+    # the neutral base preserves the historical field order.
+    from kdcube_ai_app.apps.chat.sdk.runtime.agent_capabilities import (
+        resolve_capability_provider,
+    )
+
+    provider = resolve_capability_provider(bundle_props, agent_id)
+    blocks = (
+        provider.capability_blocks(
+            bundle_props=bundle_props, bundle_root=bundle_root, agent_id=agent_id
+        )
+        if provider is not None
+        else None
+    )
+    if blocks is not None:
+        catalog.update(blocks.to_catalog_fields())
+    else:
+        # Fallback: no provider registered — the original inline embedding.
+        skills_out = _catalog_skills(
+            bundle_props,
+            agent_id,
+            bundle_root=bundle_root,
+            default_agent_id=default_agent_id,
+        )
+        subagents_enabled, _subagent_defaults = react_subagents_config(bundle_props, agent_id)
+        catalog.update({
+            "skills": skills_out,
+            # Per-user model choice: the admin-allowed list (empty = the feature
+            # stays invisible) and the configured default for the strong decision
+            # role the pick overrides.
+            "supported_models": react_supported_models(bundle_props, agent_id),
+            "default_model": configured_strong_model(bundle_props, agent_id),
+            # Subagent delegation: admin `subagents.allowed: true` puts it in the
+            # inventory; the user's toggle decides use (deny key `subagents`).
+            # Absent from the config = not offered. `default_on` (admin
+            # `subagents.default_on`, default true) is the toggle's default state
+            # when the user has no stored preference — false = offered but not
+            # active until the user opts in.
+            "subagents": (
+                {
+                    "available": True,
+                    "label": SUBAGENTS_CAPABILITY_LABEL,
+                    "description": SUBAGENTS_CAPABILITY_DESCRIPTION,
+                    "default_on": subagents_default_on(_subagent_defaults),
+                }
+                if subagents_enabled
+                else None
+            ),
+        })
+    return catalog
 
 
 # One-line descriptions for the generic named-service grammar, shown when a

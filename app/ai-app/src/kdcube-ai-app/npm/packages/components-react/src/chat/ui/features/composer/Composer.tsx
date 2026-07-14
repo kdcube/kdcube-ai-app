@@ -6,7 +6,7 @@ import { memo, useEffect, useMemo, useRef, useState, type CSSProperties, type Dr
 import { formatBytes } from '../../support/utils.ts'
 import type { AttachedContext, NamespaceStyleMap } from '@kdcube/components-core/chat'
 import type { BannerTone } from '@kdcube/components-core/chat'
-import { contextChipClass, contextChipStyle } from '@kdcube/components-core/chat'
+import { agentAcceptsFollowup, agentAcceptsSteer, contextChipClass, contextChipStyle } from '@kdcube/components-core/chat'
 import {
   recognizeContextMessage,
   recognizeContextPayload,
@@ -90,6 +90,13 @@ function ComposerImpl({
   menuSections?: ComposerMenuSectionDescriptor[]
 }) {
   const vm = useChatViewModel()
+  // Per-agent declared mid-turn affordances. A ReAct agent consumes a followup
+  // (the running turn folds it in) and a steer (cancel + finalize); a
+  // run-to-completion (ported) agent consumes NEITHER. Absence in the inventory
+  // reads as UNKNOWN → today's behavior (both enabled), so existing bundles do
+  // not regress; only an explicit `false` gates an affordance off.
+  const acceptsFollowup = agentAcceptsFollowup(vm.capabilities.inventory)
+  const acceptsSteer = agentAcceptsSteer(vm.capabilities.inventory)
   const composerRef = useRef<HTMLDivElement | null>(null)
   const [selectedContextIds, setSelectedContextIds] = useState<string[]>([])
   const selectedContextIdSet = useMemo(() => new Set(selectedContextIds), [selectedContextIds])
@@ -241,7 +248,9 @@ function ComposerImpl({
           }}
           placeholder={
             inProgress
-              ? 'Send a follow-up while the current turn is still running.'
+              ? (acceptsFollowup
+                  ? 'Send a follow-up while the current turn is still running.'
+                  : 'This message will be queued and sent as your next turn once the current one finishes.')
               : 'Ask anything — attachments, web search, code exec, and follow-ups are supported.'
           }
           rows={2}
@@ -266,7 +275,7 @@ function ComposerImpl({
                 onChange={(event) => onFilesAdd(event.target.files)}
               />
             </label>
-            {inProgress ? (
+            {inProgress && acceptsSteer ? (
               <button
                 type="button"
                 disabled={disabled}
@@ -286,7 +295,7 @@ function ComposerImpl({
               onClick={onSubmit}
               className="k-btn k-primary"
             >
-              {inProgress ? 'Follow up' : 'Send'}
+              {inProgress ? (acceptsFollowup ? 'Follow up' : 'Queue for next turn') : 'Send'}
             </button>
           </div>
         </div>

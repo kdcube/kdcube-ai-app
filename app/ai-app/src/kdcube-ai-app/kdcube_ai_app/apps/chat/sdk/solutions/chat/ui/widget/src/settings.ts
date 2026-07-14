@@ -6,6 +6,10 @@ export interface AppSettings {
   tenant: string
   project: string
   defaultBundleId: string | null
+  /** The bundle agent this chat drives (`surfaces.as_consumer.agents.<id>`).
+   *  Multi-agent apps expose one chat per agent; null => the server's default
+   *  agent. Resolved from the `agent_id` query param or the parent-frame config. */
+  agentId: string | null
   namespaceStyles: Record<string, unknown>
 }
 
@@ -51,6 +55,11 @@ export const CHAT_CANVAS_PATCH_MESSAGE = configValue('VITE_CHAT_CANVAS_PATCH_MES
 export const CHAT_CANVAS_PATCH_SOURCE = configValue('VITE_CHAT_CANVAS_PATCH_SOURCE', 'chat_canvas_patch_source', 'chat-widget')
 export const CHAT_CANVAS_INGRESS_MESSAGE = configValue('VITE_CHAT_CANVAS_INGRESS_MESSAGE', 'chat_canvas_ingress_message', 'kdcube.canvas.ingress')
 export const BUILT_BUNDLE_ID = configValue('VITE_BUNDLE_ID', 'bundle_id', '')
+// The bundle agent this build drives, baked at build time so a per-agent chat
+// widget is agent-bound by its OWN config (a dedicated `ui.widgets.<alias>` built
+// with `VITE_CHAT_AGENT_ID=<agent>`), not only by an `?agent_id=` URL query. The
+// query param still wins for a generic build (see `getAgentId`).
+export const CHAT_AGENT_ID = configValue('VITE_CHAT_AGENT_ID', 'agent_id', '')
 
 interface RouteContext {
   tenant: string
@@ -67,6 +76,8 @@ interface RuntimeConfigPayload {
   defaultTenant?: string
   defaultProject?: string
   defaultAppBundleId?: string | null
+  agentId?: string | null
+  agent_id?: string | null
   tenant?: string
   project?: string
   tenant_id?: string
@@ -138,6 +149,7 @@ class SettingsManager {
     tenant: PLACEHOLDER_TENANT,
     project: PLACEHOLDER_PROJECT,
     defaultBundleId: PLACEHOLDER_BUNDLE,
+    agentId: null,
     namespaceStyles: {},
   }
 
@@ -177,6 +189,14 @@ class SettingsManager {
     return this.settings.defaultBundleId
   }
 
+  getAgentId(): string | null {
+    // Precedence: a build-time bake or `?agent_id=` query param (both collapsed
+    // into CHAT_AGENT_ID, env winning) — the per-agent knob for a dedicated chat
+    // widget — then whatever the parent frame supplied, else null (server uses the
+    // app's default agent). A generic build with no bake keeps "query param wins".
+    return CHAT_AGENT_ID || this.settings.agentId || null
+  }
+
   getNamespaceStyles(): Record<string, unknown> {
     return this.settings.namespaceStyles || {}
   }
@@ -209,6 +229,8 @@ class SettingsManager {
     if (tenant) updates.tenant = tenant
     if (project) updates.project = project
     if (config.defaultAppBundleId !== undefined) updates.defaultBundleId = config.defaultAppBundleId
+    const agentId = config.agentId ?? config.agent_id
+    if (agentId !== undefined) updates.agentId = agentId
     const namespaceStyles = config.namespace_styles || config.namespaceStyles
     if (namespaceStyles && typeof namespaceStyles === 'object') {
       updates.namespaceStyles = namespaceStyles

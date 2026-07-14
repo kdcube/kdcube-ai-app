@@ -49,6 +49,10 @@ function buildEngineConfig(): EngineConfig {
       project: settings.getProject(),
       bundleId: settings.getBundleId() || BUILT_BUNDLE_ID,
     },
+    // Multi-agent apps: drive a specific agent (one chat per agent). Absent =>
+    // the core defaults to 'main' and the server falls back to the app's default
+    // agent. Resolved from the `agent_id` query param / parent config.
+    agentId: settings.getAgentId() || undefined,
     // Boot compact when embedded in a host iframe (the compact tile), expanded
     // standalone — matching the in-tree widget (useChatEngine's initial hostView).
     // Without this the package engine defaulted to 'expanded', so the embedded chat

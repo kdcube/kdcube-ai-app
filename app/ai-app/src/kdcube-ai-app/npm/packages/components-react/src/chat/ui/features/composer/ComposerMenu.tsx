@@ -927,13 +927,18 @@ function builtInSections(namespaceStyles: NamespaceStyleMap): ComposerMenuSectio
   const capabilitySection = (
     id: string,
     order: number,
+    /* An empty group renders nothing at all: the descriptor returns null so the
+     * picker body filters it out entirely — no header, no divider, no blank row.
+     * The check lives HERE (not only inside the Section) because the body sees a
+     * `<Section/>` element as truthy and can't tell it will render null. */
+    hasItems: (inventory: AgentCapabilitiesInventory) => boolean,
     Section: (props: CapabilityRowsProps) => ReactNode,
   ): ComposerMenuSectionDescriptor => ({
     id,
     order,
     render: ({ vm, close }) => {
       const { inventory, disabled, toggle, pending } = vm.capabilities
-      if (!inventory) return null
+      if (!inventory || !hasItems(inventory)) return null
       const onConsent = vm.connections.available()
         ? (consent: ConnectionsConsentOpen) => {
             vm.connections.open('composer-menu', consent)
@@ -957,17 +962,20 @@ function builtInSections(namespaceStyles: NamespaceStyleMap): ComposerMenuSectio
     {
       id: 'model',
       order: 5,
-      render: (ctx: ComposerMenuSectionContext) => <ModelsSection {...ctx} />,
+      render: (ctx: ComposerMenuSectionContext) =>
+        ctx.vm.capabilities.inventory?.supported_models?.length
+          ? <ModelsSection {...ctx} />
+          : null,
     },
-    capabilitySection('skills', 10, SkillsSection),
-    capabilitySection('tools', 20, ToolGroupsSection),
-    capabilitySection('mcp', 30, McpSection),
-    capabilitySection('services', 40, ServicesSection),
-    capabilitySection('subagents', 45, HelperAgentsSection),
+    capabilitySection('skills', 10, (inv) => inv.skills.length > 0, SkillsSection),
+    capabilitySection('tools', 20, (inv) => inv.tools.some((group) => !group.system), ToolGroupsSection),
+    capabilitySection('mcp', 30, (inv) => inv.mcp.length > 0, McpSection),
+    capabilitySection('services', 40, (inv) => inv.named_services.length > 0, ServicesSection),
+    capabilitySection('subagents', 45, (inv) => Boolean(inv.subagents?.available), HelperAgentsSection),
     {
       id: 'connectors',
       order: 50,
-      render: (ctx) => <ConnectorsSection {...ctx} />,
+      render: (ctx) => (ctx.vm.connections.available() ? <ConnectorsSection {...ctx} /> : null),
     },
   ]
 }

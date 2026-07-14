@@ -267,6 +267,40 @@ export function ChatShell({
   useEffect(() => {
     if (visibleTurns.length > 1) wakeTurnNav()
   }, [visibleTurns.length, wakeTurnNav])
+
+  /* On-demand overlap probe (the banner dismiss vs the floating turn-nav has
+   * resisted several code-only fixes; this repo has no browser rig). When the
+   * banner × looks unclickable, run `__kdcChatOverlapProbe()` in the console: it
+   * reports what element is actually topmost at the ×, plus z-index and
+   * pointer-events for the × and the turn-nav — the hard data to fix precisely.
+   * Zero side effects unless called; remove once the overlap is confirmed fixed. */
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const probe = () => {
+      const dismiss = document.querySelector('.k-banner-dismiss') as HTMLElement | null
+      if (!dismiss) { console.log('[chat-overlap] no banner dismiss visible'); return }
+      const r = dismiss.getBoundingClientRect()
+      const cx = r.left + r.width / 2, cy = r.top + r.height / 2
+      const topmost = document.elementFromPoint(cx, cy) as HTMLElement | null
+      const nav = document.querySelector('.k-turn-nav') as HTMLElement | null
+      const latest = document.querySelector('.k-turn-nav-latest') as HTMLElement | null
+      const z = (el: Element | null) => (el ? getComputedStyle(el as HTMLElement).zIndex : 'n/a')
+      const pe = (el: Element | null) => (el ? getComputedStyle(el as HTMLElement).pointerEvents : 'n/a')
+      const info = {
+        dismissRect: { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) },
+        topmostAtDismiss: topmost ? (topmost.className || topmost.tagName) : null,
+        dismissIsClickable: !!topmost && (topmost === dismiss || dismiss.contains(topmost) || topmost.contains(dismiss)),
+        dismissZ: z(dismiss), noticeZ: z(dismiss.closest('.k-notice')),
+        navZ: z(nav), navPointerEvents: pe(nav),
+        latestRect: latest ? (() => { const lr = latest.getBoundingClientRect(); return { x: Math.round(lr.x), y: Math.round(lr.y), w: Math.round(lr.width), h: Math.round(lr.height) } })() : null,
+        latestPointerEvents: pe(latest),
+      }
+      console.log('[chat-overlap]', info)
+      return info
+    }
+    ;(window as unknown as Record<string, unknown>).__kdcChatOverlapProbe = probe
+    return () => { delete (window as unknown as Record<string, unknown>).__kdcChatOverlapProbe }
+  }, [])
   const lastTurn = visibleTurns[visibleTurns.length - 1]
   /* Subagent threads grow the transcript too (live stamped traffic streams in
    * below their fork turns), so their progress participates in the
@@ -584,8 +618,8 @@ export function ChatShell({
             </svg>
             {compact ? (
               <span className="flex min-w-0 flex-col leading-tight">
-                <span className="text-[10px] font-semibold uppercase tracking-[0.05em] text-[var(--muted)]">
-                  {brandLabel}
+                <span className="truncate text-[10px] font-semibold uppercase tracking-[0.05em] text-[var(--muted)]">
+                  {state.agentId && state.agentId !== 'main' ? state.agentId : brandLabel}
                 </span>
                 <span className="flex min-w-0 items-center gap-1.5">
                   <span
@@ -612,7 +646,9 @@ export function ChatShell({
               </span>
             ) : (
               <>
-                <span className="k-brand-name">{brandLabel}</span>
+                <span className="k-brand-name">
+                  {state.agentId && state.agentId !== 'main' ? state.agentId : brandLabel}
+                </span>
                 <span className="k-brand-sep">/</span>
                 <span className="k-brand-path">{bundleId}</span>
               </>
@@ -803,7 +839,11 @@ export function ChatShell({
 
         <main className={`flex-1 ${compact ? 'flex min-h-0 flex-col overflow-hidden' : 'lg:flex lg:min-h-0 lg:flex-col lg:overflow-hidden px-3 py-3 sm:px-4 sm:py-4 lg:px-6 lg:py-5'}`}>
           {topBanners.length > 0 ? (
-            <div className={compact ? 'px-3 pt-2' : 'pb-3'}>
+            // Elevate the banner region above the floating turn-nav (position:fixed,
+            // z-index 4) so the dismiss × is always the topmost element and stays
+            // clickable — the turn-nav and this container share the root stacking
+            // context, so z-20 wins deterministically. Keeps the nav controls.
+            <div className={`relative z-20 ${compact ? 'px-3 pt-2' : 'pb-3'}`}>
               {topBanners.length > 1 ? (
                 <div className="flex justify-end pb-1">
                   <button type="button" className="k-btn k-sm k-ghost" onClick={handleDismissAllBanners}>

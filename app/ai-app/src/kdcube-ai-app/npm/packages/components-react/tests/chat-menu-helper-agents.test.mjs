@@ -19,7 +19,7 @@ const MENU_SOURCE = readFileSync(
 
 test('the helper-agents row rides the shared picker body via the sections registry', () => {
   assert.match(MENU_SOURCE, /function HelperAgentsSection/)
-  assert.match(MENU_SOURCE, /capabilitySection\('subagents', 45, HelperAgentsSection\)/)
+  assert.match(MENU_SOURCE, /capabilitySection\('subagents', 45, \([^)]*\) => [^,]*, HelperAgentsSection\)/)
 })
 
 test('entry absent -> no row; copy comes from the payload, never hardcoded prose', () => {
