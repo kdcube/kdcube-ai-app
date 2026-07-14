@@ -538,20 +538,6 @@ async def record_minimal_turn_log_if_absent(
         user_attachments=user_attachments,
         assistant_files=assistant_files,
     )
-    # DIAGNOSTIC (temporary): the actual blocks being written. If block_types lacks
-    # 'user.prompt' while user_prompt_len>0, the block builder dropped it; if
-    # user_prompt_len=0, nothing was passed in (see the entrypoint [turn-log-blocks] log).
-    try:
-        import logging as _lg
-        _lg.getLogger("kdcube.turn_recording").info(
-            "[turn-log-write] conv=%s turn=%s bundle=%s block_types=%s "
-            "(user_prompt_len=%d attachments=%d files=%d)",
-            conversation_id, turn_id, bundle_id,
-            [b.get("type") for b in payload.get("blocks", [])],
-            len(user_prompt_text or ""), len(user_attachments or []), len(assistant_files or []),
-        )
-    except Exception:
-        pass
     await save(
         tenant=tenant, project=project, user=user,
         conversation_id=conversation_id, user_type=user_type,

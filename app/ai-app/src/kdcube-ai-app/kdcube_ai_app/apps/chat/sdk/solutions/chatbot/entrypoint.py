@@ -2532,23 +2532,6 @@ class BaseEntrypoint:
             assistant_files = [f for f in raw_files if isinstance(f, dict)]
         except Exception:
             assistant_files = []
-        # DIAGNOSTIC (temporary): the one log that shows whether this code runs, whether
-        # the turn's external_events survive to here, and what user prompt / files we
-        # recovered. If this line is absent → my fix isn't deployed. If user_prompt_len=0
-        # with external_events missing from state_keys → the events don't reach the
-        # recorder (a state-threading problem, not the block builder).
-        try:
-            _ev = (state or {}).get("external_events") or []
-            self.logger.log(
-                f"[turn-log-blocks] conversation={thread_id} turn={turn_id} "
-                f"external_events={len(_ev) if isinstance(_ev, list) else 'NOTLIST'} "
-                f"user_prompt_len={len(user_prompt_text)} user_prompt={user_prompt_text[:80]!r} "
-                f"attachments={len(user_attachments)} files={len(assistant_files)} "
-                f"state_keys={sorted([str(k) for k in (state or {}).keys()])}",
-                "INFO",
-            )
-        except Exception:
-            pass
         try:
             client = await self.get_ctx_client()
             if client is None:
