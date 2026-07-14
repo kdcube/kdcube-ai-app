@@ -243,7 +243,8 @@ split in `docs/storage/README.md` as an ownership matrix (owned / read-through /
 ephemeral / platform-owned). Reload/history is owned by
 `chat-component-communication-README.md` ("Stored Conversation Reload"). The full
 continuity model — the two memories (your agent's own store vs. the platform
-record), durable-checkpointer keying, and the first-turn title — is
+record), durable-checkpointer keying, the first-turn title, and restoring the turn
+cost/time on reload (a `post_run_hook` that calls `_save_events_artifact`) — is
 [hosted-agent-conversation-README.md](../../sdk/solutions/conversation/hosted-agent-conversation-README.md).
 
 ### Dependencies

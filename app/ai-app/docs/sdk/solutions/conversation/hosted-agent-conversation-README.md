@@ -80,6 +80,18 @@ reload contract in
 [chat component communication](../chat/chat-component-communication-README.md)
 ("Stored Conversation Reload").
 
+## Turn economics and timing on reload
+
+The per-turn cost (`$`) and elapsed time the chat component shows are part of the
+conversation record too — not just live badges. The economics door emits the turn
+cost (`accounting.usage`, `cost_total_usd`) and the timing (`chat.turn.summary`,
+`elapsed_ms`) as chat events; a `post_run_hook` that calls `_save_events_artifact`
+persists them into the turn's `conv.artifacts.events` artifact, which the reload
+reader re-surfaces. The React workflow does this in its own `post_run_hook`; a
+run-to-completion port must add the same hook (and, having no timeline, emit the
+`chat.turn.summary` timing itself) or the reloaded turn shows no cost or time.
+Match the platform event shapes — do not hand-roll a parallel economics format.
+
 ## The conversation title
 
 A new conversation earns a short auto-title on its **first turn**. "New" is a
