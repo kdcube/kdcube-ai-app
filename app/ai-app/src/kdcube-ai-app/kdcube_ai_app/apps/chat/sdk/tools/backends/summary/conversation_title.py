@@ -56,6 +56,33 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Type
 
 LOGGER = logging.getLogger("kdcube.conversation_title")
 
+
+def _meta_model(meta: Any) -> str:
+    """Best-effort model id/name from stream_with_channels meta, for logging.
+    An empty string means the role did not resolve to a concrete model."""
+    if not isinstance(meta, dict):
+        return ""
+    for key in ("model", "model_id", "model_name", "resolved_model"):
+        val = meta.get(key)
+        if isinstance(val, str) and val.strip():
+            return val.strip()
+    # Some services nest it under a client/role descriptor.
+    client = meta.get("client") if isinstance(meta.get("client"), dict) else {}
+    for key in ("model", "model_id", "model_name"):
+        val = client.get(key)
+        if isinstance(val, str) and val.strip():
+            return val.strip()
+    return ""
+
+
+def _meta_brief(meta: Any) -> Dict[str, Any]:
+    """Small JSON-safe slice of meta for a diagnostic log (never the full payload)."""
+    if not isinstance(meta, dict):
+        return {}
+    keys = ("model", "model_id", "role", "provider", "finish_reason", "stop_reason",
+            "usage", "service_error", "error")
+    return {k: meta.get(k) for k in keys if k in meta}
+
 from pydantic import BaseModel, Field
 
 from kdcube_ai_app.infra.service_hub.inventory import (
@@ -249,10 +276,24 @@ async def run_conversation_title(
                 # Still empty after structured parse + salvage: log the raw model
                 # output so the exact shape (which extraction to add) is visible.
                 LOGGER.info(
-                    "[conversation-title] role=%s produced NO usable title. "
-                    "raw output=%r thinking=%r",
-                    role, (channel_dump["output"] or "")[:400], (channel_dump["thinking"] or "")[:400],
+                    "[conversation-title] role=%s model=%s produced NO usable title. "
+                    "raw output=%r thinking=%r meta=%r",
+                    role, _meta_model(meta),
+                    (channel_dump["output"] or "")[:400], (channel_dump["thinking"] or "")[:400],
+                    _meta_brief(meta),
                 )
+
+        # Always log the outcome so the title path is never a black box: which role
+        # resolved to which model, and whether a title came out. An empty model here
+        # means the role did not resolve (missing role_models binding / overlay).
+        try:
+            LOGGER.info(
+                "[conversation-title] role=%s model=%s title=%r (out_len=%d think_len=%d)",
+                role, _meta_model(meta), str(payload.get(title_field) or "").strip(),
+                len(channel_dump.get("output") or ""), len(channel_dump.get("thinking") or ""),
+            )
+        except Exception:
+            pass
 
         return payload, channel_dump
 

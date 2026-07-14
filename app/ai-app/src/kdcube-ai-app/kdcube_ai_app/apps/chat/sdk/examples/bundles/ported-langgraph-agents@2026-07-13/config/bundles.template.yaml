@@ -13,6 +13,21 @@ bundles:
       # identity gate (platform/identity.py). Multiple processes may load it.
       singleton: false
       config:
+        # Base model bindings for each agent's answer role. The per-user model pick
+        # (simple_model_pick, below) overlays these onto bundle_call_context at TURN
+        # time — but that overlay is scoped to the active agent's turn. Platform-side
+        # calls that run outside/before it — notably conversation-title generation,
+        # which uses the responsible agent's answer role — need the role resolvable
+        # from base config; without this binding that call resolves to no model and
+        # returns an empty title ("Untitled conversation"). Keep these in sync with
+        # the simple_model_pick defaults below.
+        role_models:
+          lg-solution.answer:
+            provider: anthropic
+            model: claude-sonnet-4-5-20250929
+          lg-react.answer:
+            provider: anthropic
+            model: claude-haiku-4-5-20251001
         surfaces:
           as_provider:
             # The reactive chat turn. The control plane serves the conversation
