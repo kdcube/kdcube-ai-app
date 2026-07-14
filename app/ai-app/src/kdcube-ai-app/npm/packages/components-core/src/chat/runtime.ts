@@ -23,6 +23,14 @@ export interface EngineRuntime {
   readonly bundleId: string
   /** The bundle agent this engine drives (config `agentId`, default 'main'). */
   readonly agentId: string
+  /** The explicitly-configured agent, present only when the widget is agent-bound
+   *  (a dedicated per-agent chat: `VITE_CHAT_AGENT_ID` / `?agent_id=` / config).
+   *  `undefined` for a plain single-agent widget. This distinguishes "explicitly
+   *  agent X" from the coerced `'main'` default so agent-scoped reads (the
+   *  conversation list) filter ONLY when the widget really is bound to one agent —
+   *  a single-agent app's conversations are stored with a NULL agent_id and must
+   *  not be filtered out by an `agent_id=main` query. */
+  readonly boundAgentId?: string
   /** Header name the id token is sent under (token mode). */
   readonly idTokenHeader: string
   /** Fetch credentials mode — `'include'` so an external session cookie rides along. */
@@ -60,6 +68,7 @@ export function getClientTimezone(): { tz?: string; utcOffsetMin: number } {
 export function buildRuntime(config: EngineConfig): EngineRuntime {
   const { baseUrl, tenant, project, bundleId } = config.connection
   const agentId = resolveAgentId(config)
+  const boundAgentId = config.agentId?.trim() || undefined
   const mode = resolveAuthMode(config)
   const idTokenHeader = resolveIdTokenHeader(config)
 
@@ -76,6 +85,7 @@ export function buildRuntime(config: EngineConfig): EngineRuntime {
     project,
     bundleId,
     agentId,
+    boundAgentId,
     idTokenHeader,
     credentials: 'include',
     getTokens,

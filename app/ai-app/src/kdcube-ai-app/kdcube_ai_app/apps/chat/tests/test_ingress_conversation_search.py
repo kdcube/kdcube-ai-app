@@ -265,6 +265,27 @@ def test_explicit_bundle_id_is_validated_and_used(harness):
     assert harness.browser.list_kwargs["bundle_id"] == "bundle-x"
 
 
+def test_agent_bound_search_narrows_to_that_agent(harness):
+    # An agent-bound widget (one chat per agent) passes agent_id. The whole-history
+    # ("user") search is promoted to the backend's agent scope — user-wide, filtered
+    # by agent_id — and the title enrichment is scoped the same way, so the tile
+    # never surfaces a sibling agent's conversations.
+    resp = harness.client.post(SEARCH_URL, json={"query": "invoice", "agent_id": "lg-solution"})
+    assert resp.status_code == 200
+    assert harness.backend.search_kwargs["agent_id"] == "lg-solution"
+    assert harness.backend.search_kwargs["scope"] == "user"  # agent scope is user-wide
+    assert harness.browser.list_kwargs["agent_id"] == "lg-solution"
+
+
+def test_no_agent_id_searches_across_all_agents(harness):
+    # A plain (unbound) widget sends no agent_id — search spans every agent in the
+    # bundle, exactly as before (agent_id filter absent).
+    resp = harness.client.post(SEARCH_URL, json={"query": "invoice"})
+    assert resp.status_code == 200
+    assert harness.backend.search_kwargs["agent_id"] is None
+    assert harness.browser.list_kwargs["agent_id"] is None
+
+
 def test_summary_target_maps_to_summary_arm(harness):
     resp = harness.client.post(SEARCH_URL, json={"query": "acme", "targets": ["summary"]})
     assert resp.status_code == 200

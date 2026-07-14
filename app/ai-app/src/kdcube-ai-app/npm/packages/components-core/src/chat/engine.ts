@@ -238,7 +238,7 @@ export function createChatEngine(config: EngineConfig): ChatEngine {
     dispatch(chatActions.setConversationsLoading(true))
     dispatch(chatActions.setConversationsError(null))
     try {
-      const conversations = await listBundleConversations(runtime, bundleId)
+      const conversations = await listBundleConversations(runtime, bundleId, runtime.boundAgentId)
       dispatch(chatActions.setConversations(conversations))
       dispatch(chatActions.setConversationsLoading(false))
     } catch (error) {

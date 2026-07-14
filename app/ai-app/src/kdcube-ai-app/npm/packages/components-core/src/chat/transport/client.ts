@@ -92,10 +92,19 @@ function operationsUrl(runtime: EngineRuntime, alias: string, bundleId: string, 
   )
 }
 
-export async function listBundleConversations(runtime: EngineRuntime, bundleId: string): Promise<ConversationSummary[]> {
+export async function listBundleConversations(
+  runtime: EngineRuntime,
+  bundleId: string,
+  agentId?: string,
+): Promise<ConversationSummary[]> {
   const { tenant, project } = requireScope(runtime)
   const params = new URLSearchParams()
   params.set('bundle_id', bundleId)
+  // An agent-bound widget (one chat per agent in a multi-agent app) lists only
+  // its own agent's conversations. Omitted for a plain single-agent widget, whose
+  // conversations are stored with a NULL agent_id — an `agent_id` filter would
+  // exclude them (the backend matches agent_id exactly).
+  if (agentId) params.set('agent_id', agentId)
 
   const response = await fetch(
     `${runtime.baseUrl}/api/cb/conversations/${tenant}/${project}?${params.toString()}`,
@@ -129,6 +138,9 @@ export async function searchConversations(
 ): Promise<ConversationSearchResponse> {
   const { tenant, project } = requireScope(runtime)
   const body: ConversationSearchRequest = { ...request, bundle_id: bundleId }
+  // An agent-bound widget narrows search to its own agent (same rule as the
+  // conversation list); a plain single-agent widget omits it.
+  if (runtime.boundAgentId) body.agent_id = runtime.boundAgentId
   /* Unset optionals are omitted (not sent as JSON null) — the backend models
    * them as defaulted plain fields, and "absent" is what "unset" means here. */
   for (const key of Object.keys(body) as Array<keyof ConversationSearchRequest>) {

@@ -39,11 +39,14 @@ from kdcube_ai_app.auth.sessions import UserSession
 from kdcube_ai_app.apps.chat.sdk.context.retrieval.ctx_rag import normalize_rank_weights
 from kdcube_ai_app.apps.chat.sdk.solutions.conversation.api import (
     ALLOWED_TARGETS,
+    SCOPE_AGENT,
+    SCOPE_USER,
     ConversationSearchContext,
     ConversationSearchParams,
     ConversationSearchResult,
     run_conversation_search,
 )
+from kdcube_ai_app.apps.chat.sdk.event_identity import index_agent_id
 from kdcube_ai_app.apps.chat.sdk.solutions.conversation.search_backend import (
     make_conversation_search_backend,
 )
@@ -93,6 +96,7 @@ class ConversationSearchRequest(BaseModel):
     limit: int = Field(default=20, ge=1, le=50)
     weights: Optional[ConversationSearchWeights] = None
     bundle_id: Optional[str] = Field(default=None, description="If omitted, the default bundle for this tenant/project is used.")
+    agent_id: Optional[str] = Field(default=None, description="Narrow to one agent's conversations (an agent-bound chat widget). If omitted, all agents in the bundle.")
     include_recovery_sessions: bool = False
 
 
@@ -268,6 +272,7 @@ async def _conversation_infos(
     *,
     user_id: str,
     bundle_id: Optional[str],
+    agent_id: Optional[str] = None,
     conversation_ids: List[str],
 ) -> Dict[str, ConversationSearchConversationInfo]:
     """Enrich hit conversation ids with title/last_activity_at from the same
@@ -286,6 +291,7 @@ async def _conversation_infos(
                 days=3650,
                 include_titles=True,
                 bundle_id=bundle_id,
+                agent_id=agent_id,
             )
             by_id = {
                 str(item.get("conversation_id") or ""): item
@@ -337,6 +343,17 @@ async def search_conversations(
 
     params = validated_search_params(req)
 
+    # An agent-bound widget (one chat per agent in a multi-agent app) narrows
+    # search to its own agent's conversations. Reuses the backend's existing agent
+    # scope — user-wide search filtered by agent_id — by promoting a whole-history
+    # ("user") search to "agent". A conversation-scoped search is left untouched (a
+    # single conversation is already one agent's), and so is a search with no bound
+    # agent. `index_agent_id` normalizes empty -> None, matching how the agent id
+    # is stored on conv_messages.
+    agent_filter = index_agent_id((req.agent_id or "").strip() or None)
+    if agent_filter and params.scope == SCOPE_USER:
+        params.scope = SCOPE_AGENT
+
     requested_bundle = (req.bundle_id or "").strip() or None
     if requested_bundle:
         # Validates the id against the active registry (404 on unknown).
@@ -371,6 +388,7 @@ async def search_conversations(
         user_id=session.user_id,
         conversation_id=conversation_id,
         bundle_id=bundle_id,
+        agent_id=agent_filter,
         tenant=tenant,
         project=project,
     )
@@ -399,6 +417,7 @@ async def search_conversations(
         state,
         user_id=session.user_id,
         bundle_id=bundle_id,
+        agent_id=agent_filter,
         conversation_ids=[str(h.get("conversation_id") or "") for h in (result.hits or [])],
     )
     return shape_search_response(

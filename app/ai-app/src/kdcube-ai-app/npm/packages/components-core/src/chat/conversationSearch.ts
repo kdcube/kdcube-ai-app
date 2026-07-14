@@ -46,6 +46,9 @@ export interface ConversationSearchParams {
 /** Full wire request body. */
 export interface ConversationSearchRequest extends ConversationSearchParams {
   bundle_id: string
+  /** Narrow to one agent's conversations — set by the engine for an agent-bound
+   *  widget (a dedicated per-agent chat). Omitted for a plain single-agent widget. */
+  agent_id?: string | null
 }
 
 export interface ConversationSearchSnippet {
