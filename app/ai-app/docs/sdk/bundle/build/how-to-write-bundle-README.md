@@ -339,6 +339,24 @@ Practical hook rule:
 - `on_turn_completed(...)` = fast per-turn cleanup after success, error, or
   cancellation; do not perform expensive reporting or user-facing delivery there
 
+Relational (Postgres) storage rule (IMPORTANT — do not get this wrong):
+
+- If a bundle needs Postgres tables, use the ONE shared per-`tenant/project`
+  schema: `kdcube_{tenant}_{project}` (this mirrors `ConvIndex`,
+  `UserMemoryStore`, and `IssueStore`). NEVER create a schema per bundle, per
+  agent, or per version — that pollutes the database and is not how KDCube works.
+- Namespace by TABLE NAME, not by schema: bundle-prefixed table names (e.g.
+  `myapp_records`) inside that one shared schema. Scope every row by COLUMNS —
+  `tenant`, `project`, `bundle_id` (plus `agent_id` / `user_id` when the data is
+  per-agent or per-user). Every query filters `WHERE tenant=$1 AND project=$2 AND
+  bundle_id=…`; isolation is by column, never by a separate schema.
+- Provision idempotently and concurrency-safely from `on_bundle_load(...)` (or
+  first use): `CREATE SCHEMA IF NOT EXISTS "{schema}"` + `CREATE TABLE/INDEX IF
+  NOT EXISTS`. Do NOT run `CREATE EXTENSION` — the platform's PostgresSetup job
+  provides `vector` / `pg_trgm` / `pgcrypto`.
+- Reference implementation: `task-tracker@1-0` `issues/storage.py`
+  (`schema_for_scope`, bundle-prefixed tables, column-scoped rows).
+
 Async rule:
 
 - KDCube proc is a concurrent asyncio service; every platform-invoked lifecycle
