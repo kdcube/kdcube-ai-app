@@ -316,6 +316,67 @@ def test_unknown_catalog_sitemap_is_404(tmp_path):
     assert _serve(tmp_path, "news/unknown/sitemap.xml").status_code == 404
 
 
+def test_presentation_theme_tokens_reach_the_page(tmp_path):
+    """Alias presentation sets base tokens; the catalog's accent shorthand and
+    its own presentation.theme override them (later wins), and accent tints
+    derive from the winning accent."""
+    _seed(tmp_path)
+    props = copy.deepcopy(_PROPS)
+    props["public_content"]["news"]["presentation"] = {
+        "theme": {"display": "'Playfair Display',serif", "width": "1000px", "accent": "#333333"},
+    }
+    props["public_content"]["news"]["catalogs"]["kdcube/blogs"]["presentation"] = {
+        "theme": {"ink": "#101010"},
+    }
+    page = _serve(tmp_path, "news/kdcube/blogs", props=props).content.decode("utf-8")
+    assert "--kdcpub-display:'Playfair Display',serif;" in page
+    assert "--kdcpub-width:1000px;" in page
+    assert "--kdcpub-ink:#101010;" in page
+    # catalog accent shorthand (#01BEB2) wins over the alias theme accent
+    assert "--kdcpub-accent:#01BEB2;" in page
+    assert "--kdcpub-accent-rgb:1,190,178;" in page
+
+
+def test_presentation_stylesheets_load_after_sdk_styles(tmp_path):
+    """App stylesheets (alias first, then catalog) come after the SDK style +
+    theme token blocks so they can override anything via kdcpub-* classes."""
+    _seed(tmp_path)
+    props = copy.deepcopy(_PROPS)
+    props["public_content"]["news"]["presentation"] = {
+        "stylesheets": ["/assets/pub-brand.css"],
+    }
+    props["public_content"]["news"]["catalogs"]["kdcube/blogs"]["presentation"] = {
+        "stylesheets": ["/assets/pub-blogs.css"],
+    }
+    page = _serve(tmp_path, "news/kdcube/blogs", props=props).content.decode("utf-8")
+    alias_link = '<link rel="stylesheet" href="/assets/pub-brand.css">'
+    fold_link = '<link rel="stylesheet" href="/assets/pub-blogs.css">'
+    assert page.rindex("--kdcpub-accent") < page.index(alias_link) < page.index(fold_link)
+    # the item-page shell carries the same app styles (shared primitives)
+    item = _serve(
+        tmp_path, "news/kdcube/blogs/2026-07-02-beta", props=props
+    ).content.decode("utf-8")
+    assert alias_link in item and fold_link in item
+
+
+def test_presentation_rejects_unsafe_theme_tokens():
+    props = copy.deepcopy(_PROPS)
+    props["public_content"]["news"]["presentation"] = {
+        "theme": {"ink": "#111}</style><script>x()</script>"},
+    }
+    assert "news" not in resolve_alias_configs(props)
+
+
+def test_empty_fold_renders_deliberate_empty_state(tmp_path):
+    _seed(tmp_path)
+    props = copy.deepcopy(_PROPS)
+    props["public_content"]["news"]["catalogs"]["recipes"] = {"title": "Recipes"}
+    page = _serve(tmp_path, "news/recipes", props=props).content.decode("utf-8")
+    assert "kdcpub-empty" in page and "No articles yet." in page
+    # no 0–0 pager row in an empty band (the class only remains in the CSS)
+    assert '<div class="kdcpub-pager">' not in page
+
+
 def test_old_schema_hot_index_is_rebuilt_on_catalog_serve(tmp_path):
     _seed(tmp_path)
     hot_dir = tmp_path / "hot" / "_public_content" / "news"

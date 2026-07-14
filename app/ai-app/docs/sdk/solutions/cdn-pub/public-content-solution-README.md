@@ -5,6 +5,7 @@ summary: "The sdk/pub solution: how the platform turns app-declared content into
 tags: ["sdk", "solutions", "cdn-pub", "public-content", "seo", "sitemap", "jsonld", "registry", "storage", "cdn", "catalogs", "chrome"]
 keywords: ["public content solution", "sdk pub", "content registry", "generation marker", "hot index", "crawlable html", "json-ld", "sitemap", "410 gone", "split origin", "cdn rewrite", "canonical base", "catalog page", "browsable listing", "search hook", "site chrome", "article rail", "fold"]
 see_also:
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/cdn-pub/public-content-styling-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/public-content-provider-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/recipes/resource_sharing/publish-discoverable-content-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-storage-and-cache-README.md
@@ -234,7 +235,10 @@ Behavior and guarantees:
 - **Per-fold color worlds**: `accent`/`background`/`border` theme each
   catalog (tints derive from the accent), so two open tabs are tellable
   apart at a glance. Selection states are transparent accent tints; the
-  design language is shared between catalog cards and rail cards.
+  design language is shared between catalog rows and rail cards. Beyond the
+  three shorthands, an application owns the full presentation — design
+  tokens and app stylesheets declared per alias/catalog — see
+  [public-content-styling-README](public-content-styling-README.md).
 - **Item pages under a catalog** gain the chrome header, a "← catalog"
   crumb, and the rail (collapsible, persisted per browser; the rail search
   submits to the catalog page). The authored `body_html` renders byte-exact

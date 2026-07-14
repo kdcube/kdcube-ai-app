@@ -14,16 +14,24 @@ request never touches the durable backend. Search (``?q=``) dispatches to the
 providing app's declared search hook when one exists and falls back to a
 lexical match over the index otherwise.
 
-Design language (approved 2026-07-10): white cards on a per-catalog background
-tint; selection states are transparent tints of the catalog accent (never solid
-fills); modest radii (6–14px); one shared card anatomy (date, kicker badge,
-title, summary, tag chips) on catalog cards and rail cards. All classes are
+Design language (editorial, approved 2026-07-14): a compact masthead (eyebrow,
+display-serif title, one-line description, count + latest date), a segmented
+fold control, a quiet search toolbar, and the article list as a full-bleed
+surface band of hairline-divided rows — selection states are transparent tints
+of the catalog accent (never solid fills), radii stay modest. All classes are
 namespaced ``kdcpub-`` and the styles are self-contained, so authored article
 CSS and the chrome cannot bleed into each other.
+
+Styling boundary: the SDK owns behavior and semantic structure plus a neutral
+default theme; every visual decision is a ``--kdcpub-*`` token, and the app
+overrides tokens or appends whole stylesheets from config — see
+``model.PublicContentPresentation`` and the styling README under
+``docs/sdk/solutions/cdn-pub``.
 """
 from __future__ import annotations
 
 import html
+import re
 from typing import Callable, Dict, List, Optional, Tuple
 from urllib.parse import quote_plus, urlsplit
 
@@ -43,14 +51,34 @@ def _esc(value: str) -> str:
 
 
 # ------------------------------------------------------------------ theming
+#
+# Boundary: the SDK owns behavior and semantic structure (routing, SEO,
+# pagination, search, accessibility, the stable ``kdcpub-*`` classes) and a
+# neutral default theme. Applications own presentation: every visual decision
+# below is expressed as a ``--kdcpub-*`` design token, and an app overrides
+# tokens (``presentation.theme``) or whole styles (``presentation.stylesheets``,
+# loaded after the SDK styles) from its config — see model.PublicContentPresentation.
 
 _DEFAULT_THEME = {
+    # color world
     "bg": "#F6FAFA",
+    "surface": "#FFFFFF",
+    "ink": "#0D1E2C",
+    "dim": "#3A5672",
+    "muted": "#7A99B0",
     "border": "#D8ECEB",
     "accent": "#01BEB2",
     "accent_dark": "#009C92",
     "accent_rgb": "1,190,178",
+    # type + metrics
+    "font": "Inter,system-ui,-apple-system,'Segoe UI',sans-serif",
+    "display": "Georgia,'Times New Roman',serif",
+    "radius": "10px",
+    "width": "1140px",
 }
+
+# Emitted token values must stay inert inside a <style> block.
+_SAFE_TOKEN_VALUE_RE = re.compile(r"^[^<>{};]*$")
 
 
 def _hex_to_rgb(value: str) -> Optional[Tuple[int, int, int]]:
@@ -69,33 +97,76 @@ def _darken(rgb: Tuple[int, int, int], factor: float = 0.78) -> str:
     return "#%02X%02X%02X" % tuple(max(0, min(255, int(c * factor))) for c in rgb)
 
 
-def catalog_theme(catalog: Optional[PublicContentCatalogConfig]) -> Dict[str, str]:
-    """Resolved color world for a catalog: configured accent/background/border
-    with derived values (rgb triple for tints, darkened accent) and teal-family
-    defaults when nothing is configured."""
+def catalog_theme(
+    catalog: Optional[PublicContentCatalogConfig],
+    alias_config: Optional[PublicContentAliasConfig] = None,
+) -> Dict[str, str]:
+    """The resolved design tokens for a catalog surface.
+
+    Merge order (later wins): SDK defaults ← alias ``presentation.theme`` ←
+    catalog accent/background/border shorthands ← catalog
+    ``presentation.theme``. When an override changes ``accent`` without
+    explicitly providing ``accent_rgb``/``accent_dark``, both are derived from
+    the accent hex so tints and hovers follow automatically.
+    """
     theme = dict(_DEFAULT_THEME)
-    if catalog is None:
-        return theme
-    rgb = _hex_to_rgb(catalog.accent)
-    if rgb is not None:
-        theme["accent"] = catalog.accent.strip()
-        theme["accent_rgb"] = f"{rgb[0]},{rgb[1]},{rgb[2]}"
-        theme["accent_dark"] = _darken(rgb)
-    if catalog.background.strip():
-        theme["bg"] = catalog.background.strip()
-    if catalog.border.strip():
-        theme["border"] = catalog.border.strip()
+    overridden: set = set()
+
+    def _apply(mapping: Optional[Dict[str, str]]) -> None:
+        for key, value in (mapping or {}).items():
+            name = str(key).strip().lower().replace("-", "_")
+            text = str(value).strip()
+            if not name or not _SAFE_TOKEN_VALUE_RE.match(text):
+                continue
+            theme[name] = text
+            overridden.add(name)
+
+    if alias_config is not None and alias_config.presentation is not None:
+        _apply(alias_config.presentation.theme)
+    if catalog is not None:
+        shorthand: Dict[str, str] = {}
+        if _hex_to_rgb(catalog.accent) is not None:
+            shorthand["accent"] = catalog.accent.strip()
+        if catalog.background.strip():
+            shorthand["bg"] = catalog.background.strip()
+        if catalog.border.strip():
+            shorthand["border"] = catalog.border.strip()
+        _apply(shorthand)
+        if catalog.presentation is not None:
+            _apply(catalog.presentation.theme)
+
+    if "accent" in overridden:
+        rgb = _hex_to_rgb(theme["accent"])
+        if rgb is not None:
+            if "accent_rgb" not in overridden:
+                theme["accent_rgb"] = f"{rgb[0]},{rgb[1]},{rgb[2]}"
+            if "accent_dark" not in overridden:
+                theme["accent_dark"] = _darken(rgb)
     return theme
 
 
 def _theme_css(theme: Dict[str, str]) -> str:
-    return (
-        "<style>:root{"
-        f"--kdcpub-bg:{theme['bg']};--kdcpub-border:{theme['border']};"
-        f"--kdcpub-accent:{theme['accent']};--kdcpub-accent-dark:{theme['accent_dark']};"
-        f"--kdcpub-accent-rgb:{theme['accent_rgb']};"
-        "}</style>"
+    decls = "".join(
+        f"--kdcpub-{name.replace('_', '-')}:{value};"
+        for name, value in theme.items()
+        if _SAFE_TOKEN_VALUE_RE.match(str(value))
     )
+    return f"<style>:root{{{decls}}}</style>"
+
+
+def presentation_stylesheets(
+    alias_config: Optional[PublicContentAliasConfig],
+    catalog: Optional[PublicContentCatalogConfig] = None,
+) -> str:
+    """App-owned stylesheet links (alias-level first, then the catalog's),
+    emitted AFTER the SDK styles + theme tokens so they can override anything
+    via the stable ``kdcpub-*`` classes."""
+    urls: List[str] = []
+    if alias_config is not None and alias_config.presentation is not None:
+        urls.extend(alias_config.presentation.stylesheets)
+    if catalog is not None and catalog.presentation is not None:
+        urls.extend(catalog.presentation.stylesheets)
+    return "".join(f'<link rel="stylesheet" href="{_esc(url)}">' for url in urls)
 
 
 # ------------------------------------------------------------------ styles
@@ -106,12 +177,21 @@ _BASE_CSS = """
     --kdcpub-dim:#3A5672; --kdcpub-muted:#7A99B0;
     --kdcpub-accent:#01BEB2; --kdcpub-accent-dark:#009C92;
     --kdcpub-accent-rgb:1,190,178; --kdcpub-border:#D8ECEB;
+    --kdcpub-font:Inter,system-ui,-apple-system,'Segoe UI',sans-serif;
+    --kdcpub-display:Georgia,'Times New Roman',serif;
+    --kdcpub-radius:10px; --kdcpub-width:1140px;
   }
+  /* Full-bleed bands stretch 50vw past the column; clip the scrollbar-width
+     overshoot without creating a scroll container (keeps sticky working). */
+  html{overflow-x:clip}
   .kdcpub-header,.kdcpub-header *,.kdcpub-wrap,.kdcpub-wrap *,.kdcpub-rail,.kdcpub-rail *,
   .kdcpub-crumb,.kdcpub-crumb *,.kdcpub-foot,.kdcpub-foot *{box-sizing:border-box}
-  body.kdcpub-body{margin:0;background:var(--kdcpub-bg);font-family:Inter,system-ui,-apple-system,'Segoe UI',sans-serif;color:var(--kdcpub-ink)}
-  .kdcpub-header{position:sticky;top:0;z-index:50;background:rgba(246,250,250,.97);backdrop-filter:blur(10px);border-bottom:1px solid #D8ECEB;font-family:Inter,system-ui,-apple-system,'Segoe UI',sans-serif}
-  .kdcpub-header-in{max-width:1200px;min-height:60px;margin:0 auto;display:flex;align-items:center;gap:22px;padding:12px 24px}
+  body.kdcpub-body{margin:0;background:var(--kdcpub-bg);font-family:var(--kdcpub-font);color:var(--kdcpub-ink)}
+  .kdcpub-header{position:sticky;top:0;z-index:50;background:var(--kdcpub-bg);border-bottom:1px solid var(--kdcpub-border);font-family:var(--kdcpub-font)}
+  @supports (background:color-mix(in srgb,#fff 50%,transparent)){
+    .kdcpub-header{background:color-mix(in srgb,var(--kdcpub-bg) 96%,transparent);backdrop-filter:blur(10px)}
+  }
+  .kdcpub-header-in{max-width:var(--kdcpub-width);min-height:60px;margin:0 auto;display:flex;align-items:center;gap:22px;padding:12px 24px}
   .kdcpub-brand{display:flex;align-items:center;gap:8px;text-decoration:none;margin-right:auto;color:var(--kdcpub-ink);font-weight:700;font-size:15px}
   .kdcpub-brand img{height:28px;width:auto;display:block}
   .kdcpub-nav{display:flex;align-items:center;gap:12px;overflow-x:auto;scrollbar-width:none}
@@ -125,60 +205,86 @@ _BASE_CSS = """
   .kdcpub-chipbtn{display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border-radius:8px;border:1px solid var(--kdcpub-border);background:var(--kdcpub-surface);color:var(--kdcpub-dim);font-family:inherit;font-size:13px;font-weight:600;text-decoration:none;cursor:pointer;line-height:1.2}
   .kdcpub-chipbtn:hover{border-color:rgba(var(--kdcpub-accent-rgb),.5);color:var(--kdcpub-accent-dark)}
   .kdcpub-date{color:var(--kdcpub-muted);font-size:13px;font-variant-numeric:tabular-nums}
-  .kdcpub-rubric{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:3px 8px;border-radius:6px;background:rgba(var(--kdcpub-accent-rgb),.10);color:var(--kdcpub-accent-dark)}
+  .kdcpub-rubric{font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:2px 8px;border-radius:6px;background:rgba(var(--kdcpub-accent-rgb),.10);color:var(--kdcpub-accent-dark)}
   .kdcpub-terms{display:flex;flex-wrap:wrap;gap:6px}
-  .kdcpub-term{font-size:12px;color:var(--kdcpub-dim);border:1px solid var(--kdcpub-border);border-radius:6px;padding:3px 9px;background:var(--kdcpub-bg)}
+  .kdcpub-term{font-size:11.5px;color:var(--kdcpub-dim);border:1px solid var(--kdcpub-border);border-radius:6px;padding:2px 8px;background:var(--kdcpub-bg)}
   .kdcpub-card-top{display:flex;align-items:center;gap:10px;margin-bottom:6px}
-  .kdcpub-foot{max-width:1180px;margin:0 auto;padding:18px 24px 40px;color:var(--kdcpub-muted);font-size:12.5px;border-top:1px solid var(--kdcpub-border);font-family:Inter,system-ui,sans-serif}
-  .kdcpub-foot a{color:var(--kdcpub-accent-dark)}
+  .kdcpub-foot{font-family:var(--kdcpub-font)}
+  .kdcpub-foot-in{max-width:var(--kdcpub-width);margin:0 auto;display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:22px 24px 46px;color:var(--kdcpub-muted);font-size:12.5px}
+  .kdcpub-foot-nav{margin-left:auto;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  .kdcpub-foot a{color:var(--kdcpub-muted);text-decoration:none}
+  .kdcpub-foot a:hover{color:var(--kdcpub-accent-dark)}
   @media(max-width:720px){
     .kdcpub-header-in{position:relative;gap:12px;padding:8px 16px}
     .kdcpub-brand img{height:24px}
     .kdcpub-menu{display:flex}
-    .kdcpub-nav{display:none;position:absolute;left:0;right:0;top:100%;z-index:51;flex-direction:column;align-items:stretch;gap:0;padding:8px 16px 14px;overflow:visible;background:rgba(246,250,250,.99);border-bottom:1px solid #D8ECEB;box-shadow:0 8px 18px rgba(13,30,44,.08)}
+    .kdcpub-nav{display:none;position:absolute;left:0;right:0;top:100%;z-index:51;flex-direction:column;align-items:stretch;gap:0;padding:8px 16px 14px;overflow:visible;background:var(--kdcpub-bg);border-bottom:1px solid var(--kdcpub-border);box-shadow:0 8px 18px rgba(13,30,44,.08)}
     .kdcpub-header.kdcpub-menu-open .kdcpub-nav{display:flex}
     .kdcpub-nav a{width:100%;min-height:46px;padding:10px 8px;font-size:14px}
+    .kdcpub-foot-in{padding:18px 18px 40px}
+    .kdcpub-foot-nav{margin-left:0}
   }
 """
 
 _CATALOG_CSS = """
-  .kdcpub-wrap{max-width:1080px;margin:0 auto;padding:26px 24px 48px;font-family:Inter,system-ui,-apple-system,'Segoe UI',sans-serif}
-  .kdcpub-eyebrow{font-size:11px;font-weight:700;letter-spacing:.14em;color:var(--kdcpub-accent-dark);text-transform:uppercase}
-  .kdcpub-hero h1{font-size:28px;line-height:1.15;margin:6px 0 6px;letter-spacing:-.01em}
-  .kdcpub-sub{color:var(--kdcpub-dim);font-size:14px;max-width:640px;margin:0 0 4px}
-  .kdcpub-meta{color:var(--kdcpub-muted);font-size:12.5px}
+  .kdcpub-wrap{max-width:var(--kdcpub-width);margin:0 auto;padding:34px 24px 0;font-family:var(--kdcpub-font)}
+  /* masthead — compact editorial: eyebrow, display title, one-line description,
+     count + latest date */
+  .kdcpub-hero{margin:0 0 4px}
+  .kdcpub-eyebrow{font-size:12px;font-weight:700;letter-spacing:.15em;color:var(--kdcpub-accent-dark);text-transform:uppercase}
+  .kdcpub-hero h1{font-family:var(--kdcpub-display);font-weight:600;font-size:clamp(28px,4.2vw,36px);line-height:1.12;letter-spacing:-.01em;margin:8px 0;color:var(--kdcpub-ink)}
+  .kdcpub-sub{color:var(--kdcpub-dim);font-size:15px;line-height:1.55;max-width:62ch;margin:0 0 10px}
+  .kdcpub-meta{color:var(--kdcpub-muted);font-size:13px;font-variant-numeric:tabular-nums}
   .kdcpub-meta a{color:var(--kdcpub-accent-dark)}
-  .kdcpub-folds{display:flex;gap:8px;margin:14px 0 10px}
-  .kdcpub-fold{padding:5px 12px;border-radius:8px;border:1px solid var(--kdcpub-border);background:var(--kdcpub-surface);color:var(--kdcpub-dim);font-size:13px;font-weight:600;text-decoration:none}
-  .kdcpub-fold:hover{border-color:rgba(var(--kdcpub-accent-rgb),.5);color:var(--kdcpub-accent-dark)}
-  .kdcpub-fold.kdcpub-on{background:rgba(var(--kdcpub-accent-rgb),.10);border-color:rgba(var(--kdcpub-accent-rgb),.45);color:var(--kdcpub-accent-dark)}
-  .kdcpub-search{display:flex;gap:8px;margin:0 0 6px}
-  .kdcpub-search input{flex:1;padding:8px 13px;border-radius:8px;border:1px solid var(--kdcpub-border);background:var(--kdcpub-surface);font:inherit;font-size:14px;color:var(--kdcpub-ink);outline:none}
-  .kdcpub-search input:focus{border-color:rgba(var(--kdcpub-accent-rgb),.6)}
-  .kdcpub-search button{padding:8px 18px;border-radius:8px;border:0;background:var(--kdcpub-accent);color:#fff;font:inherit;font-size:14px;font-weight:600;cursor:pointer}
+  /* toolbar — segmented fold control + quiet search, one stable row */
+  .kdcpub-toolbar{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin:18px 0 0}
+  .kdcpub-folds{display:inline-flex;align-items:center;gap:2px;padding:3px;background:var(--kdcpub-surface);border:1px solid var(--kdcpub-border);border-radius:var(--kdcpub-radius);max-width:100%;overflow-x:auto;scrollbar-width:none}
+  .kdcpub-folds::-webkit-scrollbar{display:none}
+  .kdcpub-fold{padding:6px 13px;border-radius:calc(var(--kdcpub-radius) - 3px);border:1px solid transparent;color:var(--kdcpub-dim);font-size:13px;font-weight:600;text-decoration:none;white-space:nowrap}
+  .kdcpub-fold:hover{color:var(--kdcpub-accent-dark)}
+  .kdcpub-fold.kdcpub-on{background:rgba(var(--kdcpub-accent-rgb),.10);border-color:rgba(var(--kdcpub-accent-rgb),.30);color:var(--kdcpub-accent-dark)}
+  .kdcpub-search{display:flex;gap:8px;flex:1;min-width:240px;max-width:380px;margin-left:auto}
+  .kdcpub-search input{flex:1;min-width:0;padding:8px 13px;border-radius:calc(var(--kdcpub-radius) - 1px);border:1px solid var(--kdcpub-border);background:var(--kdcpub-surface);font:inherit;font-size:13.5px;color:var(--kdcpub-ink);outline:none}
+  .kdcpub-search input:focus{border-color:rgba(var(--kdcpub-accent-rgb),.55);box-shadow:0 0 0 3px rgba(var(--kdcpub-accent-rgb),.10)}
+  .kdcpub-search button{padding:8px 16px;border-radius:calc(var(--kdcpub-radius) - 1px);border:0;background:var(--kdcpub-accent);color:#fff;font:inherit;font-size:13.5px;font-weight:600;cursor:pointer}
   .kdcpub-search button:hover{background:var(--kdcpub-accent-dark)}
-  .kdcpub-search-hint{color:var(--kdcpub-muted);font-size:12px;margin:0 0 14px}
+  .kdcpub-search-hint{color:var(--kdcpub-muted);font-size:12.5px;margin:8px 0 0}
   .kdcpub-search-hint a{color:var(--kdcpub-accent-dark)}
-  .kdcpub-list{display:flex;flex-direction:column;gap:8px}
-  .kdcpub-card{background:var(--kdcpub-surface);border:1px solid var(--kdcpub-border);border-radius:11px;padding:11px 15px;transition:border-color .15s, box-shadow .15s}
-  .kdcpub-card:hover{border-color:rgba(var(--kdcpub-accent-rgb),.5);box-shadow:0 4px 14px rgba(var(--kdcpub-accent-rgb),.07)}
-  .kdcpub-card .kdcpub-card-top{margin-bottom:2px}
-  .kdcpub-card .kdcpub-date{font-size:12px}
-  .kdcpub-card h2{margin:0 0 3px;font-size:15.5px;line-height:1.3}
-  .kdcpub-card h2 a{color:var(--kdcpub-ink);text-decoration:none}
-  .kdcpub-card h2 a:hover{color:var(--kdcpub-accent-dark)}
-  .kdcpub-card p{margin:0 0 7px;color:var(--kdcpub-dim);font-size:13px;line-height:1.5;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-  .kdcpub-card .kdcpub-term{font-size:11px;padding:2px 8px}
-  .kdcpub-empty{background:var(--kdcpub-surface);border:1px solid var(--kdcpub-border);border-radius:11px;padding:18px;color:var(--kdcpub-dim);font-size:13.5px}
-  .kdcpub-pager{display:flex;align-items:center;justify-content:space-between;margin-top:16px}
-  .kdcpub-pager span{color:var(--kdcpub-muted);font-size:12.5px}
-  .kdcpub-pgbtn{padding:6px 14px;border-radius:8px;border:1px solid var(--kdcpub-border);background:var(--kdcpub-surface);color:var(--kdcpub-dim);font-size:13px;font-weight:600;text-decoration:none}
-  .kdcpub-pgbtn:hover{border-color:rgba(var(--kdcpub-accent-rgb),.5);color:var(--kdcpub-accent-dark)}
-  .kdcpub-pgbtn.kdcpub-off{opacity:.4;pointer-events:none}
+  /* article list — a full-bleed surface band; rows divided by hairlines,
+     aligned back to the page column */
+  .kdcpub-band{margin:18px calc(50% - 50vw) 0;padding:4px calc(50vw - 50%) 0;background:var(--kdcpub-surface);border-top:1px solid var(--kdcpub-border);border-bottom:1px solid var(--kdcpub-border)}
+  .kdcpub-list{display:block}
+  .kdcpub-row{position:relative;padding:17px 0 15px 22px;border-bottom:1px solid var(--kdcpub-border)}
+  .kdcpub-row:last-child{border-bottom:0}
+  .kdcpub-row::before{content:"";position:absolute;left:2px;top:25px;width:7px;height:7px;border-radius:50%;background:var(--kdcpub-accent)}
+  .kdcpub-row h2{margin:0 0 5px;font-size:16.5px;line-height:1.35;font-weight:650}
+  .kdcpub-row h2 a{color:var(--kdcpub-ink);text-decoration:none}
+  .kdcpub-row h2 a:hover{color:var(--kdcpub-accent-dark)}
+  .kdcpub-row p{margin:0 0 8px;color:var(--kdcpub-dim);font-size:13.5px;line-height:1.55;max-width:76ch;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .kdcpub-row-meta{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .kdcpub-row-meta .kdcpub-date{font-size:12.5px;margin-left:auto}
+  /* deliberate empty state */
+  .kdcpub-empty{padding:56px 0 60px;text-align:center}
+  .kdcpub-empty-t{font-family:var(--kdcpub-display);font-weight:600;font-size:22px;color:var(--kdcpub-ink);margin:0 0 8px}
+  .kdcpub-empty p{margin:0 0 10px;color:var(--kdcpub-dim);font-size:14px}
+  .kdcpub-empty a{color:var(--kdcpub-accent-dark);font-weight:600}
+  /* quiet pagination — hairline row inside the band */
+  .kdcpub-pager{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 0;border-top:1px solid var(--kdcpub-border)}
+  .kdcpub-pager span{color:var(--kdcpub-muted);font-size:12.5px;font-variant-numeric:tabular-nums}
+  .kdcpub-pgbtn{color:var(--kdcpub-accent-dark);font-size:13.5px;font-weight:600;text-decoration:none;white-space:nowrap}
+  .kdcpub-pgbtn:hover{text-decoration:underline}
+  .kdcpub-pgbtn.kdcpub-off{color:var(--kdcpub-muted);opacity:.45;pointer-events:none}
+  @media(max-width:720px){
+    .kdcpub-wrap{padding:26px 18px 0}
+    .kdcpub-toolbar{flex-direction:column;align-items:stretch}
+    .kdcpub-search{max-width:none;margin-left:0}
+    .kdcpub-row{padding-left:20px}
+    .kdcpub-row::before{left:1px}
+  }
 """
 
 _RAIL_CSS = """
-  .kdcpub-layout{display:grid;grid-template-columns:324px minmax(0,1fr);align-items:start;max-width:1420px;margin:0 auto;font-family:Inter,system-ui,-apple-system,'Segoe UI',sans-serif}
+  .kdcpub-layout{display:grid;grid-template-columns:324px minmax(0,1fr);align-items:start;max-width:1420px;margin:0 auto;font-family:var(--kdcpub-font)}
   .kdcpub-layout.kdcpub-rail-hidden{grid-template-columns:minmax(0,1fr)}
   .kdcpub-layout.kdcpub-rail-hidden .kdcpub-rail{display:none}
   .kdcpub-rail{position:sticky;top:51px;height:calc(100vh - 51px);padding:16px 0 16px 16px}
@@ -363,15 +469,44 @@ def _terms_html(entry: PublicContentIndexEntry, *, limit: int = 5) -> str:
     return f'<div class="kdcpub-terms">{chips}</div>' if chips else ""
 
 
-def _catalog_card(entry: PublicContentIndexEntry, *, item_url: str) -> str:
+def _catalog_row(entry: PublicContentIndexEntry, *, item_url: str) -> str:
+    """One article row in the catalog band: title, clamped summary, then a
+    quiet meta line (kicker badge + tag chips, date right-aligned)."""
     summary = f"<p>{_esc(entry.summary)}</p>" if entry.summary else ""
+    kicker = (
+        f'<span class="kdcpub-rubric">{_esc(entry.kicker)}</span>' if entry.kicker else ""
+    )
+    date = (entry.published_at or "")[:10]
+    date_html = f'<span class="kdcpub-date">{_esc(date)}</span>' if date else ""
+    meta = f'<div class="kdcpub-row-meta">{kicker}{_terms_html(entry)}{date_html}</div>'
     return (
-        '<article class="kdcpub-card">'
-        f"{_card_top(entry)}"
+        '<article class="kdcpub-row">'
         f'<h2><a href="{_esc(item_url)}">{_esc(entry.title or entry.slug)}</a></h2>'
         f"{summary}"
-        f"{_terms_html(entry)}"
+        f"{meta}"
         "</article>"
+    )
+
+
+def render_chrome_footer(
+    chrome: Optional[PublicContentChromeConfig],
+    *,
+    site_name: str = "",
+) -> str:
+    """Quiet page footer: © site name plus the chrome's own navigation links
+    (auth-neutral — only what the config declares)."""
+    copyright_html = f"<span>© {_esc(site_name)}</span>" if site_name else ""
+    links = "".join(
+        f'<a href="{_esc(link.href)}">{_esc(link.label)}</a>'
+        for link in (chrome.links if chrome else [])
+    )
+    nav = f'<nav class="kdcpub-foot-nav">{links}</nav>' if links else ""
+    if not copyright_html and not nav:
+        return ""
+    return (
+        '<footer class="kdcpub-foot"><div class="kdcpub-foot-in">'
+        f"{copyright_html}{nav}"
+        "</div></footer>"
     )
 
 
@@ -402,7 +537,10 @@ def _document(
     body: str,
     head_extra: str = "",
     meta_robots: str = "",
+    app_styles: str = "",
 ) -> str:
+    """The full HTML document. ``app_styles`` (presentation stylesheets) come
+    AFTER the SDK styles and the theme tokens so the app's CSS wins."""
     robots = f'<meta name="robots" content="{_esc(meta_robots)}" />' if meta_robots else ""
     return (
         "<!doctype html>\n"
@@ -411,7 +549,7 @@ def _document(
         '<meta name="viewport" content="width=device-width, initial-scale=1" />\n'
         f"<title>{_esc(title)}</title>\n"
         f"{robots}"
-        f"<style>{_BASE_CSS}{extra_css}</style>{_theme_css(theme)}\n"
+        f"<style>{_BASE_CSS}{extra_css}</style>{_theme_css(theme)}{app_styles}\n"
         f"{head_extra}\n"
         "</head>\n"
         '<body class="kdcpub-body">\n'
@@ -446,25 +584,30 @@ def render_catalog_page(
     ``basic`` (the platform's match over the index cards) — the results hint
     states it so the reader knows the search depth.
     """
-    theme = catalog_theme(catalog)
+    theme = catalog_theme(catalog, config)
     page_size = catalog.page_size
     site = config.og_defaults.site_name
 
     header = render_chrome_header(config.chrome, active_href=catalog_url)
 
     cards = [
-        _catalog_card(entry, item_url=item_url_for(entry.slug)) for entry in entries
+        _catalog_row(entry, item_url=item_url_for(entry.slug)) for entry in entries
     ]
     if not cards:
-        empty_text = (
-            f"No articles match “{_esc(query)}”." if searched else "No articles yet."
-        )
-        clear = (
-            f' <a href="{_esc(catalog_url)}" style="color:var(--kdcpub-accent-dark)">Show all</a>'
-            if searched
-            else ""
-        )
-        cards = [f'<div class="kdcpub-empty">{empty_text}{clear}</div>']
+        if searched:
+            empty_title = f"No articles match “{_esc(query)}”."
+            empty_line = "Try a different phrase, or browse everything in this fold."
+            empty_link = f'<a href="{_esc(catalog_url)}">Show all</a>'
+        else:
+            empty_title = "No articles yet."
+            empty_line = "New writing lands here as soon as it is published."
+            empty_link = ""
+        cards = [
+            '<div class="kdcpub-empty">'
+            f'<div class="kdcpub-empty-t">{empty_title}</div>'
+            f"<p>{empty_line}</p>{empty_link}"
+            "</div>"
+        ]
 
     folds = _fold_pills(
         config,
@@ -515,12 +658,15 @@ def render_catalog_page(
     next_cls = "" if has_next else " kdcpub-off"
     shown_from = offset + 1 if entries else 0
     shown_to = offset + len(entries)
+    # An empty band carries its own message; a 0–0 pager row would only add noise.
     pager = (
         '<div class="kdcpub-pager">'
         f'<a class="kdcpub-pgbtn{prev_cls}" href="{_esc(_page_url(max(0, offset - page_size)))}">← Newer</a>'
         f"<span>{shown_from}–{shown_to} of {total_in_catalog}</span>"
         f'<a class="kdcpub-pgbtn{next_cls}" href="{_esc(_page_url(offset + page_size))}">Older →</a>'
         "</div>"
+        if entries
+        else ""
     )
 
     eyebrow = (
@@ -533,15 +679,12 @@ def render_catalog_page(
         '<main class="kdcpub-wrap">'
         f'<div class="kdcpub-hero">{eyebrow}<h1>{_esc(catalog.title or catalog.prefix)}</h1>'
         f"{subtitle}{meta_line}</div>"
-        f"{folds_html}{search_form}{search_hint}"
-        f'<div class="kdcpub-list">{"".join(cards)}</div>'
-        f"{pager}"
+        f'<div class="kdcpub-toolbar">{folds_html}{search_form}</div>'
+        f"{search_hint}"
+        f'<section class="kdcpub-band"><div class="kdcpub-list">{"".join(cards)}</div>'
+        f"{pager}</section>"
         "</main>\n"
-        + (
-            f'<footer class="kdcpub-foot">© {_esc(site)}</footer>'
-            if site
-            else ""
-        )
+        + render_chrome_footer(config.chrome, site_name=site)
     )
     title = f"{catalog.title or catalog.prefix}" + (f" · {site}" if site else "")
     description = catalog.subtitle or f"Browse {catalog.title or catalog.label}."
@@ -570,6 +713,7 @@ def render_catalog_page(
         body=body,
         head_extra="".join(head_parts),
         meta_robots="noindex" if searched else "",
+        app_styles=presentation_stylesheets(config, catalog),
     )
 
 
@@ -592,7 +736,7 @@ def build_item_shell(
     the prefix opens chrome header, layout grid, rail card, crumb row and the
     article card; the suffix closes them and appends the rail script.
     """
-    theme = catalog_theme(catalog)
+    theme = catalog_theme(catalog, config)
     header = render_chrome_header(config.chrome, active_href=catalog_url)
 
     rail_cards = []
@@ -643,7 +787,10 @@ def build_item_shell(
         "</div>"
     )
 
-    head_extra = f"<style>{_BASE_CSS}{_RAIL_CSS}</style>{_theme_css(theme)}"
+    head_extra = (
+        f"<style>{_BASE_CSS}{_RAIL_CSS}</style>{_theme_css(theme)}"
+        f"{presentation_stylesheets(config, catalog)}"
+    )
     body_prefix = (
         f"{header}\n"
         '<div class="kdcpub-layout">\n'

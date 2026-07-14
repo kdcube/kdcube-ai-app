@@ -21,6 +21,8 @@ SDK architecture docs.
 | Recipe | Use when |
 | --- | --- |
 | [Share Static Resources](share-static-resources-README.md) | You want to hand someone a plain URL that opens an app-hosted page or file with no sign-in — a rendered page (HTML/PDF), a stored artifact (FS/S3), or, by pointer, a whole built UI. |
+| [Publish Discoverable Content](publish-discoverable-content-README.md) | Your app's content set should exist for search engines and AI crawlers — crawlable pages, JSON-LD, sitemaps, and browsable catalogs. |
+| [Style Your Published Catalogs](style-published-catalogs-README.md) | The SDK-rendered catalog pages should look like your product — fold colors, design tokens, and app-owned stylesheets, all from config. |
 | [Move Files In And Out Over MCP](hosting-README.md) | An external agent needs real file bytes to cross the MCP boundary — attach a file to outgoing mail, upload to Slack, or pull a mail attachment / Slack file — via signed upload slots and download URLs. |
 
 ## Canonical SDK Docs

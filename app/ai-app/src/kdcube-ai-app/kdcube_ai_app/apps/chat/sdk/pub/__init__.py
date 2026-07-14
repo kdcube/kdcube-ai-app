@@ -22,11 +22,15 @@ from kdcube_ai_app.apps.chat.sdk.pub.model import (
     PublicContentImage,
     PublicContentIndexEntry,
     PublicContentItem,
+    PublicContentPresentation,
     normalize_slug_path,
 )
 from kdcube_ai_app.apps.chat.sdk.pub.pages import (
     build_item_shell,
+    catalog_theme,
+    presentation_stylesheets,
     render_catalog_page,
+    render_chrome_footer,
     render_chrome_header,
 )
 from kdcube_ai_app.apps.chat.sdk.pub.registry import (
@@ -52,13 +56,17 @@ __all__ = [
     "PublicContentImage",
     "PublicContentIndexEntry",
     "PublicContentItem",
+    "PublicContentPresentation",
     "PublicContentRegistry",
     "build_breadcrumbs_jsonld",
     "build_item_shell",
     "build_jsonld",
+    "catalog_theme",
     "index_entry_for_item",
     "normalize_slug_path",
+    "presentation_stylesheets",
     "render_catalog_page",
+    "render_chrome_footer",
     "render_chrome_header",
     "render_gone_page",
     "render_item_page",

@@ -173,6 +173,63 @@ class OpenGraphDefaults(BaseModel):
     twitter_site: str = ""
 
 
+_THEME_TOKEN_KEY_RE = re.compile(r"^[a-z][a-z0-9_-]*$")
+# Token values land inside a <style> block as CSS custom-property values;
+# reject anything that could terminate the declaration/block or open markup.
+_THEME_TOKEN_VALUE_RE = re.compile(r"^[^<>{};]*$")
+
+
+def _clean_theme_map(raw: Dict[str, Any]) -> Dict[str, str]:
+    clean: Dict[str, str] = {}
+    for key, value in (raw or {}).items():
+        k = str(key or "").strip().lower()
+        v = str(value or "").strip()
+        if not _THEME_TOKEN_KEY_RE.match(k):
+            raise ValueError(f"invalid presentation theme token name: {key!r}")
+        if not _THEME_TOKEN_VALUE_RE.match(v):
+            raise ValueError(f"invalid presentation theme token value for {key!r}")
+        clean[k] = v
+    return clean
+
+
+class PublicContentPresentation(BaseModel):
+    """Application-owned presentation for the catalog/list surfaces.
+
+    The SDK owns behavior and semantic structure (routing, SEO, pagination,
+    search, accessibility, the stable ``kdcpub-*`` classes) plus a neutral
+    default theme. The app owns how it looks:
+
+    - ``theme``: design-token overrides. Every token is emitted as a
+      ``--kdcpub-<name>`` CSS variable (``_`` becomes ``-``), and the SDK
+      styles reference only those variables — so tokens reach typography,
+      colors, spacing and widths without any custom CSS.
+    - ``stylesheets``: URLs of app-owned stylesheets (public assets), loaded
+      AFTER the SDK default styles so they can restyle anything via the
+      ``kdcpub-*`` contract. Large CSS bodies belong in an asset, not YAML.
+    """
+
+    theme: Dict[str, str] = Field(default_factory=dict)
+    stylesheets: List[str] = Field(default_factory=list)
+
+    @field_validator("theme", mode="before")
+    @classmethod
+    def _validate_theme(cls, value: Any) -> Dict[str, str]:
+        if value is None:
+            return {}
+        if not isinstance(value, dict):
+            raise ValueError("presentation theme must be a mapping of token: value")
+        return _clean_theme_map(value)
+
+    @field_validator("stylesheets", mode="before")
+    @classmethod
+    def _coerce_stylesheets(cls, value: Any) -> List[str]:
+        if value is None:
+            return []
+        if isinstance(value, str):
+            value = [value]
+        return [str(item).strip() for item in value if str(item or "").strip()]
+
+
 class PublicContentCatalogConfig(BaseModel):
     """One browsable catalog (fold) of an alias: a slug prefix served as a
     server-rendered, paginated, searchable listing page, the same data
@@ -205,6 +262,15 @@ class PublicContentCatalogConfig(BaseModel):
     )
     background: str = Field(default="", description="Page background tint (hex).")
     border: str = Field(default="", description="Card/hairline border color (hex).")
+    presentation: Optional[PublicContentPresentation] = Field(
+        default=None,
+        description=(
+            "Per-fold presentation overrides, merged over the alias "
+            "presentation: theme tokens override, stylesheets append. The "
+            "accent/background/border shorthands above are equivalent to the "
+            "same-named theme tokens."
+        ),
+    )
     page_size: int = Field(default=10, ge=1, le=100)
     search_placeholder: str = ""
 
@@ -275,6 +341,14 @@ class PublicContentAliasConfig(BaseModel):
     )
     sitemap: bool = True
     og_defaults: OpenGraphDefaults = Field(default_factory=OpenGraphDefaults)
+    presentation: Optional[PublicContentPresentation] = Field(
+        default=None,
+        description=(
+            "Application-owned presentation for every surface of this alias "
+            "(catalog pages, item-page chrome/rail): theme tokens + app "
+            "stylesheets loaded after the SDK defaults."
+        ),
+    )
     catalogs: List[PublicContentCatalogConfig] = Field(default_factory=list)
     chrome: Optional[PublicContentChromeConfig] = None
 

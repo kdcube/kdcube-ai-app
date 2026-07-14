@@ -340,6 +340,9 @@ async def articles_search(self, query: str, *, prefix: str = "", limit: int = 50
 
 Full semantics (theming, pagination, degrade paths, the rail):
 [Public Content Solution → Catalogs](../../sdk/solutions/cdn-pub/public-content-solution-README.md#catalogs-browsable-folds-with-search-pagination-and-site-chrome).
+To make the pages look like your product — tokens, fonts, app-owned
+stylesheets — continue with
+[Style Your Published Catalogs](style-published-catalogs-README.md).
 
 ## What not to do
 
