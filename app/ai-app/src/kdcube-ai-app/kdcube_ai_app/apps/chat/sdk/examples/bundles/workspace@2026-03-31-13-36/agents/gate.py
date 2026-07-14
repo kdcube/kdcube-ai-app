@@ -1,18 +1,23 @@
 # ── agents/gate.py ──
 # Lightweight "gate" agent — the first LLM call in the pipeline.
 #
-# In this eco bundle the gate has a single job: propose a short
-# conversation title on the first turn of a new conversation.
+# In this app the gate has a single job: propose a short conversation title
+# on the first turn of a new conversation.
+#
+# The title generation itself is a shared SDK utility
+# (kdcube_ai_app.apps.chat.sdk.tools.backends.summary.conversation_title). This
+# module is a thin gate wrapper over it: it owns the gate identity (system
+# prompt, GateOut output model, the is_new_conversation short-circuit) and
+# delegates the streaming / channel parsing / compaction-retry mechanics to the
+# utility.
 #
 # How it works:
 #   1. If not a new conversation → skip (return empty defaults)
-#   2. Build a system prompt instructing the LLM to emit two channels:
-#      - <channel:thinking>  → streamed to the user as "thinking" indicator
-#      - <channel:output>    → structured JSON parsed into GateOut
-#   3. Call the LLM via stream_with_channels()
-#   4. Parse the output channel into GateOut (Pydantic model)
-#   5. If ctx_browser is provided, use retry_with_compaction to auto-retry
-#      on token-limit errors (compacts context and retries)
+#   2. Delegate to run_conversation_title() with:
+#      - the gate system prompt (emits <channel:thinking> + <channel:output>)
+#      - GateOut as the structured output model
+#      - the caller's on_thinking_delta / ctx_browser / render_params
+#   3. On subsequent turns the gate is skipped entirely.
 #
 # To extend:
 #   Add more fields to GateOut (e.g. route, intent, clarification_questions)
@@ -22,21 +27,35 @@ from __future__ import annotations
 
 from typing import Any, Dict, Tuple, Optional, Callable, List
 
-from kdcube_ai_app.infra.service_hub.inventory import (
-    ModelServiceBase,
-    create_cached_system_message,
-    create_cached_human_message,
-)
 from pydantic import BaseModel, Field
-from kdcube_ai_app.apps.chat.sdk.streaming.workspace_streamer import ChannelSpec, stream_with_channels
-from kdcube_ai_app.infra.service_hub.errors import ServiceException, ServiceError
-from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.agent_retry import retry_with_compaction
-from kdcube_ai_app.apps.chat.sdk.util import token_count
+
+from kdcube_ai_app.infra.service_hub.inventory import ModelServiceBase
+from kdcube_ai_app.apps.chat.sdk.tools.backends.summary.conversation_title import (
+    run_conversation_title,
+)
 
 
 class GateOut(BaseModel):
     """Structured output from the gate agent. Add fields here to extend."""
     conversation_title: str | None = Field(default=None, description="Conversation title (first turn only)")
+
+
+# Gate identity: the exact system prompt the gate emits. Kept here (not in the
+# shared utility) because it carries the gate's role in this pipeline.
+_GATE_SYSTEM_PROMPT = (
+    "You are a minimal gate agent.\n"
+    "Your only job: propose a conversation title.\n\n"
+    "IMPORTANT: The THINKING channel is shown to the user.\n"
+    "Keep it very short (1–2 sentences, no lists).\n\n"
+    "Output protocol (strict):\n"
+    "<channel:thinking> ... </channel:thinking>\n"
+    "<channel:output> {\"conversation_title\": \"...\"} </channel:output>\n\n"
+    "Return JSON with key:\n"
+    "- conversation_title: short title (≤6 words).\n\n"
+    "Rules:\n"
+    "- Only emit conversation_title.\n"
+    "- Do not add any other keys.\n"
+)
 
 
 async def gate_stream(
@@ -59,94 +78,22 @@ async def gate_stream(
     if not is_new_conversation:
         return {"conversation_title": ""}, {"thinking": "", "output": ""}
 
-    # System prompt — instructs LLM to emit two channels
-    sys_prompt = (
-        "You are a minimal gate agent.\n"
-        "Your only job: propose a conversation title.\n\n"
-        "IMPORTANT: The THINKING channel is shown to the user.\n"
-        "Keep it very short (1–2 sentences, no lists).\n\n"
-        "Output protocol (strict):\n"
-        "<channel:thinking> ... </channel:thinking>\n"
-        "<channel:output> {\"conversation_title\": \"...\"} </channel:output>\n\n"
-        "Return JSON with key:\n"
-        "- conversation_title: short title (≤6 words).\n\n"
-        "Rules:\n"
-        "- Only emit conversation_title.\n"
-        "- Do not add any other keys.\n"
+    # Delegate to the shared title utility. Gate keeps its own system prompt and
+    # GateOut model; everything else (channels, thinking stream, compaction retry)
+    # is handled by the utility. role "gate.simple" resolves to a concrete model
+    # via configuration; max_tokens is kept low because gate output is tiny.
+    return await run_conversation_title(
+        svc,
+        role="gate.simple",
+        agent="gate.simple",
+        max_tokens=800,
+        temperature=0.2,
+        on_thinking_delta=on_thinking_delta,
+        ctx_browser=ctx_browser,
+        emit_status=emit_status,
+        render_params=render_params,
+        sanitize_on_fail=sanitize_on_fail,
+        output_model=GateOut,
+        system_prompt=_GATE_SYSTEM_PROMPT,
+        system_message_token_count_fn=system_message_token_count_fn,
     )
-    # Cached message — reuses KV cache on repeated calls
-    system_msg = create_cached_system_message([{"text": sys_prompt, "cache": True}])
-
-    # Streaming callback — routes channel chunks to the UI
-    async def _emit(**kwargs):
-        channel = kwargs.pop("channel", None)
-        text = kwargs.get("text") or ""
-        # Only "thinking" channel is forwarded to the user in real time
-        if channel == "thinking" and on_thinking_delta:
-            await on_thinking_delta(text=text, completed=kwargs.get("completed", False))
-
-    # Channel definitions:
-    #   "thinking" = free-form text shown as "thinking" in UI
-    #   "output"   = structured JSON validated against GateOut
-    channels = [
-        ChannelSpec(name="thinking", format="text", replace_citations=False, emit_marker="thinking"),
-        ChannelSpec(name="output", format="json", model=GateOut, replace_citations=False, emit_marker="subsystem"),
-    ]
-
-    async def _call_gate(*, blocks):
-        """Inner function that calls the LLM and parses output."""
-        messages = [system_msg, create_cached_human_message(blocks)]
-        results, meta = await stream_with_channels(
-            svc,
-            messages=messages,
-            role="gate.simple",           # resolved to concrete model via configuration
-            channels=channels,
-            emit=_emit,
-            agent="gate.simple",
-            max_tokens=800,               # gate output is tiny — keep cap low
-            temperature=0.2,              # low temperature for deterministic titles
-            return_full_raw=True,
-        )
-        # Propagate service-level errors (rate limit, provider down, etc.)
-        service_error = (meta or {}).get("service_error")
-        if service_error:
-            raise ServiceException(ServiceError.model_validate(service_error))
-
-        # Try auto-parsed Pydantic object first; fall back to raw JSON
-        res = results.get("output")
-        if res and res.obj and isinstance(res.obj, GateOut):
-            payload = res.obj.model_dump()
-        else:
-            raw = (res.raw if res else "") or ""
-            payload = {"conversation_title": ""}
-            if raw:
-                try:
-                    parsed = GateOut.model_validate_json(raw)
-                    payload = parsed.model_dump()
-                except Exception:
-                    payload = {"conversation_title": ""}
-
-        # Capture raw channel text for debug logging
-        channel_dump = {
-            "thinking": (results.get("thinking").raw if results.get("thinking") else "") or "",
-            "output": (results.get("output").raw if results.get("output") else "") or "",
-        }
-
-        return payload, channel_dump
-
-    # When ctx_browser is available, retry_with_compaction auto-shrinks
-    # context and retries on token-limit errors. Otherwise call directly.
-    if ctx_browser:
-        if system_message_token_count_fn is None:
-            system_message_token_count_fn = lambda: token_count(sys_prompt)
-        return await retry_with_compaction(
-            ctx_browser=ctx_browser,
-            system_text_fn=lambda: sys_prompt,
-            system_message_token_count_fn=system_message_token_count_fn,
-            render_params=render_params,
-            agent_fn=_call_gate,
-            emit_status=emit_status,
-            sanitize_on_fail=sanitize_on_fail,
-        )
-
-    return await _call_gate(blocks=None)

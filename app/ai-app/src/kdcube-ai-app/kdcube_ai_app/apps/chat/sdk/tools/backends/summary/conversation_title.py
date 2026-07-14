@@ -49,7 +49,12 @@ model configuration must resolve to a concrete model.
 
 from __future__ import annotations
 
+import json
+import logging
+import re
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type
+
+LOGGER = logging.getLogger("kdcube.conversation_title")
 
 from pydantic import BaseModel, Field
 
@@ -95,6 +100,35 @@ def build_title_system_prompt(max_words: int = 6) -> str:
         "- Only emit conversation_title.\n"
         "- Do not add any other keys.\n"
     )
+
+
+def _salvage_title_from_raw(texts: List[str], title_field: str) -> str:
+    """Recover a title when the model answered WITHOUT the structured output channel.
+
+    Some models emit the title JSON (or bare text) directly instead of wrapping it in
+    ``<channel:output>…</channel:output>``, which the channel parser then yields
+    nothing from — a silent empty title. This scans the available raw text for the
+    title: a direct ``"<field>": "<value>"`` anywhere, or any JSON object that
+    carries the field. Called ONLY when the structured path produced no title, so it
+    never overrides a well-formed result. Returns "" when nothing is recoverable.
+    """
+    for text in texts:
+        text = (text or "").strip()
+        if not text:
+            continue
+        m = re.search(rf'"{re.escape(title_field)}"\s*:\s*"([^"\\]{{1,120}})"', text)
+        if m and m.group(1).strip():
+            return m.group(1).strip()
+        for jm in re.finditer(r"\{[^{}]{0,400}\}", text):
+            try:
+                obj = json.loads(jm.group(0))
+            except Exception:
+                continue
+            if isinstance(obj, dict):
+                val = str(obj.get(title_field) or "").strip()
+                if val:
+                    return val
+    return ""
 
 
 def _build_human_blocks(
@@ -201,6 +235,25 @@ async def run_conversation_title(
             "thinking": (results.get("thinking").raw if results.get("thinking") else "") or "",
             "output": (results.get("output").raw if results.get("output") else "") or "",
         }
+
+        # Fail-open salvage: if the structured output channel produced no title (a
+        # model that skipped the <channel:output> wrapper and emitted the JSON
+        # directly), recover it from the raw output/thinking text before giving up.
+        if not str(payload.get(title_field) or "").strip():
+            salvaged = _salvage_title_from_raw(
+                [channel_dump["output"], channel_dump["thinking"]], title_field
+            )
+            if salvaged:
+                payload[title_field] = salvaged
+            else:
+                # Still empty after structured parse + salvage: log the raw model
+                # output so the exact shape (which extraction to add) is visible.
+                LOGGER.info(
+                    "[conversation-title] role=%s produced NO usable title. "
+                    "raw output=%r thinking=%r",
+                    role, (channel_dump["output"] or "")[:400], (channel_dump["thinking"] or "")[:400],
+                )
+
         return payload, channel_dump
 
     # With a ctx_browser, wrap the call so token-limit errors auto-compact & retry.

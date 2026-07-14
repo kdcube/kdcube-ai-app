@@ -307,7 +307,31 @@ class WorkspaceWorkflow(BaseWorkflow):
                 # selection (deny-list; fail-open; system tools immune). Runs
                 # BEFORE the claims check so a disabled tool group's
                 # connected-account claims are never even resolved.
-                tool_config, skill_config = await self.apply_user_agent_selection(tool_config, skill_config)
+                #
+                # The call site resolves the agent's capabilities provider so a
+                # non-ReAct agent applies its own selection. The default kind is
+                # "react": its provider binds this workflow and delegates to
+                # `apply_user_agent_selection` (identical behavior). If nothing
+                # resolves, call the workflow method directly (fail safe).
+                from kdcube_ai_app.apps.chat.sdk.runtime.agent_capabilities import (
+                    resolve_capability_provider,
+                )
+                _cap_provider = resolve_capability_provider(
+                    self.bundle_props, getattr(self.runtime_ctx, "agent_id", None)
+                )
+                if _cap_provider is not None:
+                    _bind = getattr(_cap_provider, "bind_workflow", None)
+                    if callable(_bind):
+                        _bind(self)
+                    tool_config, skill_config = await _cap_provider.apply_selection(
+                        tool_config=tool_config,
+                        skill_config=skill_config,
+                        runtime_ctx=self.runtime_ctx,
+                    )
+                else:
+                    tool_config, skill_config = await self.apply_user_agent_selection(
+                        tool_config, skill_config
+                    )
                 # Tools whose connected-account claims are unmet DROP from this
                 # turn's tool set — the turn always proceeds with the rest. The
                 # notice event names the provider + affected tools with the
