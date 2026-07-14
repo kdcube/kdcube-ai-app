@@ -13,36 +13,35 @@ bundle:
     - `lg-solution` — the rich research graph (KB retrieval + per-user pgvector
       memory + a nested subagent), vendored under `solution/lg_solution/`. A linear
       shape with a DEDICATED answer node.
-    - `lg-react` — the standard `langgraph.prebuilt.create_react_agent` (plain +
-      MCP tools), vendored under `solution/lg_prebuilt/`. A ReAct loop with a
-      LOOPING agent node and no dedicated answer node.
+    - `lg-react` — a `langchain.agents.create_agent` agent (plain + MCP tools),
+      vendored under `solution/lg_prebuilt/`. A ReAct loop with a LOOPING model
+      node, `SummarizationMiddleware`, and no dedicated answer node.
 
     Highlights
 
     - The dispatcher: `execute_core` resolves `agent_id = normalize(state.agent_id)
       or DEFAULT_AGENT_ID` (unknown -> the default, lg-solution) and runs the right
       agent from a per-agent registry (`AgentSpec`: build_graph, stream,
-      build_inputs, role, schema). A per-agent LAZY graph CACHE builds each agent's
-      graph once per process (its own deps/checkpointer/storage schema) and reuses
-      it — still stateless: per-turn state via thread_id. Adding an agent is adding
-      a spec; execute_core never branches on agent_id.
+      build_inputs, role). It builds a fresh graph inside every turn and discards
+      it afterward; only the checkpointer connection is reused. Durable state is
+      shared and keyed by agent/user/conversation, so any worker can serve the next
+      turn. Adding an agent is adding a spec; execute_core never branches on
+      agent_id.
     - Two stream adapters, selected by agent_id (the teaching point): different
       agent shapes -> different stream adapters. `platform/stream_solution.py`
       streams the DEDICATED answer node's tokens; `platform/stream_prebuilt.py`
       streams ONLY the final turn of the LOOPING agent node and surfaces each tools
       run as a step.
-    - Per-agent isolation: the shared identity gate (`platform/identity.py`) folds
+    - Agent/user state scope: the shared identity gate (`platform/identity.py`) folds
       the active `agent_id` into the per-user key
       (`{tenant}:{project}:{agent}:{user}`) and scopes the checkpointer thread by
-      it, and each agent's own store is routed onto KDCube's SHARED Postgres in its
-      OWN schema (`ported_langgraph_agents__lg_solution` / `..._lg_prebuilt`) via
-      `platform/pg_target.agent_schema`. Two mechanisms guarantee the two agents'
-      memories never mix. Fallback chain kept: pg_pool -> own DATABASE_URL ->
-      in-memory saver.
+      it. App-owned memory/KB rows use KDCube's SHARED Postgres in one
+      tenant/project schema, with app-prefixed tables and `agent_id` row scope.
+      Fallback chain: pg_pool -> own DATABASE_URL -> in-memory saver.
     - Capabilities model picker PER AGENT: each agent declares the generic
       `simple_model_pick` provider on its own role (`lg-solution.answer` /
       `lg-react.answer`); `resolve_turn_role_models(self, state, agent_id)`
-      applies the ACTIVE agent's pick per turn via
+      applies the ACTIVE agent's saved conversation pick per turn via
       `bundle_call_context.role_models`, so a pick for one agent never cross-applies.
     - lg-react tools, both ways (`config.tools.mode`: plain | mcp | both): the
       vendored plain LangChain tools and/or KDCube-served MCP tools via
@@ -70,8 +69,8 @@ bundle:
       run their own graph + stream adapter, an unknown agent_id falls back to the
       default, and an offline smoke of `execute_core` runs BOTH agents end to end
       with a non-empty final_answer); the identity + agent_id fold (the two agents
-      get different memory keys); the per-agent storage schema selection + the
-      statelessness invariant; the per-agent Capabilities pick (each agent's role,
+      get different memory keys); the one-schema, agent_id-scoped storage selection + the
+      statelessness invariant; the per-agent, conversation-scoped Capabilities pick (each agent's role,
       no cross-apply); both stream adapters (dedicated answer node + looping agent
       node); tools-both-ways resolution + MCP degradation; the Telegram webhook
       boundary; and the interface/config/OpenAPI id agreement.
@@ -81,7 +80,7 @@ bundle:
     - The two single-agent source bundles (the standalone lg-solution port and the
       standalone lg-react port) were removed — their solutions + stream adapters
       are folded in here.
-    - The standalone POCs (`poc/lg-solution`, `poc/lg-react-agent`) are untouched.
+    - The standalone POCs (`poc/lg-solution`, `poc/lg-prebuilt-agent`) are untouched.
 
     Known follow-ups
 

@@ -85,9 +85,9 @@ handler, cron, or background job.
 
 ## The isolation boundary (per agent)
 
-The same process serves many users across many tenants/projects — AND hosts both
-agents. `identity.py` maps the platform identity + the ACTIVE `agent_id` onto each
-agent's per-user keys:
+One deployment is bound to one tenant/project, while the same worker process can
+serve many users concurrently and hosts both agents. `identity.py` maps the bound
+platform identity + the ACTIVE `agent_id` onto each agent's per-user keys:
 
 ```text
 platform state + agent_id        agent key

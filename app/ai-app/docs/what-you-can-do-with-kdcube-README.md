@@ -1,695 +1,479 @@
 ---
 id: repo:kdcube-ai-app/app/ai-app/docs/what-you-can-do-with-kdcube-README.md
 title: "What You Can Do With KDCube"
-summary: "Dense product and builder overview of KDCube: how developers quickly build powerful governed AI apps, how apps become ecosystem components, which runtime surfaces they expose, and how ReAct, named services, APIs, MCP, Event Bus, Data Bus, storage, cron/jobs, tools, optional composition surfaces, and isolated execution fit together."
-tags: ["docs", "product", "overview", "sdk", "platform", "app", "ecosystem", "agent", "react", "named-services", "exec"]
-keywords: ["what is kdcube", "what can kdcube do", "ai product platform", "app runtime", "app reload", "kdcube app", "build ai app", "wrap existing app", "coding agent build app", "local to cloud workflow", "mcp endpoint", "react agent", "announce", "steer followup", "user memory", "namespace services", "named services", "scene", "pinboard", "iso runtime", "distributed exec", "streaming widgets", "artifact provenance", "per-user agent tuning", "user settings", "supported models pick", "prompt cache cold turn", "connection hub", "delegated access", "automation tokens", "public content provider", "named service discovery"]
-updated_at: 2026-07-08
+summary: "Builder-facing map of KDCube as an open-source AI application framework with an integrated production runtime: keep existing agents and product code, adopt one useful boundary, or compose complete multi-surface apps with identity, conversations, files, isolated execution, integrations, economics, and deployment services."
+tags: ["docs", "product", "overview", "framework", "runtime", "platform", "app", "agent", "integration"]
+keywords: ["what is kdcube", "what can kdcube do", "ai application framework", "production agent runtime", "keep existing agent", "langgraph integration", "multi-user chat", "isolated code execution", "connected accounts", "delegated operators", "named services", "scene", "canvas", "user memories", "application hosted website", "deploy from git", "agent economics"]
+updated_at: 2026-07-15
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/quick-start-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/recipes/use-cases-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/how/how-to-construct-react-agent-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/user-settings/user-settings-solution-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/connection-hub-solution-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/context-caching-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/how-to-integrate-with-kdcube-apps-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/README.md
   - repo:kdcube-ai-app/app/ai-app/docs/arch/architecture-of-what-we-built-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/arch/architecture-of-what-you-build-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/ecosystem-component/components-ecosystem-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/ecosystem-component/ecosystem-component-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/recipes/components/README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-navigate-kdcube-docs-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-assemble-bundle-with-sdk-building-blocks-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/arch/control-plane-web-app-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/runtime/tenant-project-user-and-execution-boundaries-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-write-bundle-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/workspace-reference-bundle-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/recipes/kdcube_for_agents/port-your-solution-to-kdcube-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/how/how-to-construct-react-agent-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/connection-hub-solution-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/react-object-materialization-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/react-object-policy-bridge-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/scene/generic-scene-contract-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/canvas/canvas-sdk-solution-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/flow-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/event-source/event-source-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/tools/named-services-tools-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/exec/README-iso-runtime.md
-  - repo:kdcube-ai-app/app/ai-app/docs/exec/distributed-exec-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/configuration/bundle-runtime-configuration-and-secrets-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/sites/application-sites-README.md
 ---
 # What You Can Do With KDCube
 
-KDCube is a platform and SDK for quickly building powerful governed AI apps:
-chat workbenches, agentic operations tools, domain-object providers, API/MCP
-integrations, event-driven workflows, streaming widgets, scheduled automations,
-Claude Code/custom agent flows, and generated-code assistants that can move
-from local prototype to operated product without changing shape.
+KDCube is an open-source AI application framework with an integrated,
+self-hosted production runtime.
 
-The first value is builder speed. KDCube gives developers reusable app
-surfaces: API and public webhook routes, MCP endpoints, Event Bus/SSE streams,
-Data Bus handlers, app storage/cache, cron/jobs, widgets, chat, memory, tools,
-skills, artifacts, a governed ReAct runtime, Claude Code/custom agent runtimes,
-named-service object integration, and isolated execution. Scene and Pinboard
-are optional composition/context surfaces that can join independently useful
-apps into a wider user-and-agent interaction network. The second value is that
-the same building blocks already sit inside tenancy, secrets, budgets, RBAC,
-accounting, event control, and deployment descriptors.
+Keep the agent, tools, UI, services, and storage that already make your product
+useful. Add KDCube where it removes routine infrastructure: deployment,
+authenticated APIs, ordered conversations, streaming, files, isolated code,
+connected accounts, delegated access, user settings, or cost enforcement.
 
-Those contracts also support hybrid topologies. A solution can run different
-apps in different KDCube deployments, tenants, projects, or security zones and
-connect them deliberately through API, MCP, Event Bus, Data Bus, and
-named-service contracts. A scene or host app can then compose selected surfaces
-from multiple independently deployed KDCubes without forcing every app into one
-runtime.
+You do not have to adopt everything. One existing handler behind one app
+operation is valid. So is a complete product with several agents, widgets,
+websites, scheduled jobs, and domain services.
 
-Use KDCube when an AI system needs product structure:
+```text
+your product owns                  KDCube can operate
+-------------------------------    ---------------------------------
+agent logic and prompts            ingress, scheduling, streaming
+business services and tools        identity, grants, consent
+product UI and interaction         conversations, files, events
+domain data and rules              isolated execution, economics
+                                   deployment, health, failure reports
+```
 
-- a fast path from idea to real multi-surface AI app
-- reusable SDK pieces instead of one-off app scaffolding
-- agent/UI/domain-object interop across chat, APIs, MCP, Event Bus streams,
-  Data Bus handlers, cron/jobs, named services, and optional Scene/Pinboard
-  composition surfaces
-- hybrid setups where separately deployed KDCube runtimes/apps interoperate
-  through explicit contracts
-- runtime configuration and secrets
-- user and environment isolation
-- chat plus APIs plus widgets plus MCP plus scheduled work
-- a governed ReAct agent runtime with timeline, tools, event sources,
-  ANNOUNCE, compaction, steer/followup, and named-service materialization
-- isolated execution for untrusted/model-generated code, separate from trusted
-  app logic and app secrets
-- app-owned state, tools, skills, files, artifacts, citations, memory,
-  named-service realms, provenance, and policy
-- a local-to-cloud delivery path that engineers and coding agents can follow
-
-For the client integration map, read
+For the shortest local path, read [Quick Start](quick-start-README.md). For
+host-product integration choices, read
 [How To Integrate With KDCube Apps](how-to-integrate-with-kdcube-apps-README.md).
-For a problem-first map ("does KDCube answer this?"), read the
-[use-cases recipe index](recipes/use-cases-README.md).
 
-## 1. KDCube In One Paragraph
+## 1. Start With The Boundary You Need
 
-KDCube hosts **apps** inside isolated `tenant/project` environments. An app is a
-deployable product unit: it can contain backend logic, an agent workflow, tools,
-skills, APIs, widgets, a full UI, MCP endpoints, cron jobs, storage, secrets,
-Data Bus handlers, Event Bus publishers/subscribers, named-service providers,
-and product-specific policy. The platform supplies the runtime envelope; the
-app supplies the product behavior.
+| What you already have | First useful KDCube step | What stays yours |
+| --- | --- | --- |
+| Python agent or graph | Bind it to an app operation or conversation surface. | Framework, graph, prompts, tools. |
+| Existing website | Consume KDCube APIs/streams or embed the ready chat component. | Product shell, design system, navigation. |
+| Backend service or webhook | Expose one authenticated operation or public callback. | Handlers and domain storage. |
+| Generated-code workflow | Attach the isolated execution tool and workspace contract. | Workflow and approved tool contract. |
+| Gmail, Slack, or custom OAuth service | Let users connect accounts and approve the claims tools need. | Provider-facing product behavior. |
+| Script, CI job, or external agent | Protect one REST or MCP resource with delegated grants. | External client implementation. |
+| No existing AI surface | Start with the ready chat, ReAct agent, files, web search, and code execution. | Product-specific instructions, tools, skills, and policy. |
+
+These paths are independent. The first boundary can remain the only one.
+
+## 2. Framework, Runtime, And Platform
+
+The framework is what builders develop against: SDKs, contracts,
+configuration, components, and extension points.
+
+The runtime is the active machinery that executes and enforces those contracts
+under concurrency, failure, security, and cost constraints.
+
+The platform is the framework and runtime together with shared operating
+services that let independently authored apps work together.
 
 ```text
-tenant/project = isolated environment
-app            = runnable product/application unit
-surface        = how users, agents, systems, or jobs enter the app
-realm          = app-owned domain space exposed through refs and contracts
+FRAMEWORK
+  app model | SDK | config | tools | UI components | extension contracts
+       |
+       | declarations become enforced behavior
+       v
+RUNTIME
+  ingress | scheduling | event order | storage | isolation | accounting
+       |
+       | shared operating services
+       v
+PLATFORM
+  apps | users | connected accounts | hosting | settings | control surfaces
 ```
 
-Compatibility note: some lower-level code, config, CLI commands, and existing
-SDK docs still use the legacy name `bundle`, for example `bundles.yaml`,
-`bundles.secrets.yaml`, `kdcube bundle reload`, and `sdk/bundle/...` docs. In
-builder-facing text, the deployable unit is an **app**.
+KDCube was built runtime-first. Production responsibilities were implemented
+for real applications and then generalized into reusable framework contracts.
 
-## 2. Who KDCube Is For
+## 3. Build Small Apps Or Complete Products
 
-KDCube is useful for:
+An **app** is a descriptor-addressed application unit. It can expose any honest
+combination of surfaces; none is universally required.
 
-- product teams building governed AI assistants, workbenches, or workflow apps
-- platform teams standardizing how multiple AI apps are deployed, isolated,
-  accounted, and operated
-- engineers wrapping existing apps, scripts, UIs, APIs, webhooks, or data
-  services into a managed runtime
-- teams that need local development and cloud deployment to use the same app
-  contract
-- coding agents that need a clear target shape for building runnable AI
-  products instead of loose prototypes
+Every app can participate in two directions:
 
-It is not only a chatbot template. Chat is one surface of an app.
+```text
+as_provider
+  what this app exposes to users, other apps, agents, or external clients
 
-## 3. What You Can Build
+as_consumer
+  what this app and each of its agents are configured to call or resolve
+```
 
-Common app shapes:
+An app may be only a provider, only a consumer, or both. For example, a mail
+app can provide a named-service realm and MCP facade; a workspace app can
+consume that realm; and the same workspace app can also provide its own chat,
+widgets, APIs, or website. Provider policy does not implicitly grant consumer
+access, and consumer wiring does not publish a surface.
 
-| Product shape | KDCube surfaces |
+| App shape | Possible surfaces |
 | --- | --- |
-| Internal AI workbench with files, tasks, memory, and reports | Chat, ReAct tools, widgets, rendering tools, hosted artifacts, optional Scene/Pinboard composition |
-| Governed agent product | ReAct runtime, tool policies, event-source rendering, named-service tools, steer/followup, compaction |
-| Coding or maintenance copilot | Claude Code/custom agent runtime, app APIs, storage, MCP, isolated exec, audit trail |
-| Generated-code assistant | ISO runtime, isolated exec, artifact capture, controlled tool proxying, workspace transport |
-| Internal operations tool | Authenticated APIs, admin widgets, Data Bus handlers, storage, role policy |
-| Event-driven backend app | Event Bus/SSE, Data Bus handlers, streaming, app storage/cache, idempotent mutations |
-| Public integration endpoint | Public `@api`, webhook auth, idempotent processing |
-| Telegram, email, or messaging assistant | SDK integration, public webhook/OAuth callback, user registry, delivery |
-| Browser/iframe app | App widget or full UI, operation APIs, shared SDK UI panels |
-| Docs or data assistant | Knowledge source, MCP endpoint, app storage, search/fetch/read tools |
-| Scheduled automation | `@cron`, `@on_job`, jobs stream, task/memo solution |
-| Existing app wrapper | Thin KDCube app adapter around existing backend/UI/business logic |
-| Named-service provider | Namespace ownership, provider-owned refs, schemas, search/get/upsert/action, block rendering, UI/canvas actions, file hosting |
-| Ecosystem component | App, widget, provider realm, MCP surface, event publisher, Data Bus handler, cron worker, or any combination |
-| Hybrid multi-KDCube solution | Separate deployments connected by API/MCP/events/named services and optionally composed in one host scene |
+| Backend-only service | REST operations, public APIs, Data Bus handlers, jobs. |
+| Existing agent host | One or several agents behind REST, webhooks, or conversations. |
+| Ready assistant | Chat widget, ReAct agent, tools, skills, files, web search, isolated code. |
+| Domain service | Named-service provider, MCP facade, storage, APIs, events. |
+| Multi-surface workspace | Scene, chat, Canvas/Pinboard, memories, task or domain widgets. |
+| Application website | Built main view served under an alias or dedicated host. |
+| External-agent gateway | Managed MCP or REST resources protected by delegated credentials. |
+| Scheduled automation | Cron scans, background jobs, provider integrations, accounted calls. |
 
-One app can expose several of these at once.
+The app package remains self-describing: runtime composition, human docs,
+machine-readable interfaces, configuration templates, storage ownership,
+tests, release metadata, and implementation journal describe the same app.
+See [How To Write A KDCube App](sdk/bundle/build/how-to-write-bundle-README.md).
 
-## 4. Flagship Runtime Capabilities
+Compatibility note: current source, descriptors, routes, and CLI commands still
+use `bundle` in identifiers such as `bundle_id`, `bundles.yaml`, and
+`kdcube bundle reload`. Public prose uses **app**.
 
-KDCube is not only an app host. Two runtime capabilities are central to why the
-platform exists:
+## 4. Serve An Existing Agent Or Use The Ready ReAct Agent
 
-```text
-app
-  |
-  +-- trusted product/runtime surfaces
-  |     APIs, public webhooks, widgets, MCP, Event Bus streams,
-  |     Data Bus handlers, storage/cache, cron/jobs, provider operations
-  |
-  +-- agent runtimes
-  |     ReAct timeline/tools/ANNOUNCE/event policies/pull-read/compaction
-  |     Claude Code or custom Python agents where appropriate
-  |
-  +-- isolated execution boundary
-        generated code, rendering jobs, heavy helpers, Docker/Fargate exec,
-        artifact capture, no implicit access to app secrets
-```
+KDCube does not require one agent framework. An app can host LangGraph, CrewAI,
+the Claude Agent SDK, custom Python, or another loop behind the same product
+surfaces.
 
-**ReAct is the built-in reference agent runtime.** It is a platform-governed
-agent loop, not a thin wrapper over vendor tool calling. The runtime owns the
-timeline, workspace, tool validation, event-source block production,
-ANNOUNCE/compaction projection, recovery paths, budgets, and live control
-events. This lets an app author decide what the model sees, what it can touch,
-what it can mutate, and how provider-owned objects become model-visible context.
+The reference `ported-langgraph-agents@2026-07-13` app keeps two LangGraph
+agents as the decision runtimes. Small adapters connect model calls, stream
+events, turn input/output, files, and accounting to KDCube. The graphs, prompts,
+LangChain tools, and checkpointer keep their jobs.
 
-**Isolated execution is a first-class trust boundary.** Trusted app logic,
-provider operations, and secrets do not share a process boundary with
-untrusted/model-generated code. Generated code and heavy tools can run in local
-subprocesses, Docker ISO runtime, split supervisor/executor mode, or distributed
-Fargate exec while artifacts and logs still flow back into KDCube's provenance
-model.
+Scaled serving changes the lifetime of the graph object, not the agent's
+behavior. The reference app builds a fresh graph inside each turn, runs it only
+for that bound user/conversation turn, and then discards it. It does not keep a
+stateful graph on the long-lived app instance. Durable continuity belongs in
+shared/checkpointed storage; only true connections, such as the checkpointer
+connection, are reused across turns. Any worker can therefore serve the next
+turn without depending on another worker's process memory.
 
-This combination is what makes KDCube different from a plain app server, a
-chatbot template, or a library-level agent framework: the app can ship UI/API
-surfaces, a governed agent runtime, and a safe execution substrate as one
-operated product.
+Teams that want a ready agent can use KDCube ReAct. It already supports:
 
-## 5. Why Apps Matter
+- a conversation-owned logical workspace;
+- web, knowledge, file, rendering, and code-execution tools;
+- skills and app-local Python tools;
+- ordered timeline events, followups, steers, and recovery;
+- named-service realms for memories, conversations, mail, Slack, and custom
+  domains;
+- chartered subagents for parallel assignments when enabled;
+- runtime-governed multi-action and tool-execution policy.
 
-An app gives one product a stable runtime identity:
+An app can declare `surfaces.as_provider.bundle.default_chat: true` to serve the
+SDK chat under the reserved `chat` widget alias. The declaration expresses
+intent; merely inheriting a reactive entrypoint does not.
 
-- one id in `bundles.yaml`
-- one `entrypoint.py` that exposes decorated surfaces
-- one app config namespace
-- one app secret namespace
-- one storage/cache namespace
-- one place to attach tools, skills, widgets, MCP, scheduled jobs, events,
-  named services, and product policy
+The tools available to each hosted agent are consumer wiring. App configuration
+places Python tools, MCP connections, and named-service namespaces under
+`surfaces.as_consumer`, including the agent-specific inventory under
+`surfaces.as_consumer.agents.<agent_id>`. This lets one app host several agents
+with different callable surfaces while exposing a separate set of provider
+surfaces to the outside.
 
-This lets an AI product be deployed, configured, reloaded, tested, and reasoned
-about as a unit.
+Read [Port Your Solution To A KDCube App](recipes/kdcube_for_agents/port-your-solution-to-kdcube-README.md),
+[How To Construct A ReAct Agent](sdk/agents/react/how/how-to-construct-react-agent-README.md),
+and [Work With Subagents](sdk/agents/react/work-with-subagents-README.md).
 
-Apps can also be hot-reloaded during development and operations. The current CLI
-command is still named `kdcube bundle reload <app_id>`: it reapplies the
-descriptor-authoritative app registry, evicts process-local app caches,
-refreshes app code/config for subsequent requests, and broadcasts the change to
-running components. Platform image changes still require the normal image
-rebuild/restart path.
+## 5. Give Users A Ready Multi-User Chat Experience
 
-## 6. Runtime Surfaces
+The reusable chat component can be embedded in an existing site or mounted in a
+KDCube scene. It provides streaming conversations, attachments, files,
+followups, steer controls, tool progress, model/capability selection, and
+connection actions.
 
-KDCube apps can expose:
+Each agent has its own administrator-granted inventory of tools, skills, MCP
+servers, named-service operations, models, and optional helper agents. Users
+may narrow that inventory for one conversation.
 
-- **chat/on-message**: assistant or workflow response to user messages
-- **operations APIs**: authenticated backend actions for UI/admin tools
-- **public APIs**: webhooks and external callbacks with app-owned auth
-- **public content**: a `@public_content` provider publishes selected artifacts
-  as crawlable HTML with sitemaps, stable URLs, and `410` on retract
-  ([public content solution](sdk/solutions/cdn-pub/public-content-solution-README.md))
-- **widgets**: embedded app UI, Telegram Mini App, or KDCube widget
-- **main UI**: full browser app surface
-- **MCP endpoints**: app-served tool/resource interface for external agents
-- **Event Bus / SSE**: service events, UI refresh signals, accounting usage,
-  snapshots, and component subscription claims
-- **Data Bus handlers**: durable app-domain messages, mutations, patches,
-  annotations, and async state changes handled by `@data_bus_handler`
-- **named-service provider**: namespace ownership for refs, objects, schemas,
-  files, actions, renderers, and resolvers that other KDCube surfaces can
-  consume generically
-- **cron**: scheduled scans or recurring jobs
-- **jobs**: async work submitted to the platform job stream and handled by
-  `@on_job`
-
-The same product may use several surfaces:
+The picker is explicit:
 
 ```text
-Telegram message
-  -> public webhook
-  -> app entrypoint
-  -> ReAct agent/tools
-  -> streamed progress
-  -> final Telegram response and hosted files
-
-KDCube widget
-  -> authenticated operation APIs
-  -> Data Bus message for durable state mutation
-  -> same app storage and user state
-
-Canvas pin or external ref
-  -> named-service provider resolves task:/mem:/domain: refs
-  -> generic chat/canvas/ReAct surfaces render and act without hardcoded
-     provider-specific logic
+application inventory = ceiling
+        |
+        v
+conversation draft in the picker
+        |
+        | Save changes
+        v
+conversation-scoped selection enforced on later turns
 ```
 
-## 7. Ecosystem Components And Realms
+An optional user baseline supplies defaults for **future** conversations. A new
+conversation materializes that baseline once; later baseline changes do not
+rewrite existing conversations. Sending a chat message does not implicitly save
+picker edits.
 
-An ecosystem component is a reusable participant in KDCube's events and actions
-network. It may be a standalone service, UI widget, provider app, consumer app,
-MCP surface, API surface, scheduled worker, event publisher, Data Bus handler,
-or any combination.
+See [Conversation-Scoped Agent Capabilities](sdk/solutions/user-settings/capabilities-README.md).
 
-The important idea is that apps can be useful at different integration depths:
+## 6. Run Generated Code Without Giving It Platform Authority
+
+KDCube's isolated execution service is reusable by ReAct and by other agent
+adapters. The model or agent is an untrusted requester, not an authority
+source.
 
 ```text
-Stage 1: Standalone app
-  owns domain data and UI
-  maybe exposes API/MCP
-
-Stage 2: Event participant
-  emits service events
-  consumes Event Bus/Data Bus messages
-  can refresh widgets or trigger jobs
-
-Stage 3: Scene component
-  provides iframe widget route
-  handles kdcube.surface.command
-  emits/accepts context drag payloads
-  claims live event subscriptions when embedded
-
-Stage 4: Named-service provider
-  owns object_ref namespace
-  exposes object.schema/search/get/upsert/delete
-  exposes object.resolve/action for UI affordances
-  exposes block.produce/render for ReAct visibility
-  exposes namespace presentation config
-
-Stage 5: Agentic realm
-  ReAct can explore/search/read the realm
-  ReAct can mutate through schema-governed tools
-  users can pin/attach realm objects with provenance
-  outputs from one realm can become evidence/material for another
+agent proposes a logical ref or tool arguments
+        |
+        | untrusted locator
+        v
+trusted resolver applies runtime-bound tenant/project/user/authority
+        |
+        +-- out of scope -> missing/denied; no bytes
+        |
+        `-- in scope -> materialize into a sparse execution workspace
+                               |
+                               v
+                         isolated executor
 ```
 
-Read the full architecture map:
+In the strongest split-Docker profile, generated Python runs in a restricted
+executor with no network, a minimal environment, and only the assigned work,
+output, log, and supervisor-socket mounts. Platform stores, app storage,
+descriptors, provider credentials, and other users' workspace roots stay on the
+trusted side.
 
-- [Architecture Of What You Build](arch/architecture-of-what-you-build-README.md)
-- [Components Ecosystem Architecture](sdk/solutions/ecosystem-component/components-ecosystem-README.md)
-- [Ecosystem Component Contract](sdk/solutions/ecosystem-component/ecosystem-component-README.md)
+Approved tool calls use an authenticated supervisor bridge. Their trusted
+implementations execute under the carried request identity, grants, provider
+claims, and economics context. Credentials do not move into generated code.
 
-## 8. Optional Scene And Pinboard Composition
+Other execution profiles provide different isolation strengths; `no network`
+is specifically a split-executor guarantee. Read
+[Tenant, Project, User, Authority, And Execution Boundaries](runtime/tenant-project-user-and-execution-boundaries-README.md)
+and [Isolated Execution](exec/README-iso-runtime.md).
 
-Scene and Pinboard are not prerequisites for an app to be useful. Apps can
-participate in the KDCube network through API, MCP, Event Bus, Data Bus,
-streams, cron/jobs, storage, and named services without a shared visual scene.
+## 7. Connect Accounts And External Operators In Both Directions
 
-When a product needs a user-facing interaction workspace, Scene is a browser
-host that composes multiple app surfaces and routes commands, events, and
-context between them. Pinboard/canvas is a neutral board: it stores opaque
-object refs, layout, comments, display cache, and context provenance. Object
-meaning stays with the provider.
+Two opposite delegation directions solve different problems:
 
 ```text
-User / Scene
-   |
-   +-- Chat surface
-   +-- Pinboard surface
-   +-- Memory surface
-   +-- Task surface
-   +-- Usage / stats / domain widgets
-          |
-          v
-   context objects carry object_ref
-          |
-          v
-   owner provider resolves:
-     object.resolve
-     object.action(open|preview|download)
-     namespace_presentation_config
+DELEGATED TO KDCUBE
+user connects Gmail, Slack, or a custom OAuth/OIDC account
+  -> trusted KDCube tools may use approved provider claims for that user
+
+DELEGATED BY KDCUBE
+user approves a script, CI job, or external agent client
+  -> that delegate may use selected KDCube resources and operations
 ```
 
-The scene should not hardcode provider semantics. It may use configuration to
-mount surfaces and route target commands, but provider-owned actions come from
-provider resolvers. Pinboard cards are proxies over provider-owned refs unless
-the card is a canvas-owned object such as text, attachment, or comment.
+The first direction lets KDCube act through a user's external account. The
+second lets external automation act inside KDCube on the user's behalf. Neither
+is platform login.
 
-Scene components are served widgets iframed from the apps that own them,
-declared in `surfaces.as_consumer.ui.scene.components` (`bundle_id` +
-`widget_alias`, with `placement`, `rail`, `gated`, and `drop` routing in
-config); the reusable host lives in `@kdcube/components-react/scene`. A new
-alias mounts any deployed app's widget without a new frontend project.
+Connection Hub owns the authority/provider registry, connection edges,
+connected-account lifecycle, delegated credentials, consent, and runtime
+projection. Apps may host login or consent presentation, while Connection Hub
+keeps protocol and policy ownership.
 
-Read:
+Provider credentials stay in user-scoped secrets. Trusted tools resolve the
+current user's connected account server-side. If access is missing or stale,
+the SDK returns a structured connect, claim-upgrade, account-selection, or
+reconnect action.
 
-- [Scene Configuration](sdk/solutions/scene/config/README.md)
-- [Generic Scene Contract](sdk/solutions/scene/generic-scene-contract-README.md)
-- [Cross-Surface Context Drag](sdk/solutions/scene/cross-surface-context-drag-README.md)
-- [Canvas SDK Solution](sdk/solutions/canvas/canvas-sdk-solution-README.md)
-- [Pin Operations](sdk/solutions/canvas/pin-operations-README.md)
+Consent is demand-driven: the attempted tool asks for exactly its declared
+claims. The user may approve them or disable the tools that need them. A menu
+render does not request consent.
 
-## 9. Flagship ReAct Runtime Model
+Telegram and other channels begin as external identities. A verified channel
+actor becomes platform-authorized only through an explicit connection edge and
+authority projection.
 
-KDCube's flagship agent runtime is ReAct: a timeline-driven runtime model for
-agents that must work with tools, files, events, memory, external namespace
-objects, and long-running work. It is the reference runtime used by the
-workspace reference app (`workspace@2026-03-31-13-36`).
+Read [Connection Hub](sdk/solutions/connections/connection-hub-solution-README.md).
 
-ReAct is not a provider-native tool-calling wrapper. The runtime owns the
-protocol shape, timeline, workspace, recovery paths, budgets, and event-source
-policies. The model is the decision module inside that runtime.
+## 8. Expose Your Domain Through Named Services
 
-The ReAct runtime is a custom channeled protocol, which lets it carry rich
-events and artifacts:
+Named services prevent an agent catalog from growing one bespoke tool shape per
+domain. Every realm uses a fixed grammar:
 
-- visible `thinking`/progress stream
-- structured `ReactDecisionOutV2` actions
-- streamed code channel for exec
-- final summary channel for compact continuity
-- tool-call and tool-result timeline artifacts
-- live `followup` and `steer` events accepted through the shared timeline event
-  bus while a turn is running
-- an uncached ANNOUNCE block that re-renders operational state each decision
-  round
-- event-source block production, timeline projection, ANNOUNCE projection, and
-  compaction projection
-- protocol violation feedback visible to the next decision round
+```text
+about | capabilities | schema | list | search | get
+action | upsert | host_file | delete
+```
 
-`followup` lets a running turn accept additional same-turn user input and can
-grant bounded extra iteration credit. `steer` is a control event: it is recorded
-on the current turn, interrupts active generation or cancellable tool phases
-when possible, and gives ReAct a short finalize/reorient window.
+The realm supplies its own nouns, refs, filters, actions, guards, and human
+presentation. One self-description serves two readers:
 
-ANNOUNCE is not decoration and not a cached transcript. It puts volatile
-between-turn or between-round state directly in the model's attention without
-rewriting old timeline blocks. Provider policies decide which blocks are
-rendered into timeline, ANNOUNCE, and eventually compaction material.
+```text
+agent reads schema/about -> works the realm
+user reads service card  -> understands, narrows, and consents
+```
 
-The same split carries the cache economics: the durable instruction envelope
-(with tool catalog and skill gallery) stays cached; ANNOUNCE is never cached.
-A per-user selection change (tools/skills/model) produces a marked cold turn —
-the agent sees a one-line `[CACHE]` section, accounting carries
-`cache_cold_turn`, and the rebuild premium is attributable as one component of
-the turn's spend sum — governed by a user-held cold-cache policy. See
-[Context Caching](sdk/agents/react/context-caching-README.md).
+A complete provider declares nouns, search questions, bounded use cases,
+guards, presentation, registration, and tests. Provider-backed realms declare
+connected-account requirements; demand-driven consent and coverage UI follow
+from that declaration rather than realm-specific consent code.
 
-An agent is constructed fresh per turn from app code, per-agent config, and the
-user's saved selection; the full pipeline is
-[How To Construct A ReAct Agent](sdk/agents/react/how/how-to-construct-react-agent-README.md).
+External clients can reach configured realms through the
+`kdcube-services@1-0` named-services MCP gateway. Delegated namespace grants
+guard the MCP boundary; provider claims or realm rules guard the operation
+inside. Those are two different authorization layers.
 
-Read the ReAct model in this order:
+Generated code in isolated execution can call named services through the
+supervisor. Client policy travels in the portable runtime context, and a Data
+Bus relay reaches the provider app under the original request identity when no
+in-process caller exists.
 
-1. [ReAct Runtime Flow](sdk/agents/react/flow-README.md)
-2. [ReAct State Machine](sdk/agents/react/react-state-machine-README.md)
-3. [ReAct Context Layout](sdk/agents/react/context-layout.md)
-4. [ReAct System Instruction](sdk/agents/react/system-instruction-README.md)
-5. [ReAct Tools](sdk/agents/react/react-tools-README.md)
-6. [ReAct Turn Workspace](sdk/agents/react/workspace/workspace-lifecycle-and-distribution-README.md)
-7. [ReAct Event Sources](sdk/agents/react/event-source/event-source-README.md)
-8. [Why Not Simply Tool Calling](sdk/agents/react/why/why-not-simply-tool-calling-README.md)
+Read [Namespace Services](sdk/namespace-services/README.md) and
+[Named Services From Isolated Runtime](sdk/solutions/kdcube-services/named-services-from-isolated-runtime-README.md).
 
-## 10. Tools, Skills, And Named Services
+## 9. Compose Chat, Scene, Canvas, Memories, And Websites
 
-Tools are SDK/app capabilities, not just LLM function calls:
+Apps may expose UI, but they do not have to.
 
-- `web_tools` search/fetch with source-pool provenance
-- `rendering_tools` for PDF/DOCX/PPTX/PNG/HTML outputs
-- `exec_tools` for isolated generated-code execution
-- `ctx_tools` and `io_tools` for context, attachments, hosted files, and
-  runtime reads
-- `react.*` tools for workspace/artifact recovery, reading, patching, planning,
-  and writing
-- MCP tools exposed by configured MCP servers or app-served MCP endpoints
-- named-service tools that connect an agent to configured namespace providers
-  such as task, memory, canvas, or domain-specific systems
-- app-local Python tools wired per agent through
-  `surfaces.as_consumer.agents.<agent>.tools`
+- **Chat** is a ready assistant surface or an embeddable component.
+- **Scene** composes independently served widgets and routes declared surface
+  commands and context between them.
+- **Canvas/Pinboard** stores visual working context and provider-owned object
+  refs without taking ownership of their meaning.
+- **User memories** provide durable, user-visible, cross-conversation memory
+  alongside conversation history.
+- **Application-hosted websites** serve a built app main view as a complete
+  multipage or SPA website.
 
-Skills are first-class. Platform/shared skills and custom app skills provide
-workflow instructions and domain guidance that the agent can load before using
-tools. Apps wire skills per agent through
-`surfaces.as_consumer.agents.<agent>.skills`.
+Site declarations live under the app's `ui.main_view.site` config in
+`bundles.yaml`. They compile into a validated, versioned site catalog. Each proc
+routes from an immutable in-memory snapshot; a site request does not scan YAML
+or query Redis. Aliases work under `/sites/{alias}`; clean dedicated-host paths
+use a CDN/origin rewrite that preserves the viewer host.
 
-The per-agent config is an **inventory** — the administrator's grant. Each
-signed-in user can narrow it for themselves from the chat composer's "+" menu:
-deny-lists for tools, skills, MCP servers, and namespaces, plus one model pick
-from the admin-declared `supported_models`. The selection is stored per
-(user, app, agent) and applied per turn as `configured ∩ chosen` — clamped on
-write, failing open, never wider than the grant. Tools whose connected-account
-claims are unmet drop for the turn and surface to the agent in ANNOUNCE as
-`[INACTIVE TOOLS THIS TURN]` — a missing account never blocks the turn. See
-[How To Construct A ReAct Agent](sdk/agents/react/how/how-to-construct-react-agent-README.md)
-and the [User Settings Solution](sdk/solutions/user-settings/user-settings-solution-README.md).
+Application-hosted websites and `@public_content` are separate. A website
+serves an app's complete built main-view tree. Public content serves indexed
+records, catalogs, metadata, and sitemaps.
 
-Named services are the bridge between app-owned domain systems and common
-runtime surfaces. A provider is the owner of a namespace such as `task:`,
-`mem:`, `cnv:`, or a domain-specific prefix. It defines:
+Read [Component Recipes](recipes/components/README.md) and
+[Application-Hosted Sites](sdk/solutions/sites/application-sites-README.md).
+The browser shell itself is documented in
+[Control Plane Web App](arch/control-plane-web-app-README.md).
 
-- what refs mean
-- which object families exist
-- which schemas and mutations are valid
-- how files are materialized
-- how blocks render to ReAct timeline/ANNOUNCE/compaction
-- how URIs resolve
-- which UI/canvas actions are meaningful
-- how namespace presentation is configured
+## 10. Keep Conversation Work Ordered And Recoverable
 
-A consumer connects chat, ReAct, widgets, MCP, APIs, jobs, or optional
-Pinboard/Scene composition to that namespace by configuration and provider
-discovery, not by embedding provider-specific logic into shared components.
-Providers publish themselves to a per-tenant/project discovery registry on
-load; consumers resolve a provider **by namespace**, across apps, and receive
-the endpoint — never a hardcoded address
-([discovery](sdk/namespace-services/discovery-README.md)).
+Conversation work uses an ordered lane identified by:
 
-Connections are the delegated-trust counterpart: **Connection Hub** brokers
-user-connected provider accounts (tools resolve claims, never keys; client
-secrets stay in descriptors), grants external agents their own revocable
-namespace grants, and mints disposable automation tokens bound to declared
-resources and grants. See the
-[Connection Hub solution](sdk/solutions/connections/connection-hub-solution-README.md)
-and the
-[delegated automation access recipe](recipes/connections/create-delegated-automation-access-README.md).
+```text
+tenant + project + user + conversation + agent
+```
 
-See:
+Reactive ingress atomically stores accepted events in the lane and admits one
+bodyless wake to the processor queue. Redis lane sequence defines event order;
+the queue schedules work but does not define order.
 
-- [Namespace Services](sdk/namespace-services/README.md)
-- [Namespace Service Integration](sdk/namespace-services/integration-README.md)
-- [Object Ref Presentation And Actions](sdk/namespace-services/object-ref-presentation-and-actions-README.md)
-- [ReAct Object Materialization](sdk/namespace-services/react-object-materialization-README.md)
-- [Named Services Tools](sdk/tools/named-services-tools-README.md)
-- [Custom Skills](sdk/skills/custom-skills-README.md)
+One scheduled app turn opens the handler. Events arriving afterward can fold
+into that live turn. Handler ownership, consumer heartbeat, an event-source
+lease, processed cursor, and close gate prevent stale turns from consuming new
+events or becoming conversation head.
 
-## 11. Execution Runtime
+The Conversation Event Bus is for conversation/agent context. The Data Bus is
+for app-owned domain mutations independent of chat. Sharing a browser transport
+does not merge them.
 
-KDCube includes an execution subsystem for generated code, heavy tools, and
-tool runtimes that should not run inside the main server process.
+SSE relay state is also scoped by tenant, project, and session. A `stream_id`
+selects one concrete connection only after the correct session clients have
+been selected.
 
-Runtime modes include:
+Read [External Events Journey](sdk/events/external-events-journey-and-handling-README.md)
+and [Conversation Event Bus And Data Bus](service/comm/conversation-event-bus-and-data-bus-README.md).
 
-- in-process execution for safe lightweight tools
-- isolated local subprocess execution for tools that need crash containment
-- Docker ISO runtime with a trusted supervisor and restricted executor
-- split Docker mode, where the supervisor and executor run in sibling
-  containers with different mounts and privileges
-- distributed/Fargate exec, where workspaces and app snapshots are transported
-  to a remote ECS task
+## 11. Track And Enforce Economics
 
-The ISO runtime is not tied to ReAct. It is reusable platform execution
-infrastructure: an app can use it directly, expose it as a tool to another
-agent, or serve a tool surface backed by it. It also acts as an execution
-boundary:
+KDCube can govern model, embedding, web-search, and custom metered calls through
+one lifecycle:
 
-- generated Python can run without network access or secret material
-- approved tools can still be proxied through the supervisor
-- artifacts, logs, executed programs, and tool outputs are merged back into the
-  same KDCube artifact/timeline model
-- app code roots, app readonly data, descriptor payloads, and execution
-  workspaces are kept as separate surfaces
+```text
+verify -> reserve -> run -> settle actual usage
+```
 
-This lets apps use generated-code execution, rendering tools, web/search tools,
-and custom isolated helpers while preserving an auditable result contract.
+Accounting can attribute work to user, app, conversation, turn, flow, provider,
+and model. A turn has no fixed price; its cost is the sum of the spendings inside
+it. Helper-agent spend can roll up to the delegating work.
 
-## 12. Streaming, Artifacts, And Provenance
+Observability alone reports what happened. Economics enforcement decides
+whether work may begin and how actual usage is settled. Custom paid services
+join only when they use the accounting/economics contracts.
 
-KDCube is designed for observable long-running work.
+Read [Economics Enforcement](economics/economic-enforcement-engine-README.md)
+and [Accounting](accounting/accounting-README.md).
 
-The runtime can stream:
+## 12. Deploy, Configure, Store, And Update Deliberately
 
-- model progress
-- tool progress
-- code snippets and execution contracts
-- search queries, search results, and fetch results
-- generated canvas artifacts
-- final answers
-- file metadata and hosted downloadable outputs
-- app service events and domain refresh signals
+App source can come from Git or a local path. Local and cloud deployments use
+the same app contract.
 
-Artifacts keep provenance:
+```text
+descriptors -> kdcube init -> kdcube start
+app source/config change -> bundle config apply / bundle reload
+platform source/image change -> kdcube refresh
+```
 
-- logical paths such as `conv:fi:`, `conv:tc:`, `conv:ar:`, `conv:so:`, and repository refs such as
-  `repo:kdcube-ai-app/app/ai-app/docs/...`
-- owner refs such as `task:issue:...`, `mem:record:...`, `cnv:<board>`
-- tool call/result records
-- visibility (`internal` vs user-visible/external)
-- source-pool citation tokens and replacement
-- hosted-file metadata
-- original object stats for materialized provider objects where available
+Configuration ownership is split intentionally:
 
-File delivery is verified, never assumed: a tool that declares output files
-gets them hosted and delivered to the user's Files tab, and a hosting failure
-raises a `delivery_failed.file_hosting` timeline notice instead of a silent
-claim of delivery
-([custom tools & declared files](sdk/tools/custom-tools-README.md)).
-
-## 13. Memory And Continuity
-
-KDCube has several memory layers with different owners and lifetimes:
-
-| Layer | Purpose |
+| Store or descriptor | Owns |
 | --- | --- |
-| timeline | current and recent turn evidence, tool calls, artifacts, messages |
-| working summaries | compact continuity after pruning/compaction |
-| internal conversation notes | agent-authored anchors inside conversation memory |
-| durable user memory | user-visible, user-owned memory records with widget management, search, snapshots, and reconciliation |
+| `assembly.yaml` | Tenant/project runtime selection, platform/infra settings, active auth selection. |
+| `bundles.yaml` | App registry, app source, non-secret config, surfaces, sites, provider declarations. |
+| `secrets.yaml` / `bundles.secrets.yaml` | Platform and app secret references/values for the deployment lifecycle. |
+| PostgreSQL | Durable metadata and product records owned by their subsystems. |
+| Redis | Queues, lanes, relay, coordination, and selected fail-closed grant/session records. |
+| App filesystem storage | App-owned mutable files; local/mounted locally, normally shared EFS in cloud. |
+| Artifact storage | Separate artifact API backed by configured local or object storage. |
+| User-scoped secrets | Connected external-provider credentials. |
+| User settings | Durable user/app choices, including conversation-scoped agent selections. |
 
-Durable user memory is a standalone subsystem. ReAct can use it by:
+`bundle_storage_root()` is filesystem storage, not S3. Provider tokens do not
+belong in account metadata files. Delegated bearer tokens are handles; managed
+guards load server-side grant/session records for authority.
 
-- reading a top-N hotset in ANNOUNCE when enabled
-- searching/reading memory when memory tools are enabled
-- proposing or writing memory only when app policy allows it
+One running KDCube deployment is bound to one effective `tenant/project`. It may
+serve many users and apps. PostgreSQL, Redis, object storage, and filesystems may
+be dedicated or shared with other deployments through schemas, namespaces, and
+prefixes; inside one deployment, users can share workers and infrastructure, so
+request identity and scoped SDK contracts remain mandatory.
 
-User memory does not replace conversation memory. It extends the agent with
-curated, cross-conversation user facts/preferences/state. The durable realm is
-**co-managed** — the agent proposes, a reconciler merges, the user edits in the
-memory widget — and reads can aggregate across the user's linked identity
-family (one person, several sign-ins, one memory). The user's memory posture
-(participate at all, read scope) is a per-user setting stored in the
-[user-settings construct](sdk/solutions/user-settings/user-settings-solution-README.md);
-see [User Memories Overview](sdk/memory/user-memories-overview-README.md).
+Read [Quick Start](quick-start-README.md),
+[Configuration And Secrets](configuration/bundle-runtime-configuration-and-secrets-README.md),
+and [Connection Hub Storage](sdk/solutions/connections/storage-model/storage-model-README.md).
 
-## 14. How Configuration Is Organized
-
-Use this split:
-
-| Scope | Examples |
-| --- | --- |
-| `assembly.yaml` | tenant/project, auth, ports, platform ref, storage, infra, ReAct runtime limits, tool trait policy |
-| `secrets.yaml` | platform-level service secrets |
-| `gateway.yaml` | gateway capacity, throttling, process limits |
-| `bundles.yaml` | app registry, source refs, app props, non-secret config |
-| `bundles.secrets.yaml` | app-specific secrets |
-| user state | per-user credentials, preferences, runtime choices, memory records |
-
-Do not put secrets in non-secret props. Do not put per-user runtime state into
-deployment descriptors.
-
-## 15. Turning Code Into An App
-
-When wrapping existing code, keep the boundary clean:
+## 13. A Practical Builder Path
 
 ```text
-existing product code
-  -> reusable service/helper/module
-  -> thin KDCube app adapter
-  -> decorated surfaces in entrypoint.py
-  -> descriptors for config/secrets/source wiring
-  -> local runtime test
+1. keep the existing product behavior
+2. choose the first runtime boundary that saves work
+3. wrap that boundary with a thin KDCube app adapter
+4. declare only the surfaces the app actually provides
+5. configure source, non-secret props, and secret references
+6. run the app and test the real transport/storage/identity path
+7. add another KDCube service only when it earns its place
 ```
 
-Practical rules:
+Start with:
 
-- keep business logic reusable and testable outside the app class
-- keep KDCube decorators and runtime calls close to `entrypoint.py`
-- expose APIs/widgets/MCP/cron/jobs through platform decorators
-- expose durable domain mutations through Data Bus handlers when clients submit
-  app-owned state changes
-- expose named services when the app owns a domain ontology that other KDCube
-  surfaces should resolve, render, search, or mutate generically
-- wire agent tools in `surfaces.as_consumer.agents.<agent>.tools`
-- wire agent skills in `surfaces.as_consumer.agents.<agent>.skills`
-- define deployment config in `config/bundles.template.yaml`
-- define deployment secrets in `config/bundles.secrets.template.yaml`
-- document public routes, widgets, MCP, jobs, Data Bus subjects,
-  named-service refs/schemas, and config in `interface/README.md`
-- test with the shared app docs/test path before release
+1. [Quick Start](quick-start-README.md)
+2. [Architecture Of What You Build](arch/architecture-of-what-you-build-README.md)
+3. [How To Write A KDCube App](sdk/bundle/build/how-to-write-bundle-README.md)
+4. [How To Test An App](sdk/bundle/build/how-to-test-bundle-README.md)
 
-Start with the Tier 1 app docs:
+## 14. Honest Boundaries
 
-1. [How To Navigate KDCube App Docs](sdk/bundle/build/how-to-navigate-kdcube-docs-README.md)
-2. [How To Test An App](sdk/bundle/build/how-to-test-bundle-README.md)
-3. [How To Assemble An App With SDK Building Blocks](sdk/bundle/build/how-to-assemble-bundle-with-sdk-building-blocks-README.md)
-4. [How To Write An App](sdk/bundle/build/how-to-write-bundle-README.md)
-5. [App Runtime Settings, Configuration, And Secrets](configuration/bundle-runtime-configuration-and-secrets-README.md)
-6. [How To Configure And Run An App](sdk/bundle/build/how-to-configure-and-run-bundle-README.md)
+KDCube provides contracts and runtime enforcement, not magic.
 
-## 16. Coding-Agent Instruction Seed
+- Existing agents need a small adapter at the product/runtime seam; integration
+  is not a zero-code wrapper.
+- Custom app/tool/provider code remains trusted code and owns authorization when
+  it bypasses scoped SDK services.
+- Isolation strength depends on the configured runtime profile.
+- A connector app's provider claim ceiling does not replace provider-side
+  scopes or workspace approval.
+- Adding a named-service namespace to config does not widen an already issued
+  delegated credential; the external client reconnects to consent again.
+- Website host declarations do not provision DNS, certificates, or a CDN.
+- Hot app reload does not replace a platform image rebuild when platform code
+  changes.
+- Evidence supports review; deployment retention/integrity policy and reviewers
+  determine compliance.
 
-Use this when asking Claude Code, Codex, or another coding agent to build an
-app:
+The short framing is:
 
 ```text
-You are building a KDCube app, not a standalone script.
-
-Read first:
-- docs/what-you-can-do-with-kdcube-README.md
-- docs/quick-start-README.md
-- docs/arch/architecture-of-what-you-build-README.md
-- docs/sdk/solutions/ecosystem-component/components-ecosystem-README.md
-- docs/sdk/bundle/build/how-to-navigate-kdcube-docs-README.md
-- docs/sdk/bundle/build/how-to-test-bundle-README.md
-- docs/sdk/bundle/build/how-to-assemble-bundle-with-sdk-building-blocks-README.md
-- docs/sdk/bundle/build/how-to-write-bundle-README.md
-- docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md
-
-Then inspect the workspace reference app for the nearest pattern.
-
-Build the app as a thin KDCube adapter around product logic:
-- entrypoint.py exposes surfaces with decorators
-- agents/main.py contains the primary ReAct workflow when the app uses ReAct
-- config/bundles.template.yaml wires agent tools under surfaces.as_consumer.agents.<agent>.tools
-- config/bundles.template.yaml wires agent skills under surfaces.as_consumer.agents.<agent>.skills
-- config templates define app props/secrets
-- interface docs define routes/widgets/MCP/jobs/Data Bus subjects/named services/config
-- tests verify imports, descriptors, and runtime behavior
-
-Run locally with kdcube init/start and the current compatibility commands
-`kdcube bundle reload` / `kdcube bundle config apply` using the active
-descriptor set.
-Do not invent runtime paths or config scopes; use the docs and reference app.
-```
-
-## 17. Implementation Limits And Honest Boundaries
-
-KDCube gives a runtime contract, not magic:
-
-- descriptor sets must still be correct for the target environment
-- public callbacks need reachable HTTPS origins
-- local platform-code changes require image rebuilds
-- app reload updates app code/config, not platform code baked into images
-- app secrets must be supplied through secret channels
-- widgets must use the KDCube frame/runtime origin for API calls
-- agent quality depends on visible docs, loaded skills, available tools, and
-  configured model/runtime budgets
-- durable memory writes require explicit policy and result verification
-- MCP/docs knowledge sources must point at the intended repo/ref/root when a
-  deployment exposes such a surface
-
-## 18. Short Practical Framing
-
-If you need one compact explanation:
-
-```text
-KDCube is a runtime for AI product apps.
-One tenant/project is an isolated environment.
-One app is one runnable product unit.
-An app can expose chat, APIs, widgets, MCP, cron, jobs, tools, skills, and UI.
-An app can also own durable Data Bus handlers and act as a named-service
-provider: the owner of refs, schemas, objects, files, renderers, and actions
-for a domain namespace.
-Descriptors wire the environment; entrypoint decorators expose the app.
-The current compatibility CLI command `kdcube bundle reload` updates app
-code/config without rebuilding the platform image.
-The same contract supports local development and cloud deployment.
+Bring the agent. Keep the product.
+Use KDCube for the parts that should become routine.
 ```

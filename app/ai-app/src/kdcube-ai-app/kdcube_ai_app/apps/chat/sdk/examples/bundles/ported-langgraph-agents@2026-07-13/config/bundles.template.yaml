@@ -8,12 +8,12 @@ bundles:
       # (Parent-dir shape also works: path=<parent>, module="ported-langgraph-agents@2026-07-13.entrypoint".)
       path: "<LOCAL_HOST_BUNDLE_ROOT>"
       module: "entrypoint"
-      # Not a singleton: one compiled graph PER AGENT is safe for many concurrent
-      # users because every turn is keyed per (agent, user, conversation) by the
-      # identity gate (platform/identity.py). Multiple processes may load it.
+      # Not a singleton: every worker may load the app. A fresh graph is built for
+      # one bound (agent, user, conversation) turn and then discarded; shared
+      # checkpointer/storage state lets any worker serve the next turn.
       singleton: false
       config:
-        # Base model bindings for each agent's answer role. The per-user model pick
+        # Base model bindings for each agent's answer role. The conversation-scoped model pick
         # (simple_model_pick, below) overlays these onto bundle_call_context at TURN
         # time — but that overlay is scoped to the active agent's turn. Platform-side
         # calls that run outside/before it — notably conversation-title generation,

@@ -1,10 +1,10 @@
-"""The shared multi-tenant + multi-agent isolation gate (platform/identity.py).
+"""The shared multi-user + multi-agent isolation gate (platform/identity.py).
 
-The two vendored agents were single-user; hosted by KDCube one process serves many
-users across many tenants/projects, AND this one app hosts BOTH agents dispatched by
-agent_id. identity.py is the gate that keeps them partitioned — including the fold of
-the ACTIVE agent_id into the per-user key so the two agents' memories never mix.
-These tests import that module directly (stdlib-only, no DB / API).
+The two vendored agents were single-user. One deployment is tenant/project-bound,
+but one process serves many users and this app hosts both agents. The same app can
+also run in another deployment against shared backing stores. ``identity.py`` keeps
+the keys partitioned by deployment, user, conversation, and active agent id. These
+tests import that module directly (stdlib-only, no DB / API).
 """
 from __future__ import annotations
 

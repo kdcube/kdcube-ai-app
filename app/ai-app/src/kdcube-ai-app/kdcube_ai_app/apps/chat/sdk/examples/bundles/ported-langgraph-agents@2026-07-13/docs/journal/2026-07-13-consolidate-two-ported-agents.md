@@ -1,11 +1,17 @@
 ---
 id: ported-langgraph-agents@2026-07-13/docs/journal/2026-07-13-consolidate-two-ported-agents
 title: "2026-07-13 — Consolidate two ported agents into one multi-agent app"
-status: active
+status: historical
 tags: ["ported-langgraph-agents", "journal", "multi-agent", "dispatch", "consolidation"]
 ---
 
 # 2026-07-13 — Consolidate two ported agents into one multi-agent app
+
+> Historical implementation record. Current code rebuilds each graph for one
+> turn, uses `langchain.agents.create_agent`, and stores app-owned rows in one
+> tenant/project schema with `agent_id` row/key scope. References below to a
+> process-cached graph, `create_react_agent`, or per-agent schemas are obsolete;
+> use the app README, architecture, and storage docs for current behavior.
 
 ## What changed
 

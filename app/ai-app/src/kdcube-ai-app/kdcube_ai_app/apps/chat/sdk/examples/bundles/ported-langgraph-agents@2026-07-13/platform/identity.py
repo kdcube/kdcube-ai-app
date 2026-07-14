@@ -1,19 +1,21 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Elena Viter
 #
-# ── identity.py ── the shared multi-tenant + multi-agent isolation gate ──
+# ── identity.py ── the shared multi-user + multi-agent isolation gate ──
 #
 # Each vendored agent ran on one machine for one person: its CLI passed
 # `--user alice` and that raw string keyed both the per-user store and the
-# checkpointer thread. Hosted by KDCube, the SAME process serves many users
-# across many tenants/projects concurrently — AND this one app now hosts TWO
-# agents (`lg-solution`, `lg-react`) dispatched by `agent_id`. If the platform
+# checkpointer thread. One KDCube deployment is bound to one tenant/project,
+# while the SAME process serves many users concurrently and this one app hosts
+# TWO agents (`lg-solution`, `lg-react`) dispatched by `agent_id`. The keys still
+# include tenant/project because the app can run in another deployment against
+# shared backing infrastructure. If the platform
 # layer forwarded a raw or constant id, two platform users would share state, and
 # worse, the two agents' memories could mix.
 #
 # So this gate maps the PLATFORM identity onto each agent's per-user + per-
-# conversation keys AND folds the ACTIVE agent_id into them, so the two agents'
-# memories can never collide even though they share a store. (Storage rows are
+# conversation keys AND folds the ACTIVE agent_id into them, separating the two
+# agents even though they share a store. (Storage rows are
 # also tagged with the scope columns tenant/project/bundle_id/agent_id — see
 # pg_target.py — so the store filters `WHERE agent_id = …`; this fold is the
 # belt-and-suspenders key-level guarantee.) Kept separate so the isolation rule is

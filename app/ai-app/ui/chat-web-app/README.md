@@ -1,79 +1,116 @@
-# React + TypeScript + Vite
+# KDCube Web App
 
-## Runtime Config
+This React application is KDCube's browser shell. It selects an app, presents
+that app's main browser surface, hosts platform control panels, and connects the
+SDK chat experience to the backend transports.
 
-The frontend first requests runtime config from `CHAT_WEB_APP_CONFIG_ENDPOINT`,
-defaulting to `/api/cp-frontend-config`. If that endpoint is unavailable, it
-falls back to `CHAT_WEB_APP_CONFIG_FILE_PATH`, defaulting to `/config.json`.
+It is not the UI every KDCube app must use. Apps may provide their own main
+view, widgets, Scene, website, APIs, or no UI at all.
 
-Use the server endpoint for descriptor-driven deployments. Keep the static file
-fallback for local development and static hosting scenarios where the ingress
-endpoint is not available.
+## Runtime Contract
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+At startup the client requests runtime configuration from:
 
-Currently, two official plugins are available:
-
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default tseslint.config([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      ...tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      ...tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      ...tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```text
+CHAT_WEB_APP_CONFIG_ENDPOINT=/api/cp-frontend-config
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+If that endpoint is unavailable, it falls back to:
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default tseslint.config([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```text
+CHAT_WEB_APP_CONFIG_FILE_PATH=/config.json
 ```
+
+Use the endpoint in descriptor-driven deployments. The static file is intended
+for local development or static hosting without the control-plane endpoint.
+
+The endpoint supplies the effective tenant/project, app catalog, browser auth
+configuration, cookie/header names, and platform routes. The browser should not
+reconstruct those values from deployment internals.
+
+## App Presentation
+
+For the selected app, the shell follows this order:
+
+```text
+app has a built main view
+  -> display that main view
+
+otherwise
+  -> display the automatic app scene
+     -> visible app widgets become summonable chips
+     -> an explicitly declared default chat is the reserved `chat` widget
+```
+
+An app declares chat intent with:
+
+```yaml
+surfaces:
+  as_provider:
+    bundle:
+      default_chat: true
+```
+
+Inheriting a reactive entrypoint is capability, not browser intent.
+
+The quick-access rail is for platform control surfaces such as economics,
+usage, apps, gateway, conversation/Redis/storage browsers, and the pinned
+connections widget. Conversation-specific controls belong inside the chat
+component.
+
+## Authentication
+
+The web app supports the backend-provided auth modes in the runtime config,
+including Cognito, simple token, application-hosted session, and no-auth local
+profiles.
+
+`/profile` is the source of the current browser session. A visible email, local
+OIDC state, or a client-readable cookie is not sufficient evidence that a
+platform user is authenticated.
+
+For application-hosted session auth, the config may provide a concrete
+`loginUrl` or a Connection Hub authority/provider reference. The client can
+resolve the provider's login entrypoint when no concrete URL is materialized.
+
+## Development
+
+Install dependencies and start Vite:
+
+```bash
+npm install
+npm run dev
+```
+
+The development proxy defaults to:
+
+```text
+VITE_APP_API_BASE=http://localhost:8010/
+VITE_APP_INTEGRATIONS_API_BASE=http://localhost:8020/
+```
+
+Optional settings:
+
+```text
+VITE_HTTPS=true
+CHAT_WEB_APP_SHOW_DEBUG_CONTROLS=true
+CHAT_WEB_APP_CHAT_API_BASE_PATH=/custom-prefix
+```
+
+Validate a change with:
+
+```bash
+npm run lint
+npm run build
+```
+
+`npm run build_no_lint` runs the Vite build without the TypeScript build step;
+use it only when that distinction is intentional.
+
+## Read Next
+
+- [Control Plane Web App](../../docs/arch/control-plane-web-app-README.md)
+- [What You Can Do With KDCube](../../docs/what-you-can-do-with-kdcube-README.md)
+- [Architecture Short](../../docs/arch/architecture-short.md)
+- [Chat Widget Solution](../../docs/sdk/solutions/chat/chat-widget-solution-README.md)
+- [Application-Hosted Sites](../../docs/sdk/solutions/sites/application-sites-README.md)
+- [Platform Authority Setup](../../docs/recipes/connections/platform-authority/setup-platform-authority-README.md)

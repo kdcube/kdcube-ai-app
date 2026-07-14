@@ -1,237 +1,196 @@
 ---
 id: repo:kdcube-ai-app/app/ai-app/docs/arch/architecture-short.md
 title: "Architecture Short"
-summary: "Concise system architecture overview with key components and integrations."
-tags: ["arch", "architecture", "overview"]
-keywords: ["high-level architecture", "ingress", "proc", "gateway", "SSE", "redis"]
+summary: "Concise current architecture of KDCube: one tenant/project deployment, directional app surfaces, ordered conversation eventing, app Data Bus, authority, storage, isolation, and accounting."
+status: current
+tags: ["arch", "architecture", "overview", "apps", "runtime"]
+updated_at: 2026-07-14
+keywords: ["KDCube architecture", "app surfaces", "as provider", "as consumer", "conversation event lane", "isolated execution"]
 see_also:
+  - repo:kdcube-ai-app/app/ai-app/docs/arch/control-plane-web-app-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/arch/architecture-of-what-we-built-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/arch/architecture-of-what-you-build-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/arch/architecture-long.md
-  - repo:kdcube-ai-app/app/ai-app/docs/service/comm/README-comm.md
+  - repo:kdcube-ai-app/app/ai-app/docs/runtime/tenant-project-user-and-execution-boundaries-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/service/comm/conversation-event-bus-and-data-bus-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/service/comm/data-bus-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/hosting/attachments-system.md
 ---
-# KDCube AI App — System Architecture (Short)
+# KDCube Architecture: Short Map
 
-This is the historical concise overview of the physical KDCube runtime.
-Start with [Architecture Of What We Built](architecture-of-what-we-built-README.md)
-for the current runtime map and
-[Architecture Of What You Build](architecture-of-what-you-build-README.md) for
-the app/ecosystem architecture. For a deeper operational dive, see
-`architecture-long.md` in this folder.
+KDCube is an open-source AI application framework with an integrated,
+self-hosted production runtime. Builders declare apps, surfaces, dependencies,
+identity rules, execution policy, and storage contracts. The runtime serves and
+enforces those declarations under concurrency, failure, security, and cost
+constraints.
 
----
+## Scope
 
-## 1) System at a glance
+One running deployment is bound to one effective `tenant/project` and may serve
+many users and apps concurrently. PostgreSQL, Redis, object storage, and shared
+filesystem infrastructure may be dedicated or shared; shared deployments keep
+tenant/project data separated through schemas, namespaces, and prefixes.
 
-```mermaid
-graph TD
-  %% Entry / Auth
-  UI[Web UI / Client] -->|HTTPS + masked cookie| NGINX[Web Proxy / Nginx]
-  AUTH["ProxyLogin (Delegated Auth + 2FA)"] -->|token exchange| NGINX
-  NGINX -->|real auth/id cookies| GATE[Chat API + Gateway]
-  KB[Knowledge Base Service] --> GATE
-  CP[Control Plane / Project Mgmt] --> GATE
-
-  %% Transport + Gateway
-  NGINX -->|SSE / Socket.IO| GATE
-  NGINX -->|REST| GATE
-  GATE -->|session mgmt| SESS[Session Manager]
-  GATE -->|rate limit/backpressure| GW[Gateway + Throttling]
-
-  %% Queue + Processing
-  GATE -->|enqueue chat wake/task| Q[Redis Queues]
-  GATE -->|publish data_bus messages| DBUS[Redis Data Bus Streams]
-  Q --> PROC[Chat Processor Workers]
-  DBUS --> PROC
-
-  %% Orchestration
-  PROC --> BUNDLES[Dynamic Bundles / Workflows]
-  BUNDLES -->|events| RELAY[ChatRelay + Redis Pub/Sub]
-  RELAY -->|fan-out| GATE
-
-  %% Context management
-  BUNDLES --> CTX[Context Management]
-  CTX -->|storage| PG[(Postgres RDS)]
-  CTX -->|artifacts| S3[(S3)]
-  KB -->|storage| PG
-  KB -->|artifacts| S3
-  CP -->|policies + quotas| PG
-
-  %% Runtime + providers
-  BUNDLES --> RT["Runtime (LLM + Tools)"]
-  RT --> DOCKER[Ephemeral Docker Exec]
-  RT --> TOOLS[External Tools / APIs]
-
-  subgraph EXTPROV["External Providers (LLMs/Search/Embeddings)"]
-    OAI[OpenAI]
-    ANTH[Anthropic]
-    GEM[Gemini]
-    BRAVE[Brave Search]
-    DDG[DuckDuckGo]
-  end
-
-  RT --> OAI
-  RT --> ANTH
-  RT --> GEM
-  RT --> BRAVE
-  RT --> DDG
-
-  %% Cache/Queues/PubSub
-  BUNDLES -->|cache/queues/streams/pubsub| REDIS["(Redis / ElastiCache)"]
-
-  classDef aws fill:#e8f4ff,stroke:#7aa7d6,color:#0b2b4f;
-  classDef ext fill:#f2f7ee,stroke:#8fbf7a,color:#1f3b1c;
-  classDef infra fill:#f7f2ff,stroke:#b69ad6,color:#2b1b4f;
-
-  class PG,REDIS,S3 aws;
-  class OAI,ANTH,GEM,BRAVE,DDG,TOOLS ext;
-  class AUTH infra;
+```text
+deployment scope       tenant + project
+request scope          actor + user + authority
+product-work scope     app + conversation + agent + turn
 ```
 
----
+## System Map
 
-## 2) ECS / Fargate deployment
-
-In production the services above run as independent **ECS Fargate tasks** inside a private VPC. Docker Compose host‑name aliases are replaced by **AWS Cloud Map DNS** (`*.kdcube.local`). TLS is terminated at the ALB; the proxy listens on HTTP :80 only inside the VPC.
-
-```mermaid
-graph LR
-  CLIENT[Client] -->|"HTTPS :443"| ALB["ALB\n+ ACM cert"]
-
-  subgraph VPC["VPC — private subnets"]
-    ALB -->|"HTTP :80\nX-Forwarded-For"| PROXY["web-proxy\nOpenResty"]
-
-    subgraph ECS["ECS Cluster · Fargate"]
-      PROXY --> WEBUI["web-ui\n:80"]
-      PROXY -->|"unmask_token()"| PROXYLOGIN["proxylogin\n:80"]
-      PROXY --> INGRESS["chat-ingress\n:8010"]
-      PROXY --> PROC["chat-proc\n:8020"]
-      PROXY -.->|optional| KB["kb\n:8000"]
-    end
-
-    CLOUDMAP[/"Cloud Map\nkdcube.local"/] -.->|"A records TTL 10s"| ECS
-
-    INGRESS & PROC & KB --> RDS[(RDS\nPostgreSQL)]
-    INGRESS & PROC --> REDIS[(ElastiCache\nRedis)]
-    PROC & KB --> EFS[(EFS\nbundle storage)]
-    PROXYLOGIN --> SM[Secrets Manager]
-    ECS -->|"awslogs"| CW[CloudWatch Logs]
-  end
-
-  ECR[ECR] -.->|"image pull"| ECS
+```text
+browser | channel | webhook | REST client | MCP client
+                          |
+                          v
+                proxy and public routing
+                          |
+                          v
+              ingress and request context
+        authenticate | validate | admit | upload
+                          |
+          +---------------+----------------+
+          |               |                |
+          v               v                v
+ conversation lanes   Data Bus        direct app/API
+ + wake queues        streams         operations
+          |               |                |
+          +---------------+----------------+
+                          |
+                          v
+                  proc / processors
+             load app and invoke surface
+                          |
+       +------------------+-------------------+
+       |                  |                   |
+       v                  v                   v
+ app/agent code     trusted SDK/tools   isolated execution
+ UI/API/jobs        identity/storage    supervisor + executor
+ providers          hosting/economics
+       |                  |                   |
+       +------------------+-------------------+
+                          |
+                          v
+        configured stores and external providers
 ```
 
-**What changes vs Docker Compose:**
+## Apps Have Two Directions
 
-| | Docker Compose | ECS / Fargate |
-|---|---|---|
-| Service discovery | Docker DNS (`web-ui`, `chat-ingress` …) | Cloud Map (`*.kdcube.local`) |
-| TLS | Proxy-level (Let's Encrypt) | ALB + ACM |
-| Real client IP | `$remote_addr` direct | Recovered from `X-Forwarded-For` (`real_ip_header` active) |
-| Secrets | `.env` / bind-mount | Secrets Manager → task env vars |
-| AWS credentials | `~/.aws` bind-mount | Task IAM role |
-| Shared storage | Host bind-mount | EFS access point |
+An app can provide surfaces, consume surfaces, or do both:
 
-See `architecture-long.md §2` for the full breakdown, security group topology, IAM roles, and CI/CD pipeline.
+```text
+surfaces.as_provider                 surfaces.as_consumer
+--------------------                 --------------------
+what this app exposes                what this app may call
 
----
-
-## 3) Supported client transports
-
-- **SSE**: primary streaming transport (current UI default)
-- **Socket.IO**: fully supported alternative for chat and Data Bus publish
-- **REST**: non‑streaming endpoints (profile/admin/monitoring/etc.)
-- **Data Bus**: Socket.IO `data_bus.publish` or `POST /sse/data_bus.publish`
-  with `messages[]`; this is bundle-scoped durable inbound traffic, not chat.
-
----
-
-## 3) Auth & token transport
-
-- **Delegated auth** via ProxyLogin; hosted UI for 2FA is always available.
-- **Infra auth (cookie‑only mode)**: client stores only a masked (non‑real) token cookie.
-  Nginx exchanges it via ProxyLogin to real tokens, sets auth/id cookies, and forwards to API.
-- Server accepts tokens from **headers, cookies, SSE query params, Socket.IO auth payload** (for compatibility).
-
----
-
-## 4) Multi‑tenancy + storage
-
-- **Postgres**: per‑tenant + per‑project schema (prod/dev separated) + **control_plane** schema.
-- **S3** (prod): bucket per tenant/project or shared bucket with prefix segmentation; KB artifacts live here too.
-- **Redis**: cache, chat ready queues, conversation event lanes, Data Bus
-  streams, comm Pub/Sub relay, sessions, and rate‑limit counters.
-- **Neo4j**: optional, currently off.
-
-Processor note:
-- proc concurrency is bounded per worker
-- each active proc task is guarded by an activity-based idle watchdog plus a hard wall-time cap
-- this allows same-turn `followup` / `steer` to keep a turn warm while still terminating silent or runaway tasks
-
----
-
-## 5) Limits & economics
-
-- **Gateway rate limiting** + backpressure + circuit breakers.
-- **Economics rate limiting**: tier policies, per‑user quotas, concurrency locks.
-- **Input limits**: message/attachment size limits enforced at transport layer.
-
----
-
-## 6) Chat Streaming Flow (SSE or Socket.IO)
-
-```mermaid
-sequenceDiagram
-  participant UI as Client UI
-  participant API as Chat API
-  participant Q as Redis Ready Queue
-  participant W as Proc Worker
-  participant B as Bundle / Workflow
-  participant RL as Redis Relay
-
-  UI->>API: open stream (SSE / Socket.IO connect)
-  UI->>API: send message (SSE / Socket.IO)
-  API->>Q: enqueue chat task / lane wakeup
-  W->>Q: dequeue + lock
-  W->>B: run workflow
-  B->>RL: publish chat_* events to session channel
-  RL-->>API: fan-out to connected stream
-  API-->>UI: chat_start/step/delta/complete
+API and operations                   per-agent Python tools
+widgets and main view                MCP server connections
+MCP endpoints                        MCP tool allow-lists
+default chat intent                  named-service namespaces
+visibility and managed auth          UI resolvers/materialization
 ```
 
-## 7) Data Bus Flow
+Provider policy does not grant the app consumer access. Consumer wiring does
+not republish another service as this app's own surface. Each agent can have a
+different inventory under `surfaces.as_consumer.agents.<agent_id>`.
 
-```mermaid
-sequenceDiagram
-  participant UI as Widget / Client
-  participant API as Chat API
-  participant DS as Redis Data Bus Stream
-  participant W as Proc Data Bus Worker
-  participant B as Bundle Handler
-  participant RL as Comm Relay
+Apps may expose any honest combination of REST, UI, chat, MCP, named services,
+Data Bus handlers, integrations, jobs, websites, or ReAct. None is universally
+required.
 
-  UI->>API: data_bus.publish messages[]
-  API->>API: auth + bundle visibility + publish limits
-  API->>DS: append bundle-scoped messages
-  W->>DS: read handler stream
-  W->>B: @data_bus_handler(...)
-  B-->>RL: optional reply/event
-  RL-->>UI: optional chat_service reply
+## Browser And Sites
+
+The browser reads `/api/cp-frontend-config` and follows its provider-neutral
+auth and app-routing contract. `/profile` is the source of logged-in state.
+
+An app may serve widgets, a main view, the reserved default chat, or a complete
+website. Website declarations compile into a validated
+`ApplicationSiteCatalog`; Redis distributes catalog generations and each proc
+routes from an immutable in-memory snapshot.
+
+## Conversation Work
+
+One ordered event lane is keyed by:
+
+```text
+tenant + project + user + conversation + agent
 ```
 
----
+Reactive ingress atomically writes prepared events to the lane and admits one
+bodyless wake to the processor queue. Non-reactive events enter only the lane.
+The lane sequence defines order; the queue schedules work. A live turn consumes
+later events through owner-fenced lane handling rather than repeatedly invoking
+the app entrypoint.
 
-## 8) Key docs
+Conversation Event Bus events carry prompts, attachments, followups, steers,
+approvals, callbacks, and future-turn context. The Data Bus carries app-owned
+domain work independent of chat. An app explicitly submits conversation events
+when Data Bus work should enter or wake a conversation.
 
-- Comm integrations: [README-comm.md](../service/comm/README-comm.md)
-- Comm architecture: [comm-system.md](../service/comm/comm-system.md)
-- Conversation Event Bus and Data Bus: [conversation-event-bus-and-data-bus-README.md](../service/comm/conversation-event-bus-and-data-bus-README.md)
-- Data Bus: [data-bus-README.md](../service/comm/data-bus-README.md)
-- Gateway: [gateway-README.md](../service/gateway-README.md)
-- Economics: [economics-usage.md](../economics/economics-usage.md)
-- Control plane: [instance-config-README.md](../service/maintenance/instance-config-README.md)
-- Monitoring: [README-monitoring-observability.md](../service/README-monitoring-observability.md)
-- ECS deployment: [proxy-ecs-ops-README.md](../arch/proxy/proxy-ecs-ops-README.md)
+Streaming delivery is a third mechanism. SSE relay state is scoped by
+`tenant + project + session_id`; `stream_id` selects one connection within that
+set.
+
+## Identity And Authority
+
+Ingress verifies the actor and binds a request context. Connection Hub owns the
+platform authority/provider registry, connection edges, authority projection,
+connected external accounts, and delegated credentials.
+
+```text
+external account -> KDCube
+  delegated to KDCube: trusted tools may use approved provider claims
+
+KDCube -> external operator
+  delegated by KDCube: automation receives bounded resource/operation grants
+```
+
+These directions are separate. Raw channel proof is not platform login, and a
+bearer token is a handle to server-side grant/session state rather than the
+authority source itself.
+
+## Cross-Runtime And Isolated Execution
+
+Request identity and authority travel through async, thread, subprocess,
+supervisor, app-call, and Data Bus boundaries in a JSON-safe portable context.
+The context carries situation and policy, not secrets, blobs, or live handles.
+
+For generated code, model-proposed refs and paths are untrusted locators. A
+trusted resolver binds tenant/project/user/authority before materializing bytes
+into a sparse workspace. In split Docker execution, the executor has no network
+and receives no platform storage root, app storage root, descriptors, or
+provider credentials. Approved tools execute in the trusted supervisor under
+the carried request identity.
+
+The same workspace and ISO-runtime contracts can support KDCube ReAct or an
+externally authored agent such as LangGraph.
+
+Hosted framework graphs are also turn-scoped. A graph is built for the current
+bound user/conversation turn and discarded afterward; shared checkpointer and
+domain stores carry continuity across workers. This is separate from the ISO
+executor, which bounds generated code invoked by the graph or ReAct harness.
+
+## Storage And Economics
+
+KDCube does not pretend all state belongs in one store. Descriptors and secret
+references, PostgreSQL records, Redis lanes/queues/catalogs/auth records, app
+filesystem storage, artifact storage, and user-scoped provider secrets have
+different owners and durability contracts.
+
+Economics-aware work follows `verify -> reserve -> run -> settle`. Tracked calls
+are attributed to request lineage such as user, app, conversation, turn, flow,
+provider, and model.
+
+## Deployment
+
+The contracts run in local, Docker Compose, process/container, and ECS/Fargate
+profiles. Deployment-specific ports, task sizes, IAM, DNS, TLS, and storage
+choices belong to deployment descriptors and operations docs, not this stable
+architecture map.
+
+## Read Next
+
+- [Control Plane Web App](control-plane-web-app-README.md)
+- [Architecture Of What We Built](architecture-of-what-we-built-README.md)
+- [Architecture Of What You Build](architecture-of-what-you-build-README.md)
+- [Architecture Long](architecture-long.md)
+- [Tenant, Project, User, Authority, And Execution Boundaries](../runtime/tenant-project-user-and-execution-boundaries-README.md)
+- [Conversation Event Bus And Data Bus](../service/comm/conversation-event-bus-and-data-bus-README.md)

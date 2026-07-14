@@ -1,566 +1,650 @@
 ---
 id: repo:kdcube-ai-app/app/ai-app/docs/arch/architecture-long.md
 title: "Architecture Long"
-summary: "End‑to‑end system architecture: transports, gateway, processing, relay, storage, and economics."
-tags: ["arch", "architecture", "system", "services", "dataflow", "ecs", "fargate"]
-keywords: ["ingress", "proc", "gateway", "SSE", "redis", "storage", "economics", "auth", "ecs", "fargate", "alb", "cloud-map"]
+summary: "Detailed current KDCube architecture: deployment scope, app catalogs and surfaces, ingress, ordered conversation lanes, Data Bus and relay, identity and delegation, cross-runtime context, isolated execution, storage, scaling, sites, and economics."
+status: current
+tags: ["arch", "architecture", "runtime", "apps", "events", "identity", "execution", "storage"]
+updated_at: 2026-07-14
+keywords: ["KDCube architecture", "tenant project", "app provider consumer", "conversation event bus", "data bus", "isolated execution", "Connection Hub", "site catalog"]
 see_also:
+  - repo:kdcube-ai-app/app/ai-app/docs/arch/control-plane-web-app-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/arch/architecture-of-what-we-built-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/arch/architecture-of-what-you-build-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/arch/architecture-short.md
-  - repo:kdcube-ai-app/app/ai-app/docs/service/comm/README-comm.md
+  - repo:kdcube-ai-app/app/ai-app/docs/runtime/tenant-project-user-and-execution-boundaries-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/runtime/cross-runtime-context-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/service/comm/conversation-event-bus-and-data-bus-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/service/comm/data-bus-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/service/auth/auth-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/service/proxy/proxy-ecs-ops-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/connection-hub-solution-README.md
 ---
-# KDCube AI App — System Architecture (Long)
+# KDCube Architecture: Long Map
 
-This historical long-form document captures the **end-to-end runtime
-architecture**: transports, gateway, processing, relay, storage, economics, and
-integrations.
-It reflects the current production model (SSE‑first, cookie‑based auth, Redis relay, RDS + S3) while keeping Socket.IO fully supported.
+This document explains the stable architecture of the KDCube platform runtime.
+It avoids deployment-specific port numbers, task sizes, DNS names, and IAM
+details; those belong to the deployment and operations descriptors.
 
-Use [Architecture Of What We Built](architecture-of-what-we-built-README.md) as
-the current entry point for platform/runtime architecture, and
-[Architecture Of What You Build](architecture-of-what-you-build-README.md) for
-the app/ecosystem architecture built on top of the runtime.
+Use [Architecture Of What You Build](architecture-of-what-you-build-README.md)
+for the product architecture an app builder composes on top of this runtime.
 
----
+## 1. Architectural Invariants
 
-## 0) Glossary (quick)
+1. One running deployment is bound to one effective `tenant/project`.
+2. Many users and apps may execute concurrently in that deployment.
+3. Request identity and authority must survive every runtime boundary.
+4. Apps state separately what they provide and what they consume.
+5. Redis queue order is not conversation event order; the lane sequence is.
+6. Conversation events, app-domain Data Bus work, and client relay are
+   different mechanisms.
+7. Model-proposed refs and paths are requests, not authority.
+8. Generated code receives selected workspace material, not ambient platform
+   storage or credentials.
+9. Storage has subsystem owners; there is no universal KDCube data store.
+10. Accounting follows the same request/work lineage as execution.
 
-- **Gateway**: policy enforcement + rate limiting + backpressure before a request is accepted.
-- **Relay**: Redis Pub/Sub transport for async events.
-- **Data Bus**: durable bundle-scoped inbound messages consumed by
-  `@data_bus_handler(...)`, separate from conversation ingress.
-- **Bundle**: a dynamic workflow (agentic app) loaded from the plugin registry.
-- **Control Plane**: quotas + budgets + top‑ups + policy cache.
-- **Session**: resolved from auth tokens; used for per‑session routing.
+## 2. Deployment Scope
 
----
+One KDCube deployment serves one `tenant/project` and can host many apps and
+users:
 
-## 1) Deployment overview (prod/dev)
-
-```mermaid
-graph LR
-%% Client & Entry
-    UI[Web UI] -->|HTTPS| PROXY[Web Proxy / Nginx]
-    AUTH["ProxyLogin (Delegated Auth)"] --> PROXY
-
-%% API Layer
-    PROXY -->|HTTP| API["Chat Web Backend (FastAPI)"]
-
-%% Shared Storage Layer
-    REDIS[(Redis / ElastiCache)]
-    PG[(Postgres RDS)]
-    S3[(S3 Storage)]
-
-%% API Connections
-    API --> REDIS
-    API --> PG
-    API --> S3
-    API --> PROC[Chat Processor Workers]
-
-%% Worker Connections
-    PROC --> REDIS
-    PROC --> PG
-    PROC --> S3
-    PROC --> DOCKER[Ephemeral Docker Exec]
-
-%% Knowledge Base Service
-    KB[Knowledge Base Service] --> API
-    KB --> REDIS
-    KB --> PG
-    KB --> S3
-
-%% Optional Components
-    subgraph Optional
-        NEO4J[(Neo4j / Graph)]
-    end
-
-    PROC -.->|optional| NEO4J
-    KB -.->|optional| NEO4J
+```text
+KDCube deployment
+  tenant = T
+  project = P
+  |
+  +-- app A
+  +-- app B
+  +-- app C
+  |
+  +-- user 1 requests
+  +-- user 2 requests
+  `-- user N requests
 ```
 
-**Notes**
-- **Prod**: Postgres = RDS, Redis = ElastiCache, Storage = S3.
-- **Dev**: local Postgres + local Redis; S3 optional.
-- **Neo4j** is optional and currently disabled.
+PostgreSQL, Redis, object storage, and shared filesystems may be dedicated to
+that deployment or shared with other tenant/project deployments. Shared
+infrastructure preserves scope through schemas, keys/namespaces, prefixes, and
+service-owned lookup contracts. A shared process can handle multiple users, so
+user isolation cannot be inferred from process isolation.
 
----
-
-## 2) ECS/Fargate deployment topology
-
-This section describes how the services in section 1 map onto AWS ECS with Fargate. Each service runs as an independent ECS task; Docker Compose host‑name aliasing is replaced by **AWS Cloud Map private DNS** (`*.kdcube.local`).
-
-### 2.1) Network flow
-
-```mermaid
-graph TD
-    subgraph Internet
-        CLIENT[Client browser]
-    end
-
-    subgraph AWS["AWS — public"]
-        ACM[ACM Certificate]
-        ALB["ALB\nHTTPS :443 → HTTP :80"]
-        ECR[ECR — image registry]
-    end
-
-    subgraph VPC["VPC — private subnets"]
-        direction TB
-
-        subgraph ECS["ECS Cluster · Fargate · kdcube"]
-            PROXY["web-proxy\nOpenResty :80\nnginx_proxy_ecs.conf"]
-            WEBUI["web-ui\n:80"]
-            PROXYLOGIN["proxylogin\n:80"]
-            INGRESS["chat-ingress\n:8010"]
-            PROC["chat-proc\n:8020"]
-            KB["kb\n:8000 (optional)"]
-        end
-
-        CLOUDMAP["Cloud Map\nkdcube.local private DNS"]
-
-        subgraph MANAGED["Managed services"]
-            RDS[(RDS PostgreSQL\npgvector)]
-            REDIS[(ElastiCache Redis)]
-            SM[Secrets Manager]
-            CW[CloudWatch Logs]
-            EFS[(EFS\nbundle storage)]
-        end
-    end
-
-    CLIENT -->|"HTTPS :443"| ALB
-    ACM -.->|"TLS cert"| ALB
-    ALB -->|"HTTP :80\nreal IP in X-Forwarded-For"| PROXY
-    ECR -.->|"image pull"| ECS
-
-    PROXY -->|"web-ui.kdcube.local:80"| WEBUI
-    PROXY -->|"proxylogin.kdcube.local:80\nunmask_token()"| PROXYLOGIN
-    PROXY -->|"chat-ingress.kdcube.local:8010\nSSE · WS · REST"| INGRESS
-    PROXY -->|"chat-proc.kdcube.local:8020\nintegrations"| PROC
-    PROXY -.->|"kb.kdcube.local:8000"| KB
-
-    CLOUDMAP -.->|"A records\nTTL 10s"| ECS
-
-    INGRESS --> RDS
-    INGRESS --> REDIS
-    PROC --> RDS
-    PROC --> REDIS
-    PROC --> EFS
-    KB -.-> RDS
-    KB -.-> EFS
-    PROXYLOGIN --> SM
-    ECS --> CW
+```text
+tenant/project   deployment and persistence namespace
+actor/user       authenticated requester inside that deployment
+authority        grants projected for the current operation
+app              product/runtime owner
+conversation     ordered interaction lineage
+agent/turn       active execution lineage
 ```
 
-### 2.2) Key differences from the Docker Compose deployment
+See [Tenant, Project, User, Authority, And Execution Boundaries](../runtime/tenant-project-user-and-execution-boundaries-README.md).
 
-| Concern | Docker Compose (EC2 / local) | ECS / Fargate |
-|---|---|---|
-| Service discovery | Docker internal DNS (`web-ui`, `chat-ingress`, …) | Cloud Map private DNS (`*.kdcube.local`) |
-| SSL/TLS | Proxy-level (Let's Encrypt, port 443 in proxy) | ALB + ACM; proxy listens on port 80 only |
-| Real client IP | `$remote_addr` is the actual client | Must recover from `X-Forwarded-For`; `real_ip_header` active |
-| `X-Forwarded-Proto` | `$scheme` (correct because proxy sees HTTPS) | `$http_x_forwarded_proto` (proxy sees HTTP; ALB injects original scheme) |
-| Lua DNS resolution | OS resolver, works automatically | `resolver 169.254.169.253` required in `http {}` for `unmask_token()` subrequests |
-| Secret injection | `.env` files / bind‑mounted `.aws` directory | Secrets Manager → ECS secrets (injected as env vars at task start) |
-| Shared storage | Host bind mount | EFS access point (uid=1000, transit encryption enabled) |
-| Credentials | `~/.aws` bind mount | Task IAM role (no static credentials) |
-| Compose-level dependency ordering | `depends_on` | ECS service startup is independent; services must tolerate missing peers on first boot |
+## 3. Physical Runtime Map
 
-### 2.3) Proxy config changes for ECS
-
-The ECS proxy config (`nginx_proxy_ecs.conf`) is derived from the local config with these targeted changes:
-
-1. **`real_ip_header X-Forwarded-For` + `set_real_ip_from <ALB_CIDR>`** — activated. Without this, all clients share the ALB's private IP in `$binary_remote_addr`, breaking rate‑limiting zones entirely.
-2. **`resolver 169.254.169.253 valid=10s`** — added to `http {}`. Required for the `$kb_backend` variable proxy and for Lua `ngx.location.capture()` which internally resolves `upstream proxy_login`.
-3. **All `upstream server` directives** — changed to Cloud Map FQDNs (`web-ui.kdcube.local:80`, `chat-ingress.kdcube.local:8010`, etc.).
-4. **`proxy_set_header X-Forwarded-Proto`** — changed from `$scheme` to `$http_x_forwarded_proto` everywhere. Behind ALB `$scheme` is always `http`; the ALB‑injected header carries the correct `https`.
-5. **No SSL block** — `listen 443 ssl http2`, `ssl_certificate`, and the ACME challenge location are removed. ACM handles the certificate at the ALB.
-6. **HSTS header** — added to the proxy because ALB does not inject custom response headers by default.
-7. **`/auth/` rate limit** — `auth_zone` enabled (was commented out in local config); auth endpoints are now internet‑facing.
-
-### 2.4) ECS service definitions
-
-Each service maps to one ECS task definition and one ECS service:
-
-| ECS service | Task family | Port | CPU | Memory | Notes |
-|---|---|---|---|---|---|
-| `web-proxy` | `kdcube-web-proxy` | 80 | 256 | 512 MB | Only service registered with ALB target group |
-| `web-ui` | `kdcube-web-ui` | 80 | 256 | 512 MB | Internal only; no ALB registration |
-| `chat-ingress` | `kdcube-chat-ingress` | 8010 | 1024 | 2048 MB | `stopTimeout: 60` for in‑flight SSE streams |
-| `chat-proc` | `kdcube-chat-proc` | 8020 | 1024 | 2048 MB | `stopTimeout: 120` for long‑running bundles; EFS mount |
-| `proxylogin` | `kdcube-proxylogin` | 80 | 256 | 512 MB | Cognito config via Secrets Manager |
-| `kb` *(optional)* | `kdcube-kb` | 8000 | 512 | 1024 MB | Disabled until KB service is active; EFS mount |
-
-All services run in **private subnets** with `assignPublicIp: DISABLED`. Only `web-proxy` is reachable from outside the VPC (through the ALB). All other services accept traffic only from the proxy security group.
-
-### 2.5) Security group topology
-
-```mermaid
-graph LR
-    INTERNET[Internet] -->|"HTTPS 443"| SG_ALB[SG: alb]
-    SG_ALB -->|"HTTP 80"| SG_PROXY[SG: proxy]
-    SG_PROXY -->|"TCP 80 / 8010 / 8020 / 8000"| SG_APP[SG: app]
-    SG_APP -->|"TCP 5432"| RDS[(RDS)]
-    SG_APP -->|"TCP 6379"| REDIS[(ElastiCache)]
-    SG_APP -->|"TCP 2049"| EFS[(EFS)]
+```text
+clients
+  browser | app website | Telegram/channel | webhook | REST | MCP
+                                    |
+                                    v
+                         public proxy and routing
+                                    |
+               +--------------------+--------------------+
+               |                                         |
+               v                                         v
+       browser/static/site paths                  API and event ingress
+                                                         |
+                                  authenticate actor and bind request context
+                                  validate payload, visibility, limits, budget
+                                                         |
+                    +---------------------+--------------+----------------+
+                    |                     |                               |
+                    v                     v                               v
+            conversation lane         Data Bus                    direct app call
+              + wake queue             stream                       / response
+                    |                     |                               |
+                    +---------------------+-------------------------------+
+                                          |
+                                          v
+                               proc / processor workers
+                                    app dispatcher
+                                          |
+                +-------------------------+-------------------------+
+                |                         |                         |
+                v                         v                         v
+          app entrypoint            SDK/runtime services      execution runtime
+        API/agent/job/UI             identity, storage,       in-proc or isolated
+        provider/handler             hosting, economics
+                |                         |                         |
+                +-------------------------+-------------------------+
+                                          |
+                                          v
+                  PostgreSQL | Redis | app files | artifacts | providers
 ```
 
-No service in `SG_APP` is reachable from the internet or from the ALB directly — only through `SG_PROXY`.
+The proxy routes stable platform and app surfaces. It does not own the app
+registry, site registry, authority model, or per-app policy.
 
-### 2.6) Cloud Map service discovery
+## 4. Descriptor, App, And Site Catalogs
 
-Services register with a **private DNS namespace** `kdcube.local` (type `DNS_PRIVATE`). Each ECS service has a corresponding Cloud Map service; ECS registers/deregisters A records automatically as tasks start and stop.
+`bundles.yaml` is the app/source/configuration authority. It identifies app
+source, path, module, singleton behavior, non-secret configuration, surfaces,
+and website declarations. `assembly.yaml` selects deployment/platform behavior;
+it is not the long-term owner of app provider internals or Scene composition.
 
-```
-web-ui.kdcube.local          → web-ui task private IP
-chat-ingress.kdcube.local    → chat-ingress task private IP
-chat-proc.kdcube.local       → chat-proc task private IP
-proxylogin.kdcube.local      → proxylogin task private IP
-kb.kdcube.local              → kb task private IP (optional)
-```
+The app store parses descriptor state with a process cache keyed by file stat
+identity. The file remains authoritative: a changed path modification time or
+size causes a reparse. Secret values are not cached there.
 
-TTL is 10 seconds. With `real_ip_recursive on` in OpenResty, stale DNS entries after a task replacement resolve within one TTL cycle (10 s) — no manual cache flush needed.
+Startup app preload is collaborative across workers:
 
-### 2.7) IAM roles
-
-| Role | Used by | Key permissions |
-|---|---|---|
-| `ecsTaskExecutionRole` | All tasks | ECR pull, CloudWatch log stream creation |
-| `kdcube-proxy-task-role` | `web-proxy` | EFS mount (if config served from EFS) |
-| `kdcube-chat-proc-task-role` | `chat-proc` | S3 read/write, EFS mount, Secrets Manager read |
-| `kdcube-chat-ingress-task-role` | `chat-ingress` | S3 read/write, Secrets Manager read |
-| `kdcube-proxylogin-task-role` | `proxylogin` | Secrets Manager read (Cognito client secret) |
-| `kdcube-kb-task-role` | `kb` | S3 read/write, EFS mount, Secrets Manager read |
-
-The `~/.aws` bind‑mount pattern used in the EC2 and local deployments is absent on ECS — all AWS API access goes through the task IAM role.
-
-### 2.8) Build and deploy pipeline (overview)
-
-```mermaid
-sequenceDiagram
-    participant DEV as Developer
-    participant GH as GitHub Actions
-    participant ECR as ECR
-    participant ECS as ECS
-
-    DEV->>GH: git push / release tag
-    GH->>GH: docker build (NGINX_CONFIG_FILE_PATH=nginx_proxy_ecs.conf)
-    GH->>ECR: docker push kdcube-web-proxy:<tag>
-    GH->>ECS: register-task-definition (new image tag)
-    GH->>ECS: update-service --force-new-deployment
-    ECS->>ECS: drain old tasks, start new tasks
-    ECS->>ECR: pull new image
-    ECS-->>GH: service stable
+```text
+descriptor-resolved app generation
+          |
+          v
+Redis claim + heartbeat ------ another worker sees claimed and skips
+          |
+          v
+load/prebuild app UI
+          |
+          v
+generation-specific done marker
+          |
+          `------ later workers skip the completed generation
 ```
 
-The same `Dockerfile_ProxyOpenResty` is used for all deployment variants; the config is selected at build time via the `NGINX_CONFIG_FILE_PATH` build argument:
+Shared-filesystem locks remain the final guard around UI artifact writes.
+Redis distributes preload ownership; filesystem locks protect the actual
+write/swap. If Redis is unavailable, workers fall back to local traversal with
+the shared-storage lock.
 
-| Variant | Build arg value |
-|---|---|
-| Local / all‑in‑one | `deployment/docker/all_in_one_kdcube/nginx_proxy.conf` |
-| EC2 + SSL + Cognito | `deployment/docker/custom-ui-managed-infra/nginx_proxy_ssl_cognito.conf` |
-| ECS / Fargate | `deployment/proxy/nginx_proxy_ecs.conf` |
+Application website declarations are compiled into a validated immutable
+`ApplicationSiteCatalog` containing alias/host/default policy and the resolved
+app target. Publication atomically advances a Redis generation, replaces the
+snapshot, and emits an update. Each proc subscribes, loads the current snapshot,
+rejects delayed generations, and performs request-time lookups only against its
+local immutable catalog.
 
-References:
-- [proxy-ecs-ops-README.md](../service/proxy/proxy-ecs-ops-README.md)
-- [proxy-ops-README.md](../service/proxy/proxy-ops-README.md)
-- ECS task definitions: `deployment/ecs/task-definitions/`
-- Cloud Map setup: `deployment/ecs/setup-cloud-map.sh`
-
----
-
-## 3) Auth model (delegated + infra cookies)
-
-### Providers
-- **Cognito** (production)
-- **SimpleIDP** (dev/testing)
-- **Delegated auth** via ProxyLogin (UI -> auth service + hosted 2FA)
-
-### Token transport
-The server accepts tokens via **headers, cookies, SSE query params, and Socket.IO auth payload**.
-In production, the preferred flow is **cookie‑only with infra exchange**:
-
-```mermaid
-sequenceDiagram
-  participant UI as Client UI
-  participant AUTH as ProxyLogin (Hosted 2FA)
-  participant PROXY as Nginx/Web Proxy
-  participant API as Chat API
-
-  UI->>AUTH: login (credentials + 2FA)
-  AUTH-->>PROXY: access + id tokens
-  PROXY-->>UI: set masked cookie (client-only)
-  UI->>PROXY: requests with masked cookie
-  PROXY->>AUTH: exchange masked cookie for real tokens
-  AUTH-->>PROXY: access + id tokens
-  PROXY->>UI: set auth cookies (__Secure-LATC, __Secure-LITC)
-  PROXY->>API: forward request with auth cookies
-  API->>API: resolve session from cookies
+```text
+bundles.yaml -> validate -> catalog revision + generation -> Redis projection
+                                                               |
+                                                               v
+                                                        proc-local snapshot
+                                                               |
+                                                               v
+                                                    host/alias request lookup
 ```
 
-**Compatibility**: existing clients may still pass tokens (headers or SSE query params); the gateway accepts both.
-Hosted UI for 2FA is available in both modes; infra exchange adds cookie-only auth for the client.
+Redis distributes the site catalog; it is not the site authority and is not
+queried for every website request.
 
-References:
-- [auth-README.md](../service/auth/auth-README.md)
-- [token_extract.py](../../src/kdcube-ai-app/kdcube_ai_app/apps/middleware/token_extract.py)
+## 5. Directional App Surfaces
 
----
+An app is simultaneously capable of being a service provider and a service
+consumer. Those roles are declared independently:
 
-## 4) API surface (chat + monitoring + control plane)
+```text
+surfaces.as_provider
+  bundle/app visibility and default_chat intent
+  API visibility and managed auth
+  widget visibility and auth
+  MCP endpoint auth
 
-**Chat transports**
-- **SSE**: `/sse/stream`, `/sse/chat`, `/sse/conv_status.get`
-- **Socket.IO**: `/socket.io` handshake + `chat_message`, `conv_status.get`
-- **REST**: `/profile`, admin/monitoring/control‑plane routes
-
-**Data Bus transports**
-- **Socket.IO**: `data_bus.publish` with top-level `messages[]`
-- **HTTP**: `POST /sse/data_bus.publish` with top-level `messages[]`
-
-Conversation `chat_message` and Data Bus `data_bus.publish` can reuse one
-Socket.IO connection. They route to different durable paths.
-
-Key entrypoint: [web_app.py](../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/ingress/web_app.py)
-
----
-
-## 5) Gateway & policy enforcement
-
-The gateway enforces **authentication**, **rate limits**, and **backpressure** before a request is accepted:
-
-- **Gateway rate limiting** (requests / hour / etc.)
-- **Data Bus publish limits** (per-session packages/messages/bytes before
-  durable stream writes)
-- **Backpressure** (queue capacity, system protection)
-- **Circuit breakers** (system health and failure protection)
-- **Session resolution** (anonymous → registered/privileged upgrade)
-
-Key modules:
-- [gateway.py](../../src/kdcube-ai-app/kdcube_ai_app/apps/middleware/gateway.py)
-- [gateway-README.md](../service/gateway-README.md)
-
----
-
-## 6) Streaming & relay (SSE and Socket.IO)
-
-Chat SSE and Socket.IO use the same **Redis relay** for transient client
-delivery, but accepted chat submissions still execute through the Redis ready
-queue. Ingress accepts the message, enqueues a chat task or lane wakeup, proc
-claims that queue item, and the running bundle publishes `chat_*` events back
-through the relay.
-
-The relay is session-scoped for ordinary chat events and also supports explicit
-project-scoped service events where the platform sends them. Data Bus durable
-traffic does not use this relay for storage; it uses bundle Data Bus streams
-and may use the relay only for optional replies.
-
-```mermaid
-graph TD
-  UI[Client] -->|open SSE / Socket.IO stream| API[Chat API]
-  UI -->|send chat_message or /sse/chat| API
-  API -->|LPUSH task / lane wakeup| Q[(Redis Ready Queue)]
-  Q -->|claim + lock| P[Proc Worker]
-  P -->|run| B[Bundle / Workflow]
-  B -->|chat_* events| CR[ChatRelayCommunicator]
-  CR -->|pub| R[(Redis Pub/Sub)]
-
-  R --> SSEH[SSEHub]
-  R --> WS[Socket.IO Handler]
-
-  SSEH --> UI1[Client via SSE]
-  WS --> UI2[Client via Socket.IO]
+surfaces.as_consumer
+  agents.<agent_id>.tools and skills
+  mcp.services connection and authentication config
+  named-service namespace/operation inventory
+  event-source pull/materialization policy
+  UI resolvers and Scene component wiring
 ```
 
-Design goals:
-- Dynamic per‑session subscription
-- Low fan‑out cost (no global firehose)
-- Transport symmetry (SSE + Socket.IO)
+`enabled.*` decides whether a concrete surface is served. Provider policy
+decides who may see/call an exposed surface. Consumer configuration decides
+what this app and each agent may call or resolve. One direction never implies
+the other.
 
-References:
-- [comm-system.md](../service/comm/comm-system.md)
-- [README-comm.md](../service/comm/README-comm.md)
-- [SSE relay deep dive](../service/comm/CHAT-RELAY-SESSION-SUBSCR-SSE-SOCKETIO-FUNOUT.README.md)
+For consumed MCP, `server_id` in an agent tool entry must identify a server
+under `surfaces.as_consumer.mcp.services`. Different agents can use the same
+server with different tool allow-lists. Python, MCP, and named-service
+connections converge into ToolSubsystem metadata and policy.
 
----
+Runtime decorators and registrations supply the implementation:
 
-## 7) Processing Pipeline
+| Surface | Runtime role |
+| --- | --- |
+| API / operations | Synchronous app calls, callbacks, and webhooks. |
+| Widget / main view | App-owned browser surfaces. |
+| `default_chat` | Explicit intent to serve the SDK chat under alias `chat`. |
+| MCP | Tool/resource facade, optionally protected by managed credentials. |
+| Named-service provider | Self-describing domain realm. |
+| Data Bus handler | App-owned durable message consumption. |
+| Cron / job | Scheduled and background work. |
+| Reactive event entrypoint | One scheduled conversation-event app turn. |
 
-Chat requests and lane wakeups are enqueued into **user‑type queues**
-(privileged/registered/anonymous). Workers pop fairly and apply locks.
+An app may provide any subset and need not have UI, chat, ReAct, or a database.
 
-```mermaid
-sequenceDiagram
-  participant API as Chat API
-  participant RQ as Redis Queues
-  participant W as Processor Worker
+## 6. Browser, Authentication, And App Presentation
 
-  API->>RQ: enqueue task (queue by user_type)
-  W->>RQ: BRPOP (fair across queues)
-  W->>RQ: acquire lock (per task)
-  W->>W: run workflow bundle\n(activity watchdog + hard wall cap)
-  W->>RQ: release lock / update metrics
+The browser obtains the effective platform contract from
+`/api/cp-frontend-config`. It follows returned auth fields such as `loginUrl`,
+`profileUrl`, and `logoutUrl`; it does not inspect provider implementation or
+infer login state from visible cookies. `/profile` is the browser-session truth.
+
+Platform authority may be backed by Cognito, multi-Cognito, SimpleIDP, or an
+application-hosted authority flow. Connection Hub owns the platform authority
+provider registry and policy. An app may host login/session/consent UI and
+operations without becoming the owner of global authority semantics.
+
+The control plane presents an app's own main view when present, otherwise an
+automatic app scene. Apps declaring `default_chat` serve the reserved SDK chat
+widget. A Scene can compose cross-app widgets by consumer configuration and
+deliver declared surface commands; the route that serves a widget remains its
+app identity.
+
+Complete app-hosted websites are separate from indexed `@public_content`:
+
+```text
+application-hosted website
+  serves the complete built main-view tree
+  alias/host resolution through ApplicationSiteCatalog
+  multipage files + directory index + SPA fallback
+
+@public_content
+  serves indexed public records, catalogs, metadata, and sitemaps
 ```
 
-Key worker: [apps/chat/processor.py](../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/processor.py)
+CDN clean-path routing rewrites to the reserved `site-root` origin route while
+preserving the viewer hostname. The CDN forwards and caches; it does not own or
+query the site catalog.
 
-Data Bus messages follow a separate proc-owned stream worker path:
+## 7. Ingress And Request Context
 
-```mermaid
-sequenceDiagram
-  participant API as Data Bus Ingress
-  participant DS as Redis Data Bus Stream
-  participant W as Proc Data Bus Worker
-  participant B as Bundle @data_bus_handler
-  participant R as Comm Relay
+Ingress normalizes transport-specific input into a bound request:
 
-  API->>DS: XADD bundle message
-  W->>DS: XREADGROUP handler group
-  W->>W: partition lock + retry/DLQ policy
-  W->>B: invoke handler
-  B-->>R: optional ctx.reply/event
+```text
+transport proof and payload
+        |
+        v
+authenticate / verify actor
+        |
+        v
+bind tenant + project + actor + user + authority
+        |
+        v
+resolve app + conversation + agent + turn routing
+        |
+        v
+apply visibility, payload, backpressure, and economics admission
 ```
 
-Key Data Bus runtime files:
-- [socketio/data_bus/publish.py](../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/ingress/socketio/data_bus/publish.py)
-- [runtime/data_bus/worker.py](../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/runtime/data_bus/worker.py)
-- [runtime/data_bus/policy.py](../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/runtime/data_bus/policy.py)
+`ChatIngressSubmitter` provides a proc-local adapter for channels and backend
+webhooks that cannot call browser SSE or Socket.IO ingress directly. After
+normalization it calls the canonical chat-message path; it is a conversation
+event submitter, not a universal event bus.
 
----
+Nested in-process app calls use `call_bundle_operation()`. Internal peer-call
+provenance bypasses only the generic external-entry requirement for an already
+bound user; target visibility, role, delegated authority, enablement, and API
+policy still run.
 
-## 8) Horizontal scaling & instance load
+## 8. Ordered Conversation Eventing
 
-- Each running process has an **instance id** and maintains load counters.
-- Workers respect **max concurrent** limits and fair queue scheduling.
-- Each active proc task is protected by an **activity watchdog** plus a **hard wall-time cap**.
-- This allows same-turn `followup` / `steer` to keep a turn warm without letting silent or runaway tasks live forever.
-- Gateway + backpressure protect the system from overload before enqueue.
+One lane identity is:
 
----
-
-## 9) Dynamic bundles (plugin system)
-
-Bundles are **runtime‑loadable workflows** with custom logic and optional endpoints.
-
-- Registry + loader: [bundle-delivery-and-update-README.md](../sdk/bundle/bundle-delivery-and-update-README.md)
-- Example bundle entrypoint: [react bundle entrypoint](../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/react@2026-02-10-02-44/entrypoint.py)
-
-Bundles can:
-- Define workflows (agentic graphs)
-- Register custom endpoints
-- Use storage, KB, economics, control‑plane
-- Emit chat events via `ChatCommunicator`
-
----
-
-## 10) Context management
-
-Context management reconciles per‑turn context, preferences, and artifacts so workflows receive a clean, ordered view.
-
-- Uses **Postgres** for metadata, indexes, and control‑plane policy joins.
-- Uses **S3** (prod) for artifacts and large blobs (attachments, generated files).
-- Feeds workflows and tools with **turn‑ordered memory blocks** and signals.
-
----
-
-## 11) Economics & control plane
-The economics subsystem provides **tier‑aware rate limiting** and **charging**, while the control plane provides **policy management**.
-
-```mermaid
-flowchart TD
-  REQ[Chat Request] --> RL[Economics Rate Limiter]
-  RL -->|allowed| WORK[Workflow]
-  WORK --> COST[Usage/Cost]
-  COST --> CP[Control Plane]
-  CP --> DB[(Postgres control_plane schema)]
-  RL --> REDIS[(Redis counters)]
+```text
+tenant + project + user_id + conversation_id + agent_id
 ```
 
-Key points:
-- **Per‑user quotas** + **tier overrides** + **project budgets**
-- **Concurrency locks** to prevent oversubscription
-- **Control plane** stores policies and replenishments
-- Quotas can be enforced **per user across projects** (control‑plane scope).
+Redis lane sequence defines accepted event order. A processor queue schedules
+work but does not contain the authoritative event body or define its order.
 
-References:
-- [economics-usage.md](../economics/economics-usage.md)
-- [instance-config-README.md](../service/maintenance/instance-config-README.md)
+```text
+reactive ingress
+  atomically append all prepared events to lane L
+  atomically admit one ExternalEventLaneWakeup pointer to queue Q
 
----
+non-reactive ingress
+  append events to lane L only
+```
 
-## 12) Multi‑tenancy & data layout
+The processor consumes the wake, resolves the accepted event from lane state,
+reconstructs `ExternalEventPayload` from retained `task_payload`, and invokes
+the routed app's conversation-event surface.
 
-### Postgres
-- **Per‑tenant + per‑project schema** (prod and dev separated by schema)
-- **Control plane** uses a shared schema (`kdcube_control_plane`)
+A live turn consumes later events through `ContextBrowser`. Ownership combines:
 
-### Storage (S3 / FS)
-- **Tenant/project bucket** or **shared bucket with prefix**
-- Prefix segment forms the tenant/project boundary
+- a logical handler turn id;
+- a fresh active-consumer heartbeat for stale-owner reclaim;
+- a short scheduled-start reservation during app loading;
+- a token-fenced Redis event-source lease for the physical reader.
 
-### Redis
-- Cache
-- chat ready/inflight queues
-- conversation external-event lanes and lane state
-- bundle Data Bus streams
-- comm Pub/Sub relay
-- sessions, proxy state, rate-limit counters, and publish-limit counters
+The background listener and direct decision/tool-phase watcher use the same
+owner-fenced acceptance path. Cancellation closes the handler, stops the
+listener, and releases the owner lease.
 
-### Neo4j
-- Optional graph context; currently off
+The processed cursor is timestamp plus event id, with lane sequence when
+available. It lives on the timeline and survives serialization and in-turn
+compaction. A consumed event that produces zero timeline blocks advances the
+cursor explicitly. The close gate succeeds only when the processed/rendered
+cursor covers the latest accepted event.
 
----
+Supersession can be detected at several boundaries. The invariant is stable: a
+stale turn may briefly resume execution, but it cannot fold new lane events,
+commit an answer, or become conversation head.
 
-## 13) Inputs & payload limits
+`@on_reactive_event` starts one scheduled app turn. Events arriving during that
+turn fold into it when eligible. Passive versus promotable behavior is decided
+by the event's retained `task_payload`, not by `reactive: false` alone.
 
-- **Message/attachment limits** enforced at transport layer.
-- Socket.IO chat limits are configured via max buffer size; SSE uses server‑side validation.
-- Socket.IO `data_bus.publish` has per-role package/message/byte limits under
-  `gateway.data_bus.ingress.publish_limits`.
+## 9. Event Materialization
 
-References:
-- [Socket.IO transport](../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/ingress/socketio/chat.py)
-- [SSE transport](../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/ingress/sse/chat.py)
+An accepted lane event is not automatically a timeline block or PostgreSQL
+chat row.
 
----
+```text
+accepted event
+      |
+      v
+source-owned block production
+      |
+      +-- zero blocks -> advance cursor, mark consumed, no generic hook
+      |
+      `-- blocks      -> contribute blocks, then enabled workflow hooks
+```
 
-## 14) Observability & reporting
+`react.block_production.no_timeline` is a visibility decision, not proof that a
+generic callback stored product state. Business durability belongs to the
+producing service or explicit source-owned processing.
 
-- **Monitoring/observability**: [README-monitoring-observability.md](../service/README-monitoring-observability.md)
-- **Accounting & spending**: usage envelopes + spend reporting (per tenant/project/user)
+Steer and followup are semantic event types nested inside the uniform external
+event transport envelope. Eligible followups may add bounded iteration credit;
+a steer requests active-phase cancellation and bounded finalization. This does
+not promise synchronous termination of every possible external process.
 
----
+## 10. Data Bus And Client Relay
 
-## 15) Integrations
+Conversation Event Bus and Data Bus share some transports but have different
+ownership:
 
-### Knowledge Base (KB)
-- REST + Socket.IO
-- Postgres + pgvector, optional S3 storage
-- [KB README](../../src/kdcube-ai-app/kdcube_ai_app/apps/knowledge_base/README.md)
+| Mechanism | Intended work |
+| --- | --- |
+| Conversation Event Bus | Context for a current or future conversation/app turn. |
+| Data Bus | App-owned domain mutation independent of chat. |
+| Chat relay | Transient delivery to connected browser/client streams. |
 
-### Runtime tools & LLM providers
-- Centralized service hub for models, embeddings, and tool adapters.
-- Typical providers (configured per deployment):
-  - **LLMs**: Anthropic, OpenAI, Gemini
-  - **Embeddings**: OpenAI
-  - **Web search**: Brave, DuckDuckGo
-  - **Code execution**: ephemeral Docker runtime
+Data Bus messages are consumed by `@data_bus_handler`. A handler explicitly
+submits `external_events[]` when its result belongs in a conversation. Apps do
+not write processor ready queues or invent lane state.
 
----
+SSE relay state uses the same namespace as its Redis channel:
 
-## 16) Appendix — key files
+```text
+tenant + project + session_id -> connected clients
+                                  |
+                                  `-- stream_id -> one SSE connection
+```
 
-- Chat API entrypoint: [web_app.py](../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/ingress/web_app.py)
-- SSE transport: [sse/chat.py](../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/ingress/sse/chat.py)
-- Socket.IO transport: [socketio/chat.py](../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/ingress/socketio/chat.py)
-- Data Bus Socket.IO ingress: [socketio/data_bus/publish.py](../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/ingress/socketio/data_bus/publish.py)
-- Data Bus runtime worker: [runtime/data_bus/worker.py](../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/runtime/data_bus/worker.py)
-- Processor: [apps/chat/processor.py](../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/processor.py)
-- Comm subsystem: [comm-system.md](../service/comm/comm-system.md)
-- Comm integrations: [README-comm.md](../service/comm/README-comm.md)
-- Proxy ECS config: [nginx_proxy_ecs.conf](../../deployment/docker/custom-ui-managed-infra/nginx/conf/nginx_proxy_ecs.conf)
-- ECS task definitions: [deployment/ecs/task-definitions](../../deployment/ecs/task-definitions)
-- Cloud Map setup: [deployment/ecs/setup-cloud-map.sh](../../deployment/ecs/task-definitions/setup-cloud-map.sh)
+Missing tenant/project metadata may trigger session-id fallback for legacy
+payloads, but tenant/project/session is the intended contract. `stream_id` is
+an exact identifier; it does not normalize `stream_<uuid>` and `<uuid>`.
+
+## 11. Authority And The Two Delegation Directions
+
+Connection Hub is the central authority and connection plane. It owns:
+
+- platform authority/provider registration and policy;
+- connection edges and authority projection;
+- connected external accounts and provider-claim consent;
+- delegated KDCube credentials and managed MCP/REST guards;
+- server-side grant/session records and resource policy.
+
+```text
+delegated to KDCube
+  external provider -> current KDCube user -> trusted KDCube tool/provider
+  examples: Gmail, Slack, custom OAuth/OIDC service
+
+delegated by KDCube
+  current KDCube user -> bounded credential -> external automation/client
+  examples: script, CI job, Claude MCP client
+```
+
+Provider claims such as `gmail:send` authorize KDCube's use of a connected
+provider account. KDCube resource grants such as `mail:write` authorize an
+external client to enter a protected KDCube resource. They are two gates and
+must not be merged.
+
+Consent for connected-account claims is demand-driven. The attempted tool or
+named-service operation raises the scoped request. Approval is not the union of
+every configured tool. The managed denial envelope explains whether connection,
+claim upgrade, reconnect, or account selection is needed.
+
+Tokens remain server-side credential handles. Trusted guards resolve grant and
+session records; application handlers do not infer authority by decoding token
+bodies. Provider credentials live in user-scoped secrets and are resolved by
+trusted SDK/tool code, not exposed to the model or generated-code executor.
+
+## 12. Cross-Runtime Context
+
+The same request can cross coroutine, thread, subprocess, isolated-supervisor,
+Data Bus, app-call, and named-service boundaries. The portable context room
+preserves the situation:
+
+```text
+request identity + authority
+tenant/project/app/conversation/turn routing
+accounting/run context
+app-call context
+named-service discovery descriptors
+named-service consumer-policy ceiling
+```
+
+It does not carry live database/Redis clients, secrets, provider tokens, or
+arbitrary blobs. Each target runtime restores context variables and rebuilds
+services from descriptors.
+
+Conversation-scoped capability denials travel in the context snapshot. App consumer
+configuration remains the ceiling. Providers authorize through restored
+request identity, never a model-supplied user id.
+
+## 13. Named Services Across Runtime Boundaries
+
+Named services give domains one fixed agent-facing grammar while each provider
+owns object kinds, refs, search schema, actions, presentation, and guards.
+
+Direct in-proc calls use the live app registry. From isolated execution, the
+supervisor first applies the carried consumer policy. If no live registry
+caller exists, the named-service relay transports the request over the Data Bus
+to the provider app's worker:
+
+```text
+executor code
+  -> supervisor tool bridge
+  -> named-service client policy
+  -> Data Bus relay request with restored actor
+  -> provider app worker and registry
+  -> normal provider guards/claims
+  -> recorded relay result
+  -> supervisor
+  -> executor result
+```
+
+The executor itself remains network-isolated. The supervisor is the relay
+client. Relay delivery is at least once, while the handler records results by
+message id and requires idempotency so a redelivered side-effecting operation
+does not run twice.
+
+The relay is transport, not a new authorization surface. Missing identity is
+refused; missing connected-account consent returns the standard consent
+contract.
+
+## 14. Requester, Resolver, Workspace, And Executor
+
+For model-controlled execution, distinguish the requester from the authority:
+
+```text
+agent or generated code
+  proposes ref/path/operation
+           |
+           v
+trusted resolver/tool
+  binds current tenant/project/user/authority
+  validates visibility and grants
+  returns only in-scope bytes/result
+           |
+           v
+sparse current workspace
+  only materialized inputs and produced outputs
+           |
+           v
+isolated executor
+```
+
+KDCube ReAct operates on logical refs, not an unrestricted platform filesystem.
+`react.pull` materializes visible historical or external owner refs;
+`react.checkout` materializes editable project state. Other agent frameworks
+can use the same pull/workspace/ISO-exec pattern through adapters.
+
+Current conversation-owned refs use `conv:<family>:<body>`, including
+`conv:fi:` for files. Bare `fi:` and other pre-migration family refs are not
+valid current protocol.
+
+Workspace paths are role-based:
+
+```text
+turn_<id>/git/projects/...   editable project state
+turn_<id>/files/...          produced files
+turn_<id>/git/snapshots/...  workflow/scene snapshots
+turn_<id>/attachments/...    current-turn uploads
+turn_<id>/external/...       rehosted external evidence
+```
+
+In split Docker execution:
+
+- the executor has no network;
+- only selected work/artifact/log/socket paths are mounted;
+- platform and app storage roots are not mounted;
+- descriptors and provider credentials are not sent to the executor;
+- runtime globals are stripped to the executor subset;
+- approved tool calls cross the supervisor socket and run in the trusted
+  supervisor under carried identity and policy.
+
+Oversized supervisor-only environment payloads are streamed over container
+stdin as a JSON env map; this avoids command-line `E2BIG` without widening the
+executor. Distributed Fargate execution uses a separate launch-payload
+transport.
+
+Structured harness failures return normal tool-result blocks with
+`status: "error"`; they do not disappear as logs. A repeated identical launch
+failure should not cause unbounded retries.
+
+## 15. Tool Policy
+
+Python, MCP, named-service, and built-in tools converge into the tool subsystem.
+Authorization, user selection, connected-account claims, strategy traits, and
+execution traits remain distinct policy layers.
+
+`strategy` describes ordered multi-action causality (`exploration`,
+`exploitation`, `neutral`, or `unknown`). `execution` describes completed-call
+scheduling and replay. Early detached execution currently requires a fully
+validated, exactly neutral call and the supported execution profile; it is not
+a Boolean "run early" hint and not process-global exactly-once execution.
+
+## 16. User Settings And Conversation Choices
+
+Agent model/capability choices are durable per conversation:
+
+```text
+conversation:<conversation_id>:agent_selection:<agent_id>
+```
+
+The optional `agent_selection:<agent_id>` row is a baseline for future
+conversations, not the app-configured default. A new conversation materializes
+the current baseline once using insert-if-absent; otherwise it starts from app
+configuration. Existing conversation rows do not change when the baseline
+changes.
+
+The picker edits a local draft. Only **Save changes** persists it. Switching
+conversations discards unsaved edits, and a chat-originated capabilities command
+carries `conversation_id` to preserve scope.
+
+## 17. Storage Ownership
+
+KDCube intentionally separates storage responsibilities:
+
+| Storage surface | Owner / purpose |
+| --- | --- |
+| `bundles.yaml` and deployment descriptors | App source, non-secret configuration, declared surfaces. |
+| Secret lifecycle | Deployment and app secret values behind references. |
+| PostgreSQL | Durable subsystem/product records in tenant/project schema. |
+| Redis | Queues, lanes, streams, relay, locks, catalogs, and selected fail-closed grant/session records. |
+| App filesystem storage | App-owned mutable files; local/mounted locally, normally shared filesystem in cloud. |
+| Artifact storage | Separate local/object-backed artifact API. |
+| User-scoped secrets | Connected external-provider credentials. |
+| Conversation workspace/artifacts | Turn/conversation materialization and deliverables. |
+| User settings | Durable user choices, including conversation selection records. |
+
+`bundle_storage_root()` is filesystem storage, not S3. Connected-account
+metadata may live in app filesystem storage, while raw provider tokens live in
+user-scoped secrets. Delegated access authority comes from server-side records,
+not token-body decoding.
+
+Temporary staging is not a distributed object store. Producers and consumers
+must share the intended storage root or use the hosting/artifact contract.
+
+## 18. Economics, Observability, And Failure
+
+Economics-aware work follows:
+
+```text
+verify policy and balance
+        -> reserve expected spend
+        -> execute tracked calls
+        -> settle actual spend
+```
+
+Usage records inherit request lineage such as tenant/project, user, app,
+conversation, turn, flow, provider, and model. A turn has no fixed "cost per
+turn"; its cost is the sum of spendings inside it. Helper-agent spend can be
+attributed under the child conversation and rolled up to the parent work.
+
+Logs, structured events, tool results, lane records, authority decisions, and
+accounting records provide reviewable evidence. Compliance depends on
+deployment retention, integrity, access, and export policy plus reviewer
+judgment; not every log line is automatically compliant evidence.
+
+Failures cross tool boundaries as structured results where applicable. Runtime
+cleanup releases handlers, leases, and execution resources during cancellation.
+No architecture should rely on a missing result being interpreted as success.
+
+## 19. Scaling And Deployment Profiles
+
+Web/proc/processor workers may scale horizontally around shared configured
+stores. Correctness depends on explicit coordination:
+
+- turn-scoped hosted-agent graphs rebuilt from configuration plus
+  shared/checkpointed state, never retained as conversation state in one worker;
+- lane ownership, active-consumer heartbeats, and owner leases for live turns;
+- Redis claims plus filesystem locks for collaborative app preload;
+- consumer groups and idempotency for Data Bus handling;
+- generation ordering for distributed catalogs;
+- scoped relay refcounts for connected streams;
+- per-user/app/work concurrency and economics admission.
+
+The same application contracts support local processes, Docker Compose,
+container clusters, and ECS/Fargate deployment. Production topology may use
+managed PostgreSQL/Redis/object storage and a shared filesystem such as EFS.
+Operators choose whether stores are dedicated or shared and configure the
+matching namespace, durability, IAM, TLS, DNS, backup, and recovery policy.
+
+## 20. Source Map
+
+- [Control Plane Web App](control-plane-web-app-README.md)
+- [Architecture Of What We Built](architecture-of-what-we-built-README.md)
+- [Architecture Of What You Build](architecture-of-what-you-build-README.md)
+- [Bundles Descriptor](../configuration/bundles-descriptor-README.md)
+- [Cross-Runtime Context](../runtime/cross-runtime-context-README.md)
+- [Fenced Runtime Bootstrap And Reduce](../runtime/fenced-runtime-bootstrap-and-reduce-README.md)
+- [ISO Runtime](../exec/README-iso-runtime.md)
+- [Conversation Event Journey](../sdk/events/external-events-journey-and-handling-README.md)
+- [Conversation Event Lane State](../sdk/events/conversation-event-lane-state-README.md)
+- [Conversation Event Bus And Data Bus](../service/comm/conversation-event-bus-and-data-bus-README.md)
+- [Connection Hub](../sdk/solutions/connections/connection-hub-solution-README.md)
+- [Named-Service Providers](../sdk/namespace-services/providers-README.md)
+- [Application-Hosted Sites](../sdk/solutions/sites/application-sites-README.md)
+- [User Settings](../sdk/solutions/user-settings/user-settings-solution-README.md)

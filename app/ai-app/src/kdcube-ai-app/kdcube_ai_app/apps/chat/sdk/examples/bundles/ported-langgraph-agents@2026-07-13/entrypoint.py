@@ -16,7 +16,7 @@
 #     adapter (platform/stream_prebuilt.py) streams ONLY the final agent turn.
 #
 # Both agents' graph structure and logic are UNCHANGED from their standalone
-# "before" (poc/lg-solution, poc/lg-react-agent). The platform integration is:
+# "before" (poc/lg-solution, poc/lg-prebuilt-agent). The platform integration is:
 #
 #   1. a dispatcher      — execute_core resolves agent_id and runs the right graph
 #                          through its own stream adapter (the teaching point:
@@ -25,19 +25,20 @@
 #   2. scaled serving    — the agent's graph is REBUILT every turn, never cached
 #                          in-process. KDCube is distributed (turns hop workers/
 #                          machines), so a process-cached graph would neither survive
-#                          the hop nor reflect this turn's per-user state. Durable
+#                          the hop nor reflect this conversation's saved selection. Durable
 #                          state lives in shared Postgres (checkpointer, keyed by
 #                          thread_id); only connections are long-lived on self.
 #   3. isolation         — platform identity + agent_id -> per-agent per-user keys
-#                          (platform/identity.py) AND a per-agent storage schema
-#                          (platform/pg_target.py), so the two agents never mix
+#                          (platform/identity.py), plus one tenant/project schema
+#                          with app-prefixed tables and agent_id row scope
 #   4. streaming         — astream_events -> comm_ctx (the two stream adapters)
 #   5. a shared ingress  — a Telegram Bot API webhook (platform/telegram.py) that
 #                          drives the SAME execute_core for the DEFAULT agent
 #
 # Persistence is mapped by DATA KIND (see docs/storage/README.md): each agent's OWN
 # working store (memory/KB + the LangGraph checkpointer) is routed onto KDCube's
-# SHARED Postgres (self.pg_pool) in a PER-AGENT schema when hosted, its own
+# SHARED Postgres (self.pg_pool) in the ONE tenant/project schema when hosted,
+# with app-prefixed tables and agent_id row scope; it uses its own
 # DATABASE_URL standalone, in-memory offline. KDCube owns the conversation record.
 
 from __future__ import annotations
@@ -385,16 +386,12 @@ class LGPortedAgentsBundle(BaseEntrypointWithEconomics):
             redis=redis,
             comm_context=comm_context,
         )
-        # Per-agent graph CACHE. Each agent's graph is a per-PROCESS template built
-        # lazily on first use (the checkpointer needs an event loop) and reused
-        # across turns/users — keyed per turn by thread_id in `run_config`, so one
-        # graph per agent serves everyone safely.
-        #
         # SCALED-SERVING INVARIANT: the compiled graph is REBUILT every turn, never
         # cached in-process. KDCube is distributed — turn 1 can land on worker 1,
         # turn 2 on worker 2 on machine B — so a process-cached graph would neither
-        # survive the hop nor reflect THIS turn's per-user state (model pick, tool
-        # selection). The only long-lived things on `self` are CONNECTIONS (the
+        # survive the hop nor reflect THIS conversation's saved model/tool
+        # selection. The graph instance exists for one turn only. The only
+        # long-lived things on `self` are CONNECTIONS (the
         # checkpointer, like `pg_pool`): infra, re-established lazily per worker, not
         # rebuildable state. Every mutable byte is in shared Postgres keyed per
         # (agent, user, conversation). So ANY worker can serve ANY turn.
@@ -581,13 +578,13 @@ class LGPortedAgentsBundle(BaseEntrypointWithEconomics):
         """Build the agent's graph FOR THIS TURN — never cached in-process.
 
         KDCube is distributed (turns hop workers/machines), so a process-cached
-        graph would neither survive the hop nor reflect this turn's per-user state
+        graph would neither survive the hop nor reflect this conversation's saved state
         (model pick, tool selection). Each agent builds with its own deps + the
         SHARED checkpointer connection (opened once per agent, reused — see
         `_open_checkpointer`), storing into the shared tenant/project schema scoped
         by its agent_id column. Rebuilding is cheap: the checkpointer is reused, and
         the rest is pure in-memory graph compilation. `disabled_tools` is this turn's
-        per-user tool opt-outs — the per-turn build is exactly what lets them narrow
+        current conversation's tool opt-outs — the per-turn build is exactly what lets them narrow
         the bound tool set (lg-react); agents with no tool loop ignore it."""
         return await AGENTS[agent_id].build_graph(self, disabled_tools=disabled_tools)
 

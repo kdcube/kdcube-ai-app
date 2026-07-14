@@ -1,7 +1,7 @@
 ---
 id: kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/ported-langgraph-agents@2026-07-13/docs/README.md
 title: "Ported LangGraph Agents Design"
-summary: "Design overview of ported-langgraph-agents@2026-07-13: ONE KDCube app hosting TWO vendored LangGraph agents dispatched by agent_id through a single execute_core, with per-agent stream adapters, storage schemas, and model pickers."
+summary: "Design overview of ported-langgraph-agents@2026-07-13: ONE KDCube app hosting TWO vendored LangGraph agents dispatched by agent_id through a single execute_core, with per-agent stream adapters and model pickers, plus one tenant/project storage schema with agent_id row/key scope."
 status: active
 tags: ["app", "ported-langgraph-agents", "langgraph", "platform", "port", "chat", "multi-agent", "design"]
 ---

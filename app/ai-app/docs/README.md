@@ -4,7 +4,7 @@ title: "Platform Documentation Index"
 summary: "Curated top-level map of the KDCube documentation tree for app builders, integrators, operators, and agents."
 tags: ["docs", "index", "sdk", "service", "ops", "architecture"]
 keywords: ["documentation index", "platform architecture", "configuration guides", "service runtime docs", "app sdk docs", "execution docs", "deployment and operations docs", "app builder docs", "client widgets", "streaming", "memory", "claude code"]
-updated_at: 2026-06-23
+updated_at: 2026-07-15
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/what-you-can-do-with-kdcube-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/recipes/use-cases-README.md
@@ -12,6 +12,7 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/quick-start-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/arch/architecture-of-what-we-built-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/arch/architecture-of-what-you-build-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/arch/control-plane-web-app-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/recipes/components/README.md
   - repo:kdcube-ai-app/app/ai-app/docs/recipes/connections/README.md
   - repo:kdcube-ai-app/app/ai-app/docs/recipes/resource_sharing/README.md
@@ -32,6 +33,7 @@ Curated index of platform, service, and SDK documentation.
 * Quick Start: [quick-start-README.md](quick-start-README.md)
 * Architecture Of What We Built: [architecture-of-what-we-built-README.md](arch/architecture-of-what-we-built-README.md)
 * Architecture Of What You Build: [architecture-of-what-you-build-README.md](arch/architecture-of-what-you-build-README.md)
+* Control Plane Web App: [control-plane-web-app-README.md](arch/control-plane-web-app-README.md)
 * Component Recipes: [components/README.md](recipes/components/README.md)
 * Connection Recipes: [connections/README.md](recipes/connections/README.md)
 * Resource Sharing Recipes: [resource_sharing/README.md](recipes/resource_sharing/README.md)
@@ -109,8 +111,9 @@ Curated index of platform, service, and SDK documentation.
 
 * Architecture Of What We Built: [architecture-of-what-we-built-README.md](arch/architecture-of-what-we-built-README.md)
 * Architecture Of What You Build: [architecture-of-what-you-build-README.md](arch/architecture-of-what-you-build-README.md)
-* Architecture Short (historical runtime overview): [architecture-short.md](arch/architecture-short.md)
-* Architecture Long (historical runtime detail): [architecture-long.md](arch/architecture-long.md)
+* Architecture Short: [architecture-short.md](arch/architecture-short.md)
+* Architecture Long: [architecture-long.md](arch/architecture-long.md)
+* Control Plane Web App: [control-plane-web-app-README.md](arch/control-plane-web-app-README.md)
 * Current CLI: [cli-README.md](service/cicd/cli-README.md)
 * Descriptors And CI/CD: [descriptors-README.md](service/cicd/descriptors-README.md)
 * Custom CI/CD: [custom-cicd-README.md](service/cicd/custom-cicd-README.md)

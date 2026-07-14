@@ -65,7 +65,7 @@ server, Data Bus handler, cron, or background job.
   [platform/stream_prebuilt.py](platform/stream_prebuilt.py)
 
 Add a dated journal entry for every round that changes the dispatcher, the agent
-registry, the identity/agent fold, the storage schemas, a stream adapter, the
+registry, the identity/agent fold, the storage scope/schema, a stream adapter, the
 surfaces, config keys, or the dependency posture.
 
 ## Product Shape
@@ -155,9 +155,11 @@ Secrets ([config/bundles.secrets.template.yaml](config/bundles.secrets.template.
 `OPENAI_API_KEY`, `DATABASE_URL`, the Telegram integration secrets.
 
 Storage ownership (full matrix in [docs/storage/README.md](docs/storage/README.md)):
-each agent's own store on KDCube's shared Postgres in its own schema; the platform
-owns the conversation record; the compiled graphs + checkpointer connections are
-per-process; the SDK-shaped Telegram user registry is the one bundle-local store.
+each agent's own store uses KDCube's shared Postgres in the one tenant/project
+schema, with app-prefixed tables and `agent_id` row scope. The platform owns the
+conversation record. Graph instances are rebuilt for one turn and discarded;
+only checkpointer connections are process-local and reused. The SDK-shaped
+Telegram user registry is the one app-local store.
 
 ## Keep In Sync
 

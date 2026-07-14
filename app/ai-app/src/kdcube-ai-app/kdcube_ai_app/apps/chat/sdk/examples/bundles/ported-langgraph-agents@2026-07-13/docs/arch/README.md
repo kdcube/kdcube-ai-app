@@ -1,7 +1,7 @@
 ---
 id: ported-langgraph-agents@2026-07-13/docs/arch
 title: "Ported LangGraph Agents — Architecture"
-summary: "ASCII architecture of the ported-langgraph-agents app: ONE execute_core dispatching on agent_id to TWO vendored LangGraph agents, each with its own stream adapter + storage schema; the surfaces, integrations, request/data flow, and the folder-to-responsibility map."
+summary: "ASCII architecture of the ported-langgraph-agents app: ONE execute_core dispatching on agent_id to TWO vendored LangGraph agents, each with its own stream adapter; both use one tenant/project schema with app-prefixed tables and agent_id row scope."
 status: active
 tags: [arch, ported-langgraph-agents, langgraph, multi-agent, diagram]
 ---

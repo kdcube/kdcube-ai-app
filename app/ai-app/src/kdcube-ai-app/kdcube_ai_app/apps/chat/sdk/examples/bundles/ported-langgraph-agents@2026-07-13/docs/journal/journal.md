@@ -13,7 +13,7 @@ dated files in this directory.
 
 | Date | Entry | Summary |
 | --- | --- | --- |
-| 2026-07-13 | [Consolidate two ported agents into one multi-agent app](2026-07-13-consolidate-two-ported-agents.md) | Merged the two single-agent port bundles (a research graph and the prebuilt create_react_agent) into ONE app that hosts BOTH, dispatched by `agent_id` through a single `execute_core`. Per-agent graph cache + stream adapter + storage schema; the identity gate folds `agent_id` into the per-user key. The two source bundles were retired; both POCs are untouched. |
+| 2026-07-13 | [Consolidate two ported agents into one multi-agent app](2026-07-13-consolidate-two-ported-agents.md) | Historical consolidation record. Its original graph-cache, `create_react_agent`, and per-agent-schema details are superseded; current behavior is per-turn graph rebuild, `langchain.agents.create_agent`, and one tenant/project schema with `agent_id` row/key scope. |
 
 ## Baseline carried forward
 

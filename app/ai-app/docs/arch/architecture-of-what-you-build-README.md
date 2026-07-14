@@ -1,235 +1,278 @@
 ---
 id: repo:kdcube-ai-app/app/ai-app/docs/arch/architecture-of-what-you-build-README.md
 title: "Architecture Of What You Build"
-summary: "Soft architecture for app builders: how KDCube apps become ecosystem participants, service providers, scene components, named-service realms, ReAct context sources, and Pinboard objects."
+summary: "Builder architecture for KDCube apps: optional surface families, provider and consumer directions, existing or ready agents, scenes, named-service realms, events, websites, storage, authority, and package contracts."
 status: current
-tags: ["arch", "architecture", "ecosystem", "apps", "service-provider", "named-services", "scene", "react", "pinboard"]
-updated_at: 2026-06-23
-keywords:
-  [
-    "agentic network",
-    "ecosystem component",
-    "service provider",
-    "named services",
-    "realm",
-    "API",
-    "MCP",
-    "Event Bus",
-    "Data Bus",
-    "cron",
-    "scene",
-    "pinboard",
-    "ReAct",
-    "provenance",
-  ]
+tags: ["arch", "architecture", "apps", "surfaces", "provider", "consumer", "named-services", "scene"]
+updated_at: 2026-07-14
+keywords: ["KDCube app architecture", "as provider", "as consumer", "app surfaces", "named service", "scene", "default chat"]
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/arch/architecture-of-what-we-built-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/ecosystem-component/components-ecosystem-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/ecosystem-component/ecosystem-component-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/recipes/components/README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-interfaces-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-write-bundle-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/configuration/bundles-descriptor-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/providers-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/recipes/components/scene-README.md
 ---
 # Architecture Of What You Build
 
-This is the soft architecture an app builder creates on top of the KDCube
-runtime. It explains how a regular app can remain standalone, expose APIs/MCP,
-publish events, run cron, mount widgets, or become a powerful provider in the
-agentic interaction network.
+KDCube does not require every app to become a chat app, an agent, or a large
+platform package. You choose the product surface you need and add other
+capabilities independently.
 
-## Core Terminology
+An app may wrap work you already have, use KDCube building blocks, or combine
+both. Existing LangGraph, CrewAI, Claude Agent SDK, custom Python, REST, MCP,
+and frontend code can remain responsible for its domain logic.
 
-| Term | Meaning |
+## The App Is A Boundary
+
+An app is a descriptor-addressed package that owns a coherent part of the
+product:
+
+```text
+app
+  runtime composition
+  provided and consumed surfaces
+  configuration and secret references
+  storage ownership
+  interface declarations
+  UI, agents, tools, providers, or jobs when present
+  tests, release metadata, and implementation journal
+```
+
+Current source and descriptors still use technical names such as `bundle_id`
+and `bundles.yaml`. Those are implementation identifiers; this documentation
+uses **app** for the builder-facing concept.
+
+## Two Directions, Chosen Independently
+
+The central design question is not only "what does my app expose?" It is also
+"what is my app allowed and configured to consume?"
+
+```text
+                         your app
+                            |
+          +-----------------+------------------+
+          |                                    |
+          v                                    v
+surfaces.as_provider                  surfaces.as_consumer
+what others can use                   what this app can use
+          |                                    |
+API / operations                      Python tool connections
+widgets / main view                    MCP service connections
+MCP endpoints                         per-agent tool allow-lists
+default chat intent                    named-service namespaces
+visibility / managed auth              UI object resolvers
+```
+
+An app can be:
+
+- a provider only, such as a backend API or named-service realm;
+- a consumer only, such as an agent using existing services;
+- both, such as a workspace that serves chat and widgets while consuming mail,
+  Slack, memories, task services, Python tools, and MCP servers.
+
+Provider policy and consumer wiring are separate. Allowing an agent to call an
+MCP server does not publish that server as the app's own MCP endpoint. Exposing
+an API does not automatically allow the app's agents to call it.
+
+## Choose Only The Surface Families You Need
+
+| Surface family | Use it when the app needs to... |
 | --- | --- |
-| Ecosystem component | A reusable domain participant in KDCube's events and actions network. It may be a standalone service, API, MCP server, UI widget, scene surface, provider app, scheduler, or agent tool provider. |
-| App package | The deployable package that supplies one or more component roles. Some current APIs still expose a bundle id internally, but app is the builder/user-facing term. |
-| Realm | A domain space owned by a component, such as tasks, memories, telemetry, documents, repositories, or conversations. |
-| Named service provider | The standard provider contract that makes a realm usable by generic agents and UI surfaces through object refs, schema, search/get/upsert/action/resolve, and block production. |
-| Scene | A browser host that composes multiple UI surfaces and routes commands/events/context between them. |
-| Pinboard / canvas | A neutral board that stores opaque object refs, layout, comments, and context provenance; object meaning stays with the provider. |
-| ReAct | The agent runtime that uses tools, context, named services, events, and block policies to reason and act. |
-| Provenance | The preserved identity of where context came from, usually the canonical `object_ref` and provider metadata. |
+| API / operations | Serve synchronous product operations, callbacks, or webhooks. |
+| UI widget / main view | Add a focused interface or own the app's primary view. |
+| Default chat | Serve the ready SDK chat under the reserved `chat` alias. |
+| Agent | Host one or several existing agent loops or KDCube ReAct agents. |
+| MCP | Provide or consume model-callable tools/resources. |
+| Named service | Expose a domain as typed objects and bounded operations through a fixed grammar. |
+| Data Bus | Process durable app-domain messages independent of chat. |
+| Conversation events | Send ordered context into a current or future app/agent turn. |
+| Job / cron | Run background or scheduled work. |
+| Integration | Connect channels, provider accounts, or external callbacks. |
+| Scene / Canvas | Compose browser surfaces or preserve visual working context. |
+| Website | Serve the app's complete built main-view file tree. |
 
-## Interaction Planes
+No row is mandatory for every app. Declare a surface only when the runtime and
+package actually provide it.
 
-An app joins KDCube through one or more planes:
+## Existing Agent Or Ready ReAct
 
-```text
-regular app
-  |
-  +-- API / REST operations
-  |     synchronous request/response calls
-  |
-  +-- MCP tools/resources
-  |     tool and resource surface for agents or external clients
-  |
-  +-- Event Bus / SSE
-  |     service events, UI refresh signals, accounting usage, snapshots
-  |
-  +-- Data Bus
-  |     durable non-chat commands and result events
-  |
-  +-- Cron / scheduled jobs
-  |     recurring due scans and background work handoff
-  |
-  +-- Named services
-  |     provider-owned object/action/context plane for realms
-  |
-  +-- UI scene surfaces
-        widgets, context drag/drop, target surfaces, surface commands
-```
+You can keep an existing agent as the decision runtime and adapt its inputs,
+streamed events, outputs, files, and accounting to KDCube. The
+`ported-langgraph-agents@2026-07-13` reference app demonstrates this approach.
 
-These planes are independent. A component can be useful with only API/MCP, only
-cron, only a widget, or only events. The named-services plane is required when
-the component wants generic ReAct, Pinboard, Chat, and Scene interop around
-provider-owned objects.
+In a horizontally scaled app, the agent runner cannot keep a stateful graph in
+one worker and assume the next turn returns there. The reference app rebuilds
+the graph inside every turn from configuration and shared/checkpointed state;
+the graph instance exists for that turn only. Long-lived app instances retain
+connections, not graph or conversation state.
 
-## From Regular App To Service Provider
+Or use KDCube ReAct when you want a ready harness with a logical workspace,
+tools, skills, files, web search, named services, conversation events,
+subagents, and isolated code execution.
+
+For either choice, consumer configuration can give each agent a separate
+inventory:
 
 ```text
-Stage 1: Standalone app
-  owns domain data and UI
-  maybe exposes API/MCP
-  no generic agent/object interop required
+surfaces.as_consumer.agents.main
+  tools: Python + MCP + named-service connections
+  skills: app-granted skill catalog
 
-Stage 2: Event participant
-  emits service events
-  consumes Event Bus/Data Bus messages
-  can refresh widgets or trigger jobs
-
-Stage 3: Scene component
-  provides iframe widget route
-  handles kdcube.surface.command
-  emits/accepts context drag payloads
-  claims live event subscriptions when embedded
-
-Stage 4: Named-service provider
-  owns object_ref namespace
-  exposes object.schema/search/get/upsert/delete
-  exposes object.resolve/action for UI affordances
-  exposes block.produce/render for ReAct visibility
-  exposes namespace presentation config
-
-Stage 5: Agentic realm
-  ReAct can explore/search/read the realm
-  ReAct can mutate through schema-governed tools
-  users can pin/attach realm objects with provenance
-  outputs from one realm can become evidence/material for another
+surfaces.as_consumer.agents.reviewer
+  tools: a narrower or different catalog
+  skills: reviewer-specific skills
 ```
 
-## Agentic Network Map
+The administrator grants the inventory. The user may narrow supported models,
+tools, skills, service operations, and helper agents for one conversation. The
+chat picker keeps a local draft; only **Save changes** persists it.
+
+## Compose Browser Surfaces
+
+A Scene is an optional host page for widgets. It owns layout, frame mounting,
+shared configuration, event fan-out, and declared surface-command delivery.
+The mounted apps still own their product behavior and authorization.
 
 ```text
-                      user / scene
-                           |
-       +-------------------+-------------------+
-       |                                       |
-       v                                       v
-  UI surfaces                             chat / ReAct
-  scene widgets                           agent turn
-       |                                       |
-       | kdcube.surface.command               | named_services.*
-       | context drag/drop                    | react.pull/read
-       v                                       v
-  Pinboard / canvas <---------------> provider realm
-  stores opaque refs                   owns refs and semantics
-  layout/comments                      schema/search/get/upsert
-  provenance                           resolve/action/block.produce
-       ^                                       |
-       |                                       |
-       +--------------- events ----------------+
-                       Event Bus / Data Bus
-                       Cron / jobs / snapshots
+scene
+  +-- chat widget
+  +-- canvas / pinboard
+  +-- memories widget
+  +-- connection or domain widget
+  `-- app-specific components
+
+surface command
+  one component asks another declared surface to open or focus
+
+context drag
+  a typed object ref moves between surfaces without losing its kind
 ```
 
-## Provider Realm Contract
+Scene component entries live on the consumer side because the scene consumes
+other UI surfaces. Configuration merges descriptor entries over code defaults
+by alias. Cross-app mounting is supported.
 
-To make a realm generic, the provider owns:
+Apps that do not need a Scene can embed the chat or another widget directly in
+an existing website. An app may also expose its built main view as a complete
+website through the application-site catalog.
+
+## Model A Domain As A Named Service
+
+Named services avoid one bespoke tool vocabulary per domain. Providers expose
+self-describing realms through a stable grammar:
 
 ```text
-identity:
-  object_ref namespace and object families
-
-schema:
-  object.schema for create/update/delete
-
-exploration:
-  provider.about
-  object.search
-  object.list
-  object.get
-
-exploitation:
-  object.upsert
-  object.delete
-  domain actions
-
-UI actions:
-  object.resolve
-  object.action(open|preview|download|attach|pin-specific actions)
-
-ReAct representation:
-  event.resolve
-  block.produce
-  block.render when needed
-
-presentation:
-  namespace_presentation_config
-  labels, icons, colors by namespace/object_kind
-
-live behavior:
-  Event Bus events
-  Data Bus commands/results
-  cron/job outputs where relevant
+provider.about        provider.capabilities
+object.schema         object.list          object.search
+object.get            object.action        object.upsert
+object.host_file      object.delete
 ```
 
-## Builder Read Order
+The provider advertises only operations it actually serves. An agent reads
+`object.schema` before constructing provider-encoded action payloads and
+verifies the result of state-changing actions.
 
-1. Start with this page.
-2. Read [Components Ecosystem Architecture](../sdk/solutions/ecosystem-component/components-ecosystem-README.md) for the full scene/ReAct/Pinboard map.
-3. Read [Ecosystem Component Contract](../sdk/solutions/ecosystem-component/ecosystem-component-README.md) for provider and UI requirements.
-4. Read [Namespace Services](../sdk/namespace-services/README.md) if the app should become a service provider.
-5. Read [Component Recipes](../recipes/components/README.md) for short implementation recipes.
-6. Read [App Interfaces](../sdk/bundle/bundle-interfaces-README.md) for the runtime decorators and transport details.
-
-## Solution Interaction Map
-
-App builders should be able to render a map of their solution's interaction
-horizon from the same contracts they use to run the app. This can be a website
-overlay, an internal ops page, a docs diagram, or a scene component. The map is
-useful because it shows which apps, realms, surfaces, event channels, jobs, and
-agent tools are connected.
-
-The KDCube website scene architecture map is one implementation of this idea,
-not a special platform-only concept.
+A complete realm has seven authoring declarations:
 
 ```text
-nodes:
-  runtimes
-  apps / app packages
-  widgets/surfaces
-  provider realms/namespaces
-  API/MCP surfaces
-  named-service operations
-  Event Bus subscriptions
-  Data Bus subjects
-  cron/job producers
-  ReAct tools/event sources
-  Pinboard object resolver edges
-
-edges:
-  app -> runtime
-  app -> API/MCP/Event/Data/Cron/NamedService/UI roles
-  namespace -> provider app
-  scene surface -> target_surface
-  ReAct -> provider object.get/block.produce/upsert
-  Pinboard -> provider object.resolve/action
-  component -> event claim
-  Data Bus subject -> handler
-  cron -> job/background work
+1. nouns          typed object kinds and self-contained refs
+2. questions      documented search/filter vocabulary
+3. use cases      named, bounded operations and actions
+4. guards         internal rules or connected-account requirements
+5. presentation   human purpose, labels, object descriptions, claim labels
+6. registration   provider discovery and metadata
+7. tests          agent and human projections
 ```
 
-The map should not be a separately maintained drawing when the data already
-exists in configuration, provider discovery, and component declarations. A
-manual article diagram is still useful for explanation, but the inspectable
-solution map should be generated from the running contracts where possible.
+One self-description serves two readers:
+
+```text
+agent -> reads about/schema -> works the realm
+user  -> reads service card -> understands, narrows, and consents
+```
+
+Presentation describes; it does not authorize. Internal realms enforce their
+own access rules. Provider-backed realms declare connected-account claims, and
+demand-driven consent is raised only when an attempted operation needs claims
+the current user does not hold.
+
+## Connect Apps And External Operators
+
+Apps can consume each other through synchronous operations, named services,
+MCP, conversation events, Data Bus messages, and UI surfaces. Use the mechanism
+that matches the ownership of the work:
+
+```text
+synchronous app result       call_bundle_operation / API
+conversation context         Conversation Event Bus
+app-domain mutation          Data Bus
+agent/domain object access   named service or MCP
+browser composition          Scene and surface commands
+```
+
+External agents and automation can call protected MCP or REST resources with
+delegated KDCube credentials. Connected external accounts point the other way:
+they let trusted KDCube tools call services such as mail or Slack for the
+current user. Do not merge these two delegation directions.
+
+## Define Execution And Data Boundaries
+
+The app decides which code is trusted and which work requires isolation.
+
+```text
+trusted app/tool code
+  runs under carried request identity and explicit service contracts
+
+generated or untrusted code
+  receives a sparse materialized workspace
+  runs in the selected execution profile
+  reaches approved tools through the trusted supervisor boundary
+```
+
+Model-proposed refs and paths are untrusted locators. Trusted runtime resolvers
+bind tenant/project/user/authority before returning bytes. This requester versus
+resolver distinction matters more than asking the model to remember a tenant
+filter.
+
+Storage is also explicit. App filesystem storage, artifact storage, user
+settings, conversation records, connected-account secrets, and Redis runtime
+state have separate owners; an app should use the owning SDK contract rather
+than opening deployment files or stores directly.
+
+## Keep The Package Synchronized
+
+A production app is one contract expressed in several files. Runtime
+decorators, interface declarations, descriptors, configuration templates,
+storage documentation, tests, stable docs, release metadata, and journal
+entries must describe the same surfaces.
+
+`AGENTS.md` is an operational implementation contract for coding agents, not a
+second user README. Secret templates contain placeholders only. Journals record
+decisions but do not replace stable documentation.
+
+## A Practical Builder Route
+
+```text
+1. choose one useful surface
+2. wrap existing code or select an SDK building block
+3. declare provider surfaces and consumer dependencies separately
+4. bind identity, storage, visibility, and execution policy
+5. run locally against the real transport
+6. add only the next surface the product needs
+7. release and update from the app source/ref
+```
+
+Start with [How To Write A KDCube App](../sdk/bundle/build/how-to-write-bundle-README.md),
+then follow the recipe for the selected surface. Reference apps show concrete
+patterns; they do not replace the canonical package contract.
+
+## Read Next
+
+- [What You Can Do With KDCube](../what-you-can-do-with-kdcube-README.md)
+- [How To Write A KDCube App](../sdk/bundle/build/how-to-write-bundle-README.md)
+- [Bundles Descriptor](../configuration/bundles-descriptor-README.md)
+- [Named-Service Providers](../sdk/namespace-services/providers-README.md)
+- [Scene Recipe](../recipes/components/scene-README.md)
+- [Chat With A ReAct Agent](../recipes/components/chat-with-react-agent-README.md)
+- [Application-Hosted Sites](../sdk/solutions/sites/application-sites-README.md)
