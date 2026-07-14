@@ -66,7 +66,8 @@ def render_sitemap_xml(
         covered = [e for e in published if catalog_entry.covers(e.slug)]
         lastmod = max((e.lastmod for e in covered if e.lastmod), default="")
         lines.append("  <url>")
-        lines.append(f"    <loc>{_esc(f'{base}/{catalog_entry.prefix}')}</loc>")
+        catalog_url = config.canonical_url(catalog_entry.prefix) or base
+        lines.append(f"    <loc>{_esc(catalog_url)}</loc>")
         if lastmod:
             lines.append(f"    <lastmod>{_esc(lastmod)}</lastmod>")
         lines.append("  </url>")
@@ -118,6 +119,7 @@ def sitemap_descriptor(
             published=published,
         )
         for catalog in config.catalogs
+        if catalog.prefix
     ]
     return {
         "alias": config.alias,

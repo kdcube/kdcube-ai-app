@@ -485,6 +485,23 @@ def render_catalog_page(
         )
     )
     title = f"{catalog.title or catalog.prefix}" + (f" · {site}" if site else "")
+    description = catalog.subtitle or f"Browse {catalog.title or catalog.label}."
+    head_parts = []
+    if catalog_url:
+        head_parts.extend(
+            [
+                f'<link rel="canonical" href="{_esc(catalog_url)}" />',
+                f'<meta property="og:url" content="{_esc(catalog_url)}" />',
+            ]
+        )
+    head_parts.extend(
+        [
+            '<meta property="og:type" content="website" />',
+            f'<meta property="og:title" content="{_esc(title)}" />',
+            f'<meta name="description" content="{_esc(description)}" />',
+            f'<meta property="og:description" content="{_esc(description)}" />',
+        ]
+    )
     # Search-result windows are session-shaped URLs; keep crawlers on the
     # canonical browse pages.
     return _document(
@@ -492,6 +509,7 @@ def render_catalog_page(
         theme=theme,
         extra_css=_CATALOG_CSS,
         body=body,
+        head_extra="".join(head_parts),
         meta_robots="noindex" if searched else "",
     )
 
