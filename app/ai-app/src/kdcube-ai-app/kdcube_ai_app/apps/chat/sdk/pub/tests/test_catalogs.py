@@ -71,10 +71,11 @@ _PROPS = {
             },
             "chrome": {
                 "brand_label": "KDCube",
-                "brand_href": "https://kdcube.tech/",
+                "brand_href": "/",
                 "links": [
-                    {"label": "Home", "href": "https://kdcube.tech/"},
-                    {"label": "Blog", "href": "https://kdcube.tech/news/kdcube/blogs"},
+                    {"label": "Home", "href": "/"},
+                    {"label": "News", "href": "/news"},
+                    {"label": "Blog", "href": "/blog"},
                 ],
             },
         },
@@ -151,7 +152,7 @@ def test_catalogs_mapping_form_parses():
     config = resolve_alias_configs(_PROPS)["news"]
     assert [c.prefix for c in config.catalogs] == ["kdcube/blogs", "kdcube/journal"]
     assert config.catalog("kdcube/blogs").label == "Blogs"
-    assert config.chrome and config.chrome.links[1].label == "Blog"
+    assert config.chrome and config.chrome.links[2].label == "Blog"
 
 
 def test_empty_prefix_declares_alias_root_catalog():
@@ -219,7 +220,11 @@ def test_catalog_page_lists_newest_first_with_pagination(tmp_path):
     assert "Gamma article" in page and "Beta article" in page and "Alpha article" not in page
     assert "Blogs · 3" in page and "Journal · 1" in page
     assert "kdcpub-header" in page and "Engineering blog" in page
+    assert 'aria-controls="kdcpub-site-nav"' in page
+    assert 'aria-label="Primary navigation"' in page
     assert "1–2 of 3" in page
+    assert 'href="/news" class="kdcpub-active" aria-current="page"' in page
+    assert 'href="/" class="kdcpub-active"' not in page
     # second page
     page2 = _serve(tmp_path, "news/kdcube/blogs", query_params={"offset": "2"}).content.decode("utf-8")
     assert "Alpha article" in page2 and "Gamma article" not in page2

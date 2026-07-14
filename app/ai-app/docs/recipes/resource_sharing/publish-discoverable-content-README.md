@@ -283,12 +283,18 @@ public_content:
       blog:   { title: "Blog",    accent: "#0969DA", background: "#F4F9FF" }
     chrome:
       brand_label: "My Product"
-      brand_href: https://example.com/
+      brand_href: /
+      logo_url: /assets/logo.svg
       links:
-        - { label: Home,   href: 'https://example.com/' }
-        - { label: Guides, href: 'https://example.com/articles/guides' }
-        - { label: Blog,   href: 'https://example.com/articles/blog' }
+        - { label: Home,   href: '/' }
+        - { label: Guides, href: '/articles/guides' }
+        - { label: Blog,   href: '/articles/blog' }
 ```
+
+Keep `canonical_base` absolute: it declares the one URL search engines should
+index. Keep same-site chrome links root-relative so the same descriptor works
+on local, preview, staging, and production hosts. Use an absolute chrome link
+only when navigation intentionally leaves the current site.
 
 `https://example.com/articles` now answers the alias-root catalog over every
 published item. `https://example.com/articles/blog` answers the filtered Blog

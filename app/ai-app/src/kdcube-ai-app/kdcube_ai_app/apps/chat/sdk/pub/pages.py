@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import html
 from typing import Callable, Dict, List, Optional, Tuple
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, urlsplit
 
 from kdcube_ai_app.apps.chat.sdk.pub.model import (
     PublicContentAliasConfig,
@@ -110,14 +110,18 @@ _BASE_CSS = """
   .kdcpub-header,.kdcpub-header *,.kdcpub-wrap,.kdcpub-wrap *,.kdcpub-rail,.kdcpub-rail *,
   .kdcpub-crumb,.kdcpub-crumb *,.kdcpub-foot,.kdcpub-foot *{box-sizing:border-box}
   body.kdcpub-body{margin:0;background:var(--kdcpub-bg);font-family:Inter,system-ui,-apple-system,'Segoe UI',sans-serif;color:var(--kdcpub-ink)}
-  .kdcpub-header{position:sticky;top:0;z-index:50;background:rgba(255,255,255,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--kdcpub-border);font-family:Inter,system-ui,-apple-system,'Segoe UI',sans-serif}
-  .kdcpub-header-in{max-width:1180px;margin:0 auto;display:flex;align-items:center;gap:22px;padding:12px 24px}
+  .kdcpub-header{position:sticky;top:0;z-index:50;background:rgba(246,250,250,.97);backdrop-filter:blur(10px);border-bottom:1px solid #D8ECEB;font-family:Inter,system-ui,-apple-system,'Segoe UI',sans-serif}
+  .kdcpub-header-in{max-width:1200px;min-height:60px;margin:0 auto;display:flex;align-items:center;gap:22px;padding:12px 24px}
   .kdcpub-brand{display:flex;align-items:center;gap:8px;text-decoration:none;margin-right:auto;color:var(--kdcpub-ink);font-weight:700;font-size:15px}
-  .kdcpub-brand img{height:26px;display:block}
-  .kdcpub-nav{display:flex;gap:2px;flex-wrap:wrap}
-  .kdcpub-nav a{color:var(--kdcpub-dim);text-decoration:none;font-size:14px;font-weight:500;padding:6px 10px;border-radius:8px}
-  .kdcpub-nav a:hover{color:var(--kdcpub-accent-dark);background:rgba(var(--kdcpub-accent-rgb),.07)}
-  .kdcpub-nav a.kdcpub-active{color:var(--kdcpub-accent-dark);background:rgba(var(--kdcpub-accent-rgb),.10)}
+  .kdcpub-brand img{height:28px;width:auto;display:block}
+  .kdcpub-nav{display:flex;align-items:center;gap:12px;overflow-x:auto;scrollbar-width:none}
+  .kdcpub-nav::-webkit-scrollbar{display:none}
+  .kdcpub-nav a{display:flex;align-items:center;min-height:44px;white-space:nowrap;color:var(--kdcpub-dim);text-decoration:none;font-size:13px;font-weight:500;padding:8px 4px}
+  .kdcpub-nav a:hover{color:var(--kdcpub-ink)}
+  .kdcpub-nav a.kdcpub-active{color:var(--kdcpub-accent-dark);font-weight:600}
+  .kdcpub-menu{display:none;flex-direction:column;align-items:center;justify-content:center;gap:4px;width:44px;height:44px;padding:0;border:0;border-radius:8px;background:transparent;cursor:pointer}
+  .kdcpub-menu:hover{background:rgba(var(--kdcpub-accent-rgb),.07)}
+  .kdcpub-menu span{display:block;width:20px;height:2px;border-radius:2px;background:var(--kdcpub-ink)}
   .kdcpub-chipbtn{display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border-radius:8px;border:1px solid var(--kdcpub-border);background:var(--kdcpub-surface);color:var(--kdcpub-dim);font-family:inherit;font-size:13px;font-weight:600;text-decoration:none;cursor:pointer;line-height:1.2}
   .kdcpub-chipbtn:hover{border-color:rgba(var(--kdcpub-accent-rgb),.5);color:var(--kdcpub-accent-dark)}
   .kdcpub-date{color:var(--kdcpub-muted);font-size:13px;font-variant-numeric:tabular-nums}
@@ -127,6 +131,14 @@ _BASE_CSS = """
   .kdcpub-card-top{display:flex;align-items:center;gap:10px;margin-bottom:6px}
   .kdcpub-foot{max-width:1180px;margin:0 auto;padding:18px 24px 40px;color:var(--kdcpub-muted);font-size:12.5px;border-top:1px solid var(--kdcpub-border);font-family:Inter,system-ui,sans-serif}
   .kdcpub-foot a{color:var(--kdcpub-accent-dark)}
+  @media(max-width:720px){
+    .kdcpub-header-in{position:relative;gap:12px;padding:8px 16px}
+    .kdcpub-brand img{height:24px}
+    .kdcpub-menu{display:flex}
+    .kdcpub-nav{display:none;position:absolute;left:0;right:0;top:100%;z-index:51;flex-direction:column;align-items:stretch;gap:0;padding:8px 16px 14px;overflow:visible;background:rgba(246,250,250,.99);border-bottom:1px solid #D8ECEB;box-shadow:0 8px 18px rgba(13,30,44,.08)}
+    .kdcpub-header.kdcpub-menu-open .kdcpub-nav{display:flex}
+    .kdcpub-nav a{width:100%;min-height:46px;padding:10px 8px;font-size:14px}
+  }
 """
 
 _CATALOG_CSS = """
@@ -257,6 +269,21 @@ _RAIL_JS = """
 
 # ------------------------------------------------------------------ pieces
 
+def _nav_link_is_active(link_href: str, active_href: str) -> bool:
+    """Match a navigation section across relative and canonical URLs."""
+    if not link_href or not active_href:
+        return False
+    link = urlsplit(link_href)
+    active = urlsplit(active_href)
+    if link.netloc and active.netloc and link.netloc != active.netloc:
+        return False
+    link_path = "/" + link.path.strip("/") if link.path.strip("/") else "/"
+    active_path = "/" + active.path.strip("/") if active.path.strip("/") else "/"
+    if link_path == "/":
+        return active_path == "/"
+    return active_path == link_path or active_path.startswith(f"{link_path}/")
+
+
 def render_chrome_header(
     chrome: Optional[PublicContentChromeConfig],
     *,
@@ -272,18 +299,50 @@ def render_chrome_header(
     brand = (
         f'<a class="kdcpub-brand" href="{_esc(chrome.brand_href or "/")}">{brand_body}</a>'
     )
-    active_attr = ' class="kdcpub-active"'
     nav_links = "".join(
         f'<a href="{_esc(link.href)}"'
-        f"{active_attr if active_href and link.href == active_href else ''}"
-        f">{_esc(link.label)}</a>"
+        + (
+            ' class="kdcpub-active" aria-current="page"'
+            if _nav_link_is_active(link.href, active_href)
+            else ""
+        )
+        + f">{_esc(link.label)}</a>"
         for link in chrome.links
     )
-    nav = f'<nav class="kdcpub-nav">{nav_links}</nav>' if nav_links else ""
+    menu = (
+        '<button class="kdcpub-menu" type="button" aria-expanded="false" '
+        'aria-controls="kdcpub-site-nav" aria-label="Open navigation">'
+        '<span></span><span></span><span></span></button>'
+        if nav_links
+        else ""
+    )
+    nav = (
+        f'<nav class="kdcpub-nav" id="kdcpub-site-nav" '
+        f'aria-label="Primary navigation">{nav_links}</nav>'
+        if nav_links
+        else ""
+    )
+    menu_script = (
+        "<script>(function(){"
+        "var h=document.querySelector('.kdcpub-header');"
+        "var b=h&&h.querySelector('.kdcpub-menu');"
+        "if(!h||!b)return;"
+        "function close(){h.classList.remove('kdcpub-menu-open');"
+        "b.setAttribute('aria-expanded','false');b.setAttribute('aria-label','Open navigation')}"
+        "b.addEventListener('click',function(){var open=!h.classList.contains('kdcpub-menu-open');"
+        "h.classList.toggle('kdcpub-menu-open',open);"
+        "b.setAttribute('aria-expanded',open?'true':'false');"
+        "b.setAttribute('aria-label',open?'Close navigation':'Open navigation')});"
+        "document.addEventListener('keydown',function(e){if(e.key==='Escape')close()});"
+        "})();</script>"
+        if nav_links
+        else ""
+    )
     return (
         '<header class="kdcpub-header"><div class="kdcpub-header-in">'
-        f"{brand}{nav}"
+        f"{brand}{menu}{nav}"
         "</div></header>"
+        f"{menu_script}"
     )
 
 

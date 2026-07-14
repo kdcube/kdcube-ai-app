@@ -199,12 +199,18 @@ public_content:
         background: '#F4F9FF'
     chrome:                         # sticky site header on catalog + item pages
       brand_label: KDCube
-      brand_href: https://site.example/
-      logo_url: https://site.example/assets/logo.svg
+      brand_href: /
+      logo_url: /assets/logo.svg
       links:
-        - { label: Home, href: 'https://site.example/' }
-        - { label: Blog, href: 'https://site.example/news/engineering' }
+        - { label: Home, href: '/' }
+        - { label: Blog, href: '/news/engineering' }
 ```
+
+`canonical_base` is deliberately absolute because it defines the indexed URL.
+Same-site `brand_href`, `logo_url`, and navigation links should normally be
+root-relative. This keeps one application descriptor valid on local, preview,
+staging, and production hosts; absolute chrome links are for intentional
+cross-site navigation.
 
 Behavior and guarantees:
 
