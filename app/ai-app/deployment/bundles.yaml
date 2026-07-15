@@ -1275,6 +1275,12 @@ bundles:
           \ assistant can use\nthem as sources to build on, or act on them in the apps they live in —\nand it can add, comment\
           \ on, or refine cards.</p>\n"
       react:
+        agents:
+          main:
+            subagents:
+              allowed: true
+              model: strong_agent
+              visibility: thread
         default_agent:
           event_source_pipeline:
             enabled: true
@@ -1733,10 +1739,6 @@ bundles:
                     expanded: false
                     command:
                       action: refresh
-                  task_tracker.issue_editor:
-                    label: task editor
-                    expanded: true
-                    command_from_open: provider_surface_open
               components:
                 stats:
                   enabled: false
@@ -1751,6 +1753,26 @@ bundles:
                     w: 720
                     h: 520
                   order: 40
+                # Task editor owns the issue-editor surface: task pins and
+                # the task list's "Open editor" summon it via provider
+                # surface open. Surface-command-only (no rail button).
+                task_wizard:
+                  enabled: true
+                  bundle_id: task-tracker@1-0
+                  widget_alias: task_tracker_wizard
+                  route: widgets/task_tracker_wizard/?host_controls=1
+                  title: KDCube Task Editor
+                  accent: green
+                  gated: true
+                  views: false
+                  rail: false
+                  placement: floating
+                  size:
+                    w: 620
+                    h: 720
+                  target_surfaces:
+                  - task_tracker.issue_editor
+                  order: 45
             canvas:
               resolvers:
               - kind: named_service
