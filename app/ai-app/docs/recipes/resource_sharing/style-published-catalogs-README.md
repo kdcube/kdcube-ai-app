@@ -102,6 +102,17 @@ In `pub-brand.css`, target the stable `kdcpub-*` classes:
 Keep CSS in the asset, not in YAML — `bundles.yaml` carries intent (tokens
 and URLs), never stylesheet bodies.
 
+The **item-page rail** (the article-list control beside an article) is part
+of the same contract — `kdcpub-rail-*` classes, same tokens, same stylesheet.
+One rule worth stealing: the rail's fold pills stretch to share one row by
+default, which squeezes long labels; natural-width wrapping reads better on
+alias configs with many folds:
+
+```css
+.kdcpub-rail-folds { flex-wrap: wrap; }
+.kdcpub-rail-fold  { flex: 0 1 auto; white-space: nowrap; }
+```
+
 ## Step 4 — Per-fold overrides
 
 A catalog can carry its own `presentation`. Tokens override the alias values;
@@ -159,5 +170,17 @@ rail shell carry it).
 curl -s $CATALOG_URL | grep -c 'link rel="stylesheet"'
 # → the number of stylesheets you declared (alias + fold)
 curl -s $CATALOG_URL | grep -o -- '--kdcpub-accent:[^;]*'
-# → the fold's accent
+# → the fold's accent (the LAST match — the first is the SDK default block)
 ```
+
+## Worked example
+
+The news app's catalogs run a complete Tier-1 + Tier-2 treatment built with
+this recipe — five fold color worlds plus one app stylesheet covering the
+catalog pages and the rail. Its decisions (palette, stylesheet hosting,
+change procedure) are recorded in the app's own
+`docs/design/catalog-presentation-design.md` (applications repo). Two
+practical habits from that build: **pick treatments from offline mocks
+first** — replicate the rendered DOM with your candidate CSS layered last,
+exactly the cascade the runtime applies — and host the stylesheet at a
+root-relative URL your site serves on every origin.
