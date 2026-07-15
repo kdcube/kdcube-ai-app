@@ -32,8 +32,15 @@ async def _load_store_registry_readonly(tenant: str, project: str):
 
     return await _load_store_registry_readonly_impl(tenant, project)
 
-@dataclass
+@dataclass(frozen=True)
 class BundleSpec:
+    """Authoritative identity and load coordinates for one application bundle.
+
+    ``id`` is required even when only loading code: storage, runtime context,
+    singleton caches, and lifecycle callbacks are all application-scoped.
+    ``path`` and ``module`` locate that application's entrypoint.
+    """
+
     id: str
     name: Optional[str] = None
     path: str = ""
@@ -45,6 +52,10 @@ class BundleSpec:
     ref: Optional[str] = None
     subdir: Optional[str] = None
     git_commit: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        if not str(self.id or "").strip():
+            raise ValueError("BundleSpec requires a non-empty id")
 
 ADMIN_BUNDLE_ID = "kdcube.admin"
 

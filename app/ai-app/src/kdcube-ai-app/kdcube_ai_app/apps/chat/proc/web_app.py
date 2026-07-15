@@ -601,6 +601,7 @@ async def _preload_bundles_loop(app) -> None:
                 continue
             total += 1
             spec = BundleSpec(
+                id=bid,
                 path=path,
                 module=entry.module,
                 singleton=bool(entry.singleton),
@@ -1019,6 +1020,7 @@ async def lifespan(app: FastAPI):
 
         wf_config.ai_bundle_spec = spec_resolved
         spec = BundleSpec(
+            id=spec_resolved.id,
             path=spec_resolved.path,
             module=spec_resolved.module,
             singleton=bool(spec_resolved.singleton),

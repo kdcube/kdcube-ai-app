@@ -95,6 +95,7 @@ def test_singleton_workflow_rebinds_request_context(monkeypatch):
 
     admin = _admin_bundle_entry()
     spec = BundleSpec(
+        id=admin.id,
         path=admin.path,
         module=admin.module,
         singleton=bool(admin.singleton),
@@ -118,6 +119,7 @@ def test_kdcube_services_storage_widget_source_resolves(monkeypatch):
 
     bundle_root = Path(__file__).resolve().parents[1] / "sdk" / "examples" / "bundles" / "kdcube-services@1-0"
     spec = BundleSpec(
+        id="kdcube-services@1-0",
         path=str(bundle_root),
         module="entrypoint",
         singleton=False,
@@ -546,7 +548,12 @@ async def test_notify_cached_bundle_props_changed_calls_singleton_hook(monkeypat
     ep.kv_cache = MagicMock()
     ep.kv_cache.get_json = AsyncMock(return_value={"feature": {"enabled": True}})
 
-    spec = BundleSpec(path="/tmp/bundle.props", module="entrypoint", singleton=True)
+    spec = BundleSpec(
+        id="bundle.props",
+        path="/tmp/bundle.props",
+        module="entrypoint",
+        singleton=True,
+    )
     _singleton_cache[cache_key_for_spec(spec)] = (ep, SimpleNamespace(__name__="bundle.props.entrypoint"))
 
     try:

@@ -661,6 +661,7 @@ async def _reload_widget_manifest_after_miss(
     """Recover once from stale in-process bundle code/manifest state."""
     try:
         spec = BundleSpec(
+            id=spec_resolved.id,
             path=spec_resolved.path,
             module=spec_resolved.module,
             singleton=bool(spec_resolved.singleton),
@@ -1414,6 +1415,7 @@ async def _load_bundle_props_defaults(
         wf_config = create_workflow_config(ConfigRequest.model_validate({"project": project}))
 
     spec = BundleSpec(
+        id=spec_resolved.id,
         path=spec_resolved.path,
         module=spec_resolved.module,
         singleton=bool(spec_resolved.singleton),
@@ -1515,6 +1517,7 @@ async def _get_bundle_manifest(
     if not spec_resolved:
         return None
     spec = BundleSpec(
+        id=spec_resolved.id,
         path=spec_resolved.path,
         module=spec_resolved.module,
         singleton=bool(spec_resolved.singleton),
@@ -2397,6 +2400,7 @@ async def internal_bundle_status(payload: BundleStatusRequest, request: Request)
 
     entry_dict = entry.model_dump()
     spec = BundleSpec(
+        id=bundle_id,
         path=entry.path,
         module=entry.module,
         singleton=bool(entry.singleton),
@@ -2633,6 +2637,7 @@ async def _do_reload_bundles_from_authority(
         if target_entry is not None:
             target_payload = target_entry.model_dump()
             target_spec = BundleSpec(
+                id=str(target_payload.get("id") or requested_bundle_id),
                 path=target_payload.get("path"),
                 module=target_payload.get("module"),
                 singleton=bool(target_payload.get("singleton")),
@@ -2759,6 +2764,7 @@ async def admin_cleanup_bundles(
             try:
                 active_specs.append(
                     BundleSpec(
+                        id=_bid,
                         path=entry.path,
                         module=entry.module,
                         singleton=bool(entry.singleton),
@@ -3097,6 +3103,7 @@ async def _serve_application_site(
             detail=f"Application site owner '{site.application_id}' is unavailable",
         )
     site_spec = BundleSpec(
+        id=site.application_id,
         path=site.target.path,
         module=site.target.module,
         singleton=site.target.singleton,
@@ -3559,6 +3566,7 @@ def _log_bundle_widget_lookup_mismatch(
         workflow: Any,
 ) -> None:
     spec = BundleSpec(
+        id=spec_resolved.id,
         path=spec_resolved.path,
         module=spec_resolved.module,
         singleton=bool(spec_resolved.singleton),
@@ -4708,6 +4716,7 @@ async def _load_bundle_workflow(
     wf_config.ai_bundle_spec = spec_resolved
 
     spec = BundleSpec(
+        id=spec_resolved.id,
         path=spec_resolved.path,
         module=spec_resolved.module,
         singleton=bool(spec_resolved.singleton),

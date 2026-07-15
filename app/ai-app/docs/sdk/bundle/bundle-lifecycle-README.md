@@ -111,7 +111,8 @@ Important precision:
 
 - singleton reuse is **not** keyed by `tenant/project`
 - singleton reuse is **not** keyed by `bundle_id` alone
-- the cache key is the loaded bundle spec (`path + module`) in the current worker
+- every loaded `BundleSpec` carries a required application `id`
+- the cache key is the loaded bundle spec (`id + path + module`) in the current worker
 
 Operationally, the bundle registry still exposes one active loaded spec for a
 given `bundle_id` at a time, so different refs of the same `bundle_id` do not

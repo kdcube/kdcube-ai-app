@@ -601,7 +601,7 @@ class BundleSchedulerManager:
             if not path:
                 continue
 
-            spec = BundleSpec(path=path, module=module, singleton=bool(singleton))
+            spec = BundleSpec(id=bundle_id, path=path, module=module, singleton=bool(singleton))
 
             try:
                 manifest = load_bundle_manifest(spec, bundle_id=bundle_id)

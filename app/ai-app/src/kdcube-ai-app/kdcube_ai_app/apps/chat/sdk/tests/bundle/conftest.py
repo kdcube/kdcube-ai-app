@@ -169,7 +169,7 @@ def bundle(bundle_dir, bundle_id, redis_client, pg_pool, comm_context):
             _discover_decorated,
         )
 
-        spec = BundleSpec(path=str(bundle_dir), module="entrypoint")
+        spec = BundleSpec(id=bundle_id, path=str(bundle_dir), module="entrypoint")
         mod = _resolve_module(spec)
         chosen = _discover_decorated(mod)
 

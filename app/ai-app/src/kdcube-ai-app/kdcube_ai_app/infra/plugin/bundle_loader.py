@@ -38,6 +38,7 @@ from kdcube_ai_app.apps.chat.sdk.runtime.data_bus.types import (
     DataBusHandlerSpec,
     validate_handler_spec_values,
 )
+from kdcube_ai_app.infra.plugin.bundle_registry import BundleSpec
 from kdcube_ai_app.infra.service_hub.inventory import AgentLogger
 _log = logging.getLogger("kdcube.plugin.loader")
 
@@ -1815,19 +1816,6 @@ def _execute_in_bundle_venv(
 # Spec & caches
 # --------------------------------------------------------------------------------------
 
-@dataclass(frozen=True)
-class BundleSpec:
-    """
-    Where/how to load a bundle module:
-      - path: file.py | package_dir/ | archive.zip/.whl
-      - module: dotted module **inside** path (required for zip/whl; optional otherwise)
-      - singleton: if True, cache & reuse the entrypoint instance
-    """
-    path: str
-    module: Optional[str] = None
-    singleton: bool = False
-
-
 # Backward-compatible public name. New code should use BundleSpec.
 AgenticBundleSpec = BundleSpec
 
@@ -1976,7 +1964,7 @@ def _cancel_task_if_pending(task: asyncio.Task | None) -> None:
         pass
 
 def _cache_key(spec: BundleSpec) -> str:
-    return f"{Path(spec.path).resolve()}::{spec.module or ''}"
+    return f"{spec.id}::{Path(spec.path).resolve()}::{spec.module or ''}"
 
 def cache_key_for_spec(spec: BundleSpec) -> str:
     return _cache_key(spec)

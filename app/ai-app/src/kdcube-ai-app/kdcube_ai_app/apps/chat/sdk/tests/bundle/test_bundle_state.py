@@ -117,7 +117,7 @@ class TestBundleState:
                 _resolve_module,
                 _discover_decorated,
             )
-            spec = BundleSpec(path=str(bundle_dir), module="entrypoint")
+            spec = BundleSpec(id=bundle_id, path=str(bundle_dir), module="entrypoint")
             mod = _resolve_module(spec)
             chosen = _discover_decorated(mod)
             if chosen is None or chosen[0] != "class":

@@ -605,7 +605,8 @@ Current behavior:
 - startup and bundle-update paths load or rebuild the effective registry for the worker scope
 - built-in example bundles are merged into that registry in [bundle_store.py](../../../src/kdcube-ai-app/kdcube_ai_app/infra/plugin/bundle_store.py)
 - request-time bundle resolution then uses the in-memory registry in [bundle_registry.py](../../../src/kdcube-ai-app/kdcube_ai_app/infra/plugin/bundle_registry.py)
-- module/singleton cache keys are based on the resolved bundle path in [bundle_loader.py](../../../src/kdcube-ai-app/kdcube_ai_app/infra/plugin/bundle_loader.py)
+- the authoritative `BundleSpec` always carries the application id and resolved load coordinates
+- module/singleton cache keys use `id + path + module` in [bundle_loader.py](../../../src/kdcube-ai-app/kdcube_ai_app/infra/plugin/bundle_loader.py), so two application identities cannot share runtime state merely because they resolve to the same code path
 
 For built-in example bundles on Docker/ECS proc:
 

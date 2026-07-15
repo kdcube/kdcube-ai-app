@@ -71,6 +71,7 @@ async def test_site_alias_delegates_to_standard_static_serving(monkeypatch) -> N
     assert captured["base_href"] == "/sites/docs/"
     assert captured["html_context"]["application_id"] == "website@1"
     assert captured["html_context"]["catalog_revision"] == catalog.revision
+    assert captured["resolved_spec"].id == "website@1"
     assert captured["resolved_spec"].path == _SITE_TARGET.path
 
 

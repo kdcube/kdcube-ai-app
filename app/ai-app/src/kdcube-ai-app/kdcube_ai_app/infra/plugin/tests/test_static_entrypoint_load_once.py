@@ -69,7 +69,7 @@ async def test_static_entrypoint_load_cleanup_marks_done_after_waiter_cancellati
 @pytest.mark.asyncio
 async def test_bundle_on_load_continues_after_waiter_cancellation():
     clear_bundle_loader_caches()
-    spec = BundleSpec(path="/tmp/test-bundle", module="entrypoint")
+    spec = BundleSpec(id="test-bundle", path="/tmp/test-bundle", module="entrypoint")
     config = SimpleNamespace(
         log_level="INFO",
         ai_bundle_spec=SimpleNamespace(id="test-bundle"),

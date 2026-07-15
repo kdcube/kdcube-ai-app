@@ -2084,6 +2084,7 @@ class EnhancedChatRequestProcessor:
                         continue
                     try:
                         spec = BundleSpec(
+                            id=bundle_id,
                             path=entry.path,
                             module=entry.module,
                             singleton=bool(getattr(entry, "singleton", False)),
@@ -2329,6 +2330,7 @@ class EnhancedChatRequestProcessor:
                         for _bid, entry in (current_reg.bundles or {}).items():
                             try:
                                 active_specs.append(BundleSpec(
+                                    id=_bid,
                                     path=entry.path,
                                     module=entry.module,
                                     singleton=bool(entry.singleton),
@@ -2538,6 +2540,7 @@ class EnhancedChatRequestProcessor:
                                 entry = (current.bundles or {}).get(bundle_id) if current else None
                                 if entry is not None:
                                     spec = BundleSpec(
+                                        id=bundle_id,
                                         path=entry.path,
                                         module=entry.module,
                                         singleton=bool(getattr(entry, "singleton", False)),

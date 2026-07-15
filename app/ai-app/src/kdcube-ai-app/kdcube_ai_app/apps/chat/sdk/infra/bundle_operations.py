@@ -466,6 +466,7 @@ async def _invoke_local_bundle_operation_raw(
     wf_config = create_workflow_config(cfg_req)
     wf_config.ai_bundle_spec = spec_resolved
     spec = BundleSpec(
+        id=spec_resolved.id,
         path=spec_resolved.path,
         module=spec_resolved.module,
         singleton=bool(getattr(spec_resolved, "singleton", False)),
@@ -714,6 +715,7 @@ async def invoke_local_bundle_named_service(
     wf_config = create_workflow_config(cfg_req)
     wf_config.ai_bundle_spec = spec_resolved
     spec = BundleSpec(
+        id=spec_resolved.id,
         path=spec_resolved.path,
         module=spec_resolved.module,
         singleton=bool(getattr(spec_resolved, "singleton", False)),

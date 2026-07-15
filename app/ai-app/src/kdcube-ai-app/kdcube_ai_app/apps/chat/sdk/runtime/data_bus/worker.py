@@ -549,7 +549,7 @@ class DataBusRuntimeManager:
             singleton = entry.singleton if hasattr(entry, "singleton") else entry.get("singleton", False)
             if not path:
                 continue
-            spec = BundleSpec(path=path, module=module, singleton=bool(singleton))
+            spec = BundleSpec(id=bundle_id, path=path, module=module, singleton=bool(singleton))
             try:
                 manifest = load_bundle_manifest(spec, bundle_id=bundle_id)
             except Exception:

@@ -39,7 +39,7 @@ def test_evict_bundle_scope_removes_only_target_bundle_modules(tmp_path):
     other_file = other_root / "entrypoint.py"
     other_file.write_text("z = 3\n")
 
-    spec = BundleSpec(path=str(bundle_root), module="entrypoint", singleton=True)
+    spec = BundleSpec(id="bundle-a", path=str(bundle_root), module="entrypoint", singleton=True)
     key = cache_key_for_spec(spec)
 
     target_module = types.ModuleType("kdcube_bundle_123.entrypoint")
@@ -99,7 +99,7 @@ class BadWorkflow(BaseWorkflow):
     pass
 """.lstrip()
     )
-    spec = BundleSpec(path=str(bundle_root), module="entrypoint", singleton=True)
+    spec = BundleSpec(id="bad.workflow", path=str(bundle_root), module="entrypoint", singleton=True)
     config = SimpleNamespace(ai_bundle_spec=SimpleNamespace(id="bad.workflow"), log_level="INFO")
     ctx = ExternalEventPayload(
         request=ExternalEventRequest(request_id="req-1"),
@@ -118,3 +118,15 @@ class BadWorkflow(BaseWorkflow):
             get_workflow_instance(spec, config, comm_context=ctx)
     finally:
         clear_bundle_loader_caches()
+
+
+def test_bundle_cache_key_includes_application_id(tmp_path):
+    first = BundleSpec(id="site-a", path=str(tmp_path), module="entrypoint")
+    second = BundleSpec(id="site-b", path=str(tmp_path), module="entrypoint")
+
+    assert cache_key_for_spec(first) != cache_key_for_spec(second)
+
+
+def test_bundle_spec_requires_application_id(tmp_path):
+    with pytest.raises(ValueError, match="non-empty id"):
+        BundleSpec(id="", path=str(tmp_path), module="entrypoint")
