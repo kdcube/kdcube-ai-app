@@ -33,4 +33,9 @@ export {
   type StandaloneSelectionWriteOptions,
   type ComposerMenuSectionContext,
   type ComposerMenuSectionDescriptor,
+  ConversationSearchPage,
+  useConversationSearch,
+  type ConversationSearchSeed,
+  type ConversationSearchVm,
+  type ConversationSearchScope,
 } from './ui/index.ts'

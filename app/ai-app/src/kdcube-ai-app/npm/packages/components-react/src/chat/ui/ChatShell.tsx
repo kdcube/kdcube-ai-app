@@ -10,9 +10,11 @@
  *   <ChatStoreProvider config={...}><MyOwnChatUI /></ChatStoreProvider>
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react'
 import type { BannerTone, ConnectionsConsentOpen, ConversationSearchHit, ConversationSummary, NamespaceStyleMap } from '@kdcube/components-core/chat'
 import type { ChatTurn } from '@kdcube/components-core/chat'
-import { findActiveTurn, subagentThreadsForTurn } from '@kdcube/components-core/chat'
+import { findActiveTurn, openConversationSearchOnHost, subagentThreadsForTurn } from '@kdcube/components-core/chat'
 import { useAppDispatch, useStableCallback } from './support/hooks.ts'
 import { chatActions } from '@kdcube/components-core/chat'
 import { useChatViewModel } from './context.tsx'
@@ -87,6 +89,29 @@ function isEmbedded(): boolean {
  *  (a host can wire focus via the engine event bus instead). */
 const NOOP = () => {}
 
+/* User-resizable panes, persisted across sessions. */
+const SIDEBAR_WIDTH_KEY = 'kdcube.chat.sidebarWidth'
+const SIDEBAR_MIN = 220
+const SIDEBAR_MAX = 640
+const SIDEBAR_DEFAULT = 260
+const CONV_MENU_HEIGHT_KEY = 'kdcube.chat.convMenuHeight'
+const CONV_MENU_MIN = 280
+
+function readStoredSize(key: string, min: number, max: number): number | null {
+  try {
+    const stored = Number(window.localStorage.getItem(key))
+    if (Number.isFinite(stored) && stored > 0) return Math.min(max, Math.max(min, stored))
+  } catch { /* storage unavailable (sandboxed iframe) — session-only sizing */ }
+  return null
+}
+
+function storeSize(key: string, value: number | null) {
+  try {
+    if (value === null) window.localStorage.removeItem(key)
+    else window.localStorage.setItem(key, String(Math.round(value)))
+  } catch { /* storage unavailable */ }
+}
+
 export function ChatShell({
   brandLabel = DEFAULT_BRAND_LABEL,
   accountLabel,
@@ -131,6 +156,72 @@ export function ChatShell({
   const [leftPaneMode, setLeftPaneMode] = useState<'chats' | 'webapp' | 'collapsed'>('chats')
   const [webappModalOpen, setWebappModalOpen] = useState(false)
   const [convMenuOpen, setConvMenuOpen] = useState(false)
+
+  /* The left pane (chats / search results) is user-resizable: a drag handle
+   * on its right edge sets the width (the search pane at 260px was cramped);
+   * double-click resets. The compact conversations overlay resizes the same
+   * way via its bottom grip. Both persist. */
+  const [sidebarWidth, setSidebarWidth] = useState<number>(
+    () => readStoredSize(SIDEBAR_WIDTH_KEY, SIDEBAR_MIN, SIDEBAR_MAX) ?? SIDEBAR_DEFAULT,
+  )
+  const [sidebarDragging, setSidebarDragging] = useState(false)
+  const sidebarDragRef = useRef<{ startX: number; startWidth: number } | null>(null)
+  const handleSidebarResizeStart = useStableCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    sidebarDragRef.current = { startX: event.clientX, startWidth: sidebarWidth }
+    setSidebarDragging(true)
+    event.currentTarget.setPointerCapture(event.pointerId)
+  })
+  const handleSidebarResizeMove = useStableCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = sidebarDragRef.current
+    if (!drag) return
+    const next = Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, drag.startWidth + (event.clientX - drag.startX)))
+    setSidebarWidth(next)
+  })
+  const handleSidebarResizeEnd = useStableCallback(() => {
+    if (!sidebarDragRef.current) return
+    sidebarDragRef.current = null
+    setSidebarDragging(false)
+    setSidebarWidth((width) => {
+      storeSize(SIDEBAR_WIDTH_KEY, width)
+      return width
+    })
+  })
+  const handleSidebarResizeReset = useStableCallback(() => {
+    setSidebarWidth(SIDEBAR_DEFAULT)
+    storeSize(SIDEBAR_WIDTH_KEY, null)
+  })
+
+  const [convMenuHeight, setConvMenuHeight] = useState<number | null>(
+    () => readStoredSize(CONV_MENU_HEIGHT_KEY, CONV_MENU_MIN, 10_000),
+  )
+  const convMenuDragRef = useRef<{ startY: number; startHeight: number } | null>(null)
+  const convMenuRef = useRef<HTMLDivElement | null>(null)
+  const handleConvMenuResizeStart = useStableCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    const measured = convMenuRef.current?.offsetHeight ?? convMenuHeight ?? CONV_MENU_MIN
+    convMenuDragRef.current = { startY: event.clientY, startHeight: measured }
+    event.currentTarget.setPointerCapture(event.pointerId)
+  })
+  const handleConvMenuResizeMove = useStableCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = convMenuDragRef.current
+    if (!drag) return
+    const ceiling = Math.max(CONV_MENU_MIN, window.innerHeight - 90)
+    const next = Math.min(ceiling, Math.max(CONV_MENU_MIN, drag.startHeight + (event.clientY - drag.startY)))
+    setConvMenuHeight(next)
+  })
+  const handleConvMenuResizeEnd = useStableCallback(() => {
+    if (!convMenuDragRef.current) return
+    convMenuDragRef.current = null
+    setConvMenuHeight((height) => {
+      storeSize(CONV_MENU_HEIGHT_KEY, height)
+      return height
+    })
+  })
+  const handleConvMenuResizeReset = useStableCallback(() => {
+    setConvMenuHeight(null)
+    storeSize(CONV_MENU_HEIGHT_KEY, null)
+  })
   const [showScrollDown, setShowScrollDown] = useState(false)
   const bottomRef = useRef<HTMLDivElement | null>(null)
   const scrollContainerRef = useRef<HTMLDivElement | null>(null)
@@ -336,19 +427,27 @@ export function ChatShell({
    * Same conversation → scroll + flash immediately. Different conversation →
    * load it, then a pending-anchor effect waits for the turn anchors to render
    * before scrolling. Search hit `turn_id`s equal the UI `turn.id`s (hydration
-   * keeps the backend turn ids), which TurnView exposes as data-turn-anchor. */
-  const [pendingJump, setPendingJump] = useState<{ conversationId: string; turnId: string } | null>(null)
+   * keeps the backend turn ids), which TurnView exposes as data-turn-anchor
+   * (user bubble) / data-turn-assistant-anchor (assistant part). The clicked
+   * snippet's role picks which side of the turn to land on. */
+  const [pendingJump, setPendingJump] = useState<{ conversationId: string; turnId: string; role: string | null } | null>(null)
 
-  const flashTurnAnchor = useStableCallback((turnId: string): boolean => {
+  const flashTurnAnchor = useStableCallback((turnId: string, role?: string | null): boolean => {
     const container = scrollContainerRef.current
     if (!container) return false
     const escaped = typeof CSS !== 'undefined' && typeof CSS.escape === 'function'
       ? CSS.escape(turnId)
       : turnId.replace(/"/g, '\\"')
-    const anchor = container.querySelector<HTMLElement>(`[data-turn-anchor="${escaped}"]`)
+    const wantAssistantSide = role === 'assistant' || role === 'summary'
+    const anchor =
+      (wantAssistantSide
+        ? container.querySelector<HTMLElement>(`[data-turn-assistant-anchor="${escaped}"]`)
+        : null) ||
+      container.querySelector<HTMLElement>(`[data-turn-anchor="${escaped}"]`) ||
+      container.querySelector<HTMLElement>(`[data-turn-assistant-anchor="${escaped}"]`)
     if (!anchor) return false
     autoScrollRef.current = false
-    anchor.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    anchor.scrollIntoView({ behavior: 'smooth', block: wantAssistantSide ? 'start' : 'center' })
     anchor.classList.remove('kcs-turn-flash')
     void anchor.offsetWidth
     anchor.classList.add('kcs-turn-flash')
@@ -356,17 +455,18 @@ export function ChatShell({
     return true
   })
 
-  const handleJumpToHit = useStableCallback((hit: ConversationSearchHit) => {
+  const handleJumpToHit = useStableCallback((hit: ConversationSearchHit, role?: string | null) => {
     /* Park the stick-to-bottom follower so hydration doesn't yank the view
      * to the newest turn before we land on the target one. */
     autoScrollRef.current = false
+    const targetRole = role ?? hit.matched_via_role ?? null
     if (state.conversationId === hit.conversation_id) {
       window.requestAnimationFrame(() => {
-        flashTurnAnchor(hit.turn_id)
+        flashTurnAnchor(hit.turn_id, targetRole)
       })
       return
     }
-    setPendingJump({ conversationId: hit.conversation_id, turnId: hit.turn_id })
+    setPendingJump({ conversationId: hit.conversation_id, turnId: hit.turn_id, role: targetRole })
     engine.loadConversation(hit.conversation_id)
   })
 
@@ -374,13 +474,84 @@ export function ChatShell({
     if (!pendingJump) return
     if (state.conversationId !== pendingJump.conversationId) return
     const frame = window.requestAnimationFrame(() => {
-      const landed = flashTurnAnchor(pendingJump.turnId)
+      const landed = flashTurnAnchor(pendingJump.turnId, pendingJump.role)
       /* Once the load settled, stop waiting even if the anchor never appears
        * (e.g. the matched turn hydrated without a user bubble). */
       if (landed || state.conversationLoadingId === null) setPendingJump(null)
     })
     return () => window.cancelAnimationFrame(frame)
   }, [pendingJump, state.conversationId, state.conversationLoadingId, visibleTurns.length, flashTurnAnchor])
+
+  /* Host-driven turn jump (the undocked search window's "bring me here"): the
+   * engine parked the request in the store and kicked the conversation load;
+   * consume it into the same pending-jump machinery as a local hit click. */
+  useEffect(() => {
+    const jump = state.turnJump
+    if (!jump) return
+    dispatch(chatActions.clearTurnJump())
+    autoScrollRef.current = false
+    if (state.conversationId === jump.conversationId) {
+      window.requestAnimationFrame(() => {
+        flashTurnAnchor(jump.turnId, jump.role)
+      })
+    } else {
+      setPendingJump({ conversationId: jump.conversationId, turnId: jump.turnId, role: jump.role })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.turnJump])
+
+  /* ---- Undock: search results as a scene window. ----
+   * The expand affordance in the results head tries the host first
+   * (`conversation_search.open` seeded with the CURRENT search state); an
+   * acked command means a real window opened, so the in-chat results clear.
+   * No ack (no host contract / standalone) falls back to a wide in-chat
+   * modal over the same vm — the affordance never lands nowhere. */
+  const [searchModalOpen, setSearchModalOpen] = useState(false)
+  const handleSearchUndock = useStableCallback(() => {
+    void openConversationSearchOnHost(
+      {
+        query: conversationSearch.query || conversationSearch.resultsQuery,
+        scope: conversationSearch.scope === 'current' ? 'current' : 'all',
+        ...(conversationSearch.scope === 'current' && state.conversationId
+          ? { conversation_id: state.conversationId }
+          : {}),
+        ...(engine.boundAgentId ? { agent_id: engine.boundAgentId } : {}),
+        targets: conversationSearch.targets,
+        time_preset: conversationSearch.timePreset,
+        ...(conversationSearch.dateFrom ? { date_from: conversationSearch.dateFrom } : {}),
+        ...(conversationSearch.dateTo ? { date_to: conversationSearch.dateTo } : {}),
+        weights: conversationSearch.weights,
+        autorun: conversationSearch.mode === 'results',
+      },
+      { source: 'chat-search-undock' },
+    ).then((acked) => {
+      if (acked) {
+        conversationSearch.clearSearch()
+        setConvMenuOpen(false)
+        setSearchModalOpen(false)
+      } else {
+        setConvMenuOpen(false)
+        setSearchModalOpen(true)
+      }
+    })
+  })
+  const handleSearchModalClose = useStableCallback(() => setSearchModalOpen(false))
+  const handleSearchModalConvSelect = useStableCallback((conversationId: string) => {
+    setSearchModalOpen(false)
+    engine.loadConversation(conversationId)
+  })
+  const handleSearchModalJumpToHit = useStableCallback((hit: ConversationSearchHit, role?: string | null) => {
+    setSearchModalOpen(false)
+    handleJumpToHit(hit, role)
+  })
+  useEffect(() => {
+    if (!searchModalOpen) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setSearchModalOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [searchModalOpen])
 
   /* Host view-form controls (engine owns the state + host messaging). */
   const toggleHostView = () => engine.setHostView(hostView === 'expanded' ? 'compact' : 'expanded')
@@ -428,9 +599,9 @@ export function ChatShell({
   /* Compact "bring me here": the menu is an overlay covering the transcript, so
    * close it first — the jump target and its flash must be visible. Results
    * persist in the shared search vm, so reopening the menu restores them. */
-  const handleCompactJumpToHit = useStableCallback((hit: ConversationSearchHit) => {
+  const handleCompactJumpToHit = useStableCallback((hit: ConversationSearchHit, role?: string | null) => {
     setConvMenuOpen(false)
-    handleJumpToHit(hit)
+    handleJumpToHit(hit, role)
   })
   const handleCompactNewChat = useStableCallback(() => {
     setConvMenuOpen(false)
@@ -619,9 +790,9 @@ export function ChatShell({
             {compact ? (
               <span className="flex min-w-0 flex-col leading-tight">
                 <span className="truncate text-[10px] font-semibold uppercase tracking-[0.05em] text-[var(--muted)]">
-                  {state.agentId && state.agentId !== 'main' ? state.agentId : brandLabel}
+                  {engine.agentId && engine.agentId !== 'main' ? engine.agentId : brandLabel}
                 </span>
-                <span className="flex min-w-0 items-center gap-1.5">
+                <span className="flex min-w-0 items-center gap-1">
                   <span
                     className="truncate text-[13px] font-semibold text-[var(--ink)]"
                     title={state.conversationId || undefined}
@@ -629,25 +800,30 @@ export function ChatShell({
                     {state.conversationTitle || (state.conversationId ? 'Untitled conversation' : 'New chat')}
                   </span>
                   {state.conversationId ? (
-                    <button
-                      type="button"
-                      onClick={pinConversationToCanvas}
-                      className="k-conv-pin shrink-0 text-[var(--muted)]"
-                      aria-label="Pin this conversation to the canvas"
-                      title="Pin this conversation to the canvas"
-                    >
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M12 17v5" />
-                        <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z" />
-                      </svg>
-                    </button>
+                    /* Copy + pin hug the name as one tight cluster — full-size
+                       tiny buttons here wrapped the compact appbar to two rows. */
+                    <span className="k-conv-title-actions flex shrink-0 items-center">
+                      <CopyButton value={state.conversationId} title="Copy conversation id" />
+                      <button
+                        type="button"
+                        onClick={pinConversationToCanvas}
+                        className="k-conv-pin shrink-0 text-[var(--muted)]"
+                        aria-label="Pin this conversation to the canvas"
+                        title="Pin this conversation to the canvas"
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M12 17v5" />
+                          <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z" />
+                        </svg>
+                      </button>
+                    </span>
                   ) : null}
                 </span>
               </span>
             ) : (
               <>
                 <span className="k-brand-name">
-                  {state.agentId && state.agentId !== 'main' ? state.agentId : brandLabel}
+                  {engine.agentId && engine.agentId !== 'main' ? engine.agentId : brandLabel}
                 </span>
                 <span className="k-brand-sep">/</span>
                 <span className="k-brand-path">{bundleId}</span>
@@ -668,18 +844,24 @@ export function ChatShell({
               </span>
             )}
             {compact && authed ? (
+              /* When a cross-chat search is active its results live behind
+               * this button (jumping to a hit closes the overlay) — the dot
+               * + title tell the user the way back to them. */
               <button
                 type="button"
                 onClick={handleCompactConversationMenuToggle}
-                className={`k-iconbtn ${convMenuOpen ? 'k-iconbtn-active' : ''}`}
-                aria-label="Conversations"
-                title="Conversations"
+                className={`k-iconbtn relative ${convMenuOpen ? 'k-iconbtn-active' : ''}`}
+                aria-label={conversationSearch.mode === 'results' && !convMenuOpen ? 'Conversations — search results ready' : 'Conversations'}
+                title={conversationSearch.mode === 'results' && !convMenuOpen ? 'Back to search results' : 'Conversations'}
                 aria-haspopup="menu"
                 aria-expanded={convMenuOpen}
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
                 </svg>
+                {conversationSearch.mode === 'results' && !convMenuOpen ? (
+                  <span className="k-iconbtn-dot" aria-hidden="true" />
+                ) : null}
               </button>
             ) : null}
             {!compact ? (
@@ -788,7 +970,9 @@ export function ChatShell({
               aria-hidden="true"
             />
             <div
-              className="absolute inset-x-2 top-[50px] z-30 flex max-h-[min(72vh,520px)] flex-col overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--surface)] shadow-lg"
+              ref={convMenuRef}
+              className={`absolute inset-x-2 top-[50px] z-30 flex flex-col overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--surface)] shadow-lg ${convMenuHeight === null ? 'k-conv-menu-autoheight' : ''}`}
+              style={convMenuHeight !== null ? { height: `${convMenuHeight}px`, maxHeight: 'calc(100% - 60px)' } : undefined}
               role="menu"
             >
               <button type="button" className="k-conv-menu-item k-conv-menu-new" onClick={handleCompactNewChat}>
@@ -807,6 +991,7 @@ export function ChatShell({
                   vm={conversationSearch}
                   onOpenConversation={handleCompactConvSelect}
                   onJumpToHit={handleCompactJumpToHit}
+                  onUndock={handleSearchUndock}
                 />
               ) : (
                 <div className="min-h-0 flex-1 overflow-y-auto border-t border-[var(--line-soft)]">
@@ -833,6 +1018,18 @@ export function ChatShell({
                   )}
                 </div>
               )}
+              <div
+                className="k-conv-menu-resize"
+                role="separator"
+                aria-orientation="horizontal"
+                aria-label="Resize the conversations panel"
+                title="Drag to resize · double-click to reset"
+                onPointerDown={handleConvMenuResizeStart}
+                onPointerMove={handleConvMenuResizeMove}
+                onPointerUp={handleConvMenuResizeEnd}
+                onPointerCancel={handleConvMenuResizeEnd}
+                onDoubleClick={handleConvMenuResizeReset}
+              />
             </div>
           </>
         ) : null}
@@ -858,26 +1055,42 @@ export function ChatShell({
           <div
             className={`grid gap-3 lg:gap-4 ${compact ? 'min-h-0 flex-1 grid-rows-[minmax(0,1fr)]' : 'lg:min-h-0 lg:flex-1 lg:grid-rows-[minmax(0,1fr)]'} ${
               leftPaneVisible
-                ? 'lg:grid-cols-[260px_minmax(0,1fr)]'
+                ? 'k-shell-cols-sidebar'
                 : 'lg:grid-cols-[minmax(0,1fr)]'
             }`}
+            style={leftPaneVisible ? ({ '--kdc-sidebar-w': `${sidebarWidth}px` } as CSSProperties) : undefined}
           >
             {leftPaneVisible && leftPaneMode === 'chats' ? (
-              <ConversationsSidebar
-                conversations={filteredConversations}
-                search={conversationSearch}
-                activeConversationId={state.conversationId}
-                disabled={hasPendingTurn}
-                loading={state.conversationsLoading}
-                error={state.conversationsError}
-                loadingConversationId={state.conversationLoadingId}
-                deletingConversationId={state.conversationDeletingId}
-                onRefresh={handleConversationRefresh}
-                onSelect={handleConversationSelect}
-                onStartNew={handleStartNewChat}
-                onDelete={handleConversationDelete}
-                onJumpToHit={handleJumpToHit}
-              />
+              <div className="relative min-w-0 lg:h-full lg:min-h-0">
+                <ConversationsSidebar
+                  conversations={filteredConversations}
+                  search={conversationSearch}
+                  activeConversationId={state.conversationId}
+                  disabled={hasPendingTurn}
+                  loading={state.conversationsLoading}
+                  error={state.conversationsError}
+                  loadingConversationId={state.conversationLoadingId}
+                  deletingConversationId={state.conversationDeletingId}
+                  onRefresh={handleConversationRefresh}
+                  onSelect={handleConversationSelect}
+                  onStartNew={handleStartNewChat}
+                  onDelete={handleConversationDelete}
+                  onJumpToHit={handleJumpToHit}
+                  onUndockSearch={handleSearchUndock}
+                />
+                <div
+                  className={`k-pane-resizer hidden lg:block ${sidebarDragging ? 'is-dragging' : ''}`}
+                  role="separator"
+                  aria-orientation="vertical"
+                  aria-label="Resize the chats panel"
+                  title="Drag to resize · double-click to reset"
+                  onPointerDown={handleSidebarResizeStart}
+                  onPointerMove={handleSidebarResizeMove}
+                  onPointerUp={handleSidebarResizeEnd}
+                  onPointerCancel={handleSidebarResizeEnd}
+                  onDoubleClick={handleSidebarResizeReset}
+                />
+              </div>
             ) : null}
 
             {leftPaneVisible && leftPaneMode === 'webapp' && webappWidgetUrl ? (
@@ -1091,6 +1304,59 @@ export function ChatShell({
           onClose={handleCloseWebappModal}
         />
       ) : null}
+      {/* Undock fallback: the same search vm in a wide in-chat modal when no
+          host answered the `conversation_search.open` command. */}
+      {searchModalOpen
+        ? createPortal(
+            <div className="k-canvas-modal-backdrop" onClick={handleSearchModalClose}>
+              <div
+                className="k-canvas-modal k-search-modal"
+                onClick={(event) => event.stopPropagation()}
+                role="dialog"
+                aria-modal="true"
+                aria-label="Search chats"
+              >
+                <div className="k-canvas-modal-head">
+                  <div className="k-canvas-modal-title">
+                    <span className="k-text">Search chats</span>
+                    <span className="k-micro">across your conversations</span>
+                  </div>
+                  <button
+                    type="button"
+                    className="k-iconbtn"
+                    onClick={handleSearchModalClose}
+                    aria-label="Close (Esc)"
+                    title="Close (Esc)"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M18 6L6 18M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+                <div className="k-canvas-modal-body k-search-modal-body">
+                  <ConversationSearchControls
+                    vm={conversationSearch}
+                    disabled={hasPendingTurn}
+                    availableScopes={['current', 'all']}
+                  />
+                  {conversationSearch.mode === 'results' ? (
+                    <ConversationSearchResults
+                      vm={conversationSearch}
+                      onOpenConversation={handleSearchModalConvSelect}
+                      onJumpToHit={handleSearchModalJumpToHit}
+                      backLabel="Clear"
+                    />
+                  ) : (
+                    <div className="kcs-empty">
+                      Search your chats — words, a time range, or both.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   )
 }

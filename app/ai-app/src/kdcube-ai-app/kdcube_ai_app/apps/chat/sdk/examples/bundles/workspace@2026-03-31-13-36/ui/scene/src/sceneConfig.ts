@@ -236,6 +236,31 @@ export function defaultComponentSpecs(): SceneComponentSpec[] {
       order: 65,
     },
     {
+      // Undocked conversation search — the SAME search surface the chat
+      // sidebar drives, served by this bundle's `conversation_search`
+      // widget. The chat's undock affordance summons it via
+      // `conversation_search.open` seeded with the live search state; its
+      // hits route back into the chat through `sdk.chat.conversation`
+      // (conversation_id + the turn_id/role jump refinement).
+      alias: 'conversation_search',
+      bundleId: '',
+      widgetAlias: 'conversation_search',
+      title: 'Search Chats',
+      accent: 'teal',
+      gated: true,
+      views: false,
+      size: { w: 480, h: 680 },
+      full: { w: 900, h: 760 },
+      targetSurfaces: ['sdk.chat.search'],
+      placement: 'floating',
+      // Rail chip on: searching your chats is useful standalone, not only
+      // when summoned from the chat's undock affordance.
+      rail: true,
+      defaultOpen: false,
+      enabled: true,
+      order: 66,
+    },
+    {
       // Connection Hub settings widget — the `connections.hub.open` surface
       // contract lands here (declared via targetSurfaces, exactly like the
       // website scene's contract for the same widget). Chat consent cards

@@ -39,6 +39,7 @@ function ConversationsSidebarImpl({
   onStartNew,
   onDelete,
   onJumpToHit,
+  onUndockSearch,
 }: {
   conversations: ConversationSummary[]
   search: ConversationSearchVm
@@ -52,7 +53,10 @@ function ConversationsSidebarImpl({
   onSelect: (conversationId: string) => void
   onStartNew: () => void
   onDelete: (conversation: ConversationSummary) => void
-  onJumpToHit: (hit: ConversationSearchHit) => void
+  onJumpToHit: (hit: ConversationSearchHit, role?: string | null) => void
+  /** Present = search results offer "open as a window" (see
+   *  `ConversationSearchResults.onUndock`). */
+  onUndockSearch?: () => void
 }) {
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
   /* Reset the window when the title filter changes so results start from the
@@ -112,7 +116,7 @@ function ConversationsSidebarImpl({
       <ConversationSearchControls vm={search} disabled={disabled} />
 
       {resultsMode ? (
-        <ConversationSearchResults vm={search} onOpenConversation={onSelect} onJumpToHit={onJumpToHit} />
+        <ConversationSearchResults vm={search} onOpenConversation={onSelect} onJumpToHit={onJumpToHit} onUndock={onUndockSearch} />
       ) : (
         <>
           {error ? (

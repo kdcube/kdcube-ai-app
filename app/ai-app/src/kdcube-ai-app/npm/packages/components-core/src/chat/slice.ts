@@ -260,6 +260,21 @@ const slice = createSlice({
       state.toolSpotlight = null
     },
 
+    // --- Host-driven turn jump ("bring me here" from an undocked window) ---
+    requestTurnJump(
+      state,
+      action: PayloadAction<{ conversationId: string; turnId: string; role?: string | null }>,
+    ) {
+      const conversationId = String(action.payload.conversationId || '').trim()
+      const turnId = String(action.payload.turnId || '').trim()
+      if (!conversationId || !turnId) return
+      const role = String(action.payload.role || '').trim() || null
+      state.turnJump = { conversationId, turnId, role, nonce: Date.now() }
+    },
+    clearTurnJump(state) {
+      state.turnJump = null
+    },
+
     // --- Turn feedback (signed-in user's reaction per assistant turn) ---
     setTurnFeedback(state, action: PayloadAction<{ turnId: string; reaction: TurnReaction | null }>) {
       const { turnId, reaction } = action.payload

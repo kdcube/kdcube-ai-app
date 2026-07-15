@@ -11,7 +11,7 @@
  * turns in the window chronologically with `score: null` per hit, and the UI
  * renders them newest-first without relevance.
  */
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type {
   ConversationSearchParams,
   ConversationSearchResponse,
@@ -63,6 +63,23 @@ export function resolveSearchTimeRange(
   return { fromTs: new Date(Date.now() - days * DAY_MS).toISOString(), toTs: null }
 }
 
+/** One-shot externally-supplied search state (e.g. the `conversation_search.open`
+ *  seed carried when the chat undocks its search into a scene window). */
+export interface ConversationSearchSeed {
+  query?: string
+  scope?: ConversationSearchScope
+  targets?: ConversationSearchTarget[]
+  timePreset?: ConversationSearchTimePreset
+  dateFrom?: string
+  dateTo?: string
+  weights?: Partial<ConversationSearchWeights>
+  /** Run the seeded search immediately (once the state committed). */
+  autorun?: boolean
+}
+
+const VALID_TARGETS: ConversationSearchTarget[] = ['user', 'assistant', 'summary']
+const VALID_TIME_PRESETS: ConversationSearchTimePreset[] = ['any', '7', '30', '90', 'custom']
+
 export interface ConversationSearchVm {
   query: string
   setQuery: (value: string) => void
@@ -101,17 +118,23 @@ export interface ConversationSearchVm {
   markVisited: (cardKey: string) => void
   runSearch: () => void
   clearSearch: () => void
+  /** Apply an externally-supplied search state in one shot (see
+   *  `ConversationSearchSeed`); `autorun` searches after the state commits. */
+  applySeed: (seed: ConversationSearchSeed) => void
 }
 
 export function useConversationSearch({
   search,
   activeConversationId,
+  initialScope = 'titles',
 }: {
   search: (request: ConversationSearchParams) => Promise<ConversationSearchResponse>
   activeConversationId: string | null
+  /** Surfaces without a local chat list (the undocked window) start deep. */
+  initialScope?: ConversationSearchScope
 }): ConversationSearchVm {
   const [query, setQuery] = useState('')
-  const [scope, setScopeState] = useState<ConversationSearchScope>('titles')
+  const [scope, setScopeState] = useState<ConversationSearchScope>(initialScope)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [infoOpen, setInfoOpen] = useState(false)
   const [timePreset, setTimePreset] = useState<ConversationSearchTimePreset>('any')
@@ -208,6 +231,40 @@ export function useConversationSearch({
     setVisitedKey(cardKey)
   })
 
+  /* Seed application is two-phase: set the state, then (for `autorun`) run
+   * the search from an effect — `runSearch` reads the committed state, so
+   * running it in the same tick would search the PRE-seed values. */
+  const [autorunNonce, setAutorunNonce] = useState(0)
+  useEffect(() => {
+    if (!autorunNonce) return
+    runSearch()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autorunNonce])
+
+  const applySeed = useStableCallback((seed: ConversationSearchSeed) => {
+    if (seed.query !== undefined) setQuery(seed.query)
+    if (seed.scope === 'titles' || seed.scope === 'current' || seed.scope === 'all') {
+      setScopeState(seed.scope)
+      if (seed.scope === 'titles') setMode('list')
+    }
+    if (seed.targets) {
+      const targets = seed.targets.filter((target) => VALID_TARGETS.includes(target))
+      if (targets.length) setTargets(targets)
+    }
+    if (seed.timePreset && VALID_TIME_PRESETS.includes(seed.timePreset)) setTimePreset(seed.timePreset)
+    if (seed.dateFrom !== undefined) setDateFrom(seed.dateFrom)
+    if (seed.dateTo !== undefined) setDateTo(seed.dateTo)
+    if (seed.weights) {
+      const patch: Partial<ConversationSearchWeights> = {}
+      for (const arm of ['semantic', 'lexical', 'recency'] as const) {
+        const value = seed.weights[arm]
+        if (typeof value === 'number' && Number.isFinite(value)) patch[arm] = Math.min(2, Math.max(0, value))
+      }
+      if (Object.keys(patch).length) setWeights((current) => ({ ...current, ...patch }))
+    }
+    if (seed.autorun) setAutorunNonce((nonce) => nonce + 1)
+  })
+
   /* All the callbacks above are referentially stable (useState setters +
    * useStableCallback), so the vm identity only changes with actual state —
    * keeping the memoized sidebar quiet. */
@@ -245,6 +302,7 @@ export function useConversationSearch({
       markVisited,
       runSearch,
       clearSearch,
+      applySeed,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [

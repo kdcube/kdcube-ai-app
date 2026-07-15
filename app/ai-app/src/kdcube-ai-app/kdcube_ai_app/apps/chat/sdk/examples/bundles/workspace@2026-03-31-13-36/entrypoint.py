@@ -564,6 +564,34 @@ class WorkspaceEntrypoint(BaseEntrypointWithEconomics):
         ]
 
     @api(
+        alias="conversation_search_widget",
+        route="operations",
+        **_api_visibility("conversation_search_widget"),
+    )
+    @ui_widget(
+        icon={
+            "tailwind": "heroicons-outline:magnifying-glass",
+            "lucide": "Search",
+        },
+        alias="conversation_search",
+        **_widget_visibility("conversation_search"),
+    )
+    def conversation_search_widget(self, **kwargs):
+        # Static fallback served when the built widget is not yet on disk.
+        # The platform routes the real UI from
+        # sdk://solutions/chat/ui/widget-search once the bundle build ran:
+        # the undocked presentation of the SAME conversation search the chat
+        # sidebar drives (`sdk.chat.search` scene surface). It talks to the
+        # platform conversation-search endpoint directly; "bring me here"
+        # routes back into the chat window via `sdk.chat.conversation`.
+        del kwargs
+        return [
+            "<div style=\"font-family:system-ui,sans-serif;padding:16px\">"
+            "Search is served from sdk://solutions/chat/ui/widget-search after build."
+            "</div>"
+        ]
+
+    @api(
         alias="pinboard_widget",
         route="operations",
         **_api_visibility("pinboard_widget"),
@@ -1211,6 +1239,20 @@ class WorkspaceEntrypoint(BaseEntrypointWithEconomics):
                         # Ops it needs (agent_capabilities /
                         # agent_selection_update) live on this entrypoint.
                         "src_folder": "sdk://solutions/chat/ui/widget-capabilities",
+                        "build_command": "npm install --no-package-lock && OUTDIR=<VI_BUILD_DEST_ABSOLUTE_PATH> npm run build",
+                        "shared_sources": {
+                            "components_core": "npm://components-core/src",
+                            "components_react": "npm://components-react/src",
+                            "chat_ui_css": "npm://components-react/examples/standalone",
+                        },
+                    },
+                    "conversation_search": {
+                        "enabled": True,
+                        # Undocked conversation search: the SAME search surface
+                        # the chat sidebar drives, served as its own widget
+                        # (the `sdk.chat.search` scene window). Talks straight
+                        # to the platform conversation-search endpoint.
+                        "src_folder": "sdk://solutions/chat/ui/widget-search",
                         "build_command": "npm install --no-package-lock && OUTDIR=<VI_BUILD_DEST_ABSOLUTE_PATH> npm run build",
                         "shared_sources": {
                             "components_core": "npm://components-core/src",

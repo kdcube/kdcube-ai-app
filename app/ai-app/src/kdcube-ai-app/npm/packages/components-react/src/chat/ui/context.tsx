@@ -42,6 +42,7 @@ export function ChatViewModelProvider({ children, kdcubePreview = false }: ChatV
     hostView: status.hostView,
     bundleId: engine.bundleId,
     agentId: engine.agentId,
+    boundAgentId: engine.boundAgentId,
     kdcubePreview,
 
     setBootError: engine.setBootError,

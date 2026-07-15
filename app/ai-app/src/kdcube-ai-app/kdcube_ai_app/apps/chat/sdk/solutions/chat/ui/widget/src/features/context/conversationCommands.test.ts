@@ -4,6 +4,7 @@ import {
   conversationIdFromContextItem,
   conversationIdFromConversationRef,
   conversationIdFromSurfaceCommand,
+  turnTargetFromSurfaceCommand,
 } from './conversationCommands'
 
 const SURFACE_COMMAND = 'kdcube.surface.command'
@@ -109,4 +110,43 @@ test('dropped conversation pin context item resolves via kind + ref', () => {
   )
   // Non-conversation kinds without a parsable conv ref stay inert.
   assert.equal(conversationIdFromContextItem({ kind: 'file', ref: 'mem:record/1' }), '')
+})
+
+test('search-window open with a turn target carries the jump refinement', () => {
+  // The exact shape the undocked search widget emits via
+  // openConversationInChatOnHost: conversation + turn + snippet role.
+  const command = {
+    type: SURFACE_COMMAND,
+    target_surface: 'sdk.chat.conversation',
+    action: 'open',
+    ui_event: {
+      conversation_id: '42d5a4e0abc',
+      turn_id: 'turn-7',
+      role: 'assistant',
+    },
+  }
+  assert.equal(conversationIdFromSurfaceCommand(command), '42d5a4e0abc')
+  assert.deepEqual(turnTargetFromSurfaceCommand(command), { turnId: 'turn-7', role: 'assistant' })
+})
+
+test('plain conversation opens carry NO turn target', () => {
+  assert.equal(
+    turnTargetFromSurfaceCommand({
+      type: SURFACE_COMMAND,
+      target_surface: 'sdk.chat.viewer',
+      action: 'open',
+      ui_event: { conversation_id: '42d5a4e0abc' },
+    }),
+    null,
+  )
+  // A turn without a role still jumps (defaults to the user side).
+  assert.deepEqual(
+    turnTargetFromSurfaceCommand({
+      type: SURFACE_COMMAND,
+      target_surface: 'sdk.chat.conversation',
+      action: 'open',
+      ui_event: { conversation_id: '42d5a4e0abc', turn_id: 'turn-3' },
+    }),
+    { turnId: 'turn-3', role: null },
+  )
 })

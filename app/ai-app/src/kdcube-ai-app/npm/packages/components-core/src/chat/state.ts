@@ -375,6 +375,12 @@ export interface ChatState {
   /** Composer-menu spotlight request: open the tools menu with these tools
    *  highlighted (set by the consent banner's "turn off the tools" option). */
   toolSpotlight: { tools: string[]; nonce: number } | null
+  /** Host-driven "bring me here": land on one turn (role picks the user /
+   *  assistant side) once its conversation is open. Set by an inbound
+   *  `sdk.chat.conversation` command carrying `turn_id` (e.g. from the
+   *  undocked search window); the view consumes and clears it. It survives
+   *  the conversation hydration it usually races with. */
+  turnJump: { conversationId: string; turnId: string; role: string | null; nonce: number } | null
   /** Signed-in user's saved reaction per assistant turn id. */
   feedback: Record<string, TurnReaction>
   inputLocked: boolean
@@ -406,6 +412,7 @@ export const initialState: ChatState = {
   banners: [],
   dismissedConsentSignatures: [],
   toolSpotlight: null,
+  turnJump: null,
   feedback: {},
   inputLocked: false,
   inputLockMessage: null,

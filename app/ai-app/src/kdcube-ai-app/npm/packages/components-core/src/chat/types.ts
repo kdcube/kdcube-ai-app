@@ -56,6 +56,11 @@ export interface ChatEngine extends Pick<HostEventEmitter, 'on'> {
   readonly bundleId: string
   /** The bundle agent this engine drives (config `agentId`, default 'main'). */
   readonly agentId: string
+  /** The EXPLICIT agent binding (config `agentId` verbatim, undefined when the
+   *  widget wasn't agent-bound). Search/list filters use this, never the
+   *  defaulted `agentId` — unbound widgets' conversations store a NULL agent
+   *  and an `agent_id` filter would exclude them. */
+  readonly boundAgentId?: string
 
   getState(): ChatState
   subscribe(listener: () => void): () => void
@@ -70,6 +75,11 @@ export interface ChatEngine extends Pick<HostEventEmitter, 'on'> {
   steer(): void
 
   loadConversation(conversationId: string): void
+  /** Host-driven "bring me here": open the conversation (when not already
+   *  open) and land on one turn — `role` 'assistant'/'summary' targets the
+   *  assistant side, anything else the user bubble. The request parks in
+   *  `state.turnJump` until the view can scroll to the anchor. */
+  requestTurnJump(target: { conversationId: string; turnId: string; role?: string | null }): void
   /** Hydrate a reconstructed subagent-thread stub: fetch the child
    *  conversation (same conversation-fetch endpoint, same user auth) and fold
    *  its turns into `state.threads[childConversationId]`. No-op for live or

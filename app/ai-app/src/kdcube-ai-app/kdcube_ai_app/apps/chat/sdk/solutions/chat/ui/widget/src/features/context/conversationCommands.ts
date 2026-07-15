@@ -79,6 +79,27 @@ export function conversationIdFromContextItem(item: unknown): string {
   return direct || fromRef
 }
 
+/** A conversation-open command's optional turn landing: `ui_event.turn_id`
+ *  (+ `ui_event.role` picking the user/assistant side). Emitted by the
+ *  undocked search window's "bring me here"; absent on plain opens. */
+export interface ConversationTurnTarget {
+  turnId: string
+  role: string | null
+}
+
+/**
+ * The turn a conversation-open surface command asks to land on, or null for
+ * a plain open. Callers gate on `conversationIdFromSurfaceCommand` first —
+ * this only reads the refinement fields.
+ */
+export function turnTargetFromSurfaceCommand(data: Record<string, unknown>): ConversationTurnTarget | null {
+  const uiEvent = recordValue(data.ui_event)
+  const turnId = stringValue(uiEvent.turn_id) || stringValue(data.turn_id)
+  if (!turnId) return null
+  const role = stringValue(uiEvent.role) || stringValue(data.role)
+  return { turnId, role: role || null }
+}
+
 /**
  * Conversation id a chat surface command asks to open, or '' when the message
  * is not a conversation-open command for this widget.

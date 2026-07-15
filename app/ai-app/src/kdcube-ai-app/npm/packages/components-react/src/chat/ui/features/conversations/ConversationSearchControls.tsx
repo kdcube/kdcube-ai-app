@@ -53,10 +53,17 @@ const RANK_ARMS: Array<{ id: keyof ConversationSearchWeights; label: string }> =
 export function ConversationSearchControls({
   vm,
   disabled,
+  availableScopes,
 }: {
   vm: ConversationSearchVm
   disabled: boolean
+  /** WHERE chips to offer. Default all three; surfaces without a local chat
+   *  list (the undocked window, the in-chat modal) drop `titles`. */
+  availableScopes?: ConversationSearchScope[]
 }) {
+  const scopes = availableScopes?.length
+    ? SCOPES.filter((scope) => availableScopes.includes(scope.id))
+    : SCOPES
   return (
     <>
       <div className="kcs-search-wrap">
@@ -110,7 +117,7 @@ export function ConversationSearchControls({
           <div className="kcs-row">
             <span className="kcs-lab">where</span>
             <div className="kcs-controls">
-              {SCOPES.map((scope) => (
+              {scopes.map((scope) => (
                 <button
                   key={scope.id}
                   type="button"

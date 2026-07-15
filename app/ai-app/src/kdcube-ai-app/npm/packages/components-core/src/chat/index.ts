@@ -27,6 +27,7 @@ export { connectionsConsentOpen, consentOpenForClaims, consentTiersForClaims } f
 export type { ConnectionsConsentOpen } from '../shared/index.ts'
 export * from './capabilities.ts'
 export * from './capabilitiesSurface.ts'
+export * from './conversationSearchSurface.ts'
 export * from './conversationSearch.ts'
 
 export type * from './state.ts'

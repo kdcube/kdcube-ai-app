@@ -32,6 +32,9 @@ export interface ChatViewModel {
   bundleId: string
   /** The bundle agent this chat drives (engine config `agentId`, default 'main'). */
   agentId: string
+  /** Explicit agent binding (undefined for an unbound widget) — what search /
+   *  list filters carry; see `ChatEngine.boundAgentId`. */
+  boundAgentId?: string
   /** True when rendered inside a same-origin dev preview frame; hosts may set it. */
   kdcubePreview: boolean
 

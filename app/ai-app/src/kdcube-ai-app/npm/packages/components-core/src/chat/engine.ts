@@ -912,6 +912,7 @@ export function createChatEngine(config: EngineConfig): ChatEngine {
     store,
     bundleId,
     agentId: runtime.agentId,
+    boundAgentId: runtime.boundAgentId,
     getState: getChat,
     subscribe(listener) {
       return store.subscribe(listener)
@@ -933,6 +934,15 @@ export function createChatEngine(config: EngineConfig): ChatEngine {
     },
     loadConversation(conversationId) {
       void loadConversation(conversationId)
+    },
+    requestTurnJump(target) {
+      const conversationId = String(target.conversationId || '').trim()
+      const turnId = String(target.turnId || '').trim()
+      if (!conversationId || !turnId) return
+      dispatch(chatActions.requestTurnJump({ conversationId, turnId, role: target.role ?? null }))
+      // The view lands on the turn once the anchors exist; loading is only
+      // kicked here when the target conversation isn't already open.
+      if (getChat().conversationId !== conversationId) void loadConversation(conversationId)
     },
     loadSubagentThread(childConversationId) {
       void loadSubagentThread(childConversationId)

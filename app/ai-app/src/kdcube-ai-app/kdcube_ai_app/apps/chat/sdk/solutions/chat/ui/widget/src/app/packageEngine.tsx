@@ -37,6 +37,7 @@ import {
   conversationIdFromContextItem,
   conversationIdFromConversationRef,
   conversationIdFromSurfaceCommand,
+  turnTargetFromSurfaceCommand,
 } from '../features/context/conversationCommands.ts'
 
 const SURFACE_COMMAND_MESSAGE_TYPE = 'kdcube.surface.command'
@@ -195,7 +196,16 @@ function PackageEngineHost({ children }: { children: ReactNode }) {
       const conversationId = conversationIdFromSurfaceCommand(data as Record<string, unknown>)
       if (conversationId) {
         const id = conversationId.trim()
-        if (id) engine.loadConversation(id)
+        if (id) {
+          /* An open carrying a turn target (the undocked search window's
+           * "bring me here") lands on that turn; a plain open just loads. */
+          const turnTarget = turnTargetFromSurfaceCommand(data as Record<string, unknown>)
+          if (turnTarget) {
+            engine.requestTurnJump({ conversationId: id, turnId: turnTarget.turnId, role: turnTarget.role })
+          } else {
+            engine.loadConversation(id)
+          }
+        }
         return
       }
       if (data.type === 'kdcube-auth-changed') {

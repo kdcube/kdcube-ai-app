@@ -1128,8 +1128,37 @@ export function useCapabilityPickerBody({
   const rendered = sections
     .map((section) => ({ id: section.id, node: section.render({ vm: vmForSections, close }) }))
     .filter((section) => section.node !== null && section.node !== undefined && section.node !== false)
+  /* The save control leads the body (sticky, so it never scrolls out of
+   * view): the sections below can be taller than any shell's viewport, and a
+   * save button only reachable by scrolling reads as "my change is done"
+   * the moment the row shows its check. Dirty state additionally warns +
+   * gently pulses the button so unsaved changes are unmissable. */
+  const saveBar = (
+    <div
+      className={`k-menu-savebar${capabilities.dirty && !capabilities.saving ? ' is-dirty' : ''}${capabilities.saveError ? ' is-error' : ''}`}
+    >
+      <span className="k-menu-savebar-copy" role="status">
+        {capabilities.saveError
+          ? 'Changes couldn’t be saved.'
+          : capabilities.saving
+            ? 'Saving changes…'
+            : capabilities.dirty
+              ? 'Unsaved changes'
+              : 'Saved changes apply from your next message.'}
+      </span>
+      <button
+        type="button"
+        className="k-btn k-sm k-primary"
+        disabled={!capabilities.dirty || capabilities.saving || Boolean(confirmState)}
+        onClick={() => capabilities.save()}
+      >
+        {capabilities.saving ? 'Saving…' : 'Save changes'}
+      </button>
+    </div>
+  )
   return rendered.length ? (
     <>
+      {saveBar}
       {rendered.map((section, index) => (
         <div key={section.id} data-picker-section={section.id}>
           {index > 0 ? <div className="k-menu-divider" role="separator" /> : null}
@@ -1169,25 +1198,6 @@ export function useCapabilityPickerBody({
           {pending.apply === 'when_cold' ? PENDING_WHEN_COLD_NOTICE : PENDING_NEXT_CONVERSATION_NOTICE}
         </div>
       ) : null}
-      <div className="k-menu-foot">
-        <span className="k-menu-foot-copy">
-          {capabilities.saveError
-            ? 'Changes couldn’t be saved.'
-            : capabilities.saving
-              ? 'Saving changes…'
-              : capabilities.dirty
-                ? 'Unsaved changes'
-                : 'Saved changes apply from your next message.'}
-        </span>
-        <button
-          type="button"
-          className="k-btn k-sm k-primary"
-          disabled={!capabilities.dirty || capabilities.saving || Boolean(confirmState)}
-          onClick={() => capabilities.save()}
-        >
-          {capabilities.saving ? 'Saving…' : 'Save changes'}
-        </button>
-      </div>
     </>
   ) : (
     <div className="k-menu-status">Everything this agent uses is always on.</div>

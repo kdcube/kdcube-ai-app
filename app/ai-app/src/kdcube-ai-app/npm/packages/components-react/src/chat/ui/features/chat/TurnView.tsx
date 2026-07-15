@@ -305,8 +305,10 @@ function TurnViewImpl({
         </div>
       ) : null}
 
-      {/* Assistant turn */}
-      <div className="flex flex-col gap-1.5">
+      {/* Assistant turn. Its own anchor lets a search hit that matched the
+          assistant reply (or the turn summary) land HERE instead of on the
+          user bubble above. */}
+      <div className="flex flex-col gap-1.5" data-turn-assistant-anchor={turn.id}>
         <div className="flex items-center justify-between gap-2 text-[11px] text-[var(--muted)]">
           <div className="flex items-center gap-2">
             <span className="font-semibold text-[var(--text-2)]">Assistant</span>

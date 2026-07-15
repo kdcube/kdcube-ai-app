@@ -23,6 +23,7 @@ import {
 } from '@kdcube/components-core/chat'
 import type { ConversationSearchGroup } from '@kdcube/components-core/chat'
 import type { ConversationSearchSort, ConversationSearchVm } from './useConversationSearch.ts'
+import { CanvasExpandButton } from '../../components/CanvasModal.tsx'
 
 /** Kind pill visuals per snippet role ('user' reads as "you"). */
 function kindPill(role: string | null | undefined): { label: string; tint: string } {
@@ -133,10 +134,20 @@ export function ConversationSearchResults({
   vm,
   onOpenConversation,
   onJumpToHit,
+  onUndock,
+  backLabel = 'Chats',
 }: {
   vm: ConversationSearchVm
   onOpenConversation: (conversationId: string) => void
-  onJumpToHit: (hit: ConversationSearchHit) => void
+  /** `role` is the clicked snippet's role — the jump lands on that side of
+   *  the turn (assistant/summary → the assistant part, else the user bubble). */
+  onJumpToHit: (hit: ConversationSearchHit, role?: string | null) => void
+  /** Present = the sticky head offers "open as a window" (the
+   *  `conversation_search.open` undock; the handler owns ack/fallback). */
+  onUndock?: () => void
+  /** Back-button label — "Chats" beside a chat list; "Clear" where clearing
+   *  is all it does (the undocked window, the in-chat modal). */
+  backLabel?: string
 }) {
   const hits = vm.response?.hits ?? []
   const conversations = vm.response?.conversations ?? {}
@@ -156,17 +167,35 @@ export function ConversationSearchResults({
     return best ? conversationSearchHitKey(best) : null
   }, [hits, vm.browse])
 
-  const backLink = (
-    <button type="button" className="kcs-link" onClick={vm.clearSearch}>
-      back to chats
+  /* The exit + sort controls live in a STICKY header above the scrolling
+   * result cards — they must never ride away with the scroll (that made
+   * "back to chats" effectively invisible mid-list). The back affordance is
+   * a real button, not a text link buried in the meta prose. */
+  const backButton = (
+    <button type="button" className="k-btn k-sm k-ghost kcs-back" onClick={vm.clearSearch} title="Leave these search results">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M19 12H5M12 19l-7-7 7-7" />
+      </svg>
+      {backLabel}
     </button>
   )
+  const undockButton = onUndock ? (
+    <span className="kcs-undock">
+      <CanvasExpandButton onClick={onUndock} title="Open search in its own window" />
+    </span>
+  ) : null
 
   if (hits.length === 0) {
     return (
       <div className="kcs-results">
-        <div className="kcs-meta">
-          0 matches{vm.resultsQuery ? <> for "{vm.resultsQuery}"</> : null} · {backLink}
+        <div className="kcs-results-head">
+          <div className="kcs-results-head-row">
+            {backButton}
+            <span className="kcs-meta-line">
+              0 matches{vm.resultsQuery ? <> for "{vm.resultsQuery}"</> : null}
+            </span>
+            {undockButton}
+          </div>
         </div>
         <div className="kcs-empty">
           Nothing matched{vm.browse || vm.resultsQuery ? ' in this time range' : ''}. Try fewer words or a wider
@@ -178,21 +207,24 @@ export function ConversationSearchResults({
 
   return (
     <div className="kcs-results">
-      {vm.browse ? (
-        <div className="kcs-meta">
-          <b>{hits.length}</b> turn{hits.length > 1 ? 's' : ''} in <b>{groups.length}</b> conversation
-          {groups.length > 1 ? 's' : ''} in this time range, newest first · {backLink}
+      <div className="kcs-results-head">
+        <div className="kcs-results-head-row">
+          {backButton}
+          {vm.browse ? (
+            <span className="kcs-meta-line">
+              <b>{hits.length}</b> turn{hits.length > 1 ? 's' : ''} in <b>{groups.length}</b> conversation
+              {groups.length > 1 ? 's' : ''} · newest first
+            </span>
+          ) : (
+            <span className="kcs-meta-line">
+              <b>{hits.length}</b> match{hits.length > 1 ? 'es' : ''} in <b>{groups.length}</b> conversation
+              {groups.length > 1 ? 's' : ''}
+            </span>
+          )}
+          {undockButton}
         </div>
-      ) : (
-        <div className="kcs-meta">
-          <b>{hits.length}</b> match{hits.length > 1 ? 'es' : ''} in <b>{groups.length}</b> conversation
-          {groups.length > 1 ? 's' : ''}
-          {warnings.map((warning) => (
-            <span key={warning}> · {warning}</span>
-          ))}{' '}
-          · {backLink}
-          <br />
-          <span className="kcs-sort">
+        {!vm.browse ? (
+          <div className="kcs-results-head-row kcs-sort">
             sort by{' '}
             <button
               type="button"
@@ -209,9 +241,16 @@ export function ConversationSearchResults({
             >
               time
             </button>
-          </span>
-        </div>
-      )}
+          </div>
+        ) : null}
+        {warnings.length > 0 ? (
+          <div className="kcs-results-head-row kcs-meta-line">
+            {warnings.map((warning) => (
+              <span key={warning}>{warning}</span>
+            ))}
+          </div>
+        ) : null}
+      </div>
 
       {groups.map((group) => {
         const meta = conversations[group.conversationId]
@@ -245,7 +284,7 @@ export function ConversationSearchResults({
                   className={`kcs-hit ${vm.visitedKey === card.key ? 'kcs-visited' : ''}`}
                   onClick={() => {
                     vm.markVisited(card.key)
-                    onJumpToHit(hit)
+                    onJumpToHit(hit, card.role)
                   }}
                   title="Bring me here"
                 >

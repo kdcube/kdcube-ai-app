@@ -17,3 +17,10 @@ export {
   type StandaloneSelectionWriteOptions,
 } from './features/composer/CapabilityPickerStandalone.tsx'
 export { SubagentThreads } from './features/chat/SubagentThreads.tsx'
+export { ConversationSearchPage } from './features/conversations/ConversationSearchPage.tsx'
+export {
+  useConversationSearch,
+  type ConversationSearchSeed,
+  type ConversationSearchVm,
+  type ConversationSearchScope,
+} from './features/conversations/useConversationSearch.ts'
