@@ -1,6 +1,9 @@
 import json
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
 
 import yaml
 from rich.console import Console
@@ -18,6 +21,8 @@ from kdcube_cli.cli import (
     _cli_quiet_requested,
     _compose_running_services,
     _descriptor_fast_path_reasons,
+    _apply_auth_flags,
+    _bundle_session_client_id,
     _compose_logs_dir_from_env,
     _load_bundle_ids_from_descriptor,
     _load_cli_defaults,
@@ -36,12 +41,20 @@ from kdcube_cli.cli import (
 )
 from kdcube_cli import export_live_bundles as export_mod
 from kdcube_cli.installer import (
+    EnvFile,
     PathsContext,
+    TELEGRAM_INTEGRATION_ID,
+    TELEGRAM_SECRET_STEM,
+    apply_bundle_session_auth,
+    apply_telegram_companion,
+    telegram_mini_app_url,
+    telegram_webhook_url,
     _connection_hub_provider_config,
     apply_runtime_secrets_to_file_descriptors,
     build_ui_url,
     ensure_generated_runtime_secrets,
     ensure_local_dirs,
+    patch_gateway_descriptor_file,
     gather_configuration,
     render_nginx_frame_embedding_config,
     resolve_frontend_routes_prefix,
@@ -3640,3 +3653,402 @@ def test_resolve_subcommand_workdir_uses_default_workdir(tmp_path: Path):
     resolved = _resolve_subcommand_workdir(None, {"default_workdir": str(default)})
 
     assert resolved == default.resolve()
+
+
+def _empty_env() -> EnvFile:
+    return EnvFile(path=Path(".env"), lines=[], entries={})
+
+
+def _bundle_provider(bundles_data: dict) -> dict:
+    item = bundles_data["bundles"]["items"][0]
+    authorities = item["config"]["authority_registry"]["authorities"]
+    return authorities["kdcube.platform"]["providers"]["workspace_google_session"]
+
+
+def test_apply_bundle_session_auth_generates_topology():
+    assembly: dict = {
+        "auth": {"type": "cognito", "cognito": {"region": "eu-west-1"}},
+        "frontend": {"config": {"routesPrefix": "/platform", "auth": {"authType": "simple", "token": "test-admin-token-123"}}},
+    }
+    bundles: dict = {"bundles": {"items": [{"id": "connection-hub@1-0", "config": {}}]}}
+    env_main, env_ingress, env_proc = _empty_env(), _empty_env(), _empty_env()
+
+    apply_bundle_session_auth(
+        assembly_data=assembly,
+        bundles_data=bundles,
+        env_targets=[env_main, env_ingress, env_proc],
+        client_id="test-web.apps.googleusercontent.com",
+        provider="google",
+        bootstrap_admin_email="owner@example.com",
+    )
+
+    # assembly selects the Connection Hub bundle-session provider and drops cognito.
+    assert assembly["auth"]["type"] == "bundle"
+    assert assembly["auth"]["idp"] == "session"
+    assert assembly["auth"]["connection_hub"] == {
+        "bundle_id": "connection-hub@1-0",
+        "authority_id": "kdcube.platform",
+        "provider_id": "workspace_google_session",
+        "entrypoint": "login",
+    }
+    assert assembly["auth"]["authenticators"]["connection_hub"]["app_id"] == "connection-hub@1-0"
+    assert "cognito" not in assembly["auth"]
+    # Cookie/header names and the input seed live in env and the CH provider, not assembly.auth.
+    for stray in (
+        "bundle",
+        "auth_token_cookie_name",
+        "id_token_cookie_name",
+        "id_token_header_name",
+        "masqueraded_token_cookie_name",
+    ):
+        assert stray not in assembly["auth"]
+    # The frontend derives authType from assembly auth; the simple/test-token override is cleared.
+    assert "auth" not in assembly["frontend"]["config"]
+    assert assembly["frontend"]["config"]["routesPrefix"] == "/platform"
+
+    # AUTH_PROVIDER is cleared; cookie names are written on every worker env.
+    for env in (env_main, env_ingress, env_proc):
+        assert env.entries["AUTH_PROVIDER"][1] == ""
+        assert env.entries["AUTH_TOKEN_COOKIE_NAME"][1] == "__Secure-LATC"
+        assert env.entries["ID_TOKEN_COOKIE_NAME"][1] == "__Secure-LITC"
+
+    # Connection Hub authority registry carries the platform provider and upstream.
+    provider = _bundle_provider(bundles)
+    assert provider["type"] == "bundle_session_login"
+    assert provider["input"]["authenticator_ref"] == {
+        "authority_id": "google.accounts",
+        "provider_id": "google_oidc",
+    }
+    assert provider["issuer"]["type"] == "kdcube_session_token"
+
+    authorities = bundles["bundles"]["items"][0]["config"]["authority_registry"]["authorities"]
+    assert authorities["kdcube.platform"]["platform"] is True
+    # Role policy lives on the provider; the authority grants hold subjects/bootstrap only.
+    platform_grants = authorities["kdcube.platform"]["grants"]
+    assert platform_grants["subjects"] == {}
+    assert "default" not in platform_grants and "assignable" not in platform_grants
+    assert provider["grants"]["default"]["roles"] == ["kdcube:role:registered"]
+    google = authorities["google.accounts"]["providers"]["google_oidc"]
+    assert google["type"] == "google_id_token"
+    assert google["authenticator"]["client_id"] == "test-web.apps.googleusercontent.com"
+
+
+def test_apply_bundle_session_auth_omits_bootstrap_rule_without_email():
+    assembly: dict = {"auth": {"type": "simple"}}
+    bundles: dict = {"bundles": {"items": [{"id": "connection-hub@1-0", "config": {}}]}}
+
+    apply_bundle_session_auth(
+        assembly_data=assembly,
+        bundles_data=bundles,
+        env_targets=[_empty_env()],
+        client_id="test-web.apps.googleusercontent.com",
+        provider="google",
+        bootstrap_admin_email="",
+    )
+
+    grants = _bundle_provider(bundles)["grants"]
+    assert "bootstrap_rules" not in grants
+
+
+def _bundle_assembly(client_id: str = "web.apps.googleusercontent.com") -> dict:
+    return {
+        "context": {"tenant": "acme", "project": "platform"},
+        "platform": {"ref": "2026.4.04.318"},
+        "secrets": {"provider": "secrets-file"},
+        "auth": {"type": "bundle", "bundle": {"provider": "google", "client_id": client_id}},
+        "proxy": {"ssl": False},
+    }
+
+
+def test_descriptor_fast_path_accepts_bundle():
+    reasons = _descriptor_fast_path_reasons(
+        _bundle_assembly(),
+        have_secrets=True,
+        have_gateway=True,
+        latest=False,
+        release=None,
+    )
+
+    assert reasons == []
+
+
+def test_descriptor_fast_path_bundle_reads_client_id_from_bundles_descriptor():
+    assembly = _bundle_assembly(client_id="")
+    assembly["auth"]["bundle"].pop("client_id")
+    bundles = {
+        "bundles": {
+            "items": [
+                {
+                    "id": "connection-hub@1-0",
+                    "config": {
+                        "authority_registry": {
+                            "authorities": {
+                                "google.accounts": {
+                                    "providers": {
+                                        "google_oidc": {
+                                            "type": "google_id_token",
+                                            "authenticator": {"client_id": "from-bundles.apps.googleusercontent.com"},
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                }
+            ]
+        }
+    }
+
+    assert _bundle_session_client_id(assembly, bundles) == "from-bundles.apps.googleusercontent.com"
+    reasons = _descriptor_fast_path_reasons(
+        assembly,
+        have_secrets=True,
+        have_gateway=True,
+        bundles_descriptor=bundles,
+        latest=False,
+        release=None,
+    )
+    assert reasons == []
+
+
+def test_descriptor_fast_path_rejects_unsupported_bundle_provider():
+    assembly = _bundle_assembly()
+    assembly["auth"]["bundle"]["provider"] = "telegram"
+
+    reasons = _descriptor_fast_path_reasons(
+        assembly,
+        have_secrets=True,
+        have_gateway=True,
+        latest=False,
+        release=None,
+    )
+
+    assert any("not supported" in reason for reason in reasons)
+
+
+def test_descriptor_fast_path_bundle_requires_client_id():
+    assembly = _bundle_assembly(client_id="")
+    assembly["auth"]["bundle"].pop("client_id")
+
+    reasons = _descriptor_fast_path_reasons(
+        assembly,
+        have_secrets=True,
+        have_gateway=True,
+        latest=False,
+        release=None,
+    )
+
+    assert any("Google client id" in reason for reason in reasons)
+
+
+def test_apply_auth_flags_seeds_bundle_from_flags():
+    console = Console()
+    assembly: dict = {"auth": {"type": "simple"}}
+    args = SimpleNamespace(
+        auth_type="bundle",
+        provider="google",
+        client_id="flag-web.apps.googleusercontent.com",
+        bootstrap_admin_email="owner@example.com",
+    )
+
+    changed = _apply_auth_flags(console, assembly, args)
+
+    assert changed is True
+    assert assembly["auth"]["type"] == "bundle"
+    assert assembly["auth"]["bundle"] == {
+        "provider": "google",
+        "client_id": "flag-web.apps.googleusercontent.com",
+        "bootstrap_admin_email": "owner@example.com",
+    }
+
+
+def test_apply_auth_flags_rejects_unsupported_provider():
+    console = Console()
+    assembly: dict = {"auth": {"type": "simple"}}
+    args = SimpleNamespace(
+        auth_type="bundle",
+        provider="telegram",
+        client_id="web.apps.googleusercontent.com",
+        bootstrap_admin_email="",
+    )
+
+    with pytest.raises(SystemExit):
+        _apply_auth_flags(console, assembly, args)
+
+
+def test_apply_auth_flags_bundle_flags_require_bundle_auth_type():
+    console = Console()
+    assembly: dict = {"auth": {"type": "simple"}}
+    args = SimpleNamespace(
+        auth_type="",
+        provider="google",
+        client_id="web.apps.googleusercontent.com",
+        bootstrap_admin_email="",
+    )
+
+    with pytest.raises(SystemExit):
+        _apply_auth_flags(console, assembly, args)
+
+
+def test_build_frontend_config_bundle_derives_authtype_and_drops_token():
+    from kdcube_cli.frontend_config import build_frontend_config
+
+    # Worst case: base template ships simple auth with a hardcoded dev token.
+    template = {"auth": {"authType": "simple", "token": "test-admin-token-123"}, "routesPrefix": "/x"}
+    assembly = {
+        "auth": {
+            "type": "bundle",
+            "idp": "session",
+            "connection_hub": {
+                "bundle_id": "connection-hub@1-0",
+                "authority_id": "kdcube.platform",
+                "provider_id": "workspace_google_session",
+                "entrypoint": "login",
+            },
+        }
+    }
+
+    out = build_frontend_config(tenant="t", project="p", assembly=assembly, template_data=template)
+
+    assert out["auth"]["authType"] == "bundle"
+    assert "token" not in out["auth"]
+    assert out["auth"]["connectionHub"]["providerId"] == "workspace_google_session"
+
+
+def test_telegram_webhook_and_mini_app_urls():
+    webhook = telegram_webhook_url("https://runtime.example.com/", "demo", "proj", "workspace@2026-03-31-13-36")
+    assert webhook == (
+        "https://runtime.example.com/api/integrations/bundles/demo/proj/"
+        "workspace@2026-03-31-13-36/public/telegram_webhook?integration_id=telegram.kdcube_ref"
+    )
+    mini_app = telegram_mini_app_url("https://runtime.example.com", "demo", "proj", "workspace@2026-03-31-13-36")
+    assert mini_app.endswith("/public/widgets/telegram_miniapp")
+
+
+def test_apply_telegram_companion_generates_topology():
+    bundles: dict = {"bundles": {"items": []}}
+    bundles_secrets: dict = {}
+
+    apply_telegram_companion(
+        bundles_data=bundles,
+        bundles_secrets_data=bundles_secrets,
+        tenant="demo",
+        project="proj",
+        bot_token="123:ABC",
+        external_https_url="https://runtime.example.com",
+        webhook_secret="whsec-test",
+        bot_name="KDCube Ref",
+        bot_username="kdcube_ref_bot",
+    )
+
+    items = {item["id"]: item for item in bundles["bundles"]["items"]}
+    host = items["workspace@2026-03-31-13-36"]["config"]
+    ch = items["connection-hub@1-0"]["config"]
+
+    # Host bundle: webhook integration + Mini App widget.
+    integration = host["integrations"][TELEGRAM_INTEGRATION_ID]
+    assert integration["provider"] == "telegram"
+    assert integration["definition"]["bot_username"] == "kdcube_ref_bot"
+    assert integration["definition"]["webhook"]["url"].endswith(
+        "/public/telegram_webhook?integration_id=telegram.kdcube_ref"
+    )
+    assert "mini_apps" not in integration["definition"]
+    assert host["ui"]["widgets"]["telegram_miniapp"]["enabled"] is True
+
+    # Connection Hub: identity authenticator, edge resolver defaults, link flow, authority.
+    assert ch["identity"]["enabled"] is True
+    assert ch["identity"]["role_resolver"]["mode"] == "platform"
+    assert ch["identity"]["link_flows"]["telegram"]["enabled"] is True
+    authenticator = ch["identity"]["authenticators"][0]
+    assert authenticator["id"] == TELEGRAM_INTEGRATION_ID
+    assert authenticator["secret_ref"] == f"identity.authenticators.{TELEGRAM_SECRET_STEM}.bot_token"
+    provider = ch["authority_registry"]["authorities"][TELEGRAM_INTEGRATION_ID]["providers"]["telegram_bot_init_data"]
+    assert provider["type"] == "telegram_init_data"
+
+    # Secrets: CH identity bot token + bundle-local integration token/webhook secret.
+    secret_items = {item["id"]: item for item in bundles_secrets["bundles"]["items"]}
+    ch_secret = secret_items["connection-hub@1-0"]["secrets"]["identity"]["authenticators"][TELEGRAM_SECRET_STEM]
+    assert ch_secret["bot_token"] == "123:ABC"
+    host_secret = secret_items["workspace@2026-03-31-13-36"]["secrets"]["integrations"][TELEGRAM_SECRET_STEM]["definition"]
+    assert host_secret["bot_token"] == "123:ABC"
+    assert host_secret["webhook_secret"] == "whsec-test"
+
+
+def test_patch_gateway_descriptor_file_substitutes_placeholders(tmp_path: Path):
+    config_dir = tmp_path
+    (config_dir / "gateway.yaml").write_text(
+        yaml.safe_dump({"gateway": {"tenant": "TENANT_ID", "project": "PROJECT_ID", "profile": "development"}})
+    )
+
+    patch_gateway_descriptor_file(config_dir, "demo-tenant", "demo-project")
+
+    data = yaml.safe_load((config_dir / "gateway.yaml").read_text())
+    assert data["gateway"]["tenant"] == "demo-tenant"
+    assert data["gateway"]["project"] == "demo-project"
+    assert data["gateway"]["profile"] == "development"
+
+
+def test_patch_gateway_descriptor_file_preserves_real_values(tmp_path: Path):
+    config_dir = tmp_path
+    (config_dir / "gateway.yaml").write_text(
+        yaml.safe_dump({"gateway": {"tenant": "real-tenant", "project": "real-project"}})
+    )
+
+    patch_gateway_descriptor_file(config_dir, "demo-tenant", "demo-project")
+
+    data = yaml.safe_load((config_dir / "gateway.yaml").read_text())
+    assert data["gateway"]["tenant"] == "real-tenant"
+    assert data["gateway"]["project"] == "real-project"
+
+
+def test_ensure_generated_runtime_secrets_fills_oauth_state_secret(tmp_path: Path):
+    config_dir = tmp_path
+    (config_dir / "secrets.yaml").write_text(yaml.safe_dump({"services": {}}))
+    (config_dir / "bundles.secrets.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "bundles": {
+                    "items": [
+                        {
+                            "id": "connection-hub@1-0",
+                            "secrets": {
+                                "connections": {
+                                    "oauth_state_secret": "<FILL_ME>",
+                                    "delegated_to_kdcube": {"oauth_state_secret": "<FILL_ME>"},
+                                }
+                            },
+                        }
+                    ]
+                }
+            }
+        )
+    )
+
+    generated = ensure_generated_runtime_secrets(config_dir)
+
+    bundles_secrets = yaml.safe_load((config_dir / "bundles.secrets.yaml").read_text())
+    connections = bundles_secrets["bundles"]["items"][0]["secrets"]["connections"]
+    assert connections["oauth_state_secret"] != "<FILL_ME>"
+    assert connections["delegated_to_kdcube"]["oauth_state_secret"] != "<FILL_ME>"
+    assert len(connections["oauth_state_secret"]) >= 32
+    assert "bundles.connection-hub@1-0.secrets.connections.oauth_state_secret" in generated
+
+
+def test_apply_telegram_companion_is_idempotent():
+    bundles: dict = {"bundles": {"items": []}}
+    bundles_secrets: dict = {}
+    kwargs = dict(
+        bundles_data=bundles,
+        bundles_secrets_data=bundles_secrets,
+        tenant="demo",
+        project="proj",
+        bot_token="123:ABC",
+        external_https_url="https://runtime.example.com",
+        webhook_secret="whsec-test",
+    )
+    apply_telegram_companion(**kwargs)
+    apply_telegram_companion(**kwargs)
+
+    ch = {item["id"]: item for item in bundles["bundles"]["items"]}["connection-hub@1-0"]["config"]
+    # The identity authenticator is upserted by id, not duplicated.
+    assert len(ch["identity"]["authenticators"]) == 1

@@ -2557,6 +2557,56 @@ def _apply_cors_origins(assembly: dict, origins: list[str]) -> list[str]:
     return added
 
 
+def _apply_auth_flags(console: Console, assembly: dict, args) -> bool:
+    """Seed the staged assembly auth block from init auth flags.
+
+    --auth-type selects the platform method. For bundle (application-hosted
+    login), --provider/--client-id/--bootstrap-admin-email are written under
+    auth.bundle so the setup wizard uses them without prompting. An unsupported
+    bundle provider aborts. Returns True if the assembly changed.
+    """
+    auth_type = str(getattr(args, "auth_type", "") or "").strip().lower()
+    provider = str(getattr(args, "provider", "") or "").strip().lower()
+    client_id = str(getattr(args, "client_id", "") or "").strip()
+    admin_email = str(getattr(args, "bootstrap_admin_email", "") or "").strip()
+
+    auth = assembly.get("auth")
+    if not isinstance(auth, dict):
+        auth = {}
+        assembly["auth"] = auth
+
+    changed = False
+    if auth_type and auth.get("type") != auth_type:
+        auth["type"] = auth_type
+        changed = True
+
+    effective_type = str(auth.get("type") or "").strip().lower()
+    if effective_type != "bundle":
+        if provider or client_id or admin_email:
+            raise SystemExit(
+                "--provider/--client-id/--bootstrap-admin-email require --auth-type bundle."
+            )
+        return changed
+
+    seed = auth.get("bundle")
+    if not isinstance(seed, dict):
+        seed = {}
+        auth["bundle"] = seed
+    resolved_provider = installer_mod.validate_bundle_auth_provider(
+        console, provider or str(seed.get("provider") or "google")
+    )
+    if seed.get("provider") != resolved_provider:
+        seed["provider"] = resolved_provider
+        changed = True
+    if client_id and seed.get("client_id") != client_id:
+        seed["client_id"] = client_id
+        changed = True
+    if admin_email and seed.get("bootstrap_admin_email") != admin_email:
+        seed["bootstrap_admin_email"] = admin_email
+        changed = True
+    return changed
+
+
 def _iter_bundle_specs(payload: dict | None):
     if not isinstance(payload, dict):
         return
@@ -2633,6 +2683,33 @@ def _connection_hub_cognito_provider_has_fields(assembly: dict, bundles_descript
     )
 
 
+def _bundle_session_client_id(assembly: dict, bundles_descriptor: dict | None) -> str:
+    """Resolve the Google client id for an application-hosted login descriptor set.
+
+    Reads assembly auth.bundle.client_id first, then the Connection Hub
+    google_oidc provider's authenticator in the bundles descriptor.
+    """
+    direct = _get_nested(assembly, "auth", "bundle", "client_id")
+    if _has_value(direct):
+        return str(direct).strip()
+    for spec in _iter_bundle_specs(bundles_descriptor):
+        authorities = _get_nested(spec, "config", "authority_registry", "authorities")
+        if not isinstance(authorities, dict):
+            continue
+        for authority in authorities.values():
+            providers = authority.get("providers") if isinstance(authority, dict) else None
+            if not isinstance(providers, dict):
+                continue
+            for prov in providers.values():
+                if not isinstance(prov, dict):
+                    continue
+                if str(prov.get("type") or "").strip().lower() == "google_id_token":
+                    cid = _get_nested(prov, "authenticator", "client_id")
+                    if _has_value(cid):
+                        return str(cid).strip()
+    return ""
+
+
 def _descriptor_fast_path_reasons(
     assembly: dict,
     *,
@@ -2664,8 +2741,20 @@ def _descriptor_fast_path_reasons(
             reasons.append(f"assembly {'.'.join(field)} is required")
 
     auth_type = str(_get_nested(assembly, "auth", "type") or "").strip().lower()
-    if auth_type not in {"simple", "cognito", "delegated"}:
-        reasons.append("assembly auth.type must be simple, cognito, or delegated")
+    if auth_type not in {"simple", "cognito", "delegated", "bundle"}:
+        reasons.append("assembly auth.type must be simple, cognito, delegated, or bundle")
+    if auth_type == "bundle":
+        provider = str(_get_nested(assembly, "auth", "bundle", "provider") or "google").strip().lower()
+        if provider not in installer_mod.SUPPORTED_BUNDLE_AUTH_PROVIDERS:
+            reasons.append(
+                f"application-hosted authentication provider '{provider}' is not supported "
+                "(currently supported: google)"
+            )
+        elif not _has_value(_bundle_session_client_id(assembly, bundles_descriptor)):
+            reasons.append(
+                "application-hosted login requires a Google client id "
+                "(assembly auth.bundle.client_id or the Connection Hub google_oidc provider)"
+            )
     if auth_type in {"cognito", "delegated"}:
         has_connection_hub_provider = _connection_hub_cognito_provider_has_fields(assembly, bundles_descriptor)
         if not has_connection_hub_provider:
@@ -3644,11 +3733,26 @@ def main() -> None:
 
     _sp = subparsers.add_parser("config", help="Export or import runtime descriptors")
     _add_quiet_arg(_sp)
-    _sp.add_argument("config_action", choices=("export", "import"), help="Descriptor operation")
+    _sp.add_argument("config_action", choices=("export", "import", "apply"), help="Descriptor operation")
     _sp.add_argument("--tenant", default="", help="Tenant of the runtime. With --project, composes under the platform default base.")
     _sp.add_argument("--project", default="", help="Project of the runtime. Pair with --tenant.")
     _sp.add_argument("--workdir", default=None, help="(Advanced) Fully-qualified namespaced runtime workdir")
     _sp.add_argument("--path", default=str(DEFAULT_DIR), help="Platform repo path")
+    _sp.add_argument(
+        "--auth-type",
+        choices=("bundle", "cognito", "simple", "delegated"),
+        default="",
+        help="With `config apply`, the platform authentication method to reconfigure to.",
+    )
+    _sp.add_argument("--provider", default="", help="With `config apply --auth-type bundle`, the login provider. Supported: google.")
+    _sp.add_argument("--client-id", default="", help="With `config apply --auth-type bundle`, the Google OAuth client id (Web application).")
+    _sp.add_argument(
+        "--bootstrap-admin-email",
+        default="",
+        help="With `config apply --auth-type bundle`, the verified Google email granted platform super-admin on first login.",
+    )
+    _sp.add_argument("--restart", action="store_true", help="With `config apply`, restart the runtime after writing the new configuration.")
+    _sp.add_argument("-i", "--interactive", action="store_true", help="With `config apply`, prompt for auth fields not given as flags.")
     _sp.add_argument("--out-dir", default="", help="With `config export`, output directory for exported files")
     _sp.add_argument("--descriptors-location", default="", help="With `config import`, source directory containing descriptors")
     _sp.add_argument(
@@ -3659,7 +3763,7 @@ def main() -> None:
     _sp.add_argument("--aws-region", default="", help="With `config export`, AWS region for aws-sm bundle descriptor export")
     _sp.add_argument("--aws-profile", default="", help="With `config export`, AWS profile for aws-sm bundle descriptor export")
     _sp.add_argument("--aws-sm-prefix", default="", help="With `config export`, explicit AWS Secrets Manager prefix")
-    _sp.add_argument("--dry-run", action="store_true", help="With `config import`, show what would change without staging files")
+    _sp.add_argument("--dry-run", action="store_true", help="With `config import` or `config apply`, show what would change without writing files")
     _sp.add_argument("--reload", action="store_true", dest="reload_changed", help="With `config import`, reload changed bundle ids after staging descriptors")
     _sp.add_argument("--json", action="store_true", dest="json_output", help="Print machine-readable JSON")
     _sp.add_argument(
@@ -3796,6 +3900,50 @@ def main() -> None:
         "--interactive",
         action="store_true",
         help="Prompt for required fields missing in the assembly instead of failing",
+    )
+    _sp.add_argument(
+        "--auth-type",
+        choices=("bundle", "cognito", "simple", "delegated"),
+        default="",
+        help=(
+            "Platform authentication method. 'bundle' is application-hosted login "
+            "(the app hosts the login page; KDCube accepts the result as a platform "
+            "session). Non-interactive installs must pass this to select the method."
+        ),
+    )
+    _sp.add_argument(
+        "--provider",
+        default="",
+        help="Application-hosted login provider for --auth-type bundle. Supported: google.",
+    )
+    _sp.add_argument(
+        "--client-id",
+        default="",
+        help="Google OAuth client id (Web application) for --auth-type bundle.",
+    )
+    _sp.add_argument(
+        "--bootstrap-admin-email",
+        default="",
+        help=(
+            "Verified Google email that receives the platform super-admin role on "
+            "first login, for --auth-type bundle."
+        ),
+    )
+    _sp.add_argument(
+        "--enable-telegram",
+        action="store_true",
+        help=(
+            "Configure the Telegram companion after application-hosted login setup. "
+            "Reads the bot token from KDCUBE_TELEGRAM_BOT_TOKEN and needs --external-https-url."
+        ),
+    )
+    _sp.add_argument(
+        "--external-https-url",
+        default="",
+        help=(
+            "Externally reachable HTTPS URL Telegram uses to reach the runtime "
+            "(webhook and Mini App). Required with --enable-telegram."
+        ),
     )
 
     _sp = subparsers.add_parser(
@@ -4523,7 +4671,101 @@ def main() -> None:
                 if args.json_output:
                     _print_json(_result)
                 return
-            raise SystemExit("Usage: kdcube config <export|import> ...")
+            if _action == "apply":
+                if _config_dir is None:
+                    raise SystemExit(
+                        f"Workdir is not initialized: {_resolved}\n"
+                        "`kdcube config apply` reconfigures a runtime created by `kdcube init`."
+                    )
+                if str(args.descriptors_location or "").strip() or str(args.out_dir or "").strip():
+                    raise SystemExit("--descriptors-location/--out-dir are not used with `kdcube config apply`.")
+                _assembly_path = _config_dir / "assembly.yaml"
+                _assembly = installer_mod.load_release_descriptor_soft(_assembly_path)
+                _apply_auth_flags(_op_console, _assembly, args)
+                _effective_type = str(_get_nested(_assembly, "auth", "type") or "").strip().lower()
+                if _effective_type != "bundle":
+                    raise SystemExit(
+                        "`kdcube config apply` reconfigures application-hosted login. "
+                        "Pass --auth-type bundle with --client-id (and optionally --bootstrap-admin-email)."
+                    )
+                _bundles = installer_mod.load_release_descriptor_soft(_config_dir / "bundles.yaml")
+                _client_id = _bundle_session_client_id(_assembly, _bundles)
+                if not args.interactive and not _has_value(_client_id):
+                    raise SystemExit(
+                        "`kdcube config apply --auth-type bundle` requires a Google client id "
+                        "(--client-id, or an existing application-hosted login runtime)."
+                    )
+                if args.dry_run:
+                    _preview_assembly = json.loads(json.dumps(_assembly))
+                    _preview_bundles = json.loads(json.dumps(_bundles))
+                    installer_mod.apply_bundle_session_auth(
+                        assembly_data=_preview_assembly,
+                        bundles_data=_preview_bundles,
+                        env_targets=[],
+                        client_id=_client_id or "<client-id>",
+                        provider=str(_get_nested(_assembly, "auth", "bundle", "provider") or "google"),
+                        bootstrap_admin_email=str(_get_nested(_assembly, "auth", "bundle", "bootstrap_admin_email") or ""),
+                    )
+                    _auth_preview = _get_nested(_preview_assembly, "auth") or {}
+                    if args.json_output:
+                        _print_json(
+                            {"status": "dry-run", "action": "apply", "workdir": str(_resolved), "auth": _auth_preview}
+                        )
+                    else:
+                        _op_console.print("[bold]config apply (dry-run)[/bold] — no files written")
+                        _op_console.print(f"[dim]workdir:[/dim] {_resolved}")
+                        _op_console.print(yaml.safe_dump({"auth": _auth_preview}, sort_keys=False).rstrip())
+                    return
+                installer_mod.save_release_descriptor(_assembly_path, _assembly)
+                _repo = _resolve_subcommand_repo(args.path, workdir=_resolved, path_provided=_arg_provided("--path"))
+                os.environ["KDCUBE_DESCRIPTORS_LOCATION"] = str(_config_dir)
+                os.environ["KDCUBE_ASSEMBLY_DESCRIPTOR_PATH"] = str(_assembly_path)
+                os.environ["KDCUBE_ASSEMBLY_USER_SUPPLIED"] = "0"
+                for _env_key, _env_name in (
+                    ("KDCUBE_SECRETS_DESCRIPTOR_PATH", "secrets.yaml"),
+                    ("KDCUBE_GATEWAY_DESCRIPTOR_PATH", "gateway.yaml"),
+                    ("KDCUBE_BUNDLES_DESCRIPTOR_PATH", "bundles.yaml"),
+                    ("KDCUBE_BUNDLES_SECRETS_PATH", "bundles.secrets.yaml"),
+                ):
+                    _env_path = _config_dir / _env_name
+                    if _env_path.exists():
+                        os.environ[_env_key] = str(_env_path)
+                os.environ["KDCUBE_ASSEMBLY_USE_BUNDLES"] = "1" if bool(_get_nested(_assembly, "bundles")) else "0"
+                os.environ["KDCUBE_ASSEMBLY_USE_FRONTEND"] = "1" if bool(_get_nested(_assembly, "frontend")) else "0"
+                os.environ["KDCUBE_ASSEMBLY_USE_PLATFORM"] = "0"
+                os.environ["KDCUBE_USE_BUNDLES_DESCRIPTOR"] = "1" if (_config_dir / "bundles.yaml").exists() else "0"
+                os.environ["KDCUBE_USE_BUNDLES_SECRETS"] = "1" if (_config_dir / "bundles.secrets.yaml").exists() else "0"
+                os.environ["KDCUBE_INIT_PREPARE_ONLY"] = "1"
+                if not args.interactive:
+                    os.environ["KDCUBE_CLI_NONINTERACTIVE"] = "1"
+                # Re-render env/bundles/frontend/nginx from the updated descriptors without Docker actions.
+                run_installer(_op_console, _repo, _resolved, "skip", None, None, True)
+                _t, _p = _parse_workdir_namespace(_resolved)
+                if args.restart:
+                    try:
+                        stop_compose_stack(_op_console, repo_root=_repo, workdir=_resolved)
+                    except SystemExit as _stop_exit:
+                        if "Deployment is not running" not in str(_stop_exit):
+                            raise
+                    _check_before_start(_op_console, tenant=_t, project=_p, workdir=_resolved)
+                    start_compose_stack(_op_console, repo_root=_repo, workdir=_resolved, build=False)
+                else:
+                    _op_console.print(
+                        "[dim]config apply: descriptors updated. Run "
+                        f"`kdcube refresh --workdir {_resolved}` (or pass --restart) to apply to the running stack.[/dim]"
+                    )
+                if args.json_output:
+                    _print_json(
+                        {
+                            "status": "ok",
+                            "action": "apply",
+                            "workdir": str(_resolved),
+                            "auth_type": _effective_type,
+                            "restarted": bool(args.restart),
+                        }
+                    )
+                return
+            raise SystemExit("Usage: kdcube config <export|import|apply> ...")
         if args.command == "export":
             _workdir = _resolve_subcommand_workdir(
                 args.workdir, cli_defaults,
@@ -4867,6 +5109,19 @@ def main() -> None:
                     "[dim]Added CORS origins to config/assembly.yaml:[/dim] "
                     + ", ".join(_added_cors_origins)
                 )
+            if _apply_auth_flags(console, _descriptor_bootstrap["assembly"], args):
+                installer_mod.save_release_descriptor(
+                    _descriptor_bootstrap["assembly_path"],
+                    _descriptor_bootstrap["assembly"],
+                )
+                console.print("[dim]Applied authentication settings to config/assembly.yaml.[/dim]")
+            if getattr(args, "enable_telegram", False):
+                os.environ["KDCUBE_ENABLE_TELEGRAM"] = "1"
+            _external_https_url = str(getattr(args, "external_https_url", "") or "").strip()
+            if _external_https_url:
+                os.environ["KDCUBE_TELEGRAM_EXTERNAL_HTTPS_URL"] = _external_https_url
+            if getattr(args, "enable_telegram", False) and not _external_https_url:
+                raise SystemExit("--enable-telegram requires --external-https-url.")
             _init_runtime_secrets = _parse_init_secret_pairs(args.set_secret)
             if args.prompt_secrets and not args.interactive:
                 _init_runtime_secrets = _prompt_init_standard_secrets(console, _init_runtime_secrets)
@@ -4891,6 +5146,15 @@ def main() -> None:
                 "0"
                 if _init_descriptors_location.resolve() == (_init_resolved / "config").resolve()
                 else "1"
+            )
+            # Recommend application-hosted login as the interactive default only when the
+            # auth type was not chosen explicitly: no user-supplied descriptor set and no
+            # --auth-type flag. Otherwise the explicit choice is honored.
+            os.environ["KDCUBE_RECOMMEND_BUNDLE_AUTH"] = (
+                "1"
+                if not str(args.descriptors_location or "").strip()
+                and not str(getattr(args, "auth_type", "") or "").strip()
+                else "0"
             )
             if _descriptor_bootstrap["secrets_path"]:
                 os.environ["KDCUBE_SECRETS_DESCRIPTOR_PATH"] = str(_descriptor_bootstrap["secrets_path"])

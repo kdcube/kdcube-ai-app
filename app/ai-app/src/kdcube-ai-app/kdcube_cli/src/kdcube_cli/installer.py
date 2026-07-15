@@ -364,6 +364,26 @@ def patch_gateway_config_json(env: EnvFile, tenant: str, project: str) -> None:
     replace_multiline_block(env, "GATEWAY_CONFIG_JSON", _format_json_multiline("GATEWAY_CONFIG_JSON", data))
 
 
+def patch_gateway_descriptor_file(config_dir: Path, tenant: str, project: str) -> None:
+    """Substitute tenant/project into the staged gateway.yaml when they are placeholders."""
+    path = config_dir / "gateway.yaml"
+    if not path.exists():
+        return
+    data = load_release_descriptor(path)
+    gateway = data.get("gateway") if isinstance(data, dict) else None
+    if not isinstance(gateway, dict):
+        return
+    changed = False
+    if is_placeholder(_as_str(gateway.get("tenant"))):
+        gateway["tenant"] = tenant
+        changed = True
+    if is_placeholder(_as_str(gateway.get("project"))):
+        gateway["project"] = project
+        changed = True
+    if changed:
+        save_release_descriptor(path, data)
+
+
 def _load_json_file(path: Path) -> Dict[str, object]:
     try:
         return json.loads(path.read_text())
@@ -595,6 +615,514 @@ def _ensure_connection_hub_cognito_provider(
     )
 
 
+def _bundle_session_default_grants() -> Dict[str, object]:
+    """Default and assignable platform grants for a bundle-session provider."""
+    return {
+        "default": {"roles": ["kdcube:role:registered"], "permissions": []},
+        "assignable": {
+            "roles": ["kdcube:role:registered", "kdcube:role:super-admin"],
+            "permissions": ["kdcube:*:chat:*;read;write", "kdcube:*:*:*"],
+        },
+    }
+
+
+def _google_upstream_spec(client_id: str) -> Dict[str, object]:
+    """Upstream authenticator spec that verifies Google OIDC ID tokens.
+
+    Describes the `google.accounts/google_oidc` authority the bundle-session
+    provider trusts and the claim used to bootstrap an admin (verified Google email).
+    """
+    return {
+        "authority_id": "google.accounts",
+        "authority_label": "Google Accounts",
+        "provider_id": "google_oidc",
+        "provider_type": "google_id_token",
+        "authenticator": {"client_id": str(client_id or "")},
+        "bootstrap_id": "bootstrap_admin_by_google_email",
+        "bootstrap_provider": "google",
+        "bootstrap_email_claim": {"email_verified": True},
+    }
+
+
+def _ensure_connection_hub_bundle_session_provider(
+    bundles_data: Dict[str, object],
+    *,
+    connection_hub_bundle_id: str,
+    authority_id: str,
+    provider_id: str,
+    provider_label: str,
+    host_bundle_id: str,
+    ttl_seconds: int,
+    auth_token_cookie_name: str,
+    id_token_cookie_name: str,
+    masqueraded_token_cookie_name: str,
+    upstream: Dict[str, object],
+    admin_bootstrap_email: str = "",
+    login_operation: str = "platform_login",
+    session_issue_operation: str = "auth_google_session",
+    consent_operation: str = "delegated_consent",
+) -> None:
+    """Write the bundle-session platform authority into the Connection Hub descriptor.
+
+    Registers the platform authority (`platform: true`), its `bundle_session_login`
+    provider (issuer, grants, and the host-bundle login/session/consent entrypoints),
+    an optional admin bootstrap rule, and the upstream authenticator authority.
+    """
+    connection_hub = _ensure_bundle_item(bundles_data, connection_hub_bundle_id)
+    config = connection_hub.get("config")
+    if not isinstance(config, dict):
+        config = {}
+        connection_hub["config"] = config
+
+    authority_path = ["authority_registry", "authorities", authority_id]
+    _set_nested(config, authority_path + ["label"], "KDCube platform authority")
+    _set_nested(config, authority_path + ["platform"], True)
+    _set_nested(config, authority_path + ["grants", "subjects"], {})
+
+    if admin_bootstrap_email:
+        claims: Dict[str, object] = {"email": admin_bootstrap_email}
+        extra = upstream.get("bootstrap_email_claim")
+        if isinstance(extra, dict):
+            claims.update(extra)
+        _set_nested(
+            config,
+            authority_path + ["grants", "bootstrap_rules"],
+            [
+                {
+                    "id": str(upstream.get("bootstrap_id") or "bootstrap_admin_by_email"),
+                    "when": {"provider": str(upstream.get("bootstrap_provider") or ""), "claims": claims},
+                    "roles": ["kdcube:role:super-admin"],
+                    "permissions": ["kdcube:*:*:*"],
+                }
+            ],
+        )
+
+    _set_nested(
+        config,
+        authority_path + ["providers", provider_id],
+        {
+            "type": "bundle_session_login",
+            "enabled": True,
+            "label": provider_label,
+            "input": {
+                "authenticator_ref": {
+                    "authority_id": str(upstream.get("authority_id") or ""),
+                    "provider_id": str(upstream.get("provider_id") or ""),
+                }
+            },
+            "issuer": {
+                "type": "kdcube_session_token",
+                "ttl_seconds": int(ttl_seconds),
+                "cookie": {
+                    "secure": True,
+                    "same_site": "lax",
+                    "auth_token_cookie_name": auth_token_cookie_name,
+                    "id_token_cookie_name": id_token_cookie_name,
+                    "masqueraded_token_cookie_name": masqueraded_token_cookie_name,
+                },
+            },
+            "grants": _bundle_session_default_grants(),
+            "entrypoints": {
+                "login": {"bundle_id": host_bundle_id, "route": "public", "operation": login_operation},
+                "session_issue": {"bundle_id": host_bundle_id, "route": "public", "operation": session_issue_operation},
+                "consent": {"bundle_id": host_bundle_id, "route": "public", "operation": consent_operation},
+            },
+        },
+    )
+
+    upstream_authority = str(upstream.get("authority_id") or "")
+    upstream_provider = str(upstream.get("provider_id") or "")
+    upstream_authority_path = ["authority_registry", "authorities", upstream_authority]
+    _set_nested(config, upstream_authority_path + ["label"], str(upstream.get("authority_label") or ""))
+    _set_nested(config, upstream_authority_path + ["platform"], False)
+    _set_nested(
+        config,
+        upstream_authority_path + ["providers", upstream_provider],
+        {
+            "type": str(upstream.get("provider_type") or ""),
+            "enabled": True,
+            "authenticator": dict(upstream.get("authenticator") or {}),
+        },
+    )
+
+
+SUPPORTED_BUNDLE_AUTH_PROVIDERS = ("google",)
+
+
+def validate_bundle_auth_provider(console: Console, provider: str) -> str:
+    """Return the normalized provider, or abort if it is not supported."""
+    normalized = str(provider or "").strip().lower() or "google"
+    if normalized not in SUPPORTED_BUNDLE_AUTH_PROVIDERS:
+        supported = ", ".join(SUPPORTED_BUNDLE_AUTH_PROVIDERS)
+        console.print(
+            f"[yellow]WARNING: Application-hosted authentication provider '{provider}' "
+            f"is not supported.\nCurrently supported provider: {supported}.[/yellow]"
+        )
+        raise SystemExit(1)
+    return normalized
+
+
+def _bundle_session_existing_values(
+    bundles_data: Dict[str, object],
+    connection_hub_bundle_id: str,
+    authority_id: str,
+) -> Tuple[str, str]:
+    """Read the current upstream client_id and bootstrap admin email from the descriptor."""
+    config: Dict[str, object] = {}
+    for spec in _iter_bundle_specs(bundles_data):
+        if str(spec.get("id") or "").strip() == connection_hub_bundle_id:
+            cfg = spec.get("config")
+            config = cfg if isinstance(cfg, dict) else {}
+            break
+    upstream = _google_upstream_spec("")
+    client_id = _as_str(
+        _get_nested(
+            config, "authority_registry", "authorities", str(upstream["authority_id"]),
+            "providers", str(upstream["provider_id"]), "authenticator", "client_id",
+        )
+    ) or ""
+    admin_email = ""
+    rules = _get_nested(config, "authority_registry", "authorities", authority_id, "grants", "bootstrap_rules")
+    if isinstance(rules, list):
+        for rule in rules:
+            email = _get_nested(rule, "when", "claims", "email") if isinstance(rule, dict) else None
+            if email:
+                admin_email = str(email)
+                break
+    return client_id, admin_email
+
+
+def apply_bundle_session_auth(
+    *,
+    assembly_data: Dict[str, object],
+    bundles_data: Dict[str, object],
+    env_targets: list,
+    client_id: str,
+    provider: str = "google",
+    bootstrap_admin_email: str = "",
+    connection_hub_bundle_id: str = "connection-hub@1-0",
+    authority_id: str = "kdcube.platform",
+    provider_id: str = "workspace_google_session",
+    host_bundle_id: str = "workspace@2026-03-31-13-36",
+    provider_label: str = "Workspace Google platform session",
+    ttl_seconds: int = 43200,
+    auth_token_cookie_name: str = "__Secure-LATC",
+    id_token_cookie_name: str = "__Secure-LITC",
+    masqueraded_token_cookie_name: str = "__Secure-LMTC",
+    id_token_header_name: str = "X-ID-Token",
+) -> None:
+    """Apply the application-hosted (bundle-session) auth topology to descriptors and env.
+
+    Writes assembly.auth (Connection Hub provider selection), the Connection Hub
+    authority registry, cookie/AUTH_PROVIDER env, and clears leftover cognito/proxy
+    fields. Shared by `kdcube init` and `kdcube config apply`.
+    """
+    for env in env_targets:
+        # Selection is driven by assembly.auth.connection_hub; AUTH_PROVIDER is cleared.
+        update_env_value(env, "AUTH_PROVIDER", "")
+        update_env_value(env, "AUTH_TOKEN_COOKIE_NAME", auth_token_cookie_name)
+        update_env_value(env, "ID_TOKEN_COOKIE_NAME", id_token_cookie_name)
+        update_env_value(env, "ID_TOKEN_HEADER_NAME", id_token_header_name)
+
+    _set_nested(assembly_data, ["auth", "type"], "bundle")
+    _set_nested(assembly_data, ["auth", "idp"], "session")
+    _set_nested(
+        assembly_data,
+        ["auth", "connection_hub"],
+        {
+            "bundle_id": connection_hub_bundle_id,
+            "authority_id": authority_id,
+            "provider_id": provider_id,
+            "entrypoint": "login",
+        },
+    )
+    _set_nested(
+        assembly_data,
+        ["auth", "authenticators", "connection_hub"],
+        {"enabled": True, "app_id": connection_hub_bundle_id, "operation": "request_authenticate"},
+    )
+    for legacy_path in (
+        ["auth", "cognito"],
+        ["auth", "providers"],
+        ["auth", "jwks_cache_ttl_seconds"],
+        ["auth", "proxy_login"],
+        ["auth", "bundle"],
+        ["auth", "id_token_header_name"],
+        ["auth", "auth_token_cookie_name"],
+        ["auth", "id_token_cookie_name"],
+        ["auth", "masqueraded_token_cookie_name"],
+        ["frontend", "config", "auth"],
+    ):
+        _delete_nested(assembly_data, legacy_path)
+
+    _ensure_connection_hub_bundle_session_provider(
+        bundles_data,
+        connection_hub_bundle_id=connection_hub_bundle_id,
+        authority_id=authority_id,
+        provider_id=provider_id,
+        provider_label=provider_label,
+        host_bundle_id=host_bundle_id,
+        ttl_seconds=ttl_seconds,
+        auth_token_cookie_name=auth_token_cookie_name,
+        id_token_cookie_name=id_token_cookie_name,
+        masqueraded_token_cookie_name=masqueraded_token_cookie_name,
+        upstream=_google_upstream_spec(client_id),
+        admin_bootstrap_email=bootstrap_admin_email,
+    )
+
+
+# Stable, non-secret Telegram companion id used in webhook URLs, widget
+# auth-context headers, and Connection Hub identity/authority records.
+TELEGRAM_INTEGRATION_ID = "telegram.kdcube_ref"
+TELEGRAM_SECRET_STEM = "telegram_kdcube_ref"
+
+
+def telegram_webhook_url(external_https_url: str, tenant: str, project: str, host_bundle_id: str) -> str:
+    base = str(external_https_url or "").strip().rstrip("/")
+    return (
+        f"{base}/api/integrations/bundles/{tenant}/{project}/{host_bundle_id}"
+        f"/public/telegram_webhook?integration_id={TELEGRAM_INTEGRATION_ID}"
+    )
+
+
+def telegram_mini_app_url(external_https_url: str, tenant: str, project: str, host_bundle_id: str) -> str:
+    base = str(external_https_url or "").strip().rstrip("/")
+    return (
+        f"{base}/api/integrations/bundles/{tenant}/{project}/{host_bundle_id}"
+        f"/public/widgets/telegram_miniapp"
+    )
+
+
+def _telegram_api_call(bot_token: str, method: str, params: Optional[Dict[str, str]] = None, timeout: int = 15) -> Dict[str, object]:
+    """Call one Telegram Bot API method. Returns the parsed response or an {ok: false} error dict."""
+    import urllib.request
+    import urllib.error
+    from urllib.parse import urlencode
+
+    url = f"https://api.telegram.org/bot{bot_token}/{method}"
+    data = urlencode(params).encode() if params else None
+    request = urllib.request.Request(url, data=data, method="POST" if data else "GET")
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return json.loads(response.read().decode())
+    except urllib.error.HTTPError as exc:
+        try:
+            return json.loads(exc.read().decode())
+        except Exception:
+            return {"ok": False, "description": f"HTTP {exc.code}"}
+    except Exception as exc:
+        return {"ok": False, "description": str(exc)}
+
+
+def telegram_get_me(bot_token: str) -> Dict[str, object]:
+    return _telegram_api_call(bot_token, "getMe")
+
+
+def telegram_set_webhook(bot_token: str, url: str, secret_token: str) -> Dict[str, object]:
+    return _telegram_api_call(bot_token, "setWebhook", {"url": url, "secret_token": secret_token})
+
+
+def telegram_get_webhook_info(bot_token: str) -> Dict[str, object]:
+    return _telegram_api_call(bot_token, "getWebhookInfo")
+
+
+def _upsert_telegram_identity_authenticator(ch_config: Dict[str, object]) -> None:
+    identity = ch_config.setdefault("identity", {})
+    if not isinstance(identity, dict):
+        identity = {}
+        ch_config["identity"] = identity
+    identity["enabled"] = True
+    # Edge projection resolves platform roles/economics from the linked platform
+    # user. Set the resolver defaults without clobbering an existing configuration.
+    identity.setdefault("authenticator_selector_cache", {"enabled": True, "ttl_seconds": 30})
+    identity.setdefault("role_resolver", {"mode": "platform"})
+    identity.setdefault("role_bindings", {})
+    authenticators = identity.setdefault("authenticators", [])
+    if not isinstance(authenticators, list):
+        authenticators = []
+        identity["authenticators"] = authenticators
+    entry = {
+        "id": TELEGRAM_INTEGRATION_ID,
+        "provider": "telegram",
+        "where": "built-in",
+        "enabled": True,
+        "role_providing": False,
+        "secret_ref": f"identity.authenticators.{TELEGRAM_SECRET_STEM}.bot_token",
+        "definition": {"label": "KDCube Telegram bot", "web_app_auth_max_age_seconds": 86400},
+    }
+    for index, existing in enumerate(authenticators):
+        if isinstance(existing, dict) and str(existing.get("id") or "") == TELEGRAM_INTEGRATION_ID:
+            authenticators[index] = entry
+            return
+    authenticators.append(entry)
+
+
+def apply_telegram_companion(
+    *,
+    bundles_data: Dict[str, object],
+    bundles_secrets_data: Dict[str, object],
+    tenant: str,
+    project: str,
+    bot_token: str,
+    external_https_url: str,
+    webhook_secret: str,
+    bot_name: str = "",
+    bot_username: str = "",
+    host_bundle_id: str = "workspace@2026-03-31-13-36",
+    connection_hub_bundle_id: str = "connection-hub@1-0",
+    web_app_auth_max_age_seconds: int = 86400,
+    link_challenge_ttl_seconds: int = 600,
+) -> None:
+    """Configure the Telegram companion channel on an application-hosted login runtime.
+
+    Adds the Telegram webhook integration and Mini App on the login host bundle,
+    the Connection Hub identity authenticator, authority, and link flow, and writes
+    the bot token and webhook secret into the bundle secrets.
+    """
+    webhook_url = telegram_webhook_url(external_https_url, tenant, project, host_bundle_id)
+
+    host = _ensure_bundle_item(bundles_data, host_bundle_id)
+    host_config = host.get("config")
+    if not isinstance(host_config, dict):
+        host_config = {}
+        host["config"] = host_config
+    _set_nested(
+        host_config,
+        ["integrations", TELEGRAM_INTEGRATION_ID],
+        {
+            "provider": "telegram",
+            "where": "built-in",
+            "enabled": True,
+            "secret_refs": {
+                "bot_token": f"integrations.{TELEGRAM_SECRET_STEM}.definition.bot_token",
+                "webhook_secret": f"integrations.{TELEGRAM_SECRET_STEM}.definition.webhook_secret",
+            },
+            "definition": {
+                "bot_name": bot_name,
+                "bot_username": bot_username,
+                "webhook": {"url": webhook_url, "send_responses": True, "stream_activity": True},
+                "web_app_auth_max_age_seconds": web_app_auth_max_age_seconds,
+            },
+        },
+    )
+    _set_nested(host_config, ["ui", "widgets", "telegram_miniapp", "enabled"], True)
+
+    connection_hub = _ensure_bundle_item(bundles_data, connection_hub_bundle_id)
+    ch_config = connection_hub.get("config")
+    if not isinstance(ch_config, dict):
+        ch_config = {}
+        connection_hub["config"] = ch_config
+    _upsert_telegram_identity_authenticator(ch_config)
+    _set_nested(
+        ch_config,
+        ["identity", "link_flows", "telegram"],
+        {"enabled": True, "challenge_ttl_seconds": link_challenge_ttl_seconds, "platform_claim_url": ""},
+    )
+    _set_nested(
+        ch_config,
+        ["authority_registry", "authorities", TELEGRAM_INTEGRATION_ID],
+        {
+            "label": "KDCube Telegram identity",
+            "platform": False,
+            "providers": {
+                "telegram_bot_init_data": {
+                    "type": "telegram_init_data",
+                    "enabled": True,
+                    "authenticator": {"secret_ref": f"identity.authenticators.{TELEGRAM_SECRET_STEM}.bot_token"},
+                }
+            },
+        },
+    )
+
+    _upsert_bundle_secret(
+        bundles_secrets_data,
+        bundle_id=connection_hub_bundle_id,
+        secret_path=["identity", "authenticators", TELEGRAM_SECRET_STEM, "bot_token"],
+        value=bot_token,
+    )
+    _upsert_bundle_secret(
+        bundles_secrets_data,
+        bundle_id=host_bundle_id,
+        secret_path=["integrations", TELEGRAM_SECRET_STEM, "definition", "bot_token"],
+        value=bot_token,
+    )
+    _upsert_bundle_secret(
+        bundles_secrets_data,
+        bundle_id=host_bundle_id,
+        secret_path=["integrations", TELEGRAM_SECRET_STEM, "definition", "webhook_secret"],
+        value=webhook_secret,
+    )
+
+
+def configure_telegram_companion(
+    console: Console,
+    *,
+    bundles_data: Dict[str, object],
+    bundles_secrets_data: Dict[str, object],
+    tenant: str,
+    project: str,
+    bot_token: str,
+    external_https_url: str,
+    host_bundle_id: str = "workspace@2026-03-31-13-36",
+    connection_hub_bundle_id: str = "connection-hub@1-0",
+) -> bool:
+    """Validate the bot, stage the Telegram companion descriptors, and register the webhook.
+
+    Calls getMe to validate the token and read the bot name, generates the webhook
+    secret, writes the companion descriptors and secrets, then setWebhook and
+    getWebhookInfo to register and verify. Returns True on success.
+    """
+    bot_token = str(bot_token or "").strip()
+    external_https_url = str(external_https_url or "").strip()
+    if not bot_token or not external_https_url:
+        console.print("[yellow]Telegram companion: bot token and external HTTPS URL are required; skipping.[/yellow]")
+        return False
+
+    me = telegram_get_me(bot_token)
+    if not me.get("ok"):
+        console.print(f"[red]Telegram companion: getMe failed: {me.get('description') or me}[/red]")
+        return False
+    result = me.get("result") if isinstance(me.get("result"), dict) else {}
+    bot_username = str(result.get("username") or "")
+    bot_name = str(result.get("first_name") or bot_username)
+    console.print(f"[dim]Telegram companion: bot @{bot_username} verified.[/dim]")
+
+    webhook_secret = secrets.token_urlsafe(32)
+    apply_telegram_companion(
+        bundles_data=bundles_data,
+        bundles_secrets_data=bundles_secrets_data,
+        tenant=tenant,
+        project=project,
+        bot_token=bot_token,
+        external_https_url=external_https_url,
+        webhook_secret=webhook_secret,
+        bot_name=bot_name,
+        bot_username=bot_username,
+        host_bundle_id=host_bundle_id,
+        connection_hub_bundle_id=connection_hub_bundle_id,
+    )
+
+    webhook_url = telegram_webhook_url(external_https_url, tenant, project, host_bundle_id)
+    set_result = telegram_set_webhook(bot_token, webhook_url, webhook_secret)
+    if not set_result.get("ok"):
+        console.print(f"[red]Telegram companion: setWebhook failed: {set_result.get('description') or set_result}[/red]")
+        return False
+    info = telegram_get_webhook_info(bot_token)
+    info_url = str((info.get("result") or {}).get("url") or "") if isinstance(info.get("result"), dict) else ""
+    if info_url != webhook_url:
+        console.print(
+            f"[yellow]Telegram companion: webhook registered but getWebhookInfo url mismatch "
+            f"(expected {webhook_url}, got {info_url or '<empty>'}).[/yellow]"
+        )
+    else:
+        console.print("[green]Telegram companion: webhook registered and verified.[/green]")
+    console.print(
+        "[dim]Telegram Mini App URL (set as BotFather Main Mini App + menu button):[/dim] "
+        + telegram_mini_app_url(external_https_url, tenant, project, host_bundle_id)
+    )
+    return True
+
+
 def _connection_hub_provider_config(
     assembly_data: Dict[str, object],
     bundles_data: Dict[str, object],
@@ -729,6 +1257,29 @@ def ensure_generated_runtime_secrets(config_dir: Path) -> Dict[str, str]:
 
     if generated:
         save_release_descriptor(secrets_path, secrets_data)
+
+    bundles_secrets_path = config_dir / "bundles.secrets.yaml"
+    if bundles_secrets_path.exists():
+        bundles_secrets_data = load_release_descriptor(bundles_secrets_path)
+        changed_bundles_secrets = False
+        for item in _iter_bundle_specs(bundles_secrets_data):
+            secrets_block = item.get("secrets")
+            if not isinstance(secrets_block, dict):
+                continue
+            bundle_id = str(item.get("id") or "")
+            for secret_path in (
+                ["connections", "oauth_state_secret"],
+                ["connections", "delegated_to_kdcube", "oauth_state_secret"],
+            ):
+                current = _get_nested(secrets_block, *secret_path)
+                if isinstance(current, str) and is_placeholder(current):
+                    value = secrets.token_hex(32)
+                    _set_nested(secrets_block, secret_path, value)
+                    changed_bundles_secrets = True
+                    generated[f"bundles.{bundle_id}.secrets.{'.'.join(secret_path)}"] = value
+        if changed_bundles_secrets:
+            save_release_descriptor(bundles_secrets_path, bundles_secrets_data)
+
     return generated
 
 
@@ -1040,6 +1591,38 @@ def update_nginx_routes_prefix(path: Path, routes_prefix: str) -> None:
             updated = root_redirect_re.sub(_insert_prefix_redirect, updated, count=1)
     if updated != current:
         path.write_text(updated)
+
+
+_NGINX_ORIGIN_HEADER_RE = re.compile(
+    r"^(?P<pre>\s*proxy_set_header\s+(?:Host|X-Forwarded-Host)\s+)\$host;",
+)
+
+
+def ensure_nginx_origin_forwarding(path: Path) -> None:
+    """Forward the browser's Host header (including port) to the backends.
+
+    Rewrites active ``proxy_set_header Host`` / ``X-Forwarded-Host`` directives
+    to use ``$http_host`` so the backend sees the request authority and port
+    the browser used (localhost:PORT, an ngrok host, HTTPS). Commented lines are
+    left as-is. Intended for the base HTTP proxy config; SSL configs keep
+    ``$host`` because they pin ``server_name`` and use it in redirects.
+    """
+    if not path.exists():
+        return
+    try:
+        lines = path.read_text().split("\n")
+    except Exception:
+        return
+    changed = False
+    for i, line in enumerate(lines):
+        if line.lstrip().startswith("#"):
+            continue
+        match = _NGINX_ORIGIN_HEADER_RE.match(line)
+        if match:
+            lines[i] = match.group("pre") + "$http_host;"
+            changed = True
+    if changed:
+        path.write_text("\n".join(lines))
 
 
 def update_nginx_ssl_domain(path: Path, domain: str) -> None:
@@ -2586,6 +3169,7 @@ def gather_configuration(
     _set_nested(assembly_data, ["context", "project"], project)
     for env in (env_ingress, env_proc, env_metrics):
         patch_gateway_config_json(env, tenant, project)
+    patch_gateway_descriptor_file(ctx.config_dir, tenant, project)
     if is_placeholder(env_pg.entries.get("TENANT_ID", (None, None))[1]) or is_default_tenant_project(
         env_pg.entries.get("TENANT_ID", (None, None))[1]
     ):
@@ -2625,7 +3209,13 @@ def gather_configuration(
         if isinstance(raw_auth, dict):
             auth_descriptor = raw_auth
     descriptor_auth_type = (auth_descriptor.get("type") or "").strip().lower()
-    auth_options = ["simple", "cognito", "delegated"]
+    auth_options = ["bundle", "cognito", "simple", "delegated"]
+    auth_option_labels = {
+        "bundle": "Application-hosted login (recommended)",
+        "cognito": "cognito",
+        "simple": "simple",
+        "delegated": "delegated",
+    }
     if descriptor_auth_type in auth_options:
         default_auth = descriptor_auth_type
     else:
@@ -2633,26 +3223,146 @@ def gather_configuration(
     current_proxy_cfg = env_main.entries.get("NGINX_PROXY_RUNTIME_CONFIG_PATH", (None, None))[1] or ""
     if "delegated" in current_proxy_cfg:
         default_auth = "delegated"
-    default_idx = auth_options.index(default_auth)
+    # The interactive prompt recommends bundle by default on a fresh init bootstrapped from
+    # the repo shipped defaults (no user-supplied descriptor and no explicit --auth-type),
+    # where the "simple" auth.type is only a baseline. An explicit auth choice — a
+    # user-supplied descriptor or --auth-type flag — is honored as-is via default_auth.
+    recommend_bundle_auth = os.getenv("KDCUBE_RECOMMEND_BUNDLE_AUTH", "").lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    interactive_default_auth = default_auth
+    if (
+        recommend_bundle_auth
+        and descriptor_auth_type not in ("cognito", "delegated")
+        and (existing_auth or "").strip().lower() != "cognito"
+        and "delegated" not in current_proxy_cfg
+    ):
+        interactive_default_auth = "bundle"
     if default_local_bootstrap_mode and not force_prompt:
         auth_choice = default_auth
     else:
         console.print("[bold]Authentication[/bold]")
-        auth_choice = select_option(
+        display_options = [auth_option_labels[opt] for opt in auth_options]
+        selected_label = select_option(
             console,
             "Auth type",
-            options=auth_options,
-            default_index=default_idx,
+            options=display_options,
+            default_index=auth_options.index(interactive_default_auth),
         )
+        auth_choice = auth_options[display_options.index(selected_label)]
     auth_mode = auth_choice
     _set_nested(assembly_data, ["auth", "type"], auth_mode)
-    auth_provider = "simple" if auth_choice == "simple" else "cognito"
-    update_env_value(env_ingress, "AUTH_PROVIDER", auth_provider)
-    update_env_value(env_proc, "AUTH_PROVIDER", auth_provider)
+    if auth_choice == "simple":
+        auth_provider = "simple"
+    elif auth_choice == "bundle":
+        auth_provider = "session"
+    else:
+        auth_provider = "cognito"
+    # Bundle-session leaves AUTH_PROVIDER empty; simple/cognito set it.
+    auth_provider_env = "" if auth_provider == "session" else auth_provider
+    update_env_value(env_ingress, "AUTH_PROVIDER", auth_provider_env)
+    update_env_value(env_proc, "AUTH_PROVIDER", auth_provider_env)
     proxy_ssl_env = parse_bool(os.getenv("KDCUBE_PROXY_SSL"))
     proxy_ssl_descriptor = parse_bool(_get_nested(assembly_data, "proxy", "ssl"))
     proxy_ssl_enabled = proxy_ssl_env if proxy_ssl_env is not None else (proxy_ssl_descriptor or False)
     _set_nested(assembly_data, ["proxy", "ssl"], proxy_ssl_enabled)
+
+    if auth_provider == "session":
+        # Application-hosted login: collect the environment-specific inputs, then
+        # apply_bundle_session_auth writes the Workspace/Google topology.
+        bundle_seed = auth_descriptor.get("bundle") if isinstance(auth_descriptor.get("bundle"), dict) else {}
+        ch_ref = auth_descriptor.get("connection_hub") if isinstance(auth_descriptor.get("connection_hub"), dict) else {}
+
+        provider = validate_bundle_auth_provider(console, str(bundle_seed.get("provider") or "google"))
+        connection_hub_bundle_id = (
+            str(ch_ref.get("bundle_id") or ch_ref.get("bundleId") or "").strip() or "connection-hub@1-0"
+        )
+        authority_id = (
+            str(ch_ref.get("authority_id") or ch_ref.get("authorityId") or "").strip() or "kdcube.platform"
+        )
+        provider_id = (
+            str(ch_ref.get("provider_id") or ch_ref.get("providerId") or bundle_seed.get("provider_id") or "").strip()
+            or "workspace_google_session"
+        )
+        host_bundle_id = str(bundle_seed.get("host_bundle_id") or "").strip() or "workspace@2026-03-31-13-36"
+
+        existing_client_id, existing_admin_email = _bundle_session_existing_values(
+            bundles_data, connection_hub_bundle_id, authority_id
+        )
+
+        console.print("[bold]Application-hosted login[/bold]")
+        console.print(f"[dim]Application-hosted authentication provider: {provider}[/dim]")
+
+        client_id = str(bundle_seed.get("client_id") or "").strip()
+        if not client_id or force_prompt:
+            client_id = ask(
+                console,
+                "Google OAuth client_id (Web application)",
+                default=client_id or existing_client_id or None,
+            )
+        client_id = (client_id or "").strip()
+
+        admin_email = str(bundle_seed.get("bootstrap_admin_email") or "").strip()
+        if not admin_email or force_prompt:
+            admin_email = ask(
+                console,
+                "Bootstrap admin email (verified Google email; blank to skip)",
+                default=admin_email or existing_admin_email or "",
+            )
+        admin_email = (admin_email or "").strip()
+
+        try:
+            ttl_seconds = int(bundle_seed.get("session_ttl") or bundle_seed.get("ttl_seconds") or 43200)
+        except (TypeError, ValueError):
+            ttl_seconds = 43200
+
+        apply_bundle_session_auth(
+            assembly_data=assembly_data,
+            bundles_data=bundles_data,
+            env_targets=[env_main, env_ingress, env_proc],
+            client_id=client_id,
+            provider=provider,
+            bootstrap_admin_email=admin_email,
+            connection_hub_bundle_id=connection_hub_bundle_id,
+            authority_id=authority_id,
+            provider_id=provider_id,
+            host_bundle_id=host_bundle_id,
+            ttl_seconds=ttl_seconds,
+        )
+
+        # Optional Telegram companion. The browser login origin is request-derived;
+        # the external HTTPS URL is only how Telegram reaches the runtime.
+        telegram_bot_token = os.getenv("KDCUBE_TELEGRAM_BOT_TOKEN", "").strip()
+        telegram_external_url = os.getenv("KDCUBE_TELEGRAM_EXTERNAL_HTTPS_URL", "").strip()
+        telegram_wanted = parse_bool(os.getenv("KDCUBE_ENABLE_TELEGRAM", "")) is True
+        if not telegram_wanted and not _noninteractive_enabled():
+            telegram_wanted = ask_confirm(console, "Configure Telegram Companion now?", default=False)
+        if telegram_wanted:
+            if not telegram_bot_token:
+                telegram_bot_token = ask(console, "Telegram bot token", default=None, secret=True).strip()
+            if not telegram_external_url:
+                telegram_external_url = ask(console, "Externally reachable HTTPS URL", default=None).strip()
+            if configure_telegram_companion(
+                console,
+                bundles_data=bundles_data,
+                bundles_secrets_data=bundles_secrets_data,
+                tenant=tenant,
+                project=project,
+                bot_token=telegram_bot_token,
+                external_https_url=telegram_external_url,
+                host_bundle_id=host_bundle_id,
+                connection_hub_bundle_id=connection_hub_bundle_id,
+            ):
+                _autosave()
+                try:
+                    save_release_descriptor(
+                        (ctx.config_dir / "bundles.secrets.yaml").resolve(), bundles_secrets_data
+                    )
+                except Exception as exc:
+                    console.print(f"[yellow]Telegram companion: failed to persist bundle secrets: {exc}[/yellow]")
 
     if auth_provider == "cognito":
         def _pick(dct: Dict[str, Any], *keys: str) -> str:
@@ -4060,7 +4770,10 @@ def gather_configuration(
     company_name_raw = _get_nested(assembly_data, "company")
     company_name = company_name_raw.strip() if isinstance(company_name_raw, str) else None
 
-    if auth_provider == "simple":
+    if auth_provider in {"simple", "session"}:
+        # Bundle-session reuses the base proxy config and the hardcoded frontend
+        # template; the frontend authType is derived from assembly.auth when the
+        # config is generated.
         frontend_template = ctx.ai_app_root / "deployment/docker/all_in_one_kdcube/frontend/config.hardcoded.json"
         compose_ui_config = ctx.config_dir / "frontend.config.hardcoded.json"
         if ctx.docker_dir.name == "custom-ui-managed-infra":
@@ -4151,6 +4864,10 @@ def gather_configuration(
     runtime_proxy = Path(runtime_proxy_path).expanduser()
     sync_nginx_proxy_config(runtime_proxy, ctx.ai_app_root, defaults["nginx_proxy_config"], assembly=assembly_data)
     update_nginx_routes_prefix(runtime_proxy, routes_prefix)
+    # The base HTTP proxy config forwards the browser Host (with port); SSL
+    # configs keep $host for their pinned server_name and redirects.
+    if Path(defaults["nginx_proxy_config"]).name == "nginx_proxy.conf":
+        ensure_nginx_origin_forwarding(runtime_proxy)
     apply_nginx_frame_embedding_config(runtime_proxy, assembly_data)
     if proxy_ssl_enabled:
         ssl_domain = normalize_domain_host(_as_str(_get_nested(assembly_data, "domain")))
@@ -4193,7 +4910,7 @@ def gather_configuration(
     except Exception:
         pass
 
-    if auth_provider == "simple":
+    if auth_provider in {"simple", "session"}:
         dev_ui_config = ctx.ai_app_root / "ui/chat-web-app/public/private/config.hardcoded.json"
     elif auth_mode == "delegated":
         dev_ui_config = ctx.ai_app_root / "ui/chat-web-app/public/private/config.delegated.json"
@@ -4751,6 +5468,7 @@ def run_setup(
                 runtime_secrets=runtime_secrets,
             )
             console.print("[dim]Secrets persisted to staged descriptors.[/dim]")
+        ensure_generated_runtime_secrets(config_dir)
         return
 
     if install_mode == "release":
@@ -4872,6 +5590,7 @@ def run_setup(
                     config_dir=config_dir,
                     runtime_secrets=runtime_secrets,
                 )
+                ensure_generated_runtime_secrets(config_dir)
                 console.print("[dim]Applied runtime secrets to staged secrets-file descriptors.[/dim]")
             elif runtime_secrets:
                 console.print(
