@@ -458,7 +458,12 @@ function App() {
   }), [postToFrame])
 
   // Scene-level event relay: configured subscription claims decide which
-  // Data Bus channels the scene consumes on behalf of its widgets.
+  // Data Bus channels the scene consumes on behalf of its widgets. Two legs
+  // feed the scene event bus: the authenticated Socket.IO data-bus socket
+  // carries session-routed service events, and a dedicated SSE stream with
+  // project_events=true carries tenant/project broadcasts — the socket
+  // gateway only joins per-session relay channels, so project events (task
+  // changes, stats snapshots) are only observable over SSE.
   useEffect(() => {
     if (!isRegistered) return undefined
     const channels = sceneSubscriptionChannels(sceneSubscriptions)
@@ -483,9 +488,55 @@ function App() {
         console.warn('[kdc-scene] scene event relay subscribe failed', err)
       }
     })()
+
+    // SSE leg: project-scoped broadcasts for the claimed channels.
+    let eventSource: EventSource | null = null
+    let reconnectTimer: number | undefined
+    let reconnectDelayMs = 2000
+    const openProjectStream = () => {
+      if (cancelled) return
+      const streamId = (window.crypto && 'randomUUID' in window.crypto)
+        ? window.crypto.randomUUID()
+        : `scene_${Date.now()}_${Math.random().toString(16).slice(2)}`
+      const url = new URL(`${ctx.baseUrl.replace(/\/+$/, '')}/sse/stream`)
+      url.searchParams.set('stream_id', streamId)
+      url.searchParams.set('tenant', ctx.tenant)
+      url.searchParams.set('project', ctx.project)
+      url.searchParams.set('project_events', 'true')
+      const es = new EventSource(url.toString(), { withCredentials: true })
+      channels.forEach((channel) => {
+        es.addEventListener(channel, (raw) => {
+          try {
+            const payload = JSON.parse(String((raw as MessageEvent<string>).data || '{}'))
+            const event = sceneEventBus.normalizeEvent('sse', { type: channel }, payload)
+            sceneEventBus.publish(event)
+          } catch (err) {
+            console.warn('[kdc-scene] failed to parse project relay event', err)
+          }
+        })
+      })
+      es.addEventListener('open', () => {
+        reconnectDelayMs = 2000
+        console.info('[kdc-scene] project event relay connected', { tenant: ctx.tenant, project: ctx.project, channels })
+      })
+      es.addEventListener('error', () => {
+        es.close()
+        if (eventSource === es) eventSource = null
+        if (cancelled) return
+        console.warn('[kdc-scene] project event relay stream error; reconnect scheduled', { delay_ms: reconnectDelayMs })
+        reconnectTimer = window.setTimeout(openProjectStream, reconnectDelayMs)
+        reconnectDelayMs = Math.min(reconnectDelayMs * 2, 30000)
+      })
+      eventSource = es
+    }
+    openProjectStream()
+
     return () => {
       cancelled = true
       detach.forEach((release) => release())
+      if (reconnectTimer !== undefined) window.clearTimeout(reconnectTimer)
+      eventSource?.close()
+      eventSource = null
     }
   }, [ctx, isRegistered, sceneEventBus, sceneSubscriptions])
 
