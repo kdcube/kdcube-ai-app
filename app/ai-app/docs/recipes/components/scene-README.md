@@ -22,7 +22,9 @@ browser tab
       target_surface -> command contract
       widget alias -> event subscription claims
     event bridge
-      one Event Bus stream per authenticated scene runtime
+      two relay legs per authenticated scene runtime:
+        Socket.IO data-bus socket -> session-routed service events
+        SSE stream (project_events=true) -> tenant/project broadcasts
       per-widget subscription claims
       postMessage fan-out to subscribed iframes
     drag broker
@@ -94,7 +96,7 @@ The scene config is data, not hardcoded widget logic. A scene profile should dec
 
 An app-owned scene host declares the same routing server-side. An external
 panel mounts another app's widget and maps target surfaces to per-surface
-descriptors, including editor-surface routing for provider opens:
+descriptors:
 
 ```yaml
 external_panels:
@@ -104,14 +106,38 @@ external_panels:
     widget_message_type: kdcube-task-tracker-widget-command
     open_message_types: [kdcube-task-tracker-open-issue, kdcube-task-tracker-create-issue]
     surfaces:
-      task_tracker.issue_list:   { expanded: false, command: {action: refresh} }
-      task_tracker.issue_editor: { expanded: true,  command_from_open: provider_surface_open }
+      task_tracker.issue_list: { expanded: false, command: {action: refresh} }
+```
+
+A DIFFERENT surface of the same app can be owned by its own mounted
+component. The task editor is the shipped example: the editor widget mounts
+as a surface-command-only component (no rail button) claiming the editor
+surface, while the list panel keeps only the list surface:
+
+```yaml
+ui:
+  scene:
+    components:
+      task_wizard:
+        enabled: true
+        bundle_id: task-tracker@1-0
+        widget_alias: task_tracker_wizard
+        route: widgets/task_tracker_wizard/?host_controls=1
+        title: KDCube Task Editor
+        rail: false
+        placement: floating
+        size: { w: 620, h: 720 }
+        target_surfaces: [task_tracker.issue_editor]
 ```
 
 With this shape, opening a task pin resolves to
 `ui_event.target_surface = task_tracker.issue_editor` and the scene summons
-the panel expanded with the issue loaded (the open payload is forwarded as
-the widget command). Descriptor semantics:
+the editor window with the issue loaded (the provider's open payload is
+forwarded as the component's surface command). Give each target surface
+exactly ONE owner: external-panel surface registrations override component
+registrations for the same surface, so a panel that also claims the editor
+surface swallows every editor open into the panel widget. Descriptor
+semantics:
 [External Panels And Provider-Open Routing](../../sdk/solutions/scene/config/README.md#external-panels-and-provider-open-routing).
 
 ## Scene Components
@@ -185,16 +211,19 @@ widget loads
   -> if liveEventsTransport == scene:
        postMessage(kdcube-scene-subscribe, filters)
   -> if liveEventsTransport == sse:
-       opens its own runtime stream
+       opens its own runtime stream (project_events=true for broadcasts)
 
 server emits service event
-  -> scene Event Bus stream receives event
+  -> session-routed events arrive on the scene's data-bus socket;
+     tenant/project broadcasts arrive on the scene's SSE relay leg
+     (broadcasts travel over SSE only — the socket never carries them)
   -> scene checks registered subscriptions
   -> scene postMessage(kdcube.surface.command or configured event envelope) to matching widgets
   -> widget handles event or refreshes its own backend snapshot
 ```
 
-The scene should log subscription registration, stream connection, event receipt, and dispatch counts. A widget should log whether it selected `scene`, `sse`, or no live transport.
+The scene should log subscription registration, stream connection, event receipt, and dispatch counts. A widget should log whether it selected `scene`, `sse`, or no live transport. The end-to-end push patterns — emit side, fleet-safe dedup, and the trace path for a missing update — are the
+[Live Widget Updates recipe](../dataflow/live-widget-updates-README.md).
 
 ## Drag Flow
 
@@ -233,6 +262,7 @@ namespace parsing.
 - [Scene Composition](../../sdk/solutions/scene/scene-composition-README.md)
 - [Scene Surface Commands](../../sdk/solutions/scene/scene-surface-commands-README.md)
 - [Scene Event Orchestration](../../sdk/solutions/scene/scene-event-orchestration-README.md)
+- [Live Widget Updates](../dataflow/live-widget-updates-README.md)
 - [Cross-Surface Context Drag](../../sdk/solutions/scene/cross-surface-context-drag-README.md)
 - [Scene Surface Registry](../../sdk/solutions/scene/scene-surface-registry-README.md)
 - [Event Bus And Data Bus](../../service/comm/conversation-event-bus-and-data-bus-README.md)

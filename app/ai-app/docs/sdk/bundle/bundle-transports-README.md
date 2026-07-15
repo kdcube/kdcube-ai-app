@@ -18,6 +18,7 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/service/streams/background-jobs-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/service/comm/conversation-event-bus-and-data-bus-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/service/comm/data-bus-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/recipes/dataflow/live-widget-updates-README.md
 ---
 # Bundle Transports
 
@@ -589,8 +590,22 @@ current session. See the concrete recipe in
 For tenant/project-level widget refreshes, SSE clients opt in with
 `project_events=true`, and bundle code emits `comm.project_event(...)`. Keep
 those payloads compact and already safe for all viewers in the tenant/project.
-The detailed recipe is in
+Transport rule: tenant/project broadcasts are delivered over **SSE only** —
+the Socket.IO gateway joins per-session relay channels and never carries
+them. A scene host that relays events to embedded widgets therefore keeps an
+SSE leg with `project_events=true` beside its authenticated socket. The
+protocol details are in
 [Client Transport Protocols](../../service/comm/client-transport-protocols-README.md#tenantproject-sse-broadcast).
+
+A bundle can also push an out-of-band change to the open widgets of **one
+specific user**: register the widget's authenticated session against the
+subject it displays (a Redis live-session registry), then emit a
+session-routed relay envelope per registered session. Connection Hub's
+delegated-access delivery is the shipped implementation.
+
+End-to-end walkthrough of both push shapes — emit, fleet-safe debounce/dedup
+state, standalone and scene-hosted receive, and the trace path when an update
+goes missing: [Live Widget Updates](../../recipes/dataflow/live-widget-updates-README.md).
 
 ### 7.2 Who owns outbound auth
 
@@ -643,6 +658,8 @@ Choose by caller and auth ownership:
   [chat-stream-events-README.md](../solutions/chat/chat-stream-events-README.md)
 - durable Data Bus messages:
   [../../service/comm/data-bus-README.md](../../service/comm/data-bus-README.md)
+- pushing live updates to open widgets:
+  [../../recipes/dataflow/live-widget-updates-README.md](../../recipes/dataflow/live-widget-updates-README.md)
 - routing and partitioning:
   [../../service/comm/bus-routing-and-partitioning-README.md](../../service/comm/bus-routing-and-partitioning-README.md)
 - runtime objects available to bundle code:
