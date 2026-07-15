@@ -4,22 +4,21 @@
 
 # KDCube
 
-**A platform and SDK for building, integrating, and operating multi-user AI apps.**
+**The open-source, self-hosted production runtime for AI applications.**
 
-With KDCube you build AI apps for yourself — and just as naturally for your
-team, your company, and your customers. Multi-user is the default posture;
-personal use is the easy case.
+Keep the agent and product code you already have. Run LangGraph, CrewAI,
+Claude Agent SDK, your own loop, or KDCube's built-in ReAct agent. KDCube
+handles the production work around it: multi-user serving, ordered
+conversation delivery, streaming, files, identity, isolated code execution,
+cost controls, configuration, secrets, and deployment from Git.
 
-An app is one deployable unit: agents, APIs, cron jobs, MCP surfaces, widgets,
-and its own config and secrets. It plugs into a running platform and upgrades
-almost in real time: `kdcube bundle reload <app_id>` swaps app code and config,
-no image rebuild. The platform supplies the envelope every app needs in
-production: isolated `tenant/project` environments, auth and roles, per-user
-budgets and accounting, secret channels, streaming transports, and a
-descriptor-driven delivery path that is the same locally and in the cloud.
+Start with one capability. Put an existing agent behind REST, a webhook, or a
+streaming conversation endpoint. Embed the ready-made chat in your site. Add
+managed integrations or isolated execution later. You do not need to adopt
+the whole platform at once.
 
 <p align="center">
-  <img src="assets/topology.svg" alt="KDCube topology: users and external agents reach your apps; apps serve and consume surfaces; the auth authority is external OIDC or a bundle; Connection Hub brokers claims; kdcube-services federates app realms over MCP" width="820">
+  <img src="assets/topology.svg" alt="KDCube topology: users and external operators reach apps that provide and consume governed surfaces" width="820">
 </p>
 
 Website: [kdcube.tech](https://kdcube.tech) · Interactive architecture:
@@ -31,166 +30,99 @@ Website: [kdcube.tech](https://kdcube.tech) · Interactive architecture:
 pip install kdcube-cli
 ```
 
-Descriptor seeds, first start, hot reload, and the app release loop:
-[Quick Start](app/ai-app/docs/quick-start-README.md)
+Then create or connect an app, start the local runtime, and reload changes
+without rebuilding the platform image. Follow the
+[Quick Start](app/ai-app/docs/quick-start-README.md).
 
-## The ReAct runtime
+## Choose your starting point
 
-KDCube ships its own agent runtime. The agent perceives its input as a
-**timeline of events** — ordered, authored blocks: user messages, followups
-and steers, tool calls and results, artifacts, events from external systems
-and other agents — folding in live under runtime policy. What the model sees,
-touches, and keeps is a runtime decision, per app.
+| You already have | Add with KDCube |
+| --- | --- |
+| A LangGraph, CrewAI, Claude Agent SDK, or custom agent | A small execution adapter, ordered multi-user delivery, streaming, persistence hooks, budgets, and deployment |
+| A website or product UI | The configurable chat widget, or native integration through streaming and operations APIs |
+| Tools and provider integrations | Trackable tools, scoped credentials, user consent, REST/MCP boundaries, and isolated execution |
+| A new AI feature to build quickly | Ready chat, ReAct, web search, files, conversation storage, user memory, knowledge access, and configurable tools and skills |
+| Several AI services or frontends | Independently deployable apps that provide and consume APIs, tools, MCP services, events, and UI surfaces |
 
-- **Live control** — `followup` feeds additional user input into a running
-  turn; `steer` interrupts generation and gives the agent a reorient window.
-- **Endless conversations** — compaction prunes the timeline tail, working
-  summaries stand in for the pruned ranges: the window stays sharp
-  indefinitely and everything the conversation ever produced stays
-  retrievable through the conversational memory below. Timeline, working
-  summaries, conversation notes, durable user memory — the layers of how
-  ReAct remembers; context caching is the efficiency layer on top.
-- **Per-turn budgets and recovery** — iteration and spend limits, protocol
-  violation feedback, and recovery paths are part of the loop.
-- **Citations and provenance** — web and tool results land in a sources pool;
-  answers cite tokens that resolve to real sources; every artifact keeps its
-  lineage.
-- **Per-user memory** — durable, co-managed records: the agent proposes, a
-  reconciler merges, the user edits in a widget.
-- **A shared conversational realm** — every turn is indexed; `react.memsearch`
-  retrieves prior turns, artifacts, and decisions across conversations with
-  hybrid semantic + lexical + recency ranking. The same history is the
-  searchable `conv:` realm — external agents search and reread it over MCP,
-  and with external-event delivery the conversation timeline is shared
-  across operators.
+Each app can be as small as one backend service or as broad as a workspace.
+Apps may have no UI and no agent, or may host several agents and frontends.
 
-[Runtime flow](app/ai-app/docs/sdk/agents/react/flow-README.md) · [Timeline](app/ai-app/docs/sdk/agents/react/timeline-README.md) ·
-[How ReAct remembers](app/ai-app/docs/sdk/memory/how-react-remembers-README.md) · [Conversational memory search](app/ai-app/docs/sdk/memory/conversational-memory-search-README.md) ·
-[Context caching](app/ai-app/docs/sdk/agents/react/context-caching-README.md) · [Citations system](app/ai-app/docs/citations-system.md) · [User memories](app/ai-app/docs/sdk/memory/user-memories-overview-README.md)
+## What the runtime handles
 
-## Isolated execution
+- **Serve and stream.** Ordered per-conversation work, live output, followups,
+  external events, reconnectable chat, files, and conversation history.
+- **Deploy and update.** App code from Git, descriptor-based configuration,
+  secret references, local/cloud parity, and near-live app reloads.
+- **Run generated code safely.** A sparse per-turn workspace and an isolated
+  executor with no ambient network or credentials. Approved tools run on the
+  trusted supervisor side under the current request identity and policy.
+- **Connect users and systems.** OIDC and application authority, external
+  accounts, Telegram identity linking, managed grants, revocable automation
+  access, and protected REST or MCP surfaces.
+- **Track economics.** Attribute accountable LLM, embedding, web-search, and
+  tool work to the user, app, conversation, and turn; enforce budgets before
+  covered calls run.
+- **Compose a product.** Ready chat and workspace components, custom widgets,
+  scenes, canvases, app-hosted websites, APIs, jobs, and domain services.
 
-Model-written code runs in sandboxes with no network and no secret material —
-local subprocess, Docker ISO runtime, or distributed Fargate. Approved tools
-are brokered through a privileged supervisor: running code is a tool call with
-a tool's trust profile — declared outputs, hosted artifacts, delivery-verified
-results flowing back into the timeline and provenance model.
+A KDCube deployment serves one tenant/project environment and many concurrent
+users. Shared infrastructure is namespaced, while request identity and policy
+travel across process, thread, subprocess, and isolated-runtime boundaries.
 
-[ISO runtime](app/ai-app/docs/exec/README-iso-runtime.md) · [Custom tools and declared files](app/ai-app/docs/sdk/tools/custom-tools-README.md)
+## Bring your agent, or use KDCube ReAct
 
-## Connection Hub: delegated trust
+Existing agent frameworks remain responsible for their own graph or loop.
+KDCube supplies the surrounding runtime. In scaled serving, a graph is built
+for the current turn and then discarded; durable state belongs in its
+checkpointer or storage, not in a process-local graph object.
 
-Users connect their own provider accounts (Gmail, Slack, ...) with claim-scoped
-consent. Consent is demand-driven — the attempt is the ask: a tool that hits
-an unmet claim raises a scoped consent card in chat, and the turn keeps going.
-Claims are enforced at tool boundaries: tools resolve claims, never keys;
-OAuth client secrets stay in descriptors tool code cannot read. The same broker
-grants external agents revocable namespace grants and mints disposable
-automation tokens bound to declared resources — one click revokes token and
-session.
+The optional built-in ReAct agent uses an event-aware timeline and semantic
+streaming channels rather than requiring a provider-native tool-calling
+protocol. It can react to user input, tool results, application events,
+followups, steering, and current runtime conditions. Model-written code runs
+in the isolated workspace and reaches approved capabilities only through
+trusted tools.
 
-Connect Claude — or any MCP client — to the `kdcube-services` MCP surface and
-one consent unlocks every discoverable realm. Or expose your own MCP surface
-around your own tools, declare claims on them, and the platform enforces them
-at the boundary.
+[Port an existing solution](app/ai-app/docs/recipes/kdcube_for_agents/port-your-solution-to-kdcube-README.md) ·
+[ReAct runtime](app/ai-app/docs/sdk/agents/react/flow-README.md) ·
+[Why ReAct is not simply tool calling](app/ai-app/docs/sdk/agents/react/why/why-not-simply-tool-calling-README.md) ·
+[Isolated execution](app/ai-app/docs/exec/README-iso-runtime.md)
 
-[Connection Hub](app/ai-app/docs/sdk/solutions/connections/connection-hub-solution-README.md) · [Delegated automation access](app/ai-app/docs/recipes/connections/create-delegated-automation-access-README.md)
+## Apps provide and consume surfaces
 
-## Named services
+An app can **provide** APIs, widgets, named services, MCP endpoints, events,
+jobs, or an agent. The same app can **consume** another app's services,
+external MCP servers, provider accounts, and shared platform capabilities.
+These boundaries are explicit in configuration, so every agent and surface
+can have its own tools, grants, models, budgets, and execution policy.
 
-A domain models itself as a **realm** — `task:`, `mem:`, `mail:`, or your own —
-behind one fixed grammar: `about / schema / list / search / get / action /
-upsert / host_file`. One self-description serves everyone: agents read the
-schema and operate through a handful of generic tools; users see the realm as
-a service card. Realms federate over MCP: an external agent works the same
-objects through the same grammar under delegated consent.
+This is the framework layer: the SDK, contracts, configuration, components,
+and extension points builders use. The runtime executes and enforces those
+contracts. The platform combines both with shared serving, identity,
+economics, storage, hosting, and control surfaces.
 
-[Namespace services](app/ai-app/docs/sdk/namespace-services/README.md) · [Named services over MCP](app/ai-app/docs/recipes/kdcube_for_agents/named-services-mcp-README.md)
+## Where KDCube fits
 
-## Widgets and scenes
+| Capability | KDCube | Agent frameworks | Agent ops platforms |
+| --- | --- | --- | --- |
+| Keep an existing agent implementation | Yes | Native implementation | Integrate it |
+| Multi-user conversation serving, streaming, files, and UI | Built in | Assemble around the agent | Not their primary role |
+| Pre-run per-user budgets and cross-runtime accounting | Built in | Implement in application code | Primarily observe and analyze |
+| Isolated generated-code workspace with brokered trusted tools | Built in | Add separately | Varies by product |
+| User identity, connected accounts, delegated operators, and grants | Built in | Add separately | Not their primary role |
+| Tracing and evaluation workflows | Runtime records; use your preferred evaluation stack | Integrate an ops tool | Core strength |
+| Self-hosted open-source runtime | MIT | Common for libraries | Varies by product and plan |
 
-A widget is an app-served frontend component: the app declares it, the
-platform builds and serves it — build pipeline, discovery, auth handshake —
-so one app ships as many frontends as it needs. Ready-made widgets ship with
-the SDK — [chat](app/ai-app/docs/recipes/components/chat-README.md),
-[pin board](app/ai-app/docs/recipes/components/pinboard-README.md),
-user memories, usage card, Connection Hub, the capabilities picker — and the
-interaction machinery is a library too:
-[`@kdcube/components-core`](app/ai-app/src/kdcube-ai-app/npm/packages/components-core) and [`@kdcube/components-react`](app/ai-app/src/kdcube-ai-app/npm/packages/components-react)
-carry the scene host, config handshake, event bus, context drag, and surface
-commands.
-
-Widgets compose into chat, host pages, and scene workspaces, where a scene
-assembles widgets from many apps into one page by configuration — chat,
-boards, memory, domain widgets side by side. Objects drag between widgets as
-context with provenance intact, surface commands route actions to the owning
-widget, and a new alias mounts any deployed app's widget. Many faces come
-fast: edit a widget's source and the platform rebuilds and re-serves it;
-`kdcube bundle reload` upgrades the running deployment almost in real time.
-
-[App widget integration](app/ai-app/docs/sdk/bundle/bundle-widget-integration-README.md) · [Scene contract](app/ai-app/docs/sdk/solutions/scene/generic-scene-contract-README.md) ·
-[Cross-surface context drag](app/ai-app/docs/sdk/solutions/scene/cross-surface-context-drag-README.md)
-
-## Economics
-
-Per-user plans, budgets, and wallets. The accountable unit is the **service**:
-LLM calls, embeddings, and web search ship with trackers — `@track_llm`,
-`@track_embedding`, `@track_web_search` — and every accountable invocation is
-attributed to the user, app, and turn that caused it, enforced before it runs,
-and aggregated for operations. Accounting extends the way it ships: decorate
-your function with an existing tracker (an extractor maps its result to the
-usage shape) or add a tracker for a new accountable service type; scope
-attribution per step with `with_accounting(component, ...)`. Cache rebuilds
-are attributed too — a cold turn is marked and its premium joins the turn's
-spend.
-
-[Economics model](app/ai-app/docs/economics/economic-README.md) · [Accounting and usage tracking](app/ai-app/docs/accounting/accounting-README.md) ·
-[Accountable LLM invocation](app/ai-app/docs/sdk/streaming/llm-streaming-README.md)
-
-## Integration, both directions
-
-An app exposes its tools and realms as MCP endpoints for external agents; its
-own agents consume external MCP servers as tools — same policy, budgets, and
-accounting either way. Host products pick their depth on the same surfaces:
-iframe a served app UI, build native UI over the chat stream, operations APIs,
-and Data Bus, or call backend-only apps from a server with no browser in the
-loop. Agent code is Python inside your app: use the built-in ReAct runtime,
-the Claude Code runtime, or bring your own loop — CrewAI, LangGraph, or plain
-code run as app logic on the same platform surfaces.
-
-### Where KDCube is different
-
-| Capability | KDCube | Agent frameworks (LangGraph, CrewAI) | Agent ops platforms (LangSmith, Langfuse) |
-| --- | :---: | :---: | :---: |
-| Many apps on one platform, each a single deployable unit — agents, APIs, widgets, cron, MCP — plugged in and upgraded almost in real time | ✓ | ◐¹ | — |
-| Multi-user identity through every layer (tenant/project/user) | ✓ | — | — |
-| Per-user budgets and wallets enforced before a call runs | ✓ | — | ◐² |
-| Demand-driven consent with claims enforced at tool boundaries | ✓ | — | — |
-| Live turns: followup, steer, and external events fold into a shared timeline | ✓ | ◐³ | — |
-| Model-written code as an isolated tool (no-network sandbox, brokered tools) | ✓ | — | — |
-| Domains self-describe once — schema for agents, service cards for users | ✓ | — | — |
-
-¹ LangGraph Platform deploys and scales agent services; the deployed unit is the graph.
-² Cost and usage are traced per call and per user; spending decisions run in your code.
-³ LangGraph interrupts pause a run for human input.
-
-[How to integrate with KDCube apps](app/ai-app/docs/how-to-integrate-with-kdcube-apps-README.md) · [MCP integration](app/ai-app/docs/sdk/tools/mcp-README.md)
+KDCube complements agent frameworks and observability products. It does not
+ask you to discard either.
 
 ## Documentation
 
-One page holds a fraction of the platform. Behind it: the Data Bus for durable
-domain mutations outside chat, fairly claimed background jobs and cron,
-micro-agents and subagents inside a ReAct turn, channel integrations —
-Telegram bots and Mini Apps, email, LinkedIn — user automations, file storage
-and hosting, monitoring and observability, per-turn cost artifacts. The map
-below is the way in.
-
-- [What you can do with KDCube](app/ai-app/docs/what-you-can-do-with-kdcube-README.md) — the product overview
-- [Use cases: what problem does KDCube solve?](app/ai-app/docs/recipes/use-cases-README.md) — sixteen practitioner problems, answered with mechanisms
-- [How to integrate with KDCube apps](app/ai-app/docs/how-to-integrate-with-kdcube-apps-README.md) — iframe, native UI, server, and backend-only integration modes
-- [Docs index](app/ai-app/docs/README.md) — the full map
-- [How to navigate the docs](app/ai-app/docs/sdk/bundle/build/how-to-navigate-kdcube-docs-README.md) — reading order for builders and coding agents
-- [Architecture explorer](https://kdcube.tech/architecture.html) — interactive system map
+- [What you can do with KDCube](app/ai-app/docs/what-you-can-do-with-kdcube-README.md)
+- [How to integrate with KDCube apps](app/ai-app/docs/how-to-integrate-with-kdcube-apps-README.md)
+- [Architecture](app/ai-app/docs/arch/architecture-of-what-we-built-README.md)
+- [Docs index](app/ai-app/docs/README.md)
+- [Builder navigation](app/ai-app/docs/sdk/bundle/build/how-to-navigate-kdcube-docs-README.md)
 
 ## License
 
