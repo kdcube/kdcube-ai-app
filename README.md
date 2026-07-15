@@ -69,7 +69,7 @@ A KDCube deployment serves one tenant/project environment and many concurrent
 users. Shared infrastructure is namespaced, while request identity and policy
 travel across process, thread, subprocess, and isolated-runtime boundaries.
 
-## Bring your agent, or use KDCube ReAct
+## Bring your agent, or use KDCube ReAct Agent
 
 Existing agent frameworks remain responsible for their own graph or loop.
 KDCube supplies the surrounding runtime. In scaled serving, a graph is built
