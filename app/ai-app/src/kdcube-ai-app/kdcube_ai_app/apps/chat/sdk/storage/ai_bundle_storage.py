@@ -113,6 +113,45 @@ class BundleArtifactStorage:
             return self.backend.read_text(rel, encoding=encoding)
         return self.backend.read_bytes(rel)
 
+    async def write_a(
+            self,
+            key: str,
+            data: Union[bytes, str],
+            *,
+            mime: Optional[str] = None,
+            encoding: str = "utf-8",
+            meta: Optional[Dict[str, Any]] = None
+    ) -> str:
+        """Async twin of :meth:`write` — backend-native async I/O, no thread hop."""
+        rel = self._join(self._bundle_root, self._normalize_key(key))
+        payload: bytes = data.encode(encoding) if isinstance(data, str) else data
+
+        meta = dict(meta) if meta else {}
+        if mime:
+            meta.setdefault("ContentType", mime)
+        else:
+            guessed, enc = mimetypes.guess_type(key)
+            if guessed:
+                meta.setdefault("ContentType", guessed)
+            if enc:
+                meta.setdefault("ContentEncoding", enc)
+
+        await self.backend.write_bytes_a(rel, payload, meta=meta or None)
+        return self._uri_for_path(rel)
+
+    async def read_a(
+            self,
+            key: str,
+            *,
+            as_text: bool = False,
+            encoding: str = "utf-8"
+    ) -> Union[bytes, str]:
+        """Async twin of :meth:`read` — backend-native async I/O, no thread hop."""
+        rel = self._join(self._bundle_root, self._normalize_key(key))
+        if as_text:
+            return await self.backend.read_text_a(rel, encoding=encoding)
+        return await self.backend.read_bytes_a(rel)
+
     async def iter_bytes(self, key: str, *, chunk_size: int = 1024 * 1024) -> AsyncIterator[bytes]:
         rel = self._join(self._bundle_root, self._normalize_key(key))
         async for chunk in self.backend.iter_bytes_a(rel, chunk_size=chunk_size):

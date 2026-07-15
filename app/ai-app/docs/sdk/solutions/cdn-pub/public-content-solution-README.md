@@ -149,7 +149,24 @@ GET …/public/__content__/{alias}/{catalog-prefix}[?q=…&offset=…]
 GET …/public/__content__/{alias}/{slug…}
       → the crawlable item page (200), 410 when retracted, 404 unknown;
         chrome + side rail added when a configured catalog covers the slug
+GET …/public/__content__/{alias}/{slug…}/{asset}.png|jpg|webp|svg
+      → an item asset (image bytes, Cache-Control public max-age=3600);
+        a miss falls through to the item lookup
 ```
+
+### Item assets (the social-preview raster)
+
+An item can carry small per-item binaries served next to its page — the
+1200×630 social-preview raster behind `og:image`/`twitter:image` above all.
+`registry.put_item_asset(slug, name, data, mime=…)` stores the bytes in the
+durable tier (backend-native async I/O) with a hot-tier mirror;
+`get_item_asset` reads hot-first with durable fallback and refill. Assets are
+addressed content (slug + flat validated filename), sit outside the index and
+the generation marker, and write last-writer-wins. The app puts the asset
+**before** publishing an item whose `images` references it — a live page must
+never point at bytes that are not servable. `item.images` then drives
+`og:image`, `twitter:image`, and JSON-LD `image` on the rendered page.
+Hands-on: [Publish Discoverable Content → When items need an image](../../../recipes/resource_sharing/publish-discoverable-content-README.md#when-items-need-an-image-social-preview--ogimage).
 
 The handler reads the hot tier and renders with solution code. The route
 plumbing resolves the app instance to consult its manifest (is the alias

@@ -501,6 +501,43 @@ async def preferences_exec_report(self, recency: int = 10, kwords: str = "", **k
     ...
 ```
 
+### File uploads (multipart) into an operation
+
+A POST operation also accepts `multipart/form-data`. The ingress parses the
+form itself; the bundle never touches raw multipart:
+
+- one form field named `payload` (or `data`) carries the JSON payload — the
+  same object the JSON body would carry under `data`;
+- every file part becomes a `BundleUploadedFile` (`filename`, `content_type`,
+  `content: bytes`, `field_name`) and the list is delivered to the operation
+  as `uploaded_files`.
+
+```bash
+curl -X POST .../operations/reading_admin_upload_issue \
+  -H "Authorization: Bearer $TOKEN" \
+  -F 'data={"channel":"industry","title":"..."};type=application/json' \
+  -F 'social_preview=@social-preview.png;type=image/png'
+```
+
+```python
+@api(method="POST", alias="reading_admin_upload_issue", route="operations")
+async def reading_admin_upload_issue(self, data=None, **kwargs):
+    payload = _operation_payload(data, kwargs)
+    uploaded = list(payload.get("uploaded_files") or kwargs.get("uploaded_files") or [])
+    for part in uploaded:            # BundleUploadedFile
+        part.filename, part.content_type, part.content  # bytes are in memory
+```
+
+Notes:
+
+- the JSON and multipart forms are interchangeable per request — a client
+  sends multipart only when it has files to attach;
+- parts are buffered in memory; this lane is for documents and images, not
+  large media (use hosted-file upload slots for those — see
+  [Files, attachments, and citations](#8-files-attachments-and-citations));
+- the operation owns validation: filter by `content_type`/`filename` and
+  ignore parts it did not ask for.
+
 Example declaration:
 
 ```python
@@ -671,6 +708,13 @@ a per-alias `sitemap.xml`, and `410 Gone` after retraction, all under the
 reserved `…/public/__content__/{alias}/…` route. The app publishes/retracts
 items through the SDK registry; the widget URL stays a widget shell — the
 crawlable page is a separate platform-rendered artifact.
+
+Items can carry **item assets** — small per-item binaries served next to the
+page, above all the social-preview raster behind `og:image`/`twitter:image`.
+The app stores bytes with `registry.put_item_asset(slug, name, data)` and sets
+`item.images` to `<canonical URL>/<name>`; the route serves
+`…/{alias}/{slug}/{name}` for image extensions (png/jpg/webp/svg) with cache
+headers.
 
 Content-provider apps should be **singletons** (`singleton: true`): every
 crawler request resolves the app instance for the declaration/config gate.

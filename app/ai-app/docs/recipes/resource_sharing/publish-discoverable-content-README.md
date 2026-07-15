@@ -162,6 +162,40 @@ async def articles_publish_to_web(self, **kwargs):
     return {"ok": True, "published": len(items), "slugs": [i.slug for i in items]}
 ```
 
+### When items need an image (social preview / og:image)
+
+A shared link renders with an image only when the page carries `og:image` /
+`twitter:image` — otherwise the platform picks stale or empty visuals. The
+registry stores small per-item binaries (**item assets**) and serves them next
+to the page, so the image ships through the same publish lane as the content:
+
+```python
+# alongside the publish above — png_bytes is your 1200×630 raster
+await registry.put_item_asset(item.slug, "social-preview.png", png_bytes, mime="image/png")
+item = item.model_copy(update={"images": [PublicContentImage(
+    url=f"{config.canonical_base}/{item.slug}/social-preview.png",
+    alt=item.title, width=1200, height=630,
+)]})
+await registry.publish(item)
+```
+
+- The route serves `…/{alias}/{slug}/<name>` for image extensions
+  (png/jpg/webp/svg) with cache headers; `item.images` drives `og:image`,
+  `twitter:image`, and JSON-LD `image` on the crawlable page.
+- **Store the asset before publishing the item that references it** — never
+  point a live page at bytes that are not servable yet.
+- Crawlers do not render SVG: author the card however you like, but the URL
+  in `item.images` must be a raster (1200×630 PNG is the safe default).
+- An externally hosted image also works — put its absolute URL in
+  `item.images` and skip the asset call.
+- Getting the raster INTO the app: a POST operation accepts multipart file
+  parts as `uploaded_files` — see
+  [Bundle Interfaces → File uploads (multipart)](../../sdk/bundle/bundle-interfaces-README.md#file-uploads-multipart-into-an-operation).
+
+Verify like the rest of the surface (Step 5): the asset URL answers `200`
+with `content-type: image/png`, and the item page's `og:image` points at
+exactly that URL.
+
 ## Step 4 — Configure the app
 
 In the app's `bundles.yaml` descriptor:

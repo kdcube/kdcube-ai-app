@@ -288,6 +288,28 @@ def test_headline_in_body_omits_generated_header():
     assert "application/ld+json" in page
 
 
+def test_item_asset_roundtrip_and_tiers(tmp_path):
+    """Item assets (the social-preview raster) live in the durable tier with a
+    hot mirror: a write is readable back, survives a wiped hot tier (durable
+    fallback + refill), and rejects traversal-shaped names."""
+    registry = _registry(tmp_path)
+    payload = b"\x89PNG\r\n\x1a\nfakebytes"
+    asyncio.run(registry.put_item_asset("kdcube/journal/lane", "social-preview.png", payload, mime="image/png"))
+    assert asyncio.run(registry.get_item_asset("kdcube/journal/lane", "social-preview.png")) == payload
+    # wipe the hot mirror -> durable fallback still serves and refills
+    hot = registry._hot_asset_path("kdcube/journal/lane", "social-preview.png")
+    hot.unlink()
+    assert asyncio.run(registry.get_item_asset("kdcube/journal/lane", "social-preview.png")) == payload
+    assert hot.read_bytes() == payload
+    # unsafe names never touch storage
+    with pytest.raises(ValueError):
+        asyncio.run(registry.put_item_asset("kdcube/journal/lane", "../escape.png", payload))
+    with pytest.raises(ValueError):
+        asyncio.run(registry.get_item_asset("kdcube/journal/lane", "a/b.png"))
+    # a missing asset is None, not an error
+    assert asyncio.run(registry.get_item_asset("kdcube/journal/lane", "missing.png")) is None
+
+
 def test_generated_header_gets_baseline_style():
     """A bare fragment (no headline_in_body) ships only a scoped style, so the
     platform must give the generated <h1>/summary a readable baseline — else the

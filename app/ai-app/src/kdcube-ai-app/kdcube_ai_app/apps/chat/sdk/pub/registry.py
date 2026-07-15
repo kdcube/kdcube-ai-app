@@ -43,6 +43,7 @@ import json
 import logging
 import os
 import pathlib
+import re
 import time
 from typing import Any, Awaitable, Callable, List, Optional
 
@@ -88,10 +89,30 @@ _MUTATE_LOCK_WAIT_SECONDS = float(os.environ.get("KDCUBE_PUBLIC_CONTENT_MUTATE_L
 _REBUILD_LOCK_WAIT_SECONDS = float(os.environ.get("KDCUBE_PUBLIC_CONTENT_REBUILD_LOCK_WAIT_SECONDS", "300") or "300")
 
 
+# Item asset names are single flat filenames (no path separators): the item's
+# social-preview raster and similar per-item binaries served next to the page.
+_ASSET_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,80}")
+
+
+def normalize_asset_name(name: str) -> str:
+    """Validate a flat item-asset filename; raises ``ValueError`` otherwise."""
+    clean = str(name or "").strip()
+    if not _ASSET_NAME_RE.fullmatch(clean) or ".." in clean:
+        raise ValueError(f"invalid item asset name: {name!r}")
+    return clean
+
+
 def _atomic_write_text(path: pathlib.Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f".{path.name}.tmp.{os.getpid()}.{time.time_ns()}")
     tmp.write_text(text, encoding="utf-8")
+    tmp.replace(path)
+
+
+def _atomic_write_bytes(path: pathlib.Path, data: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.tmp.{os.getpid()}.{time.time_ns()}")
+    tmp.write_bytes(data)
     tmp.replace(path)
 
 
@@ -273,6 +294,65 @@ class PublicContentRegistry:
             except Exception:
                 pass
         return item
+
+    # ------------------ item assets (per-item binaries) ------------------
+    #
+    # An item asset is a small binary served next to the item's page — the
+    # social-preview raster above all. Assets live outside the index and the
+    # generation marker: they are addressed content (slug + name), writes are
+    # idempotent last-writer-wins, and readers never take the mutation lock.
+
+    def _durable_asset_key(self, slug: str, name: str) -> str:
+        return f"{_DURABLE_PREFIX}/{self.alias}/item-assets/{slug}/{name}"
+
+    def _hot_asset_path(self, slug: str, name: str) -> pathlib.Path:
+        return self.hot_alias_dir / "item-assets" / slug / name
+
+    async def put_item_asset(
+        self, slug: str, name: str, data: bytes, *, mime: str = "application/octet-stream"
+    ) -> None:
+        """Store one per-item binary (durable tier + hot mirror)."""
+        slug = normalize_slug_path(slug)
+        name = normalize_asset_name(name)
+        payload = bytes(data or b"")
+        if not payload:
+            raise ValueError("item asset payload is empty")
+        await self.durable.write_a(self._durable_asset_key(slug, name), payload, mime=mime)
+        try:
+            # Hot tier is a local-disk mirror; the atomic replace goes off-loop.
+            await asyncio.to_thread(_atomic_write_bytes, self._hot_asset_path(slug, name), payload)
+        except Exception:
+            _log.warning(
+                "[pub.registry] hot mirror failed for asset %s/%s (durable write succeeded)",
+                slug, name, exc_info=True,
+            )
+
+    async def get_item_asset(self, slug: str, name: str) -> Optional[bytes]:
+        """Read one per-item binary, hot tier first, durable fallback (with refill)."""
+        slug = normalize_slug_path(slug)
+        name = normalize_asset_name(name)
+        hot_path = self._hot_asset_path(slug, name)
+
+        def _hot_read() -> Optional[bytes]:
+            try:
+                return hot_path.read_bytes()
+            except OSError:
+                return None
+
+        data = await asyncio.to_thread(_hot_read)
+        if data:
+            return data
+        try:
+            raw = await self.durable.read_a(self._durable_asset_key(slug, name))
+            data = bytes(raw) if raw else None
+        except Exception:
+            data = None
+        if data:
+            try:
+                await asyncio.to_thread(_atomic_write_bytes, hot_path, data)
+            except Exception:
+                pass
+        return data
 
     # ------------------ Moment B: runtime mutation ------------------
 

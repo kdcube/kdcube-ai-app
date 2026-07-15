@@ -179,6 +179,22 @@ def _not_found(detail: str) -> BundleBinaryResponse:
     return _binary(json.dumps({"detail": detail}), _JSON, status_code=404)
 
 
+# Item assets served next to the page (the social-preview raster above all) —
+# image types only; any other path stays a content slug.
+_ASSET_MIME = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+    ".svg": "image/svg+xml",
+}
+
+
+def _asset_mime(name: str) -> Optional[str]:
+    dot = name.rfind(".")
+    return _ASSET_MIME.get(name[dot:].lower()) if dot > 0 else None
+
+
 def _redirect(location: str) -> BundleBinaryResponse:
     return BundleBinaryResponse(
         content=b"",
@@ -468,6 +484,28 @@ async def serve_public_content(
             return _not_found(f"No content index for alias {alias}")
         xml = render_sitemap_xml(index, config=config, fallback_base_url=_alias_base(alias))
         return _binary(xml, _XML)
+
+    # Item assets: `<slug>/<name>.<img-ext>` serves the per-item binary stored
+    # in the registry (the social-preview raster above all). Checked before the
+    # item lookup — an asset path never resolves to a page. A miss falls
+    # through to the normal (404) path.
+    if "/" in rest:
+        asset_slug, asset_name = rest.rsplit("/", 1)
+        asset_media_type = _asset_mime(asset_name)
+        if asset_media_type is not None:
+            data = None
+            try:
+                data = await registry.get_item_asset(asset_slug, asset_name)
+            except ValueError:
+                data = None
+            if data is not None:
+                return BundleBinaryResponse(
+                    content=data,
+                    media_type=asset_media_type,
+                    headers={"Cache-Control": "public, max-age=3600"},
+                )
+            # No stored asset — fall through; an image-looking slug still
+            # resolves as content, and a genuine miss 404s there.
 
     catalog_sitemap_suffix = "/sitemap.xml"
     if rest.endswith(catalog_sitemap_suffix):
