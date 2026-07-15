@@ -242,6 +242,42 @@ async def _read_fi_bytes(
             except Exception:
                 LOGGER.debug("[react.event_ref.resolve] candidate failed ref=%s candidate=%s", ref, candidate, exc_info=True)
                 continue
+
+    # Uploaded-attachment fallback: user uploads are STORED under a
+    # timestamped name (`{ts}-{filename}`, see `attachment_rn_and_rel_name`)
+    # directly in the turn directory, while their `conv:fi:` refs carry the
+    # PLAIN filename (the turn recorder / Files tab shape,
+    # `conv:fi:<turn>.user.attachments/<filename>`). When every exact
+    # candidate missed, list the turn directory and match the stored name by
+    # its `-<filename>` suffix (numeric timestamp prefix only).
+    filename = PurePosixPath(relpath).name
+    if filename:
+        for owner in _owner_candidates(user_id):
+            turn_dir = f"{base}/{owner}/{source_conversation_id}/{turn_id}"
+            try:
+                entries = store.backend.list_dir(turn_dir)
+            except Exception:
+                continue
+            for item in entries or []:
+                name = str(item).rstrip("/").split("/")[-1]
+                is_stored_upload = (
+                    name.endswith(f"-{filename}")
+                    and name[: -(len(filename) + 1)].isdigit()
+                )
+                if not (is_stored_upload or name == filename):
+                    continue
+                candidate = f"{turn_dir}/{name}"
+                try:
+                    data = await store.backend.read_bytes_a(candidate)
+                except Exception:
+                    continue
+                return bytes(data or b""), {
+                    "storage_relpath": candidate,
+                    "conversation_id": source_conversation_id,
+                    "turn_id": turn_id,
+                    "namespace": namespace,
+                    "relpath": relpath,
+                }
     raise FileNotFoundError(f"conv:fi: artifact bytes not found for {ref}")
 
 

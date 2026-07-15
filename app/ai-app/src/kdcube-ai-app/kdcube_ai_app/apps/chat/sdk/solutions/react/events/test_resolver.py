@@ -132,3 +132,50 @@ def test_canonicalize_event_ref_for_context_leaves_other_namespaces_unchanged():
 def test_canonicalize_event_ref_for_context_preserves_existing_cross_conversation_fi_refs():
     ref = "conv:fi:conv_other.turn_2026-06-07.files/problem.md"
     assert canonicalize_event_ref_for_context(ref, conversation_id="abc") == ref
+
+
+@pytest.mark.asyncio
+async def test_uploaded_attachment_resolves_by_its_plain_filename_ref(tmp_path):
+    """User uploads are STORED under `{ts}-{filename}` while their conv:fi:
+    refs (turn recorder / Files tab / pull) carry the PLAIN filename — the
+    resolver must bridge the two, for download AND for pull byte reads."""
+    store = ConversationStore(storage_uri=tmp_path.as_uri())
+    await store.put_attachment(
+        tenant="tenant",
+        project="project",
+        user="user",
+        fingerprint=None,
+        conversation_id="conversation",
+        turn_id="turn_1",
+        role="user",
+        filename="report.docx",
+        data=b"DOCX-BYTES",
+        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        origin="user",
+    )
+    # The literal shape the turn recorder / Files tab publish for uploads.
+    ref = "conv:fi:conv_conversation.turn_1.user.attachments/report.docx"
+
+    from kdcube_ai_app.apps.chat.sdk.solutions.react.events.resolver import read_event_ref_bytes
+
+    data, meta = await read_event_ref_bytes(
+        ref=ref,
+        tenant="tenant",
+        project="project",
+        user_id="user",
+        storage_path=tmp_path.as_uri(),
+    )
+    assert data == b"DOCX-BYTES"
+    assert meta["turn_id"] == "turn_1"
+    assert meta["storage_relpath"].endswith("-report.docx")
+
+    result = await resolve_event_ref_action(
+        {"object_ref": ref, "action": "download"},
+        tenant="tenant",
+        project="project",
+        user_id="user",
+        storage_path=tmp_path.as_uri(),
+    )
+    assert result["ok"] is True
+    assert result["filename"] == "report.docx"
+    assert result["size"] == len(b"DOCX-BYTES")

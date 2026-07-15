@@ -3,6 +3,12 @@
 #
 # ── attachments.py ── the multimodality seam ──
 #
+# NOTE: since the turn-workspace triad (turn_workspace.py), nothing is
+# materialized for the model automatically — the turn frame carries metadata
+# + links, and `read_file` returns visual payloads on demand. This module
+# remains the mime vocabulary (_IMAGE_MIME/_DOC_MIME), the store opener, and
+# a block-shaping utility for explicit multimodal needs.
+#
 # A turn can arrive with hosted attachments: the platform hosts the user's file at
 # ingress (`store.put_attachment(role="user")`) and rides `event.user.attachment.*`
 # events onto `state["external_events"]`. `execute_core` already reads the turn TEXT

@@ -451,6 +451,61 @@ def get_workspace_implementation_guide(implementation: str | None = None) -> str
         return WORKSPACE_IMPLEMENTATION_GUIDE_GIT
     return WORKSPACE_IMPLEMENTATION_GUIDE_CUSTOM
 
+
+DISTRIBUTED_TURN_WORKSPACE_MINIMAL_GUIDE = """
+[DISTRIBUTED TURN WORKSPACE — {tool_list}]
+You have a per-turn file workspace and file tools over CONVERSATION LINKS.
+- TURN LIFECYCLE: each new user message begins a NEW TURN, and the working
+  directory starts EMPTY every turn. Nothing carries over in the directory itself —
+  not the user's files, not files you produced or pulled in earlier turns. The
+  durable record is the conversation: every file keeps its conversation link.
+- Each turn's text is framed for you: `[Turn start turn_<id>]` marks the boundary,
+  `[User message]` carries the user's words, and `[Files arriving this turn]` lists
+  each arriving file as METADATA + LINK (filename, mime, size, `conv:fi:...`).
+  Nothing is read for you automatically — you decide which files to open, and you
+  always trust the CURRENT turn's frame over your memory of earlier turns.
+- Conversation links look like `conv:fi:turn_<id>.user.attachments/<name>` (a user
+  upload) or `conv:fi:conv_<conversation_id>.turn_<id>.files/<name>` (a produced
+  file). They appear beside files throughout the conversation: in `[Files arriving
+  this turn]` and in {exec_tool} reports (produced files are listed as
+  `link=conv:fi:...`). A link is durable — it identifies the file in ANY turn.
+{read_bullet}- To PROCESS a file with code: call {pull_tool} with its link, then read it from
+  {exec_tool} by the bare filename the pull reports. This works for any file of any
+  turn — arriving now, uploaded earlier, or produced by your own code before.
+- Your {exec_tool} code runs with the workspace working directory as its current
+  directory; files you pulled are there under their bare filenames. Every file your
+  code writes with a plain relative path is kept with the conversation and
+  delivered to the user.
+- When `[Files arriving this turn]` says a file's contents are not available this
+  turn, that is the current truth — say so plainly when it matters to the answer.
+"""
+
+_READ_BULLET = """- To VIEW a file: call {read_tool} with its link. Text comes back as text
+  (bounded); images and PDFs come back as visual content; other binaries are
+  routed to pull + code.
+"""
+
+
+def distributed_turn_workspace_guide(
+    *,
+    exec_tool: str = "run_python",
+    pull_tool: str = "pull_files",
+    read_tool: str = "read_file",
+) -> str:
+    """The minimal distributed-turn-workspace block for an agent whose workspace
+    tooling is read / pull / exec over conversation links (any agent connected to
+    the workspace paradigm — not only ReAct). Tool names are parameters so each
+    agent's binding names hold; an empty ``read_tool`` drops the view bullet
+    (pull + code stays the reader)."""
+    tools = [t for t in (read_tool, pull_tool, exec_tool) if t]
+    read_bullet = _READ_BULLET.format(read_tool=read_tool) if read_tool else ""
+    return DISTRIBUTED_TURN_WORKSPACE_MINIMAL_GUIDE.format(
+        tool_list=" / ".join(dict.fromkeys(tools)),
+        exec_tool=exec_tool,
+        pull_tool=pull_tool,
+        read_bullet=read_bullet,
+    )
+
 SCENARIO_FAILURE_STRICTNESS = """
 [SCENARIO / SKILL FAILURE HANDLING (HARD)]:
 - Treat the user's explicit frame, scope, sequencing, and stop conditions as part of the task contract.

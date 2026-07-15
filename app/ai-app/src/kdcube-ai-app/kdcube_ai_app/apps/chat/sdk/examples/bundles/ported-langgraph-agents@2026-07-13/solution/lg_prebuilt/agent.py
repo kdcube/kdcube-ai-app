@@ -47,6 +47,7 @@ def build_agent(
     tools: Optional[List[Any]] = None,
     checkpointer: Any = None,
     summary_model: Any = None,
+    system_prompt: Optional[str] = None,
 ):
     """Build and compile the prebuilt ReAct agent.
 
@@ -60,6 +61,10 @@ def build_agent(
                          fold older turns into a summary. ``None`` (offline / no
                          model service) runs the turn with no middleware. See
                          context.py.
+    - ``system_prompt``— the system prompt to bind; defaults to this agent's
+                         ``SYSTEM_PROMPT``. A hosting platform appends its own
+                         standalone guidance blocks here (e.g. the distributed
+                         turn-workspace block when workspace tools are bound).
     """
     config = config or get_config()
     model = model if model is not None else build_chat_model(config)
@@ -68,7 +73,7 @@ def build_agent(
     return create_agent(
         model,
         tools,
-        system_prompt=SYSTEM_PROMPT,
+        system_prompt=system_prompt or SYSTEM_PROMPT,
         checkpointer=checkpointer,
         # Bound the model's per-turn context view (the checkpointer keeps the full
         # history; the middleware summarizes older turns). See context.py.

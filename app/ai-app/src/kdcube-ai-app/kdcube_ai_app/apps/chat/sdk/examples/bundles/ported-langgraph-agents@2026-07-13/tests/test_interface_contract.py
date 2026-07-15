@@ -144,10 +144,11 @@ def test_public_ingress_surface_is_only_the_telegram_webhook() -> None:
     assert _kw(dec, "method", consts) == "POST"
     assert _kw(dec, "alias", consts) == "telegram_webhook"
 
-    # Every other api is an operations-route fallback companion of a scene chat
-    # widget — nothing else is exposed.
+    # Every other api is an operations route: the scene chat widgets' fallback
+    # companions plus `scene_object_action` (the required chat op serving
+    # conv:fi: file downloads board-less) — nothing else is exposed.
     operations = {name for name, dec in apis.items() if _kw(dec, "route", consts) == "operations"}
-    assert operations == {"chat_lg_solution_widget", "chat_lg_react_widget"}
+    assert operations == {"chat_lg_solution_widget", "chat_lg_react_widget", "scene_object_action"}
 
 
 def test_entrypoint_declares_the_two_scene_chat_widgets() -> None:
@@ -237,8 +238,14 @@ def test_config_template_declares_two_agents_and_both_surfaces() -> None:
     assert BUNDLE_ID in str(webhook["url"])
     assert "integration_id=telegram.default" in str(webhook["url"])
 
-    # No static role_models mapping key: picks are applied at runtime.
-    assert "role_models" not in item_config
+    # Base role_models binding: the answer roles must resolve from base config
+    # for platform-side calls outside the per-turn pick overlay (notably the
+    # conversation title, which otherwise resolves to no model and yields an
+    # empty title). The per-user pick still overlays these at turn time.
+    role_models = item_config["role_models"]
+    assert set(role_models.keys()) == {"lg-solution.answer", "lg-react.answer"}
+    for binding in role_models.values():
+        assert binding["provider"] and binding["model"]
 
 
 def test_secrets_template_placeholders_only() -> None:

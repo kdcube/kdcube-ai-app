@@ -82,12 +82,18 @@ from .solution.lg_prebuilt.llm import StubChatModel
 
 # The platform seams.
 from .platform.pg_target import resolve_solution_pg, resolve_solution_memory, schema_for_scope
-from .platform.attachments import materialize_turn_attachments
+from .platform.turn_batch import fold_turn_external_events
 from .platform.identity import turn_identity, normalize_agent_id
 from .platform.stream_solution import stream_graph_turn
 from .platform.stream_prebuilt import stream_react_turn
 from .platform.tools_mcp import load_mcp_tools, mcp_cfg_from_connections
-from .platform.tool_pick import agent_tool_connections, select_bound_tools
+from .platform.tool_pick import agent_tool_connections, run_python_bound, select_bound_tools
+from .platform.turn_workspace import (
+    build_pull_files_tool,
+    build_read_file_tool,
+    frame_turn_input,
+    prepare_turn_workspace,
+)
 from .platform.capabilities import resolve_turn_role_models, resolve_turn_disabled_tools
 from .platform.code_exec import build_code_exec_context, code_exec_scope
 from .platform import telegram as telegram_ingress
@@ -181,6 +187,7 @@ class AgentSpec:
     stream: Callable[[Any, Dict[str, Any], Dict[str, Any]], Awaitable[str]]
     # (question, ident, attachments) -> (inputs, run_config). `attachments` is the
     # turn's materialized multimodal blocks (image/document); empty for text-only.
+    # (framed turn text, identity, multimodal attachment blocks)
     build_inputs: Callable[[str, Any, list], Tuple[Dict[str, Any], Dict[str, Any]]]
 
 
@@ -266,29 +273,64 @@ async def _build_prebuilt_graph(
         from .platform.code_exec_tool import build_run_python_tool
         return build_run_python_tool()
 
+    def _pull_files_factory() -> Any:
+        # Workspace companion: materialize conversation files into the sandbox
+        # working directory by their conv:fi: links.
+        return build_pull_files_tool()
+
+    def _read_file_factory() -> Any:
+        # Workspace companion: view one conversation file in visible context
+        # (text bounded; images/PDF as visual payloads — react.read semantics).
+        return build_read_file_tool()
+
     # Plain + code-exec tools narrowed to (admin-declared − user-disabled) this turn.
     tools = select_bound_tools(
         connections,
         disabled_tools or {},
         plain_registry=plain_tool_registry(),
         run_python_factory=_run_python_factory,
+        pull_files_factory=_pull_files_factory,
+        read_file_factory=_read_file_factory,
     )
     # MCP tools declared as `kind: mcp` connections (optional; degrades to none).
     tools += await load_mcp_tools(mcp_cfg_from_connections(connections))
 
     checkpointer = await ep._open_checkpointer("lg-react", config.database_url)
     return build_prebuilt_agent(
-        config, model=model, tools=tools, checkpointer=checkpointer, summary_model=summary_model
+        config, model=model, tools=tools, checkpointer=checkpointer, summary_model=summary_model,
+        system_prompt=_prebuilt_system_prompt(tools),
+    )
+
+
+def _prebuilt_system_prompt(tools: List[Any]) -> Optional[str]:
+    """The lg-react system prompt for this turn's tool binding: with the
+    workspace tools bound (`run_python` + its `pull_files` companion), the
+    SDK's standalone distributed-turn-workspace block is APPENDED to the
+    agent's own prompt — a separate block, so the agent's prose stays its own
+    and any workspace-connected agent shares the same guidance. Without the
+    tools, None keeps the vendored default."""
+    names = {str(getattr(tool, "name", "") or "") for tool in tools or []}
+    if "run_python" not in names:
+        return None
+    from kdcube_ai_app.apps.chat.sdk.skills.instructions.shared_instructions import (
+        distributed_turn_workspace_guide,
+    )
+    from .solution.lg_prebuilt.agent import SYSTEM_PROMPT
+
+    return SYSTEM_PROMPT + "\n" + distributed_turn_workspace_guide(
+        exec_tool="run_python",
+        pull_tool="pull_files" if "pull_files" in names else "run_python",
+        read_tool="read_file" if "read_file" in names else "",
     )
 
 
 def _solution_inputs(
     question: str, ident: Any, attachments: list
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-    # `messages` keeps the turn's user text (history for the checkpointer + the
-    # compact node). The multimodal blocks ride a separate `attachments` slot so the
-    # answer node builds the multimodal HumanMessage for the model WITHOUT bloating
-    # the persisted `messages` history with base64.
+    # `question` arrives ALREADY FRAMED (`frame_turn_input`: turn start + user
+    # message + arriving-file links) — the frame is part of the turn, so it
+    # rides the checkpointed `messages` history too. `attachments` stays a
+    # pass-through slot for callers that add multimodal blocks explicitly.
     inputs = {
         "question": question,
         "user_id": ident.user_id,
@@ -302,9 +344,10 @@ def _solution_inputs(
 def _prebuilt_inputs(
     question: str, ident: Any, attachments: list
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-    # create_react's `messages` list IS the model input, so the current user turn
-    # becomes a multimodal HumanMessage when it carries attachments; text-only stays
-    # a plain ("user", text) tuple — no behavior change for the common case.
+    # `question` arrives ALREADY FRAMED (`frame_turn_input`); create_react's
+    # `messages` list IS the model input and the checkpointed history, so the
+    # frame lands in both. `attachments` stays a pass-through for explicit
+    # multimodal blocks; plain turns stay a plain ("user", text) tuple.
     if attachments:
         from langchain_core.messages import HumanMessage
 
@@ -611,51 +654,76 @@ class LGPortedAgentsBundle(BaseEntrypointWithEconomics):
         # Built fresh every turn — no in-process graph cache (scaled serving).
         graph = await self._build_graph(agent_id, disabled_tools=disabled_tools)
 
+        # (batch fold) the lane-wakeup dispatch hands a run-to-completion turn
+        # only its single wakeup event (the prompt) — the attachment events
+        # that arrived in the SAME ingress batch ride separate lane events.
+        # Fold the batch back in (bundle-local, read-only on the lane; see
+        # platform/turn_batch.py). Fail-open: the dispatched events stand.
+        state["external_events"] = await fold_turn_external_events(self, state)
+
         # (state mapping) pull the user's question out of the platform external
-        # events; each agent shapes it into its own inputs.
+        # events; each agent shapes it into its own inputs. Nothing else is
+        # read for the model automatically: arriving files reach it as
+        # METADATA + LINKS in the turn frame below, and the model chooses the
+        # door — read_file to view, pull_files + run_python to process.
         question = external_events_text(state.get("external_events") or [])
-        # (multimodality) materialize this turn's hosted image/PDF attachments into
-        # native model content blocks, threaded into build_inputs so the current
-        # user turn becomes a multimodal HumanMessage. Text-only turns get []
-        # (no behavior change). Fail-open: an unreadable attachment is skipped.
-        try:
-            attachments = await materialize_turn_attachments(state.get("external_events") or [])
-        except Exception:
-            LOGGER.warning("[ported-langgraph] attachment materialization failed", exc_info=True)
-            attachments = []
+        attachments: list = []
 
-        # Whole-turn summary at the boundary: one line tells the story of what this
-        # turn was asked to do (cheap, non-fatal).
-        LOGGER.info(
-            "[ported-langgraph] TURN start agent=%s conversation=%s question_len=%d attachments=%d",
-            agent_id, thread_id, len(question or ""), len(attachments or []),
-        )
-
-        # (isolation) map platform identity + agent_id onto the agent's per-user +
-        # per-conversation keys — the gate that keeps the two agents' state apart.
-        ident = turn_identity(state, agent_id=agent_id, fallback_thread_id=thread_id)
-        inputs, run_config = spec.build_inputs(question, ident, attachments)
-
-        # First turn only: name the conversation from the USER'S QUESTION and emit it
-        # to the client header BEFORE the agent runs, so the title appears even if the
-        # agent's turn later errors — the title never depends on a successful answer.
-        # Stashed on `state` for the turn recorder to persist. One small accounted
-        # title call, first turn only.
-        await self._finalize_conversation_title(
-            state=state, conversation_id=thread_id, question=question,
-            title_role=spec.role,
-        )
-
-        # (code execution) build the per-turn code-exec scope for the ACTIVE agent.
-        # When `tools.code_exec.enabled` is on, this stands up an isolated-runtime +
-        # hosting edge so a model-called `run_python` runs code and hosts the files
-        # it produces into conversation storage (exactly like a user attachment).
-        # Disabled / offline yields an inert context and the turn runs unchanged.
+        # (code execution) build the per-turn code-exec scope for the ACTIVE agent —
+        # BEFORE the inputs, because the exec workspace also receives this turn's
+        # attachments. When `tools.code_exec.enabled` is on, this stands up an
+        # isolated-runtime + hosting edge so a model-called `run_python` runs code
+        # and hosts the files it produces into conversation storage (exactly like a
+        # user attachment). Disabled / offline yields an inert context and the turn
+        # runs unchanged.
         try:
             code_exec_ctx = build_code_exec_context(self, state, agent_id)
         except Exception:
             LOGGER.warning("[ported-langgraph] code-exec context build failed", exc_info=True)
             code_exec_ctx = None
+
+        # (turn workspace) account for this turn's arriving files — metadata as
+        # received + a durable conv:fi: link each — and frame the model's turn
+        # text like React frames its timeline: [Turn start <id>] (the boundary
+        # + the empty-fresh-workspace rule), [User message], [Files arriving
+        # this turn]. A file is never silently dropped: with no workspace
+        # tools the frame says exactly why contents are out of reach.
+        try:
+            workspace = await prepare_turn_workspace(
+                code_exec_ctx,
+                state.get("external_events") or [],
+                exec_tool_bound=run_python_bound(agent_tool_connections(self, agent_id), disabled_tools),
+            )
+        except Exception:
+            LOGGER.warning("[ported-langgraph] turn workspace preparation failed", exc_info=True)
+            from .platform.turn_workspace import TurnWorkspace
+            workspace = TurnWorkspace(live=False)
+        framed_question = frame_turn_input(question, workspace)
+
+        # Whole-turn summary at the boundary: one line tells the story of what this
+        # turn was asked to do (cheap, non-fatal).
+        LOGGER.info(
+            "[ported-langgraph] TURN start agent=%s conversation=%s question_len=%d attachments=%d "
+            "workspace_live=%s workspace_files=%d",
+            agent_id, thread_id, len(question or ""), len(attachments or []),
+            workspace.live, len(workspace.files),
+        )
+
+        # (isolation) map platform identity + agent_id onto the agent's per-user +
+        # per-conversation keys — the gate that keeps the two agents' state apart.
+        ident = turn_identity(state, agent_id=agent_id, fallback_thread_id=thread_id)
+        inputs, run_config = spec.build_inputs(framed_question, ident, attachments)
+
+        # First turn only: name the conversation from the USER'S QUESTION and emit it
+        # to the client header BEFORE the agent runs, so the title appears even if the
+        # agent's turn later errors — the title never depends on a successful answer.
+        # Stashed on `state` for the turn recorder to persist. One small accounted
+        # title call, first turn only. (The ORIGINAL question — the staged-files
+        # note is model plumbing, not the user's ask.)
+        await self._finalize_conversation_title(
+            state=state, conversation_id=thread_id, question=question,
+            title_role=spec.role,
+        )
 
         # (streaming) run the agent's own astream_events loop through ITS stream
         # adapter, redirected at the chat component via comm_ctx. Returns the

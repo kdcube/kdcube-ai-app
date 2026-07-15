@@ -98,13 +98,21 @@ def select_bound_tools(
     *,
     plain_registry: Mapping[str, Any],
     run_python_factory: Callable[[], Any],
+    pull_files_factory: Optional[Callable[[], Any]] = None,
+    read_file_factory: Optional[Callable[[], Any]] = None,
 ) -> List[Any]:
     """Bind EXACTLY the declared, user-enabled tools (the picker's runtime half).
 
     For each `kind: python` connection, in declared order, bind each of its tool
     names that the user has not opted out of: a name in the plain registry binds
     that @tool; `run_python` binds a fresh code-exec tool. A tool the admin did not
-    declare is never built (hard ceiling); a user-disabled tool is skipped."""
+    declare is never built (hard ceiling); a user-disabled tool is skipped.
+
+    `pull_files` and `read_file` are COMPANIONS of the code workspace, not
+    their own declarations: pull materializes conversation files INTO the
+    sandbox for `run_python`, read views a file in visible context — both bind
+    exactly when `run_python` binds (opting out of run_python drops them too;
+    the workspace triad stands or falls together)."""
     allowlist = python_tool_allowlist(connections)
     disabled = disabled_tool_names(allowlist, disabled_map)
     bound: List[Any] = []
@@ -116,4 +124,22 @@ def select_bound_tools(
                 bound.append(plain_registry[name])
             elif name == RUN_PYTHON_TOOL:
                 bound.append(run_python_factory())
+                if pull_files_factory is not None:
+                    bound.append(pull_files_factory())
+                if read_file_factory is not None:
+                    bound.append(read_file_factory())
     return bound
+
+
+def run_python_bound(
+    connections: List[Dict[str, Any]], disabled_map: Optional[Mapping[str, Any]]
+) -> bool:
+    """True when this turn actually binds `run_python` (declared AND not opted
+    out) — the gate for exec-workspace side services like attachment staging."""
+    allowlist = python_tool_allowlist(connections)
+    disabled = disabled_tool_names(allowlist, disabled_map)
+    return any(
+        name == RUN_PYTHON_TOOL and name not in disabled
+        for names in allowlist.values()
+        for name in names
+    )

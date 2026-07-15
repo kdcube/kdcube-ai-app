@@ -3,8 +3,8 @@ id: repo:kdcube-ai-app/app/ai-app/docs/recipes/kdcube_for_agents/port-your-solut
 title: "Port Your Solution To A KDCube App"
 summary: "Executable procedure a coding agent (or engineer) follows to host an existing Python agent — in its own framework — as a KDCube app: vendor the solution unchanged, add a thin wrap (entry seam, state mapping, streaming, concurrent-user isolation, per-turn rebuild), then satisfy the canonical app-package contract. Worked instance: ported-langgraph-agents@2026-07-13 (poc/lg-solution + poc/lg-prebuilt-agent)."
 status: draft
-tags: ["recipes", "kdcube-for-agents", "port", "wrap", "langgraph", "streaming", "bundle", "app", "scaled-serving"]
-updated_at: 2026-07-14
+tags: ["recipes", "kdcube-for-agents", "port", "wrap", "langgraph", "streaming", "bundle", "app", "scaled-serving", "turn-workspace", "attachments"]
+updated_at: 2026-07-16
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-write-bundle-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/chat/chat-stream-events-README.md
@@ -145,6 +145,22 @@ run-to-completion loop — a mid-turn message is then queued for the next turn. 
 the mechanism and how a loop that *can* consume mid-turn opts in, see
 [Reactive Turn Delivery](../../sdk/events/reactive-turn-delivery-README.md) and
 [Connect Your Agentic Loop To Ordered Message Delivery](../dataflow/connect-agentic-loop-to-ordered-delivery-README.md).
+
+**Fold the turn's batch — the input is the batch, not the wakeup event.** A user
+message with attachments arrives at ingress as ONE batch of external events — the
+prompt event plus one `event.user.attachment.file` event per hosted file, all
+sharing a `batch_id` — but the lane wakeup that starts your turn names only *one*
+of those events, and the rehydrated `state["external_events"]` carries only that
+one. Read as-is, your turn sees the prompt and is blind to the files that arrived
+beside it (the exact bug the worked instance surfaced live: the agent answered a
+"what's in this file?" turn as if no file existed). The wrap folds the batch back
+in at the top of `execute_core` — read the conversation lane, take the wakeup
+event's `batch_id` siblings in lane order, skip anything an earlier turn already
+consumed. STRICTLY READ-ONLY: no consumption marks, no reservation changes — lane
+bookkeeping stays with the door. The built-in ReAct agent is immune (it folds the
+lane itself), which is why this bites only run-to-completion ports. Worked
+instance: `platform/turn_batch.py::fold_turn_external_events` + `tests/test_turn_batch.py`
+(including the exact surfaced case: prompt + hosted PNG in one batch).
 
 ### 3b. Streaming — `stream_adapter.py`
 
@@ -384,6 +400,90 @@ native:
   assume success. Contract:
   [exec-logging-error-propagation-README.md](../../exec/exec-logging-error-propagation-README.md).
 
+### The distributed turn workspace: files in (read / pull / exec over links)
+
+Code execution (above) covers files going *out* — the code writes, the platform
+hosts. Files coming **in** — the user attaches a spreadsheet, or the agent wants a
+file its own code produced two turns ago — ride one platform concept the port must
+adopt deliberately: the **distributed turn workspace**. It is the same per-turn
+`work/`+`out/` surface the code tool already runs in, and it obeys ONE rule with no
+exceptions:
+
+> **The working directory starts EMPTY every turn.** Nothing carries over in the
+> directory itself — not the user's files, not files the code produced or pulled in
+> earlier turns. The durable record is the conversation: every file keeps a
+> **conversation link** (`conv:fi:...`) that identifies it in any later turn.
+
+**Nothing is read for the model automatically** — not text, not images. The turn
+input carries the user's message plus each arriving file as **metadata + link**,
+framed the way the built-in agent frames its timeline (an in-band turn boundary):
+
+```text
+[Turn start turn_<id>]
+Your working directory is EMPTY — it starts fresh every turn. Files are given
+to you as LINKS only; nothing is read for you automatically. ...
+
+[User message]
+whats in this file?
+
+[Files arriving this turn]
+- report.docx (application/vnd...document, 2.9 MB) — link: conv:fi:turn_<id>.user.attachments/report.docx
+```
+
+The frame is not cosmetic. A chat-shaped history spans many turns; without an
+explicit `[Turn start ...]` stamp the model trusts stale history — "I pulled that
+file before, it is still here" — and the fresh empty directory silently contradicts
+everything it remembers. The frame rides the user message into the model input AND
+the checkpointed history, so every turn's scope is legible forever. Worked
+instance: `platform/turn_workspace.py::prepare_turn_workspace` (accounts for every
+arriving file; with no workspace tools bound it states the honest reason contents
+are out of reach — a file is never silently dropped) and `frame_turn_input` (the
+frame); `execute_core` passes the framed text as the turn's question.
+
+**Three tools operate over the links**, and they bind as one set with the code-exec
+connection (a user opting out of code execution drops all three — a pulled file
+with no way to run code would be inert):
+
+- **`read_file(path)`** — view ONE file in visible context by its link, mirroring
+  `react.read`: text files return bounded text (`max_text_symbols`); images and
+  PDFs return as visual content (oversized images downscaled via
+  `normalize_image_base64_for_model`, byte-capped); other binaries answer "pull +
+  run_python".
+- **`pull_files(paths)`** — materialize ANY links into the working directory: a
+  file arriving now, a user upload from an earlier turn, a file the code produced
+  before. After a pull the code reads it by the bare filename the pull reports.
+- **`run_python(code, ...)`** — process. Pulled files sit under bare filenames in
+  the working directory; every file the code writes is hosted back into the
+  conversation, and its report lists each as `link=conv:fi:...` — which is exactly
+  how the model's history accumulates pullable links for its own artifacts.
+
+**One resolver serves every door.** `read_event_ref_bytes`
+(`react/events/resolver.py`) resolves a `conv:fi:` link to bytes for read, for
+pull (via the SDK core `runtime/workspace/pull.py::pull_refs_into_dir`), and for
+the Download button (`scene_object_action`) — a link that downloads also reads and
+pulls. Two ref shapes to know: uploads are
+`conv:fi:turn_<id>.user.attachments/<filename>` (the turn-recorder / Files-tab
+shape; the resolver bridges the timestamped stored name to the plain filename),
+produced files are `conv:fi:conv_<conversation_id>.turn_<id>.files/<filename>`.
+
+**Teach it with the shared block — do not write your own prose.** The SDK ships
+the standalone instruction block
+`shared_instructions.py::distributed_turn_workspace_guide(exec_tool=..., pull_tool=...,
+read_tool=...)` — turn lifecycle (new user message = new turn = empty directory),
+frame literacy, link vocabulary, and the three doors, parameterized by your tool
+names (an empty `read_tool` drops the view bullet). Append it to the agent's
+system prompt exactly when the triad is bound (worked instance:
+`entrypoint.py::_prebuilt_system_prompt`; the vendored agent's own prompt leads,
+the block follows). The paradigm is platform-shaped, not agent-shaped — any agent
+you connect to the workspace gets the same literacy from the same block.
+
+Worked instance files: `platform/turn_workspace.py` (frame + read + pull tools),
+`platform/tool_pick.py` (companion binding), `platform/code_exec.py::exec_files_dir`
+(the working directory, defined beside the exec wrapper so the two cannot drift),
+`tests/test_turn_workspace.py` (frame moves no bytes; boundary stamped on fileless
+turns; never-silent no-workspace case; read text/image/binary; pull through the
+shared core; triad binding; guide-in-prompt).
+
 ### Ingress beyond chat (optional)
 
 The reactive chat turn is one entry. The same `execute_core` can also be driven
@@ -410,6 +510,15 @@ In order:
    citations/steps/followups all come back (the platform-owned record). If the agent
    hosts files, confirm **Download** works (`scene_object_action`); if it names the
    conversation, confirm the **title** appears (role bound in base `role_models`).
+5. **Workspace loop (live)** — attach a non-image file (e.g. a `.docx`) and ask about
+   it: the payload log shows the `[Turn start ...]` / `[Files arriving this turn]`
+   frame, and the model chooses a door (`read_file`, or `pull_files` + `run_python`)
+   instead of answering blind. Then, in a LATER turn, ask it to work with that same
+   file again: the pass criterion is that it **pulls/reads by the link before
+   assuming** — the empty-every-turn rule holding in model behavior, not just in
+   text. Also confirm a `read_file` of an image returns visual content through your
+   framework's tool-message path (the offline tests pin the tool's return shape;
+   the wire passage through your framework's tool node is a live check).
 
 ---
 
@@ -424,6 +533,7 @@ solution/  (vendored verbatim)   ──►    entrypoint.py   drive it via execu
   its streaming loop                    identity.py     platform identity → its keys
                                         + canonical package (docs/interface/config/tests)
                                         + (optional) capabilities / tools / code-exec
+                                                     / turn workspace (read·pull·exec over links)
                                                      / file download / conversation title
 ```
 

@@ -125,6 +125,9 @@ def build_run_python_tool() -> Any:
           paths — e.g. ``wb.save("sample.xlsx")`` — the working directory is already the
           deliverables folder, and EVERY file your code writes is hosted and delivered
           automatically. You do NOT need to know any output directory or turn id.
+          Files you pulled with ``pull_files`` are in this working directory — read
+          them with their bare filenames, e.g. ``open("report.docx", "rb")``. The
+          directory starts EMPTY every turn: pull first, then run.
         - `contract` (optional): a list of `{filepath, description, visibility?}` naming
           the files you PLAN to produce. It is ADVISORY — it labels your intended
           outputs in the exec panel and helps you plan; it does NOT change where you

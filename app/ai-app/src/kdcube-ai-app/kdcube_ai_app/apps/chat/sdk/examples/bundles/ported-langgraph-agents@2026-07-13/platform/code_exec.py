@@ -434,6 +434,23 @@ def _cleanup_sandbox(ctx: CodeExecContext) -> None:
 
 # ── run + host ───────────────────────────────────────────────────────────────
 
+def exec_files_dir(ctx: "CodeExecContext", *, create: bool = True) -> Optional[pathlib.Path]:
+    """HOST-side path of the sandbox's model-visible working directory — the
+    SAME `FILES_DIR` `_wrap_code` chdir's generated code into
+    (`OUTPUT_DIR/turn_<seg>/files`, OUTPUT_DIR being the artifact root of
+    `ctx.outdir`). Files placed here BEFORE an exec run are readable by the
+    model's code with bare relative paths (`open("report.docx","rb")`) and are
+    never re-hosted as produced files (the side-effects differ only reports
+    what a run CREATES). None when the context has no outdir."""
+    if ctx is None or ctx.outdir is None:
+        return None
+    turn_seg = _safe_seg(ctx.turn_id or "") or "turn_local"
+    files_dir = artifact_outdir_for(ctx.outdir, create=create) / turn_seg / _FILES_NAMESPACE
+    if create:
+        files_dir.mkdir(parents=True, exist_ok=True)
+    return files_dir
+
+
 def _wrap_code(user_code: str, *, turn_id: str) -> str:
     """Wrap the model's freeform code so a bare relative write lands in the hosted
     `turn_<id>/files/` namespace under OUTPUT_DIR (the exec runtime sets OUTPUT_DIR
