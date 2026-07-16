@@ -4,7 +4,7 @@ title: "Bundle Properties And Secrets Lifecycle"
 summary: "Concise bundle-author lifecycle for code defaults, descriptor/admin bundle props, effective runtime props, bundle secrets, user-scoped state, and what is merged versus only stored as authority."
 tags: ["sdk", "bundle", "configuration", "props", "secrets", "lifecycle", "descriptor"]
 keywords: ["bundle props lifecycle", "bundle secrets lifecycle", "configuration_defaults", "bundle_props_defaults", "effective bundle props", "bundles.yaml config", "bundles.secrets.yaml", "descriptor authority", "redis bundle props cache", "set_bundle_prop", "set_bundle_secret", "bundle props merge", "bundle props materialization"]
-updated_at: 2026-05-22
+updated_at: 2026-07-17
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/configuration/bundle-runtime-configuration-and-secrets-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/configuration/runtime-configuration-and-secrets-store-README.md
@@ -218,6 +218,41 @@ Merge semantics:
   the same bundle props layer; they are special only because platform code
   interprets them
 
+## How Props Reach The Model Service
+
+Merged props are data; some of them must ALSO change runtime objects. That
+application happens in one place: `_apply_bundle_props_overrides()`, which
+every `refresh_bundle_props(...)` calls after the merge. The base
+implementation applies the platform-interpreted paths — `role_models` into
+`config.set_role_models(...)`, `embedding` into `config.set_embedding(...)`
+— and rebuilds the models service when config changed, so the model router
+hands out clients built from the fresh state. The per-user model pick then
+overlays `role_models` per turn through the request's bundle call context;
+it never touches the durable props.
+
+A bundle with its own config-affecting props extends the same hook rather
+than inventing a second application moment:
+
+```python
+def _apply_bundle_props_overrides(self) -> None:
+    super()._apply_bundle_props_overrides()
+    custom = self.get_prop_path(self.bundle_props or {}, "services.llm.custom") or {}
+    endpoint = str(custom.get("endpoint") or "").strip()
+    if not endpoint:
+        return
+    if self.config.custom_model_endpoint == endpoint and self.config.use_custom_endpoint:
+        return
+    self.config.custom_model_endpoint = endpoint
+    self.config.use_custom_endpoint = True
+    if hasattr(self, "models_service"):
+        self._rebuild_models_service()
+```
+
+(The shipped example is the workspace app's locally-served-models wiring.)
+Reading these props anywhere earlier — the constructor in particular — sees
+code defaults only; reading them anywhere later means the models service may
+already have been built from stale config.
+
 ## What Is Not Merged Or Materialized
 
 The effective merge does not mean every store is rewritten with every default.
@@ -330,6 +365,14 @@ Resolution order for service secrets:
 
 Secrets are never read from `bundles.yaml`, and bundle props are never used to
 store secret values.
+
+When an override takes effect: provider keys are resolved at construction
+moments — the turn door resolves them into the `ConfigRequest` before the
+turn's `Config` and models service are built, so on the chat path a rotated
+bundle secret applies on the NEXT turn with no further action. Nothing
+watches secrets afterwards: a long-lived or cached instance keeps the keys
+its `Config` was built with until it is reconstructed. There is no
+props-style refresh/notify cycle for secrets.
 
 ## Write Path
 
