@@ -1,1 +1,116 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 940 470" font-family="Inter, ui-sans-serif, system-ui, sans-serif" role="img" aria-label="KDCube topology: a user and an external agent reach your apps; apps serve and consume surfaces; the auth authority is external OIDC or a bundle; Connection Hub brokers claims; kdcube-services federates app realms over MCP."><rect x="280" y="100" width="640" height="350" rx="12" fill="#FCFDFD" stroke="#E6ECEE"/><text x="298" y="122" font-size="10.5" letter-spacing="0.08em" font-weight="700" fill="#7A99B0">KDCUBE PLATFORM</text><rect x="380" y="16" width="240" height="58" rx="10" fill="#FFFFFF" stroke="#E6ECEE"/><text x="394" y="38" font-size="12.5" font-weight="700" fill="#0D1E2C">Auth authority</text><text x="394" y="54" font-size="10.5" font-style="italic" fill="#7A99B0">external OIDC · or a bundle you deploy</text><rect x="392" y="46" width="98" height="18" rx="4" fill="#EAF0FB" stroke="#4F7BD0" stroke-opacity="0.45"/><text x="441.0" y="58.5" font-size="10" font-weight="600" fill="#3C63AE" text-anchor="middle">OIDC / Cognito</text><rect x="496" y="46" width="128" height="18" rx="4" fill="#F3EDFB" stroke="#9A6BD0" stroke-opacity="0.45"/><text x="560.0" y="58.5" font-size="10" font-weight="600" fill="#7B4FB8" text-anchor="middle">bundle session auth</text><rect x="560" y="140" width="340" height="150" rx="10" fill="#FFFFFF" stroke="#E6ECEE"/><text x="574" y="162" font-size="12.5" font-weight="700" fill="#0D1E2C">Your app(s)</text><text x="574" y="178" font-size="10.5" font-style="italic" fill="#7A99B0">one deployable unit · hot reload</text><text x="574" y="192" font-size="10" font-weight="700" fill="#7A99B0">SERVES · as_provider</text><rect x="574" y="200" width="39" height="18" rx="4" fill="#E2F7F4" stroke="#01BEB2" stroke-opacity="0.45"/><text x="593.5" y="212.5" font-size="10" font-weight="600" fill="#06968C" text-anchor="middle">chat</text><rect x="619" y="200" width="57" height="18" rx="4" fill="#E2F7F4" stroke="#01BEB2" stroke-opacity="0.45"/><text x="647.5" y="212.5" font-size="10" font-weight="600" fill="#06968C" text-anchor="middle">widgets</text><rect x="682" y="200" width="39" height="18" rx="4" fill="#E2F7F4" stroke="#01BEB2" stroke-opacity="0.45"/><text x="701.5" y="212.5" font-size="10" font-weight="600" fill="#06968C" text-anchor="middle">REST</text><rect x="727" y="200" width="33" height="18" rx="4" fill="#E2F7F4" stroke="#01BEB2" stroke-opacity="0.45"/><text x="743.5" y="212.5" font-size="10" font-weight="600" fill="#06968C" text-anchor="middle">MCP</text><rect x="766" y="200" width="45" height="18" rx="4" fill="#E2F7F4" stroke="#01BEB2" stroke-opacity="0.45"/><text x="788.5" y="212.5" font-size="10" font-weight="600" fill="#06968C" text-anchor="middle">realm</text><text x="574" y="242" font-size="10" font-weight="700" fill="#7A99B0">USES · as_consumer</text><rect x="574" y="250" width="98" height="18" rx="4" fill="#EAF0FB" stroke="#4F7BD0" stroke-opacity="0.45"/><text x="623.0" y="262.5" font-size="10" font-weight="600" fill="#3C63AE" text-anchor="middle">agents + tools</text><rect x="678" y="250" width="75" height="18" rx="4" fill="#EAF0FB" stroke="#4F7BD0" stroke-opacity="0.45"/><text x="715.5" y="262.5" font-size="10" font-weight="600" fill="#3C63AE" text-anchor="middle">namespaces</text><rect x="759" y="250" width="80" height="18" rx="4" fill="#EAF0FB" stroke="#4F7BD0" stroke-opacity="0.45"/><text x="799.0" y="262.5" font-size="10" font-weight="600" fill="#3C63AE" text-anchor="middle">MCP servers</text><rect x="310" y="320" width="270" height="110" rx="10" fill="#FFFFFF" stroke="#E6ECEE"/><text x="324" y="342" font-size="12.5" font-weight="700" fill="#0D1E2C">kdcube-services</text><text x="324" y="358" font-size="10.5" font-style="italic" fill="#7A99B0">named-services gateway over MCP</text><rect x="324" y="378" width="39" height="18" rx="4" fill="#FBF2DC" stroke="#D9982B" stroke-opacity="0.45"/><text x="343.5" y="390.5" font-size="10" font-weight="600" fill="#C4861F" text-anchor="middle">conv</text><rect x="369" y="378" width="39" height="18" rx="4" fill="#FBF2DC" stroke="#D9982B" stroke-opacity="0.45"/><text x="388.5" y="390.5" font-size="10" font-weight="600" fill="#C4861F" text-anchor="middle">mail</text><rect x="414" y="378" width="45" height="18" rx="4" fill="#FBF2DC" stroke="#D9982B" stroke-opacity="0.45"/><text x="436.5" y="390.5" font-size="10" font-weight="600" fill="#C4861F" text-anchor="middle">slack</text><rect x="465" y="378" width="39" height="18" rx="4" fill="#FBF2DC" stroke="#D9982B" stroke-opacity="0.45"/><text x="484.5" y="390.5" font-size="10" font-weight="600" fill="#C4861F" text-anchor="middle">task</text><rect x="510" y="378" width="33" height="18" rx="4" fill="#FBF2DC" stroke="#D9982B" stroke-opacity="0.45"/><text x="526.5" y="390.5" font-size="10" font-weight="600" fill="#C4861F" text-anchor="middle">mem</text><rect x="620" y="320" width="280" height="110" rx="10" fill="#FFFFFF" stroke="#E6ECEE"/><text x="634" y="342" font-size="12.5" font-weight="700" fill="#0D1E2C">Connection Hub</text><text x="634" y="358" font-size="10.5" font-style="italic" fill="#7A99B0">connected accounts · claims broker</text><rect x="634" y="378" width="57" height="18" rx="4" fill="#E8F5EF" stroke="#2FA37A" stroke-opacity="0.45"/><text x="662.5" y="390.5" font-size="10" font-weight="600" fill="#1E7C5A" text-anchor="middle">consent</text><rect x="697" y="378" width="51" height="18" rx="4" fill="#E8F5EF" stroke="#2FA37A" stroke-opacity="0.45"/><text x="722.5" y="390.5" font-size="10" font-weight="600" fill="#1E7C5A" text-anchor="middle">grants</text><rect x="754" y="378" width="116" height="18" rx="4" fill="#E8F5EF" stroke="#2FA37A" stroke-opacity="0.45"/><text x="812.0" y="390.5" font-size="10" font-weight="600" fill="#1E7C5A" text-anchor="middle">automation tokens</text><rect x="40" y="140" width="190" height="64" rx="10" fill="#FFFFFF" stroke="#E6ECEE"/><text x="54" y="162" font-size="12.5" font-weight="700" fill="#0D1E2C">User</text><text x="54" y="178" font-size="10.5" font-style="italic" fill="#7A99B0">browser · scenes &amp; widgets</text><rect x="40" y="330" width="190" height="76" rx="10" fill="#FFFFFF" stroke="#E6ECEE"/><text x="54" y="352" font-size="12.5" font-weight="700" fill="#0D1E2C">External agent</text><text x="54" y="368" font-size="10.5" font-style="italic" fill="#7A99B0">Claude · any MCP client</text><path d="M230 165 C 380 165 420 180 560 190" fill="none" stroke="#B9CBD6" stroke-width="1.5" marker-end="url(#a)"/><text x="390" y="158" font-size="10" font-style="italic" fill="#7A99B0" text-anchor="middle">chat · widgets · consent</text><path d="M230 368 C 260 368 280 372 310 372" fill="none" stroke="#B9CBD6" stroke-width="1.5" marker-end="url(#a)"/><text x="268" y="358" font-size="10" font-style="italic" fill="#7A99B0" text-anchor="middle">MCP · namespace grants</text><path d="M470 320 C 500 290 530 275 560 265" fill="none" stroke="#B9CBD6" stroke-width="1.5" marker-end="url(#a)"/><text x="488" y="282" font-size="10" font-style="italic" fill="#7A99B0" text-anchor="middle">federates app realms</text><path d="M660 320 C 680 305 700 300 720 290" fill="none" stroke="#B9CBD6" stroke-width="1.5" marker-end="url(#a)"/><text x="760" y="308" font-size="10" font-style="italic" fill="#7A99B0" text-anchor="middle">brokers claims at tool boundaries</text><path d="M500 74 L 500 100" fill="none" stroke="#B9CBD6" stroke-width="1.5" marker-end="url(#a)"/><text x="548" y="92" font-size="10" font-style="italic" fill="#7A99B0" text-anchor="middle">authenticates</text><defs><marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="userSpaceOnUse"><path d="M1 1 L7 4 L1 7 Z" fill="#B9CBD6"/></marker></defs></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 940 540" font-family="Inter, ui-sans-serif, system-ui, sans-serif" role="img" aria-labelledby="ttitle tdesc">
+  <title id="ttitle">KDCube deployment topology</title>
+  <desc id="tdesc">A user and an external agent reach your apps inside one KDCube tenant/project platform. Your apps — warm-lit, one deployable unit each with hot reload — serve chat, widgets, REST, MCP, and realms, and use agents, tools, namespaces, and MCP servers. The auth authority is external OIDC or a bundle you deploy. kdcube-services is a deployable named-services gateway federating app realms over MCP; Connection Hub is a deployable claims broker for connected accounts, consent, grants, and automation tokens — brokered at tool boundaries.</desc>
+  <defs>
+    <linearGradient id="graphite" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#F1F3F4"/><stop offset="100%" stop-color="#E3E6E8"/>
+    </linearGradient>
+    <radialGradient id="glamp" cx="50%" cy="50%" r="62%">
+      <stop offset="0%" stop-color="#FFC978" stop-opacity="0.32"/>
+      <stop offset="45%" stop-color="#F0BC2E" stop-opacity="0.11"/>
+      <stop offset="100%" stop-color="#F0BC2E" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="gtick" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#465864"/><stop offset="1" stop-color="#D9A945"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="940" height="540" fill="url(#graphite)"/>
+  <text x="34" y="36" font-size="11" letter-spacing="0.2em" fill="#465864" font-weight="700" font-family="JetBrains Mono, ui-monospace, Menlo, monospace">KDCUBE · DEPLOYMENT TOPOLOGY</text>
+  <rect x="34" y="44" width="72" height="2" rx="1" fill="url(#gtick)"/>
+
+  <!-- auth authority -->
+  <rect x="380" y="58" width="250" height="60" rx="10" fill="#FFFFFF" stroke="#465864" stroke-opacity="0.35"/>
+  <circle cx="398" cy="80" r="3.4" fill="none" stroke="#465864"/><circle cx="398" cy="80" r="1.2" fill="#465864"/>
+  <text x="410" y="84" font-size="12" font-weight="700" fill="#3A4A56">Auth authority</text>
+  <rect x="396" y="92" width="100" height="18" rx="4" fill="#F3F5F6" stroke="#465864" stroke-opacity="0.3"/>
+  <text x="446" y="104.5" font-size="9.5" font-weight="600" fill="#5C6E7A" text-anchor="middle">OIDC / Cognito</text>
+  <rect x="502" y="92" width="118" height="18" rx="4" fill="#FFF8E9" stroke="#D9A945" stroke-opacity="0.55"/>
+  <text x="561" y="104.5" font-size="9.5" font-weight="600" fill="#8A6A1C" text-anchor="middle">a bundle you deploy</text>
+
+  <path d="M505 118 V146" stroke="#B08428" stroke-width="1.1" fill="none" stroke-dasharray="5 4" stroke-opacity="0.6"/>
+  <path d="M505 155l-4 -9h8z" fill="#B08428" fill-opacity="0.8"/>
+  <text x="524" y="140" font-size="7.5" letter-spacing="0.12em" fill="#8794A0" font-family="JetBrains Mono, ui-monospace, Menlo, monospace">AUTHENTICATES</text>
+
+  <!-- the platform boundary -->
+  <rect x="280" y="155" width="640" height="345" rx="12" fill="none" stroke="#465864" stroke-opacity="0.4" stroke-dasharray="6 5"/>
+  <text x="296" y="176" font-size="8.5" letter-spacing="0.14em" font-weight="700" fill="#465864" font-family="JetBrains Mono, ui-monospace, Menlo, monospace">KDCUBE PLATFORM · ONE TENANT / PROJECT</text>
+
+  <!-- your app(s): the warm-lit heart -->
+  <ellipse cx="730" cy="270" rx="220" ry="105" fill="url(#glamp)"/>
+  <rect x="560" y="192" width="340" height="156" rx="14" fill="#FFF8E9" stroke="#D9A945" stroke-width="1.3"/>
+  <rect x="566" y="198" width="328" height="144" rx="11" fill="none" stroke="#D9A945" stroke-opacity="0.3"/>
+  <text x="578" y="218" font-size="15" font-weight="700" fill="#8A6A1C" font-family="Iowan Old Style, Georgia, serif">your app(s)</text>
+  <text x="578" y="234" font-size="10" font-style="italic" fill="#A08648">one deployable unit · hot reload</text>
+  <text x="578" y="256" font-size="8" letter-spacing="0.12em" font-weight="700" fill="#465864" font-family="JetBrains Mono, ui-monospace, Menlo, monospace">SERVES · AS_PROVIDER</text>
+  <g font-size="9.5" font-weight="600" text-anchor="middle">
+    <rect x="578" y="264" width="42" height="18" rx="4" fill="#FFFFFF" stroke="#465864" stroke-opacity="0.35"/><text x="599" y="276.5" fill="#465864">chat</text>
+    <rect x="626" y="264" width="58" height="18" rx="4" fill="#FFFFFF" stroke="#465864" stroke-opacity="0.35"/><text x="655" y="276.5" fill="#465864">widgets</text>
+    <rect x="690" y="264" width="42" height="18" rx="4" fill="#FFFFFF" stroke="#465864" stroke-opacity="0.35"/><text x="711" y="276.5" fill="#465864">REST</text>
+    <rect x="738" y="264" width="38" height="18" rx="4" fill="#FFFFFF" stroke="#465864" stroke-opacity="0.35"/><text x="757" y="276.5" fill="#465864">MCP</text>
+    <rect x="782" y="264" width="48" height="18" rx="4" fill="#FFFFFF" stroke="#465864" stroke-opacity="0.35"/><text x="806" y="276.5" fill="#465864">realm</text>
+  </g>
+  <text x="578" y="306" font-size="8" letter-spacing="0.12em" font-weight="700" fill="#8A6A1C" font-family="JetBrains Mono, ui-monospace, Menlo, monospace">USES · AS_CONSUMER</text>
+  <g font-size="9.5" font-weight="600" text-anchor="middle">
+    <rect x="578" y="314" width="100" height="18" rx="4" fill="#FFFFFF" stroke="#D9A945" stroke-opacity="0.55"/><text x="628" y="326.5" fill="#8A6A1C">agents + tools</text>
+    <rect x="684" y="314" width="86" height="18" rx="4" fill="#FFFFFF" stroke="#D9A945" stroke-opacity="0.55"/><text x="727" y="326.5" fill="#8A6A1C">namespaces</text>
+    <rect x="776" y="314" width="90" height="18" rx="4" fill="#FFFFFF" stroke="#D9A945" stroke-opacity="0.55"/><text x="821" y="326.5" fill="#8A6A1C">MCP servers</text>
+  </g>
+
+  <!-- kdcube-services: a deployable app -->
+  <rect x="310" y="380" width="270" height="104" rx="10" fill="#FFFFFF" stroke="#465864" stroke-opacity="0.35"/>
+  <circle cx="328" cy="402" r="3.4" fill="none" stroke="#465864"/><circle cx="328" cy="402" r="1.2" fill="#465864"/>
+  <text x="340" y="406" font-size="12" font-weight="700" fill="#3A4A56">kdcube-services</text>
+  <text x="340" y="421" font-size="9.5" font-style="italic" fill="#8794A0">named-services gateway over MCP · a deployable app</text>
+  <g font-size="9.5" font-weight="600" text-anchor="middle">
+    <rect x="326" y="432" width="40" height="18" rx="4" fill="#FFF8E9" stroke="#D9A945" stroke-opacity="0.5"/><text x="346" y="444.5" fill="#8A6A1C">conv</text>
+    <rect x="372" y="432" width="40" height="18" rx="4" fill="#FFF8E9" stroke="#D9A945" stroke-opacity="0.5"/><text x="392" y="444.5" fill="#8A6A1C">mail</text>
+    <rect x="418" y="432" width="44" height="18" rx="4" fill="#FFF8E9" stroke="#D9A945" stroke-opacity="0.5"/><text x="440" y="444.5" fill="#8A6A1C">slack</text>
+    <rect x="468" y="432" width="40" height="18" rx="4" fill="#FFF8E9" stroke="#D9A945" stroke-opacity="0.5"/><text x="488" y="444.5" fill="#8A6A1C">task</text>
+    <rect x="514" y="432" width="42" height="18" rx="4" fill="#FFF8E9" stroke="#D9A945" stroke-opacity="0.5"/><text x="535" y="444.5" fill="#8A6A1C">mem</text>
+  </g>
+
+  <!-- Connection Hub: a deployable app -->
+  <rect x="620" y="380" width="280" height="104" rx="10" fill="#FFFFFF" stroke="#465864" stroke-opacity="0.35"/>
+  <circle cx="638" cy="402" r="3.4" fill="none" stroke="#465864"/><circle cx="638" cy="402" r="1.2" fill="#465864"/>
+  <text x="650" y="406" font-size="12" font-weight="700" fill="#3A4A56">Connection Hub</text>
+  <text x="650" y="421" font-size="9.5" font-style="italic" fill="#8794A0">connected accounts · claims broker · a deployable app</text>
+  <g font-size="9.5" font-weight="600" text-anchor="middle">
+    <rect x="636" y="432" width="60" height="18" rx="4" fill="#F3F5F6" stroke="#465864" stroke-opacity="0.3"/><text x="666" y="444.5" fill="#465864">consent</text>
+    <rect x="702" y="432" width="52" height="18" rx="4" fill="#F3F5F6" stroke="#465864" stroke-opacity="0.3"/><text x="728" y="444.5" fill="#465864">grants</text>
+    <rect x="760" y="432" width="122" height="18" rx="4" fill="#F3F5F6" stroke="#465864" stroke-opacity="0.3"/><text x="821" y="444.5" fill="#465864">automation tokens</text>
+  </g>
+
+  <!-- the actors -->
+  <rect x="40" y="192" width="190" height="64" rx="10" fill="#FFFFFF" stroke="#465864" stroke-opacity="0.35"/>
+  <circle cx="58" cy="214" r="3.4" fill="none" stroke="#465864"/><circle cx="58" cy="214" r="1.2" fill="#465864"/>
+  <text x="70" y="218" font-size="12" font-weight="700" fill="#3A4A56">User</text>
+  <text x="70" y="234" font-size="9.5" font-style="italic" fill="#8794A0">browser · scenes &amp; widgets</text>
+
+  <rect x="40" y="382" width="190" height="70" rx="10" fill="#FFFFFF" stroke="#465864" stroke-opacity="0.35"/>
+  <circle cx="58" cy="404" r="3.4" fill="none" stroke="#465864"/><circle cx="58" cy="404" r="1.2" fill="#465864"/>
+  <text x="70" y="408" font-size="12" font-weight="700" fill="#3A4A56">External agent</text>
+  <text x="70" y="424" font-size="9.5" font-style="italic" fill="#8794A0">Claude · any MCP client</text>
+
+  <!-- governed paths -->
+  <g stroke="#B08428" stroke-width="1.1" fill="none" stroke-dasharray="5 4" stroke-opacity="0.6">
+    <path d="M230 218 C 380 218 430 230 551 240"/>
+    <path d="M230 414 C 260 414 275 418 301 424"/>
+    <path d="M470 380 C 500 362 530 352 551 344"/>
+    <path d="M700 380 C 706 370 712 362 718 352"/>
+  </g>
+  <g fill="#B08428" fill-opacity="0.8">
+    <path d="M560 241l-9 -4v8z"/>
+    <path d="M310 426l-9 -4v8z"/>
+    <path d="M560 341l-9 -1 3 -8z"/>
+    <path d="M721 348l-8 -4 7 -6z"/>
+  </g>
+  <g font-size="7.5" letter-spacing="0.1em" fill="#8794A0" font-family="JetBrains Mono, ui-monospace, Menlo, monospace">
+    <text x="330" y="208">CHAT · WIDGETS · CONSENT</text>
+    <text x="234" y="398">MCP · NAMESPACE GRANTS</text>
+    <text x="430" y="366">FEDERATES APP REALMS</text>
+    <text x="726" y="370">BROKERS CLAIMS AT TOOL BOUNDARIES</text>
+  </g>
+
+  <text x="470" y="526" font-size="9" letter-spacing="0.2em" fill="#8794A0" text-anchor="middle" font-family="JetBrains Mono, ui-monospace, Menlo, monospace">APPS PROVIDE AND CONSUME · THE GATEWAY AND THE HUB ARE THEMSELVES DEPLOYABLE APPS</text>
+</svg>
