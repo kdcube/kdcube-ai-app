@@ -745,6 +745,140 @@ def _ensure_connection_hub_bundle_session_provider(
         },
     )
 
+    # The delegated-OAuth consent flow authenticates the approving user through the
+    # platform login provider. Attach its reference when the delegated connection exists.
+    delegated_oauth = _get_nested(config, "connections", "delegated_credentials", "oauth")
+    if isinstance(delegated_oauth, dict):
+        delegated_oauth["consent_ui"] = {
+            "mode": "authority_provider",
+            "authority_id": authority_id,
+            "provider_id": provider_id,
+            "entrypoint": "consent",
+        }
+
+
+# Provider key the cognito auth type writes under the platform authority.
+_COGNITO_PLATFORM_PROVIDER_ID = "cognito"
+
+
+def _find_bundle_item(payload: Dict[str, object] | None, bundle_id: str) -> Optional[Dict[str, object]]:
+    """Return the mutable bundle item for bundle_id, or None when it is absent."""
+    if not isinstance(payload, dict):
+        return None
+    bundles = payload.get("bundles")
+    if not isinstance(bundles, dict):
+        return None
+    items = bundles.get("items")
+    if isinstance(items, list):
+        for item in items:
+            if isinstance(item, dict) and str(item.get("id") or "").strip() == bundle_id:
+                return item
+        return None
+    item = bundles.get(bundle_id)
+    return item if isinstance(item, dict) else None
+
+
+def _platform_provider_exists(authorities: object, authority_id: object, provider_id: object) -> bool:
+    """True when authorities[authority_id].providers[provider_id] resolves."""
+    providers = _get_nested(authorities, str(authority_id), "providers") if isinstance(authorities, dict) else None
+    return isinstance(providers, dict) and str(provider_id) in providers
+
+
+def _collect_authenticator_refs(authorities: object) -> set:
+    """Authority ids referenced by any provider's authenticator_ref across the registry."""
+    refs: set = set()
+    if not isinstance(authorities, dict):
+        return refs
+    for authority in authorities.values():
+        providers = authority.get("providers") if isinstance(authority, dict) else None
+        if not isinstance(providers, dict):
+            continue
+        for provider in providers.values():
+            ref = _get_nested(provider, "input", "authenticator_ref", "authority_id") if isinstance(provider, dict) else None
+            if ref:
+                refs.add(str(ref))
+    return refs
+
+
+def _prune_dangling_platform_consent_ui(node: object, authorities: object) -> None:
+    """Remove consent_ui blocks whose referenced authority/provider no longer exists."""
+    if isinstance(node, dict):
+        consent = node.get("consent_ui")
+        if isinstance(consent, dict):
+            authority_id = consent.get("authority_id")
+            provider_id = consent.get("provider_id")
+            if (
+                authority_id is not None
+                and provider_id is not None
+                and not _platform_provider_exists(authorities, authority_id, provider_id)
+            ):
+                node.pop("consent_ui", None)
+        for value in node.values():
+            _prune_dangling_platform_consent_ui(value, authorities)
+    elif isinstance(node, list):
+        for item in node:
+            _prune_dangling_platform_consent_ui(item, authorities)
+
+
+def _prune_foreign_platform_login(
+    bundles_data: Dict[str, object],
+    *,
+    connection_hub_bundle_id: str,
+    authority_id: str,
+    keep_provider_ids: set,
+    keep_bootstrap_rules: bool,
+) -> None:
+    """Reconcile the platform authority to the target auth type's login artifacts.
+
+    Keeps only the platform providers in keep_provider_ids (the provider the target auth
+    type just wrote), garbage-collects upstream authorities no longer referenced by any
+    surviving provider, optionally removes the admin bootstrap rules, and drops consent_ui
+    blocks left without a provider. Platform grants.subjects, the telegram authority, and
+    delegated connectors are preserved.
+    """
+    item = _find_bundle_item(bundles_data, connection_hub_bundle_id)
+    if not isinstance(item, dict):
+        return
+    config = item.get("config")
+    if not isinstance(config, dict):
+        return
+    authorities = _get_nested(config, "authority_registry", "authorities")
+    if not isinstance(authorities, dict):
+        return
+    platform = authorities.get(authority_id)
+    if not isinstance(platform, dict):
+        return
+
+    providers = platform.get("providers")
+    removed_upstreams: set = set()
+    if isinstance(providers, dict):
+        for provider_id in list(providers.keys()):
+            if provider_id in keep_provider_ids:
+                continue
+            provider = providers.get(provider_id)
+            ref = _get_nested(provider, "input", "authenticator_ref", "authority_id") if isinstance(provider, dict) else None
+            if ref:
+                removed_upstreams.add(str(ref))
+            providers.pop(provider_id, None)
+
+    surviving_refs = _collect_authenticator_refs(authorities)
+    for orphan in removed_upstreams - surviving_refs - {authority_id}:
+        authorities.pop(orphan, None)
+
+    if not keep_bootstrap_rules:
+        _delete_nested(platform, ["grants", "bootstrap_rules"])
+        # Drop the empty grant scaffolding left by the bundle-session default,
+        # while preserving any real per-subject grants.
+        grants = platform.get("grants")
+        if isinstance(grants, dict):
+            subjects = grants.get("subjects")
+            if isinstance(subjects, dict) and not subjects:
+                grants.pop("subjects", None)
+            if not grants:
+                platform.pop("grants", None)
+
+    _prune_dangling_platform_consent_ui(config, authorities)
+
 
 SUPPORTED_BUNDLE_AUTH_PROVIDERS = ("google",)
 
@@ -870,11 +1004,49 @@ def apply_bundle_session_auth(
         admin_bootstrap_email=bootstrap_admin_email,
     )
 
+    _prune_foreign_platform_login(
+        bundles_data,
+        connection_hub_bundle_id=connection_hub_bundle_id,
+        authority_id=authority_id,
+        keep_provider_ids={provider_id},
+        keep_bootstrap_rules=True,
+    )
+
 
 # Stable, non-secret Telegram companion id used in webhook URLs, widget
 # auth-context headers, and Connection Hub identity/authority records.
 TELEGRAM_INTEGRATION_ID = "telegram.kdcube_ref"
 TELEGRAM_SECRET_STEM = "telegram_kdcube_ref"
+
+
+def _origin_from_url(url: str) -> str:
+    """Return the scheme://host[:port] origin of a URL, or empty when it has none."""
+    from urllib.parse import urlsplit
+
+    parts = urlsplit(str(url or "").strip())
+    if not parts.scheme or not parts.netloc:
+        return ""
+    return f"{parts.scheme}://{parts.netloc}"
+
+
+def _ensure_cors_allow_origin(assembly_data: Dict[str, object], url: str) -> bool:
+    """Add the URL's origin to assembly cors.allow_origins when missing.
+
+    An externally reachable origin (e.g. a tunnel used by a Telegram Mini App) must be
+    allow-listed so its cross-origin WebSocket/HTTP requests are accepted. Returns True
+    when the origin was added.
+    """
+    origin = _origin_from_url(url)
+    if not origin:
+        return False
+    origins = _get_nested(assembly_data, "cors", "allow_origins")
+    if not isinstance(origins, list):
+        origins = []
+        _set_nested(assembly_data, ["cors", "allow_origins"], origins)
+    if "*" in origins or origin in origins:
+        return False
+    origins.append(origin)
+    return True
 
 
 def telegram_webhook_url(external_https_url: str, tenant: str, project: str, host_bundle_id: str) -> str:
@@ -3245,14 +3417,21 @@ def gather_configuration(
         auth_choice = default_auth
     else:
         console.print("[bold]Authentication[/bold]")
-        display_options = [auth_option_labels[opt] for opt in auth_options]
+        # Delegated is not offered as a new interactive choice. It stays selectable only
+        # when it is already the configured mode, so a delegated runtime is preserved.
+        picker_options = [
+            opt for opt in auth_options
+            if opt != "delegated" or interactive_default_auth == "delegated"
+        ]
+        display_options = [auth_option_labels[opt] for opt in picker_options]
+        picker_default = interactive_default_auth if interactive_default_auth in picker_options else "cognito"
         selected_label = select_option(
             console,
             "Auth type",
             options=display_options,
-            default_index=auth_options.index(interactive_default_auth),
+            default_index=picker_options.index(picker_default),
         )
-        auth_choice = auth_options[display_options.index(selected_label)]
+        auth_choice = picker_options[display_options.index(selected_label)]
     auth_mode = auth_choice
     _set_nested(assembly_data, ["auth", "type"], auth_mode)
     if auth_choice == "simple":
@@ -3270,6 +3449,11 @@ def gather_configuration(
     proxy_ssl_enabled = proxy_ssl_env if proxy_ssl_env is not None else (proxy_ssl_descriptor or False)
     _set_nested(assembly_data, ["proxy", "ssl"], proxy_ssl_enabled)
 
+    # Telegram companion host defaults; the session branch overrides them with the
+    # application-hosted login's own host/connection-hub bundle ids.
+    telegram_host_bundle_id = "workspace@2026-03-31-13-36"
+    telegram_connection_hub_bundle_id = "connection-hub@1-0"
+
     if auth_provider == "session":
         # Application-hosted login: collect the environment-specific inputs, then
         # apply_bundle_session_auth writes the Workspace/Google topology.
@@ -3283,8 +3467,11 @@ def gather_configuration(
         authority_id = (
             str(ch_ref.get("authority_id") or ch_ref.get("authorityId") or "").strip() or "kdcube.platform"
         )
+        # The provider id is the bundle-session provider key. It comes from the
+        # bundle seed or the default, not from auth.connection_hub, whose provider_id
+        # reflects whatever auth type is currently active (e.g. cognito).
         provider_id = (
-            str(ch_ref.get("provider_id") or ch_ref.get("providerId") or bundle_seed.get("provider_id") or "").strip()
+            str(bundle_seed.get("provider_id") or bundle_seed.get("providerId") or "").strip()
             or "workspace_google_session"
         )
         host_bundle_id = str(bundle_seed.get("host_bundle_id") or "").strip() or "workspace@2026-03-31-13-36"
@@ -3332,37 +3519,8 @@ def gather_configuration(
             host_bundle_id=host_bundle_id,
             ttl_seconds=ttl_seconds,
         )
-
-        # Optional Telegram companion. The browser login origin is request-derived;
-        # the external HTTPS URL is only how Telegram reaches the runtime.
-        telegram_bot_token = os.getenv("KDCUBE_TELEGRAM_BOT_TOKEN", "").strip()
-        telegram_external_url = os.getenv("KDCUBE_TELEGRAM_EXTERNAL_HTTPS_URL", "").strip()
-        telegram_wanted = parse_bool(os.getenv("KDCUBE_ENABLE_TELEGRAM", "")) is True
-        if not telegram_wanted and not _noninteractive_enabled():
-            telegram_wanted = ask_confirm(console, "Configure Telegram Companion now?", default=False)
-        if telegram_wanted:
-            if not telegram_bot_token:
-                telegram_bot_token = ask(console, "Telegram bot token", default=None, secret=True).strip()
-            if not telegram_external_url:
-                telegram_external_url = ask(console, "Externally reachable HTTPS URL", default=None).strip()
-            if configure_telegram_companion(
-                console,
-                bundles_data=bundles_data,
-                bundles_secrets_data=bundles_secrets_data,
-                tenant=tenant,
-                project=project,
-                bot_token=telegram_bot_token,
-                external_https_url=telegram_external_url,
-                host_bundle_id=host_bundle_id,
-                connection_hub_bundle_id=connection_hub_bundle_id,
-            ):
-                _autosave()
-                try:
-                    save_release_descriptor(
-                        (ctx.config_dir / "bundles.secrets.yaml").resolve(), bundles_secrets_data
-                    )
-                except Exception as exc:
-                    console.print(f"[yellow]Telegram companion: failed to persist bundle secrets: {exc}[/yellow]")
+        telegram_host_bundle_id = host_bundle_id
+        telegram_connection_hub_bundle_id = connection_hub_bundle_id
 
     if auth_provider == "cognito":
         def _pick(dct: Dict[str, Any], *keys: str) -> str:
@@ -3509,6 +3667,7 @@ def gather_configuration(
             masqueraded_token_cookie_name=masqueraded_token_cookie_name,
             jwks_cache_ttl_seconds=int(jwks_cache_ttl) if jwks_cache_ttl.isdigit() else jwks_cache_ttl,
         )
+        _set_nested(assembly_data, ["auth", "idp"], "cognito")
         _set_nested(
             assembly_data,
             ["auth", "connection_hub"],
@@ -3518,6 +3677,18 @@ def gather_configuration(
                 "provider_id": "cognito",
             },
         )
+        _set_nested(
+            assembly_data,
+            ["auth", "authenticators", "connection_hub"],
+            {"enabled": True, "app_id": "connection-hub@1-0", "operation": "request_authenticate"},
+        )
+        _prune_foreign_platform_login(
+            bundles_data,
+            connection_hub_bundle_id="connection-hub@1-0",
+            authority_id="kdcube.platform",
+            keep_provider_ids={_COGNITO_PLATFORM_PROVIDER_ID},
+            keep_bootstrap_rules=False,
+        )
         for legacy_path in (
             ["auth", "cognito"],
             ["auth", "providers"],
@@ -3526,6 +3697,8 @@ def gather_configuration(
             ["auth", "id_token_cookie_name"],
             ["auth", "masqueraded_token_cookie_name"],
             ["auth", "jwks_cache_ttl_seconds"],
+            # The frontend derives authType from assembly.auth; drop the stale override.
+            ["frontend", "config", "auth"],
         ):
             _delete_nested(assembly_data, legacy_path)
 
@@ -3658,6 +3831,55 @@ def gather_configuration(
                 http_urlbase = f"{scheme}://{proxy_domain}/auth"
             update_env_value(env_proxy, "HTTP_URLBASE", http_urlbase)
             _set_nested(assembly_data, ["auth", "proxy_login", "http_urlbase"], http_urlbase)
+
+    if auth_provider == "simple":
+        _set_nested(assembly_data, ["auth", "idp"], "simple")
+        _set_nested(assembly_data, ["auth", "authenticators", "connection_hub", "enabled"], False)
+        _delete_nested(assembly_data, ["auth", "connection_hub"])
+        # The frontend derives authType from assembly.auth; drop a stale override.
+        _delete_nested(assembly_data, ["frontend", "config", "auth"])
+        _prune_foreign_platform_login(
+            bundles_data,
+            connection_hub_bundle_id="connection-hub@1-0",
+            authority_id="kdcube.platform",
+            keep_provider_ids=set(),
+            keep_bootstrap_rules=False,
+        )
+
+    # Optional Telegram companion, offered for every auth type. The browser login
+    # origin is request-derived; the external HTTPS URL is only how Telegram reaches
+    # the runtime. The telegram authority is independent of the platform login provider.
+    telegram_bot_token = os.getenv("KDCUBE_TELEGRAM_BOT_TOKEN", "").strip()
+    telegram_external_url = os.getenv("KDCUBE_TELEGRAM_EXTERNAL_HTTPS_URL", "").strip()
+    telegram_wanted = parse_bool(os.getenv("KDCUBE_ENABLE_TELEGRAM", "")) is True
+    if not telegram_wanted and not _noninteractive_enabled():
+        telegram_wanted = ask_confirm(console, "Configure Telegram Companion now?", default=False)
+    if telegram_wanted:
+        if not telegram_bot_token:
+            telegram_bot_token = ask(console, "Telegram bot token", default=None, secret=True).strip()
+        if not telegram_external_url:
+            telegram_external_url = ask(console, "Externally reachable HTTPS URL", default=None).strip()
+        # The Mini App is served from this external origin; allow-list it so its
+        # cross-origin WebSocket (Connection Hub link flow) and requests are accepted.
+        if _ensure_cors_allow_origin(assembly_data, telegram_external_url):
+            console.print(f"[dim]Added {_origin_from_url(telegram_external_url)} to cors.allow_origins.[/dim]")
+        if configure_telegram_companion(
+            console,
+            bundles_data=bundles_data,
+            bundles_secrets_data=bundles_secrets_data,
+            tenant=tenant,
+            project=project,
+            bot_token=telegram_bot_token,
+            external_https_url=telegram_external_url,
+            host_bundle_id=telegram_host_bundle_id,
+            connection_hub_bundle_id=telegram_connection_hub_bundle_id,
+        ):
+            try:
+                save_release_descriptor(
+                    (ctx.config_dir / "bundles.secrets.yaml").resolve(), bundles_secrets_data
+                )
+            except Exception as exc:
+                console.print(f"[yellow]Telegram companion: failed to persist bundle secrets: {exc}[/yellow]")
 
     _autosave()
 
@@ -4849,6 +5071,19 @@ def gather_configuration(
         id_token_cookie_name=id_token_cookie_name_val,
         assembly=assembly_data,
     )
+    # Remove frontend config files for other auth types so reconfiguring does not
+    # leave stale copies next to the active one.
+    for stale_name in (
+        "frontend.config.hardcoded.json",
+        "frontend.config.cognito.json",
+        "frontend.config.delegated.json",
+    ):
+        stale_path = ctx.config_dir / stale_name
+        if stale_path.exists() and stale_path.resolve() != compose_ui_config.resolve():
+            try:
+                stale_path.unlink()
+            except OSError:
+                pass
     routes_prefix = proxy_route_prefix or normalize_routes_prefix(_load_json_file(compose_ui_config).get("routesPrefix"))
     runtime_proxy_path = env_main.entries.get("NGINX_PROXY_RUNTIME_CONFIG_PATH", (None, None))[1]
     desired_runtime_path = str((ctx.config_dir / Path(defaults["nginx_proxy_config"]).name).resolve())

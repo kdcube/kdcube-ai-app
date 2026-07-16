@@ -46,6 +46,10 @@ from kdcube_cli.installer import (
     TELEGRAM_INTEGRATION_ID,
     TELEGRAM_SECRET_STEM,
     apply_bundle_session_auth,
+    _ensure_connection_hub_cognito_provider,
+    _ensure_cors_allow_origin,
+    _origin_from_url,
+    _prune_foreign_platform_login,
     apply_telegram_companion,
     telegram_mini_app_url,
     telegram_webhook_url,
@@ -3748,6 +3752,340 @@ def test_apply_bundle_session_auth_omits_bootstrap_rule_without_email():
 
     grants = _bundle_provider(bundles)["grants"]
     assert "bootstrap_rules" not in grants
+
+
+def _polluted_bundle_session_bundles() -> dict:
+    """Connection Hub descriptor carrying application-hosted login plus a telegram authority.
+
+    Mirrors the shipped default where the platform authority already holds the
+    bundle-session provider, its google upstream, an admin bootstrap rule, and a
+    consent_ui pointing at the login provider.
+    """
+    return {
+        "bundles": {
+            "items": [
+                {
+                    "id": "connection-hub@1-0",
+                    "config": {
+                        "connections": {
+                            "delegated_credentials": {
+                                "oauth": {
+                                    "enabled": True,
+                                    "consent_ui": {
+                                        "mode": "authority_provider",
+                                        "authority_id": "kdcube.platform",
+                                        "provider_id": "workspace_google_session",
+                                        "entrypoint": "consent",
+                                    },
+                                }
+                            }
+                        },
+                        "authority_registry": {
+                            "authorities": {
+                                "kdcube.platform": {
+                                    "platform": True,
+                                    "grants": {
+                                        "subjects": {"user:existing": {"roles": ["kdcube:role:registered"]}},
+                                        "bootstrap_rules": [
+                                            {
+                                                "id": "bootstrap_admin_by_google_email",
+                                                "when": {"provider": "google", "claims": {"email": "owner@example.com"}},
+                                                "roles": ["kdcube:role:super-admin"],
+                                            }
+                                        ],
+                                    },
+                                    "providers": {
+                                        "workspace_google_session": {
+                                            "type": "bundle_session_login",
+                                            "enabled": True,
+                                            "input": {
+                                                "authenticator_ref": {
+                                                    "authority_id": "google.accounts",
+                                                    "provider_id": "google_oidc",
+                                                }
+                                            },
+                                        }
+                                    },
+                                },
+                                "google.accounts": {
+                                    "platform": False,
+                                    "providers": {
+                                        "google_oidc": {
+                                            "type": "google_id_token",
+                                            "enabled": True,
+                                            "authenticator": {"client_id": "old-web.apps.googleusercontent.com"},
+                                        }
+                                    },
+                                },
+                                "telegram.kdcube_ref": {
+                                    "platform": True,
+                                    "providers": {
+                                        "telegram_bot_init_data": {
+                                            "type": "telegram_bot_init_data",
+                                            "enabled": True,
+                                        }
+                                    },
+                                },
+                            }
+                        },
+                    },
+                }
+            ]
+        }
+    }
+
+
+def _ch_authorities(bundles_data: dict) -> dict:
+    return bundles_data["bundles"]["items"][0]["config"]["authority_registry"]["authorities"]
+
+
+def test_reconcile_to_cognito_removes_bundle_session_login_artifacts():
+    bundles = _polluted_bundle_session_bundles()
+
+    _ensure_connection_hub_cognito_provider(
+        bundles,
+        region="eu-west-1",
+        user_pool_id="eu-west-1_pool",
+        app_client_id="app-client",
+        service_client_id="service-client",
+        providers=None,
+        id_token_header_name="X-ID-Token",
+        auth_token_cookie_name="__Secure-LATC",
+        id_token_cookie_name="__Secure-LITC",
+        masqueraded_token_cookie_name="__Secure-LMTC",
+        jwks_cache_ttl_seconds=3600,
+    )
+    _prune_foreign_platform_login(
+        bundles,
+        connection_hub_bundle_id="connection-hub@1-0",
+        authority_id="kdcube.platform",
+        keep_provider_ids={"cognito"},
+        keep_bootstrap_rules=False,
+    )
+
+    authorities = _ch_authorities(bundles)
+    platform_providers = authorities["kdcube.platform"]["providers"]
+    # The cognito provider replaces the bundle-session login provider.
+    assert "cognito" in platform_providers
+    assert "workspace_google_session" not in platform_providers
+    # The google upstream is garbage-collected once nothing references it.
+    assert "google.accounts" not in authorities
+    # The admin bootstrap rule is dropped, but real user grants are preserved.
+    assert "bootstrap_rules" not in authorities["kdcube.platform"]["grants"]
+    assert authorities["kdcube.platform"]["grants"]["subjects"] == {
+        "user:existing": {"roles": ["kdcube:role:registered"]}
+    }
+    # The consent_ui referencing the removed provider is dropped.
+    assert "consent_ui" not in bundles["bundles"]["items"][0]["config"]["connections"]["delegated_credentials"]["oauth"]
+    # The telegram authority is independent of the login provider and stays.
+    assert "telegram.kdcube_ref" in authorities
+
+
+def test_reconcile_to_simple_removes_all_platform_login_providers():
+    bundles = _polluted_bundle_session_bundles()
+
+    _prune_foreign_platform_login(
+        bundles,
+        connection_hub_bundle_id="connection-hub@1-0",
+        authority_id="kdcube.platform",
+        keep_provider_ids=set(),
+        keep_bootstrap_rules=False,
+    )
+
+    authorities = _ch_authorities(bundles)
+    assert authorities["kdcube.platform"]["providers"] == {}
+    assert "google.accounts" not in authorities
+    assert "bootstrap_rules" not in authorities["kdcube.platform"]["grants"]
+    assert authorities["kdcube.platform"]["grants"]["subjects"] == {
+        "user:existing": {"roles": ["kdcube:role:registered"]}
+    }
+    assert "consent_ui" not in bundles["bundles"]["items"][0]["config"]["connections"]["delegated_credentials"]["oauth"]
+    assert "telegram.kdcube_ref" in authorities
+
+
+def test_reconcile_drops_empty_platform_grants():
+    # Fresh install: the shipped default carries only empty subjects + the bootstrap rule.
+    bundles = _polluted_bundle_session_bundles()
+    _ch_authorities(bundles)["kdcube.platform"]["grants"]["subjects"] = {}
+
+    _prune_foreign_platform_login(
+        bundles,
+        connection_hub_bundle_id="connection-hub@1-0",
+        authority_id="kdcube.platform",
+        keep_provider_ids={"cognito"},
+        keep_bootstrap_rules=False,
+    )
+
+    # With no real subjects and no bootstrap rule, the whole grants block is removed.
+    assert "grants" not in _ch_authorities(bundles)["kdcube.platform"]
+
+
+def test_apply_bundle_session_auth_removes_stale_cognito_provider():
+    bundles = _polluted_bundle_session_bundles()
+    # Seed a stale cognito provider as if the runtime had previously used cognito.
+    _ch_authorities(bundles)["kdcube.platform"]["providers"]["cognito"] = {
+        "type": "cognito",
+        "enabled": True,
+        "authenticator": {"region": "eu-west-1"},
+    }
+
+    apply_bundle_session_auth(
+        assembly_data={"auth": {"type": "cognito"}},
+        bundles_data=bundles,
+        env_targets=[_empty_env()],
+        client_id="new-web.apps.googleusercontent.com",
+        provider="google",
+        bootstrap_admin_email="owner@example.com",
+    )
+
+    authorities = _ch_authorities(bundles)
+    platform_providers = authorities["kdcube.platform"]["providers"]
+    assert "workspace_google_session" in platform_providers
+    assert "cognito" not in platform_providers
+    # The google upstream is rebuilt with the new client id and telegram is preserved.
+    assert authorities["google.accounts"]["providers"]["google_oidc"]["authenticator"]["client_id"] == (
+        "new-web.apps.googleusercontent.com"
+    )
+    assert "telegram.kdcube_ref" in authorities
+
+
+def test_apply_bundle_session_auth_restores_consent_ui_after_cognito():
+    # Simulate a runtime that switched to cognito: the login provider became cognito,
+    # the google upstream was garbage-collected, and the consent_ui was pruned.
+    bundles = _polluted_bundle_session_bundles()
+    _ensure_connection_hub_cognito_provider(
+        bundles,
+        region="eu-west-1",
+        user_pool_id="eu-west-1_pool",
+        app_client_id="app-client",
+        service_client_id="service-client",
+        providers=None,
+        id_token_header_name="X-ID-Token",
+        auth_token_cookie_name="__Secure-LATC",
+        id_token_cookie_name="__Secure-LITC",
+        masqueraded_token_cookie_name="__Secure-LMTC",
+        jwks_cache_ttl_seconds=3600,
+    )
+    _prune_foreign_platform_login(
+        bundles,
+        connection_hub_bundle_id="connection-hub@1-0",
+        authority_id="kdcube.platform",
+        keep_provider_ids={"cognito"},
+        keep_bootstrap_rules=False,
+    )
+    oauth = bundles["bundles"]["items"][0]["config"]["connections"]["delegated_credentials"]["oauth"]
+    assert "consent_ui" not in oauth  # removed while on cognito
+
+    # Switch back to application-hosted login.
+    apply_bundle_session_auth(
+        assembly_data={"auth": {"type": "cognito", "connection_hub": {"provider_id": "cognito"}}},
+        bundles_data=bundles,
+        env_targets=[_empty_env()],
+        client_id="web.apps.googleusercontent.com",
+        provider="google",
+        bootstrap_admin_email="owner@example.com",
+    )
+
+    authorities = _ch_authorities(bundles)
+    # The bundle provider lands under its own key, not the cognito key.
+    assert "workspace_google_session" in authorities["kdcube.platform"]["providers"]
+    assert "cognito" not in authorities["kdcube.platform"]["providers"]
+    # The consent_ui is restored pointing at the bundle-session provider.
+    consent = bundles["bundles"]["items"][0]["config"]["connections"]["delegated_credentials"]["oauth"]["consent_ui"]
+    assert consent == {
+        "mode": "authority_provider",
+        "authority_id": "kdcube.platform",
+        "provider_id": "workspace_google_session",
+        "entrypoint": "consent",
+    }
+
+
+def test_apply_bundle_session_auth_heals_provider_under_wrong_key():
+    # A prior bug wrote the bundle-session provider under the cognito key; re-applying
+    # must leave exactly one login provider under the canonical key.
+    bundles = _polluted_bundle_session_bundles()
+    platform_providers = _ch_authorities(bundles)["kdcube.platform"]["providers"]
+    platform_providers["cognito"] = platform_providers.pop("workspace_google_session")
+
+    apply_bundle_session_auth(
+        assembly_data={"auth": {"type": "bundle"}},
+        bundles_data=bundles,
+        env_targets=[_empty_env()],
+        client_id="web.apps.googleusercontent.com",
+        provider="google",
+        bootstrap_admin_email="owner@example.com",
+    )
+
+    providers = _ch_authorities(bundles)["kdcube.platform"]["providers"]
+    assert set(providers) == {"workspace_google_session"}
+    assert providers["workspace_google_session"]["type"] == "bundle_session_login"
+
+
+def test_ensure_cors_allow_origin_adds_external_origin():
+    assembly: dict = {"cors": {"allow_origins": ["http://localhost:5174"]}}
+
+    added = _ensure_cors_allow_origin(assembly, "https://external.example.com/api/integrations/x")
+
+    assert added is True
+    assert assembly["cors"]["allow_origins"] == [
+        "http://localhost:5174",
+        "https://external.example.com",
+    ]
+    # Idempotent: re-adding the same origin is a no-op.
+    assert _ensure_cors_allow_origin(assembly, "https://external.example.com/other") is False
+
+
+def test_ensure_cors_allow_origin_skips_wildcard_and_bad_url():
+    wild: dict = {"cors": {"allow_origins": ["*"]}}
+    assert _ensure_cors_allow_origin(wild, "https://external.example.com") is False
+    assert wild["cors"]["allow_origins"] == ["*"]
+    assert _ensure_cors_allow_origin({}, "not-a-url") is False
+    assert _origin_from_url("https://host:8443/path?q=1") == "https://host:8443"
+
+
+def _auth_flag_args(**overrides) -> SimpleNamespace:
+    base = dict(
+        auth_type="",
+        provider="",
+        client_id="",
+        bootstrap_admin_email="",
+        cognito_region="",
+        cognito_user_pool_id="",
+        cognito_app_client_id="",
+        cognito_service_client_id="",
+    )
+    base.update(overrides)
+    return SimpleNamespace(**base)
+
+
+def test_apply_auth_flags_seeds_cognito_values():
+    assembly: dict = {"auth": {"type": "bundle"}}
+    args = _auth_flag_args(
+        auth_type="cognito",
+        cognito_region="eu-west-1",
+        cognito_user_pool_id="eu-west-1_POOL",
+        cognito_app_client_id="appclient",
+        cognito_service_client_id="svcclient",
+    )
+
+    changed = cli_mod._apply_auth_flags(Console(file=None), assembly, args)
+
+    assert changed is True
+    assert assembly["auth"]["type"] == "cognito"
+    assert assembly["auth"]["cognito"] == {
+        "region": "eu-west-1",
+        "user_pool_id": "eu-west-1_POOL",
+        "app_client_id": "appclient",
+        "service_client_id": "svcclient",
+    }
+
+
+def test_apply_auth_flags_rejects_cognito_flags_for_bundle():
+    assembly: dict = {"auth": {"type": "simple"}}
+    args = _auth_flag_args(auth_type="bundle", client_id="x", cognito_region="eu-west-1")
+
+    with pytest.raises(SystemExit):
+        cli_mod._apply_auth_flags(Console(file=None), assembly, args)
 
 
 def _bundle_assembly(client_id: str = "web.apps.googleusercontent.com") -> dict:

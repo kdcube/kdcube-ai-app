@@ -400,6 +400,54 @@ kdcube init --tenant <t> --project <p> \
   --release 2026.4.11.012
 ```
 
+### 2.3e Authentication<a id="auth-flags"></a>
+
+`kdcube init` selects a platform authentication method. Without `--auth-type` the
+interactive wizard prompts for it; the picker lists `simple`, `cognito`, and `bundle`
+(application-hosted login) with `bundle` preselected. `delegated` is listed only when it
+is already the configured mode, and is otherwise set with `--auth-type delegated`.
+
+Non-interactive installs pass the method and its fields as flags:
+
+```bash
+# Application-hosted (Google) login — the default identity
+kdcube init --tenant <t> --project <p> \
+  --auth-type bundle \
+  --client-id "<google-web-oauth-client-id>" \
+  --bootstrap-admin-email admin@example.com
+
+# Cognito (or delegated)
+kdcube init --tenant <t> --project <p> \
+  --auth-type cognito \
+  --cognito-region eu-west-1 \
+  --cognito-user-pool-id <pool-id> \
+  --cognito-app-client-id <app-client-id> \
+  --cognito-service-client-id <service-client-id>
+```
+
+Per-mode fields:
+
+- `bundle`: `--provider google` (only supported provider), `--client-id`,
+  `--bootstrap-admin-email` (verified Google email granted `super-admin` on first login).
+- `cognito` / `delegated`: `--cognito-region`, `--cognito-user-pool-id`,
+  `--cognito-app-client-id`, `--cognito-service-client-id` (or the matching `COGNITO_*`
+  env vars / descriptor values).
+
+The same flags apply to `kdcube config apply` (see §2.3f, Reconfigure authentication).
+
+**Telegram companion (optional).** `--enable-telegram --external-https-url <url>` configures
+the Telegram companion during init. The bot token is a secret with no flag; it is read from
+the `KDCUBE_TELEGRAM_BOT_TOKEN` env var (required for non-interactive setup, prompted
+interactively). The external URL's origin is added to `cors.allow_origins` so the Mini App's
+cross-origin WebSocket is accepted.
+
+```bash
+KDCUBE_TELEGRAM_BOT_TOKEN="<bot-token>" \
+kdcube init --tenant <t> --project <p> \
+  --auth-type bundle --client-id "<id>" \
+  --enable-telegram --external-https-url https://<stable-ngrok-domain>
+```
+
 ### 2.4 Refresh (re-init) — `kdcube refresh`<a id="refresh"></a>
 
 `kdcube refresh` is the command to use when you want to **rebuild platform
@@ -543,6 +591,37 @@ With `--include-platform-descriptors`, export writes `assembly.yaml`,
 `secrets.yaml`, `gateway.yaml`, `economics.yaml`, `bundles.yaml`, and
 `bundles.secrets.yaml`. For what `economics.yaml` owns, see
 [economics-descriptor-README.md](../../economics/economics-descriptor-README.md).
+
+### 2.3f Reconfigure authentication — `kdcube config apply`<a id="config-apply-auth"></a>
+
+`kdcube config apply` changes the platform authentication of an already-initialized
+runtime. It takes the same `--auth-type` and per-mode flags as `init` (§2.3e) and
+reconciles the descriptors to the target method: the previous method's platform login
+provider, its upstream authority, admin bootstrap rule, and consent UI are removed, and
+unrelated configuration (bundles, connectors, the Telegram companion) is preserved.
+
+```bash
+# Preview the descriptor changes without writing
+kdcube config apply --tenant <t> --project <p> \
+  --auth-type cognito \
+  --cognito-region eu-west-1 --cognito-user-pool-id <pool-id> \
+  --cognito-app-client-id <app-client-id> \
+  --dry-run
+
+# Apply and restart the stack
+kdcube config apply --tenant <t> --project <p> \
+  --auth-type cognito \
+  --cognito-region eu-west-1 --cognito-user-pool-id <pool-id> \
+  --cognito-app-client-id <app-client-id> \
+  --restart
+```
+
+`--dry-run` prints a per-descriptor semantic diff and writes nothing. `-i` prompts for
+fields not passed as flags. Without `--restart`, descriptors are updated and
+`kdcube refresh` (or a later `--restart`) applies them to the running stack.
+
+This is distinct from `kdcube bundle config apply` (§2.3b, above), which syncs bundle
+descriptors only and does not change authentication.
 
 Exported descriptors are shaped for review and re-seeding, not as a byte-for-byte
 copy of the container runtime files:
@@ -978,6 +1057,9 @@ You can also pre‑seed paths and flags via environment variables:
 | `KDCUBE_USE_BUNDLES_SECRETS` | `1/0` to apply bundles secrets. |
 | `KDCUBE_GATEWAY_DESCRIPTOR_PATH` | Path to `gateway.yaml` (copied into workdir config). |
 | `KDCUBE_CLI_NONINTERACTIVE` | Internal installer flag. Prompt helpers use defaults instead of asking. The CLI sets this automatically for the descriptor fast path. |
+| `KDCUBE_TELEGRAM_BOT_TOKEN` | Telegram companion bot token (secret; has no flag). Required for non-interactive `--enable-telegram`; prompted interactively. |
+| `KDCUBE_TELEGRAM_EXTERNAL_HTTPS_URL` | Externally reachable HTTPS URL for the Telegram companion. Equivalent to `--external-https-url`. |
+| `KDCUBE_ENABLE_TELEGRAM` | `1/0` to configure the Telegram companion non-interactively. Equivalent to `--enable-telegram`. |
 
 ---
 

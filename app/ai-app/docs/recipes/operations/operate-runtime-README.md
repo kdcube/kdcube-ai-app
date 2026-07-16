@@ -117,6 +117,8 @@ OAuth callbacks) put ONE stable HTTPS origin in front of the local web
 proxy — see `docs/service/cicd/ngrok-README.md`. Keep `domain: ""` and
 `proxy.ssl: false` locally; the tunnel origin belongs in CORS
 (`--cors-origin` at init) and in app public URLs, never in local proxy SSL.
+Configuring the Telegram companion adds its `--external-https-url` origin to
+CORS automatically.
 
 ## Shell paste rule
 

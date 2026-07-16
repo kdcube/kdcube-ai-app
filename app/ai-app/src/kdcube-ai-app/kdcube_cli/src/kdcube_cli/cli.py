@@ -1364,6 +1364,105 @@ def _descriptor_objects_differ(current: object, incoming: object) -> bool:
     return _canonical_descriptor_json(current) != _canonical_descriptor_json(incoming)
 
 
+def _config_apply_env_from_config_dir(config_dir: Path, assembly: dict) -> None:
+    """Point the installer's descriptor-source env at config_dir for a prepare-only run."""
+    os.environ["KDCUBE_DESCRIPTORS_LOCATION"] = str(config_dir)
+    os.environ["KDCUBE_ASSEMBLY_DESCRIPTOR_PATH"] = str(config_dir / "assembly.yaml")
+    os.environ["KDCUBE_ASSEMBLY_USER_SUPPLIED"] = "0"
+    for env_key, env_name in (
+        ("KDCUBE_SECRETS_DESCRIPTOR_PATH", "secrets.yaml"),
+        ("KDCUBE_GATEWAY_DESCRIPTOR_PATH", "gateway.yaml"),
+        ("KDCUBE_BUNDLES_DESCRIPTOR_PATH", "bundles.yaml"),
+        ("KDCUBE_BUNDLES_SECRETS_PATH", "bundles.secrets.yaml"),
+    ):
+        env_path = config_dir / env_name
+        if env_path.exists():
+            os.environ[env_key] = str(env_path)
+    os.environ["KDCUBE_ASSEMBLY_USE_BUNDLES"] = "1" if bool(_get_nested(assembly, "bundles")) else "0"
+    os.environ["KDCUBE_ASSEMBLY_USE_FRONTEND"] = "1" if bool(_get_nested(assembly, "frontend")) else "0"
+    os.environ["KDCUBE_ASSEMBLY_USE_PLATFORM"] = "0"
+    os.environ["KDCUBE_USE_BUNDLES_DESCRIPTOR"] = "1" if (config_dir / "bundles.yaml").exists() else "0"
+    os.environ["KDCUBE_USE_BUNDLES_SECRETS"] = "1" if (config_dir / "bundles.secrets.yaml").exists() else "0"
+    os.environ["KDCUBE_INIT_PREPARE_ONLY"] = "1"
+
+
+def _config_apply_dry_run(
+    op_console: Console,
+    *,
+    repo: Path,
+    workdir: Path,
+    config_dir: Path,
+    assembly_with_flags: dict,
+    json_output: bool,
+) -> None:
+    """Render the reconfiguration into a throwaway copy and show the semantic diff.
+
+    Copies the staged descriptors, runs the shared configurator against the copy with
+    Docker actions disabled and Telegram left unconfigured, then reports how each
+    descriptor would change. No live file is written and no runtime is restarted.
+    """
+    import tempfile
+    import difflib
+
+    saved_env = dict(os.environ)
+    temp_root = Path(tempfile.mkdtemp(prefix="kdcube-config-apply-"))
+    changes: list[dict] = []
+    try:
+        temp_workdir = temp_root / "workdir"
+        temp_config = temp_workdir / "config"
+        shutil.copytree(config_dir, temp_config)
+        installer_mod.save_release_descriptor(temp_config / "assembly.yaml", assembly_with_flags)
+
+        _config_apply_env_from_config_dir(temp_config, assembly_with_flags)
+        os.environ["KDCUBE_CLI_NONINTERACTIVE"] = "1"
+        os.environ.pop("KDCUBE_ENABLE_TELEGRAM", None)
+
+        quiet_console = Console(file=io.StringIO(), force_terminal=False)
+        run_installer(quiet_console, repo, temp_workdir, "skip", None, None, True)
+
+        for name in installer_mod.CANONICAL_DESCRIPTOR_FILENAMES:
+            live_obj = installer_mod.load_release_descriptor_soft(config_dir / name)
+            new_obj = installer_mod.load_release_descriptor_soft(temp_config / name)
+            if not _descriptor_objects_differ(live_obj, new_obj):
+                continue
+            live_text = yaml.safe_dump(live_obj, sort_keys=True, default_flow_style=False)
+            new_text = yaml.safe_dump(new_obj, sort_keys=True, default_flow_style=False)
+            diff = "".join(
+                difflib.unified_diff(
+                    live_text.splitlines(keepends=True),
+                    new_text.splitlines(keepends=True),
+                    fromfile=f"current/{name}",
+                    tofile=f"apply/{name}",
+                )
+            )
+            changes.append({"descriptor": name, "diff": diff})
+    finally:
+        os.environ.clear()
+        os.environ.update(saved_env)
+        shutil.rmtree(temp_root, ignore_errors=True)
+
+    if json_output:
+        _print_json(
+            {
+                "status": "dry-run",
+                "action": "apply",
+                "workdir": str(workdir),
+                "changed_descriptors": [c["descriptor"] for c in changes],
+                "changes": changes,
+            }
+        )
+        return
+
+    op_console.print("[bold]config apply (dry-run)[/bold] — no files written")
+    op_console.print(f"[dim]workdir:[/dim] {workdir}")
+    if not changes:
+        op_console.print("[dim]No descriptor changes.[/dim]")
+        return
+    for change in changes:
+        op_console.print(f"\n[bold]{change['descriptor']}[/bold]")
+        op_console.print(change["diff"].rstrip() or "[dim](structural change)[/dim]")
+
+
 def _normalize_bundle_descriptor_paths_for_runtime(data: object, workdir: Path) -> list[dict[str, str]]:
     translations: list[dict[str, str]] = []
     if not isinstance(data, dict):
@@ -2562,13 +2661,21 @@ def _apply_auth_flags(console: Console, assembly: dict, args) -> bool:
 
     --auth-type selects the platform method. For bundle (application-hosted
     login), --provider/--client-id/--bootstrap-admin-email are written under
-    auth.bundle so the setup wizard uses them without prompting. An unsupported
-    bundle provider aborts. Returns True if the assembly changed.
+    auth.bundle. For cognito/delegated, --cognito-* are written under auth.cognito
+    so the setup wizard uses them without prompting. An unsupported bundle provider
+    aborts. Returns True if the assembly changed.
     """
     auth_type = str(getattr(args, "auth_type", "") or "").strip().lower()
     provider = str(getattr(args, "provider", "") or "").strip().lower()
     client_id = str(getattr(args, "client_id", "") or "").strip()
     admin_email = str(getattr(args, "bootstrap_admin_email", "") or "").strip()
+    cognito_values = {
+        "region": str(getattr(args, "cognito_region", "") or "").strip(),
+        "user_pool_id": str(getattr(args, "cognito_user_pool_id", "") or "").strip(),
+        "app_client_id": str(getattr(args, "cognito_app_client_id", "") or "").strip(),
+        "service_client_id": str(getattr(args, "cognito_service_client_id", "") or "").strip(),
+    }
+    any_cognito = any(cognito_values.values())
 
     auth = assembly.get("auth")
     if not isinstance(auth, dict):
@@ -2586,7 +2693,26 @@ def _apply_auth_flags(console: Console, assembly: dict, args) -> bool:
             raise SystemExit(
                 "--provider/--client-id/--bootstrap-admin-email require --auth-type bundle."
             )
+        if any_cognito:
+            if effective_type not in ("cognito", "delegated"):
+                raise SystemExit(
+                    "--cognito-region/--cognito-user-pool-id/--cognito-app-client-id/"
+                    "--cognito-service-client-id require --auth-type cognito or delegated."
+                )
+            cognito_block = auth.get("cognito")
+            if not isinstance(cognito_block, dict):
+                cognito_block = {}
+                auth["cognito"] = cognito_block
+            for key, value in cognito_values.items():
+                if value and cognito_block.get(key) != value:
+                    cognito_block[key] = value
+                    changed = True
         return changed
+    if any_cognito:
+        raise SystemExit(
+            "--cognito-region/--cognito-user-pool-id/--cognito-app-client-id/"
+            "--cognito-service-client-id require --auth-type cognito or delegated."
+        )
 
     seed = auth.get("bundle")
     if not isinstance(seed, dict):
@@ -3751,6 +3877,10 @@ def main() -> None:
         default="",
         help="With `config apply --auth-type bundle`, the verified Google email granted platform super-admin on first login.",
     )
+    _sp.add_argument("--cognito-region", default="", help="With `config apply --auth-type cognito|delegated`, the Cognito region.")
+    _sp.add_argument("--cognito-user-pool-id", default="", help="With `config apply --auth-type cognito|delegated`, the Cognito user pool id.")
+    _sp.add_argument("--cognito-app-client-id", default="", help="With `config apply --auth-type cognito|delegated`, the Cognito app client id.")
+    _sp.add_argument("--cognito-service-client-id", default="", help="With `config apply --auth-type cognito|delegated`, the Cognito service (machine) client id.")
     _sp.add_argument("--restart", action="store_true", help="With `config apply`, restart the runtime after writing the new configuration.")
     _sp.add_argument("-i", "--interactive", action="store_true", help="With `config apply`, prompt for auth fields not given as flags.")
     _sp.add_argument("--out-dir", default="", help="With `config export`, output directory for exported files")
@@ -3929,6 +4059,10 @@ def main() -> None:
             "first login, for --auth-type bundle."
         ),
     )
+    _sp.add_argument("--cognito-region", default="", help="Cognito region for --auth-type cognito|delegated.")
+    _sp.add_argument("--cognito-user-pool-id", default="", help="Cognito user pool id for --auth-type cognito|delegated.")
+    _sp.add_argument("--cognito-app-client-id", default="", help="Cognito app client id for --auth-type cognito|delegated.")
+    _sp.add_argument("--cognito-service-client-id", default="", help="Cognito service (machine) client id for --auth-type cognito|delegated.")
     _sp.add_argument(
         "--enable-telegram",
         action="store_true",
@@ -4683,59 +4817,33 @@ def main() -> None:
                 _assembly = installer_mod.load_release_descriptor_soft(_assembly_path)
                 _apply_auth_flags(_op_console, _assembly, args)
                 _effective_type = str(_get_nested(_assembly, "auth", "type") or "").strip().lower()
-                if _effective_type != "bundle":
+                _supported_types = {"bundle", "cognito", "simple", "delegated"}
+                if _effective_type not in _supported_types:
                     raise SystemExit(
-                        "`kdcube config apply` reconfigures application-hosted login. "
-                        "Pass --auth-type bundle with --client-id (and optionally --bootstrap-admin-email)."
+                        "`kdcube config apply` requires a supported --auth-type "
+                        "(bundle, cognito, simple, or delegated)."
                     )
                 _bundles = installer_mod.load_release_descriptor_soft(_config_dir / "bundles.yaml")
-                _client_id = _bundle_session_client_id(_assembly, _bundles)
-                if not args.interactive and not _has_value(_client_id):
-                    raise SystemExit(
-                        "`kdcube config apply --auth-type bundle` requires a Google client id "
-                        "(--client-id, or an existing application-hosted login runtime)."
-                    )
-                if args.dry_run:
-                    _preview_assembly = json.loads(json.dumps(_assembly))
-                    _preview_bundles = json.loads(json.dumps(_bundles))
-                    installer_mod.apply_bundle_session_auth(
-                        assembly_data=_preview_assembly,
-                        bundles_data=_preview_bundles,
-                        env_targets=[],
-                        client_id=_client_id or "<client-id>",
-                        provider=str(_get_nested(_assembly, "auth", "bundle", "provider") or "google"),
-                        bootstrap_admin_email=str(_get_nested(_assembly, "auth", "bundle", "bootstrap_admin_email") or ""),
-                    )
-                    _auth_preview = _get_nested(_preview_assembly, "auth") or {}
-                    if args.json_output:
-                        _print_json(
-                            {"status": "dry-run", "action": "apply", "workdir": str(_resolved), "auth": _auth_preview}
+                if _effective_type == "bundle":
+                    _client_id = _bundle_session_client_id(_assembly, _bundles)
+                    if not args.interactive and not _has_value(_client_id):
+                        raise SystemExit(
+                            "`kdcube config apply --auth-type bundle` requires a Google client id "
+                            "(--client-id, or an existing application-hosted login runtime)."
                         )
-                    else:
-                        _op_console.print("[bold]config apply (dry-run)[/bold] — no files written")
-                        _op_console.print(f"[dim]workdir:[/dim] {_resolved}")
-                        _op_console.print(yaml.safe_dump({"auth": _auth_preview}, sort_keys=False).rstrip())
+                _repo = _resolve_subcommand_repo(args.path, workdir=_resolved, path_provided=_arg_provided("--path"))
+                if args.dry_run:
+                    _config_apply_dry_run(
+                        _op_console,
+                        repo=_repo,
+                        workdir=_resolved,
+                        config_dir=_config_dir,
+                        assembly_with_flags=_assembly,
+                        json_output=bool(args.json_output),
+                    )
                     return
                 installer_mod.save_release_descriptor(_assembly_path, _assembly)
-                _repo = _resolve_subcommand_repo(args.path, workdir=_resolved, path_provided=_arg_provided("--path"))
-                os.environ["KDCUBE_DESCRIPTORS_LOCATION"] = str(_config_dir)
-                os.environ["KDCUBE_ASSEMBLY_DESCRIPTOR_PATH"] = str(_assembly_path)
-                os.environ["KDCUBE_ASSEMBLY_USER_SUPPLIED"] = "0"
-                for _env_key, _env_name in (
-                    ("KDCUBE_SECRETS_DESCRIPTOR_PATH", "secrets.yaml"),
-                    ("KDCUBE_GATEWAY_DESCRIPTOR_PATH", "gateway.yaml"),
-                    ("KDCUBE_BUNDLES_DESCRIPTOR_PATH", "bundles.yaml"),
-                    ("KDCUBE_BUNDLES_SECRETS_PATH", "bundles.secrets.yaml"),
-                ):
-                    _env_path = _config_dir / _env_name
-                    if _env_path.exists():
-                        os.environ[_env_key] = str(_env_path)
-                os.environ["KDCUBE_ASSEMBLY_USE_BUNDLES"] = "1" if bool(_get_nested(_assembly, "bundles")) else "0"
-                os.environ["KDCUBE_ASSEMBLY_USE_FRONTEND"] = "1" if bool(_get_nested(_assembly, "frontend")) else "0"
-                os.environ["KDCUBE_ASSEMBLY_USE_PLATFORM"] = "0"
-                os.environ["KDCUBE_USE_BUNDLES_DESCRIPTOR"] = "1" if (_config_dir / "bundles.yaml").exists() else "0"
-                os.environ["KDCUBE_USE_BUNDLES_SECRETS"] = "1" if (_config_dir / "bundles.secrets.yaml").exists() else "0"
-                os.environ["KDCUBE_INIT_PREPARE_ONLY"] = "1"
+                _config_apply_env_from_config_dir(_config_dir, _assembly)
                 if not args.interactive:
                     os.environ["KDCUBE_CLI_NONINTERACTIVE"] = "1"
                 # Re-render env/bundles/frontend/nginx from the updated descriptors without Docker actions.
