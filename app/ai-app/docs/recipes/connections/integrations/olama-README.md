@@ -218,27 +218,41 @@ secrets:
         api_key: replace-in-real-deployment
 ```
 
-The app applies these props onto its per-instance `Config` in its
-entrypoint — the pattern any app can copy (the workspace app ships it as
-`_apply_custom_llm_props()`):
+The app applies these props onto its per-instance `Config` in
+`pre_run_hook` — the pattern any app can copy (the workspace app ships it):
 
 ```python
-def _apply_custom_llm_props(self) -> None:
+async def pre_run_hook(self, *, state: Dict[str, Any]) -> None:
+    await super().pre_run_hook(state=state)
+    await self._apply_custom_llm_props()
+
+async def _apply_custom_llm_props(self) -> None:
     custom = self.bundle_prop("services.llm.custom", {}) or {}
+    if not isinstance(custom, Mapping):
+        return
     endpoint = str(custom.get("endpoint") or "").strip()
     if not endpoint:
         return
     self.config.custom_model_endpoint = endpoint
     self.config.custom_model_name = str(custom.get("model_name") or "custom-model")
-    if custom.get("api_key"):
-        self.config.custom_model_api_key = str(custom["api_key"])
+    api_key = str(await get_secret("b:services.llm.custom.api_key") or "").strip()
+    if api_key:
+        self.config.custom_model_api_key = api_key
     self.config.use_custom_endpoint = True
 ```
 
-Why this seam: apps are rebuilt per reactive event, and the model router
-reads `config.custom_model_endpoint` lazily at client creation — so a
-per-instance apply in `__init__` is exactly aligned with the platform's
-no-local-cache serving model. Alternative to the composer pick: pin a role —
+Why this seam, precisely: on every turn door the platform runs
+`refresh_bundle_props` (code `configuration_defaults()` deep-merged with the
+Redis-staged descriptor props) and then `pre_run_hook`, before the agent
+executes. `pre_run_hook` is therefore the canonical post-refresh moment for
+per-turn config application — the same moment every other per-agent value
+(model picks, subagent settings) is read. Reading these props in `__init__`
+does not work: at construction time `bundle_props` holds code defaults only.
+The model router reads `config.custom_model_endpoint` lazily at client
+creation, inside the turn — after the hook has run. The gateway key resolves
+from app secrets (`b:...`), async like everything on the turn path.
+
+Alternative to the composer pick: pin a role —
 `role_models: {<role>: {provider: custom, model: qwen3.6:35b}}`.
 
 Activation: reload the app (kdcube CLI bundle reload), like any descriptor
