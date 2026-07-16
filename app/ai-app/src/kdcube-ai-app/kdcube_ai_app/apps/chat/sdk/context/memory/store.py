@@ -104,9 +104,15 @@ def _json(value: Any) -> Any:
         return {}
     if isinstance(value, str):
         try:
-            return json.loads(value)
+            decoded = json.loads(value)
         except Exception:
             return {}
+        if isinstance(decoded, str) and decoded.strip().startswith(("{", "[")):
+            try:
+                decoded = json.loads(decoded)
+            except Exception:
+                pass
+        return decoded
     return value
 
 
@@ -850,7 +856,7 @@ class UserMemoryStore:
                 f"""
                 INSERT INTO {self.schema}.{USER_BUNDLE_PROPS_TABLE}
                     (user_id, bundle_id, key, value_json, created_at, updated_at, subsystem)
-                VALUES ($1, $2, $3, $4::jsonb, $5, $5, $6)
+                VALUES ($1, $2, $3, ($4::text)::jsonb, $5, $5, $6)
                 ON CONFLICT (user_id, bundle_id, key)
                 DO UPDATE SET
                     value_json = EXCLUDED.value_json,
@@ -1010,7 +1016,7 @@ class UserMemoryStore:
                      scope_filter, status, storage_bundle_id, summary, artifacts, created_at, updated_at)
                 VALUES
                     ($1, $2, $3, $4, $5, $6, $7,
-                     $8, $9, $10, $11::jsonb, $12::jsonb, $13, $14)
+                     $8, $9, $10, ($11::text)::jsonb, ($12::text)::jsonb, $13, $14)
                 ON CONFLICT (tenant, project, user_id, artifact_type, artifact_id)
                 DO UPDATE SET
                     bundle_id = EXCLUDED.bundle_id,
@@ -1277,8 +1283,8 @@ class UserMemoryStore:
                         negative_weight=negative_weight + 0.25,
                         updated_at=$3,
                         last_event_at=$3,
-                        source=$4::jsonb,
-                        metadata=metadata || $5::jsonb,
+                        source=($4::text)::jsonb,
+                        metadata=metadata || ($5::text)::jsonb,
                         revision=revision + 1
                     WHERE id=$1
                     RETURNING *
@@ -1475,8 +1481,8 @@ class UserMemoryStore:
                             negative_weight=negative_weight + 0.25,
                             updated_at=$3,
                             last_event_at=$3,
-                            source=$4::jsonb,
-                            metadata=metadata || $5::jsonb,
+                            source=($4::text)::jsonb,
+                            metadata=metadata || ($5::text)::jsonb,
                             revision=revision + 1
                         WHERE id=$1
                         RETURNING *
@@ -2068,7 +2074,7 @@ class UserMemoryStore:
                         )
                         VALUES (
                             $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::text[],$14::text[],$15,$16,
-                            $17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33::jsonb,$34::jsonb,$35
+                            $17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,($33::text)::jsonb,($34::text)::jsonb,$35
                             ,$36::vector,$37
                         )
                         ON CONFLICT (id) DO UPDATE
@@ -2099,8 +2105,8 @@ class UserMemoryStore:
                             updated_at=$30,
                             last_event_at=$31,
                             last_confirmed_at=$32,
-                            source=$33::jsonb,
-                            metadata=$34::jsonb,
+                            source=($33::text)::jsonb,
+                            metadata=($34::text)::jsonb,
                             revision=EXCLUDED.revision + 1,
                             embedding=$36::vector,
                             embedding_model=$37,
@@ -2196,8 +2202,8 @@ class UserMemoryStore:
                                 tier=4,
                                 updated_at=$2,
                                 last_event_at=$2,
-                                source=$3::jsonb,
-                                metadata=metadata || $4::jsonb,
+                                source=($3::text)::jsonb,
+                                metadata=metadata || ($4::text)::jsonb,
                                 revision=revision + 1
                             WHERE id=$1
                             RETURNING *
@@ -2659,7 +2665,7 @@ class UserMemoryStore:
             )
             VALUES (
                 $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::text[],$14::text[],$15,$16,
-                $17::vector,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35::jsonb,$36::jsonb,$37
+                $17::vector,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,($35::text)::jsonb,($36::text)::jsonb,$37
             )
             ON CONFLICT (tenant, project, user_id, canonical_key)
             WHERE merged_into_id IS NULL
@@ -2846,7 +2852,7 @@ class UserMemoryStore:
                 event_type, signal_text, context, originator, confidence, importance,
                 labels, keywords, source, metadata, idempotency_key, created_at
             )
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::text[],$16::text[],$17::jsonb,$18::jsonb,$19,$20)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::text[],$16::text[],($17::text)::jsonb,($18::text)::jsonb,$19,$20)
             ON CONFLICT DO NOTHING
             RETURNING id
             """,

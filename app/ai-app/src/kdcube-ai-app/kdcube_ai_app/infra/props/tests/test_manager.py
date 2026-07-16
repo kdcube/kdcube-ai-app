@@ -14,6 +14,7 @@ class _FakeConnection:
 
     async def execute(self, sql, *args):
         if "INSERT INTO" in sql:
+            assert "($4::text)::jsonb" in sql
             user_id, bundle_id, key, value_json = args
             self.rows[(str(user_id), str(bundle_id), str(key))] = json.loads(value_json)
             return "INSERT 0 1"
@@ -116,6 +117,35 @@ async def test_user_props_manager_roundtrip():
         bundle_id="bundle.demo",
         key="preferences.theme",
     ) is None
+
+
+@pytest.mark.asyncio
+async def test_user_props_manager_reads_existing_double_encoded_json_rows():
+    pool = _FakePool()
+    mgr = UserPropsManager(
+        tenant="tenant-a",
+        project="project-a",
+        pg_pool=pool,
+    )
+    pool.connection.rows[("user-1", "bundle.demo", "preferences.object")] = json.dumps({"mode": "dark"})
+    pool.connection.rows[("user-1", "bundle.demo", "preferences.list")] = json.dumps(["one", "two"])
+    pool.connection.rows[("user-1", "bundle.demo", "preferences.literal")] = "false"
+
+    assert await mgr.get_user_prop(
+        user_id="user-1",
+        bundle_id="bundle.demo",
+        key="preferences.object",
+    ) == {"mode": "dark"}
+    assert await mgr.get_user_prop(
+        user_id="user-1",
+        bundle_id="bundle.demo",
+        key="preferences.list",
+    ) == ["one", "two"]
+    assert await mgr.get_user_prop(
+        user_id="user-1",
+        bundle_id="bundle.demo",
+        key="preferences.literal",
+    ) == "false"
 
 
 def test_user_props_manager_uses_project_schema():

@@ -47,6 +47,35 @@ def credential_id_for(account_id: str) -> str:
     return f"cred_{hashlib.sha256(as_str(account_id).encode('utf-8')).hexdigest()[:24]}"
 
 
+def _decode_jsonish(value: Any) -> Any:
+    if not isinstance(value, str):
+        return value
+    try:
+        return json.loads(value)
+    except Exception:
+        return value
+
+
+def _as_prop_list(value: Any) -> list[Any]:
+    raw = value
+    for _ in range(2):
+        decoded = _decode_jsonish(raw)
+        if decoded is raw:
+            break
+        raw = decoded
+    return raw if isinstance(raw, list) else []
+
+
+def _as_prop_dict(value: Any) -> dict[str, Any]:
+    raw = value
+    for _ in range(2):
+        decoded = _decode_jsonish(raw)
+        if decoded is raw:
+            break
+        raw = decoded
+    return raw if isinstance(raw, dict) else {}
+
+
 class DelegatedToKdcubeStore:
     def __init__(self, *, user_id: str, bundle_id: str = CONNECTION_HUB_BUNDLE_ID) -> None:
         self.user_id = as_str(user_id)
@@ -80,14 +109,7 @@ class DelegatedToKdcubeStore:
         )
 
     async def _index(self) -> list[str]:
-        raw = await self._prop(ACCOUNT_INDEX_KEY, default=[])
-        if isinstance(raw, str):
-            try:
-                raw = json.loads(raw)
-            except Exception:
-                raw = []
-        if not isinstance(raw, list):
-            return []
+        raw = _as_prop_list(await self._prop(ACCOUNT_INDEX_KEY, default=[]))
         out: list[str] = []
         seen: set[str] = set()
         for item in raw:
@@ -119,25 +141,58 @@ class DelegatedToKdcubeStore:
 
     async def list_accounts(self, *, provider_id: str = "") -> list[ConnectedAccount]:
         wanted = as_str(provider_id)
+        index = await self._index()
         accounts: list[ConnectedAccount] = []
-        for account_id in await self._index():
-            raw = await self._prop(self.account_prop_key(account_id), default=None)
-            if not isinstance(raw, dict):
+        skipped_missing = 0
+        skipped_provider = 0
+        skipped_malformed = 0
+        for account_id in index:
+            raw = _as_prop_dict(await self._prop(self.account_prop_key(account_id), default=None))
+            if not raw:
+                skipped_missing += 1
                 continue
             account = ConnectedAccount.from_dict(raw)
             if not account.account_id:
+                skipped_malformed += 1
                 continue
             if wanted and account.provider_id != wanted:
+                skipped_provider += 1
                 continue
             accounts.append(account)
-        return sorted(accounts, key=lambda item: (item.provider_id, item.display_name or item.account_id))
+        sorted_accounts = sorted(accounts, key=lambda item: (item.provider_id, item.display_name or item.account_id))
+        LOGGER.info(
+            "[delegated.store] list accounts user=%s provider=%s index=%s returned=%s skipped_missing=%s skipped_provider=%s skipped_malformed=%s",
+            self.user_id,
+            wanted or "*",
+            len(index),
+            len(sorted_accounts),
+            skipped_missing,
+            skipped_provider,
+            skipped_malformed,
+        )
+        return sorted_accounts
 
     async def get_account(self, account_id: str) -> ConnectedAccount | None:
-        raw = await self._prop(self.account_prop_key(account_id), default=None)
-        if not isinstance(raw, dict):
+        raw = _as_prop_dict(await self._prop(self.account_prop_key(account_id), default=None))
+        if not raw:
+            LOGGER.info(
+                "[delegated.store] get account user=%s account=%s found=False",
+                self.user_id,
+                account_id,
+            )
             return None
         account = ConnectedAccount.from_dict(raw)
-        return account if account.account_id else None
+        found = account if account.account_id else None
+        LOGGER.info(
+            "[delegated.store] get account user=%s account=%s found=%s provider=%s connector=%s claims=%s",
+            self.user_id,
+            account_id,
+            bool(found),
+            found.provider_id if found else "",
+            found.connector_app_id if found else "",
+            len(found.claims) if found else 0,
+        )
+        return found
 
     async def upsert_account(self, account: ConnectedAccount) -> ConnectedAccount:
         account_id = as_str(account.account_id) or account_id_for(
@@ -164,6 +219,16 @@ class DelegatedToKdcubeStore:
         )
         await self._set_prop(self.account_prop_key(account_id), stored.to_dict())
         await self._write_index([*await self._index(), account_id])
+        LOGGER.info(
+            "[delegated.store] upsert account user=%s account=%s provider=%s connector=%s claims=%s credential=%s status=%s",
+            self.user_id,
+            stored.account_id,
+            stored.provider_id,
+            stored.connector_app_id,
+            len(stored.claims),
+            stored.credential_id,
+            stored.status,
+        )
         return stored
 
     async def disconnect_account(self, account_id: str, *, delete_credential: bool = True) -> bool:
@@ -236,6 +301,16 @@ class DelegatedToKdcubeStore:
             json.dumps(dict(credential or {}), sort_keys=True, ensure_ascii=True),
             user_id=self.user_id,
             bundle_id=self.bundle_id,
+        )
+        LOGGER.info(
+            "[delegated.store] credential written user=%s credential=%s provider=%s connector=%s claims=%s has_access_token=%s has_refresh_token=%s",
+            self.user_id,
+            credential_id,
+            credential.get("provider_id") or "",
+            credential.get("connector_app_id") or "",
+            len(credential.get("claims") or []) if isinstance(credential.get("claims"), list) else 0,
+            bool(credential.get("access_token")),
+            bool(credential.get("refresh_token")),
         )
 
     async def get_credential(self, credential_id: str) -> dict[str, Any]:

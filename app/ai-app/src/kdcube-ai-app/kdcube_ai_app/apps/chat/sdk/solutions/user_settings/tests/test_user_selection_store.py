@@ -81,6 +81,7 @@ class _FakeConnection:
         self.executed.append(sql.strip().split()[0].upper())
         if not args:
             return  # DDL from ensure_schema
+        assert "($4::text)::jsonb" in sql
         user_id, bundle_id, key, value_json, subsystem = args
         if "DO NOTHING" in sql and (user_id, bundle_id, key) in self._rows:
             return "INSERT 0 0"

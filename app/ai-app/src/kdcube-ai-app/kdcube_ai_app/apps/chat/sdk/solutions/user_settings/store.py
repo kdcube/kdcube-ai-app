@@ -55,9 +55,15 @@ def json_value(value: Any) -> Any:
     """value_json as a dict, whether the driver returned text or a mapping."""
     if isinstance(value, str):
         try:
-            return json.loads(value)
+            decoded = json.loads(value)
         except Exception:
             return {}
+        if isinstance(decoded, str) and decoded.strip().startswith(("{", "[")):
+            try:
+                decoded = json.loads(decoded)
+            except Exception:
+                pass
+        return decoded
     return value
 
 
@@ -161,7 +167,7 @@ class UserSettingsStore:
                 f"""
                 INSERT INTO {self.schema}.{USER_SETTINGS_TABLE}
                     (user_id, bundle_id, key, value_json, created_at, updated_at, subsystem)
-                VALUES ($1, $2, $3, $4::jsonb, now(), now(), $5)
+                VALUES ($1, $2, $3, ($4::text)::jsonb, now(), now(), $5)
                 ON CONFLICT (user_id, bundle_id, key)
                 DO UPDATE SET
                     value_json = EXCLUDED.value_json,
@@ -196,7 +202,7 @@ class UserSettingsStore:
                 f"""
                 INSERT INTO {self.schema}.{USER_SETTINGS_TABLE}
                     (user_id, bundle_id, key, value_json, created_at, updated_at, subsystem)
-                VALUES ($1, $2, $3, $4::jsonb, now(), now(), $5)
+                VALUES ($1, $2, $3, ($4::text)::jsonb, now(), now(), $5)
                 ON CONFLICT (user_id, bundle_id, key) DO NOTHING
                 """,
                 str(user_id or "").strip() or "anonymous",

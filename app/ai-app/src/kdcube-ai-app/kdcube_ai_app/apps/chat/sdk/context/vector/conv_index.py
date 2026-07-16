@@ -37,9 +37,15 @@ def _safe_json_loads(value: Any) -> Any:
         return None
     if isinstance(value, str):
         try:
-            return json.loads(value)
+            decoded = json.loads(value)
         except (json.JSONDecodeError, TypeError):
             return value
+        if isinstance(decoded, str) and decoded.strip().startswith(("{", "[")):
+            try:
+                decoded = json.loads(decoded)
+            except (json.JSONDecodeError, TypeError):
+                pass
+        return decoded
     return value
 
 CONV_STATE_KIND = "artifact:conversation.state"
@@ -1385,7 +1391,7 @@ class ConvIndex:
                             f"""
                             INSERT INTO {self.schema}.conv_prefs
                               (user_id, conversation_id, turn_id, key, value_json, desired, scope, confidence, reason, tags)
-                            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+                            VALUES ($1,$2,$3,$4,($5::text)::jsonb,$6,$7,$8,$9,$10)
                             """,
                             assertion_data
                         )
@@ -1416,7 +1422,7 @@ class ConvIndex:
                             f"""
                             INSERT INTO {self.schema}.conv_pref_exceptions
                               (user_id, conversation_id, turn_id, rule_key, value_json, scope, confidence, reason)
-                            VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+                            VALUES ($1,$2,$3,$4,($5::text)::jsonb,$6,$7,$8)
                             """,
                             exception_data
                         )

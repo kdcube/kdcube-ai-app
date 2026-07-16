@@ -27,9 +27,15 @@ def _decode_json_value(value: Any) -> Any:
     if not isinstance(value, str):
         return value
     try:
-        return json.loads(value)
+        decoded = json.loads(value)
     except (TypeError, ValueError):
         return value
+    if isinstance(decoded, str) and decoded.strip().startswith(("{", "[")):
+        try:
+            return json.loads(decoded)
+        except (TypeError, ValueError):
+            return decoded
+    return decoded
 
 
 class UserPropsManager:
@@ -134,7 +140,7 @@ class UserPropsManager:
                     key,
                     value_json
                 )
-                VALUES ($1, $2, $3, $4::jsonb)
+                VALUES ($1, $2, $3, ($4::text)::jsonb)
                 ON CONFLICT (user_id, bundle_id, key) DO UPDATE
                 SET value_json = EXCLUDED.value_json,
                     updated_at = now()

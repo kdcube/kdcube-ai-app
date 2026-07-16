@@ -119,6 +119,13 @@ class DelegatedToKdcubeOperations:
 
     async def catalog(self, *, provider_id: str = "") -> dict[str, Any]:
         accounts = await self.store.list_accounts(provider_id=provider_id)
+        LOGGER.info(
+            "[delegated.ops] catalog user=%s provider=%s enabled=%s accounts=%s",
+            self.store.user_id,
+            provider_id or "*",
+            self.config.enabled,
+            len(accounts),
+        )
         return {
             "ok": True,
             "enabled": self.config.enabled,
@@ -248,6 +255,14 @@ class DelegatedToKdcubeOperations:
         provider_id = as_str(payload.get("provider_id"))
         connector_app_id = as_str(payload.get("connector_app_id"))
         provider = self.config.provider(provider_id)
+        LOGGER.info(
+            "[delegated.ops] connect credential start user=%s provider=%s connector=%s account=%s requested_claims=%s",
+            self.store.user_id,
+            provider_id,
+            connector_app_id,
+            as_str(payload.get("account_id")) or "<new>",
+            len(as_str_list(payload.get("claims"))),
+        )
         if not self.config.enabled:
             raise ValueError("delegated-to-KDCube connections are not enabled")
         if provider is None or not provider.enabled:
@@ -262,6 +277,13 @@ class DelegatedToKdcubeOperations:
         claims = _clean_claims(provider, connector_app_id, payload.get("claims"))
         if not claims:
             raise ValueError("at least one provider claim is required")
+        LOGGER.info(
+            "[delegated.ops] connect credential claims resolved user=%s provider=%s connector=%s claims=%s",
+            self.store.user_id,
+            provider_id,
+            connector_app_id,
+            ",".join(claims),
+        )
 
         account = ConnectedAccount(
             account_id=as_str(payload.get("account_id")),
@@ -284,6 +306,15 @@ class DelegatedToKdcubeOperations:
             **credential,
         }
         await self.store.set_credential(credential_id, credential_with_metadata)
+        LOGGER.info(
+            "[delegated.ops] connect credential persisted user=%s provider=%s connector=%s account=%s credential=%s claims=%s",
+            self.store.user_id,
+            provider_id,
+            connector_app_id,
+            stored.account_id,
+            credential_id,
+            ",".join(stored.claims),
+        )
         if credential_id != stored.credential_id:
             stored = await self.store.upsert_account(
                 ConnectedAccount(
@@ -305,6 +336,14 @@ class DelegatedToKdcubeOperations:
         # so pending demands in chat conversations learn the consent landed.
         if self.consent_granted_notifier is not None:
             try:
+                LOGGER.info(
+                    "[delegated.ops] consent notifier start user=%s provider=%s connector=%s account=%s claims=%s",
+                    self.store.user_id,
+                    provider_id,
+                    connector_app_id,
+                    stored.account_id,
+                    ",".join(claims),
+                )
                 result = self.consent_granted_notifier(
                     provider_id=provider_id,
                     connector_app_id=connector_app_id,
@@ -313,6 +352,13 @@ class DelegatedToKdcubeOperations:
                 )
                 if hasattr(result, "__await__"):
                     await result
+                LOGGER.info(
+                    "[delegated.ops] consent notifier done user=%s provider=%s connector=%s account=%s",
+                    self.store.user_id,
+                    provider_id,
+                    connector_app_id,
+                    stored.account_id,
+                )
             except Exception:
                 LOGGER.warning("[delegated.consent] granted notifier failed (best-effort)", exc_info=True)
         return {"ok": True, "account": stored.public_dict()}
@@ -331,6 +377,15 @@ class DelegatedToKdcubeOperations:
         provider_id = as_str(payload.get("provider_id"))
         connector_app_id = as_str(payload.get("connector_app_id"))
         provider = self.config.provider(provider_id)
+        LOGGER.info(
+            "[delegated.oauth] start request user=%s provider=%s connector=%s account=%s requested_claims=%s source=%s",
+            user_id,
+            provider_id,
+            connector_app_id,
+            as_str(payload.get("account_id")) or "<new>",
+            len(as_str_list(payload.get("claims"))),
+            source,
+        )
         if not self.config.enabled:
             raise ValueError("delegated-to-KDCube connections are not enabled")
         if provider is None or not provider.enabled:
@@ -369,6 +424,14 @@ class DelegatedToKdcubeOperations:
                     if item in set(provider.claims) and (not app_ceiling or item in app_ceiling)
                 )
                 claims = tuple(sorted({*claims, *held}))
+        LOGGER.info(
+            "[delegated.oauth] start claims resolved user=%s provider=%s connector=%s claims=%s mode=%s",
+            user_id,
+            provider_id,
+            connector_app_id,
+            ",".join(claims),
+            claims_mode,
+        )
         redirect_uri = connector_app.redirect_uri or as_str(callback_url)
         if not redirect_uri:
             raise ValueError("OAuth callback URL is not available")
@@ -395,6 +458,15 @@ class DelegatedToKdcubeOperations:
             params[scope_param] = " ".join(scopes)
         for key, value in adapter.authorize_extra_params().items():
             params.setdefault(key, value)
+        LOGGER.info(
+            "[delegated.oauth] start ok user=%s provider=%s connector=%s state_id=%s scopes=%s redirect_uri=%s",
+            user_id,
+            provider_id,
+            connector_app_id,
+            state["state_id"],
+            len(scopes),
+            redirect_uri,
+        )
         return {
             "ok": True,
             "provider_id": provider_id,
@@ -416,12 +488,26 @@ class DelegatedToKdcubeOperations:
         state_secret: str,
         client_secret_resolver: Callable[..., Any],
     ) -> dict[str, Any]:
+        LOGGER.info(
+            "[delegated.oauth] callback begin user=%s state=%s code_present=%s",
+            self.store.user_id,
+            state_digest(state),
+            bool(code),
+        )
         payload = await consume_oauth_state(state_store, state=state, secret=state_secret)
         user_id = as_str(payload.get("user_id"))
         if user_id != self.store.user_id:
             raise ValueError("OAuth state user does not match integration store")
         provider_id = as_str(payload.get("provider_id"))
         connector_app_id = as_str(payload.get("connector_app_id"))
+        LOGGER.info(
+            "[delegated.oauth] state consumed user=%s provider=%s connector=%s claims=%s state=%s",
+            user_id,
+            provider_id,
+            connector_app_id,
+            ",".join(as_str_list(payload.get("claims"))),
+            state_digest(state),
+        )
         provider = self.config.provider(provider_id)
         if provider is None or not provider.enabled:
             raise ValueError(f"provider is not enabled: {provider_id or '<missing>'}")
@@ -445,9 +531,29 @@ class DelegatedToKdcubeOperations:
         access_token = as_str(token.get("access_token"))
         if not access_token:
             raise ValueError("OAuth token response did not include access_token")
+        LOGGER.info(
+            "[delegated.oauth] token exchanged user=%s provider=%s connector=%s has_access_token=%s has_refresh_token=%s expires_in=%s state=%s",
+            user_id,
+            provider_id,
+            connector_app_id,
+            bool(access_token),
+            bool(token.get("refresh_token")),
+            token.get("expires_in") or token.get("expires_at") or "",
+            state_digest(state),
+        )
         profile = await adapter.fetch_profile(access_token=access_token, token=token)
         if not profile:
             profile = await adapter.normalize_profile(token)
+        LOGGER.info(
+            "[delegated.oauth] profile resolved user=%s provider=%s connector=%s external_subject=%s workspace=%s display=%s state=%s",
+            user_id,
+            provider_id,
+            connector_app_id,
+            bool(profile.get("external_subject") or profile.get("sub") or profile.get("id")),
+            bool(profile.get("workspace")),
+            bool(profile.get("display_name") or profile.get("name") or profile.get("email")),
+            state_digest(state),
+        )
         claims = tuple(as_str_list(payload.get("claims")))
         credential = {
             "oauth": True,

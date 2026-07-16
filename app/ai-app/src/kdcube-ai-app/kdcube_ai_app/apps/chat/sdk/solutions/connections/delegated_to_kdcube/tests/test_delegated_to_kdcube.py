@@ -329,6 +329,35 @@ async def test_store_persists_metadata_in_user_props_and_credentials_in_user_sec
 
 
 @pytest.mark.asyncio
+async def test_store_reads_double_encoded_account_props(monkeypatch):
+    """Connection Hub catalogs must tolerate user props produced through the
+    Postgres JSONB text read path, where historical records can be decoded to
+    JSON strings rather than dict/list objects."""
+    props, _secrets = _install_fake_storage(monkeypatch)
+    store = DelegatedToKdcubeStore(user_id="user-1")
+    account = ConnectedAccount(
+        account_id="slack_1",
+        provider_id="slack",
+        connector_app_id="demo",
+        external_subject="U123",
+        display_name="User @ Workspace",
+        workspace="T123",
+        claims=("slack:post", "slack:read"),
+        credential_id=credential_id_for("slack_1"),
+    )
+    props[("user-1", "connection-hub@1-0", "delegated_to_kdcube.account_index")] = json.dumps(["slack_1"])
+    props[("user-1", "connection-hub@1-0", "delegated_to_kdcube.accounts.slack_1")] = json.dumps(account.to_dict())
+
+    accounts = await store.list_accounts(provider_id="slack")
+    loaded = await store.get_account("slack_1")
+
+    assert [item.account_id for item in accounts] == ["slack_1"]
+    assert loaded is not None
+    assert loaded.display_name == "User @ Workspace"
+    assert loaded.claims == ("slack:post", "slack:read")
+
+
+@pytest.mark.asyncio
 async def test_broker_returns_credential_when_claim_and_credential_exist(monkeypatch):
     _install_fake_storage(monkeypatch)
     config = _sample_config()

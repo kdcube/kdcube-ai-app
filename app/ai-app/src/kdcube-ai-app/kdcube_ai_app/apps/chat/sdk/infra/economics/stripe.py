@@ -641,7 +641,7 @@ class StripeEconomicsWebhookHandler:
               'stripe', $1, $2,
               $3, $4, $5,
               $6, $7, $8,
-              'pending', $9, $10::jsonb
+              'pending', $9, ($10::text)::jsonb
             )
             ON CONFLICT (source, kind, external_id) DO NOTHING
         """, kind, external_id, tenant, project, user_id, amount_cents, tokens, currency, stripe_event_id, json.dumps(metadata))

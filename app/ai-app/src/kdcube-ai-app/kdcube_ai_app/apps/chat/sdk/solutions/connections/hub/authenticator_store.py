@@ -22,6 +22,11 @@ def _safe_mapping(value: Any) -> dict[str, Any]:
             parsed = json.loads(value)
         except json.JSONDecodeError:
             return {}
+        if isinstance(parsed, str) and parsed.strip().startswith("{"):
+            try:
+                parsed = json.loads(parsed)
+            except json.JSONDecodeError:
+                return {}
         return dict(parsed) if isinstance(parsed, Mapping) else {}
     return {}
 
@@ -216,7 +221,7 @@ class AuthenticatorStore:
                 ) VALUES (
                     $1, $2, $3, $4, $5,
                     $6, $7, $8, $9, $10, $11, $12,
-                    $13::jsonb, $14::jsonb, $15::jsonb, now(), now(), NULL
+                    ($13::text)::jsonb, ($14::text)::jsonb, ($15::text)::jsonb, now(), now(), NULL
                 )
                 ON CONFLICT (authenticator_id) DO UPDATE SET
                     provider = EXCLUDED.provider,

@@ -71,6 +71,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube impor
     operations_for_user,
     peek_state_payload,
     delegated_to_kdcube_config,
+    state_digest,
 )
 import kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube.providers  # noqa: F401
 from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oauth.metadata import (
@@ -1786,7 +1787,13 @@ class ConnectionHubEntrypoint(BaseEntrypoint):
         del fingerprint, kwargs
         platform_user_id = _platform_user_id(self, user_id=user_id)
         if not platform_user_id:
+            LOGGER.warning("[connection-hub.delegated_to_kdcube] catalog rejected anonymous user provider=%s", provider)
             return {"ok": False, "error": "delegated_to_kdcube_requires_authenticated_user"}
+        LOGGER.info(
+            "[connection-hub.delegated_to_kdcube] catalog request user=%s provider=%s",
+            platform_user_id,
+            provider or "*",
+        )
         return await _delegated_to_kdcube_operations(self, platform_user_id).catalog(provider_id=provider)
 
     @api(method="POST", alias="delegated_to_kdcube_start_oauth", route="operations", **_api_visibility("delegated_to_kdcube_start_oauth"))
@@ -1802,11 +1809,19 @@ class ConnectionHubEntrypoint(BaseEntrypoint):
         del fingerprint
         platform_user_id = _platform_user_id(self, user_id=user_id)
         if not platform_user_id:
+            LOGGER.warning("[connection-hub.delegated_to_kdcube] start OAuth rejected anonymous provider=%s", provider)
             return {"ok": False, "error": "delegated_to_kdcube_requires_authenticated_user"}
         payload = _payload(data, **kwargs)
         if provider and "provider_id" not in payload:
             payload["provider_id"] = provider
         try:
+            LOGGER.info(
+                "[connection-hub.delegated_to_kdcube] start OAuth route user=%s provider=%s connector=%s claims=%s",
+                platform_user_id,
+                payload.get("provider_id") or "",
+                payload.get("connector_app_id") or "",
+                len(payload.get("claims") or []) if isinstance(payload.get("claims"), list) else 0,
+            )
             return await _delegated_to_kdcube_operations(self, platform_user_id).start_oauth(
                 payload,
                 user_id=platform_user_id,
@@ -1815,7 +1830,7 @@ class ConnectionHubEntrypoint(BaseEntrypoint):
                 state_secret=await _delegated_to_kdcube_oauth_state_secret(self),
             )
         except Exception as exc:
-            LOGGER.warning("[connection-hub.delegated_to_kdcube] start OAuth failed: %s", exc)
+            LOGGER.warning("[connection-hub.delegated_to_kdcube] start OAuth failed: %s", exc, exc_info=True)
             return {"ok": False, "error": "invalid_delegated_to_kdcube_oauth_request", "message": str(exc)}
 
     @api(method="GET", alias="delegated_to_kdcube_oauth_callback", route="public")
@@ -1828,12 +1843,28 @@ class ConnectionHubEntrypoint(BaseEntrypoint):
         **kwargs: Any,
     ):
         del kwargs
+        LOGGER.info(
+            "[connection-hub.delegated_to_kdcube] OAuth callback route received state=%s code_present=%s error=%s",
+            state_digest(state) if state else "",
+            bool(code),
+            error or "",
+        )
         if error:
+            LOGGER.warning(
+                "[connection-hub.delegated_to_kdcube] OAuth provider returned error state=%s error=%s",
+                state_digest(state) if state else "",
+                error,
+            )
             return _delegated_to_kdcube_html_done(
                 title="Connection failed",
                 body=f"OAuth provider returned: {error}",
             )
         if not code or not state:
+            LOGGER.warning(
+                "[connection-hub.delegated_to_kdcube] OAuth callback missing required fields code_present=%s state_present=%s",
+                bool(code),
+                bool(state),
+            )
             return _delegated_to_kdcube_html_done(
                 title="Connection failed",
                 body="The OAuth callback is missing code or state.",
@@ -1843,6 +1874,14 @@ class ConnectionHubEntrypoint(BaseEntrypoint):
             platform_user_id = str(preview.get("user_id") or "").strip()
             if not platform_user_id:
                 raise ValueError("OAuth state is missing user_id")
+            LOGGER.info(
+                "[connection-hub.delegated_to_kdcube] OAuth callback state preview user=%s provider=%s connector=%s claims=%s state=%s",
+                platform_user_id,
+                preview.get("provider_id") or "",
+                preview.get("connector_app_id") or "",
+                len(preview.get("claims") or []) if isinstance(preview.get("claims"), list) else 0,
+                state_digest(state),
+            )
 
             async def _client_secret_resolver(*, provider_id: str, connector_app_id: str, connector_app: Any) -> str:
                 return await _delegated_to_kdcube_client_secret(
@@ -1861,6 +1900,14 @@ class ConnectionHubEntrypoint(BaseEntrypoint):
                 client_secret_resolver=_client_secret_resolver,
             )
             account = result.get("account") or {}
+            LOGGER.info(
+                "[connection-hub.delegated_to_kdcube] OAuth callback complete user=%s provider=%s connector=%s account=%s claims=%s",
+                platform_user_id,
+                result.get("provider_id") or "",
+                result.get("connector_app_id") or "",
+                account.get("account_id") or "",
+                len(account.get("claims") or []) if isinstance(account.get("claims"), list) else 0,
+            )
             label = account.get("display_name") or account.get("email") or account.get("workspace") or account.get("account_id") or "account"
             origin = _request_origin(request)
             return_link = str(result.get("return_hint") or "").strip()
@@ -1896,13 +1943,22 @@ class ConnectionHubEntrypoint(BaseEntrypoint):
         del fingerprint
         platform_user_id = _platform_user_id(self, user_id=user_id)
         if not platform_user_id:
+            LOGGER.warning("[connection-hub.delegated_to_kdcube] connect credential rejected anonymous provider=%s", provider)
             return {"ok": False, "error": "delegated_to_kdcube_requires_authenticated_user"}
         payload = _payload(data, **kwargs)
         if provider and "provider_id" not in payload:
             payload["provider_id"] = provider
         try:
+            LOGGER.info(
+                "[connection-hub.delegated_to_kdcube] connect credential route user=%s provider=%s connector=%s claims=%s",
+                platform_user_id,
+                payload.get("provider_id") or "",
+                payload.get("connector_app_id") or "",
+                len(payload.get("claims") or []) if isinstance(payload.get("claims"), list) else 0,
+            )
             return await _delegated_to_kdcube_operations(self, platform_user_id).connect_credential(payload)
         except ValueError as exc:
+            LOGGER.warning("[connection-hub.delegated_to_kdcube] connect credential failed: %s", exc, exc_info=True)
             return {"ok": False, "error": "invalid_delegated_to_kdcube_request", "message": str(exc)}
 
     @api(method="POST", alias="delegated_to_kdcube_disconnect", route="operations", **_api_visibility("delegated_to_kdcube_disconnect"))
@@ -1917,11 +1973,17 @@ class ConnectionHubEntrypoint(BaseEntrypoint):
         del fingerprint
         platform_user_id = _platform_user_id(self, user_id=user_id)
         if not platform_user_id:
+            LOGGER.warning("[connection-hub.delegated_to_kdcube] disconnect rejected anonymous account=%s", account_id)
             return {"ok": False, "error": "delegated_to_kdcube_requires_authenticated_user"}
         payload = _payload(data, **kwargs)
         resolved_account_id = str(account_id or payload.get("account_id") or "").strip()
         if not resolved_account_id:
             return {"ok": False, "error": "account_id_required"}
+        LOGGER.info(
+            "[connection-hub.delegated_to_kdcube] disconnect route user=%s account=%s",
+            platform_user_id,
+            resolved_account_id,
+        )
         return await _delegated_to_kdcube_operations(self, platform_user_id).disconnect(account_id=resolved_account_id)
 
     @api(method="POST", alias="delegated_to_kdcube_resolve", route="operations", **_api_visibility("delegated_to_kdcube_resolve"))
@@ -1939,8 +2001,17 @@ class ConnectionHubEntrypoint(BaseEntrypoint):
         del fingerprint
         platform_user_id = _platform_user_id(self, user_id=user_id)
         if not platform_user_id:
+            LOGGER.warning("[connection-hub.delegated_to_kdcube] resolve rejected anonymous provider=%s claim=%s", provider, claim)
             return {"ok": False, "error": "delegated_to_kdcube_requires_authenticated_user"}
         payload = _payload(data, **kwargs)
+        LOGGER.info(
+            "[connection-hub.delegated_to_kdcube] resolve route user=%s provider=%s connector=%s claim=%s account=%s",
+            platform_user_id,
+            str(provider or payload.get("provider_id") or "").strip(),
+            str(connector_app_id or payload.get("connector_app_id") or "").strip(),
+            str(claim or payload.get("claim") or "").strip(),
+            str(account_id or payload.get("account_id") or "").strip(),
+        )
         return await _delegated_to_kdcube_operations(self, platform_user_id).resolve(
             provider_id=str(provider or payload.get("provider_id") or "").strip(),
             connector_app_id=str(connector_app_id or payload.get("connector_app_id") or "").strip(),
