@@ -202,7 +202,31 @@ class WorkspaceEntrypoint(BaseEntrypointWithEconomics):
             comm_context=comm_context,
             event_filter=BundleEventFilter(),
         )
+        self._apply_custom_llm_props()
         self.graph = self._build_graph()
+
+    def _apply_custom_llm_props(self) -> None:
+        """Descriptor-driven custom model endpoint (locally served models).
+
+        `provider: custom` roles and composer picks route through the models
+        gateway named here — config comes from the app descriptor
+        (`services.llm.custom`), never from process env. Applied per instance
+        because the app is rebuilt per reactive event and the model router
+        reads the endpoint from this instance's config lazily."""
+        custom = self.bundle_prop("services.llm.custom", {}) or {}
+        if not isinstance(custom, Mapping):
+            return
+        endpoint = str(custom.get("endpoint") or "").strip()
+        if not endpoint:
+            return
+        self.config.custom_model_endpoint = endpoint
+        self.config.custom_model_name = str(
+            custom.get("model_name") or self.config.custom_model_name or "custom-model"
+        )
+        api_key = str(custom.get("api_key") or "").strip()
+        if api_key:
+            self.config.custom_model_api_key = api_key
+        self.config.use_custom_endpoint = True
 
     @on_job
     async def on_job(self, **kwargs) -> Dict[str, Any]:
