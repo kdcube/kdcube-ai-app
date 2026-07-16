@@ -32,3 +32,12 @@ external account credential -> Connection Hub -> KDCube tool/named service
 | [Mail Named Service Over MCP](mail-named-service-README.md) | Connected mail accounts should be exposed to external agents as a provider-neutral `mail` namespace. |
 | [Telegram Integration](telegram-README.md) | Telegram users should connect a channel identity to a KDCube platform user. |
 
+## Serving Integrations
+
+Connections in the other direction — external serving capacity plugged into
+the platform rather than a user account delegated to it:
+
+| Recipe | Use when |
+| --- | --- |
+| [Ollama Integration (Locally Served Models)](olama-README.md) | A locally hosted model (Ollama) should serve as a selectable brain for platform agents — streaming, accounting, thinking handling, multimodal input, descriptor wiring. |
+
