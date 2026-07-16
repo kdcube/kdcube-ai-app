@@ -194,6 +194,13 @@ items:
           model: claude-sonnet-4-6
 ```
 
+`provider` may also be `custom` — a locally served model behind the models
+gateway; the endpoint is the app prop `services.llm.custom` (see the
+[Ollama integration recipe](../recipes/connections/integrations/olama-README.md)).
+How these props become live model-router state — the application moment and
+the models-service rebuild — is
+[Bundle Properties And Secrets Lifecycle → How Props Reach The Model Service](../sdk/bundle/bundle-properties-and-secrets-lifecycle-README.md#how-props-reach-the-model-service).
+
 One API/MCP/cron/chat/job call can temporarily override the same role without
 mutating bundle props:
 

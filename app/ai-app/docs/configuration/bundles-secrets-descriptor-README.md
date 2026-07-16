@@ -67,6 +67,14 @@ Overridable keys:
 | `services.stripe.webhook_secret` | `services.stripe.webhook_secret` |
 | `services.git.http_token` | `services.git.http_token` |
 
+The table is exhaustive: only these paths get platform-side resolution into
+the request's model credentials at the turn door. Any other `services.*`
+path in a bundle's secrets is an ordinary bundle secret — readable with
+`await get_secret("b:services.…")` by bundle code, with no automatic
+platform fallback and no door-time resolution. Example: the locally-served
+models gateway key `services.llm.custom.api_key` is bundle-owned and read by
+the app itself.
+
 Example — giving one bundle its own OpenAI key and git credentials:
 
 ```yaml
