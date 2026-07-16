@@ -4,7 +4,7 @@ title: "Bundle Agent Integration"
 summary: "Canonical bundle guide for wiring React agents, bundle-local tools and skills, MCP connectors, bundle-served MCP endpoints, and Claude Code subagents with deployable auth and network requirements."
 tags: ["sdk", "bundle", "agents", "react", "claude-code", "tools", "skills", "mcp", "deployment"]
 keywords: ["bundle agent integration", "React tool config", "skill config", "event_source_reader", "bundle served MCP", "Claude Code MCP", "ClaudeCodeAgent", "mcp_base_url", "agent runtime context"]
-updated_at: 2026-07-06
+updated_at: 2026-07-16
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-runtime-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-assemble-bundle-with-sdk-building-blocks-README.md
@@ -1009,12 +1009,17 @@ task definitions when it should only execute one task.
 
 ## 4. MCP Has Three Different Meanings
 
+First classify the direction with the
+[Surface-First Rule](build/how-to-assemble-bundle-with-sdk-building-blocks-README.md#surface-first-rule):
+consumed MCP belongs to `as_consumer`; app-provided MCP belongs to
+`as_provider`. The runtime forms below implement that choice.
+
 Do not collapse these concepts:
 
 | Concept | Config/code | Consumer |
 | --- | --- | --- |
 | MCP client config for React/KDCube tools | `config.surfaces.as_consumer.mcp.services` plus agent MCP entries under `surfaces.as_consumer` | KDCube `ToolSubsystem` |
-| Bundle-served MCP endpoint | `@mcp(...)` on the bundle entrypoint | external MCP clients, Claude Code, other services |
+| Bundle-served MCP endpoint | `@mcp(...)` on the bundle entrypoint plus `surfaces.as_provider.mcp.<alias>` policy | external MCP clients, Claude Code, other services |
 | Claude Code MCP config | `.mcp.json` in the Claude workspace | the `claude` CLI subprocess |
 
 `config.surfaces.as_consumer.mcp.services` does not configure Claude Code.

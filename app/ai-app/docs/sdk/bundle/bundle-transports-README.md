@@ -56,7 +56,7 @@ for the full decorator contract and manifest model.
 
 ## 1. Core Rule
 
-There are two different auth ownership models:
+Surface auth ownership is explicit:
 
 - `@api(route="operations")`, widgets, and static UI are
   **KDCube-authenticated** surfaces
@@ -66,7 +66,9 @@ There are two different auth ownership models:
 - `@api(route="public")` is public at the proc routing layer; any webhook,
   provider proof, or callback verification is handler/SDK-owned unless a
   descriptor `surfaces.as_provider.*.auth` boundary is configured
-- `@mcp(...)` is a **bundle-authenticated** surface, if the bundle wants auth at all
+- `@mcp(...)` selects one of three policy owners through
+  `surfaces.as_provider.mcp.<alias>.auth`: intentionally public, app-owned
+  (`mode: bundle`), or platform-managed delegated credentials (`mode: managed`)
 
 So:
 
@@ -74,9 +76,10 @@ So:
 - proc owns transport auth for `@api(route="operations")` and browser-facing
   integration routes
 - proc does **not** infer public-route authentication from decorator metadata
-- proc does **not** own transport auth for `@mcp(...)`
 - the bundle method authenticates bundle-owned public APIs itself
-- the bundle MCP app authenticates MCP requests itself
+- for `auth.mode: managed`, proc/Connection Hub authenticate and authorize the
+  delegated MCP request before app code runs
+- for `auth.mode: bundle`, the app MCP provider authenticates the request itself
 
 ## 2. Inbound Surface Matrix
 
@@ -89,8 +92,8 @@ So:
 | public bundle operation | `@api(route="public")` | HTTP REST | `/api/integrations/bundles/{tenant}/{project}/{bundle_id}/public/{alias}` | KDCube or bundle | webhook, external caller |
 | widget fetch | `@ui_widget(...)` | HTTP GET | `/api/integrations/bundles/{tenant}/{project}/{bundle_id}/widgets/{alias}` or `/public/widgets/{alias}` | KDCube for `/widgets`; public/static session for `/public/widgets` | platform widget loader, Telegram Mini App, browser client |
 | main bundle UI | `@ui_main` | static HTTP asset serving | `/api/integrations/static/{tenant}/{project}/{bundle_id}/...` | KDCube | platform UI / browser client |
-| bundle-authenticated MCP | `@mcp(route="operations")` | MCP over `streamable-http` | `/api/integrations/bundles/{tenant}/{project}/{bundle_id}/mcp/{alias}` | bundle MCP app | MCP client |
-| public MCP | `@mcp(route="public")` | MCP over `streamable-http` | `/api/integrations/bundles/{tenant}/{project}/{bundle_id}/public/mcp/{alias}` | nobody by default | MCP client |
+| app MCP | `@mcp(route="operations")` | MCP over `streamable-http` | `/api/integrations/bundles/{tenant}/{project}/{bundle_id}/mcp/{alias}` | app for `mode: bundle`; proc/Connection Hub for `mode: managed`; nobody by default when no policy is declared | MCP client |
+| public-route MCP | `@mcp(route="public")` | MCP over `streamable-http` | `/api/integrations/bundles/{tenant}/{project}/{bundle_id}/public/mcp/{alias}` | app for `mode: bundle`; proc/Connection Hub for `mode: managed`; nobody by default when no policy is declared | MCP client |
 
 Chat clients can also send external events to the currently active conversation
 turn over the same chat transport. A `followup` or `steer` is not a separate
@@ -288,10 +291,10 @@ from kdcube_ai_app.infra.plugin.bundle_loader import mcp
     route="operations",
     transport="streamable-http",
 )
-def tools_mcp(self, request=None, **kwargs):
+async def tools_mcp(self, request=None, **kwargs):
     from mcp.server.fastmcp import FastMCP
 
-    app = FastMCP("my-bundle")
+    app = FastMCP("my-app", stateless_http=True)
 
     @app.tool()
     async def ping() -> dict:
@@ -309,7 +312,7 @@ Important:
 
 ### 4.2 Route families
 
-Authenticated/bundle-gated MCP:
+Operations-family MCP:
 
 ```text
 GET  /api/integrations/bundles/{tenant}/{project}/{bundle_id}/mcp/{alias}
@@ -333,19 +336,30 @@ Current supported inbound transport:
 
 ### 4.3 Who authenticates MCP
 
-The bundle authenticates MCP, not KDCube.
+The effective provider descriptor selects the owner:
 
-Current behavior:
+```text
+no auth mode
+  no MCP credential guard; use only for intentionally public work
 
-- proc does not authenticate MCP requests before dispatch
-- proc does not validate bearer tokens or ID tokens for MCP
-- proc forwards the original request headers and body into the MCP subapp
+auth.mode: bundle
+  app code authenticates and authorizes the request
 
-This is the key difference from `@api(...)`.
+auth.mode: managed
+  proc/Connection Hub validates the delegated bearer, concrete resource,
+  required grants, and selected tool before invoking the app MCP provider
+```
+
+For managed requests, proc also projects the delegate actor, approving grantor,
+platform/economics subject, grants, selected tools, and identity scope into the
+normal request context. Product code still owns record-level authorization.
+
+For non-managed requests, proc forwards the original request headers/body into
+the MCP subapp and does not invent an app credential policy.
 
 ### 4.4 Header names and token verification
 
-There is currently **no platform-defined per-bundle MCP auth header**.
+For `auth.mode: bundle`, there is no platform-defined per-app MCP auth header.
 
 That means:
 
@@ -361,23 +375,20 @@ Examples of bundle-defined MCP auth schemes:
 - custom JWT headers
 - cookie-based auth if the bundle wants to allow it
 
-The platform does not interpret those for MCP.
+The platform does not interpret those app-owned schemes. This is distinct from
+`auth.mode: managed`, whose delegated bearer is interpreted by the Connection
+Hub guard.
 
 ### 4.5 What `route="operations"` and `route="public"` mean for MCP
 
 For MCP, the route value selects the URL family, not the auth verifier.
 
-Use:
+The route is independent from `auth.mode`. In particular, a
+`route="public"` MCP endpoint can use `auth.mode: managed`; the public URL is
+reachable for MCP discovery and OAuth challenge, while the managed guard still
+rejects unauthorized calls before app code runs.
 
-- `route="operations"`
-  - when the bundle intends to authenticate or otherwise gate the caller itself
-- `route="public"`
-  - when the endpoint is intentionally public
-
-If a bundle still wants auth on a `public/mcp` route, it must implement that
-inside the bundle MCP app. Proc will not do it.
-
-### 4.6 Canonical bundle-authenticated MCP pattern
+### 4.6 Canonical app-owned MCP pattern
 
 Use one explicit contract:
 
@@ -453,7 +464,7 @@ async def partner_tools_mcp(self, request: Request, **kwargs):
             detail=f"Missing or invalid {header_name}",
         )
 
-    app = FastMCP("partner-tools")
+    app = FastMCP("partner-tools", stateless_http=True)
 
     @app.tool()
     async def ping() -> dict:
@@ -481,7 +492,36 @@ This pattern is intentionally bundle-owned:
   - HMAC signatures
   - custom JWT validation
 
-The only invariant is that the bundle, not proc, owns the MCP auth decision.
+The invariant for `mode: bundle` is that the app, not proc, owns this particular
+auth decision. It does not apply to `mode: managed`.
+
+For managed delegated-client access, point the decorator at the descriptor:
+
+```python
+@mcp(
+    alias="partner_tools",
+    route="public",
+    transport="streamable-http",
+    auth_config="surfaces.as_provider.mcp.partner_tools.auth",
+)
+async def partner_tools_mcp(self, request: Request, **kwargs):
+    return FastMCP("partner-tools", stateless_http=True)
+```
+
+```yaml
+surfaces:
+  as_provider:
+    mcp:
+      partner_tools:
+        auth:
+          mode: managed
+          authority_id: delegated_client
+          selected_tool_grants: true
+```
+
+Connection Hub then owns the matching resource/tool/grant catalog. See
+[Expose An MCP Service From A KDCube App](../../recipes/kdcube_for_agents/expose-mcp-service-README.md)
+and [Protect Bundle MCP With Managed Credentials](../../recipes/connections/protect-bundle-mcp-with-managed-credentials-README.md).
 
 ### 4.7 What `@mcp(...)` does not support
 
@@ -490,9 +530,11 @@ The only invariant is that the bundle, not proc, owns the MCP auth decision.
 - `user_types`
 - `roles`
 
-Those concepts belong to proc-authenticated bundle HTTP operations, not to
-bundle-authenticated MCP. MCP endpoint auth policy is declared through MCP
-`auth` / descriptor `surfaces.as_provider.mcp.<alias>.auth`.
+MCP endpoint auth policy is declared through MCP `auth` / descriptor
+`surfaces.as_provider.mcp.<alias>.auth`. Use `mode: managed` for the
+platform-managed authority/grant boundary; use `mode: bundle` for an app-owned
+scheme. Product code may apply additional record-level checks after either
+boundary succeeds.
 
 ## 5. Widgets and Static UI
 
@@ -641,8 +683,9 @@ Choose by caller and auth ownership:
   `data_bus.publish` plus `@data_bus_handler(...)`
 - widget/browser/frontend calling bundle logic through KDCube auth → `@api(route="operations")`
 - webhook or public HTTP caller using KDCube public-auth contract → `@api(route="public")`
-- programmatic MCP client with bundle-defined auth → `@mcp(route="operations")`
-- public MCP caller → `@mcp(route="public")`
+- programmatic MCP client with app-defined auth → `@mcp(...)` + `auth.mode: bundle`
+- external MCP client with user consent and managed grants → `@mcp(route="public")` + `auth.mode: managed`
+- intentionally public MCP caller → `@mcp(route="public")` with no managed/app-owned auth mode
 - iframe/widget UI surface → `@ui_widget(...)` / `@ui_main`
 - bundle streaming live updates back to connected clients → communicator over SSE / Socket.IO
 
