@@ -204,10 +204,11 @@ class WorkspaceEntrypoint(BaseEntrypointWithEconomics):
         )
         self.graph = self._build_graph()
 
-    async def pre_run_hook(self, *, state: Dict[str, Any]) -> None:
+    async def pre_run_hook(self, *, state: Dict[str, Any], econ_ctx: Dict[str, Any]) -> None:
         """Runs after refresh_bundle_props on every turn door — the canonical
-        moment for per-turn config application."""
-        await super().pre_run_hook(state=state)
+        moment for per-turn config application. The economics base's hook
+        contract carries econ_ctx; accept and forward it."""
+        await super().pre_run_hook(state=state, econ_ctx=econ_ctx)
         await self._apply_custom_llm_props()
 
     async def _apply_custom_llm_props(self) -> None:
@@ -226,6 +227,11 @@ class WorkspaceEntrypoint(BaseEntrypointWithEconomics):
             return
         endpoint = str(custom.get("endpoint") or "").strip()
         if not endpoint:
+            # Loud skip: a turn that later picks provider "custom" will fail
+            # at client creation, and this line is the first breadcrumb.
+            _log.info(
+                "[workspace] custom LLM props absent/empty (services.llm.custom); provider 'custom' unavailable this turn"
+            )
             return
         self.config.custom_model_endpoint = endpoint
         self.config.custom_model_name = str(
