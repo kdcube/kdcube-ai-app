@@ -204,14 +204,21 @@ class WorkspaceEntrypoint(BaseEntrypointWithEconomics):
         )
         self.graph = self._build_graph()
 
-    def _apply_custom_llm_props(self) -> None:
+    async def pre_run_hook(self, *, state: Dict[str, Any]) -> None:
+        """Runs after refresh_bundle_props on every turn door — the canonical
+        moment for per-turn config application."""
+        await super().pre_run_hook(state=state)
+        await self._apply_custom_llm_props()
+
+    async def _apply_custom_llm_props(self) -> None:
         """Descriptor-driven custom model endpoint (locally served models).
 
         `provider: custom` roles and composer picks route through the models
         gateway named here — config comes from the app descriptor
-        (`services.llm.custom`), never from process env. Called at TURN
-        start, like every other per-agent config read: descriptor props land
-        on ``self.bundle_props`` via ``refresh_bundle_props`` during
+        (`services.llm.custom`), the gateway key from the app secrets
+        (`b:services.llm.custom.api_key`); never from process env. Called at
+        TURN start, like every other per-agent config read: descriptor props
+        land on ``self.bundle_props`` via ``refresh_bundle_props`` during
         ``execute()``, and the model router reads the endpoint from this
         instance's config lazily when it creates clients."""
         custom = self.bundle_prop("services.llm.custom", {}) or {}
@@ -224,7 +231,11 @@ class WorkspaceEntrypoint(BaseEntrypointWithEconomics):
         self.config.custom_model_name = str(
             custom.get("model_name") or self.config.custom_model_name or "custom-model"
         )
-        api_key = str(custom.get("api_key") or "").strip()
+        api_key = ""
+        try:
+            api_key = str(await get_secret("b:services.llm.custom.api_key") or "").strip()
+        except Exception:
+            api_key = ""
         if api_key:
             self.config.custom_model_api_key = api_key
         self.config.use_custom_endpoint = True
@@ -271,10 +282,6 @@ class WorkspaceEntrypoint(BaseEntrypointWithEconomics):
             from kdcube_ai_app.apps.chat.sdk.context.vector.conv_index import ConvIndex
             from kdcube_ai_app.apps.chat.sdk.retrieval.kb_client import KBClient
             from kdcube_ai_app.apps.chat.sdk.storage.conversation_store import ConversationStore
-
-            # Turn-time, like every other per-agent config read: bundle props
-            # are descriptor-refreshed by execute() before this node runs.
-            self._apply_custom_llm_props()
 
             conv_idx = ConvIndex(pool=self.pg_pool)
             kb = KBClient(pool=self.pg_pool)
