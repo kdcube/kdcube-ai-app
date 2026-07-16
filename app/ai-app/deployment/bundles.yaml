@@ -1144,6 +1144,10 @@ bundles:
           default_agent: lg-solution
           agents:
             lg-solution:
+              # Answer-model OUTPUT budget (max output tokens per model call) — a
+              # generous safety cap, never a target; the model stops on its own.
+              model:
+                max_tokens: 8192
               capability_provider: simple_model_pick
               capabilities:
                 models:
@@ -1153,6 +1157,12 @@ bundles:
                     - {model: claude-sonnet-4-5-20250929, provider: anthropic, label: Sonnet 4.5}
                     - {model: claude-haiku-4-5-20251001, provider: anthropic, label: Haiku 4.5}
             lg-react:
+              # HIGHER budget: this agent passes whole payloads as tool arguments
+              # (run_python carries the full program text) — the budget must fit
+              # narration + ONE complete tool call, or the response is cut
+              # mid-arguments and the agent loops on tool validation errors.
+              model:
+                max_tokens: 16384
               capability_provider: simple_model_pick
               capabilities:
                 models:
@@ -1171,6 +1181,14 @@ bundles:
                   allowed: [run_python]
                   code_exec:
                     timeout_s: 120
+                # Platform web tools (PAID): web_search meters on the search
+                # provider (key: services.brave.api_key or per-deployment backend);
+                # result filtering/segmentation bills as llm through this app's
+                # accounted model service.
+                - name: web
+                  kind: python
+                  alias: web
+                  allowed: [web_search, web_fetch]
       ui:
         main_view:
           src_folder: ui/scene

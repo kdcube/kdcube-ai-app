@@ -14,6 +14,7 @@ dated files in this directory.
 | Date | Entry | Summary |
 | --- | --- | --- |
 | 2026-07-13 | [Consolidate two ported agents into one multi-agent app](2026-07-13-consolidate-two-ported-agents.md) | Historical consolidation record. Its original graph-cache, `create_react_agent`, and per-agent-schema details are superseded; current behavior is per-turn graph rebuild, `langchain.agents.create_agent`, and one tenant/project schema with `agent_id` row/key scope. |
+| 2026-07-16 | [Platform web tools, output budget as a descriptor property, tool-call visibility](2026-07-16-web-tools-output-budget-steps.md) | lg-react gains `web_search`/`web_fetch` (one `web` connection; dual accountable providers — search backend + llm filter/segment on the accounted model service). Answer-model output budgets become descriptor properties (`agents.<id>.model.max_tokens`: 16384 react / 8192 solution) after a live truncation loop (tool call cut mid-arguments at the adapter's 1200 default → recursion limit); the SDK bridge now explains a full-budget interruption to the model in-band and to the log with evidence. Steps show per-invocation tool-call signatures + arguments; empty args stated. Descriptors synced across demo-project, custom-authority, ecs-demo, ecs-cloudcost, and the default-install referent. |
 
 ## Baseline carried forward
 
