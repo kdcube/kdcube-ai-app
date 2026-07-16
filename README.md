@@ -65,6 +65,10 @@ Apps may have no UI and no agent, or may host several agents and frontends.
 - **Compose a product.** Ready chat and workspace components, custom widgets,
   scenes, canvases, app-hosted websites, APIs, jobs, and domain services.
 
+<p align="center">
+  <img src="assets/runtime-path.svg" alt="What KDCube adds around your agent: people, systems, and live events reach your agent or graph — LangGraph, CrewAI, Claude Agent SDK, custom code, or KDCube ReAct. It perceives chat, files, events, memory, and knowledge; it acts through a trusted broker on tools, named services, MCP, connected accounts, and isolated code; responses and artifacts stream back — all standing on the production foundation of ordered delivery, identity, persistence, streaming, isolation, budgets, configuration, and recovery" width="900">
+</p>
+
 A KDCube deployment serves one tenant/project environment and many concurrent
 users. Shared infrastructure is namespaced, while request identity and policy
 travel across process, thread, subprocess, and isolated-runtime boundaries.
