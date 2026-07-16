@@ -78,7 +78,7 @@ rebuildable state; nothing agent-specific is cached on the long-lived entrypoint
 object. The only reused handle is the **checkpointer connection** (opened once per
 agent, like a pool), because it is a connection, not rebuildable per-turn state.
 This is the "scaled serving" principle — see
-[Port Your Solution To A KDCube App](../../../../../../../../../docs/recipes/kdcube_for_agents/port-your-solution-to-kdcube-README.md) and the
+[Settle Your Solution In A KDCube App](../../../../../../../../../docs/recipes/kdcube_for_agents/settle-your-solution-in-kdcube-README.md) and the
 `_build_graph` / `_open_checkpointer` docstrings in `entrypoint.py`.
 
 ## Storage — ONE shared schema, agents separated by a column
@@ -210,7 +210,7 @@ neither agent implements — the correct default for a ported LangGraph agent.
 
 ## The generic procedure
 
-This app follows the port procedure a coding agent executes against an arbitrary
+This app follows the settling procedure a coding agent executes against an arbitrary
 Python project. The executable steps are in
-[Port Your Solution To A KDCube App](../../../../../../../../../docs/recipes/kdcube_for_agents/port-your-solution-to-kdcube-README.md);
+[Settle Your Solution In A KDCube App](../../../../../../../../../docs/recipes/kdcube_for_agents/settle-your-solution-in-kdcube-README.md);
 this app is the "one app, many agents" worked instance those steps point to.

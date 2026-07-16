@@ -87,7 +87,7 @@ followups, steering, and current runtime conditions. Model-written code runs
 in the isolated workspace and reaches approved capabilities only through
 trusted tools.
 
-[Port an existing solution](app/ai-app/docs/recipes/kdcube_for_agents/port-your-solution-to-kdcube-README.md) ·
+[Settle an existing solution in KDCube](app/ai-app/docs/recipes/kdcube_for_agents/settle-your-solution-in-kdcube-README.md) ·
 [ReAct runtime](app/ai-app/docs/sdk/agents/react/flow-README.md) ·
 [Why ReAct is not simply tool calling](app/ai-app/docs/sdk/agents/react/why/why-not-simply-tool-calling-README.md) ·
 [Isolated execution](app/ai-app/docs/exec/README-iso-runtime.md)

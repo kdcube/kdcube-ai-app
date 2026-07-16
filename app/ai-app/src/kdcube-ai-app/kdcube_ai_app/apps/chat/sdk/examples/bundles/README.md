@@ -61,7 +61,7 @@ demonstrates:
 - run-to-completion event handling at the start of a hosted-agent turn.
 
 Use the accompanying
-[port recipe](../../../../../../../../docs/recipes/kdcube_for_agents/port-your-solution-to-kdcube-README.md)
+[settling recipe](../../../../../../../../docs/recipes/kdcube_for_agents/settle-your-solution-in-kdcube-README.md)
 as the contract; use this app as the worked implementation.
 
 ### User Memories
