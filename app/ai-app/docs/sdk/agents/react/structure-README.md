@@ -1,7 +1,7 @@
 ---
 id: repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/structure-README.md
 title: "Structure"
-summary: "Module layout of the shared React runtime surface, production v2 implementation, and experimental v3 implementation."
+summary: "Module layout of the shared React runtime surface, the v2 implementation, and the v3 implementation (the current default for built-in apps)."
 tags: ["sdk", "agents", "react", "structure"]
 keywords: ["react/v2", "react/v3", "modules", "runtime layout", "core files", "workspace docs", "rationale docs"]
 see_also:
@@ -22,15 +22,16 @@ React now has a shared runtime surface plus two versioned implementations:
   - one response = one round
   - one round = one action or one final answer
 - `solutions/react/v3/`
-  - experimental runtime
+  - the current default runtime for the built-in apps
   - same timeline/workspace model
-  - optional multi-action mode where repeated `ReactDecisionOutV2` action blocks can be accepted in one response and executed sequentially
+  - real-time action governance (the action overseer gates each streamed action lane; see `round-generation-feedback-README.md`)
+  - optional multi-action mode where repeated action blocks can be accepted in one response and executed sequentially
 
 ## Runtime Modules
 
 Each runtime version keeps the same core module layout:
 
-- `runtime.py` — state machine and decision loop
+- `runtime.py` — state machine, decision loop, and per-round generation feedback (see `round-generation-feedback-README.md`)
 - `timeline.py` — timeline storage, rendering, pruning, and compaction
 - `round.py` — round lifecycle, decision attempts, and tool-call/result grouping
 - `browser.py` — context loading, timeline contribution, external-event folding, and live listener ownership
@@ -43,7 +44,8 @@ Adjacent shared modules:
 - `solutions/widgets/`
   - canvas, timeline, and exec streamers
 - `sdk/streaming/`
-  - channel stream parsing
+  - channel stream parsing and the buffered stream gates
+  - `action_overseer.py` (in `react/v3/`) drives real-time action gating
   - `workspace_streamer.py` for the current shared path
   - `workspace_streamer_v3.py` for v3 multi-instance channel handling
 

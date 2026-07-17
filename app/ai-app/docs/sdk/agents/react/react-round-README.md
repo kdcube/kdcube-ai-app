@@ -6,6 +6,7 @@ tags: ["sdk", "agents", "react", "tool-calls"]
 keywords: ["ReactRound", "tool call blocks", "results mapping", "react.round.start", "react.notice", "v3 multi-action"]
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/tool-call-blocks-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/round-generation-feedback-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/event-blocks-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/react-tools-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/timeline-README.md

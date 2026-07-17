@@ -41,7 +41,7 @@ Blocks are dicts with:
 - `react.thinking` (internal thinking captured from decision stream; hidden by default)
 - `react.notes` (decision notes emitted before tool calls; user-visible)
 - `react.note` (internal notes written via `react.write(channel="internal")`)
-- `react.decision.raw` (raw ReactDecisionOutV2 JSON; only on schema error retry)
+- `react.decision.raw` (raw decision JSON; DEBUG-only, emitted on schema-error retry and filtered out in production — the model's feedback about a failed round is the self-sufficient `react.notice`, never this block)
 - `react.completion`
 - `react.plan.ack`
 - `react.workspace.publish`
