@@ -1429,12 +1429,20 @@ class ReactSolverV2:
             # the user sees a duplicate.
             raw = str((decision or {}).get("raw") or "")
             fa = re.search(r'"final_answer"\s*:\s*"((?:[^"\\]|\\.)*)"', raw)
+            salvaged = ""
             if fa and fa.group(1).strip():
+                try:
+                    salvaged = json.loads('"' + fa.group(1) + '"')
+                except Exception:
+                    salvaged = fa.group(1)
+            if salvaged.strip():
+                self._streamed_final_answer_pending = salvaged
                 message += (
                     " IMPORTANT: the final_answer text inside that malformed action has ALREADY "
-                    "streamed to the user exactly as you wrote it — they can see it. Re-emit the "
-                    "corrected <channel:action> JSON carrying that SAME final_answer text "
-                    "unchanged; do not compose a new or reworded answer."
+                    "streamed to the user — they can see it. Do NOT repeat or reword it. "
+                    "Complete with an EMPTY final_answer (the platform keeps what already "
+                    "streamed as the answer), or add only a brief follow-up remark if "
+                    "something is genuinely missing."
                 )
             return message
         if final_answer and action == "call_tool":
@@ -1907,6 +1915,15 @@ class ReactSolverV2:
         if action in {"complete", "exit"} and (decision.get("tool_call") or {}):
             return "tool_call_with_final_answer"
         if action in {"complete", "exit"} and not final_answer:
+            # An earlier round of this turn already streamed a final_answer the
+            # user can see (recorded when its action failed post-hoc parsing).
+            # The model was told not to repeat it — an empty close is the
+            # CORRECT move; keep the streamed text as the turn's answer.
+            salvaged = str(getattr(self, "_streamed_final_answer_pending", "") or "")
+            if salvaged.strip():
+                decision["final_answer"] = salvaged
+                self._streamed_final_answer_pending = ""
+                return None
             return "final_answer_required"
         if action in {"complete", "exit"} and (decision.get("notes") or "").strip():
             return "final_answer_with_notes"
