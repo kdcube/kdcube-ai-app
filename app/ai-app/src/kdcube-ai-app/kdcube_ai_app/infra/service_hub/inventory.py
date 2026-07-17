@@ -2563,16 +2563,31 @@ class ModelServiceBase:
             return
 
         if isinstance(client, CustomModelClient):
+            # The client speaks the legacy chunk shape ({"delta": ...});
+            # downstream consumers (stream_model_text_tracked) dispatch on
+            # the modern {"event": "text.delta", "text": ...} events.
             async for ev in client.astream(messages, temperature=temperature, max_new_tokens=max_tokens):
-                yield ev
+                if ev.get("event") == "final":
+                    index += 1
+                    yield {
+                        "event": "final",
+                        "usage": ev.get("usage") or {},
+                        "model_name": ev.get("model_name") or model_name,
+                        "index": index,
+                    }
+                elif "delta" in ev:
+                    index += 1
+                    yield {"event": "text.delta", "text": ev["delta"], "index": index}
             return
 
         # Fallback
         res = await self.call_model_text(client, messages, temperature=temperature, max_tokens=max_tokens, client_cfg=cfg)
         text = res.get("text", "") or ""
         for i in range(0, len(text), 30):
-            yield {"delta": text[i:i+30]}
-        yield {"event": "final", "usage": res.get("usage", {}), "model_name": res.get("model_name", model_name)}
+            index += 1
+            yield {"event": "text.delta", "text": text[i:i+30], "index": index}
+        index += 1
+        yield {"event": "final", "usage": res.get("usage", {}), "model_name": res.get("model_name", model_name), "index": index}
 
     @track_llm(
         provider_extractor=ms_provider_extractor,
@@ -3005,18 +3020,24 @@ class CustomModelClient:
             "min_p": None, "skip_cot": True, "fabrication_awareness": False, "prompt_mode": "default"
         }
 
-    def _convert_langchain_to_conversation(self, messages: List[BaseMessage]) -> List[Dict[str, str]]:
+    def _convert_langchain_to_conversation(self, messages: List[BaseMessage]) -> List[Dict[str, Any]]:
         convo = []
         for i, message in enumerate(messages):
+            # Block-built messages (create_cached_system_message([...]) etc.)
+            # carry their real content in message_blocks with content="";
+            # reading .content alone sends an empty message. The gateway
+            # parses the normalized block list (text + base64 images).
+            blocks = extract_message_blocks(message)
+            content = normalize_blocks(blocks) if blocks else message.content
             if isinstance(message, SystemMessage):
-                convo.append({"role": "system", "content": message.content})
+                convo.append({"role": "system", "content": content})
             elif isinstance(message, HumanMessage):
-                convo.append({"role": "user", "content": message.content})
+                convo.append({"role": "user", "content": content})
             elif isinstance(message, AIMessage):
-                convo.append({"role": "assistant", "content": message.content})
+                convo.append({"role": "assistant", "content": content})
             else:
                 self.logger.log_step("unknown_message_type", {"index": i, "type": type(message).__name__}, level="WARNING")
-                convo.append({"role": "user", "content": str(message.content)})
+                convo.append({"role": "user", "content": content if isinstance(content, list) else str(content)})
         return convo
 
     def _prepare_payload(self, messages: List[BaseMessage], **kwargs) -> Dict[str, Any]:
