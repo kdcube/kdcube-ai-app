@@ -427,8 +427,11 @@ async def _bubble_mcp_consents(ep: "LGPortedAgentsBundle", consents: List[Any]) 
         return
     for c in consents:
         try:
+            # The canonical nested consent-event shape (same banner path Slack
+            # uses); carries the claims + the one-click grant action.
+            payload = c.chat_event_payload() if hasattr(c, "chat_event_payload") else (getattr(c, "consent", {}) or {})
             await announce_consent_demand(
-                payload=getattr(c, "consent", {}) or {},
+                payload=payload,
                 provider_id="kdcube",
                 claims=list(getattr(c, "claims", []) or []),
                 tool_name=str((getattr(c, "consent", {}) or {}).get("tool_name") or ""),

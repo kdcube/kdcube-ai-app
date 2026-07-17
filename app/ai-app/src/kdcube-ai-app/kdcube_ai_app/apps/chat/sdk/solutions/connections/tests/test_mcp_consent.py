@@ -58,6 +58,34 @@ def test_agent_client_id_adds_a_one_click_grant_action():
     }
 
 
+def test_chat_event_payload_is_the_nested_banner_shape_with_grant():
+    exc = mcp_consent_from_denial(
+        {"status": 403, "reason": "authority_mismatch"},
+        resource=_RES, claims=["memories:read"], tool_name="memory_search",
+        connection_hub_url="https://h/hub", agent_client_id="kdcube-agent:app@v1:lg-react",
+    )
+    ev = exc.chat_event_payload()
+    # Same shape the connected-account (Slack) banner consumes: code under error,
+    # everything else under a nested consent block.
+    assert ev["ok"] is False
+    assert ev["error"]["code"] == CONSENT_NEEDED_CODE
+    block = ev["consent"]
+    assert block["claims"] == ["memories:read"]
+    assert block["resource"] == _RES
+    assert block["url"] == "https://h/hub"
+    assert block["action_label"] == "Grant access"          # a grant, not connect
+    assert block["agent_client_id"] == "kdcube-agent:app@v1:lg-react"
+    assert block["grant"]["operation"] == "delegated_agent_grant_create"
+    assert ev["tools"] == ["memory_search"]
+
+
+def test_chat_event_payload_without_agent_is_open_hub():
+    exc = mcp_consent_from_denial({"status": 403}, resource=_RES, claims=["memories:read"])
+    block = exc.chat_event_payload()["consent"]
+    assert block["action_label"] == "Open Connection Hub"
+    assert "grant" not in block and "agent_client_id" not in block
+
+
 def test_no_agent_client_id_leaves_a_plain_demand():
     exc = mcp_consent_from_denial(
         {"status": 403}, resource=_RES, claims=["memories:read"])

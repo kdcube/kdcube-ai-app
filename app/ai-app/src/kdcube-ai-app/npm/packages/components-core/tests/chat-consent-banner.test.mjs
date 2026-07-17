@@ -109,3 +109,37 @@ test('spotlightTools sets and clearToolSpotlight clears the menu request', () =>
   const cleared = chatReducer(lit, chatActions.clearToolSpotlight())
   assert.equal(cleared.toolSpotlight, null)
 })
+
+test('a per-agent grant demand routes the banner to the Delegated-by-KDCube tab with a one-click grant', () => {
+  const env = {
+    type: 'chat.step',
+    timestamp: '2026-07-07T12:00:00.000Z',
+    service: { request_id: 'req:turn-1' },
+    conversation: { session_id: 'session-1', conversation_id: 'conv-1', turn_id: 'turn-1' },
+    event: { step: 'delegated_to_kdcube.consent', status: 'completed', title: 'Consent', agent: null },
+    data: {
+      error: { code: 'needs_connected_account_consent', message: 'memory_search needs your consent to memories:read.' },
+      consent: {
+        kind: 'delegated_agent_grant',
+        claims: ['memories:read'],
+        resource: 'https://h/api/mcp/mem',
+        url: '/widgets/connections?tab=delegated_to_kdcube',
+        action_label: 'Grant access',
+        agent_client_id: 'kdcube-agent:app:lg-react',
+        grant: {
+          operation: 'delegated_agent_grant_create',
+          payload: { client_id: 'kdcube-agent:app:lg-react', resource: 'https://h/api/mcp/mem', claims: ['memories:read'] },
+        },
+      },
+    },
+  }
+  const shown = applyChatStep(baseState(), env)
+  assert.equal(shown.banners.length, 1)
+  const banner = shown.banners[0]
+  assert.equal(banner.actionLabel, 'Grant access')
+  assert.equal(banner.consent.tab, 'delegated_to_kdcube')
+  assert.equal(banner.consent.params.agent_client_id, 'kdcube-agent:app:lg-react')
+  assert.equal(banner.consent.params.pending_agent_grant, '1')
+  assert.equal(banner.consent.params.resource, 'https://h/api/mcp/mem')
+  assert.deepEqual(banner.consentClaims, ['memories:read'])
+})

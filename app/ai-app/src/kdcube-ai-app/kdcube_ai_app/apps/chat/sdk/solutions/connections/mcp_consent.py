@@ -62,6 +62,34 @@ class MCPConsentRequired(Exception):
             "consent": self.consent,
         }
 
+    def chat_event_payload(self) -> Dict[str, Any]:
+        """The consent event the chat renders — the SAME nested shape the
+        connected-account (Slack) consent uses (`{error:{code}, consent:{…}}`), so
+        one banner path serves both. The consent block carries the claims, the
+        Connection Hub deep link, and (for a per-agent grant) the one-click `grant`
+        action + the agent identity."""
+        c = self.consent
+        consent_block: Dict[str, Any] = {
+            "kind": c.get("kind") or "delegated_to_kdcube.mcp",
+            "reason": c.get("reason") or "consent_required",
+            "claims": list(self.claims),
+            "tool_id": c.get("tool_name") or "",
+            "tool_label": c.get("tool_name") or "",
+            "resource": self.resource,
+            "url": c.get("connection_hub_url") or "",
+            "action_label": "Grant access" if c.get("grant") else "Open Connection Hub",
+        }
+        if c.get("agent_client_id"):
+            consent_block["agent_client_id"] = c["agent_client_id"]
+        if c.get("grant"):
+            consent_block["grant"] = c["grant"]
+        return {
+            "ok": False,
+            "error": {"code": CONSENT_NEEDED_CODE, "message": self.agent_message},
+            "consent": consent_block,
+            "tools": [c["tool_name"]] if c.get("tool_name") else [],
+        }
+
 
 def _status_of(denial: Any) -> Optional[int]:
     for attr in ("status_code", "status", "code"):

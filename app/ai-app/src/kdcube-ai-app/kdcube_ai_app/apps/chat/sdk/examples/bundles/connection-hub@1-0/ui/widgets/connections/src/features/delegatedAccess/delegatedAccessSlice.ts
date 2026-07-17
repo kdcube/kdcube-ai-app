@@ -87,6 +87,39 @@ export const createDelegatedAccess = createAsyncThunk<
   },
 );
 
+export interface GrantAgentAccessArgs {
+  clientId: string;
+  resource: string;
+  claims: string[];
+  label?: string;
+}
+
+/** Grant a hosted agent (a "Delegated By KDCube" entity) access to a resource —
+ *  the consent action behind a pending agent MCP demand. Keyed to the agent's
+ *  deterministic client_id, so it dedupes and appears in this list like any
+ *  delegated grant. */
+export const grantAgentAccess = createAsyncThunk<
+  DelegatedAccessCreateResult,
+  GrantAgentAccessArgs,
+  { rejectValue: string }
+>(
+  'delegatedAccess/grantAgent',
+  async ({ clientId, resource, claims, label }, { rejectWithValue }) => {
+    try {
+      const res = await postOp<DelegatedAccessCreateResult>('delegated_agent_grant_create', {
+        client_id: clientId,
+        resource,
+        claims: claims || [],
+        label: label || '',
+      });
+      if (res?.ok === false) return rejectWithValue(resultError(res, 'Failed to grant agent access'));
+      return res || {};
+    } catch (e) {
+      return rejectWithValue(message(e));
+    }
+  },
+);
+
 export const revokeDelegatedAccess = createAsyncThunk<
   DelegatedAccessRevokeResult,
   { accessId: string },
@@ -151,6 +184,20 @@ const delegatedAccessSlice = createSlice({
       .addCase(createDelegatedAccess.rejected, (state, action) => {
         state.busy = false;
         state.error = action.payload ?? 'Failed to create delegated access';
+      })
+      .addCase(grantAgentAccess.pending, (state) => {
+        state.busy = true;
+        state.error = '';
+      })
+      .addCase(grantAgentAccess.fulfilled, (state, action: PayloadAction<DelegatedAccessCreateResult>) => {
+        state.busy = false;
+        if (action.payload.access) {
+          state.items = [action.payload.access, ...state.items.filter((item) => item.access_id !== action.payload.access?.access_id)];
+        }
+      })
+      .addCase(grantAgentAccess.rejected, (state, action) => {
+        state.busy = false;
+        state.error = action.payload ?? 'Failed to grant agent access';
       })
       .addCase(revokeDelegatedAccess.pending, (state) => {
         state.busy = true;

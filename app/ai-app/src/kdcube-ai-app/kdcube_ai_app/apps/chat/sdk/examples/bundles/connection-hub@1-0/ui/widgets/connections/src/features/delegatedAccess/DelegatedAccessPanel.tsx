@@ -10,9 +10,26 @@ import type {
 import {
   clearIssuedDelegatedAccess,
   createDelegatedAccess,
+  grantAgentAccess,
   loadDelegatedAccess,
   revokeDelegatedAccess,
 } from './delegatedAccessSlice';
+
+/** The pending per-agent grant a chat consent banner deep-links here (the
+ *  `pending_agent_grant` params), so this panel offers a one-click grant. */
+function pendingAgentGrantFromLocation(): { clientId: string; resource: string; claims: string[] } | null {
+  try {
+    const p = new URLSearchParams(window.location.search);
+    if (p.get('pending_agent_grant') !== '1') return null;
+    const clientId = (p.get('agent_client_id') || '').trim();
+    const resource = (p.get('resource') || '').trim();
+    if (!clientId || !resource) return null;
+    const claims = (p.get('claims') || '').split(',').map((item) => item.trim()).filter(Boolean);
+    return { clientId, resource, claims };
+  } catch {
+    return null;
+  }
+}
 
 const ttlOptions = [
   { value: 3600, label: '1 hour' },
@@ -44,6 +61,7 @@ export function DelegatedAccessPanel() {
   const [resourceGrants, setResourceGrants] = useState<Record<string, string[]>>({});
   const [namedServiceOperations, setNamedServiceOperations] = useState<DelegatedAccessNamedServiceOperations>({});
   const [ttlSeconds, setTtlSeconds] = useState(ttlOptions[0].value);
+  const [pendingGrant, setPendingGrant] = useState(pendingAgentGrantFromLocation);
   const grantOptionByName = useMemo(
     () => new Map(grantOptions.map((item) => [item.grant, item])),
     [grantOptions],
@@ -163,6 +181,39 @@ export function DelegatedAccessPanel() {
     void dispatch(loadDelegatedAccess());
   };
 
+  const grantPending = async () => {
+    if (!pendingGrant) return;
+    await dispatch(grantAgentAccess({
+      clientId: pendingGrant.clientId,
+      resource: pendingGrant.resource,
+      claims: pendingGrant.claims,
+    })).unwrap().catch(() => undefined);
+    setPendingGrant(null);
+    void dispatch(loadDelegatedAccess());
+  };
+
+  const pendingGrantPane = pendingGrant ? (
+    <section className="card">
+      <div className="card-head">
+        <div className="form-title">Grant agent access</div>
+      </div>
+      <p className="muted" style={{ marginTop: 0 }}>
+        An agent (<code>{pendingGrant.clientId}</code>) is requesting access to{' '}
+        <code>{pendingGrant.resource}</code>
+        {pendingGrant.claims.length ? <> for {pendingGrant.claims.join(', ')}</> : null}.
+        Granting lets it act for you until you revoke it below.
+      </p>
+      <div className="row">
+        <button className="btn" type="button" disabled={busy} onClick={grantPending}>
+          Grant access
+        </button>
+        <button className="btn" type="button" disabled={busy} onClick={() => setPendingGrant(null)}>
+          Dismiss
+        </button>
+      </div>
+    </section>
+  ) : null;
+
   const grantedPane = (
     <section className="card">
       <div className="card-head">
@@ -182,7 +233,9 @@ export function DelegatedAccessPanel() {
                   {item.label || item.access_id}
                   {item.source === 'oauth'
                     ? <span className="badge badge-ok">connected app</span>
-                    : <span className="badge badge-warn">manual token</span>}
+                    : item.source === 'agent'
+                      ? <span className="badge badge-ok">agent</span>
+                      : <span className="badge badge-warn">manual token</span>}
                 </div>
                 {item.client_id && item.client_id !== item.label ? <div className="account-sub">{item.client_id}</div> : null}
                 {item.resource_grants && Object.keys(item.resource_grants).length ? (
@@ -325,6 +378,7 @@ export function DelegatedAccessPanel() {
   return (
     <PaneGroup
       panes={[
+        ...(pendingGrantPane ? [{ id: 'pending-grant', title: 'Agent access request', content: pendingGrantPane }] : []),
         { id: 'granted', title: 'Granted access', content: grantedPane },
         { id: 'create', title: 'Create automation access', content: createPane },
       ]}

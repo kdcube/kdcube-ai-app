@@ -91,6 +91,26 @@ export function consentOpenForClaims(args: {
   return { tab: 'delegated_to_kdcube', params, url: '' }
 }
 
+/** Hub-open payload for a per-agent grant demand: lands on the "Delegated by
+ *  KDCube" tab with the pending agent + resource + claims, so the panel can offer
+ *  a one-click grant. `url` is the served deep-link fallback for hosts without the
+ *  scene contract. */
+export function agentGrantConsentOpen(args: {
+  agentClientId: string
+  resource: string
+  claims: string[]
+  url?: string
+}): ConnectionsConsentOpen {
+  const params: Record<string, string> = { pending_agent_grant: '1' }
+  const client = String(args.agentClientId || '').trim()
+  if (client) params.agent_client_id = client
+  const resource = String(args.resource || '').trim()
+  if (resource) params.resource = resource
+  const claims = (args.claims || []).map((item) => String(item || '').trim()).filter(Boolean)
+  if (claims.length) params.claims = claims.join(',')
+  return { tab: 'delegated_to_kdcube', params, url: String(args.url || '').trim() }
+}
+
 /** Build the structured hub-open payload from a consent card's fields.
  *  The consent deep link is authoritative for tab + params; the claim→tier
  *  map fills `tiers` on the provider-connections path. */

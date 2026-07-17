@@ -60,7 +60,7 @@ import type {
 import { initialState } from './state.ts'
 import { canonicalObjectRef, durableHistoricalObjectRef } from './refs.ts'
 import { messageWithContextChips } from './contextChips.ts'
-import { connectionsConsentOpen } from './connectionsConsent.ts'
+import { connectionsConsentOpen, agentGrantConsentOpen } from './connectionsConsent.ts'
 import type { ConnectionsConsentOpen } from '../shared/index.ts'
 
 export function addBanner(
@@ -195,6 +195,26 @@ function connectedAccountConsentBanner(data: Record<string, unknown> | undefined
   const blockedTools = Array.isArray(consent.tools)
     ? consent.tools.map((item) => stringValue(item)).filter(Boolean)
     : []
+  // A per-agent delegated grant (a hosted agent's MCP demand): land on the
+  // "Delegated by KDCube" tab with the pending agent + resource + claims so the
+  // panel offers a one-click grant, rather than the connect-an-account card.
+  const grant = recordValue(consent.grant)
+  const agentClientId = stringValue(consent.agent_client_id)
+  if (agentClientId) {
+    const resource = stringValue(consent.resource)
+    const grantClaims = Array.isArray(grant?.claims)
+      ? (grant?.claims as unknown[]).map((item) => stringValue(item)).filter(Boolean)
+      : claims
+    return {
+      text: text || `Grant this agent access to ${resource || 'your data'}.`,
+      actionLabel: stringValue(consent.action_label) || 'Grant access',
+      actionUrl: url,
+      consent: agentGrantConsentOpen({ agentClientId, resource, claims: grantClaims, url }),
+      signature: `agent:${agentClientId}|${resource}`,
+      tools: blockedTools,
+      claims: grantClaims,
+    }
+  }
   return {
     text,
     actionLabel: stringValue(consent.action_label || payload.action_label) || 'Open Connection Hub',
