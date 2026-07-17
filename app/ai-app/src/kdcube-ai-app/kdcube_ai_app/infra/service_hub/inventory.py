@@ -3052,7 +3052,13 @@ class CustomModelClient:
 
     def _prepare_payload(self, messages: List[BaseMessage], **kwargs) -> Dict[str, Any]:
         parameters = {**self.default_params, **kwargs}
-        return {"inputs": self._convert_langchain_to_conversation(messages), "parameters": parameters}
+        payload = {"inputs": self._convert_langchain_to_conversation(messages), "parameters": parameters}
+        # Transmit the model name so one gateway can serve several models
+        # (per-role/per-pick routing). Gateways without multi-model support
+        # ignore it and serve their configured model.
+        if self.model_name:
+            payload["model"] = self.model_name
+        return payload
 
     def _headers(self) -> Dict[str, str]:
         return {"Accept": "application/json", "Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}

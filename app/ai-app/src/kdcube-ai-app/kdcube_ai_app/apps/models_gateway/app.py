@@ -17,12 +17,14 @@ inference runtime — Ollama first — with ZERO changes to platform modules.
               "usage":{...}}         eval counts                     "prompt_eval_count",...}
     data: [DONE]
 
-The platform client does not send a model name — the gateway owns model
-selection (``GATEWAY_MODEL``). One gateway instance = one served model; run a
-second instance on another port for a second model.
+The platform client transmits its model name (top-level ``model`` in the
+request); the gateway routes it to Ollama, so ONE gateway instance serves
+every locally pulled model. ``GATEWAY_MODEL`` is the fallback for requests
+that carry no model name.
 
 Environment:
-    GATEWAY_MODEL       Ollama model tag to serve (default: qwen3:0.6b)
+    GATEWAY_MODEL       fallback Ollama model tag for requests without a
+                        model name (default: qwen3:0.6b)
     GATEWAY_API_KEY     when set, requests must carry `Authorization: Bearer <it>`
     OLLAMA_BASE_URL     default http://localhost:11434
     GATEWAY_KEEP_ALIVE  Ollama keep_alive (default 30m) — keeps weights warm
@@ -124,6 +126,10 @@ def _split_content(content: Any) -> tuple[str, List[str]]:
     return str(content or ""), []
 
 
+def _requested_model(payload: Dict[str, Any]) -> str:
+    return str(payload.get("model") or "").strip() or GATEWAY_MODEL
+
+
 def _to_ollama_request(payload: Dict[str, Any], *, stream: bool) -> Dict[str, Any]:
     inputs = payload.get("inputs") or []
     parameters = dict(payload.get("parameters") or {})
@@ -151,7 +157,7 @@ def _to_ollama_request(payload: Dict[str, Any], *, stream: bool) -> Dict[str, An
     elif GATEWAY_NUM_CTX > 0:
         options["num_ctx"] = GATEWAY_NUM_CTX
     return {
-        "model": GATEWAY_MODEL,
+        "model": _requested_model(payload),
         "messages": messages,
         "stream": stream,
         "keep_alive": GATEWAY_KEEP_ALIVE,
@@ -205,7 +211,7 @@ async def _invoke(payload: Dict[str, Any]) -> JSONResponse:
     return JSONResponse({
         "id": f"gw-{uuid.uuid4()}",
         "response": text,
-        "model": GATEWAY_MODEL,
+        "model": _requested_model(payload),
         "usage": _usage(data),
     })
 
@@ -272,6 +278,6 @@ async def _stream(payload: Dict[str, Any], request: Request) -> AsyncIterator[st
     except Exception as exc:
         logger.warning("[models_gateway] stream failed: %s", exc, exc_info=True)
         yield f'data: {json.dumps({"error": str(exc)})}\n\n'
-    final = {"delta": "", "final": True, "usage": usage, "model": GATEWAY_MODEL}
+    final = {"delta": "", "final": True, "usage": usage, "model": _requested_model(payload)}
     yield f"data: {json.dumps(final)}\n\n"
     yield "data: [DONE]\n\n"
