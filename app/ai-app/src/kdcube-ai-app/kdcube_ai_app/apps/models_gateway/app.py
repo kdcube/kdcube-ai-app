@@ -46,6 +46,7 @@ host.docker.internal):
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -186,7 +187,7 @@ async def generate(request: Request):
     parameters = payload.get("parameters") or {}
     if parameters.get("stream"):
         return StreamingResponse(
-            _stream(payload),
+            _stream(payload, request),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache"},
         )
@@ -209,7 +210,38 @@ async def _invoke(payload: Dict[str, Any]) -> JSONResponse:
     })
 
 
-async def _stream(payload: Dict[str, Any]) -> AsyncIterator[str]:
+class _ClientGone(Exception):
+    """The caller dropped the connection — abandon the upstream call."""
+
+
+async def _lines_watching_disconnect(resp, request: Request) -> AsyncIterator[str]:
+    """Yield Ollama's stream lines, aborting when the client disconnects.
+
+    During prompt evaluation Ollama sends nothing for minutes, so a plain
+    `async for` would only discover a vanished client at the first token —
+    the orphaned request keeps burning the machine. Poll the client
+    connection while waiting; raising here unwinds the httpx stream context,
+    which cancels the generation inside Ollama.
+    """
+    it = resp.aiter_lines().__aiter__()
+    while True:
+        nxt = asyncio.ensure_future(it.__anext__())
+        while not nxt.done():
+            await asyncio.wait({nxt}, timeout=1.0)
+            if not nxt.done() and await request.is_disconnected():
+                nxt.cancel()
+                try:
+                    await nxt
+                except (asyncio.CancelledError, StopAsyncIteration, Exception):
+                    pass
+                raise _ClientGone()
+        try:
+            yield nxt.result()
+        except StopAsyncIteration:
+            return
+
+
+async def _stream(payload: Dict[str, Any], request: Request) -> AsyncIterator[str]:
     body = _to_ollama_request(payload, stream=True)
     usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
     try:
@@ -220,7 +252,7 @@ async def _stream(payload: Dict[str, Any]) -> AsyncIterator[str]:
                     yield f'data: {json.dumps({"error": f"ollama: {detail}"})}\n\n'
                     yield "data: [DONE]\n\n"
                     return
-                async for line in resp.aiter_lines():
+                async for line in _lines_watching_disconnect(resp, request):
                     line = (line or "").strip()
                     if not line:
                         continue
@@ -234,6 +266,9 @@ async def _stream(payload: Dict[str, Any]) -> AsyncIterator[str]:
                     if chunk.get("done"):
                         usage = _usage(chunk)
                         break
+    except _ClientGone:
+        logger.info("[models_gateway] client disconnected — upstream generation cancelled")
+        return
     except Exception as exc:
         logger.warning("[models_gateway] stream failed: %s", exc, exc_info=True)
         yield f'data: {json.dumps({"error": str(exc)})}\n\n'
