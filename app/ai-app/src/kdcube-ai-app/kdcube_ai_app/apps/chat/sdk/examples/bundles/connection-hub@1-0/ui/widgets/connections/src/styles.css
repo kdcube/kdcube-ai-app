@@ -1078,6 +1078,159 @@ code {
   overflow-wrap: anywhere;
 }
 
+.resource-boundaries {
+  margin-top: 4px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.resource-boundaries-head,
+.namespace-boundary > summary,
+.provider-requirement-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.resource-boundaries-head {
+  padding: 10px 0 6px;
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.namespace-boundary {
+  border-top: 1px solid var(--line-soft);
+}
+
+.namespace-boundary > summary {
+  min-height: 44px;
+  padding: 8px 2px;
+  cursor: pointer;
+  list-style-position: outside;
+}
+
+.namespace-boundary > summary > span:first-child,
+.provider-requirement-head > span:first-child,
+.namespace-operation > span:first-of-type {
+  min-width: 0;
+}
+
+.namespace-boundary > summary strong,
+.namespace-boundary > summary small,
+.provider-requirement-head strong,
+.provider-requirement-head small,
+.namespace-operation strong,
+.namespace-operation small {
+  display: block;
+}
+
+.namespace-boundary > summary strong,
+.provider-requirement-head strong,
+.namespace-operation strong {
+  color: var(--ink);
+  font-size: 12.5px;
+}
+
+.namespace-boundary > summary small,
+.provider-requirement-head small,
+.namespace-operation small {
+  margin-top: 2px;
+  color: var(--text-2);
+  font-size: 11.5px;
+  line-height: 1.35;
+}
+
+.namespace-operation-list {
+  border-top: 1px solid var(--line-soft);
+}
+
+.namespace-operation {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+  padding: 8px 2px;
+  border-bottom: 1px solid var(--line-soft);
+  opacity: 0.48;
+  cursor: pointer;
+}
+
+.namespace-operation > input {
+  margin-top: 2px;
+}
+
+.namespace-operation-included {
+  opacity: 1;
+}
+
+.namespace-operation-grants,
+.provider-claim-list,
+.provider-claim-branch > span {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 5px;
+}
+
+.namespace-operation-grants code,
+.provider-claim-branch code,
+.provider-claim-list em,
+.provider-claim-branch em {
+  padding: 2px 5px;
+  border-radius: 5px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-style: normal;
+  line-height: 1.3;
+}
+
+.namespace-operation-included .namespace-operation-grants code,
+.provider-claim-list em,
+.provider-claim-branch em {
+  background: rgba(var(--kind-rgb), 0.08);
+  color: var(--kind);
+}
+
+.provider-requirements {
+  padding: 8px 0 2px;
+}
+
+.provider-requirement {
+  padding: 8px 2px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.provider-requirement-action {
+  flex: 0 0 auto;
+  min-height: 28px;
+  padding: 5px 9px;
+  font-size: 11.5px;
+  text-decoration: none;
+}
+
+.provider-claim-list,
+.provider-claim-branches {
+  margin-top: 7px;
+}
+
+.provider-claim-list {
+  justify-content: flex-start;
+}
+
+.provider-claim-branch {
+  display: grid;
+  grid-template-columns: minmax(120px, auto) minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  padding: 4px 0;
+}
+
+.provider-claim-branch > span {
+  justify-content: flex-start;
+}
+
 .grant-option {
   display: grid;
   grid-template-columns: 18px 1fr;
@@ -1137,6 +1290,19 @@ code {
 
   .auth-row {
     flex-direction: column;
+  }
+
+  .provider-claim-branch {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .namespace-operation {
+    grid-template-columns: 18px minmax(0, 1fr);
+  }
+
+  .namespace-operation-grants {
+    grid-column: 2;
+    justify-content: flex-start;
   }
 }
 

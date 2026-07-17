@@ -70,6 +70,9 @@ All are authenticated (`PlatformAuth`) and visibility-gated by
 | `delegated_to_kdcube_connect_credential` | POST | operations | Store a non-OAuth credential, such as an iCloud app-specific password, as a user-scoped connected account delegated to KDCube. |
 | `delegated_to_kdcube_disconnect` | POST | operations | Disconnect a user account (`provider`, `account_id`). |
 | `delegated_to_kdcube_resolve` | POST | operations | Resolve a delegated-to-KDCube credential for code acting on behalf of the current authenticated user. Secret values are returned only to server-side callers. |
+| `delegated_access_list` | GET | operations | List automation credentials and the configured resource/grant catalog. Named-service resources include their descriptor-backed namespace operation tree and provider-declared connected-account requirements. |
+| `delegated_access_create` | POST | operations | Mint a short-lived KDCube automation bearer bounded by `resource_grants` and an optional exact `named_service_operations` resource/namespace/operation selection; compatible top-level MCP operations are derived server-side. |
+| `delegated_access_revoke` | POST | operations | Revoke one automation or OAuth delegated-client grant owned by the current user. |
 | `email_accounts_status` | GET | operations | Older iCloud account status route retained only for the older email integration surface. |
 | `email_connect_app_password` | POST | operations | Older iCloud app-password route retained only for the older email integration surface. |
 | `email_disconnect_account` | POST | operations | Older iCloud disconnect route retained only for the older email integration surface. |
@@ -265,6 +268,26 @@ result = await delegated_to_kdcube_client.ensure_tool_claims(policy=policy)
 Connection Hub can derive a "which tools ask for which provider claims" catalog
 by scanning bundle descriptors, but that catalog is derived metadata. The source
 of truth remains the application bundle/tool definition.
+
+Named services do not need a second per-tool declaration. Their provider spec
+publishes `metadata.connected_accounts`, and the delegated MCP resource owns the
+allowed namespace/tool/grant tree under `resources[].named_services`. The
+automation-access list projects those two existing declarations directly:
+
+```text
+delegated_access_list.resources[].named_services[]
+  tools / operations / grants       <- delegated MCP resource descriptor
+  connected_accounts               <- named-service provider discovery metadata
+```
+
+The descriptor and provider projection is read-only source data, but its
+existing namespace operations are selectable when creating automation access.
+The request sends `named_service_operations[resource][namespace][]`; the
+backend validates that selection and stores a narrowed copy of the same
+`named_services` policy in the token's `GrantStore` record. It does not create
+action variants or copy provider credentials into the automation bearer. The
+widget uses the existing provider/connector/claims deep link to continue in
+**Delegated to KDCube**.
 
 `delegated_to_kdcube_resolve` resolves one explicit provider claim:
 

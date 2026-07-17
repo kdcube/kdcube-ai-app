@@ -14,6 +14,7 @@ configuration.
 
 ## Entries
 
+- [2026-07-17 - Automation access catalog parity](2026-07-17-automation-access-catalog-parity.md)
 - [2026-07-05 - Managed REST guard](2026-07-05-managed-rest-guard.md)
 - [2026-07-05 - Delegated access for automation](2026-07-05-delegated-access-for-automation.md)
 - [2026-07-01 - Authority registry descriptor](2026-07-01-authority-registry-descriptor.md)

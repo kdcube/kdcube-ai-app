@@ -74,6 +74,37 @@ export interface DelegatedAccessOperationOption {
   grants?: string[];
 }
 
+export interface DelegatedAccessNamedServiceOperationOption {
+  label?: string;
+  description?: string;
+  authority_id?: string;
+  grants?: string[];
+}
+
+export interface DelegatedAccessNamedServiceToolOption extends DelegatedAccessNamedServiceOperationOption {
+  operation?: string;
+  operations?: Record<string, DelegatedAccessNamedServiceOperationOption>;
+}
+
+export interface DelegatedAccessConnectedAccountRequirement {
+  provider_id?: string;
+  connector_app_id?: string;
+  provider_label?: string;
+  claims?: string[];
+  claim_labels?: Record<string, string>;
+  claims_by_operation?: Record<string, string[]>;
+  [key: string]: unknown;
+}
+
+export interface DelegatedAccessNamedServiceNamespaceOption {
+  namespace: string;
+  label?: string;
+  description?: string;
+  authority_id?: string;
+  tools?: Record<string, DelegatedAccessNamedServiceToolOption>;
+  connected_accounts?: DelegatedAccessConnectedAccountRequirement[];
+}
+
 export interface DelegatedAccessResourceOption {
   resource: string;
   label?: string;
@@ -81,7 +112,10 @@ export interface DelegatedAccessResourceOption {
   grants?: string[];
   admin_only?: boolean;
   operations?: DelegatedAccessOperationOption[];
+  named_services?: DelegatedAccessNamedServiceNamespaceOption[];
 }
+
+export type DelegatedAccessNamedServiceOperations = Record<string, Record<string, string[]>>;
 
 export interface DelegatedAccessRecord {
   access_id: string;
@@ -90,6 +124,7 @@ export interface DelegatedAccessRecord {
   delegate_subject?: string;
   operations?: string[];
   resource_grants?: Record<string, string[]>;
+  named_service_operations?: DelegatedAccessNamedServiceOperations;
   identity_scope?: string;
   created_at?: number;
   expires_at?: number;

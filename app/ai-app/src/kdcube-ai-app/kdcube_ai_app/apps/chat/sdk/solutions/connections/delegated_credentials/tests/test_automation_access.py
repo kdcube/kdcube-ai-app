@@ -73,6 +73,25 @@ class _Authority:
         return True
 
 
+class _NamedServiceDiscovery:
+    def __init__(self, requirements_by_namespace: dict[str, list[dict]]) -> None:
+        self.requirements_by_namespace = requirements_by_namespace
+        self.requested: list[str] = []
+
+    async def entries_for_namespace(self, namespace: str):
+        self.requested.append(namespace)
+        requirements = self.requirements_by_namespace.get(namespace, [])
+        if not requirements:
+            return []
+        return [
+            SimpleNamespace(
+                spec=SimpleNamespace(
+                    metadata={"connected_accounts": requirements},
+                )
+            )
+        ]
+
+
 async def _minter(_grantor_subject, _scopes, **kwargs):
     return {
         "access_token": "kst1.test.abcdef",
@@ -126,6 +145,104 @@ def _config():
                         },
                     },
                 },
+            ],
+        }
+    )
+    return oauth_delegated_config(SimpleNamespace(state=state))
+
+
+def _named_services_config():
+    state = SimpleNamespace(
+        oauth_delegated_config={
+            "enabled": True,
+            "tenant": "demo-tenant",
+            "project": "demo-project",
+            "capabilities": [
+                {
+                    "grant": grant,
+                    "label": grant,
+                    "delegable_roles": ["kdcube:role:registered"],
+                }
+                for grant in (
+                    "named_services:use",
+                    "mail:read",
+                    "mail:send",
+                    "slack:read",
+                    "slack:write",
+                )
+            ],
+            "resources": [
+                {
+                    "resource": "https://example.test/mcp/named-services",
+                    "label": "Named services MCP",
+                    "tools": {
+                        "named_services_call": {
+                            "label": "Named service call",
+                            "grants": ["named_services:use"],
+                        }
+                    },
+                    "named_services": {
+                        "namespaces": {
+                            "mail": {
+                                "label": "Mail",
+                                "description": "Connected mail accounts.",
+                                "authority_id": "delegated_client",
+                                "tools": {
+                                    "search": {
+                                        "operation": "object.search",
+                                        "label": "Search mail",
+                                        "grants": ["mail:read"],
+                                    },
+                                    "action": {
+                                        "operation": "object.action",
+                                        "label": "Mail action",
+                                        "operations": {
+                                            "object.action": {
+                                                "label": "Mail action",
+                                                "grants": ["mail:read", "mail:send"],
+                                            }
+                                        },
+                                    },
+                                },
+                            },
+                            "slack": {
+                                "label": "Slack",
+                                "description": "Connected Slack workspaces.",
+                                "authority_id": "delegated_client",
+                                "tools": {
+                                    "search": {
+                                        "operation": "object.search",
+                                        "label": "Search Slack",
+                                        "grants": ["slack:read"],
+                                    },
+                                    "action": {
+                                        "operation": "object.action",
+                                        "label": "Slack action",
+                                        "operations": {
+                                            "object.action": {
+                                                "label": "Slack action",
+                                                "grants": ["slack:read", "slack:write"],
+                                            }
+                                        },
+                                    },
+                                    "call": {
+                                        "label": "Generic Slack call",
+                                        "operations": {
+                                            "object.search": {
+                                                "label": "Search Slack",
+                                                "grants": ["slack:read"],
+                                            },
+                                            "object.action": {
+                                                "label": "Slack action",
+                                                "grants": ["slack:read", "slack:write"],
+                                            },
+                                        },
+                                    },
+                                },
+                            },
+                        }
+                    },
+                }
             ],
         }
     )
@@ -198,6 +315,166 @@ async def test_automation_access_create_list_and_revoke():
         "grant_options": listed["grant_options"],
         "resources": listed["resources"],
         "items": [],
+    }
+
+
+@pytest.mark.asyncio
+async def test_resource_options_project_exact_named_service_and_provider_catalogs():
+    mail_requirement = {
+        "provider_id": "google",
+        "connector_app_id": "gmail",
+        "provider_label": "Google",
+        "claims": ["gmail:read", "gmail:send"],
+        "claim_labels": {
+            "gmail:read": "read mail",
+            "gmail:send": "send mail",
+        },
+        "claims_by_operation": {
+            "object.search": ["gmail:read"],
+            "object.action.send": ["gmail:send"],
+        },
+    }
+    slack_requirement = {
+        "provider_id": "slack",
+        "connector_app_id": "slack-oauth",
+        "provider_label": "Slack",
+        "claims": ["slack:history", "slack:chat:write"],
+        "claim_labels": {
+            "slack:history": "read history",
+            "slack:chat:write": "post messages",
+        },
+    }
+    discovery = _NamedServiceDiscovery(
+        {
+            "mail": [mail_requirement],
+            "slack": [slack_requirement, slack_requirement],
+        }
+    )
+    store = _Store()
+    service = AutomationAccessService(
+        redis=_Redis(),
+        tenant="demo-tenant",
+        project="demo-project",
+        config=_named_services_config(),
+        grant_store=store,
+        authority=_Authority(),
+        minter=_minter,
+        named_service_discovery=discovery,
+    )
+    user = {
+        "user_id": "platform-user-1",
+        "roles": ["kdcube:role:registered"],
+        "permissions": [],
+    }
+
+    listed = await service.list_access(user)
+    resource = listed["resources"][0]
+    namespaces = {item["namespace"]: item for item in resource["named_services"]}
+
+    assert discovery.requested == ["mail", "slack"]
+    assert namespaces["mail"]["connected_accounts"] == [mail_requirement]
+    assert namespaces["slack"]["connected_accounts"] == [slack_requirement]
+    assert namespaces["slack"]["tools"]["action"]["operation"] == "object.action"
+    assert set(namespaces["slack"]["tools"]["action"]["operations"]) == {
+        "object.action"
+    }
+    assert "object.action.post_message" not in json.dumps(
+        namespaces["slack"]["tools"],
+        sort_keys=True,
+    )
+
+    created = await service.create_access(
+        user,
+        label="Slack automation",
+        resource_grants={
+            "https://example.test/mcp/named-services": [
+                "named_services:use",
+                "slack:read",
+                "slack:write",
+            ]
+        },
+    )
+    assert created["ok"] is True
+    persisted_policy = store.bound[0]["named_services"]
+    assert persisted_policy["namespaces"]["slack"]["tools"]["action"]["operation"] == "object.action"
+    assert "connected_accounts" not in persisted_policy["namespaces"]["slack"]
+
+
+@pytest.mark.asyncio
+async def test_automation_access_persists_only_selected_named_service_operations():
+    store = _Store()
+    service = AutomationAccessService(
+        redis=_Redis(),
+        tenant="demo-tenant",
+        project="demo-project",
+        config=_named_services_config(),
+        grant_store=store,
+        authority=_Authority(),
+        minter=_minter,
+        named_service_discovery=_NamedServiceDiscovery({}),
+    )
+    user = {
+        "user_id": "platform-user-1",
+        "roles": ["kdcube:role:registered"],
+        "permissions": [],
+    }
+    resource = "https://example.test/mcp/named-services"
+
+    created = await service.create_access(
+        user,
+        label="Slack search only",
+        resource_grants={resource: ["named_services:use", "slack:read"]},
+        named_service_operations={
+            resource: {"slack": ["object.search"]},
+        },
+    )
+
+    assert created["ok"] is True
+    assert created["access"]["named_service_operations"] == {
+        resource: {"slack": ["object.search"]},
+    }
+    persisted = store.bound[0]["named_services"]
+    assert set(persisted["namespaces"]) == {"slack"}
+    assert set(persisted["namespaces"]["slack"]["tools"]) == {"search", "call"}
+    assert set(
+        persisted["namespaces"]["slack"]["tools"]["call"]["operations"]
+    ) == {"object.search"}
+
+
+@pytest.mark.asyncio
+async def test_automation_access_rejects_named_service_operation_without_its_grants():
+    service = AutomationAccessService(
+        redis=_Redis(),
+        tenant="demo-tenant",
+        project="demo-project",
+        config=_named_services_config(),
+        grant_store=_Store(),
+        authority=_Authority(),
+        minter=_minter,
+        named_service_discovery=_NamedServiceDiscovery({}),
+    )
+    resource = "https://example.test/mcp/named-services"
+
+    denied = await service.create_access(
+        {
+            "user_id": "platform-user-1",
+            "roles": ["kdcube:role:registered"],
+            "permissions": [],
+        },
+        label="Missing Slack write",
+        resource_grants={resource: ["named_services:use", "slack:read"]},
+        named_service_operations={
+            resource: {"slack": ["object.action"]},
+        },
+    )
+
+    assert denied == {
+        "ok": False,
+        "error": "invalid_named_service_operation_selection",
+        "message": (
+            "named-service operation(s) lack selected grants for "
+            "'https://example.test/mcp/named-services'/slack: object.action"
+        ),
     }
 
 

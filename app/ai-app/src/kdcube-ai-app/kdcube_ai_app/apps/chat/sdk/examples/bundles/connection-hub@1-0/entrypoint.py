@@ -1750,6 +1750,11 @@ class ConnectionHubEntrypoint(BaseEntrypoint):
                 label=str(payload.get("label") or "").strip(),
                 resource_grants=dict(payload.get("resource_grants") or {}),
                 operations=_safe_list(payload.get("operations")),
+                named_service_operations=(
+                    dict(payload.get("named_service_operations") or {})
+                    if "named_service_operations" in payload
+                    else None
+                ),
                 ttl_seconds=payload.get("ttl_seconds"),
             )
         except ValueError as exc:

@@ -2,6 +2,11 @@ import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { useAppDispatch, useAppSelector } from '../../app/hooks';
 import { PaneGroup } from '../../components/Pane';
 import { subscribeConnectionHubEvents } from '../../api/dataBus';
+import { DelegatedResourceCatalog, operationRows } from './DelegatedResourceCatalog';
+import type {
+  DelegatedAccessNamedServiceOperations,
+  DelegatedAccessResourceOption,
+} from '../../api/types';
 import {
   clearIssuedDelegatedAccess,
   createDelegatedAccess,
@@ -24,11 +29,20 @@ function formatDate(seconds?: number): string {
   }
 }
 
+function commonOperationGrants(resource: DelegatedAccessResourceOption): string[] {
+  const operations = resource.operations || [];
+  if (!operations.length) return [];
+  const [first, ...rest] = operations.map((operation) => new Set(operation.grants || []));
+  return Array.from(first).filter((grant) => rest.every((grants) => grants.has(grant)));
+}
+
 export function DelegatedAccessPanel() {
   const dispatch = useAppDispatch();
   const { platformUserId, items, grantOptions, resources, issuedToken, issuedHeader, issuedAccess, busy } = useAppSelector((s) => s.delegatedAccess);
+  const { providers, accounts } = useAppSelector((s) => s.delegatedToKdcube);
   const [label, setLabel] = useState('Automation access');
   const [resourceGrants, setResourceGrants] = useState<Record<string, string[]>>({});
+  const [namedServiceOperations, setNamedServiceOperations] = useState<DelegatedAccessNamedServiceOperations>({});
   const [ttlSeconds, setTtlSeconds] = useState(ttlOptions[0].value);
   const grantOptionByName = useMemo(
     () => new Map(grantOptions.map((item) => [item.grant, item])),
@@ -50,7 +64,7 @@ export function DelegatedAccessPanel() {
     });
   }, [dispatch]);
 
-  const grantsForResource = (resource: typeof resources[number]): string[] => {
+  const grantsForResource = (resource: DelegatedAccessResourceOption): string[] => {
     const grants = resource.grants?.length
       ? resource.grants
       : Array.from(new Set((resource.operations || []).flatMap((operation) => operation.grants || [])));
@@ -68,14 +82,77 @@ export function DelegatedAccessPanel() {
       else delete next[resource];
       return next;
     });
+    if (!checked) {
+      const resourceOption = resources.find((item) => item.resource === resource);
+      setNamedServiceOperations((current) => {
+        const existingNamespaces = current[resource];
+        if (!existingNamespaces || !resourceOption) return current;
+        const nextNamespaces: Record<string, string[]> = {};
+        const removesSurfaceAccess = commonOperationGrants(resourceOption).includes(grant);
+        (resourceOption.named_services || []).forEach((namespace) => {
+          const disallowed = new Set(
+            operationRows(namespace)
+              .filter((row) => removesSurfaceAccess || row.grants.includes(grant))
+              .map((row) => row.operation),
+          );
+          const remaining = (existingNamespaces[namespace.namespace] || [])
+            .filter((operation) => !disallowed.has(operation));
+          if (remaining.length) nextNamespaces[namespace.namespace] = remaining;
+        });
+        const next = { ...current };
+        if (Object.keys(nextNamespaces).length) next[resource] = nextNamespaces;
+        else delete next[resource];
+        return next;
+      });
+    }
+  };
+
+  const toggleNamedServiceOperation = (
+    resource: string,
+    namespace: string,
+    operation: string,
+    grants: string[],
+    checked: boolean,
+  ) => {
+    if (checked) {
+      const resourceOption = resources.find((item) => item.resource === resource);
+      const requiredGrants = [
+        ...grants,
+        ...(resourceOption ? commonOperationGrants(resourceOption) : []),
+      ];
+      setResourceGrants((current) => ({
+        ...current,
+        [resource]: Array.from(new Set([...(current[resource] || []), ...requiredGrants])),
+      }));
+    }
+    setNamedServiceOperations((current) => {
+      const next = { ...current };
+      const namespaces = { ...(next[resource] || {}) };
+      const existing = namespaces[namespace] || [];
+      const updated = checked
+        ? Array.from(new Set([...existing, operation]))
+        : existing.filter((item) => item !== operation);
+      if (updated.length) namespaces[namespace] = updated;
+      else delete namespaces[namespace];
+      if (Object.keys(namespaces).length) next[resource] = namespaces;
+      else delete next[resource];
+      return next;
+    });
   };
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (!canSubmit) return;
+    const selectedNamedServiceOperations = Object.fromEntries(
+      selectedResourceEntries.map(([resource]) => [
+        resource,
+        namedServiceOperations[resource] || {},
+      ]),
+    );
     await dispatch(createDelegatedAccess({
       label: label.trim() || 'Automation access',
       resourceGrants,
+      namedServiceOperations: selectedNamedServiceOperations,
       ttlSeconds,
     })).unwrap().catch(() => undefined);
     void dispatch(loadDelegatedAccess());
@@ -114,6 +191,14 @@ export function DelegatedAccessPanel() {
                   </div>
                 ) : null}
                 {item.operations?.length ? <div className="account-sub">Operations: {item.operations.join(', ')}</div> : null}
+                {item.named_service_operations && Object.keys(item.named_service_operations).length ? (
+                  <div className="account-sub">
+                    Named services: {Object.values(item.named_service_operations)
+                      .flatMap((namespaces) => Object.entries(namespaces))
+                      .map(([namespace, operations]) => `${namespace} (${operations.join(', ')})`)
+                      .join('; ')}
+                  </div>
+                ) : null}
                 <div className="account-sub">
                   {item.source === 'oauth' ? 'Approved' : 'Created'} {formatDate(item.created_at) || 'unknown'}
                   {' · '}expires {formatDate(item.expires_at) || 'unknown'}
@@ -197,6 +282,22 @@ export function DelegatedAccessPanel() {
                         );
                       })}
                     </div>
+                    <DelegatedResourceCatalog
+                      resource={item}
+                      selectedGrants={resourceGrants[item.resource] || []}
+                      selectedOperations={namedServiceOperations[item.resource] || {}}
+                      onOperationChange={(namespace, operation, operationGrants, checked) => (
+                        toggleNamedServiceOperation(
+                          item.resource,
+                          namespace,
+                          operation,
+                          operationGrants,
+                          checked,
+                        )
+                      )}
+                      providers={providers}
+                      accounts={accounts}
+                    />
                   </div>
                 );
               })}

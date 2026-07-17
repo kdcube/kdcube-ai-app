@@ -4,6 +4,7 @@ import type {
   DelegatedAccessCreateResult,
   DelegatedAccessGrantOption,
   DelegatedAccessListResult,
+  DelegatedAccessNamedServiceOperations,
   DelegatedAccessRecord,
   DelegatedAccessResourceOption,
   DelegatedAccessRevokeResult,
@@ -59,6 +60,7 @@ export interface CreateDelegatedAccessArgs {
   label: string;
   resourceGrants: Record<string, string[]>;
   operations?: string[];
+  namedServiceOperations: DelegatedAccessNamedServiceOperations;
   ttlSeconds?: number;
 }
 
@@ -68,12 +70,13 @@ export const createDelegatedAccess = createAsyncThunk<
   { rejectValue: string }
 >(
   'delegatedAccess/create',
-  async ({ label, resourceGrants, operations, ttlSeconds }, { rejectWithValue }) => {
+  async ({ label, resourceGrants, operations, namedServiceOperations, ttlSeconds }, { rejectWithValue }) => {
     try {
       const res = await postOp<DelegatedAccessCreateResult>('delegated_access_create', {
         label,
         resource_grants: resourceGrants || {},
         operations: operations || [],
+        named_service_operations: namedServiceOperations || {},
         ttl_seconds: ttlSeconds || undefined,
       });
       if (res?.ok === false) return rejectWithValue(resultError(res, 'Failed to create delegated access'));

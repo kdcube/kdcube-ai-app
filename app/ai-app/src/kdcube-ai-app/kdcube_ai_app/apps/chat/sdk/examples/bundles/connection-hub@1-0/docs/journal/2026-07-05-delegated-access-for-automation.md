@@ -70,5 +70,11 @@ session by `session_id`.
   as `resource: "*"`, is visible only to platform admins, and requires the
   platform role grant `kdcube:role:super-admin`.
 - Platform roles are authority grants for delegated access.
-- Future delegated provider integrations, such as Gmail or Slack, remain a
-  separate subsystem.
+- Delegated-to-KDCube provider credentials, such as Gmail or Slack tokens,
+  remain a separate subsystem and are never copied into an automation token.
+  The automation-access menu may project a named-service provider's declared
+  connected-account requirements so the user can complete that existing
+  consent flow before issuing the KDCube credential. Named-service operations
+  selected for a manual credential narrow the descriptor-backed
+  `named_services` policy stored with that access grant; the runtime bridge
+  enforces the narrowed tree directly.
