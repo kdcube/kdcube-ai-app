@@ -41,6 +41,30 @@ def test_consent_payload_carries_the_chat_contract_and_claims():
     assert exc.consent["connection_hub_url"] == "https://h/hub"
 
 
+def test_agent_client_id_adds_a_one_click_grant_action():
+    exc = mcp_consent_from_denial(
+        {"status": 403, "reason": "authority_mismatch"},
+        resource=_RES, claims=["memories:read"], tool_name="memory_search",
+        agent_client_id="kdcube-agent:app@v1:lg-react",
+    )
+    assert exc.consent["kind"] == "delegated_agent_grant"
+    assert exc.consent["agent_client_id"] == "kdcube-agent:app@v1:lg-react"
+    grant = exc.consent["grant"]
+    assert grant["operation"] == "delegated_agent_grant_create"
+    assert grant["payload"] == {
+        "client_id": "kdcube-agent:app@v1:lg-react",
+        "resource": _RES,
+        "claims": ["memories:read"],
+    }
+
+
+def test_no_agent_client_id_leaves_a_plain_demand():
+    exc = mcp_consent_from_denial(
+        {"status": 403}, resource=_RES, claims=["memories:read"])
+    # Without the agent identity there is no grant action / kind (unchanged shape).
+    assert "grant" not in exc.consent and "kind" not in exc.consent
+
+
 def test_exception_is_agent_explainable():
     exc = mcp_consent_from_denial(
         {"status": 403}, resource=_RES, claims=["memories:read"], tool_name="memory_search")

@@ -97,6 +97,14 @@ def is_kdcube_mcp_consent_denial(denial: Any, *, resource: str = "") -> bool:
     return True
 
 
+# The REST operation (Connection Hub) that grants a hosted agent access to a
+# resource — the consent action behind a pending agent MCP demand.
+AGENT_GRANT_CREATE_OPERATION = "delegated_agent_grant_create"
+# Marks a demand as a per-agent DELEGATED grant (the user grants THIS agent), so
+# a consent surface renders a "Grant" action rather than a connect-an-account flow.
+CONSENT_KIND_AGENT_GRANT = "delegated_agent_grant"
+
+
 def mcp_consent_from_denial(
     denial: Any,
     *,
@@ -104,10 +112,16 @@ def mcp_consent_from_denial(
     claims: Iterable[str],
     connection_hub_url: str = "",
     tool_name: str = "",
+    agent_client_id: str = "",
 ) -> MCPConsentRequired:
     """Build the `MCPConsentRequired` from a KDCube-MCP denial + the connection's
     declared claims. The claims come from the caller (the `kind: mcp` connection's
-    `scopes`); the surface's 403 doesn't enumerate them."""
+    `scopes`); the surface's 403 doesn't enumerate them.
+
+    ``agent_client_id`` (the calling agent's ``kdcube-agent:<app>:<agent>``
+    identity) makes the demand actionable: the payload carries a ``grant`` block —
+    the Connection Hub operation + args — a consent surface POSTs to grant THIS
+    agent the claims, distinct from a connect-an-account flow."""
     claim_list = [str(c).strip() for c in (claims or []) if str(c).strip()]
     label = tool_name or resource.rsplit("/", 1)[-1] or "this tool"
     claims_str = ", ".join(claim_list) or "the required access"
@@ -126,6 +140,14 @@ def mcp_consent_from_denial(
         consent["connection_hub_url"] = connection_hub_url
     if tool_name:
         consent["tool_name"] = tool_name
+    if agent_client_id:
+        # The one-click grant action for this demand (user grants THIS agent).
+        consent["kind"] = CONSENT_KIND_AGENT_GRANT
+        consent["agent_client_id"] = agent_client_id
+        consent["grant"] = {
+            "operation": AGENT_GRANT_CREATE_OPERATION,
+            "payload": {"client_id": agent_client_id, "resource": resource, "claims": claim_list},
+        }
     return MCPConsentRequired(
         resource=resource, claims=claim_list, consent=consent, agent_message=agent_message,
     )
@@ -138,6 +160,7 @@ def raise_for_mcp_consent(
     claims: Iterable[str],
     connection_hub_url: str = "",
     tool_name: str = "",
+    agent_client_id: str = "",
 ) -> None:
     """Raise `MCPConsentRequired` when `denial` is a KDCube-MCP consent denial;
     return silently otherwise. Call this around a KDCube-MCP call/load with the
@@ -146,4 +169,5 @@ def raise_for_mcp_consent(
         raise mcp_consent_from_denial(
             denial, resource=resource, claims=claims,
             connection_hub_url=connection_hub_url, tool_name=tool_name,
+            agent_client_id=agent_client_id,
         )

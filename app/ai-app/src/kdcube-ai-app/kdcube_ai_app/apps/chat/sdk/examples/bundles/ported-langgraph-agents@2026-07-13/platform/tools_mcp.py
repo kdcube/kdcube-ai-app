@@ -122,5 +122,6 @@ async def load_mcp_tools_for_connections(
                 resource=str(c.get("url") or ""),
                 claims=claims,
                 tool_name=str(c.get("alias") or c.get("name") or ""),
+                agent_client_id=client_id,
             ))
     return tools, consents

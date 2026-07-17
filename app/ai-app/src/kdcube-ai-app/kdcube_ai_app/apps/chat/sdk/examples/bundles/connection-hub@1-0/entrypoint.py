@@ -95,6 +95,10 @@ from kdcube_ai_app.infra.redis.client import get_async_redis_client
 BUNDLE_ID = "connection-hub@1-0"
 ENTRYPOINT_NAME = "connection-hub"
 LOGGER = logging.getLogger("kdcube.playground.connection_hub")
+# A per-agent delegated grant is a standing consent (the agent keeps acting for
+# the user across turns), so default it to the delegated-session ceiling; re-consent
+# refreshes it. Bounded by _bounded_ttl (7 days) inside create_access.
+AGENT_GRANT_DEFAULT_TTL_SECONDS = 7 * 24 * 3600
 
 
 def _api_visibility(alias: str) -> Dict[str, str]:
@@ -1763,6 +1767,45 @@ class ConnectionHubEntrypoint(BaseEntrypoint):
                     else None
                 ),
                 ttl_seconds=payload.get("ttl_seconds"),
+            )
+        except ValueError as exc:
+            return {"ok": False, "error": "invalid_delegated_access_request", "message": str(exc)}
+
+    @api(method="POST", alias="delegated_agent_grant_create", route="operations", **_api_visibility("delegated_agent_grant_create"))
+    async def delegated_agent_grant_create(
+        self,
+        data: Optional[Dict[str, Any]] = None,
+        request: Any = None,
+        user_id: Optional[str] = None,
+        fingerprint: Optional[str] = None,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+        """Grant a hosted agent (a "Delegated By KDCube" entity) access to a
+        resource under the current user's authority — the consent action behind a
+        pending agent MCP demand. Keyed to the agent's deterministic
+        ``kdcube-agent:<app>:<agent>`` client_id, so it dedupes and shows/revokes
+        in the "Delegated by KDCube" tab like any delegated grant."""
+        del fingerprint
+        payload = _payload(data, **kwargs)
+        user = _platform_user_payload(self, user_id=user_id)
+        if not user:
+            return {"ok": False, "error": "delegated_access_requires_authenticated_user"}
+        client_id = str(payload.get("client_id") or "").strip()
+        if not client_id.startswith("kdcube-agent:"):
+            # Only the hosted-agent client family may be granted here; other client
+            # kinds (OAuth apps) consent through their own flows.
+            return {"ok": False, "error": "delegated_agent_grant_invalid_client"}
+        resource = str(payload.get("resource") or "").strip()
+        claims = _safe_list(payload.get("claims") or payload.get("scopes"))
+        if not resource or not claims:
+            return {"ok": False, "error": "delegated_agent_grant_requires_resource_and_claims"}
+        try:
+            return await _automation_access_service(self, request).create_access(
+                user,
+                label=str(payload.get("label") or "").strip() or client_id,
+                resource_grants={resource: claims},
+                ttl_seconds=payload.get("ttl_seconds") or AGENT_GRANT_DEFAULT_TTL_SECONDS,
+                client_id=client_id,
             )
         except ValueError as exc:
             return {"ok": False, "error": "invalid_delegated_access_request", "message": str(exc)}
