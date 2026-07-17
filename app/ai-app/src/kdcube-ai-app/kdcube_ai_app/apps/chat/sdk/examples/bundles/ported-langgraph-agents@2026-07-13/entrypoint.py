@@ -47,7 +47,7 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass, field, replace
-from typing import Any, Awaitable, Callable, Dict, Optional, Tuple
+from typing import Any, Awaitable, Callable, Dict, Mapping, Optional, Tuple
 
 from kdcube_ai_app.apps.chat.sdk.protocol import ExternalEventPayload, external_events_text
 from kdcube_ai_app.apps.chat.sdk.runtime import comm_ctx
@@ -87,6 +87,10 @@ from .platform.identity import turn_identity, normalize_agent_id
 from .platform.stream_solution import stream_graph_turn
 from .platform.stream_prebuilt import stream_react_turn
 from .platform.tools_mcp import load_mcp_tools_for_connections
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_mcp import (
+    delegated_client_id_for_agent,
+    connection_resource,
+)
 from .platform.tool_pick import agent_tool_connections, run_python_bound, select_bound_tools
 from .platform.turn_workspace import (
     build_pull_files_tool,
@@ -341,14 +345,18 @@ async def _build_prebuilt_graph(
         extra_factories=_web_tool_factories(),
     )
     # MCP tools declared as `kind: mcp` connections (optional; degrades to none).
-    # A `delegated: true` connection is minted under the AGENT's delegated-client
-    # identity (BUNDLE_ID + agent_id) — the agent is a "Delegated By KDCube"
-    # entity, so consent is per-agent. If the user has not consented to the
-    # claims THIS agent needs, the KDCube @mcp surface denies at connect time; we
-    # get a consent demand per connection instead of the tools.
+    # A `delegated: true` connection is served under the AGENT's delegated-client
+    # identity (this bundle's spec id + agent_id) — the agent is a "Delegated By
+    # KDCube" entity, so consent is per-agent. The bearer is the token the user's
+    # per-agent grant already bound, read through the Connection Hub named service;
+    # when the user has not consented, no token is returned and we get a consent
+    # demand per connection instead of the tools.
+    application = ep._named_services_bundle_id()
+    agent_client_id = delegated_client_id_for_agent(application, PREBUILT_AGENT_ID)
     mcp_tools, mcp_consents = await load_mcp_tools_for_connections(
         connections, user_sub=_current_turn_user_sub(ep), disabled_map=disabled_tools or {},
-        application=BUNDLE_ID, agent_id=PREBUILT_AGENT_ID,
+        application=application, agent_id=PREBUILT_AGENT_ID,
+        bearer_provider=_agent_grant_bearer_provider(ep, agent_client_id),
     )
     tools += mcp_tools
     # Bubble each pending consent into chat (the same banner connected-account
@@ -360,6 +368,50 @@ async def _build_prebuilt_graph(
         config, model=model, tools=tools, checkpointer=checkpointer, summary_model=summary_model,
         system_prompt=_prebuilt_system_prompt(tools, mcp_consents),
     )
+
+
+def _agent_grant_bearer_provider(ep: "LGPortedAgentsBundle", client_id: str):
+    """A bearer provider that reads THIS agent's consented per-agent grant token
+    from the Connection Hub named service (`agent_grant.get_token`) for the turn's
+    user. Returns None on any absence/failure (consent pending / caller unbound /
+    hub unreachable) so the delegated connection is dropped and surfaces as a
+    consent demand — never a blind call, never a failed build."""
+    async def _provider(conn: Mapping[str, Any], user_sub: str):
+        resource = connection_resource(conn)
+        if not resource:
+            return None
+        try:
+            from kdcube_ai_app.apps.chat.sdk.infra.bundle_operations import call_bundle_named_service
+            from kdcube_ai_app.apps.chat.sdk.solutions.connections.connection_edges import (
+                connection_hub_bundle_id_from_entrypoint,
+            )
+            from kdcube_ai_app.apps.chat.sdk.solutions.connections.contract import (
+                NAMESPACE, AGENT_GRANT_GET_TOKEN,
+            )
+            from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers import (
+                NamedServiceResponse,
+            )
+            result = await call_bundle_named_service(
+                bundle_id=connection_hub_bundle_id_from_entrypoint(ep),
+                request={
+                    "namespace": NAMESPACE,
+                    "operation": AGENT_GRANT_GET_TOKEN,
+                    "payload": {"client_id": client_id, "resource": resource},
+                },
+            )
+            value = getattr(result, "value", None)
+            response = NamedServiceResponse.coerce(value) if value is not None else None
+        except Exception:
+            LOGGER.info(
+                "[ported-langgraph] agent-grant token lookup failed for %s; "
+                "treating as consent-pending.", resource, exc_info=True,
+            )
+            return None
+        if response is None or not response.ok or not response.attrs.get("has_token"):
+            return None
+        token = str((response.object or {}).get("access_token") or "").strip()
+        return token or None
+    return _provider
 
 
 async def _bubble_mcp_consents(ep: "LGPortedAgentsBundle", consents: List[Any]) -> None:
