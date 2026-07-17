@@ -24,8 +24,15 @@ ollama pull qwen3.6:35b        # M3 Max/48GB default; qwen3.6:27b = dense alt
 
 # 2. The gateway, on the host
 cd app/ai-app/src/kdcube-ai-app
-GATEWAY_MODEL=qwen3.6:35b uvicorn kdcube_ai_app.apps.models_gateway.app:app --port 11500
+GATEWAY_MODEL=qwen3.6:35b GATEWAY_NUM_CTX=65536 \
+  uvicorn kdcube_ai_app.apps.models_gateway.app:app --port 11500
 ```
+
+`GATEWAY_NUM_CTX` sizes Ollama's context window per call. Ollama's default
+(32768 tokens) silently truncates longer prompts from the front — the
+system instruction goes first, and agent-platform decision prompts run
+40-60K tokens. Set it above your largest prompt; the only truncation
+symptom is a `truncating input prompt` WARN in the Ollama server log.
 
 Smoke:
 

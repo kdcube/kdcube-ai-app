@@ -27,6 +27,15 @@ Environment:
     OLLAMA_BASE_URL     default http://localhost:11434
     GATEWAY_KEEP_ALIVE  Ollama keep_alive (default 30m) — keeps weights warm
                         between turns instead of reloading every request
+    GATEWAY_NUM_CTX     context window (tokens) requested per call. Ollama's
+                        runner default (32768 as of 0.24) SILENTLY truncates
+                        longer prompts from the FRONT — the system instruction
+                        goes first ("truncating input prompt" in the Ollama
+                        server log). Agent-platform prompts run tens of
+                        thousands of tokens: size this to the largest prompt
+                        you serve, within the machine's memory (KV cache
+                        grows linearly with the window). 0/unset = Ollama
+                        default.
 
 Run (host, not containerized — proc containers reach it via
 host.docker.internal):
@@ -56,6 +65,7 @@ GATEWAY_KEEP_ALIVE = os.getenv("GATEWAY_KEEP_ALIVE", "30m")
 # structure — so thinking is disabled by default. Set GATEWAY_THINK=1 for
 # raw experiments; thinking text is dropped either way.
 GATEWAY_THINK = os.getenv("GATEWAY_THINK", "0").strip().lower() in ("1", "true", "yes")
+GATEWAY_NUM_CTX = int(os.getenv("GATEWAY_NUM_CTX", "0") or 0)
 
 app = FastAPI(title="KDCube Models Gateway", version="0.1.0")
 
@@ -129,6 +139,8 @@ def _to_ollama_request(payload: Dict[str, Any], *, stream: bool) -> Dict[str, An
         options["top_p"] = float(parameters["top_p"])
     if parameters.get("max_new_tokens") is not None:
         options["num_predict"] = int(parameters["max_new_tokens"])
+    if GATEWAY_NUM_CTX > 0:
+        options["num_ctx"] = GATEWAY_NUM_CTX
     return {
         "model": GATEWAY_MODEL,
         "messages": messages,

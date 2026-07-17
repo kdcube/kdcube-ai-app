@@ -98,6 +98,21 @@ that protocol on `/generate` and forwards to Ollama `/api/chat`:
 | — (gateway env `GATEWAY_MODEL`) | `model` |
 | — (gateway env `GATEWAY_KEEP_ALIVE`, default 30m) | `keep_alive` |
 | — (gateway env `GATEWAY_THINK`, default off) | `think` (§4) |
+| — (gateway env `GATEWAY_NUM_CTX`, unset = Ollama default) | `options.num_ctx` |
+
+**Size `GATEWAY_NUM_CTX` to your agent prompts — this is load-bearing.**
+Ollama's runner defaults to a 32768-token window (0.24) and SILENTLY
+truncates longer prompts from the FRONT — exactly where the system
+instruction lives. An agent-platform decision prompt easily exceeds that
+(the react instruction alone is ~40K tokens; with a tool catalog and admin
+customization ~60K), so the model receives the tail of its prompt, loses
+the channel protocol entirely, and answers as plain text that the platform
+cannot route. The only symptom is a
+`msg="truncating input prompt" limit=... prompt=...` WARN line in the
+Ollama server log. Set the window above your largest prompt plus
+generation room (e.g. `GATEWAY_NUM_CTX=65536` for qwen3.6:35b, which fits
+the KV cache in the same ~26 GiB the weights use on Apple silicon) and
+watch that log line when in doubt.
 
 Coming back, Ollama's JSONL chunks (`{"message":{"content": piece}}`) become
 SSE `{"delta": piece}` events, and the terminal chunk's
