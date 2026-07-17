@@ -33,10 +33,26 @@ class ActionStreamGate:
         self._status = "pending"
         self._buffer: list[dict[str, Any]] = []
         self._lock = asyncio.Lock()
+        # Ground truth for "did the user actually see this lane": only deltas
+        # that reach the real emitter count. Buffered-then-denied deltas do
+        # not. This is the fact the feedback layer needs — never inferred.
+        self.emitted_chars = 0
+        self._emitted_parts: list[str] = []
 
     @property
     def status(self) -> str:
         return self._status
+
+    @property
+    def emitted_text(self) -> str:
+        return "".join(self._emitted_parts)
+
+    async def _passthrough(self, kwargs: dict[str, Any]) -> None:
+        text = kwargs.get("text")
+        if isinstance(text, str) and text:
+            self.emitted_chars += len(text)
+            self._emitted_parts.append(text)
+        await self._emit_delta(**kwargs)
 
     async def emit_delta(self, **kwargs: Any) -> None:
         async with self._lock:
@@ -53,7 +69,7 @@ class ActionStreamGate:
                     )
                 self._buffer.append(dict(kwargs))
                 return
-        await self._emit_delta(**kwargs)
+        await self._passthrough(kwargs)
 
     async def allow(self) -> None:
         async with self._lock:
@@ -69,7 +85,7 @@ class ActionStreamGate:
             len(buffered),
         )
         for item in buffered:
-            await self._emit_delta(**item)
+            await self._passthrough(item)
 
     async def deny(self) -> None:
         async with self._lock:
@@ -142,10 +158,40 @@ class RoundActionOverseer:
         self._max_actions = max(1, int(max_actions or DEFAULT_MAX_ACTIONS_PER_ROUND))
         self._observed: list[ObservedAction] = []
         self._rejected: list[RejectedAction] = []
+        self._gates: list[ActionStreamGate] = []
         self._lock = asyncio.Lock()
 
     def gate_for(self, *, action_index: int, emit_delta: EmitDelta, lane: str = "action") -> ActionStreamGate:
-        return ActionStreamGate(emit_delta=emit_delta, action_index=action_index, lane=lane)
+        gate = ActionStreamGate(emit_delta=emit_delta, action_index=action_index, lane=lane)
+        self._gates.append(gate)
+        return gate
+
+    def streamed_state(self) -> dict[str, Any]:
+        """What the USER actually saw this round, from the gates' real
+        emissions (never inferred). ``answer_streamed`` / ``answer_text``
+        are the fact + text a streamed final_answer put on the user's screen;
+        ``lanes`` is the per-lane audit."""
+        lanes: list[dict[str, Any]] = []
+        answer_text = ""
+        answer_streamed = False
+        for gate in self._gates:
+            emitted = int(gate.emitted_chars or 0)
+            lanes.append({
+                "index": gate.action_index,
+                "lane": gate.lane,
+                "status": gate.status,
+                "emitted_chars": emitted,
+            })
+            if gate.lane == "final_answer" and emitted > 0:
+                answer_streamed = True
+                # One answer lane per round reaches the user (the overseer
+                # denies competing finals); concatenation is safe.
+                answer_text += gate.emitted_text
+        return {
+            "answer_streamed": answer_streamed,
+            "answer_text": answer_text,
+            "lanes": lanes,
+        }
 
     async def observe_action_signal(
         self,

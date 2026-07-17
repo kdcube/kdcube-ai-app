@@ -74,3 +74,41 @@ def test_single_instance_parse_accepts_fenced_instance_text():
     decision, error = parse_single_react_decision_from_channel_text(FENCED)
     assert error is None, error
     assert decision["action"] == "complete"
+
+
+# --- keystone: per-lane streamed state feeds the salvage as FACT ---
+
+import asyncio
+
+from kdcube_ai_app.apps.chat.sdk.solutions.react.v3.action_overseer import (
+    RoundActionOverseer,
+)
+
+
+def test_streamed_state_reflects_real_gate_emission():
+    async def run():
+        emitted = []
+
+        async def real(**kw):
+            emitted.append(kw.get("text", ""))
+
+        ov = RoundActionOverseer(resolve_traits=lambda **k: {})
+        # allowed final_answer lane → user saw it, text captured verbatim
+        g = ov.gate_for(action_index=0, emit_delta=real, lane="final_answer")
+        await g.emit_delta(text="I can help ")
+        await g.emit_delta(text="with tasks")
+        await g.allow()
+        st = ov.streamed_state()
+        assert st["answer_streamed"] is True
+        assert st["answer_text"] == "I can help with tasks"
+
+        # denied lane → user saw nothing, no salvage
+        ov2 = RoundActionOverseer(resolve_traits=lambda **k: {})
+        g2 = ov2.gate_for(action_index=0, emit_delta=real, lane="final_answer")
+        await g2.emit_delta(text="ghost answer")
+        await g2.deny()
+        st2 = ov2.streamed_state()
+        assert st2["answer_streamed"] is False
+        assert st2["answer_text"] == ""
+
+    asyncio.run(run())

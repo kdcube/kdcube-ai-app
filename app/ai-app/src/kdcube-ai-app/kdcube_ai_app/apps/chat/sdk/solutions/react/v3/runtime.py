@@ -1431,14 +1431,21 @@ class ReactSolverV2:
             # round rejected post hoc may already have shown its final_answer.
             # Tell the model in-band — otherwise it composes a fresh answer and
             # the user sees a duplicate.
-            raw = str((decision or {}).get("raw") or "")
-            fa = re.search(r'"final_answer"\s*:\s*"((?:[^"\\]|\\.)*)"', raw)
+            # FACT first: the overseer's per-lane streamed state says exactly
+            # what the user saw. Fall back to a raw regex only if the packet
+            # predates streamed_state (defensive).
+            streamed = (decision or {}).get("streamed_state") or {}
             salvaged = ""
-            if fa and fa.group(1).strip():
-                try:
-                    salvaged = json.loads('"' + fa.group(1) + '"')
-                except Exception:
-                    salvaged = fa.group(1)
+            if isinstance(streamed, dict) and streamed.get("answer_streamed"):
+                salvaged = str(streamed.get("answer_text") or "")
+            if not salvaged.strip():
+                raw = str((decision or {}).get("raw") or "")
+                fa = re.search(r'"final_answer"\s*:\s*"((?:[^"\\]|\\.)*)"', raw)
+                if fa and fa.group(1).strip():
+                    try:
+                        salvaged = json.loads('"' + fa.group(1) + '"')
+                    except Exception:
+                        salvaged = fa.group(1)
             if salvaged.strip():
                 self._streamed_final_answer_pending = salvaged
                 message += (
@@ -3692,6 +3699,17 @@ class ReactSolverV2:
             if self._active_phase_cancelled_by_steer or self._steer_interrupt_requested:
                 self._stash_interrupted_generation_snapshot()
             self._clear_active_generation_capture()
+
+        # Per-lane streamed state from the overseer gates — the FACT of what
+        # the user saw this round (§ round-generation-feedback). Attached to
+        # the packet so every downstream feedback/finalize path reads facts,
+        # not a regex over raw.
+        try:
+            streamed_state = action_overseer.streamed_state()
+            if isinstance(decision, dict):
+                decision["streamed_state"] = streamed_state
+        except Exception:
+            streamed_state = {}
 
         policy_rejected_items = action_overseer.rejected_actions()
         if policy_rejected_items:
