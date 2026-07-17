@@ -18,6 +18,7 @@ from kdcube_ai_app.apps.chat.sdk.streaming.workspace_streamer_v3 import (
     ChannelSpec,
     stream_with_channels,
 )
+from kdcube_ai_app.apps.chat.sdk.streaming.stream_policy import StreamPolicyViolation
 from kdcube_ai_app.apps.chat.sdk.solutions.react.decision_prompt import (
     compose_decision_system_text,
     head_tail_preview,
@@ -233,6 +234,108 @@ def _preview_channel_text(text: Optional[str], *, limit: int = 600) -> str:
     if len(raw) <= limit:
         return raw
     return raw[:limit].rstrip() + "...(truncated)"
+
+
+class ReactDecisionPrefixGuard:
+    """Reject an invalid ReAct response prefix before channel parsing.
+
+    The generic channel streamer deliberately knows nothing about the ReAct
+    protocol. This guard is installed by the ReAct runtime on the raw-delta
+    callback, which runs before the generic parser and its subscribers.
+    """
+
+    _THINKING_OPEN = "<channel:thinking>"
+    _CHANNEL_OPEN_PREFIX = "<channel:"
+    _CHANNEL_CLOSE_PREFIX = "</channel:"
+
+    def __init__(self) -> None:
+        self._accepted = False
+        self._leading_whitespace_chars = 0
+        self._candidate = ""
+
+    @property
+    def accepted(self) -> bool:
+        return self._accepted
+
+    def observe_delta(self, piece: str) -> None:
+        if self._accepted or not piece:
+            return
+
+        incoming = str(piece)
+        if not self._candidate:
+            offset = 0
+            while offset < len(incoming) and incoming[offset].isspace():
+                offset += 1
+            self._leading_whitespace_chars += offset
+            incoming = incoming[offset:]
+            if not incoming:
+                return
+
+        self._candidate += incoming
+        lowered = self._candidate.lower()
+
+        if lowered.startswith(self._THINKING_OPEN):
+            self._accepted = True
+            self._candidate = ""
+            return
+        if self._THINKING_OPEN.startswith(lowered):
+            return
+
+        open_match = re.match(r"<channel:([a-zA-Z0-9_-]+)>", self._candidate, re.I)
+        close_match = re.match(r"</channel:([a-zA-Z0-9_-]+)>", self._candidate, re.I)
+        if open_match or close_match:
+            match = open_match or close_match
+            assert match is not None
+            first_channel = ("/" if close_match else "") + str(match.group(1) or "")
+            raise StreamPolicyViolation(
+                code="decision_first_channel_not_thinking",
+                message="The first ReAct channel must be <channel:thinking>.",
+                extra={
+                    "first_channel": first_channel,
+                    "offset": self._leading_whitespace_chars,
+                },
+            )
+
+        if self._CHANNEL_OPEN_PREFIX.startswith(lowered) or self._CHANNEL_CLOSE_PREFIX.startswith(lowered):
+            return
+
+        if lowered.startswith(self._CHANNEL_OPEN_PREFIX):
+            raw_name = self._candidate[len(self._CHANNEL_OPEN_PREFIX):].split(">", 1)[0]
+            if ">" not in self._candidate and re.fullmatch(r"[a-zA-Z0-9_-]*", raw_name):
+                return
+            partial_name = raw_name.strip()
+            raise StreamPolicyViolation(
+                code="decision_first_channel_not_thinking",
+                message="The first ReAct channel must be <channel:thinking>.",
+                extra={
+                    "first_channel": partial_name or "unknown",
+                    "offset": self._leading_whitespace_chars,
+                },
+            )
+
+        if lowered.startswith(self._CHANNEL_CLOSE_PREFIX):
+            raw_name = self._candidate[len(self._CHANNEL_CLOSE_PREFIX):].split(">", 1)[0]
+            if ">" not in self._candidate and re.fullmatch(r"[a-zA-Z0-9_-]*", raw_name):
+                return
+            partial_name = raw_name.strip()
+            raise StreamPolicyViolation(
+                code="decision_first_channel_not_thinking",
+                message="The first ReAct channel must be <channel:thinking>.",
+                extra={
+                    "first_channel": f"/{partial_name or 'unknown'}",
+                    "offset": self._leading_whitespace_chars,
+                },
+            )
+
+        raise StreamPolicyViolation(
+            code="decision_preamble_before_first_channel",
+            message="Text outside the ReAct channel protocol is not allowed.",
+            extra={
+                "preamble_chars": self._leading_whitespace_chars + len(self._candidate),
+                "preamble_preview": _preview_channel_text(self._candidate, limit=900),
+                "first_channel": "",
+            },
+        )
 
 
 def validate_decision_protocol_shape(full_raw: Optional[str]) -> tuple[Optional[str], Dict[str, Any]]:

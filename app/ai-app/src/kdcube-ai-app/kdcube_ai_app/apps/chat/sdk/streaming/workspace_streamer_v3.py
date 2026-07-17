@@ -897,6 +897,8 @@ async def stream_with_channels(
         if piece and raw_emit is not None:
             try:
                 await raw_emit(piece)
+            except StreamPolicyViolation:
+                raise
             except Exception:
                 pass
         piece = citations_module._strip_invisible(piece)

@@ -32,6 +32,7 @@ from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import (
     get_current_bundle_call_context,
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v3.agents.decision import (
+    ReactDecisionPrefixGuard,
     parse_single_react_decision_from_channel_text,
     react_decision_stream_v2,
 )
@@ -1284,7 +1285,7 @@ class ReactSolverV2:
             return "final_answer is required for action=complete/exit."
         if code == "decision_preamble_before_first_channel":
             return (
-                "Your response started with text outside the ReAct channel protocol. Text before the first `<channel:thinking>` tag is ignored by the runtime and can exhaust the output budget. "
+                "Your response started with text outside the ReAct channel protocol, so the runtime interrupted generation before channel parsing. "
                 "No action ran. Next: start immediately with `<channel:thinking>`, then emit `<channel:action>` and any required `<channel:code>`."
             )
         if code == "decision_first_channel_not_thinking":
@@ -3639,6 +3640,12 @@ class ReactSolverV2:
 
         async def _decision_agent(*, blocks: List[Dict[str, Any]]) -> Dict[str, Any]:
             self._begin_active_generation_capture(iteration=iteration)
+            prefix_guard = ReactDecisionPrefixGuard()
+
+            async def _capture_and_guard_raw(piece: str) -> None:
+                await self._capture_active_generation_raw(piece)
+                prefix_guard.observe_delta(piece)
+
             from kdcube_ai_app.apps.chat.sdk.streaming.workspace_streamer_v3 import ChannelSubscribers
             subs = ChannelSubscribers().subscribe_factory("action", _react_decision_subscriber_factory)
             subs = subs.subscribe("code", _hub_on_code)
@@ -3658,7 +3665,7 @@ class ReactSolverV2:
                 include_skill_gallery=self.include_skill_gallery,
                 multi_action_mode=self.multi_action_mode,
                 on_progress_delta=mainstream,
-                on_raw_delta=self._capture_active_generation_raw,
+                on_raw_delta=_capture_and_guard_raw,
                 subscribers=subs,
                 agent_name=role,
                 max_tokens=decision_max_tokens,
@@ -3765,14 +3772,9 @@ class ReactSolverV2:
         if stream_policy_violation is not None:
             code = stream_policy_violation.code
             extra = dict(stream_policy_violation.extra or {})
-            try:
-                self._persist_interrupted_generation(
-                    state=state,
-                    checkpoint="decision.stream_policy",
-                    cancelled_phase="decision",
-                )
-            except Exception:
-                pass
+            # Policy-rejected model output is not a steer-interrupted
+            # generation and must not be replayed into the next model input.
+            self._take_interrupted_generation_snapshot()
             notice_message = self._protocol_violation_message(
                 code=code,
                 decision={},
@@ -3799,11 +3801,12 @@ class ReactSolverV2:
                 decision=decision if isinstance(decision, dict) else {},
                 streamed_state=streamed_state,
                 state=state,
-                code="action_schema_error",
+                code=code,
             )
             if finalized is not None:
                 error = None
-                return finalized
+                state["last_decision"] = finalized
+                return state
             retries = int(state.get("decision_retries") or 0)
             if retries < int(state.get("max_iterations") or 0):
                 state["decision_retries"] = retries + 1
@@ -3947,6 +3950,15 @@ class ReactSolverV2:
                 self.log.log(f"[react.v3] decision schema error: {error}", level="ERROR")
             except Exception:
                 pass
+            finalized = self._keep_and_stop_if_answer_streamed(
+                decision=decision if isinstance(decision, dict) else {},
+                streamed_state=streamed_state,
+                state=state,
+                code="action_schema_error",
+            )
+            if finalized is not None:
+                state["last_decision"] = finalized
+                return state
             retries = int(state.get("decision_retries") or 0)
             if retries < int(state.get("max_iterations") or 0):
                 state["decision_retries"] = retries + 1

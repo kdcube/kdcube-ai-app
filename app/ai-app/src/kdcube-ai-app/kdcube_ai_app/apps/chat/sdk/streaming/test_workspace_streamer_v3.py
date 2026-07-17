@@ -656,6 +656,60 @@ async def test_stream_policy_interrupts_before_denied_action_channel_closes():
 
 
 @pytest.mark.asyncio
+async def test_raw_stream_policy_interrupts_before_channel_parser_and_subscribers():
+    chunks = [
+        "Draft outside the protocol.",
+        "<channel:thinking>This must not stream.</channel:thinking>",
+        _json_channel(
+            "action",
+            {
+                "action": "complete",
+                "notes": "",
+                "final_answer": "This must not reach a subscriber.",
+            },
+        ),
+    ]
+    svc = _InterruptAwareService(chunks)
+    collector = _Collector()
+    subscriber_events = []
+
+    async def _raw_emit(piece: str) -> None:
+        if piece.startswith("Draft"):
+            raise StreamPolicyViolation(
+                code="decision_preamble_before_first_channel",
+                message="invalid ReAct prefix",
+            )
+
+    async def _subscriber(**kwargs) -> None:
+        subscriber_events.append(dict(kwargs))
+
+    with pytest.raises(StreamPolicyViolation) as exc:
+        await stream_with_channels(
+            svc=svc,
+            messages=["sys", "user"],
+            role="answer.generator.regular",
+            channels=[
+                ChannelSpec(name="thinking", format="markdown", replace_citations=False, emit_marker="thinking"),
+                ChannelSpec(name="action", format="json", replace_citations=False, emit_marker="answer"),
+            ],
+            emit=collector.emit,
+            agent="test.agent",
+            artifact_name="react.decision",
+            subscribers=ChannelSubscribers().subscribe("action", _subscriber),
+            raw_emit=_raw_emit,
+            max_tokens=500,
+            temperature=0.0,
+            return_full_raw=True,
+        )
+
+    assert exc.value.code == "decision_preamble_before_first_channel"
+    assert svc.yielded == [chunks[0]]
+    assert not svc.stream_finished
+    assert collector.events == []
+    assert subscriber_events == []
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("chunk_size", [13, 97, 10**9])
 async def test_stream_with_channels_v3_captures_mixed_repeated_channel_sequence(chunk_size):
     decisions = [

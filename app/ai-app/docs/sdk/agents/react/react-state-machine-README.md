@@ -74,28 +74,28 @@ to `decision` (bounded by the retry/iteration gates).
 
 ### Streaming and failed rounds (critical)
 
-Decision channels stream to the USER while the generation is still running:
-`thinking`, root `notes`, and the action's `final_answer` string are decoded
-char-level and delivered live. Validation is TWO-TIERED:
+Decision channels stream to the USER while generation is still running.
+Enforcement is ordered:
 
-- **Online (action overseer):** each streamed action candidate is judged
-  IMMEDIATELY for strategy/trait compatibility against already-accepted
-  moves. Only an accepted candidate's gated output (e.g. its `final_answer`
-  answer lane) streams to the user; a dropped candidate never reaches them.
-- **Post hoc (schema/shape):** parsing and validating the action JSON and
-  the channel shape (preamble, first-channel, required channels) run after
-  generation. A round that PASSED the online gate but fails post hoc may
-  therefore already have shown its content; streamed text stays visible.
+1. **Online ReAct prefix guard:** the raw-delta callback permits leading
+   whitespace and then requires `<channel:thinking>`. An impossible prefix
+   raises `StreamPolicyViolation` before the generic parser, subscribers, or
+   early tool execution can observe it.
+2. **Online action overseer:** each action candidate is judged immediately
+   for strategy/trait compatibility. Only accepted gated lanes can emit.
+3. **Post-stream defense:** the complete response is checked again; action
+   JSON is parsed and validated, and channel/action consistency is enforced.
 
-Two invariants follow for the post-hoc tier:
+Two invariants follow:
 
-- **Post-hoc parsing must accept whatever the streaming layer accepted.**
-  A fence-dialect mismatch between the two layers produced a duplicated
-  final answer (parsers fixed + regression-locked in `e9f05cec4`).
-- **The retry must know what the user saw.** The `action_schema_error`
-  violation notice states when the failed action's `final_answer` already
-  streamed, and instructs the model to re-emit the SAME text in the
-  corrected action rather than composing a new answer.
+- **Incremental and complete-response parsers agree on JSON container
+  boundaries.** A fence-dialect mismatch once produced a duplicated final
+  answer (fixed and regression-locked in `e9f05cec4`).
+- **Delivery facts determine retry behavior.** If an allowed final-answer
+  lane already emitted and a post-stream check then fails,
+  `_keep_and_stop_if_answer_streamed` finalizes with that exact emitted text.
+  It does not ask the model to repeat the answer. Progress without a final
+  answer remains progress and follows the normal notice/retry path.
 
 ### Completion rounds
 A `complete`/`exit` round carries the user-facing `final_answer` and exactly

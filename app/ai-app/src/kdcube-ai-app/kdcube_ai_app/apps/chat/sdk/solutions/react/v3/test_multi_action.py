@@ -9,12 +9,14 @@ import pytest
 
 from kdcube_ai_app.apps.chat.sdk.runtime.tool_traits import STRATEGY_COMPATIBILITY_MATRIX
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v3.agents.decision import (
+    ReactDecisionPrefixGuard,
     parse_react_decision_bundle_from_raw,
     react_decision_stream_v2,
     validate_decision_protocol_shape,
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v3.runtime import ReactSolverV2
 from kdcube_ai_app.apps.chat.sdk.solutions.react.round import ReactRound
+from kdcube_ai_app.apps.chat.sdk.streaming.stream_policy import StreamPolicyViolation
 
 
 class _LogStub:
@@ -104,6 +106,8 @@ class _FakeDecisionService:
     def __init__(self, text: str, chunk_size: int = 31):
         self.text = text
         self.chunk_size = chunk_size
+        self.yielded_chunks = []
+        self.stream_finished = False
 
     def get_client(self, _role):
         return object()
@@ -126,7 +130,10 @@ class _FakeDecisionService:
     ):
         del messages, temperature, max_tokens, client_cfg, debug, role, debug_citations
         for idx in range(0, len(self.text), self.chunk_size):
-            await on_delta(self.text[idx: idx + self.chunk_size])
+            chunk = self.text[idx: idx + self.chunk_size]
+            self.yielded_chunks.append(chunk)
+            await on_delta(chunk)
+        self.stream_finished = True
         await on_complete({})
         return {"text": self.text, "service_error": None}
 
@@ -304,6 +311,108 @@ def test_validate_decision_protocol_shape_accepts_immediate_thinking_channel():
 
     assert error is None
     assert extra == {}
+
+
+@pytest.mark.parametrize(
+    "chunks",
+    [
+        ["<channel:thinking>"],
+        ["<", "channel:", "thinking", ">"],
+        [" \n\t", "<channel:thi", "nking>Planning."],
+        ["<CHANNEL:THINKING>Planning.</CHANNEL:THINKING>"],
+    ],
+)
+def test_react_decision_prefix_guard_accepts_chunked_thinking_channel(chunks):
+    guard = ReactDecisionPrefixGuard()
+
+    for chunk in chunks:
+        guard.observe_delta(chunk)
+
+    assert guard.accepted
+
+
+def test_react_decision_prefix_guard_rejects_preamble_on_first_undeniable_delta():
+    guard = ReactDecisionPrefixGuard()
+
+    with pytest.raises(StreamPolicyViolation) as exc:
+        guard.observe_delta("Draft outside the protocol")
+
+    assert exc.value.code == "decision_preamble_before_first_channel"
+    assert exc.value.extra["preamble_preview"] == "Draft outside the protocol"
+    assert not guard.accepted
+
+
+def test_react_decision_prefix_guard_rejects_wrong_first_channel_before_its_body():
+    guard = ReactDecisionPrefixGuard()
+    guard.observe_delta("<channel:")
+    guard.observe_delta("act")
+
+    with pytest.raises(StreamPolicyViolation) as exc:
+        guard.observe_delta("ion>")
+
+    assert exc.value.code == "decision_first_channel_not_thinking"
+    assert exc.value.extra["first_channel"] == "action"
+    assert not guard.accepted
+
+
+@pytest.mark.asyncio
+async def test_react_decision_stream_stops_provider_on_invalid_prefix():
+    svc = _FakeDecisionService(
+        "Draft outside the protocol."
+        "<channel:thinking>This must not be parsed.</channel:thinking>"
+        "<channel:action>{\"action\":\"complete\",\"final_answer\":\"no\"}</channel:action>",
+        chunk_size=1,
+    )
+    guard = ReactDecisionPrefixGuard()
+    captured = []
+
+    async def _capture_and_guard(piece: str) -> None:
+        captured.append(piece)
+        guard.observe_delta(piece)
+
+    with pytest.raises(StreamPolicyViolation) as exc:
+        await react_decision_stream_v2(
+            svc=svc,
+            agent_name="solver.react.v2.decision.v2.strong",
+            adapters=[],
+            on_raw_delta=_capture_and_guard,
+            user_blocks=[{"type": "text", "text": "test the protocol"}],
+        )
+
+    assert exc.value.code == "decision_preamble_before_first_channel"
+    assert captured == ["D"]
+    assert svc.yielded_chunks == ["D"]
+    assert not svc.stream_finished
+
+
+def test_keep_and_stop_uses_streamed_answer_for_schema_rejection():
+    solver = _solver_stub()
+    solver._streamed_final_answer_pending = "stale"
+    state = {"retry_decision": True}
+    decision = {
+        "action": "call_tool",
+        "notes": "invalid parser result",
+        "tool_call": {"tool_id": "example.tool", "params": {}},
+    }
+
+    finalized = solver._keep_and_stop_if_answer_streamed(
+        decision=decision,
+        streamed_state={
+            "answer_streamed": True,
+            "answer_text": "The answer already shown to the user.",
+        },
+        state=state,
+        code="action_schema_error",
+    )
+
+    assert finalized == {
+        "action": "complete",
+        "notes": "",
+        "tool_call": None,
+        "final_answer": "The answer already shown to the user.",
+    }
+    assert state["retry_decision"] is False
+    assert solver._streamed_final_answer_pending == ""
 
 
 def test_parse_react_decision_bundle_from_multiple_fenced_blocks_in_single_channel():
