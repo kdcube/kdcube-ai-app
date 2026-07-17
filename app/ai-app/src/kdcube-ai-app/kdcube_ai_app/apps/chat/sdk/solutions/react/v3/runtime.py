@@ -3736,6 +3736,26 @@ class ReactSolverV2:
                 )
             except Exception:
                 pass
+            # The user already HAS the answer when the malformed action's
+            # final_answer streamed (salvaged by the notice builder). Do not
+            # kick the model again — keep the answer and stop: synthesize the
+            # complete the model meant, attributed to THIS lineage.
+            salvaged_now = str(getattr(self, "_streamed_final_answer_pending", "") or "")
+            if salvaged_now.strip():
+                self._streamed_final_answer_pending = ""
+                state["retry_decision"] = False
+                decision["action"] = "complete"
+                decision["final_answer"] = salvaged_now
+                decision["tool_call"] = None
+                decision["notes"] = ""
+                error = None
+                state["decision"] = decision
+                self.log.log(
+                    "[react.v3] schema-error round already streamed its final_answer; "
+                    "finalizing with the streamed text instead of retrying",
+                    level="WARNING",
+                )
+                return decision
             retries = int(state.get("decision_retries") or 0)
             if retries < int(state.get("max_iterations") or 0):
                 state["decision_retries"] = retries + 1
