@@ -4,6 +4,7 @@ title: "Protect REST With Managed Delegated Credentials"
 summary: "Configure application REST operations or platform REST resources so external automation can call them with a Connection Hub delegated bearer token."
 status: active
 tags: ["connection-hub", "delegated-credentials", "rest", "automation", "oauth"]
+updated_at: 2026-07-17
 ---
 
 # Protect REST With Managed Delegated Credentials
@@ -20,6 +21,7 @@ Related docs:
 
 - [OAuth Delegated Credential Protocol Adapter](../../sdk/solutions/connections/delegated-credentials/oauth-delegated-credential-protocol-adapter-README.md)
 - [Protect Application MCP With Managed Credentials](protect-bundle-mcp-with-managed-credentials-README.md)
+- [Create Delegated Automation Access](create-delegated-automation-access-README.md)
 - [Connection Hub Solution](../../sdk/solutions/connections/connection-hub-solution-README.md)
 
 ## Flow
@@ -82,6 +84,12 @@ bundles:
 `selected_operation_grants: true` means the concrete operation must be present
 in the delegated credential grant record. MCP may expose operations as tools at
 the protocol edge, but the stored delegated access boundary is operation-centric.
+
+This REST selector is not the named-services selector. A normal REST resource
+uses `resources[].operations` and the top-level issued `operations` list.
+`named_service_operations[resource][namespace][]` is used only for the nested
+namespace boundary behind the generic named-services MCP bridge. Do not add
+namespace-shaped policy to an ordinary REST resource.
 
 ## Connection Hub Delegated Resource
 

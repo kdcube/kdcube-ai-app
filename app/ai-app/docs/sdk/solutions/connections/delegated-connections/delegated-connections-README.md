@@ -4,7 +4,7 @@ title: "Delegated Connections"
 summary: "Connection Hub role for consented connections where a credential/proof is verified by an authenticator, linked to a principal or grant, and constrained by allowed actions."
 status: active
 tags: ["sdk", "solutions", "connections", "connection-hub", "delegated-connections", "oauth", "mcp", "consent", "grants"]
-updated_at: 2026-07-06
+updated_at: 2026-07-17
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/connection-hub-solution-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/authority-providers/authority-provider-runtime-README.md
@@ -359,7 +359,8 @@ tab can show it and revoke it. Two sources land in one registry:
 ```text
 source=manual
   bounded bearer token the user creates in the Hub form
-  (label, resource->grants selection, TTL, token shown once)
+  (label, resource->grants selection, optional exact named-service operations,
+   TTL, token shown once)
 
 source=oauth
   an external client (for example an MCP client) approved through the
@@ -390,6 +391,42 @@ oauth   -> the refresh token is deleted (no new access tokens)
 Public listings never expose token material — only metadata (label, source,
 resource grants, created/approved and expiry times, token last-four for
 manual rows).
+
+### Exact Named-Service Operations For Manual Access
+
+Ordinary REST and product-specific MCP resources remain resource-grant driven:
+Connection Hub derives their compatible top-level operations from the selected
+grants. A resource that declares a `named_services` catalog has an additional
+boundary because one generic MCP tool can target many namespaces.
+
+The manual form sends only the checked existing operations:
+
+```json
+{
+  "named_service_operations": {
+    "*/kdcube-services@1-0/public/mcp/named_services*": {
+      "mem": ["object.search"],
+      "slack": ["object.search", "object.action"]
+    }
+  }
+}
+```
+
+Connection Hub validates every resource, namespace, operation, and required
+grant against the live descriptor. It stores a narrowed copy of that existing
+`named_services` tree with the server-side grant. KDCube Services prefers the
+stored tree when constructing its runtime catalog, so unselected sibling
+operations and namespaces fail at the inner bridge.
+
+Selecting an operation selects its domain grants and the common MCP entry
+grant. Removing a required grant clears the affected operation. Connection Hub
+does not create synthetic action variants or a second capability registry.
+
+Connected-account requirements are separate prerequisites. The form derives
+them from selected operations and offers the existing **Connect account**,
+**Approve access**, or **Reconnect account** action under **Delegated to
+KDCube**. Provider credentials remain in Connection Hub and are never included
+in the automation bearer or copied into its grant record.
 
 ### Live Delivery To Open Hubs
 
@@ -450,6 +487,11 @@ The outer grant lets the generic bridge run. The inner namespace catalog tells
 the bridge which authority/grant to enforce when a tool call targets a concrete
 namespace. This lets one MCP connector expose several product realms without
 making every namespace a separate MCP server.
+
+OAuth consent and manual automation creation both project this descriptor
+catalog. OAuth records the selection through its protocol flow. Manual creation
+uses `named_service_operations[resource][namespace][]`. Runtime enforcement is
+the same, while issuance and provider-account consent remain distinct flows.
 
 The MCP server advertises instructions for clients:
 

@@ -4,7 +4,7 @@ title: "Connection Hub Solution"
 summary: "Canonical map of Connection Hub roles: connection edges, identity-family resolution, request authenticators, authority projection, delegated connections, link flows, and widget auth-context transport."
 status: active
 tags: ["sdk", "solutions", "connections", "connection-hub", "identity", "auth", "authority", "delegated-connections"]
-updated_at: 2026-07-12
+updated_at: 2026-07-17
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/runtime/tenant-project-user-and-execution-boundaries-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/connection-edges/connection-edges-README.md
@@ -455,6 +455,33 @@ Managed KDCube Services MCP:
   named_services_list -> namespace capabilities/schema -> namespace operation
 ```
 
+For delegated access to the generic named-services MCP, authorization has three
+owners and no layer substitutes for another:
+
+```text
+Connection Hub resource boundary
+  resource_grants + compatible top-level MCP operations
+       |
+       v
+KDCube Services named-service boundary
+  exact named_service_operations[resource][namespace][] selection
+       |
+       v
+Connected-provider boundary, when required
+  grantor's Slack/Gmail/provider account claim under Delegated to KDCube
+```
+
+The OAuth MCP connector presents the descriptor-backed catalog through its
+OAuth authorization/consent flow. Manual **Delegated by KDCube -> Create
+automation access** presents exact namespace-operation checkboxes and persists
+a narrowed copy of the same `named_services` tree in the grant record. These
+are separate issuance paths with one runtime policy, not two grant systems.
+
+Provider prerequisites are display/deep-link information derived from the
+selected operations. They lead to the existing **Delegated to KDCube** flow.
+The provider credential and claims are not copied into the automation bearer
+or its named-service policy.
+
 Connection edges prove which identity may represent which other identity, and
 which grants are delegated on that relationship. Delegated connection
 credentials are one edge-producing/edge-consuming use case; Telegram account
@@ -476,7 +503,7 @@ grantor's full platform session.
 | Understand token/proof routing metadata | [Authority Credential Envelope](authority-providers/credential-envelope-README.md) |
 | Carry roles/economics across runtime boundaries | [Authority Projection](authority-projection/authority-projection-README.md) |
 | Open Data Bus from Telegram or another non-browser actor | [Federated Data Bus Session Tokens](../../bundle/auth-bundle-federated-README.md) |
-| Understand delegated representatives and grants | [Delegated Connections](delegated-connections/delegated-connections-README.md) |
+| Understand delegated representatives, manual automation selection, and OAuth grants | [Delegated Connections](delegated-connections/delegated-connections-README.md) |
 | See and revoke access a user granted to automations and external clients | [Delegated Connections](delegated-connections/delegated-connections-README.md) |
 | Connect Gmail/Slack/iCloud as delegated provider accounts | [Delegated Accounts](delegated-accounts/delegated-accounts-README.md) |
 | Connect a custom OAuth/OIDC service so KDCube tools can use the user's provider token | [Custom OAuth/OIDC Provider Accounts](delegated-accounts/custom-oauth-oidc-service-README.md) |

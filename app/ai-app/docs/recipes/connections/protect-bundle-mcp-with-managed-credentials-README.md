@@ -3,8 +3,8 @@ id: repo:kdcube-ai-app/app/ai-app/docs/recipes/connections/protect-bundle-mcp-wi
 title: "Protect Bundle MCP With Managed Credentials"
 summary: "Recipe for exposing a bundle MCP surface protected by Connection Hub delegated credentials, with tool-centric grants and descriptor-owned policy."
 status: active
-tags: ["recipes", "connections", "connection-hub", "delegated-credentials", "mcp", "managed-auth", "bundle-surfaces"]
-updated_at: 2026-06-30
+tags: ["recipes", "connections", "connection-hub", "delegated-credentials", "mcp", "managed-auth", "bundle-surfaces", "named-services", "least-privilege"]
+updated_at: 2026-07-17
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/delegated-credentials/oauth-delegated-credential-protocol-adapter-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/delegated-credentials/delegated-credential-protocol-adapters-README.md
@@ -479,6 +479,54 @@ The nested namespace/tool catalog says which provider boundary consumes
 or `canvas:write`. This is what lets `mem`, `task`, and `cnv` require different
 grants for the same generic bridge tool.
 
+### Manual automation access narrows this same policy
+
+The **Connection Hub -> Delegated by KDCube -> Create automation access**
+screen renders the configured `resources[].named_services` tree. Each existing
+namespace operation is selectable. The request carries the exact selection:
+
+```json
+{
+  "named_service_operations": {
+    "*/kdcube-services@1-0/public/mcp/named_services*": {
+      "mem": ["object.search"],
+      "task": ["object.search"]
+    }
+  }
+}
+```
+
+Connection Hub validates the ids and required grants, then stores a narrowed
+copy of the configured `named_services` tree in the token's `GrantStore`
+record. The KDCube Services bridge prefers that stored tree over the deployment
+default when it constructs `NamedServiceBoundaryCatalog`. Therefore the token
+can search `mem` and `task`, but cannot upsert either namespace or reach `cnv`.
+
+The selector does not create a second catalog and does not synthesize action
+variants. It selects only operation ids that already exist in the descriptor.
+Compatible top-level MCP operations and their common entry grants are derived
+server-side.
+
+Provider-backed namespaces add a separate upstream prerequisite. Provider
+discovery may declare `connected_accounts` and operation-specific claims. The
+manual screen shows them and deep-links to **Delegated to KDCube**, but does not
+copy those claims or provider credentials into the automation token:
+
+```text
+automation grant record
+  KDCube resource + generic MCP tool + selected namespace operations
+
+grantor's connected account
+  provider credential + approved provider claims
+
+provider call succeeds only when both boundaries pass
+```
+
+OAuth-based MCP connectors still authorize through their OAuth consent flow;
+they do not call the manual `delegated_access_create` operation. Both flows use
+the same descriptor-backed resource and namespace catalogs, while keeping their
+issuance protocols separate.
+
 The protected-resource discovery response keeps these catalogs separate too:
 
 ```json
@@ -526,10 +574,17 @@ credentials and user consent.
 3. Call the MCP URL without Authorization.
 4. Confirm the response points to Connection Hub OAuth metadata.
 5. Complete OAuth from an external client.
-6. Consent to only one tool if the UI allows narrowing.
+6. Consent to only one tool.
 7. Call the selected tool; it succeeds.
 8. Call an unselected tool; it fails closed.
 9. Confirm logs include delegated_client authority and selected-tool enforcement.
+10. Create a manual automation token for the named-services MCP resource with
+    only `mem.object.search`; confirm upsert/action/delete and another namespace
+    fail at the inner bridge.
+11. Try to create a token with a named-service operation but without its
+    declared grant; confirm creation fails.
+12. For a provider-backed namespace, revoke the provider claim while retaining
+    the KDCube automation grant; confirm the upstream call fails closed.
 ```
 
 ## What Not To Do

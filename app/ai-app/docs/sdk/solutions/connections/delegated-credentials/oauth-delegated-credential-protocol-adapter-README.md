@@ -745,6 +745,29 @@ The bearer token is not the authority source for this decision. Managed guards
 read the server-side grant record by access-token hash and derive matchable
 resources from the keys of `resource_grants`.
 
+For a manual automation bearer targeting a resource with a `named_services`
+catalog, the request may additionally contain the exact selection:
+
+```json
+{
+  "named_service_operations": {
+    "*/kdcube-services@1-0/public/mcp/named_services*": {
+      "mem": ["object.search"]
+    }
+  }
+}
+```
+
+This field belongs to the manual `delegated_access_create` operation, not the
+OAuth token endpoint. Connection Hub validates it against the same descriptor
+catalog OAuth consent uses and stores a narrowed `named_services` tree in the
+server-side grant. Ordinary REST and product-specific MCP resources still
+derive compatible top-level operations from `resource_grants`.
+
+Provider-account requirements are not embedded into this selector. They are
+resolved through the grantor's separate **Delegated to KDCube** connection, and
+the provider token never enters the delegated-client bearer.
+
 ## Regression Checklist
 
 Use focused tests and one live connector test.
@@ -769,5 +792,11 @@ Use focused tests and one live connector test.
 11. MCP server icon metadata resolves to the KDCube favicon, and
     `ToolAnnotations` split read-only tools from write/action/delete tools in
     clients that honor MCP annotations.
-12. The feature is disabled when
+12. Manual automation access to a named-services resource stores only selected
+    namespace operations; sibling operations and namespaces fail at the bridge.
+13. Removing a required domain or MCP-entry grant clears/rejects its selected
+    namespace operation.
+14. A missing provider-account claim fails independently without exposing the
+    provider credential to the delegated client.
+15. The feature is disabled when
     `connection-hub@1-0.config.connections.delegated_credentials.oauth.enabled: false`.

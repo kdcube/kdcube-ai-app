@@ -4,11 +4,12 @@ title: "Use Connected Identities In A Product Feature"
 summary: "Recipe for product features that need to read data across the current user's connected identities without turning identity family into an authorization shortcut."
 status: active
 tags: ["recipes", "connections", "connection-hub", "identity-family", "connection-edges", "memory"]
-updated_at: 2026-06-29
+updated_at: 2026-07-17
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/identity-family-resolver/identity-family-resolver-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/connection-edges/connection-edges-README.md
   - repo:kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/chatbot/entrypoint_with_memory.py
+  - repo:kdcube-ai-app/app/ai-app/docs/recipes/connections/create-delegated-automation-access-README.md
 ---
 # Use Connected Identities In A Product Feature
 
@@ -29,6 +30,24 @@ Connection Hub edge:
 Memory widget:
   shows both records when "all my memories" is selected
 ```
+
+Keep three independent boundaries distinct:
+
+```text
+identity family
+  which linked KDCube identities may participate in a product query
+
+delegated named-service operation
+  which KDCube namespace operation an external automation may call
+
+connected provider account
+  which external account and provider claims KDCube may use upstream
+```
+
+Selecting `mem.object.search` for an automation does not automatically grant
+identity-family expansion. Connecting Gmail or Slack does not add either
+identity-family access or a KDCube named-service operation. Each boundary must
+be configured and enforced by its own owner.
 
 ## What This Solves
 

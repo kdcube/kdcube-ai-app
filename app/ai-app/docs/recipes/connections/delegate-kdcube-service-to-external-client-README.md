@@ -4,7 +4,7 @@ title: "Delegate A KDCube Service To An External Client"
 summary: "User-facing recipe for connecting Claude or another external client to a KDCube service through Connection Hub delegated credentials."
 status: active
 tags: ["recipes", "connections", "connection-hub", "delegated-credentials", "oauth", "claude", "mcp", "consent"]
-updated_at: 2026-06-29
+updated_at: 2026-07-17
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/recipes/connections/protect-bundle-mcp-with-managed-credentials-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/delegated-credentials/oauth-delegated-credential-protocol-adapter-README.md
@@ -67,6 +67,25 @@ Claude may not call tools that were not consented.
     selected grants
     selected identity scope
 ```
+
+This OAuth connector journey and **Create automation access** are two issuance
+paths over the same Connection Hub resource catalog, but they are not the same
+request flow:
+
+```text
+external MCP connector
+  -> OAuth authorize + consent
+  -> selected resource/tools/grants in the OAuth grant record
+
+manual script or agent token
+  -> Connection Hub / Delegated by KDCube / Create automation access
+  -> resource_grants + exact named_service_operations selection
+```
+
+Do not document the manual `named_service_operations` payload as an OAuth
+protocol field. OAuth consent renders the descriptor-backed catalog within the
+OAuth flow; manual automation creation sends that explicit selector to
+`delegated_access_create`.
 
 ## What Identity Does The Client Get?
 
@@ -143,6 +162,29 @@ user selects:
 result:
   token cannot call memory_get
 ```
+
+For the generic `kdcube-services@1-0/public/mcp/named_services` bridge, there is
+one more level because one generic MCP tool accepts a namespace argument:
+
+```text
+outer consent
+  named_services_search + named_services:use
+
+inner named-service boundary
+  mem.object.search    + memories:read
+  task.object.search   + tasks:read
+  slack.object.action  + slack:write
+```
+
+The OAuth consent view displays the configured namespace/operation rows. The
+stored named-service policy is enforced again by the bridge at every call; a
+generic `named_services_action` tool does not authorize actions in every
+namespace.
+
+If the namespace uses Slack, Gmail, or another connected provider, its
+provider-account claims remain a second prerequisite under **Delegated to
+KDCube**. The external MCP client gets a KDCube delegated credential, never the
+provider token.
 
 ## Identity Scope Choices
 
@@ -235,6 +277,11 @@ service, tools, and identity scope.
 6. Ask the external client to search memories.
 7. Confirm it sees only the consented identity scope.
 8. Revoke or narrow the grant, then confirm calls fail closed.
+9. For the generic named-services bridge, approve one namespace operation and
+   confirm a different operation in the same namespace fails closed.
+10. For a provider-backed namespace, revoke the user's connected-account claim
+    while leaving the MCP grant active; confirm the provider call fails without
+    exposing the upstream credential.
 ```
 
 ## What Not To Do

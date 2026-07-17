@@ -1,17 +1,18 @@
 ---
 id: kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/connection-hub@1-0/docs/README.md
 title: "Connection Hub Design"
-summary: "Design overview of connection-hub@1-0: connection edges, delegated account connections, shared OAuth callback, named-service exposure, and the Connections widget."
+summary: "Design overview of connection-hub@1-0: connection edges, connected provider accounts, delegated client credentials, shared OAuth callbacks, named-service boundaries, and the Connections widget."
 status: active
-tags: ["app", "connection-hub", "identity", "connections", "named-services", "oauth", "email", "design"]
+tags: ["app", "connection-hub", "identity", "connections", "named-services", "mcp", "oauth", "delegated-credentials", "email", "design"]
 ---
 
 # Connection Hub Design
 
-`connection-hub@1-0` is the platform example bundle for connecting external
-identities and delegated accounts into KDCube.
+`connection-hub@1-0` is the platform example app (bundle) for connecting
+external identities and provider accounts to KDCube, and for delegating bounded
+KDCube access back out to external clients.
 
-It has two responsibilities that must stay separate:
+It has three responsibilities that must stay separate:
 
 ```text
 connection edges
@@ -23,6 +24,11 @@ delegated account connections
   platform user id -> external account credential with approved provider claims
   examples: Gmail OAuth token, Slack workspace OAuth token, iCloud app password
   used by: automation that acts for the user
+
+delegated client credentials
+  platform user -> external automation allowed into selected KDCube boundaries
+  examples: MCP OAuth connector, manual script/agent bearer
+  used by: external clients acting for the approving KDCube user
 ```
 
 Do not infer platform roles from delegated accounts. The long-term authority is:
@@ -49,7 +55,12 @@ A user-scoped hub that:
   can resolve delegated tokens (`bundle_registry` transport);
 - owns the single shared OAuth callback route used by all providers/apps;
 - offers a Connections settings widget for users to link identities and
-  connect/disconnect accounts.
+  connect/disconnect accounts;
+- issues and revokes external-client credentials through OAuth consent or
+  **Delegated by KDCube -> Create automation access**;
+- renders exact named-service namespace operations for manual automation access,
+  validates them against the descriptor, and persists the narrowed policy in
+  the delegated grant record.
 
 ## Building blocks it wires
 
@@ -116,6 +127,47 @@ Connection Hub may scan tool declarations for admin visibility, but the
 application bundle/tool definition remains the source of truth for which
 provider claims a tool needs.
 
+## Delegated automation and provider-backed named services
+
+The generic named-services MCP resource has two authorization layers and may
+have a third provider prerequisite:
+
+```text
+managed MCP boundary
+  resource + generic MCP tool + named_services:use
+        |
+        v
+named-service boundary
+  namespace + selected operation + namespace grants
+        |
+        v
+connected provider boundary (only when declared)
+  grantor's account + provider claims
+```
+
+The manual **Create automation access** screen projects the first two layers
+from `connections.delegated_credentials.oauth.resources[]`. For a resource with
+`named_services`, it submits:
+
+```text
+named_service_operations
+  <resource>
+    <namespace>
+      [<existing descriptor operation>, ...]
+```
+
+`AutomationAccessService` validates the exact selection and stores a narrowed
+copy of the descriptor's `named_services` policy in `GrantStore`. KDCube
+Services uses that stored policy for its runtime `NamedServiceBoundaryCatalog`,
+so unselected namespaces and operations are denied without a second registry.
+
+A provider may separately publish `metadata.connected_accounts`. Connection
+Hub renders those requirements and links to **Delegated to KDCube**, preserving
+flat or operation-specific claim structure. This is presentation and consent
+guidance only: provider discovery metadata and provider credentials are never
+copied into the automation grant. The provider resolves the grantor's connected
+account at call time.
+
 ## Surfaces
 
 - `named_service` (operations) — the whole `connections` contract.
@@ -148,6 +200,10 @@ provider claims a tool needs.
   broker helpers for delegated external accounts.
 - `delegated_to_kdcube_oauth_callback` (public) — the shared OAuth browser
   redirect for delegated to KDCube providers such as Gmail and Slack.
+- `delegated_access_list`, `delegated_access_create`,
+  `delegated_access_revoke` (operations) — list, issue, and revoke manual or
+  OAuth-created delegated access. Manual named-service access accepts the exact
+  `named_service_operations[resource][namespace][]` selector.
 - `email_accounts_status`, `email_connect_app_password`, `email_disconnect_account`
   (operations) — older iCloud-only email integration surface.
 - `connections_settings` (widget) — the React/Redux settings UI.

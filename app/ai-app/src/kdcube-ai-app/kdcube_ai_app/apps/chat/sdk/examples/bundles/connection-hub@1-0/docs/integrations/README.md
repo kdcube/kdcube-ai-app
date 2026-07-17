@@ -3,7 +3,7 @@ id: connection-hub@1-0/integrations/README
 title: "Connection Hub — Integrations Setup (overview)"
 summary: "Common setup shared by every connection-hub provider — the single OAuth callback URL, the hub-level state secret, and the apply/refresh step — plus links to the per-provider setup articles (Google, Slack, iCloud, and generic OAuth/OIDC)."
 status: "active"
-tags: ["integration", "connections", "oauth", "admin", "operator-setup", "prerequisites"]
+tags: ["integration", "connections", "oauth", "admin", "operator-setup", "prerequisites", "mcp", "named-services", "delegated-credentials"]
 keywords: ["connection hub setup", "delegated_to_kdcube_oauth_callback", "oauth_state_secret", "connector app", "provider setup"]
 see_also:
   - ./google.md
@@ -167,6 +167,23 @@ layer, while the provider tool still enforces the connected-account provider
 claims such as `gmail:read`, `gmail:send`, `slack:search`, `slack:history`,
 `slack:files:read`, `slack:files:write`, and `slack:post` before calling the
 external provider.
+
+When a user creates manual automation access, the same named-service provider
+metadata appears under **Delegated by KDCube**:
+
+```text
+configured resource catalog
+  -> selectable namespace operations and KDCube grants
+
+provider discovery metadata
+  -> connected-account and claim prerequisites
+```
+
+The selected namespace operations are sent as
+`named_service_operations[resource][namespace][]` and narrow the policy stored
+with the KDCube automation grant. Provider prerequisites remain in **Delegated
+to KDCube**. They may be completed from the existing deep link, but the
+provider token is never placed in the automation bearer or grant record.
 
 Example application tool declaration:
 

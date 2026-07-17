@@ -3,14 +3,15 @@ id: repo:kdcube-ai-app/app/ai-app/docs/recipes/connections/integrations/custom-o
 title: "Custom OAuth/OIDC Service Integration"
 summary: "Recipe for connecting a custom OAuth/OIDC service to KDCube so tools, named services, and agents can request the user's external-service token through Connection Hub."
 status: active
-tags: ["recipes", "connections", "connection-hub", "integrations", "delegated-to-kdcube", "oauth", "oidc", "custom-service", "connector-apps"]
-updated_at: 2026-07-12
+tags: ["recipes", "connections", "connection-hub", "integrations", "delegated-to-kdcube", "oauth", "oidc", "custom-service", "connector-apps", "mcp", "named-services"]
+updated_at: 2026-07-17
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/delegated-accounts/custom-oauth-oidc-service-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/delegated-accounts/delegated-accounts-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/recipes/connections/integrations/google-gmail-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/recipes/connections/integrations/slack-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/recipes/connections/integrations/mail-named-service-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/recipes/connections/create-delegated-automation-access-README.md
 ---
 # Custom OAuth/OIDC Service Integration
 
@@ -290,6 +291,29 @@ Claude / external client
   -> S1 API call with provider token
 ```
 
+These are independent permissions, not two names for one grant:
+
+```text
+Delegated by KDCube
+  selected S1 namespace operation + KDCube grants
+
+Delegated to KDCube
+  connected S1 account + provider claims/scopes
+```
+
+For a manual automation token, Connection Hub renders each configured S1
+namespace operation as a checkbox and sends the exact selection through
+`named_service_operations[resource][namespace][]`. The backend persists a
+narrowed copy of the existing named-service policy. Provider requirements from
+the named-service discovery metadata remain presentation and consent guidance;
+they are not copied into the automation bearer.
+
+For an external MCP connector using OAuth, the same descriptor-backed namespace
+catalog appears in the OAuth consent journey. That connector does not use the
+manual automation-create payload. In both cases the external agent receives
+only a KDCube delegated credential. The provider token stays in Connection Hub
+and is resolved at the provider boundary.
+
 ## 7. Test The Flow
 
 After descriptor changes, refresh the runtime and open the Connection Hub
@@ -305,6 +329,10 @@ Expected test path:
 5. Callback returns to Connection Hub.
 6. S1 account appears with approved claims.
 7. Agent tool can use S1.
+8. If S1 is exposed through named services, select only one namespace operation
+   for a manual automation token and confirm every unselected operation fails.
+9. Revoke the S1 provider claim while retaining the KDCube automation grant and
+   confirm the provider call fails closed.
 ```
 
 Test prompts for a connected agent:

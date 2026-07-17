@@ -4,7 +4,7 @@ title: "Connection Hub Storage Model"
 summary: "Storage map for Connection Hub data: descriptors, secrets, request-authenticator metadata, connection edges, link challenges, delegated account tokens, and runtime caches."
 status: active
 tags: ["sdk", "connections", "connection-hub", "storage", "postgres", "secrets", "connection-edges"]
-updated_at: 2026-07-05
+updated_at: 2026-07-17
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/connection-hub-solution-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/connection-hub-token-storage-README.md
@@ -55,9 +55,9 @@ user-scoped secrets
 | Connected account metadata | `ConnectionStore` under `bundle_storage_root()/connections/<user>/accounts.json` | no | Provider, account id, app id, display name, scope, and `has_token`; no raw tokens. |
 | Connected external-provider token | user-scoped secrets, key `connections.accounts.<account_id>.tokens` | yes, user token | OAuth access/refresh token, app password, or equivalent provider credential for Gmail/Slack/LinkedIn-style integrations. |
 | Connected account OAuth state | `bundle_storage_root()/connections/_oauth_states/<sha256(state)>.json` | no raw secret | Short-lived anti-CSRF state for provider OAuth callbacks. |
-| Delegated OAuth code/CSRF/access grant | Redis `GrantStore`, keys `{tenant}:{project}:kdcube:oauth:{code,csrf,agrant}:...` | sensitive auth state | Access grant is keyed by `sha256(access_token)` and carries credential envelope, grantor authority, delegation edges, selected operations, and `resource_grants`. |
+| Delegated OAuth code/CSRF/access grant | Redis `GrantStore`, keys `{tenant}:{project}:kdcube:oauth:{code,csrf,agrant}:...` | sensitive auth state | Access grant is keyed by `sha256(access_token)` and carries credential envelope, grantor authority, delegation edges, selected operations, `resource_grants`, and the narrowed `named_services` policy when applicable. |
 | Delegated OAuth refresh token / dynamic client registration | Redis `GrantStore`, keys `{tenant}:{project}:kdcube:oauth:{refresh,client}:...` | yes, auth token | Current implementation is Redis-backed; durable production backing is a strengthening target. |
-| Delegated automation access listing | Redis, keys `{tenant}:{project}:kdcube:delegated-access:automation:*` | sensitive metadata | UI-visible records contain label, expiry, last four chars, session id, and `resource_grants`; raw token is shown only at creation. |
+| Delegated automation access listing | Redis, keys `{tenant}:{project}:kdcube:delegated-access:automation:*` | sensitive metadata | UI-visible records contain label, expiry, last four chars, session id, `resource_grants`, and selected named-service operations when applicable; raw token is shown only at creation. Provider tokens stay in user-scoped connected-account secrets. |
 | Bundle-session record | Redis, keys `{tenant}:{project}:kdcube:auth:bundle-session:*` | sensitive auth state | Backs `kst1` platform/bundle-session tokens and delegated-client access tokens. |
 | Live link update | Data Bus / event delivery | no | Signals original iframe after browser claim completes. |
 

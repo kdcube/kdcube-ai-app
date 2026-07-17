@@ -1,9 +1,9 @@
 ---
 id: connection-hub@1-0/agents
 title: "Connection Hub Builder-Agent Onboarding"
-summary: "Builder-agent onboarding guide for the platform Connection Hub example bundle: connection edges, delegated account connections, shared OAuth callbacks, named-service exposure, and the Connections widget."
+summary: "Builder-agent onboarding guide for the platform Connection Hub example app: connection edges, connected provider accounts, delegated client credentials, OAuth callbacks, named-service boundaries, and the Connections widget."
 status: "active"
-tags: ["agents", "builder", "onboarding", "connection-hub", "identity", "connections", "oauth", "named-services", "react", "redux"]
+tags: ["agents", "builder", "onboarding", "connection-hub", "identity", "connections", "oauth", "mcp", "named-services", "delegated-credentials", "react", "redux"]
 see_also:
   - "repo:kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/connection-hub@1-0/README.md"
   - "repo:kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/connection-hub@1-0/docs/README.md"
@@ -37,6 +37,12 @@ connected account
   purpose: let automation use a user's external account with delegated access
   examples: Gmail OAuth token, Slack workspace token, iCloud app password
   used by: user automation and app workflows that act for the user
+
+delegated client credential
+  purpose: let an external script, agent, or MCP client enter selected KDCube
+           resources and operations on behalf of an approving platform user
+  examples: manual automation bearer, OAuth-issued MCP connector credential
+  used by: managed REST/MCP guards and the named-service bridge
 
 request authenticator
   purpose: verify that an incoming request proves a channel identity, then
@@ -105,6 +111,12 @@ Connection Hub app
     source: ui/widgets/connections
     stack: React + Redux Toolkit
     purpose: one user-facing surface for connection edges and connected accounts
+
+  delegated access
+    OAuth consent or manual Create automation access
+    resource_grants + selected top-level operations
+    optional exact named_service_operations selection
+    provider-account prerequisites stay in Delegated to KDCube
 ```
 
 ## Implementation Rules
