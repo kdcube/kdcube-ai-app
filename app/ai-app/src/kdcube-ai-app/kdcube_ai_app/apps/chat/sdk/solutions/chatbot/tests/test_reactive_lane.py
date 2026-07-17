@@ -170,6 +170,33 @@ async def test_release_rewakes_mid_turn_followup_not_own_event(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_folded_followup_is_not_rewoken(monkeypatch):
+    """The surfaced regression: a ReAct turn FOLDED a mid-turn followup (advancing
+    the lane's ``last_processed_reactive_event_timestamp`` cursor past it) but never
+    set ``consumed_at`` on it. If finalize's re-wake runs (the reservation was still
+    held — a race/close-path where mark_consumer_none hadn't landed), it must NOT
+    re-wake that folded followup: doing so re-runs it as a second turn (the
+    duplicate user bubble + answer). The skip honors the SAME cursor ReAct uses."""
+    own = _event(ts=_OWN_TS, message_id="evt-own", sequence=1)
+    followup = _event(ts=_FOLLOWUP_TS, message_id="evt-followup", sequence=2)
+    source = _FakeSource([own, followup])
+    published: list = []
+    _install(
+        monkeypatch,
+        state=EventLaneState(
+            consumer_status="scheduled",              # reservation still held (re-wake path runs)
+            last_processed_reactive_event_timestamp=_FOLLOWUP_TS,  # ReAct folded the followup
+        ),
+        source=source,
+        published=published,
+    )
+
+    await rl.finalize_reactive_event_lane(redis=object(), comm_context=_comm_context())
+
+    assert published == []  # the folded followup is NOT re-woken → no double turn
+
+
+@pytest.mark.asyncio
 async def test_noop_when_reservation_released_and_own_event_accounted_react_state(monkeypatch):
     """The post-ReAct lane state: consumer already ``none`` and the reactive
     cursor already past the own event. Finalize is inert — no re-release, no

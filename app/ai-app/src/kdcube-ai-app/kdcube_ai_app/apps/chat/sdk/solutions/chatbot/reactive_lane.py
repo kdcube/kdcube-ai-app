@@ -91,6 +91,7 @@ def _source_for_wakeup(redis: Any, wakeup: Any):
 async def _rewake_pending_reactive_events(
     *,
     source: Any,
+    state: Any,
     wake_publisher: Optional[EventLaneWakePublisher],
     own_ts: str,
     turn_id: str,
@@ -98,7 +99,15 @@ async def _rewake_pending_reactive_events(
     """Re-publish a lane wakeup for every unconsumed reactive event that landed
     AFTER the turn's own event (a followup queued mid-turn). Exactly-once holds:
     consumed/promoted/failed events, the turn's own event, and anything at/earlier
-    than it are skipped, and a duplicate wake is dropped by the lane guards."""
+    than it are skipped, and a duplicate wake is dropped by the lane guards.
+
+    A followup a ReAct turn FOLDED into itself is left alone: ReAct does not set
+    ``consumed_at`` on a folded event (it tracks folding by advancing the lane's
+    ``last_processed_reactive_event_timestamp`` cursor), so this skip MUST also
+    honor that cursor — the SAME gate ReAct's own post-save handoff uses
+    (``browser.py::post_save_external_event_handoff``). Without it, this re-wake
+    is narrower than ReAct's and re-runs a folded followup as a second turn
+    (a duplicate user message + answer)."""
     if wake_publisher is None:
         return
     try:
@@ -116,6 +125,10 @@ async def _rewake_pending_reactive_events(
         if not event_is_reactive(event):
             continue
         if timestamp_lte(event_timestamp(event), own_ts):
+            continue
+        # Already folded/processed by the turn (ReAct's cursor is past it) — the
+        # turn already handled this event, so re-waking it would double-run it.
+        if state is not None and state.event_was_processed(event):
             continue
         try:
             payload = event.task_payload_model()
@@ -215,6 +228,7 @@ async def finalize_reactive_event_lane(
         )
         await _rewake_pending_reactive_events(
             source=source,
+            state=state,
             wake_publisher=wake_publisher,
             own_ts=event_timestamp(event),
             turn_id=turn_id,
