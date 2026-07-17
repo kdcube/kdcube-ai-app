@@ -99,6 +99,7 @@ test('capabilities slice: load, optimistic patch, save reconcile', () => {
     inventory: null,
     disabled: {},
     model: null,
+    instructions: null,
     cachePolicy: null,
     pending: null,
     dirty: false,
