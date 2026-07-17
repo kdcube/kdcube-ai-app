@@ -190,6 +190,51 @@ def test_catalog_lists_mcp_servers_and_named_service_namespaces():
     assert by_ns["mem"]["tools"] == ["provider_about", "list_objects"]
 
 
+def test_catalog_carries_delegated_mcp_facts():
+    # A `delegated: true` connection calls the KDCube surface AS the user under
+    # a per-agent grant; the static facts (claims + granted resource key) ride
+    # the catalog entry so the consent enrichment and picker need no re-read of
+    # the raw connection config. A plain MCP entry carries none of them.
+    props = {
+        "surfaces": {
+            "as_consumer": {
+                "default_agent": "main",
+                "agents": {
+                    "main": {
+                        "tools": [
+                            {
+                                "name": "memories",
+                                "kind": "mcp",
+                                "server_id": "memories",
+                                "alias": "memories",
+                                "url": "https://h/api/mcp/mem",
+                                "transport": "streamable_http",
+                                "delegated": True,
+                                "scopes": ["memories:read"],
+                            },
+                            {
+                                "name": "docs",
+                                "kind": "mcp",
+                                "server_id": "docs",
+                                "alias": "docs",
+                                "url": "https://h/api/mcp/docs",
+                            },
+                        ],
+                    },
+                },
+            },
+        },
+    }
+    catalog = agent_capabilities_catalog(props, "main")
+    by_server = {e["server_id"]: e for e in catalog["mcp"]}
+    delegated = by_server["memories"]
+    assert delegated["delegated"] is True
+    assert delegated["claims"] == ["memories:read"]
+    assert delegated["resource"] == "https://h/api/mcp/mem"
+    plain = by_server["docs"]
+    assert "delegated" not in plain and "claims" not in plain and "resource" not in plain
+
+
 def test_catalog_agent_defaults():
     catalog = agent_capabilities_catalog(_props(), None, default_agent_id="main")
     assert catalog["agent"] == "main"

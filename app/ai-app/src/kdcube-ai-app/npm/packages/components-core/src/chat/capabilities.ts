@@ -24,15 +24,25 @@ export interface AgentCapabilityToolEntry {
   consent?: AgentCapabilityConsent
 }
 
-/** READ-ONLY connected-account consent state for one pickable entry: the
- *  tool's declared claims against the user's connected accounts, computed
- *  server-side at catalog time (a menu render asks nothing). */
+/** READ-ONLY consent state for one pickable entry, computed server-side at
+ *  catalog time (a menu render asks nothing). Two families share the shape:
+ *  connected-account claims (provider_id names the external provider) and a
+ *  per-agent delegated grant (agent_client_id names the agent entity the user
+ *  grants — a `delegated: true` MCP row calling KDCube as the user). */
 export interface AgentCapabilityConsent {
-  provider_id: string
+  provider_id?: string
   connector_app_id?: string
   claims: string[]
   unmet: string[]
   covered: boolean
+  /** `delegated_agent_grant` marks the per-agent family. */
+  kind?: string
+  /** The agent's delegated-client identity (`kdcube-agent:<app>:<agent>`). */
+  agent_client_id?: string
+  /** The granted resource key (the delegated surface URL). */
+  resource?: string
+  /** The one-click grant action (operation + payload) a consent surface POSTs. */
+  grant?: { operation: string; payload: Record<string, unknown> }
 }
 
 export interface AgentCapabilityToolGroup {
@@ -56,6 +66,15 @@ export interface AgentCapabilityMcpServer {
    *  runtime's cached listing). Present => per-tool toggles; absent => the
    *  server-level toggle only. */
   tool_entries?: AgentCapabilityToolEntry[]
+  /** The server calls its KDCube surface AS the signed-in user under a
+   *  per-agent consent grant (a `delegated: true` connection). */
+  delegated?: boolean
+  /** The claims the delegated connection needs (its declared scopes). */
+  claims?: string[]
+  /** The granted resource key (the delegated surface URL). */
+  resource?: string
+  /** Per-agent grant state (given/pending) with the in-place grant action. */
+  consent?: AgentCapabilityConsent
 }
 
 /** One operation or named action inside a namespace's realm view. */

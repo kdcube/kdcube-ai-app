@@ -873,6 +873,19 @@ def agent_capabilities_catalog(
             # the server-level toggle only.
             if "*" not in allowed:
                 entry["tool_entries"] = [{"name": name, "description": ""} for name in allowed]
+            # A delegated connection calls the KDCube surface AS the signed-in
+            # user under a per-agent consent grant. The static facts (claims +
+            # the granted resource key) ride the entry so the consent-state
+            # enrichment and the picker can show given/pending and offer the
+            # grant without re-reading the raw connection config.
+            if connection.get("delegated"):
+                entry["delegated"] = True
+                entry["claims"] = _string_list(
+                    connection.get("scopes") or connection.get("claims")
+                )
+                entry["resource"] = _norm(
+                    connection.get("resource") or connection.get("url")
+                )
             mcp_out.append(entry)
             continue
 

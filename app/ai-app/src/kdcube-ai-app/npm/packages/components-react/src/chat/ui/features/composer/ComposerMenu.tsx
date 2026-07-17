@@ -14,7 +14,7 @@
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { chatActions, consentOpenForClaims, openCapabilitiesOnHost, openSurfaceOnHost } from '@kdcube/components-core/chat'
+import { agentGrantConsentOpen, chatActions, consentOpenForClaims, openCapabilitiesOnHost, openSurfaceOnHost } from '@kdcube/components-core/chat'
 import type { AgentCapabilityConsent, ConnectionsConsentOpen } from '@kdcube/components-core/chat'
 import { useAppDispatch } from '../../support/hooks.ts'
 import type {
@@ -213,9 +213,11 @@ function PendingTag() {
   return <span className="k-menu-tag">pending</span>
 }
 
-/** Compact per-row connected-account consent state: covered rows show a
- *  quiet "connected" tag; rows with unmet claims get a consent button that
- *  opens the hub's consent plan seeded with exactly those claims. */
+/** Compact per-row consent state: covered rows show a quiet tag; rows with
+ *  unmet claims get a consent button that opens the hub seeded with exactly
+ *  what to approve. Two families, one affordance: connected-account claims
+ *  ("connected" / consent plan) and a per-agent delegated grant ("granted" /
+ *  the pending agent-grant pane, one click). */
 function ConsentAside({
   consent,
   onConsent,
@@ -228,18 +230,41 @@ function ConsentAside({
   title?: string
 }) {
   if (!consent || !consent.claims?.length) return null
+  const agentGrant = Boolean(consent.agent_client_id)
   if (consent.covered) {
     return (
-      <span className="k-menu-tag k-menu-tag-ok" title={`Account access granted: ${consent.claims.join(', ')}`}>
-        connected
+      <span
+        className="k-menu-tag k-menu-tag-ok"
+        title={`${agentGrant ? 'Agent access' : 'Account access'} granted: ${consent.claims.join(', ')}`}
+      >
+        {agentGrant ? 'granted' : 'connected'}
       </span>
     )
   }
   if (!onConsent) {
     return (
-      <span className="k-menu-tag k-menu-tag-consent" title={`Needs account access: ${consent.unmet.join(', ')}`}>
+      <span
+        className="k-menu-tag k-menu-tag-consent"
+        title={`Needs ${agentGrant ? 'your grant' : 'account access'}: ${consent.unmet.join(', ')}`}
+      >
         needs consent
       </span>
+    )
+  }
+  if (agentGrant) {
+    return (
+      <button
+        type="button"
+        className="k-menu-consent"
+        title={title || `Grant this agent access: ${consent.unmet.join(', ')}`}
+        onClick={() => onConsent(agentGrantConsentOpen({
+          agentClientId: consent.agent_client_id || '',
+          resource: consent.resource || '',
+          claims: consent.unmet,
+        }))}
+      >
+        {label === 'Consent' ? 'Grant' : label}
+      </button>
     )
   }
   return (
@@ -248,7 +273,7 @@ function ConsentAside({
       className="k-menu-consent"
       title={title || `Approve account access: ${consent.unmet.join(', ')}`}
       onClick={() => onConsent(consentOpenForClaims({
-        providerId: consent.provider_id,
+        providerId: consent.provider_id || '',
         connectorAppId: consent.connector_app_id,
         claims: consent.unmet,
       }))}
@@ -519,7 +544,7 @@ function ToolGroupsSection({ inventory, disabled, toggle, pending, spotlight, on
   )
 }
 
-function McpSection({ inventory, disabled, toggle }: CapabilityRowsProps) {
+function McpSection({ inventory, disabled, toggle, onConsent }: CapabilityRowsProps) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   if (!inventory.mcp.length) return null
   return (
@@ -537,6 +562,7 @@ function McpSection({ inventory, disabled, toggle }: CapabilityRowsProps) {
               expandable={entries.length > 0}
               expanded={isOpen}
               onExpand={() => setExpanded((current) => ({ ...current, [server.server_id]: !isOpen }))}
+              aside={<ConsentAside consent={server.consent} onConsent={onConsent} />}
             />
             {isOpen
               ? entries.map((tool) => (

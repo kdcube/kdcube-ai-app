@@ -444,11 +444,12 @@ class BaseEntrypoint:
             timeout_seconds=timeout,
         )
         catalog = await self._attach_named_service_realms(catalog)
-        return await self._attach_claim_coverage(
+        catalog = await self._attach_claim_coverage(
             catalog,
             agent_id,
             conversation_id=conversation_id,
         )
+        return await self._attach_delegated_mcp_consent(catalog, agent_id)
 
     # Realm resolution rides the same fail-open discipline as coverage: the
     # menu renders with plain namespace rows on any miss.
@@ -597,6 +598,89 @@ class BaseEntrypoint:
                     entry["consent"] = state
         except Exception:
             self.logger.log("[agent_capabilities] claim coverage failed (fail-open)", "WARNING")
+        return catalog
+
+    # Same fail-open discipline as claim coverage: a delegated MCP row renders
+    # as a plain toggle when the grant registry cannot be read in budget.
+    DELEGATED_MCP_CONSENT_BUDGET_SECONDS = 2.5
+
+    async def _attach_delegated_mcp_consent(self, catalog: Dict[str, Any], agent_id: str) -> Dict[str, Any]:
+        """Per-entry PER-AGENT consent state for delegated MCP rows.
+
+        A `delegated: true` MCP connection calls the KDCube surface as the
+        signed-in user under a grant keyed to THIS agent's delegated-client
+        identity. READ-ONLY probe of that grant record (no token leaves this
+        process): `covered` when the grant exists, otherwise the claims are
+        `unmet` and the row carries the one-click grant action — the same
+        `delegated_agent_grant_create` block the chat consent banner uses.
+        Fail-open: any miss keeps the catalog untouched."""
+        entries = [
+            entry for entry in (catalog.get("mcp") or [])
+            if isinstance(entry, dict) and entry.get("delegated") and entry.get("resource")
+        ]
+        if not entries:
+            return catalog
+        try:
+            from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_mcp import (
+                delegated_client_id_for_agent,
+            )
+            from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.automation_access import (
+                read_agent_grant_record,
+            )
+
+            identity = self._agent_selection_identity()
+            user_id = str(identity.get("user_id") or "").strip()
+            redis = getattr(self, "redis", None)
+            if not user_id or redis is None:
+                return catalog
+            actor = getattr(self.comm_context, "actor", None)
+            tenant = str(
+                getattr(actor, "tenant_id", "")
+                or getattr(getattr(self, "settings", None), "TENANT", "")
+                or ""
+            ).strip()
+            project = str(
+                getattr(actor, "project_id", "")
+                or getattr(getattr(self, "settings", None), "PROJECT", "")
+                or ""
+            ).strip()
+            client_id = delegated_client_id_for_agent(self._named_services_bundle_id(), agent_id)
+
+            async def _decorate() -> None:
+                for entry in entries:
+                    resource = str(entry.get("resource") or "")
+                    claims = [str(c) for c in (entry.get("claims") or []) if str(c).strip()]
+                    record = await read_agent_grant_record(
+                        redis,
+                        tenant=tenant,
+                        project=project,
+                        grantor_subject=user_id,
+                        client_id=client_id,
+                        resources=[resource],
+                    )
+                    covered = record is not None
+                    entry["consent"] = {
+                        "kind": "delegated_agent_grant",
+                        "claims": claims,
+                        "unmet": [] if covered else claims,
+                        "covered": covered,
+                        "resource": resource,
+                        "agent_client_id": client_id,
+                        "grant": {
+                            "operation": "delegated_agent_grant_create",
+                            "payload": {"client_id": client_id, "resource": resource, "claims": claims},
+                        },
+                    }
+
+            await asyncio.wait_for(_decorate(), timeout=self.DELEGATED_MCP_CONSENT_BUDGET_SECONDS)
+        except asyncio.TimeoutError:
+            self.logger.log(
+                "[agent_capabilities] delegated MCP consent probe exceeded "
+                f"{self.DELEGATED_MCP_CONSENT_BUDGET_SECONDS}s — rows render plain",
+                "WARNING",
+            )
+        except Exception:
+            self.logger.log("[agent_capabilities] delegated MCP consent probe failed (fail-open)", "WARNING")
         return catalog
 
     @api(method="POST", alias="agent_capabilities", route="operations", user_types=("registered", "paid", "privileged"))

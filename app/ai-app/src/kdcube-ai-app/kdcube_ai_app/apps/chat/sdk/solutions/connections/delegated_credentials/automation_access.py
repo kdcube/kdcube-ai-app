@@ -258,6 +258,50 @@ ACCESS_SOURCE_OAUTH = "oauth"
 ACCESS_SOURCE_AGENT = "agent"
 
 
+def agent_grant_access_id(grantor_subject: str, client_id: str, resources: Iterable[str]) -> str:
+    """The deterministic record id of a per-agent grant — one record per
+    (grantor, client, resources), shared by the write (`create_access`) and every
+    read, so re-consent updates in place and lookups always hit the same key."""
+    selected = sorted({_clean(r) for r in (resources or ()) if _clean(r)})
+    digest = hashlib.sha256(
+        f"{_clean(grantor_subject)}|{_clean(client_id)}|{'+'.join(selected)}".encode("utf-8")
+    ).hexdigest()[:16]
+    return f"agent-{digest}"
+
+
+async def read_agent_grant_record(
+    redis: Any,
+    *,
+    tenant: str,
+    project: str,
+    grantor_subject: str,
+    client_id: str,
+    resources: Iterable[str],
+) -> "AutomationAccessRecord | None":
+    """Read-only probe of a per-agent grant record: the parsed, unexpired record,
+    or ``None`` while consent is pending. Needs only Redis + the scope — no
+    delegated config — so a picker/menu enrichment can show given/pending without
+    constructing the full service. The token stays server-side with the caller."""
+    grantor = _clean(grantor_subject)
+    client = _clean(client_id)
+    if not grantor or not client:
+        return None
+    access_id = agent_grant_access_id(grantor, client, resources)
+    key = f"{_clean(tenant)}:{_clean(project)}:kdcube:delegated-access:automation:{access_id}"
+    raw = await redis.get(key)
+    if raw is None:
+        return None
+    try:
+        record = AutomationAccessRecord.from_mapping(json.loads(raw))
+    except Exception:
+        return None
+    if record.source != ACCESS_SOURCE_AGENT:
+        return None
+    if record.expires_at and record.expires_at <= int(time.time()):
+        return None
+    return record
+
+
 @dataclass(frozen=True)
 class AutomationAccessRecord:
     access_id: str
@@ -879,10 +923,7 @@ class AutomationAccessService:
             # Deterministic per-agent grant: one record per (grantor, client,
             # resources) so re-consent updates it instead of accumulating rows.
             client_id = requested_client_id
-            digest = hashlib.sha256(
-                f"{grantor_subject}|{client_id}|{'+'.join(sorted(selected_resources))}".encode("utf-8")
-            ).hexdigest()[:16]
-            access_id = f"agent-{digest}"
+            access_id = agent_grant_access_id(grantor_subject, client_id, selected_resources)
             access_source = ACCESS_SOURCE_AGENT
         else:
             access_id = "aut_" + secrets.token_urlsafe(10)
@@ -993,24 +1034,15 @@ class AutomationAccessService:
         the grant has expired. Keyed by the SAME deterministic access_id
         `create_access(client_id=…)` writes, so the per-turn resolver reuses the
         stored, already-bound token instead of minting an unbound one."""
-        grantor = _clean(grantor_subject)
-        client = _clean(client_id)
-        if not grantor or not client:
-            return None
-        selected = sorted({_clean(r) for r in (resources or ()) if _clean(r)})
-        digest = hashlib.sha256(
-            f"{grantor}|{client}|{'+'.join(selected)}".encode("utf-8")
-        ).hexdigest()[:16]
-        raw = await self._redis.get(self._record_key(f"agent-{digest}"))
-        if raw is None:
-            return None
-        try:
-            record = AutomationAccessRecord.from_mapping(json.loads(raw))
-        except Exception:
-            return None
-        if record.source != ACCESS_SOURCE_AGENT or not record.access_token:
-            return None
-        if record.expires_at and record.expires_at <= int(time.time()):
+        record = await read_agent_grant_record(
+            self._redis,
+            tenant=self._tenant,
+            project=self._project,
+            grantor_subject=grantor_subject,
+            client_id=client_id,
+            resources=resources,
+        )
+        if record is None or not record.access_token:
             return None
         return {
             "access_token": record.access_token,
