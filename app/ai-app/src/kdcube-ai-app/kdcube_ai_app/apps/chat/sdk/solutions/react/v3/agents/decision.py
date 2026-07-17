@@ -108,6 +108,31 @@ def _iter_fenced_json_blocks(text: str) -> List[str]:
     return [chunk for chunk in out if chunk]
 
 
+def _scan_decodable_json(text: str) -> List[str]:
+    """Last-resort candidate scan: decode JSON objects/arrays found anywhere
+    in the text, regardless of surrounding fence/prose quirks. Models emit
+    fences with content on the fence lines (```json { … } ```), which the
+    line-based fence walk cannot see; the streaming layer accepts those
+    shapes, so post-hoc parsing must too."""
+    src = (text or "")
+    decoder = json.JSONDecoder()
+    out: List[str] = []
+    idx = 0
+    while idx < len(src):
+        ch = src[idx]
+        if ch not in "{[":
+            idx += 1
+            continue
+        try:
+            _, end = decoder.raw_decode(src, idx)
+        except Exception:
+            idx += 1
+            continue
+        out.append(src[idx:end].strip())
+        idx = end
+    return out
+
+
 def _extract_json_candidates(text: str) -> List[str]:
     body = (text or "").strip()
     if not body:
@@ -120,8 +145,9 @@ def _extract_json_candidates(text: str) -> List[str]:
         out: List[str] = []
         for chunk in fenced:
             out.extend(_iter_json_texts(chunk))
-        return out
-    return _iter_json_texts(body)
+        if out:
+            return out
+    return _scan_decodable_json(body)
 
 
 def parse_react_decision_bundle_from_raw(

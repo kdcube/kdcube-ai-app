@@ -225,10 +225,22 @@ def _strip_structured_fences(text: str) -> str:
     nl = s.find("\n")
     if nl < 0:
         return ""
+    # Content on the opening fence line after the language tag (```json {)
+    # belongs to the body — keep it (models emit this shape).
+    first_line = s[3:nl].strip()
+    inline = ""
+    if first_line:
+        head, _, tail = first_line.partition(" ")
+        if head.isalnum():
+            inline = tail.strip()
+        else:
+            inline = first_line
     s = s[nl + 1:]
     end = s.rfind("```")
     if end >= 0:
         s = s[:end]
+    if inline:
+        s = inline + "\n" + s
     return s.strip()
 
 
