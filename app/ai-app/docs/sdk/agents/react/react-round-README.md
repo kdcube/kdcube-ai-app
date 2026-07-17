@@ -16,8 +16,8 @@ see_also:
 This document describes the ReactRound concept and how decision attempts and tool calls are represented.
 
 ## Overview
-- In production `v2`, one response corresponds to one round, and a successful round executes exactly one action.
-- In experimental `v3`, one response can request multiple actions, but accepted actions are still executed sequentially.
+- In `v2`, one response corresponds to one round, and a successful round executes exactly one action.
+- In `v3` — the current default runtime for the built-in apps — one response can request multiple actions, but accepted actions are still executed sequentially.
 - In `v3` multi-action mode, streamed action candidates are governed online:
   first valid action survives, later candidates are checked against already
   accepted moves, and incompatible later candidates are dropped before their
@@ -27,6 +27,9 @@ This document describes the ReactRound concept and how decision attempts and too
   - `react.round.start`
   - `react.decision.raw`
   - `react.notice`
+- Channels stream to the user DURING generation, so a failed decision attempt
+  may already have shown its `thinking`/`final_answer` before rejection; the
+  violation notice tells the model when that happened.
 - A single turn may later contain multiple visible `assistant.completion` blocks if reactive
   same-turn events arrive after an earlier completion attempt.
 
@@ -37,7 +40,7 @@ Tool call blocks are JSON text blocks with metadata:
 - `type`: `react.tool.call`
 - `call_id`: tool call id
 - `mime`: `application/json`
-- `path`: `conv:tc:<turn_id>.<call_id>.call`
+- `path`: `conv:tc:conv_<conversation_id>.turn_<id>.<call_id>.call`
 - `text`: JSON payload `{tool_id, tool_call_id, reasoning, params}`
 
 ## Tool Result Blocks
@@ -71,9 +74,9 @@ replacement content.
 ## Reading Results
 `react.read` can load:
 - Turn-level artifacts via:
-  - `conv:ar:<turn_id>.user.prompt`
-  - `conv:ar:<turn_id>.assistant.completion`
-  - `conv:ar:<turn_id>.assistant.completion.<n>`
-- Files via `conv:fi:<turn_id>.files/<filepath>`
-- Sources via `conv:so:sources_pool[...]`
-- Tool call payloads via `conv:tc:<turn_id>.<id>.call` or `.result`
+  - `conv:ar:conv_<conversation_id>.turn_<id>.user.prompt`
+  - `conv:ar:conv_<conversation_id>.turn_<id>.assistant.completion`
+  - `conv:ar:conv_<conversation_id>.turn_<id>.assistant.completion.<n>`
+- Files via `conv:fi:conv_<conversation_id>.turn_<id>.files/<filepath>`
+- Sources via `conv:so:conv_<conversation_id>.sources_pool[...]`
+- Tool call payloads via `conv:tc:conv_<conversation_id>.turn_<id>.<id>.call` or `.result`

@@ -8,6 +8,7 @@ import copy
 import datetime
 import os
 import json
+import re
 import pathlib
 import random
 import traceback
@@ -1418,10 +1419,24 @@ class ReactSolverV2:
             )
         if code == "action_schema_error":
             summary, _diagnostic = self._schema_error_diagnostics(error)
-            return (
+            message = (
                 "Malformed action JSON. <channel:action> could not be parsed, "
                 f"so no action was executed for this round. Parser reported: {summary}"
             )
+            # The decision channels stream to the user DURING generation, so a
+            # round rejected post hoc may already have shown its final_answer.
+            # Tell the model in-band — otherwise it composes a fresh answer and
+            # the user sees a duplicate.
+            raw = str((decision or {}).get("raw") or "")
+            fa = re.search(r'"final_answer"\s*:\s*"((?:[^"\\]|\\.)*)"', raw)
+            if fa and fa.group(1).strip():
+                message += (
+                    " IMPORTANT: the final_answer text inside that malformed action has ALREADY "
+                    "streamed to the user exactly as you wrote it — they can see it. Re-emit the "
+                    "corrected <channel:action> JSON carrying that SAME final_answer text "
+                    "unchanged; do not compose a new or reworded answer."
+                )
+            return message
         if final_answer and action == "call_tool":
             return f"final_answer present with action={action}."
         if extra:
@@ -3820,7 +3835,7 @@ class ReactSolverV2:
                 code="action_schema_error",
                 error=error,
                 state=state,
-                decision={},
+                decision=decision if isinstance(decision, dict) else {},
             )
             try:
                 await self._record_failed_decision_attempt(
