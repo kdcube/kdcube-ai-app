@@ -77,3 +77,44 @@ def test_minter_failure_drops_the_server_not_the_build():
     servers = asyncio.run(resolve_mcp_server_map([_DELEGATED, _STATIC], user_sub="u", minter=boom))
     # Delegated dropped on mint failure; static still resolves — the build survives.
     assert set(servers) == {"docs"}
+
+
+def test_consent_gate_blocks_the_mint_when_pending():
+    minter, calls = _fake_minter_calls()
+
+    async def deny(scopes):
+        return False  # consent pending
+
+    servers = asyncio.run(resolve_mcp_server_map(
+        [_DELEGATED], user_sub="u1", minter=minter, consent_gate=deny))
+    assert servers == {}            # not bound — consent pending
+    assert calls == []              # never minted without consent
+
+
+def test_consent_gate_allows_the_mint_when_given():
+    minter, calls = _fake_minter_calls()
+
+    seen = {}
+    async def allow(scopes):
+        seen["scopes"] = list(scopes)
+        return True
+
+    servers = asyncio.run(resolve_mcp_server_map(
+        [_DELEGATED], user_sub="u1", minter=minter, consent_gate=allow))
+    assert set(servers) == {"memory"}                       # bound
+    assert seen["scopes"] == ["memories:read"]              # gate saw the connection's claims
+    assert calls and calls[0]["scopes"] == ["memories:read"]
+
+
+def test_claim_requirements_from_connection():
+    from kdcube_ai_app.apps.chat.sdk.solutions.connections.consent_state import (
+        claim_requirements_from_connection, SOURCE_DELEGATED, SOURCE_CONNECTED,
+    )
+    reqs = claim_requirements_from_connection(_DELEGATED)
+    assert len(reqs) == 1 and reqs[0].claim == "memories:read" and reqs[0].source == SOURCE_DELEGATED
+
+    conn_slack = {"kind": "python", "connected_accounts": [
+        {"provider_id": "slack", "connector_app_id": "app1", "claims": ["slack:read", "slack:write"]}]}
+    reqs2 = claim_requirements_from_connection(conn_slack)
+    assert [r.claim for r in reqs2] == ["slack:read", "slack:write"]
+    assert all(r.source == SOURCE_CONNECTED and r.provider_id == "slack" for r in reqs2)

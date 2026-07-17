@@ -81,11 +81,19 @@ async def resolve_mcp_server_map(
     minter: Optional[Minter] = None,
     client_id: str = _DEFAULT_CLIENT_ID,
     ttl_seconds: Optional[int] = None,
+    consent_gate: Optional[Callable[[List[str]], Awaitable[bool]]] = None,
 ) -> Dict[str, Dict[str, Any]]:
     """Build ``{server_id: {url, transport, headers}}`` for the ``kind: mcp``
     connections. Delegated connections get a freshly minted per-user bearer;
     static connections keep their declared headers. A delegated connection with
     no ``user_sub`` (or whose mint fails) is omitted — no unauthenticated call.
+
+    ``consent_gate``: optional ``async (scopes) -> bool``. When provided, a
+    delegated connection is minted ONLY if the gate returns True (the user has
+    consented to the connection's claims). A False gate DROPS the connection (the
+    consent is pending — surface it in the picker, do not act). The gate itself
+    decides its failure posture (e.g. fail-open on an unreadable store); this
+    function just honors its verdict.
     """
     mint = minter or _default_minter
     servers: Dict[str, Dict[str, Any]] = {}
@@ -110,6 +118,20 @@ async def resolve_mcp_server_map(
                     "turn; skipping (no unauthenticated call).", server_id,
                 )
                 continue
+            if consent_gate is not None:
+                try:
+                    consented = bool(await consent_gate(scopes))
+                except Exception:
+                    logger.warning(
+                        "delegated_mcp: consent gate errored for %s; skipping.", server_id, exc_info=True,
+                    )
+                    continue
+                if not consented:
+                    logger.info(
+                        "delegated_mcp: connection %s not bound — consent pending for scopes %s "
+                        "(user grants it in Connection Hub).", server_id, scopes,
+                    )
+                    continue
             try:
                 minted = await mint(user_sub, scopes, client_id=client_id, ttl_seconds=ttl_seconds)
                 token = str((minted or {}).get("access_token") or "").strip()
