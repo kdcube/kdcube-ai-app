@@ -214,6 +214,7 @@ Merge semantics:
 - descriptor/admin values override code defaults at the same path
 - scalar values and lists replace the default value at that path
 - reserved platform paths such as `enabled.*`, `role_models`, `embedding`,
+  `services.llm.custom`,
   `ui.widgets.*`, `execution.runtime`, and `surfaces.as_consumer.mcp.services` are still stored in
   the same bundle props layer; they are special only because platform code
   interprets them
@@ -221,36 +222,36 @@ Merge semantics:
 ## How Props Reach The Model Service
 
 Merged props are data; some of them must ALSO change runtime objects. That
-application happens in one place: `_apply_bundle_props_overrides()`, which
-every `refresh_bundle_props(...)` calls after the merge. The base
-implementation applies the platform-interpreted paths — `role_models` into
-`config.set_role_models(...)`, `embedding` into `config.set_embedding(...)`
-— and rebuilds the models service when config changed, so the model router
-hands out clients built from the fresh state. The per-user model pick then
-overlays `role_models` per turn through the request's bundle call context;
-it never touches the durable props.
+application happens at one moment inside every `refresh_bundle_props(...)`,
+in two layers:
 
-A bundle with its own config-affecting props extends the same hook rather
-than inventing a second application moment:
+1. **Platform-interpreted paths** — applied by the platform itself
+   (`_apply_bundle_props_overrides`, internal; do not override it):
+   `role_models` into `config.set_role_models(...)`, `embedding` into
+   `config.set_embedding(...)`, and `services.llm.custom` (the locally
+   served models / models gateway endpoint) into the Config's custom-model
+   state — rebuilding the models service when config changed, so the model
+   router hands out clients built from the fresh state. The per-user model
+   pick then overlays `role_models` per turn through the request's bundle
+   call context; it never touches the durable props.
+2. **Bundle-specific application** — the public template hook:
 
-```python
-def _apply_bundle_props_overrides(self) -> None:
-    super()._apply_bundle_props_overrides()
-    custom = self.get_prop_path(self.bundle_props or {}, "services.llm.custom") or {}
-    endpoint = str(custom.get("endpoint") or "").strip()
-    if not endpoint:
-        return
-    if self.config.custom_model_endpoint == endpoint and self.config.use_custom_endpoint:
-        return
-    self.config.custom_model_endpoint = endpoint
-    self.config.use_custom_endpoint = True
-    if hasattr(self, "models_service"):
-        self._rebuild_models_service()
-```
+   ```python
+   async def on_apply_props(self, props: Dict[str, Any]) -> bool | None:
+       my_cfg = props.get("my_feature") or {}
+       ...apply onto self.config / runtime objects...
+       return True   # when the models service must be rebuilt
+   ```
 
-(The shipped example is the workspace app's locally-served-models wiring.)
-Reading these props anywhere earlier — the constructor in particular — sees
-code defaults only; reading them anywhere later means the models service may
+   Called after layer 1 on every refresh. Async (secrets are awaitable), no
+   `super()` call to forget (the base is a no-op), and the base owns the
+   models-service rebuild when the hook returns `True`. Do not override
+   `_apply_bundle_props_overrides` instead: it is synchronous,
+   platform-internal, and a missing `super()` there silently disables
+   `role_models`/`embedding` application.
+
+Reading config-affecting props anywhere earlier — the constructor in
+particular — sees code defaults only; anywhere later, the models service may
 already have been built from stale config.
 
 ## What Is Not Merged Or Materialized

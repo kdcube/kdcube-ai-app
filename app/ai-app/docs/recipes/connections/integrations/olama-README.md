@@ -18,11 +18,12 @@ brain for KDCube agents: the react agent's decision head, JSON-producing
 agent heads, and content-generation tools all stream from it through the
 platform's normal model-service path.
 
-The integration is deliberately additive. No platform module changes: the
-platform's existing `provider: custom` role path talks to a small standalone
-**models gateway** that translates to Ollama. Every piece is either new
-(`apps/models_gateway/`), app-owned (entrypoint props hook), or descriptor
-configuration.
+The integration is descriptor-only for the app: the platform's existing
+`provider: custom` role path talks to a small standalone **models gateway**
+that translates to Ollama, and `services.llm.custom` is a reserved
+platform-interpreted app prop — the platform applies it exactly like
+`role_models`. Turning the feature on for any app means editing
+`bundles.yaml`, zero app code.
 
 ```text
 agent role / composer pick {provider: custom}
@@ -218,39 +219,21 @@ secrets:
         api_key: replace-in-real-deployment
 ```
 
-The app applies these props onto its per-instance `Config` in
-`pre_run_hook` — the pattern any app can copy (the workspace app ships it):
-
-```python
-async def pre_run_hook(self, *, state: Dict[str, Any]) -> None:
-    await super().pre_run_hook(state=state)
-    await self._apply_custom_llm_props()
-
-async def _apply_custom_llm_props(self) -> None:
-    custom = self.bundle_prop("services.llm.custom", {}) or {}
-    if not isinstance(custom, Mapping):
-        return
-    endpoint = str(custom.get("endpoint") or "").strip()
-    if not endpoint:
-        return
-    self.config.custom_model_endpoint = endpoint
-    self.config.custom_model_name = str(custom.get("model_name") or "custom-model")
-    api_key = str(await get_secret("b:services.llm.custom.api_key") or "").strip()
-    if api_key:
-        self.config.custom_model_api_key = api_key
-    self.config.use_custom_endpoint = True
-```
-
-Why this seam, precisely: on every turn door the platform runs
+That is the whole app-side integration. `services.llm.custom` is a reserved
+platform-interpreted prop: on every turn door the platform runs
 `refresh_bundle_props` (code `configuration_defaults()` deep-merged with the
-Redis-staged descriptor props) and then `pre_run_hook`, before the agent
-executes. `pre_run_hook` is therefore the canonical post-refresh moment for
-per-turn config application — the same moment every other per-agent value
-(model picks, subagent settings) is read. Reading these props in `__init__`
-does not work: at construction time `bundle_props` holds code defaults only.
-The model router reads `config.custom_model_endpoint` lazily at client
-creation, inside the turn — after the hook has run. The gateway key resolves
-from app secrets (`b:...`), async like everything on the turn path.
+Redis-staged descriptor props) and applies the reserved paths —
+`role_models`, `embedding`, and this one — onto the per-instance `Config`,
+rebuilding the model service when they changed. The model router then reads
+`config.custom_model_endpoint` lazily at client creation, inside the turn.
+The gateway key travels the secrets path, not props: the turn door resolves
+`services.llm.custom.api_key` (bundle secret first, platform fallback) into
+the per-turn config, the same way per-app OpenAI/Anthropic key overrides
+resolve.
+
+An app that needs to apply its OWN config-affecting props does it in the
+public template hook `on_apply_props(props)` — see
+[Bundle Properties And Secrets Lifecycle](../../../sdk/bundle/bundle-properties-and-secrets-lifecycle-README.md).
 
 Alternative to the composer pick: pin a role —
 `role_models: {<role>: {provider: custom, model: qwen3.6:35b}}`.

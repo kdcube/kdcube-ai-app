@@ -243,6 +243,7 @@ Reserved bundle prop paths such as:
 
 - `role_models`
 - `embedding`
+- `services.llm.custom`
 - `economics.reservation_amount_dollars`
 - `execution.runtime`
 - `surfaces.as_consumer.mcp.services`

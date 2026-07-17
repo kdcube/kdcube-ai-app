@@ -92,6 +92,7 @@ In `aws-sm`, the grouped bundle descriptor docs are:
 |---|---|---|---|
 | `role_models` | bundle `configuration` / base configuration | `BaseEntrypoint` | Merged into `Config.role_models` and used by SDK model-role resolution |
 | `embedding` | bundle `configuration` / base configuration | `BaseEntrypoint` | Applied via `Config.set_embedding(...)` |
+| `services.llm.custom` | no default | `BaseEntrypoint` | Locally served models: `endpoint` (models gateway URL) and `model_name` applied onto `Config` custom-model state; enables `provider: custom` role routing. Key travels the secrets path: `services.llm.custom.api_key` in `bundles.secrets.yaml` |
 | `memory` | disabled in memory mixin defaults | `MemoryEntrypointMixin`, memory tools/widget, ReAct announce integration | User Memory hotset, tools, widget, reconciliation, and snapshots for memory-enabled bundles |
 | `ui.widgets.memories` | disabled in memory mixin defaults | `MemoryEntrypointMixin`, widget builder/loader | Enables and optionally overrides the built Memory widget UI |
 | `economics.reservation_amount_dollars` | `2.0` in `BaseEntrypointWithEconomics.configuration` | `BaseEntrypointWithEconomics` | Per-bundle reservation floor for pre-run economics admission |
@@ -113,6 +114,7 @@ All reserved paths below are still non-secret bundle props.
 |---|---|---|---|---|---|
 | `role_models` | `self.bundle_prop("role_models")` or resolved `Config.role_models` | `<prefix>/bundles/<bundle_id>/descriptor` `config.role_models` | `bundles.yaml -> items[].config.role_models` | cache | platform-owned model-role routing |
 | `embedding` | `self.bundle_prop("embedding")` or resolved `Config.embedding` | `<prefix>/bundles/<bundle_id>/descriptor` `config.embedding` | `bundles.yaml -> items[].config.embedding` | cache | platform-owned embedding override |
+| `services.llm.custom` | resolved `Config.custom_model_endpoint` / `custom_model_name` | `<prefix>/bundles/<bundle_id>/descriptor` `config.services.llm.custom` | `bundles.yaml -> items[].config.services.llm.custom` | cache | platform-owned locally-served-models endpoint (models gateway) |
 | `memory` | `self.bundle_prop("memory")` through memory-enabled entrypoints | `<prefix>/bundles/<bundle_id>/descriptor` `config.memory` | `bundles.yaml -> items[].config.memory` | cache | User Memory subsystem config; interpreted only by bundles that use the memory mixin |
 | `ui.widgets.memories` | `self.bundle_prop("ui.widgets.memories")` through widget loader | `<prefix>/bundles/<bundle_id>/descriptor` `config.ui.widgets.memories` | `bundles.yaml -> items[].config.ui.widgets.memories` | cache | Memory widget enable/build overrides |
 | `economics.reservation_amount_dollars` | `self.bundle_prop("economics.reservation_amount_dollars")` | `<prefix>/bundles/<bundle_id>/descriptor` `config.economics.reservation_amount_dollars` | `bundles.yaml -> items[].config.economics.reservation_amount_dollars` | cache | used only by economics entrypoints |
@@ -134,6 +136,7 @@ Not every important prop is platform-reserved.
 |---|---|---|---|
 | `role_models` | yes | platform entrypoint/runtime | bundle props authority + Redis cache |
 | `embedding` | yes | platform entrypoint/runtime | bundle props authority + Redis cache |
+| `services.llm.custom` | yes | platform entrypoint/runtime | bundle props authority + Redis cache |
 | `memory` | yes for memory-enabled entrypoints | memory mixin, memory widget/tools, optional ReAct integration | bundle props authority + Redis cache |
 | `ui.widgets.memories` | yes for memory-enabled entrypoints | memory widget loader/build flow | bundle props authority + Redis cache |
 | `surfaces.as_provider` | yes | integration bridge and Bundle Admin | bundle props authority + Redis cache |
