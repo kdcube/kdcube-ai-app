@@ -1916,6 +1916,44 @@ class ReactSolverV2:
         )
         self._timeline_text_idx[artifact_name] = idx + 2
 
+    def _keep_and_stop_if_answer_streamed(
+        self,
+        *,
+        decision: Dict[str, Any],
+        streamed_state: Optional[Dict[str, Any]],
+        state: Dict[str, Any],
+        code: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Class 1 keep-and-stop, generalized across Tier-2 rejection codes.
+
+        When THIS round's answer lane already streamed to the user (fact, from
+        the overseer's per-lane streamed_state), the user HAS the answer — do
+        not re-kick the model for any post-hoc validation failure. Synthesize
+        the complete the model meant with the streamed text, attributed to this
+        lineage, and stop. Returns the finalized decision, or None when nothing
+        streamed (caller falls through to its normal retry)."""
+        st = streamed_state if isinstance(streamed_state, dict) else {}
+        if not st.get("answer_streamed"):
+            return None
+        salvaged = str(st.get("answer_text") or "").strip()
+        if not salvaged:
+            return None
+        self._streamed_final_answer_pending = ""
+        state["retry_decision"] = False
+        if not isinstance(decision, dict):
+            decision = {}
+        decision["action"] = "complete"
+        decision["final_answer"] = salvaged
+        decision["tool_call"] = None
+        decision["notes"] = ""
+        state["decision"] = decision
+        self.log.log(
+            f"[react.v3] {code} round already streamed its final_answer; "
+            "finalizing with the streamed text instead of retrying",
+            level="WARNING",
+        )
+        return decision
+
     def _validate_decision(self, decision: Dict[str, Any]) -> Optional[str]:
         action = (decision.get("action") or "").strip()
         if action not in {"call_tool", "complete", "exit"}:
@@ -3754,26 +3792,18 @@ class ReactSolverV2:
                 )
             except Exception:
                 pass
-            # The user already HAS the answer when the malformed action's
-            # final_answer streamed (salvaged by the notice builder). Do not
-            # kick the model again — keep the answer and stop: synthesize the
-            # complete the model meant, attributed to THIS lineage.
-            salvaged_now = str(getattr(self, "_streamed_final_answer_pending", "") or "")
-            if salvaged_now.strip():
-                self._streamed_final_answer_pending = ""
-                state["retry_decision"] = False
-                decision["action"] = "complete"
-                decision["final_answer"] = salvaged_now
-                decision["tool_call"] = None
-                decision["notes"] = ""
+            # The user already HAS the answer when this round's answer lane
+            # streamed (fact, from the overseer's streamed_state). Keep it and
+            # stop instead of re-kicking the model.
+            finalized = self._keep_and_stop_if_answer_streamed(
+                decision=decision if isinstance(decision, dict) else {},
+                streamed_state=streamed_state,
+                state=state,
+                code="action_schema_error",
+            )
+            if finalized is not None:
                 error = None
-                state["decision"] = decision
-                self.log.log(
-                    "[react.v3] schema-error round already streamed its final_answer; "
-                    "finalizing with the streamed text instead of retrying",
-                    level="WARNING",
-                )
-                return decision
+                return finalized
             retries = int(state.get("decision_retries") or 0)
             if retries < int(state.get("max_iterations") or 0):
                 state["decision_retries"] = retries + 1
@@ -3959,6 +3989,17 @@ class ReactSolverV2:
                     )
                 except Exception:
                     pass
+                # Same Class 1 rule for shape-code rejections: if this round's
+                # answer already streamed, keep it and stop — do not re-kick.
+                finalized = self._keep_and_stop_if_answer_streamed(
+                    decision=decision if isinstance(decision, dict) else {},
+                    streamed_state=streamed_state,
+                    state=state,
+                    code=packet_validation_error,
+                )
+                if finalized is not None:
+                    state["last_decision"] = finalized
+                    return state
                 retries = int(state.get("decision_retries") or 0)
                 if retries < int(state.get("max_iterations") or 0):
                     state["decision_retries"] = retries + 1

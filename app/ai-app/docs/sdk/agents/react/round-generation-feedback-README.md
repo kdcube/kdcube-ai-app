@@ -318,10 +318,17 @@ also be reported to the model, honestly:
   and it must be logged with evidence. Silent truncation makes the model —
   and the user — guess.
 - **Steer cancel + finalize.** A live steer cancels the active decision and
-  routes the turn into a finalize phase. The finalizing model should know
-  what the cancelled decision had already shown the user (Class 1 content
-  from the cancelled round), so its wrap-up neither repeats nor contradicts
-  visible work.
+  routes the turn into a finalize phase. What is ALREADY visible to the
+  finalize decision, no extra work needed: the interrupted generation's raw
+  (its `react.decision.raw` block is exempt from the debug filter when
+  `meta.interrupted` — always rendered), AND any tool an accepted action
+  already executed during streaming — its `react.tool.result` block is
+  contributed by the tool handler itself (`add_block` →
+  `ctx_browser.contribute`) at execution time, before the steer, so a
+  parallel-executed tool's result survives the finalize path. The narrow
+  remaining disclosure is Class 1 streamed content of the CANCELLED round
+  (its streamed thinking/answer), which `streamed_state` now makes
+  available for a finalize-prompt statement.
 
 Both are the same principle as §5–§6: the effect happened; the model is told
 the fact from real state.
