@@ -204,46 +204,6 @@ class WorkspaceEntrypoint(BaseEntrypointWithEconomics):
         )
         self.graph = self._build_graph()
 
-    def _apply_bundle_props_overrides(self) -> None:
-        """Descriptor-driven custom model endpoint (locally served models).
-
-        Rides the SAME mechanism that propagates `role_models` and
-        `embedding` from bundles.yaml to the model service: the base
-        implementation runs inside every `refresh_bundle_props()` (bundle
-        load, each turn door, props-change notifications) and rebuilds the
-        models service when config changed. `provider: custom` roles and the
-        composer pick (which overlays role_models per user via the call
-        context) then route through the models gateway named here. The
-        gateway key, when the gateway is auth-gated, is the app secret
-        `b:services.llm.custom.api_key`, resolved by the platform's secret
-        provider at client use."""
-        super()._apply_bundle_props_overrides()
-        custom = self.get_prop_path(self.bundle_props or {}, "services.llm.custom") or {}
-        if not isinstance(custom, Mapping):
-            return
-        endpoint = str(custom.get("endpoint") or "").strip()
-        if not endpoint:
-            # Loud skip: a turn that later picks provider "custom" will fail
-            # at client creation, and this line is the first breadcrumb.
-            _log.info(
-                "[workspace] custom LLM props absent/empty (services.llm.custom); provider 'custom' unavailable"
-            )
-            return
-        if self.config.custom_model_endpoint == endpoint and self.config.use_custom_endpoint:
-            return
-        self.config.custom_model_endpoint = endpoint
-        self.config.custom_model_name = str(
-            custom.get("model_name") or self.config.custom_model_name or "custom-model"
-        )
-        self.config.use_custom_endpoint = True
-        if hasattr(self, "models_service"):
-            self._rebuild_models_service()
-        _log.info(
-            "[workspace] custom LLM endpoint applied from descriptor: %s (model=%s)",
-            endpoint,
-            self.config.custom_model_name,
-        )
-
     @on_job
     async def on_job(self, **kwargs) -> Dict[str, Any]:
         handled = await super().handle_job(**kwargs)
