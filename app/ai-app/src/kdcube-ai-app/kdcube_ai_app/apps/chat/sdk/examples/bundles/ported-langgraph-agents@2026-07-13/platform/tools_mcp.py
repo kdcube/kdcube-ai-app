@@ -33,6 +33,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_mcp import (
     resolve_mcp_server_map,
     delegated_client_id_for_agent,
     is_delegated_connection,
+    connection_resource,
     DROP_CONSENT_PENDING,
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.connections.mcp_consent import (
@@ -129,7 +130,12 @@ async def load_mcp_tools_for_connections(
             claims = [claims]
         consents.append(mcp_consent_from_denial(
             {"status": 403, "reason": "authority_mismatch"},
-            resource=str(c.get("url") or ""),
+            # The connection's declared delegated-resource id (its `resource`,
+            # falling back to the url) — the SAME key the grant is created and
+            # looked up under. A deployment whose configured resource is a
+            # wildcard pattern declares it via `resource`, so the demand's
+            # one-click grant validates against the catalog.
+            resource=connection_resource(c),
             claims=claims,
             tool_name=str(c.get("alias") or c.get("name") or ""),
             agent_client_id=client_id,

@@ -78,6 +78,30 @@ def test_consent_pending_drop_raises_a_demand_not_a_silent_gap() -> None:
     assert grant["payload"]["resource"] == "https://h/api/mcp/mem"
 
 
+def test_demand_keys_on_the_declared_resource_id_not_the_url() -> None:
+    # A deployment's delegated-resource catalog often configures a WILDCARD
+    # pattern; the connection declares it via `resource` while `url` stays the
+    # concrete endpoint. The demand (and its one-click grant payload) must key
+    # on the pattern — the grant is created, validated, and looked up under
+    # that exact id, and the guard fnmatches the request URL against it.
+    m = _mcp_module()
+    conn = {
+        **_MCP_CONN,
+        "resource": "*/api/integrations/bundles/*/*/user-memories@2026-06-26/public/mcp/memories*",
+    }
+
+    async def no_grant(c, user_sub):
+        return None
+
+    tools, consents = asyncio.run(m.load_mcp_tools_for_connections(
+        [conn], user_sub="u1", application="app", agent_id="lg-react", bearer_provider=no_grant,
+    ))
+    assert tools == [] and len(consents) == 1
+    c = consents[0]
+    assert c.resource == conn["resource"]
+    assert c.consent["grant"]["payload"]["resource"] == conn["resource"]
+
+
 def test_no_user_drop_stays_silent() -> None:
     # An anonymous turn cannot grant; the delegated connection is dropped with
     # no demand (nothing for the user to act on).

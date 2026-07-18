@@ -1219,19 +1219,34 @@ bundles:
                   alias: web
                   allowed: [web_search, web_fetch]
                 # Delegated MCP (optional; the agent calls a KDCube @mcp surface AS
-                # the signed-in user). `delegated: true` + `scopes` makes the SDK mint
-                # a per-user, per-turn, least-privilege bearer (the same delegated-OAuth
-                # seam @mcp surfaces authenticate) and inject it — the endpoint then
-                # serves only that user's own data. Fill <PUBLIC_HOST>/<TENANT>/<PROJECT>
-                # and ensure user-memories@2026-06-26 is deployed with the memories:read
-                # grant delegable to the calling user's role. OFF by default.
+                # the signed-in user, under a PER-AGENT consent grant the user gives
+                # and revokes in Connection Hub). `resource` is the delegated-resource
+                # id from `delegated_credentials.oauth.resources` (often a wildcard
+                # pattern) — the grant is created and looked up under this exact key.
+                # Fill <PUBLIC_HOST>/<TENANT>/<PROJECT>; ensure the target app is
+                # deployed with its grants delegable to the calling user's role.
+                # OFF by default.
                 # - name: memories
                 #   kind: mcp
                 #   server_id: memories
                 #   url: "https://<PUBLIC_HOST>/api/integrations/bundles/<TENANT>/<PROJECT>/user-memories@2026-06-26/public/mcp/memories"
+                #   resource: "*/api/integrations/bundles/*/*/user-memories@2026-06-26/public/mcp/memories*"
                 #   transport: streamable_http
                 #   delegated: true
                 #   scopes: [memories:read]
+                # The named-services bridge (Slack on the user's connected account):
+                # the per-agent grant admits the agent into the KDCube namespace
+                # boundary; the user's own connected-account Slack consent (Delegated
+                # to KDCube) is checked at every call — revoking either stops the tool.
+                # - name: slack
+                #   kind: mcp
+                #   server_id: slack
+                #   alias: slack
+                #   url: "https://<PUBLIC_HOST>/api/integrations/bundles/<TENANT>/<PROJECT>/kdcube-services@1-0/public/mcp/named_services"
+                #   resource: "*/api/integrations/bundles/*/*/kdcube-services@1-0/public/mcp/named_services*"
+                #   transport: streamable_http
+                #   delegated: true
+                #   scopes: [named_services:use, slack:read, slack:write]
       ui:
         main_view:
           src_folder: ui/scene

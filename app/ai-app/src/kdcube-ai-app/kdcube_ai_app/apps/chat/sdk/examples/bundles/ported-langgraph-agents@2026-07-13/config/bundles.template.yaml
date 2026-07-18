@@ -197,20 +197,44 @@ bundles:
                   #     Authorization: "Bearer <MCP_ACCESS_TOKEN>"
                   #
                   # DELEGATED auth — the agent calls the endpoint AS the signed-in
-                  # user. `delegated: true` + `scopes` makes the SDK mint a per-user,
-                  # per-turn, least-privilege bearer (the same delegated-OAuth seam
-                  # KDCube @mcp surfaces authenticate) and inject it; the endpoint then
-                  # serves only that user's own data. No `headers` needed. Governance:
-                  # per-agent allow-list (which agent) + the token subject (whose data)
-                  # + the grant's `delegable_roles` (who may delegate it). Example: the
-                  # user's own KDCube memories via the user-memories @mcp surface.
+                  # user, under a PER-AGENT consent grant. `delegated: true` +
+                  # `scopes` bind the bearer the user's grant to THIS agent already
+                  # holds (the same delegated-OAuth seam KDCube @mcp surfaces
+                  # authenticate); the endpoint then serves only that user's own
+                  # data. `resource` is the delegated-resource id from the
+                  # deployment's `delegated_credentials.oauth.resources` catalog
+                  # (often a wildcard pattern) — the grant is created, validated,
+                  # and looked up under this exact key, while the guard matches the
+                  # request URL against it. No `headers` needed. Governance:
+                  # per-agent allow-list (which agent) + per-agent grant (user
+                  # consent, revocable in Connection Hub) + the token subject
+                  # (whose data) + the grant's `delegable_roles` (who may delegate).
+                  #
+                  # Example 1: the user's own KDCube memories.
                   # - name: memories
                   #   kind: mcp
                   #   server_id: memories
                   #   url: "https://<PUBLIC_HOST>/api/integrations/bundles/<TENANT>/<PROJECT>/user-memories@2026-06-26/public/mcp/memories"
+                  #   resource: "*/api/integrations/bundles/*/*/user-memories@2026-06-26/public/mcp/memories*"
                   #   transport: streamable_http
                   #   delegated: true
                   #   scopes: [memories:read]
+                  #
+                  # Example 2: the named-services bridge (Slack via the user's
+                  # connected account). TWO consents chain here: the per-agent
+                  # grant admits the agent into the KDCube namespace boundary, and
+                  # the user's own connected-account Slack consent (Delegated to
+                  # KDCube) is checked at every call by the provider adapter —
+                  # revoking either stops the tool immediately.
+                  # - name: slack
+                  #   kind: mcp
+                  #   server_id: slack
+                  #   alias: slack
+                  #   url: "https://<PUBLIC_HOST>/api/integrations/bundles/<TENANT>/<PROJECT>/kdcube-services@1-0/public/mcp/named_services"
+                  #   resource: "*/api/integrations/bundles/*/*/kdcube-services@1-0/public/mcp/named_services*"
+                  #   transport: streamable_http
+                  #   delegated: true
+                  #   scopes: [named_services:use, slack:read, slack:write]
         # The Telegram Bot API webhook (a public @api that drives the SAME
         # execute_core for the DEFAULT agent). `route="public"` exposes it at the
         # proc layer; the trust boundary is the Telegram webhook secret, verified by
