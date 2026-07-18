@@ -314,7 +314,7 @@ def _stamp_external_event_batch(message_data: Dict[str, Any], events: List[Dict[
 def _external_event_object_path(event: Dict[str, Any], *, event_id: str) -> str:
     logical_path = str(event.get("logical_path") or "").strip()
     marker = ".events/"
-    if logical_path.startswith("ev:") and marker in logical_path:
+    if logical_path.startswith("conv:ev:") and marker in logical_path:
         return safe_event_object_path(logical_path.split(marker, 1)[1], default=event_id)
     hosted_uri = str(event.get("hosted_uri") or "").strip()
     payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}

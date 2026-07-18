@@ -46,18 +46,15 @@ def runtime_outdir_for_artifact_outdir(artifact_outdir: Path) -> Path:
 
 def resolve_artifact_path(outdir: Path, rel: str, *, prefer_existing: bool = True, create_root: bool = True) -> Path:
     """
-    Resolve an OUTPUT_DIR-relative artifact path against the separated artifact
-    root, with backward compatibility for old layouts where files were directly
-    under the runtime outdir.
+    Resolve an OUTPUT_DIR-relative artifact path against the artifact root.
+
+    ``prefer_existing`` remains in the call contract for callers that select
+    read versus write intent, but both intents resolve through the same
+    canonical artifact root.
     """
     runtime_root = Path(outdir)
     artifact_root = artifact_outdir_for(runtime_root, create=create_root)
-    candidate = artifact_root / rel
-    if prefer_existing and not candidate.exists():
-        legacy = runtime_root / rel
-        if legacy.exists():
-            return legacy
-    return candidate
+    return artifact_root / rel
 
 
 def should_skip_relpath(rel: str) -> bool:

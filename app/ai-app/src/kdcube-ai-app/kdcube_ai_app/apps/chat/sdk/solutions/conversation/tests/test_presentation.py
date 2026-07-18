@@ -21,24 +21,20 @@ from kdcube_ai_app.apps.chat.sdk.solutions.conversation.presentation import (
 
 def test_conv_file_ref_grammar_roundtrips():
     # With the presented conversation's id, every emitted ref carries its scope.
-    assert conv_file_ref("conv:fi:turn_1.outputs/summary.md", "c9") == "conv:fi:conv_c9.turn_1.outputs/summary.md"
-    # Stored rows may carry the file realm's bare fi: spelling; the emitted
-    # handle is the canonical conv-namespaced, conversation-scoped form.
-    assert conv_file_ref("fi:turn_1.outputs/summary.md", "c9") == "conv:fi:conv_c9.turn_1.outputs/summary.md"
-    assert conv_file_ref("fi:conv_c9.turn_1.outputs/summary.md", "c9") == "conv:fi:conv_c9.turn_1.outputs/summary.md"
+    assert conv_file_ref("conv:fi:turn_1.files/summary.md", "c9") == "conv:fi:conv_c9.turn_1.files/summary.md"
     # Idempotent: a ref already carrying its scope keeps it.
-    assert conv_file_ref("conv:fi:conv_c9.turn_1.outputs/summary.md", "c9") == "conv:fi:conv_c9.turn_1.outputs/summary.md"
+    assert conv_file_ref("conv:fi:conv_c9.turn_1.files/summary.md", "c9") == "conv:fi:conv_c9.turn_1.files/summary.md"
     # A ref scoped to another conversation keeps its own scope (copies keep origin).
     assert conv_file_ref("conv:fi:conv_other.turn_1.files/x", "c9") == "conv:fi:conv_other.turn_1.files/x"
-    # Handles outside the conversation namespace pass through unchanged.
-    assert conv_file_ref("ar:turn_1.react.turn.index", "c9") == "ar:turn_1.react.turn.index"
-    assert is_conv_file_ref("conv:fi:turn_1.outputs/summary.md")
+    # Other conversation-realm handles receive the same owner segment.
+    assert conv_file_ref("conv:ar:turn_1.react.turn.index", "c9") == "conv:ar:conv_c9.turn_1.react.turn.index"
+    assert is_conv_file_ref("conv:fi:turn_1.files/summary.md")
     assert not is_conv_file_ref("conv:conversation:c1")
     # The canonical file ref round-trips as-is; anything else -> "".
-    assert fi_path_from_conv_ref("conv:fi:conv_c9.turn_1.outputs/summary.md") == "conv:fi:conv_c9.turn_1.outputs/summary.md"
+    assert fi_path_from_conv_ref("conv:fi:conv_c9.turn_1.files/summary.md") == "conv:fi:conv_c9.turn_1.files/summary.md"
     assert fi_path_from_conv_ref("conv:conversation:c1") == ""
     # conversation_id_from_ref must NOT mistake a conv:fi: file ref for a conversation.
-    assert conversation_id_from_ref("conv:fi:turn_1.outputs/summary.md") == ""
+    assert conversation_id_from_ref("conv:fi:turn_1.files/summary.md") == ""
 
 
 def test_turn_hit_snippet_path_presented_as_conv_fi():

@@ -231,18 +231,6 @@ def build_external_attachment_logical_path(
     )
 
 
-def _is_safe_outdir_relpath(path_value: str) -> bool:
-    try:
-        path = pathlib.PurePosixPath(path_value)
-        if path_value.startswith(("/", "\\")):
-            return False
-        if any(part == ".." for part in path.parts):
-            return False
-        return True
-    except Exception:
-        return False
-
-
 def build_physical_artifact_path(
     *,
     turn_id: str,
@@ -322,17 +310,8 @@ def split_physical_artifact_path(path_value: str) -> tuple[str, str, str]:
                 ARTIFACT_NAMESPACE_ATTACHMENTS,
                 f"external/{kind}/attachments/{message_id}/{rel}",
             )
-    if ".user.attachments/" in raw:
-        turn_id, rel = raw.split(".user.attachments/", 1)
-        if is_turn_id(turn_id) and rel:
-            return turn_id, ARTIFACT_NAMESPACE_ATTACHMENTS, rel
     for namespace in _LOGICAL_ARTIFACT_NAMESPACES:
         marker = f"/{namespace}/"
-        if marker in raw:
-            turn_id, rel = raw.split(marker, 1)
-            if is_turn_id(turn_id) and rel:
-                return turn_id, namespace, rel
-        marker = f".{namespace}/"
         if marker in raw:
             turn_id, rel = raw.split(marker, 1)
             if is_turn_id(turn_id) and rel:
@@ -367,14 +346,9 @@ def _split_logical_artifact_body(raw_value: str) -> tuple[str, str, str]:
     if ".user.attachments/" in raw:
         turn_id, rel = raw.split(".user.attachments/", 1)
         return turn_id, ARTIFACT_NAMESPACE_ATTACHMENTS, rel
-    if "/user.attachments/" in raw:
-        turn_id, rel = raw.split("/user.attachments/", 1)
-        if is_turn_id(turn_id) and rel:
-            return turn_id, ARTIFACT_NAMESPACE_ATTACHMENTS, rel
     for namespace in _LOGICAL_ARTIFACT_NAMESPACES:
-        for marker in (f".{namespace}/", f"/{namespace}/"):
-            if marker not in raw:
-                continue
+        marker = f".{namespace}/"
+        if marker in raw:
             turn_id, rel = raw.split(marker, 1)
             if is_turn_id(turn_id) and rel:
                 return turn_id, namespace, rel
@@ -467,8 +441,6 @@ def physical_path_to_logical_path(path_value: str) -> str:
             relpath=rel,
             conversation_id=conversation_id,
         )
-    if _is_safe_outdir_relpath(raw):
-        return f"{CONVERSATION_FILE_REF_PREFIX}{raw}"
     return ""
 
 
@@ -476,7 +448,6 @@ def normalize_physical_path(
     path_value: str,
     *,
     turn_id: str,
-    allow_generic_fi: bool = False,
     default_namespace: str = ARTIFACT_NAMESPACE_FILES,
 ) -> tuple[str, str, bool]:
     """Normalize a supplied path to an artifact-outdir-relative path."""
@@ -499,11 +470,19 @@ def normalize_physical_path(
                 conversation_id=conversation_id,
             )
             return physical, rel, True
-        if allow_generic_fi:
-            logical = raw[len(CONVERSATION_FILE_REF_PREFIX) :].lstrip("/")
-            if _is_safe_outdir_relpath(logical):
-                return logical, logical, False
-        return raw, raw, False
+        return "", "", False
+    if ":" in raw:
+        return "", "", False
+    if raw.startswith("outputs/"):
+        return "", "", False
+    physical_body = raw
+    if physical_body.startswith(ARTIFACT_CONVERSATION_PREFIX):
+        _, physical_body = _split_physical_conversation_prefix(physical_body)
+    first_segment = physical_body.split("/", 1)[0]
+    if is_turn_id(first_segment) and not split_physical_artifact_path(
+        physical_body
+    )[0]:
+        return "", "", False
 
     rel = raw
     rewritten = False

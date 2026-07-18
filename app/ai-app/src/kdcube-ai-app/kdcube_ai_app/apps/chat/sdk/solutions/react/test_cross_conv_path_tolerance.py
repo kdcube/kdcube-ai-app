@@ -64,7 +64,7 @@ def test_peel_does_not_invent_conversation_ids():
 
 
 def test_peel_no_segment_after_conv_prefix_returns_unchanged():
-    # `ws:conv_abc` with no `.<rest>` after the conv segment is malformed; the
+    # `conv:ws:conv_abc` with no `.<rest>` after the conv segment is malformed; the
     # peeler must not strip it.
     out_ns, conv_id, unscoped = peel_conversation_prefix("conv:ws:conv_abc")
     assert out_ns == "conv:ws:"

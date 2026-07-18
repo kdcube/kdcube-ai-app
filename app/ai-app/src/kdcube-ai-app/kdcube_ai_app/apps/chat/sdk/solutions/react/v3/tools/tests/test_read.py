@@ -3,93 +3,36 @@
 import pytest
 import json
 import random
-from types import ModuleType
 
-from kdcube_ai_app.apps.chat.sdk.events import EventSourceSubsystem, event_source_declaration, event_source_reader
 from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace import artifact_outdir_for
-from kdcube_ai_app.apps.chat.sdk.solutions.react.events import block_production_policy
 from kdcube_ai_app.apps.chat.sdk.solutions.react.proto import RuntimeCtx
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.tools.read import handle_react_read
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.tools.tests.helpers import FakeBrowser
-
-
-def _module(name: str, **attrs):
-    mod = ModuleType(name)
-    for key, value in attrs.items():
-        setattr(mod, key, value)
-    return mod
 
 
 @pytest.mark.asyncio
 async def test_read_missing_paths_notice(tmp_path):
     runtime = RuntimeCtx(turn_id="turn_read", outdir=str(tmp_path), workdir=str(tmp_path))
     ctx = FakeBrowser(runtime)
-    state = {"last_decision": {"tool_call": {"params": {"paths": ["fi:turn_read.files/missing.md"]}}}}
+    state = {"last_decision": {"tool_call": {"params": {"paths": ["conv:fi:turn_read.files/missing.md"]}}}}
     await handle_react_read(ctx_browser=ctx, state=state, tool_call_id="r1")
     assert any(b.get("type") == "react.notice" for b in ctx.timeline.blocks)
 
 
 @pytest.mark.asyncio
-async def test_read_dispatches_owner_namespace_through_event_source_reader(tmp_path):
-    @block_production_policy(event_policy_id="demo.block_production.read_result")
-    def demo_read_policy(target, **_):
-        blocks = target.setdefault("blocks", [])
-        ret = target.get("ret") if isinstance(target.get("ret"), dict) else {}
-        blocks.append({
-            "turn": target.get("turn_id") or "",
-            "type": "react.tool.result",
-            "call_id": target.get("tool_call_id") or "",
-            "tool_id": target.get("tool_id") or "",
-            "event_source_id": target.get("event_source_id") or "",
-            "mime": "application/json",
-            "path": ret.get("ref") or "",
-            "text": json.dumps({"resolved": ret.get("value")}, ensure_ascii=False),
-            "meta": {"tool_call_id": target.get("tool_call_id") or ""},
-        })
-        target["result_items"] = []
-        target["result_items_produced"] = True
-        target["declared_file_items"] = []
-        target["declared_file_items_produced"] = True
-        return target
-
-    @event_source_reader(namespace="demo", event_source_id="{alias}.read")
-    async def read_demo_ref(**kwargs):
-        return {"ok": True, "ref": kwargs["ref"], "value": "owner payload"}
-
-    def list_event_sources():
-        return [
-            event_source_declaration(
-                event_source_id="{alias}.read",
-                policies=[
-                    {"react_phase": "block_production", "event_policy_id": "react.block_production.tool_default"},
-                    {"react_phase": "block_production", "event_policy_id": "demo.block_production.read_result"},
-                ],
-                kind="react.tool",
-            )
-        ]
-
-    event_sources = EventSourceSubsystem(modules=[{
-        "mod": _module(
-            "demo_reader_events",
-            list_event_sources=list_event_sources,
-            read_demo_ref=read_demo_ref,
-            demo_read_policy=demo_read_policy,
-        ),
-        "alias": "demo",
-    }])
-    runtime = RuntimeCtx(turn_id="turn_read", outdir=str(tmp_path), workdir=str(tmp_path), event_sources=event_sources)
+async def test_read_requires_pull_for_external_namespace_ref(tmp_path):
+    runtime = RuntimeCtx(turn_id="turn_read", outdir=str(tmp_path), workdir=str(tmp_path))
     ctx = FakeBrowser(runtime)
     state = {"last_decision": {"tool_call": {"params": {"paths": ["demo:item-1"]}}}}
 
     await handle_react_read(ctx_browser=ctx, state=state, tool_call_id="r_owner")
 
     assert any(
-        block.get("path") == "demo:item-1" and "owner payload" in (block.get("text") or "")
+        block.get("type") == "react.notice" and "read_paths_missing" in (block.get("text") or "")
         for block in ctx.timeline.blocks
-        if block.get("type") == "react.tool.result"
     )
     assert not any(
-        block.get("type") == "react.notice" and "read_paths_missing" in (block.get("text") or "")
+        block.get("type") == "react.tool.result" and block.get("path") == "demo:item-1"
         for block in ctx.timeline.blocks
     )
 
@@ -98,12 +41,12 @@ async def test_read_dispatches_owner_namespace_through_event_source_reader(tmp_p
 async def test_read_returns_latest_version(tmp_path):
     runtime = RuntimeCtx(turn_id="turn_read", outdir=str(tmp_path), workdir=str(tmp_path))
     ctx = FakeBrowser(runtime)
-    path = "fi:turn_read.files/report.md"
+    path = "conv:fi:turn_read.files/report.md"
     # older version
     ctx.timeline.blocks.append({
         "type": "react.tool.result",
         "mime": "application/json",
-        "text": '{"artifact_path":"fi:turn_read.files/report.md","physical_path":"turn_read/files/report.md"}',
+        "text": '{"artifact_path":"conv:fi:turn_read.files/report.md","physical_path":"turn_read/files/report.md"}',
         "turn_id": "turn_read",
     })
     ctx.timeline.blocks.append({
@@ -117,7 +60,7 @@ async def test_read_returns_latest_version(tmp_path):
     ctx.timeline.blocks.append({
         "type": "react.tool.result",
         "mime": "application/json",
-        "text": '{"artifact_path":"fi:turn_read.files/report.md","physical_path":"turn_read/files/report.md"}',
+        "text": '{"artifact_path":"conv:fi:turn_read.files/report.md","physical_path":"turn_read/files/report.md"}',
         "turn_id": "turn_read",
     })
     ctx.timeline.blocks.append({
@@ -133,18 +76,19 @@ async def test_read_returns_latest_version(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_read_supports_outdir_relative_fi_paths(tmp_path):
+async def test_read_supports_current_turn_file_refs(tmp_path):
     runtime = RuntimeCtx(turn_id="turn_read", outdir=str(tmp_path), workdir=str(tmp_path))
     ctx = FakeBrowser(runtime)
-    logs_dir = tmp_path / "logs"
+    logs_dir = artifact_outdir_for(tmp_path) / "turn_read" / "files" / "logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
     (logs_dir / "docker.err.log").write_text("boom", encoding="utf-8")
 
-    state = {"last_decision": {"tool_call": {"params": {"paths": ["fi:logs/docker.err.log"]}}}}
+    source_path = "conv:fi:turn_read.files/logs/docker.err.log"
+    state = {"last_decision": {"tool_call": {"params": {"paths": [source_path]}}}}
     await handle_react_read(ctx_browser=ctx, state=state, tool_call_id="r3")
 
     assert any(
-        b.get("path") == "fi:logs/docker.err.log" and b.get("text") == "boom"
+        b.get("path") == source_path and b.get("text") == "boom"
         for b in ctx.timeline.blocks
         if b.get("type") == "react.tool.result"
     )
@@ -165,7 +109,7 @@ async def test_read_external_followup_svg_attachment_as_text(tmp_path):
     )
     physical.parent.mkdir(parents=True, exist_ok=True)
     physical.write_text('<svg xmlns="http://www.w3.org/2000/svg"><text>diagram</text></svg>', encoding="utf-8")
-    path = "fi:turn_read.external.external_event.attachments/evt_1/diagram.svg"
+    path = "conv:fi:turn_read.external.external_event.attachments/evt_1/diagram.svg"
     state = {"last_decision": {"tool_call": {"params": {"paths": [path]}}}}
 
     await handle_react_read(ctx_browser=ctx, state=state, tool_call_id="r_svg")
@@ -181,7 +125,7 @@ async def test_read_external_followup_svg_attachment_as_text(tmp_path):
 async def test_read_tc_result_prefers_inline_payload_over_meta(tmp_path):
     runtime = RuntimeCtx(turn_id="turn_read", outdir=str(tmp_path), workdir=str(tmp_path))
     ctx = FakeBrowser(runtime)
-    source_path = "tc:turn_src.pref1.result"
+    source_path = "conv:tc:turn_src.pref1.result"
 
     ctx.timeline.blocks.extend([
         {
@@ -189,7 +133,7 @@ async def test_read_tc_result_prefers_inline_payload_over_meta(tmp_path):
             "mime": "application/json",
             "path": source_path,
             "text": (
-                '{"artifact_path":"tc:turn_src.pref1.result","mime":"application/json",'
+                '{"artifact_path":"conv:tc:turn_src.pref1.result","mime":"application/json",'
                 '"kind":"file","visibility":"internal","tool_call_id":"pref1"}'
             ),
             "turn_id": "turn_src",
@@ -244,13 +188,13 @@ async def test_read_sources_pool_prefers_fetched_content_over_preview(tmp_path):
         }
     ]
 
-    state = {"last_decision": {"tool_call": {"params": {"paths": ["so:sources_pool[1]"]}}}}
+    state = {"last_decision": {"tool_call": {"params": {"paths": ["conv:so:sources_pool[1]"]}}}}
     await handle_react_read(ctx_browser=ctx, state=state, tool_call_id="r_source")
 
     block = next(
         b for b in ctx.timeline.blocks
         if b.get("type") == "react.tool.result"
-        and b.get("path") == "so:sources_pool[1]"
+        and b.get("path") == "conv:so:sources_pool[1]"
         and b.get("call_id") == "r_source"
     )
     assert block.get("mime") == "application/json"
@@ -262,7 +206,7 @@ async def test_read_sources_pool_prefers_fetched_content_over_preview(tmp_path):
     status_block = next(
         b for b in ctx.timeline.blocks
         if b.get("type") == "react.tool.result"
-        and b.get("path") == "tc:turn_read.r_source.result"
+        and b.get("path") == "conv:tc:turn_read.r_source.result"
         and b.get("call_id") == "r_source"
     )
     status = json.loads(status_block["text"])
@@ -280,13 +224,13 @@ async def test_read_sources_pool_max_text_symbols_preserves_json_items(tmp_path)
         {"sid": 2, "url": "https://example.com/2", "title": "Two", "text": "snippet two", "content": "B" * 100},
     ]
 
-    state = {"last_decision": {"tool_call": {"params": {"paths": ["so:sources_pool[1,2]"], "max_text_symbols": 50}}}}
+    state = {"last_decision": {"tool_call": {"params": {"paths": ["conv:so:sources_pool[1,2]"], "max_text_symbols": 50}}}}
     await handle_react_read(ctx_browser=ctx, state=state, tool_call_id="r_source_cap")
 
     block = next(
         b for b in ctx.timeline.blocks
         if b.get("type") == "react.tool.result"
-        and b.get("path") == "so:sources_pool[1,2]"
+        and b.get("path") == "conv:so:sources_pool[1,2]"
         and b.get("call_id") == "r_source_cap"
     )
     rows = json.loads(block.get("text") or "[]")
@@ -323,7 +267,7 @@ async def test_read_cross_conversation_sources_pool_uses_ctx_client(tmp_path):
     )
     ctx = FakeBrowser(runtime)
     ctx.ctx_client = FakeCtxClient()
-    path = "so:conv_other-conv.sources_pool[2]"
+    path = "conv:so:conv_other-conv.sources_pool[2]"
 
     state = {"last_decision": {"tool_call": {"params": {"paths": [path]}}}}
     await handle_react_read(ctx_browser=ctx, state=state, tool_call_id="r_cross_source")
@@ -345,7 +289,7 @@ async def test_read_cross_conversation_sources_pool_uses_ctx_client(tmp_path):
     status = next(
         json.loads(b["text"])
         for b in ctx.timeline.blocks
-        if b.get("path") == "tc:turn_read.r_cross_source.result"
+        if b.get("path") == "conv:tc:turn_read.r_cross_source.result"
     )
     assert status["paths"][0]["conversation_id"] == "other-conv"
 
@@ -354,7 +298,7 @@ async def test_read_cross_conversation_sources_pool_uses_ctx_client(tmp_path):
 async def test_read_large_tc_result_returns_configured_preview_not_full_payload(tmp_path):
     runtime = RuntimeCtx(turn_id="turn_read", outdir=str(tmp_path), workdir=str(tmp_path), max_tokens=80_000)
     ctx = FakeBrowser(runtime)
-    source_path = "tc:turn_src.tc_big.result"
+    source_path = "conv:tc:turn_src.tc_big.result"
     large_text = json.dumps({"ok": True, "messages": ["email body " * 2000 for _ in range(80)]})
 
     ctx.timeline.blocks.append({
@@ -382,7 +326,7 @@ async def test_read_large_tc_result_returns_configured_preview_not_full_payload(
     status = next(
         json.loads(b["text"])
         for b in read_blocks
-        if b.get("path") == "tc:turn_read.r_large.result" and b.get("mime") == "application/json"
+        if b.get("path") == "conv:tc:turn_read.r_large.result" and b.get("mime") == "application/json"
     )
     assert status["paths"][0]["status"] == "truncated_for_visible_context"
     assert status["truncated_paths"][0]["path"] == source_path
@@ -392,7 +336,7 @@ async def test_read_large_tc_result_returns_configured_preview_not_full_payload(
 async def test_read_ev_event_path(tmp_path):
     runtime = RuntimeCtx(turn_id="turn_read", outdir=str(tmp_path), workdir=str(tmp_path), max_tokens=80_000)
     ctx = FakeBrowser(runtime)
-    event_path = "ev:turn_src.events/task-tracker/canvas/review/evt_1"
+    event_path = "conv:ev:turn_src.events/task-tracker/canvas/review/evt_1"
     ctx.timeline.blocks.append({
         "type": "event.external",
         "mime": "application/json",
@@ -427,7 +371,7 @@ async def test_read_ev_event_path(tmp_path):
 async def test_read_mid_sized_payload_uses_configured_preview(tmp_path):
     runtime = RuntimeCtx(turn_id="turn_read", outdir=str(tmp_path), workdir=str(tmp_path), max_tokens=80_000)
     ctx = FakeBrowser(runtime)
-    source_path = "tc:turn_src.tc_mid.result"
+    source_path = "conv:tc:turn_src.tc_mid.result"
     raw_text = "email body with enough detail\n" * 9000
     ctx.timeline.blocks.append({
         "type": "react.tool.result",
@@ -462,7 +406,7 @@ async def test_read_large_payload_with_max_text_symbols_returns_bounded_preview(
         read_visible_max_tokens=800,
     )
     ctx = FakeBrowser(runtime)
-    source_path = "tc:turn_src.tc_preview.result"
+    source_path = "conv:tc:turn_src.tc_preview.result"
     raw_text = "0123456789abcdef\n" * 1000
     ctx.timeline.blocks.append({
         "type": "react.tool.result",
@@ -488,7 +432,7 @@ async def test_read_large_payload_with_max_text_symbols_returns_bounded_preview(
     status = next(
         json.loads(b["text"])
         for b in read_blocks
-        if b.get("path") == "tc:turn_read.r_preview.result" and b.get("mime") == "application/json"
+        if b.get("path") == "conv:tc:turn_read.r_preview.result" and b.get("mime") == "application/json"
     )
     assert status["paths"][0]["status"] == "truncated_for_visible_context"
     assert status["requested_text_symbols"] == 500
@@ -506,7 +450,7 @@ async def test_read_text_payload_honors_raw_byte_cap(tmp_path):
         read_visible_max_bytes=64,
     )
     ctx = FakeBrowser(runtime)
-    source_path = "tc:turn_src.tc_bytes.result"
+    source_path = "conv:tc:turn_src.tc_bytes.result"
     raw_text = "0123456789abcdef" * 20
     ctx.timeline.blocks.append({
         "type": "react.tool.result",
@@ -531,7 +475,7 @@ async def test_read_text_payload_honors_raw_byte_cap(tmp_path):
     status = next(
         json.loads(b["text"])
         for b in read_blocks
-        if b.get("path") == "tc:turn_read.r_bytes.result" and b.get("mime") == "application/json"
+        if b.get("path") == "conv:tc:turn_read.r_bytes.result" and b.get("mime") == "application/json"
     )
     assert status["paths"][0]["status"] == "truncated_for_visible_context"
     assert status["paths"][0]["bytes"] > status["visible_read_limit_bytes"]
@@ -550,12 +494,12 @@ async def test_read_large_text_file_returns_configured_preview(tmp_path):
         read_visible_max_bytes=512,
     )
     ctx = FakeBrowser(runtime)
-    logs_dir = tmp_path / "logs"
+    logs_dir = artifact_outdir_for(tmp_path) / "turn_read" / "files" / "logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
     full_text = "large file line with details\n" * 200
     (logs_dir / "large.txt").write_text(full_text, encoding="utf-8")
 
-    source_path = "fi:logs/large.txt"
+    source_path = "conv:fi:turn_read.files/logs/large.txt"
     state = {"last_decision": {"tool_call": {"params": {"paths": [source_path]}}}}
     await handle_react_read(ctx_browser=ctx, state=state, tool_call_id="r_file_large")
 
@@ -570,7 +514,7 @@ async def test_read_large_text_file_returns_configured_preview(tmp_path):
     status = next(
         json.loads(b["text"])
         for b in read_blocks
-        if b.get("path") == "tc:turn_read.r_file_large.result" and b.get("mime") == "application/json"
+        if b.get("path") == "conv:tc:turn_read.r_file_large.result" and b.get("mime") == "application/json"
     )
     assert status["paths"][0]["status"] == "truncated_for_visible_context"
     assert status["paths"][0]["bytes"] > status["visible_read_limit_bytes"]
@@ -580,7 +524,7 @@ async def test_read_large_text_file_returns_configured_preview(tmp_path):
 async def test_read_stats_only_returns_metadata_without_materializing_tc_text(tmp_path):
     runtime = RuntimeCtx(turn_id="turn_read", outdir=str(tmp_path), workdir=str(tmp_path), max_tokens=80_000)
     ctx = FakeBrowser(runtime)
-    source_path = "tc:turn_src.tc_stats.result"
+    source_path = "conv:tc:turn_src.tc_stats.result"
     raw_text = json.dumps({"ok": True, "messages": ["email body " * 100 for _ in range(3)]})
     ctx.timeline.blocks.append({
         "type": "react.tool.result",
@@ -603,7 +547,7 @@ async def test_read_stats_only_returns_metadata_without_materializing_tc_text(tm
     status = json.loads(next(
         b["text"]
         for b in read_blocks
-        if b.get("path") == "tc:turn_read.r_stats.result" and b.get("mime") == "application/json"
+        if b.get("path") == "conv:tc:turn_read.r_stats.result" and b.get("mime") == "application/json"
     ))
     assert status["stats_only"] is True
     assert status["paths"][0]["path"] == source_path
@@ -618,12 +562,12 @@ async def test_read_stats_only_returns_metadata_without_materializing_tc_text(tm
 async def test_read_stats_only_returns_file_metadata_without_base64(tmp_path):
     runtime = RuntimeCtx(turn_id="turn_read", outdir=str(tmp_path), workdir=str(tmp_path))
     ctx = FakeBrowser(runtime)
-    logs_dir = tmp_path / "logs"
+    logs_dir = artifact_outdir_for(tmp_path) / "turn_read" / "files" / "logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
     payload = b"%PDF-1.7\n" + (b"x" * 2048)
     (logs_dir / "report.pdf").write_bytes(payload)
 
-    source_path = "fi:logs/report.pdf"
+    source_path = "conv:fi:turn_read.files/logs/report.pdf"
     state = {"last_decision": {"tool_call": {"params": {"paths": [source_path], "stats_only": True}}}}
     await handle_react_read(ctx_browser=ctx, state=state, tool_call_id="r_file_stats")
 
@@ -636,7 +580,7 @@ async def test_read_stats_only_returns_file_metadata_without_base64(tmp_path):
     status = json.loads(next(
         b["text"]
         for b in read_blocks
-        if b.get("path") == "tc:turn_read.r_file_stats.result" and b.get("mime") == "application/json"
+        if b.get("path") == "conv:tc:turn_read.r_file_stats.result" and b.get("mime") == "application/json"
     ))
     assert status["stats_only"] is True
     assert status["paths"][0]["path"] == source_path
@@ -656,7 +600,7 @@ async def test_read_large_image_file_returns_downscaled_multimodal_preview(tmp_p
         read_visible_max_bytes=90_000,
     )
     ctx = FakeBrowser(runtime)
-    out_file = tmp_path / "turn_read" / "outputs" / "large.png"
+    out_file = artifact_outdir_for(tmp_path) / "turn_read" / "files" / "large.png"
     out_file.parent.mkdir(parents=True, exist_ok=True)
     rng = random.Random(123)
     width = height = 900
@@ -664,7 +608,7 @@ async def test_read_large_image_file_returns_downscaled_multimodal_preview(tmp_p
     Image.frombytes("RGB", (width, height), payload).save(out_file, "PNG")
     assert out_file.stat().st_size > runtime.read_visible_max_bytes
 
-    source_path = "fi:turn_read.outputs/large.png"
+    source_path = "conv:fi:turn_read.files/large.png"
     state = {"last_decision": {"tool_call": {"params": {"paths": [source_path]}}}}
     await handle_react_read(ctx_browser=ctx, state=state, tool_call_id="r_img")
 
@@ -681,7 +625,7 @@ async def test_read_large_image_file_returns_downscaled_multimodal_preview(tmp_p
     status = json.loads(next(
         b["text"]
         for b in read_blocks
-        if b.get("path") == "tc:turn_read.r_img.result" and b.get("mime") == "application/json"
+        if b.get("path") == "conv:tc:turn_read.r_img.result" and b.get("mime") == "application/json"
     ))
     assert status["paths"][0]["status"] == "image_downscaled_for_visible_context"
     assert status["paths"][0]["image_view"]["visible_size_bytes"] <= runtime.read_visible_max_bytes
@@ -698,7 +642,7 @@ async def test_read_turn_index_reconstructs_semantic_inventory_from_turn_log(tmp
                 "author": "assistant",
                 "turn_id": "turn_prev",
                 "ts": "2026-05-05T19:37:00Z",
-                "path": "ws:turn_prev.conv.working.summary.attempt.1",
+                "path": "conv:ws:turn_prev.conv.working.summary.attempt.1",
                 "text": "Goal: Create ZIP with Anthropic April invoices.\nOutcome: ZIP failed at hosted artifact boundary.",
                 "mime": "text/markdown",
                 "meta": {"kind": "working_summary", "summary_scope": "completion_attempt"},
@@ -708,7 +652,7 @@ async def test_read_turn_index_reconstructs_semantic_inventory_from_turn_log(tmp
                 "author": "user",
                 "turn_id": "turn_prev",
                 "ts": "2026-05-05T19:27:38Z",
-                "path": "ar:turn_prev.external.followup.msg_1",
+                "path": "conv:ar:turn_prev.external.followup.msg_1",
                 "text": "Retry the Anthropic April invoice ZIP workflow.",
                 "meta": {"event_kind": "followup", "message_id": "msg_1", "sequence": 12, "source": "telegram"},
             },
@@ -716,7 +660,7 @@ async def test_read_turn_index_reconstructs_semantic_inventory_from_turn_log(tmp
                 "type": "react.tool.call",
                 "turn_id": "turn_prev",
                 "call_id": "tc_scan",
-                "path": "tc:turn_prev.tc_scan.call",
+                "path": "conv:tc:turn_prev.tc_scan.call",
                 "mime": "application/json",
                 "text": json.dumps({"tool_id": "email.process_user_emails", "params": {"query": "Anthropic April invoices"}}),
             },
@@ -724,7 +668,7 @@ async def test_read_turn_index_reconstructs_semantic_inventory_from_turn_log(tmp
                 "type": "react.tool.result",
                 "turn_id": "turn_prev",
                 "call_id": "tc_scan",
-                "path": "tc:turn_prev.tc_scan.result",
+                "path": "conv:tc:turn_prev.tc_scan.result",
                 "mime": "application/json",
                 "text": json.dumps({"ok": True, "message": "found 10 Anthropic April emails and current attachment IDs"}),
             },
@@ -732,10 +676,10 @@ async def test_read_turn_index_reconstructs_semantic_inventory_from_turn_log(tmp
                 "type": "react.tool.result",
                 "turn_id": "turn_prev",
                 "call_id": "tc_mat",
-                "path": "tc:turn_prev.tc_mat.result",
+                "path": "conv:tc:turn_prev.tc_mat.result",
                 "mime": "application/json",
                 "text": json.dumps({
-                    "artifact_path": "fi:turn_prev.outputs/email-attachments/Invoice_1.pdf",
+                    "artifact_path": "conv:fi:turn_prev.files/email-attachments/Invoice_1.pdf",
                     "mime": "application/pdf",
                     "kind": "file",
                     "description": "Anthropic invoice PDF materialized from Gmail",
@@ -746,7 +690,7 @@ async def test_read_turn_index_reconstructs_semantic_inventory_from_turn_log(tmp
                 "type": "react.tool.result",
                 "turn_id": "turn_prev",
                 "call_id": "tc_mat",
-                "path": "fi:turn_prev.outputs/email-attachments/Invoice_1.pdf",
+                "path": "conv:fi:turn_prev.files/email-attachments/Invoice_1.pdf",
                 "mime": "application/pdf",
                 "meta": {"tool_call_id": "tc_mat", "tool_id": "email.materialize_email_attachments"},
             },
@@ -755,7 +699,7 @@ async def test_read_turn_index_reconstructs_semantic_inventory_from_turn_log(tmp
                 "author": "assistant",
                 "turn_id": "turn_prev",
                 "ts": "2026-05-05T19:37:19Z",
-                "path": "ar:turn_prev.assistant.completion",
+                "path": "conv:ar:turn_prev.assistant.completion",
                 "text": "All 20 Anthropic invoice PDFs were materialized, but ZIP failed. [[S:1]]",
                 "meta": {"sources_used": [1]},
             },
@@ -765,7 +709,7 @@ async def test_read_turn_index_reconstructs_semantic_inventory_from_turn_log(tmp
         ],
     }
 
-    index_path = "ar:turn_prev.react.turn.index"
+    index_path = "conv:ar:turn_prev.react.turn.index"
     state = {"last_decision": {"tool_call": {"params": {"paths": [index_path]}}}}
     await handle_react_read(ctx_browser=ctx, state=state, tool_call_id="r_index")
 
@@ -775,18 +719,18 @@ async def test_read_turn_index_reconstructs_semantic_inventory_from_turn_log(tmp
     )
     text = index_block.get("text") or ""
     assert "[TURN INDEX]" in text
-    assert "latest working summary: ws:turn_prev.conv.working.summary" in text
-    assert "user followup: ar:turn_prev.external.followup.msg_1" in text
+    assert "latest working summary: conv:ws:turn_prev.conv.working.summary" in text
+    assert "user followup: conv:ar:turn_prev.external.followup.msg_1" in text
     assert "Retry the Anthropic April invoice ZIP workflow" in text
     assert "tool: email.process_user_emails" in text
     assert "found 10 Anthropic April emails" in text
-    assert "fi:turn_prev.outputs/email-attachments/Invoice_1.pdf" in text
+    assert "conv:fi:turn_prev.files/email-attachments/Invoice_1.pdf" in text
     assert "Anthropic invoice PDF materialized from Gmail" in text
-    assert "source: so:sources_pool[1]" in text
+    assert "source: conv:so:sources_pool[1]" in text
 
     status_block = next(
         b for b in ctx.timeline.blocks
-        if b.get("type") == "react.tool.result" and b.get("path") == "tc:turn_current.r_index.result"
+        if b.get("type") == "react.tool.result" and b.get("path") == "conv:tc:turn_current.r_index.result"
     )
     status = json.loads(status_block["text"])
     assert status["paths"][0]["path"] == index_path
@@ -797,7 +741,7 @@ async def test_read_turn_index_reconstructs_semantic_inventory_from_turn_log(tmp
 async def test_read_items_materializes_multiple_line_ranges(tmp_path):
     runtime = RuntimeCtx(turn_id="turn_read", outdir=str(tmp_path), workdir=str(tmp_path), max_tokens=80_000)
     ctx = FakeBrowser(runtime)
-    out_file = tmp_path / "turn_read" / "outputs" / "page.html"
+    out_file = artifact_outdir_for(tmp_path) / "turn_read" / "files" / "page.html"
     out_file.parent.mkdir(parents=True, exist_ok=True)
     out_file.write_text("\n".join([
         "<html>",
@@ -809,7 +753,7 @@ async def test_read_items_materializes_multiple_line_ranges(tmp_path):
         "</html>",
     ]), encoding="utf-8")
 
-    source_path = "fi:turn_read.outputs/page.html"
+    source_path = "conv:fi:turn_read.files/page.html"
     state = {
         "last_decision": {
             "tool_call": {
@@ -841,7 +785,7 @@ async def test_read_items_materializes_multiple_line_ranges(tmp_path):
     status = next(
         json.loads(b["text"])
         for b in ctx.timeline.blocks
-        if b.get("path") == "tc:turn_read.r_ranges.result" and b.get("mime") == "application/json"
+        if b.get("path") == "conv:tc:turn_read.r_ranges.result" and b.get("mime") == "application/json"
     )
     assert len(status["paths"]) == 2
     assert status["paths"][0]["read_range"]["line_start"] == 3

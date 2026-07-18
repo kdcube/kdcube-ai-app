@@ -333,7 +333,7 @@ class AcceptedExternalEvent(_ProtoBase):
 
     The inbound request is plural-only. Each accepted item becomes one ordered
     lane occurrence and one or more timeline blocks. `logical_path` is the
-    event object's `ev:` reference on the target turn timeline.
+    event object's `conv:ev:` reference on the target turn timeline.
     """
 
     event_id: str

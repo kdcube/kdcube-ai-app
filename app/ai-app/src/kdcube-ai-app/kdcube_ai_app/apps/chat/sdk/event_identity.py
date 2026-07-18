@@ -71,7 +71,7 @@ def safe_event_lane_part(value: object, *, default: str = "_") -> str:
 
 
 def safe_event_object_path(value: object, *, default: str = "event") -> str:
-    """Normalize an event object path used below the `ev:...events/` root."""
+    """Normalize an event object path used below the `conv:ev:...events/` root."""
 
     text = str(value or "").strip().strip("/")
     if not text:
@@ -91,7 +91,7 @@ def build_event_logical_path(
     event_path: object,
     conversation_id: object | None = None,
 ) -> str:
-    """Build the logical `ev:` reference for an event object on a turn timeline."""
+    """Build the logical `conv:ev:` reference for an event object on a turn timeline."""
 
     turn = str(turn_id or "").strip()
     if not turn:
@@ -99,5 +99,5 @@ def build_event_logical_path(
     path = safe_event_object_path(event_path)
     conv = str(conversation_id or "").strip()
     if conv:
-        return f"ev:conv_{conv}.{turn}.events/{path}"
-    return f"ev:{turn}.events/{path}"
+        return f"conv:ev:conv_{conv}.{turn}.events/{path}"
+    return f"conv:ev:{turn}.events/{path}"

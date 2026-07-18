@@ -575,7 +575,7 @@ async def _host_artifacts(
     for row in hosted:
         if not isinstance(row, dict):
             continue
-        # `logical_path` is the React-style `fi:conv_…` link the chat UI downloads
+        # `logical_path` is the harness `conv:fi:conv_…` link the chat UI downloads
         # by and the model can cite back to the user (built by host_files_to_conversation
         # from the SAME conversation_id the bytes were stored under).
         refs.append(

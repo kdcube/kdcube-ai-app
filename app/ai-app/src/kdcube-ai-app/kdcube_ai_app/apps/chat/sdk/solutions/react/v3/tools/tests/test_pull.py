@@ -29,26 +29,26 @@ async def test_pull_materializes_turn_file_subtree_from_fi_paths(tmp_path):
             {
                 "type": "react.tool.result",
                 "mime": "application/json",
-                "text": '{"artifact_path":"fi:turn_prev.files/projectA/settings.json","physical_path":"turn_prev/files/projectA/settings.json"}',
+                "text": '{"artifact_path":"conv:fi:turn_prev.git/projects/projectA/settings.json","physical_path":"turn_prev/git/projects/projectA/settings.json"}',
                 "turn_id": "turn_prev",
             },
             {
                 "type": "react.tool.result",
                 "mime": "application/json",
-                "path": "fi:turn_prev.files/projectA/settings.json",
+                "path": "conv:fi:turn_prev.git/projects/projectA/settings.json",
                 "text": '{"theme": "dark"}',
                 "turn_id": "turn_prev",
             },
             {
                 "type": "react.tool.result",
                 "mime": "application/json",
-                "text": '{"artifact_path":"fi:turn_prev.files/projectA/src/app.py","physical_path":"turn_prev/files/projectA/src/app.py"}',
+                "text": '{"artifact_path":"conv:fi:turn_prev.git/projects/projectA/src/app.py","physical_path":"turn_prev/git/projects/projectA/src/app.py"}',
                 "turn_id": "turn_prev",
             },
             {
                 "type": "react.tool.result",
                 "mime": "text/x-python",
-                "path": "fi:turn_prev.files/projectA/src/app.py",
+                "path": "conv:fi:turn_prev.git/projects/projectA/src/app.py",
                 "text": 'print("ok")\n',
                 "turn_id": "turn_prev",
             },
@@ -65,7 +65,7 @@ async def test_pull_materializes_turn_file_subtree_from_fi_paths(tmp_path):
         "last_decision": {
             "tool_call": {
                 "params": {
-                    "paths": ["fi:turn_prev.files/projectA"],
+                    "paths": ["conv:fi:turn_prev.git/projects/projectA"],
                 }
             }
         },
@@ -75,22 +75,22 @@ async def test_pull_materializes_turn_file_subtree_from_fi_paths(tmp_path):
     await handle_react_pull(ctx_browser=ctx, state=state, tool_call_id="pull_files")
 
     payload = _latest_payload(ctx)
-    assert payload["pulled"][0]["logical_root"] == "fi:turn_prev.files/projectA"
-    assert payload["pulled"][0]["physical_root"] == "turn_prev/files/projectA"
+    assert payload["pulled"][0]["logical_root"] == "conv:fi:turn_prev.git/projects/projectA"
+    assert payload["pulled"][0]["physical_root"] == "turn_prev/git/projects/projectA"
     assert payload["pulled"][0]["file_count"] == 2
     assert "settings.json" in payload["pulled"][0]["tree"]
     assert "src/" in payload["pulled"][0]["tree"]
     assert "app.py" in payload["pulled"][0]["tree"]
     assert payload["pulled"][0]["path_rule"] == {
-        "logical": "fi:turn_prev.files/projectA/<path shown in tree>",
-        "physical": "turn_prev/files/projectA/<path shown in tree>",
+        "logical": "conv:fi:turn_prev.git/projects/projectA/<path shown in tree>",
+        "physical": "turn_prev/git/projects/projectA/<path shown in tree>",
     }
     assert "invalid" not in payload
     assert "missing" not in payload
     assert "errors" not in payload
     artifact_root = outdir / "workdir"
-    assert (artifact_root / "turn_prev" / "files" / "projectA" / "settings.json").read_text(encoding="utf-8") == '{"theme": "dark"}'
-    assert (artifact_root / "turn_prev" / "files" / "projectA" / "src" / "app.py").read_text(encoding="utf-8") == 'print("ok")\n'
+    assert (artifact_root / "turn_prev" / "git" / "projects" / "projectA" / "settings.json").read_text(encoding="utf-8") == '{"theme": "dark"}'
+    assert (artifact_root / "turn_prev" / "git" / "projects" / "projectA" / "src" / "app.py").read_text(encoding="utf-8") == 'print("ok")\n'
 
 
 @pytest.mark.asyncio
@@ -104,7 +104,7 @@ async def test_pull_materializes_exact_attachment_ref(tmp_path):
             {
                 "type": "react.tool.result",
                 "mime": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                "path": "fi:turn_prev.user.attachments/template.xlsx",
+                "path": "conv:fi:turn_prev.user.attachments/template.xlsx",
                 "base64": payload,
                 "turn_id": "turn_prev",
                 "meta": {
@@ -125,7 +125,7 @@ async def test_pull_materializes_exact_attachment_ref(tmp_path):
         "last_decision": {
             "tool_call": {
                 "params": {
-                    "paths": ["fi:turn_prev.user.attachments/template.xlsx"],
+                    "paths": ["conv:fi:turn_prev.user.attachments/template.xlsx"],
                 }
             }
         },
@@ -136,7 +136,7 @@ async def test_pull_materializes_exact_attachment_ref(tmp_path):
 
     payload = _latest_payload(ctx)
     assert payload["pulled"] == [{
-        "logical_path": "fi:turn_prev.user.attachments/template.xlsx",
+        "logical_path": "conv:fi:turn_prev.user.attachments/template.xlsx",
         "physical_path": "turn_prev/attachments/template.xlsx",
         "file_count": 1,
     }]
@@ -156,10 +156,10 @@ async def test_pull_materializes_cross_conversation_snapshot_ref(tmp_path):
         conversation_id="conv_1",
     )
     ctx = FakeBrowser(runtime)
-    logical = "fi:conv_conv_2.turn_prev.snapshots/wizard/current.yaml"
-    physical = "conv_conv_2/turn_prev/snapshots/wizard/current.yaml"
-    stored_logical = "fi:turn_prev.snapshots/wizard/current.yaml"
-    stored_physical = "turn_prev/snapshots/wizard/current.yaml"
+    logical = "conv:fi:conv_conv_2.turn_prev.git/snapshots/wizard/current.yaml"
+    physical = "conv_conv_2/turn_prev/git/snapshots/wizard/current.yaml"
+    stored_logical = "conv:fi:turn_prev.git/snapshots/wizard/current.yaml"
+    stored_physical = "turn_prev/git/snapshots/wizard/current.yaml"
     ctx._turn_logs[("conv_2", "turn_prev")] = {
         "blocks": [
             {
@@ -213,11 +213,11 @@ async def test_pull_materializes_hosted_internal_output_not_preview(tmp_path):
     outdir = tmp_path / "out"
     runtime = RuntimeCtx(turn_id="turn_pull", outdir=str(outdir), workdir=str(tmp_path / "work"))
     ctx = FakeBrowser(runtime)
-    physical = "turn_prev/outputs/analysis/zip_contents.json"
-    logical = "fi:turn_prev.outputs/analysis/zip_contents.json"
+    physical = "turn_prev/files/analysis/zip_contents.json"
+    logical = "conv:fi:turn_prev.files/analysis/zip_contents.json"
     hosted_key = (
         "cb/tenants/demo/projects/demo/attachments/user-1/conv-1/"
-        "turn_prev/turn_prev/outputs/analysis/zip_contents.json"
+        "turn_prev/turn_prev/files/analysis/zip_contents.json"
     )
     full_payload = b'{"full": true, "items": [1, 2, 3]}\n'
     blob = tmp_path / hosted_key
@@ -300,7 +300,7 @@ async def test_pull_rejects_attachment_prefix_pull(tmp_path):
         "last_decision": {
             "tool_call": {
                 "params": {
-                    "paths": ["fi:turn_prev.user.attachments/binaries"],
+                    "paths": ["conv:fi:turn_prev.user.attachments/binaries"],
                 }
             }
         },
@@ -312,7 +312,7 @@ async def test_pull_rejects_attachment_prefix_pull(tmp_path):
     payload = _latest_payload(ctx)
     assert payload["pulled"] == []
     assert payload["invalid"] == [{
-        "path": "fi:turn_prev.user.attachments/binaries",
+        "path": "conv:fi:turn_prev.user.attachments/binaries",
         "reason": "attachment_pulls_require_exact_file_ref",
     }]
     assert "missing" not in payload

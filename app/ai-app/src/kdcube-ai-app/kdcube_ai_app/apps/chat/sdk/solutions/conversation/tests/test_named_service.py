@@ -44,7 +44,7 @@ class FakeBackend:
                 "type": "conv.working.summary",
                 "turn_id": turn_id,
                 "ts": "2026-05-05T10:00:00Z",
-                "path": "ws:turn_prev.conv.working.summary",
+                "path": "conv:ws:turn_prev.conv.working.summary",
                 "text": "Goal: retrieve invoices.",
                 "meta": {},
             }],

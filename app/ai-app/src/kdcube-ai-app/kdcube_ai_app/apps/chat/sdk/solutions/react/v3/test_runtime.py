@@ -357,7 +357,7 @@ async def test_decision_node_feeds_exec_contract_when_decision_channel_closes(mo
             "tool_call": {
                 "tool_id": "exec_tools.execute_code_python",
                 "params": {
-                    "contract": [{"filename": "outputs/out.txt", "description": "output"}],
+                    "contract": [{"filename": "files/out.txt", "description": "output"}],
                     "prog_name": "build_file",
                 },
             },
@@ -552,7 +552,7 @@ async def test_decision_node_binds_code_to_immediately_preceding_exec_decision(m
         "notes": "write",
         "tool_call": {
             "tool_id": "react.write",
-            "params": {"path": "outputs/a.md", "channel": "canvas", "content": "a", "kind": "display"},
+            "params": {"path": "files/a.md", "channel": "canvas", "content": "a", "kind": "display"},
         },
     }
     exec_decision = {
@@ -561,7 +561,7 @@ async def test_decision_node_binds_code_to_immediately_preceding_exec_decision(m
         "tool_call": {
             "tool_id": "exec_tools.execute_code_python",
             "params": {
-                "contract": [{"filename": "outputs/out.txt", "description": "output"}],
+                "contract": [{"filename": "files/out.txt", "description": "output"}],
                 "prog_name": "build_file",
             },
         },
@@ -569,7 +569,7 @@ async def test_decision_node_binds_code_to_immediately_preceding_exec_decision(m
     read_decision = {
         "action": "call_tool",
         "notes": "read",
-        "tool_call": {"tool_id": "react.read", "params": {"items": ["fi:turn-1.outputs/a.md"]}},
+        "tool_call": {"tool_id": "react.read", "params": {"items": ["conv:fi:turn-1.files/a.md"]}},
     }
     decisions = [write_decision, exec_decision, read_decision]
     payloads = [json.dumps(item) for item in decisions]

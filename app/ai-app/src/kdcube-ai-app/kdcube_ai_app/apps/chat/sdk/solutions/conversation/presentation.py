@@ -57,16 +57,10 @@ def conv_file_ref(fi_path: Any, conversation_id: str = "") -> str:
 
     Emitted refs self-describe their conversation: external clients have no
     ambient conversation, so a `conv:fi:conv_<id>.<body>` ref carries the scope
-    the read side needs to resolve the turn. Accepts the file realm's bare
-    `fi:<body>` spelling (as stored in older artifact rows) and returns the
-    canonical conv-namespaced handle. Delegates to the canonical
-    :func:`qualify_conversation_ref` (idempotent; refs already scoped to a
-    conversation keep their scope; non-conversation handles pass through
-    unchanged).
+    the read side needs to resolve the turn. Delegates to the canonical
+    :func:`qualify_conversation_ref`; non-conversation handles pass through.
     """
     raw = _text(fi_path)
-    if raw.startswith("fi:"):
-        raw = f"conv:{raw}"
     return qualify_conversation_ref(raw, _text(conversation_id))
 
 

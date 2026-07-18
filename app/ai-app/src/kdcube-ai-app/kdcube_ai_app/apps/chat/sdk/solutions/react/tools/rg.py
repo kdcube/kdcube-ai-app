@@ -56,7 +56,7 @@ TOOL_SPEC = {
             "turn_<id>/attachments/<path>, or supported conv:fi:conv_<conversation_id>.turn_<id>.* artifact paths "
             "to search a file or subtree. The conv_<conversation_id> segment names the conversation the ref "
             "lives in; pass refs exactly as supplied (files must be pulled locally first). "
-            "Legacy outdir/<path> is accepted but should not be used in new calls."
+            "Use the canonical artifact path exactly as returned by the runtime."
         ),
         "name_regex": "optional Python regex matched against the basename only, not the full path",
         "pattern": (
@@ -180,8 +180,6 @@ def _resolve_root(
     normalized_root = "artifact_workspace"
     root_virtual_prefix = ""
     artifact_outdir = artifact_outdir_for(outdir, create=False)
-    if not artifact_outdir.exists():
-        artifact_outdir = outdir
     if not root_sel:
         return artifact_outdir, root_kind, normalized_root, root_virtual_prefix
 
@@ -195,10 +193,7 @@ def _resolve_root(
     rel = ""
     if root_sel_lc == "outdir":
         return artifact_outdir, root_kind, "outdir", root_virtual_prefix
-    if root_sel_lc.startswith("outdir/"):
-        # Backwards compatibility only.
-        rel = root_sel[len("outdir/"):].lstrip("/")
-    elif root_sel.startswith(CONVERSATION_FILE_REF_PREFIX):
+    if root_sel.startswith(CONVERSATION_FILE_REF_PREFIX):
         source_conversation_id, logical_turn, namespace, logical_rel = split_logical_artifact_ref(root_sel)
         if logical_turn and namespace in {
             ARTIFACT_NAMESPACE_PROJECTS,

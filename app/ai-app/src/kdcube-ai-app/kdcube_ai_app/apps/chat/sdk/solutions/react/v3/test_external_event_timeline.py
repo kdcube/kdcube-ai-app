@@ -328,7 +328,7 @@ async def test_browser_renders_followup_batch_as_one_section(tmp_path):
                 "event_id": "evt_memory",
                 "type": "event.external",
                 "event_source_id": "memory.context",
-                "logical_path": "ev:turn_current.events/mem_1",
+                "logical_path": "conv:ev:turn_current.events/mem_1",
                 "hosted_uri": "mem:mem_1",
                 "reactive": False,
                 "payload": {

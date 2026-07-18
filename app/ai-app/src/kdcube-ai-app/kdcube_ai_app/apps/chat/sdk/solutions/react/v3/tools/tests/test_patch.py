@@ -417,7 +417,7 @@ async def test_patch_rejects_generic_outdir_fi_path(tmp_path):
         "last_decision": {
             "tool_call": {
                 "params": {
-                    "path": "fi:logs/docker.err.log",
+                    "path": "conv:fi:logs/docker.err.log",
                     "channel": "canvas",
                     "patch": "new",
                     "kind": "display",

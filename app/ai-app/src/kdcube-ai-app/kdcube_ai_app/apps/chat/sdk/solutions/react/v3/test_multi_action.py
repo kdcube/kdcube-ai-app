@@ -145,7 +145,7 @@ def test_parse_react_decision_bundle_from_repeated_channels():
 {"action":"call_tool","notes":"search","tool_call":{"tool_id":"web_tools.web_search","params":{"q":"one"}}}
 ```</channel:action>
 <channel:action>```json
-{"action":"call_tool","notes":"read","tool_call":{"tool_id":"react.read","params":{"paths":["so:sources_pool[1]"]}}}
+{"action":"call_tool","notes":"read","tool_call":{"tool_id":"react.read","params":{"paths":["conv:so:sources_pool[1]"]}}}
 ```</channel:action>
 """
     parsed = parse_react_decision_bundle_from_raw(full_raw=raw, json_raw=None)
@@ -184,7 +184,7 @@ def test_parse_react_decision_bundle_from_repeated_full_round_sequences():
 def test_parse_react_decision_json_with_embedded_fence_text():
     raw = """
 <channel:action>```json
-{"action":"call_tool","notes":"write","tool_call":{"tool_id":"react.write","params":{"path":"outputs/report.html","channel":"canvas","content":"<pre>```html\\n<div>ok</div>\\n```</pre>"}}}
+{"action":"call_tool","notes":"write","tool_call":{"tool_id":"react.write","params":{"path":"files/report.html","channel":"canvas","content":"<pre>```html\\n<div>ok</div>\\n```</pre>"}}}
 ```
 </channel:action>
 """
@@ -198,7 +198,7 @@ def test_parse_react_decision_json_with_embedded_fence_text():
 def test_parse_react_decision_bundle_not_poisoned_by_prior_fenced_content():
     raw = """
 <channel:action>```json
-{"action":"call_tool","notes":"write","tool_call":{"tool_id":"react.write","params":{"path":"outputs/a.md","content":"```html\\n<div>one</div>\\n```"}}}
+{"action":"call_tool","notes":"write","tool_call":{"tool_id":"react.write","params":{"path":"files/a.md","content":"```html\\n<div>one</div>\\n```"}}}
 ```</channel:action>
 <channel:action>```json
 {"action":"call_tool","notes":"search","tool_call":{"tool_id":"web_tools.web_search","params":{"q":"two"}}}
@@ -238,7 +238,7 @@ async def test_decision_stream_parses_html_content_inside_structured_channel():
         "tool_call": {
             "tool_id": "react.write",
             "params": {
-                "path": "turn_2026-05-19-01-01-49-177/outputs/science_news/report.html",
+                "path": "turn_2026-05-19-01-01-49-177/files/science_news/report.html",
                 "channel": "canvas",
                 "content": html,
                 "kind": "file",
@@ -511,12 +511,12 @@ async def test_decision_stream_recovers_repeated_action_channels_as_bundle():
 <thinking>legacy hidden thought must not poison channel parsing</thinking>
 <channel:thinking>writing two files</channel:thinking>
 <channel:action>```json
-{"action":"call_tool","notes":"write alpha","tool_call":{"tool_id":"react.write","params":{"path":"outputs/a.md","channel":"canvas","content":"alpha"}}}
+{"action":"call_tool","notes":"write alpha","tool_call":{"tool_id":"react.write","params":{"path":"files/a.md","channel":"canvas","content":"alpha"}}}
 ```</channel:action>
 <channel:code></channel:code>
 <channel:thinking>second accidental thinking block</channel:thinking>
 <channel:action>```json
-{"action":"call_tool","notes":"write beta","tool_call":{"tool_id":"react.write","params":{"path":"outputs/b.md","channel":"canvas","content":"beta"}}}
+{"action":"call_tool","notes":"write beta","tool_call":{"tool_id":"react.write","params":{"path":"files/b.md","channel":"canvas","content":"beta"}}}
 ```</channel:action>
 <channel:code></channel:code>
 """
@@ -531,8 +531,8 @@ async def test_decision_stream_recovers_repeated_action_channels_as_bundle():
     assert (packet["log"] or {}).get("error") is None
     assert (packet["log"] or {}).get("bundle_candidate_count") == 2
     assert [d["tool_call"]["params"]["path"] for d in packet["agent_response_bundle"]] == [
-        "outputs/a.md",
-        "outputs/b.md",
+        "files/a.md",
+        "files/b.md",
     ]
 
 
@@ -541,7 +541,7 @@ async def test_decision_stream_keeps_valid_repeated_action_and_reports_malformed
     raw = """
 <channel:thinking>writing files</channel:thinking>
 <channel:action>```json
-{"action":"call_tool","notes":"write alpha","tool_call":{"tool_id":"react.write","params":{"path":"outputs/a.md","channel":"canvas","content":"alpha"}}}
+{"action":"call_tool","notes":"write alpha","tool_call":{"tool_id":"react.write","params":{"path":"files/a.md","channel":"canvas","content":"alpha"}}}
 ```</channel:action>
 <channel:action>```json
 {"action":"call_tool","notes":
@@ -559,7 +559,7 @@ async def test_decision_stream_keeps_valid_repeated_action_and_reports_malformed
     assert (packet["log"] or {}).get("error") is None
     assert (packet["log"] or {}).get("bundle_candidate_count") == 2
     assert [d["tool_call"]["params"]["path"] for d in packet["agent_response_bundle"]] == [
-        "outputs/a.md",
+        "files/a.md",
     ]
     assert (packet["log"] or {}).get("bundle_errors") == ["instance:1:no_json_candidate"]
     assert (packet["log"] or {}).get("bundle_error_items") == [
@@ -588,7 +588,7 @@ async def test_prepare_safe_multi_action_bundle_accepts_strategy_compatible_expl
             "notes": "read",
             "tool_call": {
                 "tool_id": "react.read",
-                "params": {"paths": ["so:sources_pool[1]"]},
+                "params": {"paths": ["conv:so:sources_pool[1]"]},
             },
         },
     ]
@@ -622,7 +622,7 @@ async def test_prepare_safe_multi_action_bundle_rejects_third_action_even_when_s
             "notes": "read",
             "tool_call": {
                 "tool_id": "react.read",
-                "params": {"paths": ["so:sources_pool[1]"]},
+                "params": {"paths": ["conv:so:sources_pool[1]"]},
             },
         },
         {
@@ -723,7 +723,7 @@ async def test_prepare_safe_multi_action_bundle_allows_exploitation_then_explora
             "tool_call": {
                 "tool_id": "react.write",
                 "params": {
-                    "path": "outputs/section.md",
+                    "path": "files/section.md",
                     "channel": "canvas",
                     "content": "Completed section.",
                     "kind": "display",
@@ -771,7 +771,7 @@ async def test_prepare_safe_multi_action_bundle_rejects_exploration_then_exploit
             "tool_call": {
                 "tool_id": "react.write",
                 "params": {
-                    "path": "outputs/section.md",
+                    "path": "files/section.md",
                     "channel": "canvas",
                     "content": "Draft that would need search result.",
                     "kind": "display",
@@ -832,7 +832,7 @@ async def test_prepare_safe_multi_action_bundle_checks_candidate_against_all_pri
             "tool_call": {
                 "tool_id": "react.write",
                 "params": {
-                    "path": "outputs/brief.md",
+                    "path": "files/brief.md",
                     "channel": "canvas",
                     "content": "Brief.",
                     "kind": "display",
@@ -1090,7 +1090,7 @@ async def test_prepare_safe_multi_action_bundle_allows_skill_read_with_independe
             "tool_call": {
                 "tool_id": "react.write",
                 "params": {
-                    "path": "outputs/report.html",
+                    "path": "files/report.html",
                     "channel": "canvas",
                     "content": "<html></html>",
                     "kind": "display",
@@ -1133,7 +1133,7 @@ async def test_prepare_safe_multi_action_bundle_accepts_renderer_fanout():
             "tool_call": {
                 "tool_id": "rendering_tools.write_pptx",
                 "params": {
-                    "path": "outputs/news.pptx",
+                    "path": "files/news.pptx",
                     "content": "<section><h1>News</h1></section>",
                 },
             },
@@ -1144,7 +1144,7 @@ async def test_prepare_safe_multi_action_bundle_accepts_renderer_fanout():
             "tool_call": {
                 "tool_id": "rendering_tools.write_docx",
                 "params": {
-                    "path": "outputs/news.docx",
+                    "path": "files/news.docx",
                     "content": "# News\n\nSummary.",
                 },
             },
@@ -1216,7 +1216,7 @@ async def test_prepare_safe_multi_action_bundle_allows_single_complete_exec_with
             "tool_call": {
                 "tool_id": "exec_tools.execute_code_python",
                 "params": {
-                    "contract": [{"filename": "outputs/out.txt", "description": "output"}],
+                    "contract": [{"filename": "files/out.txt", "description": "output"}],
                     "prog_name": "demo.py",
                 },
             },
@@ -1226,7 +1226,7 @@ async def test_prepare_safe_multi_action_bundle_allows_single_complete_exec_with
             "notes": "write",
             "tool_call": {
                 "tool_id": "react.write",
-                "params": {"path": "outputs/brief.md", "channel": "canvas", "content": "Brief.", "kind": "display"},
+                "params": {"path": "files/brief.md", "channel": "canvas", "content": "Brief.", "kind": "display"},
             },
         },
     ]
@@ -1255,7 +1255,7 @@ async def test_prepare_safe_multi_action_bundle_allows_complete_exec_with_neutra
             "tool_call": {
                 "tool_id": "exec_tools.execute_code_python",
                 "params": {
-                    "contract": [{"filename": "outputs/out.txt", "description": "output"}],
+                    "contract": [{"filename": "files/out.txt", "description": "output"}],
                     "prog_name": "demo.py",
                 },
             },
@@ -1632,7 +1632,7 @@ def test_validate_decision_packet_channel_consistency_allows_multi_action_with_s
         },
         {
             "action": "call_tool",
-            "tool_call": {"tool_id": "react.read", "params": {"paths": ["so:sources_pool[1]"]}},
+            "tool_call": {"tool_id": "react.read", "params": {"paths": ["conv:so:sources_pool[1]"]}},
         },
     ]
 
@@ -1655,14 +1655,14 @@ def test_validate_decision_packet_channel_consistency_allows_multi_action_with_c
             "tool_call": {
                 "tool_id": "exec_tools.execute_code_python",
                 "params": {
-                    "contract": [{"filename": "outputs/out.txt", "description": "output"}],
+                    "contract": [{"filename": "files/out.txt", "description": "output"}],
                     "prog_name": "x",
                 },
             },
         },
         {
             "action": "call_tool",
-            "tool_call": {"tool_id": "react.write", "params": {"path": "outputs/a.md", "channel": "canvas", "content": "a"}},
+            "tool_call": {"tool_id": "react.write", "params": {"path": "files/a.md", "channel": "canvas", "content": "a"}},
         },
     ]
 
@@ -1689,14 +1689,14 @@ def test_validate_decision_packet_channel_consistency_allows_multi_action_with_i
             "tool_call": {
                 "tool_id": "exec_tools.execute_code_python",
                 "params": {
-                    "contract": [{"filename": "outputs/out.txt", "description": "output"}],
+                    "contract": [{"filename": "files/out.txt", "description": "output"}],
                     "prog_name": "x",
                 },
             },
         },
         {
             "action": "call_tool",
-            "tool_call": {"tool_id": "react.write", "params": {"path": "outputs/a.md", "channel": "canvas", "content": "a"}},
+            "tool_call": {"tool_id": "react.write", "params": {"path": "files/a.md", "channel": "canvas", "content": "a"}},
         },
     ]
 
@@ -1794,7 +1794,7 @@ async def test_tool_execution_node_runs_pending_bundle_sequentially(monkeypatch)
                 "decision": {
                     "action": "call_tool",
                     "notes": "read",
-                    "tool_call": {"tool_id": "react.read", "params": {"paths": ["so:sources_pool[1]"]}},
+                    "tool_call": {"tool_id": "react.read", "params": {"paths": ["conv:so:sources_pool[1]"]}},
                 },
                 "tool_call_id": "tc_second",
             },

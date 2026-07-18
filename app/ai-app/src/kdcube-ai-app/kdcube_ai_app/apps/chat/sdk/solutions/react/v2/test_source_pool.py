@@ -37,7 +37,7 @@ def test_inline_merge_remap_assigns_new_sids():
     assert [r["sid"] for r in remapped_rows] == [10, 11, 12, 13]
     assert used_sids == [10, 11, 12, 13]
     assert len(ctx.sources_pool) == 13
-    assert _format_sources_pool_path(used_sids) == "so:sources_pool[10-13]"
+    assert _format_sources_pool_path(used_sids) == "conv:so:sources_pool[10-13]"
     # prior SIDs should remain stable
     prior_sids = [r["sid"] for r in ctx.sources_pool if r["url"].startswith("https://example.com/p")]
     assert prior_sids == list(range(1, 10))
@@ -61,4 +61,4 @@ def test_inline_merge_remap_reuses_existing_sid_for_duplicates():
 
     assert [r["sid"] for r in remapped_rows] == [3, 5, 6]
     assert used_sids == [3, 5, 6]
-    assert _format_sources_pool_path(used_sids) == "so:sources_pool[3, 5-6]"
+    assert _format_sources_pool_path(used_sids) == "conv:so:sources_pool[3, 5-6]"

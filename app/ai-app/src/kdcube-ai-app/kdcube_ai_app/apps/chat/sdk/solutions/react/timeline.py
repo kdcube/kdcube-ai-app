@@ -111,6 +111,10 @@ CONV_NAMESPACE_PREFIXES = (
 )
 
 
+def _attachment_name_from_path(path: str) -> str:
+    return str(path or "").rstrip("/").rsplit("/", 1)[-1]
+
+
 def _maybe_parse_json(val: str) -> Optional[Any]:
     try:
         return json.loads(val)
@@ -1847,7 +1851,7 @@ class Timeline:
         def _current_turn_logical_ref(ref_value: str) -> str:
             raw = (ref_value or "").strip().lstrip("/")
             if raw.startswith(CONVERSATION_FILE_REF_PREFIX):
-                raw = raw[len(CONVERSATION_FILE_REF_PREFIX):].strip().lstrip("/")
+                return ""
             turn_id = (self.runtime.turn_id or "").strip()
             if not turn_id:
                 return ""
@@ -1936,8 +1940,9 @@ class Timeline:
                 if isinstance(resolved, dict):
                     visibility = (resolved.get("visibility") or "").strip()
                 logical_ref = physical_path_to_logical_path(original_ref)
-                if not logical_ref and original_ref and not original_ref.startswith((*CONV_NAMESPACE_PREFIXES, "ks:", "sk:", "sources_pool[")):
-                    logical_ref = f"{CONVERSATION_FILE_REF_PREFIX}{original_ref.lstrip('/')}"
+                current_turn_ref = _current_turn_logical_ref(original_ref)
+                if not logical_ref and current_turn_ref:
+                    logical_ref = current_turn_ref
                 logical_ref = qualify_conversation_ref(
                     logical_ref,
                     str(getattr(self.runtime, "conversation_id", "") or "").strip(),

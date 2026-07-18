@@ -103,12 +103,10 @@ def _clip(text: Any, limit: int = 4000) -> str:
     return s[: max(0, limit - 1)].rstrip() + "…"
 
 
-# Namespaces whose logical paths carry a `conv_<id>.` segment after the
-# namespace prefix. Turn logs may store either the full `conv:<ns>:` dialect or
-# the short `<ns>:` dialect; both are scoped the same way.
+# Conversation namespaces whose logical paths carry a `conv_<id>.` owner
+# segment after their canonical namespace prefix.
 _CROSS_CONV_NAMESPACE_PREFIXES = (
     "conv:ev:", "conv:ws:", "conv:ar:", "conv:tc:", "conv:so:",
-    "ev:", "ws:", "ar:", "tc:", "so:", "fi:",
 )
 
 

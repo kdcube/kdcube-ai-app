@@ -189,7 +189,7 @@ def test_tool_blocks_inherit_current_react_iteration():
         "type": "react.tool.result",
         "call_id": "tc_iter",
         "mime": "application/json",
-        "path": "tc:turn_test.tc_iter.result",
+        "path": "conv:tc:turn_test.tc_iter.result",
         "text": '{"ok": true}',
         "meta": {"tool_call_id": "tc_iter"},
     })
@@ -211,7 +211,7 @@ async def test_react_round_execute_uses_origin_iteration_after_state_advance(mon
             "type": "react.tool.result",
             "call_id": tool_call_id,
             "mime": "application/json",
-            "path": "tc:turn_test.tc_iter.result",
+            "path": "conv:tc:turn_test.tc_iter.result",
             "text": '{"ok": true}',
             "meta": {"tool_call_id": tool_call_id},
         })
@@ -269,12 +269,12 @@ def test_tool_call_block_caps_large_payload_text_but_keeps_recoverable_payload(c
     content_marker = rendered_payload["params"]["content"]
     assert content_marker["truncated"] is True
     assert content_marker["text_symbols"] == len(large_content)
-    assert content_marker["full_value_ref"] == "tc:turn_test.tc_big.call"
+    assert content_marker["full_value_ref"] == "conv:tc:turn_test.tc_big.call"
     assert content_marker["full_value_field"] == "params.content"
     assert "saved full tool-call payload" in content_marker["recover_with"]
     assert large_content not in caplog.text
 
-    resolved = resolve_artifact_from_timeline({"blocks": ctx.blocks, "sources_pool": []}, "tc:turn_test.tc_big.call")
+    resolved = resolve_artifact_from_timeline({"blocks": ctx.blocks, "sources_pool": []}, "conv:tc:turn_test.tc_big.call")
     assert resolved["payload"]["params"]["content"] == large_content
     assert resolved["text"] == block["text"]
 
@@ -287,7 +287,7 @@ def test_tool_result_block_logs_text_payload(caplog):
             "type": "react.tool.result",
             "call_id": "tc_test",
             "mime": "application/json",
-            "path": "tc:turn_test.tc_test.result",
+            "path": "conv:tc:turn_test.tc_test.result",
             "text": '{"ok": true, "file_count": 20}',
             "meta": {"tool_call_id": "tc_test"},
         })
@@ -307,9 +307,9 @@ def test_tool_result_binary_block_omits_base64(caplog):
             "type": "react.tool.result",
             "call_id": "tc_test",
             "mime": "application/pdf",
-            "path": "fi:turn_test.outputs/invoice.pdf",
+            "path": "conv:fi:turn_test.files/invoice.pdf",
             "base64": "a" * 1024,
-            "meta": {"tool_call_id": "tc_test", "physical_path": "turn_test/outputs/invoice.pdf"},
+            "meta": {"tool_call_id": "tc_test", "physical_path": "turn_test/files/invoice.pdf"},
         })
 
     assert "[react.tool.result]" in caplog.text

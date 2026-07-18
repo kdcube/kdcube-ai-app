@@ -42,13 +42,13 @@ async def test_cache_ttl_light_pruning_renders_structured_recent_web_result():
             "mime": "text/html",
         }
     ]
-    path = "so:sources_pool[1]"
+    path = "conv:so:sources_pool[1]"
     tl.blocks = [
-        {"type": "turn.header", "turn_id": "turn_prev", "path": "ar:turn_prev.header", "text": "[TURN turn_prev]"},
+        {"type": "turn.header", "turn_id": "turn_prev", "path": "conv:ar:turn_prev.header", "text": "[TURN turn_prev]"},
         {
             "type": "react.tool.call",
             "turn_id": "turn_prev",
-            "path": "tc:turn_prev.tc_search.call",
+            "path": "conv:tc:turn_prev.tc_search.call",
             "call_id": "tc_search",
             "text": json.dumps({
                 "tool_id": "web_tools.web_search",
@@ -85,11 +85,11 @@ async def test_cache_ttl_light_pruning_renders_structured_recent_web_result():
         {
             "type": "conv.working.summary",
             "turn_id": "turn_prev",
-            "path": "ws:turn_prev.conv.working.summary",
+            "path": "conv:ws:turn_prev.conv.working.summary",
             "text": "Goal: search science.\nOutcome: source row found.",
             "meta": {"kind": "working_summary"},
         },
-        {"type": "turn.header", "turn_id": "turn_current", "path": "ar:turn_current.header", "text": "[TURN turn_current]"},
+        {"type": "turn.header", "turn_id": "turn_current", "path": "conv:ar:turn_current.header", "text": "[TURN turn_current]"},
     ]
     tl.cache_last_touch_at = 1
 
@@ -298,7 +298,7 @@ def test_compaction_digest_includes_hidden_block():
 
     hidden_block = {
         "type": "react.tool.result",
-        "path": "fi:turn_9.files/secret.txt",
+        "path": "conv:fi:turn_9.files/secret.txt",
         "meta": {"hidden": True, "replacement_text": "HIDDEN"},
         "turn_id": "turn_9",
     }
@@ -464,7 +464,7 @@ async def test_compaction_carries_historical_plan_refs(monkeypatch):
             "type": "react.plan.ack",
             "turn_id": "turn_old",
             "ts": "2026-02-09T00:01:00Z",
-            "path": "ar:turn_old.react.plan.ack.1",
+            "path": "conv:ar:turn_old.react.plan.ack.1",
             "text": "✓ 1. collect metrics",
             "meta": {"iteration": 1},
         },
@@ -472,7 +472,7 @@ async def test_compaction_carries_historical_plan_refs(monkeypatch):
             "type": "react.notes",
             "turn_id": "turn_old",
             "ts": "2026-02-09T00:02:00Z",
-            "path": "ar:turn_old.react.notes.tc_old",
+            "path": "conv:ar:turn_old.react.notes.tc_old",
             "text": "Need to revisit the trend break later.",
             "meta": {"tool_call_id": "tc_old"},
         },
@@ -497,10 +497,10 @@ async def test_compaction_carries_historical_plan_refs(monkeypatch):
     history_text = history_blocks[0].get("text") or ""
     assert "collect metrics" in history_text
     assert "react.plan.history" in history_blocks[0].get("path", "")
-    assert f"snapshot_ref: ar:plan.latest:{old_snap.plan_id}" in history_text
+    assert f"snapshot_ref: conv:ar:plan.latest:{old_snap.plan_id}" in history_text
 
     persisted = tl._blocks_for_persist()
-    snapshot_ref = f"ar:plan.latest:{old_snap.plan_id}"
+    snapshot_ref = f"conv:ar:plan.latest:{old_snap.plan_id}"
     snapshot_art = resolve_artifact_from_timeline({"blocks": persisted, "sources_pool": []}, snapshot_ref)
 
     assert snapshot_art and old_snap.plan_id in (snapshot_art.get("text") or "")
@@ -530,8 +530,8 @@ async def test_compaction_preserves_internal_notes_after_summary(monkeypatch):
             "author": "react",
             "turn_id": "turn_old",
             "ts": "2026-02-09T00:01:00Z",
-            "path": "fi:turn_old.files/memory/key-artifacts.md",
-            "text": "[K] fi:turn_old.files/src/app/auth/service.py - invite flow implementation",
+            "path": "conv:fi:turn_old.files/memory/key-artifacts.md",
+            "text": "[K] conv:fi:turn_old.files/src/app/auth/service.py - invite flow implementation",
             "meta": {"channel": "internal"},
         },
         _blk(btype="assistant.completion", text="old reply" * 20, turn_id="turn_old"),
@@ -586,7 +586,7 @@ async def test_compaction_caps_preserved_internal_notes(monkeypatch):
                 "author": "react",
                 "turn_id": "turn_old",
                 "ts": f"2026-02-09T00:{idx:02d}:00Z",
-                "path": f"fi:turn_old.files/memory/note-{idx}.md",
+                "path": f"conv:fi:turn_old.files/memory/note-{idx}.md",
                 "text": f"[K] note {idx}",
                 "meta": {"channel": "internal"},
             }
@@ -640,7 +640,7 @@ async def test_compaction_rewrites_preferences_into_summary(monkeypatch):
             "author": "react",
             "turn_id": "turn_old",
             "ts": "2026-02-09T00:01:00Z",
-            "path": "fi:turn_old.files/memory/preferences.md",
+            "path": "conv:fi:turn_old.files/memory/preferences.md",
             "text": "[P] User prefers direct answers with no product pitch unless asked.",
             "meta": {"channel": "internal"},
         },
@@ -649,7 +649,7 @@ async def test_compaction_rewrites_preferences_into_summary(monkeypatch):
             "author": "react",
             "turn_id": "turn_old",
             "ts": "2026-02-09T00:02:00Z",
-            "path": "fi:turn_old.files/memory/preferences.md",
+            "path": "conv:fi:turn_old.files/memory/preferences.md",
             "text": "[P] User prefers concise answers and product positioning only when relevant.",
             "meta": {"channel": "internal"},
         },
@@ -697,7 +697,7 @@ async def test_compaction_preserves_external_turn_events_after_summary(monkeypat
             "author": "user",
             "turn_id": "turn_old",
             "ts": "2026-02-09T00:01:00Z",
-            "path": "ar:turn_old.external.followup.evt_1",
+            "path": "conv:ar:turn_old.external.followup.evt_1",
             "text": "also include the quantum angle",
             "meta": {"message_id": "evt_1", "target_turn_id": "turn_old"},
         },
@@ -706,7 +706,7 @@ async def test_compaction_preserves_external_turn_events_after_summary(monkeypat
             "author": "user",
             "turn_id": "turn_old",
             "ts": "2026-02-09T00:02:00Z",
-            "path": "ar:turn_old.external.steer.evt_2",
+            "path": "conv:ar:turn_old.external.steer.evt_2",
             "text": "stop the broader scan and wrap up what you have",
             "meta": {"message_id": "evt_2", "target_turn_id": "turn_old"},
         },
@@ -755,15 +755,15 @@ def test_cache_ttl_pruning_keeps_internal_notes_visible():
             "author": "react",
             "turn_id": "turn_old",
             "ts": "2026-02-09T00:01:00Z",
-            "path": "fi:turn_old.files/memory/key-artifacts.md",
-            "text": "[K] fi:turn_old.files/src/app/auth/service.py - invite flow implementation",
+            "path": "conv:fi:turn_old.files/memory/key-artifacts.md",
+            "text": "[K] conv:fi:turn_old.files/src/app/auth/service.py - invite flow implementation",
             "meta": {"channel": "internal"},
         },
         {
             "type": "assistant.completion",
             "turn_id": "turn_old",
             "ts": "2026-02-09T00:02:00Z",
-            "path": "ar:turn_old.assistant.completion",
+            "path": "conv:ar:turn_old.assistant.completion",
             "text": "done",
         },
     ]
@@ -780,7 +780,7 @@ def test_cache_ttl_pruning_keeps_internal_notes_visible():
     assert res.get("status") in {"pruned", "pruned_light", "no_effect"}
     note_block = next(b for b in tl.blocks if b.get("type") == "react.note")
     assert not note_block.get("hidden")
-    assert "fi:turn_old.files/memory/key-artifacts.md" not in (res.get("hidden_paths") or [])
+    assert "conv:fi:turn_old.files/memory/key-artifacts.md" not in (res.get("hidden_paths") or [])
 
 
 def test_cache_ttl_pruning_keeps_working_summary_visible():
@@ -798,7 +798,7 @@ def test_cache_ttl_pruning_keeps_working_summary_visible():
             "author": "assistant",
             "turn_id": "turn_old",
             "ts": "2026-02-09T00:02:00Z",
-            "path": "ws:turn_old.conv.working.summary.attempt.1",
+            "path": "conv:ws:turn_old.conv.working.summary.attempt.1",
             "text": "Goal: old task\nOutcome: first useful result",
             "meta": {"kind": "working_summary", "summary_scope": "completion_attempt"},
         },
@@ -807,7 +807,7 @@ def test_cache_ttl_pruning_keeps_working_summary_visible():
             "author": "assistant",
             "turn_id": "turn_old",
             "ts": "2026-02-09T00:02:30Z",
-            "path": "ws:turn_old.conv.working.summary",
+            "path": "conv:ws:turn_old.conv.working.summary",
             "text": "Goal: old task\nOutcome: final useful result",
             "meta": {"kind": "working_summary"},
         },
@@ -815,7 +815,7 @@ def test_cache_ttl_pruning_keeps_working_summary_visible():
             "type": "assistant.completion",
             "turn_id": "turn_old",
             "ts": "2026-02-09T00:03:00Z",
-            "path": "ar:turn_old.assistant.completion",
+            "path": "conv:ar:turn_old.assistant.completion",
             "text": "done",
         },
     ]
@@ -833,8 +833,8 @@ def test_cache_ttl_pruning_keeps_working_summary_visible():
     summary_blocks = [b for b in tl.blocks if b.get("type") == "conv.working.summary"]
     assert len(summary_blocks) == 2
     assert all(not b.get("hidden") for b in summary_blocks)
-    assert "ws:turn_old.conv.working.summary.attempt.1" not in (res.get("hidden_paths") or [])
-    assert "ws:turn_old.conv.working.summary" not in (res.get("hidden_paths") or [])
+    assert "conv:ws:turn_old.conv.working.summary.attempt.1" not in (res.get("hidden_paths") or [])
+    assert "conv:ws:turn_old.conv.working.summary" not in (res.get("hidden_paths") or [])
 
 def test_cache_ttl_pruning_keeps_external_turn_events_visible():
     runtime = RuntimeCtx(turn_id="turn_cur")
@@ -851,7 +851,7 @@ def test_cache_ttl_pruning_keeps_external_turn_events_visible():
             "author": "user",
             "turn_id": "turn_old",
             "ts": "2026-02-09T00:01:00Z",
-            "path": "ar:turn_old.external.followup.evt_1",
+            "path": "conv:ar:turn_old.external.followup.evt_1",
             "text": "also include the quantum angle",
             "meta": {"message_id": "evt_1", "target_turn_id": "turn_old"},
         },
@@ -860,7 +860,7 @@ def test_cache_ttl_pruning_keeps_external_turn_events_visible():
             "author": "user",
             "turn_id": "turn_old",
             "ts": "2026-02-09T00:02:00Z",
-            "path": "ar:turn_old.external.steer.evt_2",
+            "path": "conv:ar:turn_old.external.steer.evt_2",
             "text": "stop and summarize",
             "meta": {"message_id": "evt_2", "target_turn_id": "turn_old"},
         },
@@ -868,7 +868,7 @@ def test_cache_ttl_pruning_keeps_external_turn_events_visible():
             "type": "assistant.completion",
             "turn_id": "turn_old",
             "ts": "2026-02-09T00:03:00Z",
-            "path": "ar:turn_old.assistant.completion",
+            "path": "conv:ar:turn_old.assistant.completion",
             "text": "done",
         },
     ]
@@ -887,8 +887,8 @@ def test_cache_ttl_pruning_keeps_external_turn_events_visible():
     assert not followup_block.get("hidden")
     assert not steer_block.get("hidden")
     hidden_paths = res.get("hidden_paths") or []
-    assert "ar:turn_old.external.followup.evt_1" not in hidden_paths
-    assert "ar:turn_old.external.steer.evt_2" not in hidden_paths
+    assert "conv:ar:turn_old.external.followup.evt_1" not in hidden_paths
+    assert "conv:ar:turn_old.external.steer.evt_2" not in hidden_paths
 
 
 @pytest.mark.asyncio
@@ -918,10 +918,10 @@ async def test_render_compacts_when_pruned_skeleton_has_too_many_message_blocks(
             "type": "user.prompt",
             "author": "user",
             "turn_id": tid,
-            "path": f"ar:{tid}.user.prompt",
+            "path": f"conv:ar:{tid}.user.prompt",
             "text": "x",
             "hidden": True,
-            "replacement_text": f"[pruned user] path=ar:{tid}.user.prompt hint=\"x\"",
+            "replacement_text": f"[pruned user] path=conv:ar:{tid}.user.prompt hint=\"x\"",
         })
     tl.blocks = blocks
 
@@ -940,7 +940,7 @@ def test_cache_ttl_pruning_collapses_old_prune_notices():
             "type": "system.message",
             "turn_id": "turn_old",
             "ts": "2026-02-09T00:00:00Z",
-            "path": "ar:turn_old.system.message.cache_pruned",
+            "path": "conv:ar:turn_old.system.message.cache_pruned",
             "text": "Context was pruned because the session TTL was exceeded. " * 20,
             "meta": {"kind": "cache_ttl_pruned"},
         },
@@ -1001,7 +1001,7 @@ def test_compaction_serializer_accepts_numeric_metadata_fields():
                 "type": "react.tool.result",
                 "turn_id": "turn_old",
                 "ts": 1778032340.800,
-                "path": "tc:turn_old.tc_result.result",
+                "path": "conv:tc:turn_old.tc_result.result",
                 "call_id": 12345,
                 "tool_id": "email.process_user_emails",
                 "text": "",
@@ -1012,4 +1012,4 @@ def test_compaction_serializer_accepts_numeric_metadata_fields():
     assert "[Tool result]:" in text
     assert "ts=1778032340.8" in text
     assert "call_id=12345" in text
-    assert "path=tc:turn_old.tc_result.result" in text
+    assert "path=conv:tc:turn_old.tc_result.result" in text

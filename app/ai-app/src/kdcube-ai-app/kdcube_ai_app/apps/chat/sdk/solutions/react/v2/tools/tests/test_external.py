@@ -2,6 +2,7 @@
 
 import pytest
 
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace import artifact_outdir_for
 from kdcube_ai_app.apps.chat.sdk.solutions.react.proto import RuntimeCtx
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.tools.external import handle_external_tool
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.tools.tests.helpers import FakeBrowser, FakeReact
@@ -72,14 +73,17 @@ async def test_external_exec_path_rewrite_notice(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_rendering_tool_accepts_generic_outdir_fi_path(monkeypatch, tmp_path):
+async def test_rendering_tool_normalizes_canonical_conversation_file_path(monkeypatch, tmp_path):
     runtime = RuntimeCtx(turn_id="turn_exec", outdir=str(tmp_path), workdir=str(tmp_path))
     ctx = FakeBrowser(runtime)
     state = {
         "last_decision": {
             "tool_call": {
                 "tool_id": "rendering_tools.write_pdf",
-                "params": {"path": "fi:logs/out.pdf", "content": "<html><body>x</body></html>"},
+                "params": {
+                    "path": "conv:fi:turn_exec.files/logs/out.pdf",
+                    "content": "<html><body>x</body></html>",
+                },
             }
         },
         "outdir": str(tmp_path),
@@ -102,13 +106,13 @@ async def test_rendering_tool_accepts_generic_outdir_fi_path(monkeypatch, tmp_pa
 
     await handle_external_tool(react=react, ctx_browser=ctx, state=state, tool_call_id="e2")
 
-    assert captured["params"]["path"] == "logs/out.pdf"
+    assert captured["params"]["path"] == "turn_exec/files/logs/out.pdf"
     assert any(
-        "\"artifact_path\": \"fi:logs/out.pdf\"" in (b.get("text") or "")
+        "\"artifact_path\": \"conv:fi:turn_exec.files/logs/out.pdf\"" in (b.get("text") or "")
         for b in ctx.timeline.blocks
         if b.get("type") == "react.tool.result" and b.get("mime") == "application/json"
     )
-    assert not any(
+    assert any(
         b.get("type") == "react.notice" and "path_rewritten" in (b.get("text") or "")
         for b in ctx.timeline.blocks
     )
@@ -124,7 +128,7 @@ async def test_large_inline_renderer_source_is_passed_to_tool(monkeypatch, tmp_p
             "tool_call": {
                 "tool_id": "rendering_tools.write_pdf",
                 "params": {
-                    "path": "outputs/report.pdf",
+                    "path": "files/report.pdf",
                     "content": large_content,
                 },
             }
@@ -158,7 +162,7 @@ async def test_large_inline_renderer_source_is_passed_to_tool(monkeypatch, tmp_p
     )
     assert any(
         b.get("type") == "react.tool.result"
-        and b.get("path") == "fi:turn_exec.outputs/report.pdf"
+        and b.get("path") == "conv:fi:turn_exec.files/report.pdf"
         and b.get("mime") == "application/pdf"
         for b in ctx.timeline.blocks
     )
@@ -172,7 +176,7 @@ async def test_external_tool_call_error_is_visible_on_result_block(monkeypatch, 
         "last_decision": {
             "tool_call": {
                 "tool_id": "browser_tools.open_page",
-                "params": {"url": "fi:turn_exec.outputs/missing.html"},
+                "params": {"url": "conv:fi:turn_exec.files/missing.html"},
             }
         },
         "outdir": str(tmp_path),
@@ -207,7 +211,7 @@ async def test_external_tool_call_error_is_visible_on_result_block(monkeypatch, 
     result_blocks = [
         b for b in ctx.timeline.blocks
         if b.get("type") == "react.tool.result"
-        and b.get("path") == "tc:turn_exec.browser_err.result"
+        and b.get("path") == "conv:tc:turn_exec.browser_err.result"
         and (b.get("mime") or "").strip() == "application/json"
     ]
     assert result_blocks
@@ -241,7 +245,7 @@ async def test_external_exec_internal_file_is_not_hosted_but_keeps_file_path(mon
     }
 
     async def _fake_execute_tool(**kwargs):
-        target = tmp_path / "turn_exec" / "files" / "secret.txt"
+        target = artifact_outdir_for(tmp_path) / "turn_exec" / "files" / "secret.txt"
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text("top secret\n", encoding="utf-8")
         return {
@@ -276,17 +280,17 @@ async def test_external_exec_internal_file_is_not_hosted_but_keeps_file_path(mon
     meta_blocks = [
         b for b in ctx.timeline.blocks
         if b.get("type") == "react.tool.result"
-        and b.get("path") == "tc:turn_exec.e3.result"
+        and b.get("path") == "conv:tc:turn_exec.e3.result"
         and (b.get("mime") or "").strip() == "application/json"
     ]
     assert meta_blocks
     meta_text = meta_blocks[-1].get("text") or ""
     assert "\"visibility\": \"internal\"" in meta_text
-    assert "\"artifact_path\": \"fi:turn_exec.files/secret.txt\"" in meta_text
+    assert "\"artifact_path\": \"conv:fi:turn_exec.files/secret.txt\"" in meta_text
     assert "\"physical_path\": \"turn_exec/files/secret.txt\"" in meta_text
     assert any(
         b.get("type") == "react.tool.result"
-        and b.get("path") == "fi:turn_exec.files/secret.txt"
+        and b.get("path") == "conv:fi:turn_exec.files/secret.txt"
         and (b.get("text") or "") == "top secret\n"
         for b in ctx.timeline.blocks
     )
@@ -306,8 +310,8 @@ async def test_external_tool_declared_files_are_hosted_and_emitted(monkeypatch, 
         "outdir": str(tmp_path),
         "workdir": str(tmp_path),
     }
-    first = tmp_path / "turn_exec" / "outputs" / "email-attachments" / "acct" / "m1" / "invoice.pdf"
-    second = tmp_path / "turn_exec" / "outputs" / "email-attachments" / "acct" / "m1" / "terms.txt"
+    first = artifact_outdir_for(tmp_path) / "turn_exec" / "files" / "email-attachments" / "acct" / "m1" / "invoice.pdf"
+    second = artifact_outdir_for(tmp_path) / "turn_exec" / "files" / "email-attachments" / "acct" / "m1" / "terms.txt"
     first.parent.mkdir(parents=True, exist_ok=True)
     first.write_bytes(b"%PDF-1.4\n")
     second.write_text("terms\n", encoding="utf-8")
@@ -319,16 +323,16 @@ async def test_external_tool_declared_files_are_hosted_and_emitted(monkeypatch, 
                 "artifact_type": "files",
                 "files": [
                     {
-                        "artifact_path": "fi:turn_exec.outputs/email-attachments/acct/m1/invoice.pdf",
-                        "logical_path": "fi:turn_exec.outputs/email-attachments/acct/m1/invoice.pdf",
-                        "physical_path": "turn_exec/outputs/email-attachments/acct/m1/invoice.pdf",
+                        "artifact_path": "conv:fi:turn_exec.files/email-attachments/acct/m1/invoice.pdf",
+                        "logical_path": "conv:fi:turn_exec.files/email-attachments/acct/m1/invoice.pdf",
+                        "physical_path": "turn_exec/files/email-attachments/acct/m1/invoice.pdf",
                         "filename": "invoice.pdf",
                         "mime_type": "application/pdf",
                         "size_bytes": first.stat().st_size,
                         "visibility": "external",
                     },
                     {
-                        "path": "turn_exec/outputs/email-attachments/acct/m1/terms.txt",
+                        "path": "turn_exec/files/email-attachments/acct/m1/terms.txt",
                         "filename": "terms.txt",
                         "mime": "text/plain",
                         "visibility": "external",
@@ -363,13 +367,13 @@ async def test_external_tool_declared_files_are_hosted_and_emitted(monkeypatch, 
     assert len(out["last_tool_result"]) == 3
     assert any(
         b.get("type") == "react.tool.result"
-        and b.get("path") == "fi:turn_exec.outputs/email-attachments/acct/m1/invoice.pdf"
+        and b.get("path") == "conv:fi:conv_conv1.turn_exec.files/email-attachments/acct/m1/invoice.pdf"
         and (b.get("meta") or {}).get("hosted_uri") == "s3://bucket/invoice.pdf"
         for b in ctx.timeline.blocks
     )
     assert any(
         b.get("type") == "react.tool.result"
-        and b.get("path") == "fi:turn_exec.outputs/email-attachments/acct/m1/terms.txt"
+        and b.get("path") == "conv:fi:conv_conv1.turn_exec.files/email-attachments/acct/m1/terms.txt"
         and (b.get("meta") or {}).get("hosted_uri") == "s3://bucket/terms.txt"
         for b in ctx.timeline.blocks
     )
@@ -389,7 +393,7 @@ async def test_external_tool_internal_declared_files_keep_paths_without_hosting(
         "outdir": str(tmp_path),
         "workdir": str(tmp_path),
     }
-    target = tmp_path / "turn_exec" / "outputs" / "email-attachments" / "acct" / "m1" / "invoice.pdf"
+    target = artifact_outdir_for(tmp_path) / "turn_exec" / "files" / "email-attachments" / "acct" / "m1" / "invoice.pdf"
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(b"%PDF-1.4\n")
 
@@ -399,9 +403,9 @@ async def test_external_tool_internal_declared_files_keep_paths_without_hosting(
                 "ok": True,
                 "artifact_type": "files",
                 "files": [{
-                    "artifact_path": "fi:turn_exec.outputs/email-attachments/acct/m1/invoice.pdf",
-                    "logical_path": "fi:turn_exec.outputs/email-attachments/acct/m1/invoice.pdf",
-                    "physical_path": "turn_exec/outputs/email-attachments/acct/m1/invoice.pdf",
+                    "artifact_path": "conv:fi:turn_exec.files/email-attachments/acct/m1/invoice.pdf",
+                    "logical_path": "conv:fi:turn_exec.files/email-attachments/acct/m1/invoice.pdf",
+                    "physical_path": "turn_exec/files/email-attachments/acct/m1/invoice.pdf",
                     "filename": "invoice.pdf",
                     "mime_type": "application/pdf",
                     "size_bytes": target.stat().st_size,
@@ -424,15 +428,15 @@ async def test_external_tool_internal_declared_files_keep_paths_without_hosting(
     assert len(out["last_tool_result"]) == 2
     assert any(
         b.get("type") == "react.tool.result"
-        and b.get("path") == "fi:turn_exec.outputs/email-attachments/acct/m1/invoice.pdf"
-        and (b.get("meta") or {}).get("physical_path") == "turn_exec/outputs/email-attachments/acct/m1/invoice.pdf"
+        and b.get("path") == "conv:fi:conv_conv1.turn_exec.files/email-attachments/acct/m1/invoice.pdf"
+        and (b.get("meta") or {}).get("physical_path") == "turn_exec/files/email-attachments/acct/m1/invoice.pdf"
         and (b.get("meta") or {}).get("visibility") == "internal"
         for b in ctx.timeline.blocks
     )
     assert any(
         b.get("type") == "react.tool.result"
-        and (b.get("text") or "").find('"artifact_path": "fi:turn_exec.outputs/email-attachments/acct/m1/invoice.pdf"') >= 0
-        and (b.get("text") or "").find('"physical_path": "turn_exec/outputs/email-attachments/acct/m1/invoice.pdf"') >= 0
+        and (b.get("text") or "").find('"artifact_path": "conv:fi:conv_conv1.turn_exec.files/email-attachments/acct/m1/invoice.pdf"') >= 0
+        and (b.get("text") or "").find('"physical_path": "turn_exec/files/email-attachments/acct/m1/invoice.pdf"') >= 0
         for b in ctx.timeline.blocks
     )
 
@@ -464,7 +468,7 @@ async def test_external_tool_self_hosted_declared_files_are_not_rehosted(monkeyp
                     "hosted_uri": "s3://bucket/invoice.pdf",
                     "rn": "rn:invoice",
                     "key": "artifact/invoice.pdf",
-                    "physical_path": "turn_exec/outputs/email-attachments/acct/m1/invoice.pdf",
+                    "physical_path": "turn_exec/files/email-attachments/acct/m1/invoice.pdf",
                     "filename": "invoice.pdf",
                     "mime_type": "application/pdf",
                     "visibility": "external",
@@ -510,7 +514,7 @@ async def test_external_tool_self_hosted_internal_image_is_not_emitted_but_is_mu
         "outdir": str(tmp_path),
         "workdir": str(tmp_path),
     }
-    target = tmp_path / "turn_exec" / "outputs" / "browser_screenshots" / "123_main.png"
+    target = artifact_outdir_for(tmp_path) / "turn_exec" / "files" / "browser_screenshots" / "123_main.png"
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(b"\x89PNG\r\n\x1a\nfake")
 
@@ -521,10 +525,10 @@ async def test_external_tool_self_hosted_internal_image_is_not_emitted_but_is_mu
                 "ret": {
                     "artifact_type": "files",
                     "screenshot": {
-                        "path": "fi:turn_exec.outputs/browser_screenshots/123_main.png",
-                        "logical_path": "fi:turn_exec.outputs/browser_screenshots/123_main.png",
-                        "artifact_path": "fi:turn_exec.outputs/browser_screenshots/123_main.png",
-                        "physical_path": "turn_exec/outputs/browser_screenshots/123_main.png",
+                        "path": "conv:fi:turn_exec.files/browser_screenshots/123_main.png",
+                        "logical_path": "conv:fi:turn_exec.files/browser_screenshots/123_main.png",
+                        "artifact_path": "conv:fi:turn_exec.files/browser_screenshots/123_main.png",
+                        "physical_path": "turn_exec/files/browser_screenshots/123_main.png",
                         "filename": "123_main.png",
                         "mime": "image/png",
                         "visibility": "internal",
@@ -533,10 +537,10 @@ async def test_external_tool_self_hosted_internal_image_is_not_emitted_but_is_mu
                         "hosted_uri": "s3://bucket/123_main.png",
                     },
                     "files": [{
-                        "path": "fi:turn_exec.outputs/browser_screenshots/123_main.png",
-                        "logical_path": "fi:turn_exec.outputs/browser_screenshots/123_main.png",
-                        "artifact_path": "fi:turn_exec.outputs/browser_screenshots/123_main.png",
-                        "physical_path": "turn_exec/outputs/browser_screenshots/123_main.png",
+                        "path": "conv:fi:turn_exec.files/browser_screenshots/123_main.png",
+                        "logical_path": "conv:fi:turn_exec.files/browser_screenshots/123_main.png",
+                        "artifact_path": "conv:fi:turn_exec.files/browser_screenshots/123_main.png",
+                        "physical_path": "turn_exec/files/browser_screenshots/123_main.png",
                         "filename": "123_main.png",
                         "mime": "image/png",
                         "visibility": "internal",
@@ -562,7 +566,7 @@ async def test_external_tool_self_hosted_internal_image_is_not_emitted_but_is_mu
     assert len(out["last_tool_result"]) == 2
     assert any(
         b.get("type") == "react.tool.result"
-        and b.get("path") == "fi:turn_exec.outputs/browser_screenshots/123_main.png"
+        and b.get("path") == "conv:fi:turn_exec.files/browser_screenshots/123_main.png"
         and b.get("mime") == "image/png"
         and b.get("base64")
         and (b.get("meta") or {}).get("visibility") == "internal"
@@ -584,7 +588,7 @@ async def test_external_tool_large_internal_image_is_metadata_only(monkeypatch, 
         "outdir": str(tmp_path),
         "workdir": str(tmp_path),
     }
-    target = tmp_path / "turn_exec" / "outputs" / "browser_screenshots" / "large.png"
+    target = artifact_outdir_for(tmp_path) / "turn_exec" / "files" / "browser_screenshots" / "large.png"
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(b"\x89PNG\r\n\x1a\n" + b"x" * 800_000)
 
@@ -595,10 +599,10 @@ async def test_external_tool_large_internal_image_is_metadata_only(monkeypatch, 
                 "ret": {
                     "artifact_type": "files",
                     "files": [{
-                        "path": "fi:turn_exec.outputs/browser_screenshots/large.png",
-                        "logical_path": "fi:turn_exec.outputs/browser_screenshots/large.png",
-                        "artifact_path": "fi:turn_exec.outputs/browser_screenshots/large.png",
-                        "physical_path": "turn_exec/outputs/browser_screenshots/large.png",
+                        "path": "conv:fi:turn_exec.files/browser_screenshots/large.png",
+                        "logical_path": "conv:fi:turn_exec.files/browser_screenshots/large.png",
+                        "artifact_path": "conv:fi:turn_exec.files/browser_screenshots/large.png",
+                        "physical_path": "turn_exec/files/browser_screenshots/large.png",
                         "filename": "large.png",
                         "mime": "image/png",
                         "visibility": "internal",
@@ -619,13 +623,13 @@ async def test_external_tool_large_internal_image_is_metadata_only(monkeypatch, 
 
     assert not any(
         b.get("type") == "react.tool.result"
-        and b.get("path") == "fi:turn_exec.outputs/browser_screenshots/large.png"
+        and b.get("path") == "conv:fi:turn_exec.files/browser_screenshots/large.png"
         and b.get("base64")
         for b in ctx.timeline.blocks
     )
     assert any(
         b.get("type") == "react.tool.result"
-        and b.get("path") == "fi:turn_exec.outputs/browser_screenshots/large.png"
+        and b.get("path") == "conv:fi:turn_exec.files/browser_screenshots/large.png"
         and (b.get("meta") or {}).get("multimodal_status") == "too_large_for_visible_context"
         for b in ctx.timeline.blocks
     )
@@ -651,7 +655,7 @@ async def test_external_tool_plain_files_field_is_not_hosted_without_marker(monk
             "output": {
                 "ok": True,
                 "files": [{
-                    "physical_path": "turn_exec/outputs/report.pdf",
+                    "physical_path": "turn_exec/files/report.pdf",
                     "filename": "report.pdf",
                     "mime_type": "application/pdf",
                 }],
@@ -700,7 +704,7 @@ async def test_external_tool_rejects_non_artifact_type_file_markers(monkeypatch,
                 "artifact_kind": "files",
                 "artifacts": {
                     "files": [{
-                        "physical_path": "turn_exec/outputs/report.pdf",
+                        "physical_path": "turn_exec/files/report.pdf",
                         "filename": "report.pdf",
                         "mime_type": "application/pdf",
                     }]
@@ -772,7 +776,7 @@ async def test_external_exec_requires_pull_for_unmaterialized_historical_file(mo
     ]
     assert result_blocks
     assert "pre_exec_pull_required" in (result_blocks[-1].get("text") or "")
-    assert "fi:turn_old.files/a.txt" in (result_blocks[-1].get("text") or "")
+    assert "conv:fi:turn_old.files/a.txt" in (result_blocks[-1].get("text") or "")
 
 
 @pytest.mark.asyncio

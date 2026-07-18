@@ -290,13 +290,6 @@ def _resolve_input_artifact(path_value: str, artifact_root: pathlib.Path) -> pat
             physical = build_physical_artifact_path(turn_id=turn_id, namespace=namespace, relpath=rel)
             return resolve_artifact_path(artifact_root, physical)
         return None
-    if raw.startswith("fi:"):
-        body = raw[3:]
-        turn_id, dot, rest = body.partition(".")
-        if dot and "/" in rest:
-            namespace, _, rel = rest.partition("/")
-            physical = build_physical_artifact_path(turn_id=turn_id, namespace=namespace, relpath=rel)
-            return resolve_artifact_path(artifact_root, physical)
     candidate = pathlib.Path(raw)
     if candidate.is_absolute():
         try:

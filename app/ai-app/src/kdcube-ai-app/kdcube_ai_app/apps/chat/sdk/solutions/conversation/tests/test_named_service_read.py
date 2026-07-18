@@ -114,7 +114,7 @@ async def test_object_get_returns_interleaved_timeline():
                 {"type": "chat:user", "ts": "2026-07-01T22:00:00Z", "data": {"text": "make a chart"}},
                 {"type": "artifact:assistant.file", "ts": "2026-07-01T22:02:00Z",
                  "data": {"payload": {"filename": "chart.png", "mime": "image/png",
-                                       "artifact_path": "conv:fi:turn_t1.outputs/chart.png"}}},
+                                       "artifact_path": "conv:fi:turn_t1.files/chart.png"}}},
                 {"type": "chat:assistant", "ts": "2026-07-01T22:03:00Z", "data": {"text": "here it is"}},
             ],
         }],
@@ -130,7 +130,7 @@ async def test_object_get_returns_interleaved_timeline():
     events = turns[0]["events"]
     assert [e["type"] for e in events] == ["user.message", "assistant.file", "assistant.message"]
     file_event = events[1]
-    assert file_event["ref"] == "conv:fi:conv_c1.turn_t1.outputs/chart.png"
+    assert file_event["ref"] == "conv:fi:conv_c1.turn_t1.files/chart.png"
     assert file_event["filename"] == "chart.png"
     assert obj["body"]["turn_count"] == 1
 
@@ -229,17 +229,17 @@ async def test_object_get_conv_fi_returns_text_inline():
     provider = _file_provider(backend)
     resp = await provider.object_get(
         NamedServiceContext(user_id="u", conversation_id="c1"),
-        _req("object.get", object_ref="conv:fi:turn_1.outputs/summary.md"),
+        _req("object.get", object_ref="conv:fi:turn_1.files/summary.md"),
     )
     assert resp.ok
     obj = resp.ret["object"]
     assert obj["object_kind"] == "conversation.file"
-    assert obj["ref"] == "conv:fi:turn_1.outputs/summary.md"
+    assert obj["ref"] == "conv:fi:turn_1.files/summary.md"
     assert obj["body"]["encoding"] == "text"
     assert obj["body"]["content"] == "hello"
     assert obj["body"]["filename"] == "summary.md"
     # fi ref carries no conv_ prefix -> conversation_id falls back to the caller's ctx.
-    assert backend.calls == [("conv:fi:turn_1.outputs/summary.md", "c1")]
+    assert backend.calls == [("conv:fi:turn_1.files/summary.md", "c1")]
 
 
 @pytest.mark.asyncio
@@ -271,7 +271,7 @@ async def test_object_get_conv_fi_binary_prefers_download_url():
     provider = _file_provider(backend, file_url_factory=_factory)
     resp = await provider.object_get(
         NamedServiceContext(user_id="u", conversation_id="c1"),
-        _req("object.get", object_ref="conv:fi:conv_c1.turn_1.outputs/chart.png"),
+        _req("object.get", object_ref="conv:fi:conv_c1.turn_1.files/chart.png"),
     )
     assert resp.ok
     body = resp.ret["object"]["body"]
@@ -280,7 +280,7 @@ async def test_object_get_conv_fi_binary_prefers_download_url():
     assert body["expires_at"] == 1900
     assert "content" not in body
     # The factory receives the canonical conversation-file ref + descriptor.
-    assert seen["fi_ref"] == "conv:fi:conv_c1.turn_1.outputs/chart.png"
+    assert seen["fi_ref"] == "conv:fi:conv_c1.turn_1.files/chart.png"
     assert seen["mime"] == "image/png"
 
 
@@ -295,7 +295,7 @@ async def test_object_get_conv_fi_binary_large_without_url_returns_metadata():
     provider = _file_provider(backend)  # no file_url_factory
     resp = await provider.object_get(
         NamedServiceContext(user_id="u", conversation_id="c1"),
-        _req("object.get", object_ref="conv:fi:conv_c1.turn_1.outputs/chart.png"),
+        _req("object.get", object_ref="conv:fi:conv_c1.turn_1.files/chart.png"),
     )
     assert resp.ok
     body = resp.ret["object"]["body"]

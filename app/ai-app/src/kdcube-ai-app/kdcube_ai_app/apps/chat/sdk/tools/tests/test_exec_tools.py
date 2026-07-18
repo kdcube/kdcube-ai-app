@@ -52,14 +52,14 @@ async def test_fetch_ctx_reads_timeline_from_runtime_outdir_in_split_runtime(tmp
     artifact_out = runtime_out / "workdir"
     runtime_out.mkdir()
     artifact_out.mkdir()
-    path = "tc:turn_1.tc_abc.result"
+    path = "conv:tc:turn_1.tc_abc.result"
     (runtime_out / "timeline.json").write_text(
         """
         {
           "blocks": [
             {
               "type": "react.tool.result",
-              "path": "tc:turn_1.tc_abc.result",
+              "path": "conv:tc:turn_1.tc_abc.result",
               "mime": "application/json",
               "text": "{\\"ok\\": true}"
             }
@@ -89,7 +89,7 @@ async def test_fetch_ctx_exposes_payload_for_tc_result(tmp_path, monkeypatch):
     artifact_out = runtime_out / "workdir"
     runtime_out.mkdir()
     artifact_out.mkdir()
-    path = "tc:turn_1.tc_email.result"
+    path = "conv:tc:turn_1.tc_email.result"
     header = {
         "artifact_path": path,
         "kind": "display",
@@ -174,7 +174,7 @@ async def test_fetch_ctx_sources_pool_returns_full_content_field(tmp_path, monke
     monkeypatch.setenv("EXEC_CONTAINER_ROLE", "supervisor")
     monkeypatch.setenv("KDCUBE_RUNTIME_OUTPUT_DIR", str(runtime_out))
     try:
-        result = await ctx_tools_module.tools.fetch_ctx(path="so:sources_pool[1]")
+        result = await ctx_tools_module.tools.fetch_ctx(path="conv:so:sources_pool[1]")
     finally:
         OUTDIR_CV.reset(token)
 
@@ -343,23 +343,23 @@ def test_exec_contract_normalization_is_idempotent():
     # already-normalized contract must succeed — a `filepath` -> `filename` key
     # drift between the input read and the emitted key silently broke exec with
     # "invalid_artifact_spec: Each artifact requires filepath ...".
-    raw = [{"filepath": "outputs/ai/report.xlsx", "description": "Report."}]
+    raw = [{"filepath": "files/ai/report.xlsx", "description": "Report."}]
 
     normalized, _rewrites, err = normalize_exec_contract_for_turn(raw, turn_id="turn_1")
     assert err is None
-    assert normalized and normalized[0]["filepath"] == "turn_1/outputs/ai/report.xlsx"
+    assert normalized and normalized[0]["filepath"] == "turn_1/files/ai/report.xlsx"
 
     # Second pass over the ALREADY-normalized contract (what the pipeline does).
     contract, renormalized, err2 = build_exec_output_contract(normalized)
     assert err2 is None
     assert contract is not None
-    assert renormalized[0]["filepath"] == "turn_1/outputs/ai/report.xlsx"
-    assert contract["report"]["filepath"] == "turn_1/outputs/ai/report.xlsx"
+    assert renormalized[0]["filepath"] == "turn_1/files/ai/report.xlsx"
+    assert contract["report"]["filepath"] == "turn_1/files/ai/report.xlsx"
 
     # And _normalize_artifacts_spec is idempotent on its own output too.
     twice, err3 = _normalize_artifacts_spec(renormalized)
     assert err3 is None
-    assert twice[0]["filepath"] == "turn_1/outputs/ai/report.xlsx"
+    assert twice[0]["filepath"] == "turn_1/files/ai/report.xlsx"
 
 
 def test_build_exec_output_contract_preserves_visibility_and_defaults_external():
@@ -397,21 +397,21 @@ def test_build_exec_output_contract_preserves_visibility_and_defaults_external()
     }
 
 
-def test_build_exec_output_contract_accepts_outputs_namespace():
+def test_build_exec_output_contract_accepts_files_namespace():
     contract, normalized, err = build_exec_output_contract([
         {
-            "filepath": "turn_1/outputs/test_results.txt",
+            "filepath": "turn_1/files/test_results.txt",
             "description": "Non-workspace test results.",
         },
     ])
 
     assert err is None
     assert normalized is not None
-    assert normalized[0]["filepath"] == "turn_1/outputs/test_results.txt"
+    assert normalized[0]["filepath"] == "turn_1/files/test_results.txt"
     assert contract == {
         "test_results": {
             "type": "file",
-            "filepath": "turn_1/outputs/test_results.txt",
+            "filepath": "turn_1/files/test_results.txt",
             "mime": "text/plain",
             "description": "Non-workspace test results.",
             "visibility": "external",
@@ -422,23 +422,23 @@ def test_build_exec_output_contract_accepts_outputs_namespace():
 def test_build_exec_output_contract_accepts_telegram_turn_id():
     contract, normalized, err = build_exec_output_contract([
         {
-            "filepath": "telegram_turn_13083631/outputs/tech_news_emails.xlsx",
+            "filepath": "telegram_turn_13083631/files/tech_news_emails.xlsx",
             "description": "Excel report generated in a Telegram turn.",
         },
     ])
 
     assert err is None
     assert normalized is not None
-    assert normalized[0]["filepath"] == "telegram_turn_13083631/outputs/tech_news_emails.xlsx"
+    assert normalized[0]["filepath"] == "telegram_turn_13083631/files/tech_news_emails.xlsx"
     assert contract is not None
-    assert contract["tech_news_emails"]["filepath"] == "telegram_turn_13083631/outputs/tech_news_emails.xlsx"
+    assert contract["tech_news_emails"]["filepath"] == "telegram_turn_13083631/files/tech_news_emails.xlsx"
 
 
-def test_normalize_exec_contract_rewrites_outputs_for_telegram_turn_id():
+def test_normalize_exec_contract_rewrites_files_for_telegram_turn_id():
     normalized, rewrites, err = normalize_exec_contract_for_turn(
         [
             {
-                "filepath": "outputs/tech_news_emails.xlsx",
+                "filepath": "files/tech_news_emails.xlsx",
                 "description": "Excel report generated in a Telegram turn.",
             }
         ],
@@ -448,15 +448,15 @@ def test_normalize_exec_contract_rewrites_outputs_for_telegram_turn_id():
     assert err is None
     assert rewrites == [
         {
-            "original": "outputs/tech_news_emails.xlsx",
-            "rewritten": "telegram_turn_13083631/outputs/tech_news_emails.xlsx",
+            "original": "files/tech_news_emails.xlsx",
+            "rewritten": "telegram_turn_13083631/files/tech_news_emails.xlsx",
         }
     ]
     assert normalized is not None
-    assert normalized[0]["filepath"] == "telegram_turn_13083631/outputs/tech_news_emails.xlsx"
+    assert normalized[0]["filepath"] == "telegram_turn_13083631/files/tech_news_emails.xlsx"
 
 
-def test_normalize_exec_contract_rewrites_unqualified_filename_to_outputs():
+def test_normalize_exec_contract_rewrites_unqualified_filename_to_files():
     normalized, rewrites, err = normalize_exec_contract_for_turn(
         [
             {
@@ -471,18 +471,18 @@ def test_normalize_exec_contract_rewrites_unqualified_filename_to_outputs():
     assert rewrites == [
         {
             "original": "reports/summary.md",
-            "rewritten": "turn_1/outputs/reports/summary.md",
+            "rewritten": "turn_1/files/reports/summary.md",
         }
     ]
     assert normalized is not None
-    assert normalized[0]["filepath"] == "turn_1/outputs/reports/summary.md"
+    assert normalized[0]["filepath"] == "turn_1/files/reports/summary.md"
 
 
 def test_normalize_exec_contract_preserves_current_telegram_turn_id():
     normalized, rewrites, err = normalize_exec_contract_for_turn(
         [
             {
-                "filepath": "telegram_turn_13083631/outputs/tech_news_emails.xlsx",
+                "filepath": "telegram_turn_13083631/files/tech_news_emails.xlsx",
                 "description": "Excel report generated in a Telegram turn.",
             }
         ],
@@ -492,7 +492,7 @@ def test_normalize_exec_contract_preserves_current_telegram_turn_id():
     assert err is None
     assert rewrites == []
     assert normalized is not None
-    assert normalized[0]["filepath"] == "telegram_turn_13083631/outputs/tech_news_emails.xlsx"
+    assert normalized[0]["filepath"] == "telegram_turn_13083631/files/tech_news_emails.xlsx"
 
 
 def test_normalize_exec_contract_preserves_nested_current_files_path():
@@ -535,7 +535,7 @@ def test_normalize_exec_contract_rejects_different_telegram_turn_id():
     normalized, rewrites, err = normalize_exec_contract_for_turn(
         [
             {
-                "filepath": "telegram_turn_other/outputs/tech_news_emails.xlsx",
+                "filepath": "telegram_turn_other/files/tech_news_emails.xlsx",
                 "description": "Excel report generated in a different Telegram turn.",
             }
         ],
@@ -546,49 +546,49 @@ def test_normalize_exec_contract_rejects_different_telegram_turn_id():
     assert rewrites == []
     assert err == {
         "code": "invalid_filename",
-        "message": "Contract filepath must use current turn_id and files/ or outputs/ path",
+        "message": "Contract filepath must use current turn_id and files/ or git/projects/ path",
     }
 
 
 def test_rewrite_exec_code_paths_does_not_double_prefix_telegram_turn_id():
     code = (
         "from pathlib import Path\n"
-        "xlsx = Path(OUTPUT_DIR) / \"telegram_turn_13083631/outputs/tech_news_emails.xlsx\"\n"
-        "csv = Path(OUTPUT_DIR) / \"outputs/tech_news_emails.csv\"\n"
+        "xlsx = Path(OUTPUT_DIR) / \"telegram_turn_13083631/files/tech_news_emails.xlsx\"\n"
+        "csv = Path(OUTPUT_DIR) / \"files/tech_news_emails.csv\"\n"
     )
 
     rewritten, rewrites = rewrite_exec_code_paths(code, turn_id="telegram_turn_13083631")
 
     assert "telegram_turn_13083631/files/telegram_turn_13083631" not in rewritten
-    assert "telegram_turn_13083631/outputs/tech_news_emails.xlsx" in rewritten
-    assert "telegram_turn_13083631/outputs/tech_news_emails.csv" in rewritten
+    assert "telegram_turn_13083631/files/tech_news_emails.xlsx" in rewritten
+    assert "telegram_turn_13083631/files/tech_news_emails.csv" in rewritten
     assert rewrites == [
         {
-            "original": "outputs/tech_news_emails.csv",
-            "rewritten": "telegram_turn_13083631/outputs/tech_news_emails.csv",
+            "original": "files/tech_news_emails.csv",
+            "rewritten": "telegram_turn_13083631/files/tech_news_emails.csv",
         }
     ]
 
 
 def test_rewrite_exec_code_paths_is_artifact_segment_aware():
     code = (
-        'current = "turn_13083704/outputs/email-attachments/acct/msg/invoice.pdf"\n'
-        'relative = "outputs/email-attachments/acct/msg/receipt.pdf"\n'
+        'current = "turn_13083704/files/email-attachments/acct/msg/invoice.pdf"\n'
+        'relative = "files/email-attachments/acct/msg/receipt.pdf"\n'
         'user_file = "attachments/uploaded.pdf"\n'
         'url = "https://example.com/attachments/not-local.pdf"\n'
     )
 
     rewritten, rewrites = rewrite_exec_code_paths(code, turn_id="turn_13083704")
 
-    assert 'current = "turn_13083704/outputs/email-attachments/acct/msg/invoice.pdf"' in rewritten
-    assert 'relative = "turn_13083704/outputs/email-attachments/acct/msg/receipt.pdf"' in rewritten
+    assert 'current = "turn_13083704/files/email-attachments/acct/msg/invoice.pdf"' in rewritten
+    assert 'relative = "turn_13083704/files/email-attachments/acct/msg/receipt.pdf"' in rewritten
     assert 'user_file = "turn_13083704/attachments/uploaded.pdf"' in rewritten
     assert 'url = "https://example.com/attachments/not-local.pdf"' in rewritten
-    assert "turn_13083704/outputs/email-turn_13083704/attachments" not in rewritten
+    assert "turn_13083704/files/email-turn_13083704/attachments" not in rewritten
     assert rewrites == [
         {
-            "original": "outputs/email-attachments/acct/msg/receipt.pdf",
-            "rewritten": "turn_13083704/outputs/email-attachments/acct/msg/receipt.pdf",
+            "original": "files/email-attachments/acct/msg/receipt.pdf",
+            "rewritten": "turn_13083704/files/email-attachments/acct/msg/receipt.pdf",
         },
         {
             "original": "attachments/uploaded.pdf",
@@ -669,7 +669,7 @@ def test_contract_artifact_egress_rejects_symlink_escape(tmp_path):
 
 def test_contract_artifact_egress_rejects_internal_archive_paths(tmp_path):
     outdir = tmp_path / "out"
-    archive_path = outdir / "turn_1" / "outputs" / "etc.zip"
+    archive_path = outdir / "turn_1" / "files" / "etc.zip"
     archive_path.parent.mkdir(parents=True)
     with zipfile.ZipFile(archive_path, "w") as archive:
         archive.writestr("etc/os-release", "PRETTY_NAME=test")
@@ -677,7 +677,7 @@ def test_contract_artifact_egress_rejects_internal_archive_paths(tmp_path):
     err = _validate_contract_artifact_egress(
         path=archive_path,
         outdir=outdir,
-        rel="turn_1/outputs/etc.zip",
+        rel="turn_1/files/etc.zip",
         mime="application/zip",
     )
 
@@ -687,7 +687,7 @@ def test_contract_artifact_egress_rejects_internal_archive_paths(tmp_path):
 
 def test_contract_artifact_egress_allows_normal_archive(tmp_path):
     outdir = tmp_path / "out"
-    archive_path = outdir / "turn_1" / "outputs" / "report.zip"
+    archive_path = outdir / "turn_1" / "files" / "report.zip"
     archive_path.parent.mkdir(parents=True)
     with zipfile.ZipFile(archive_path, "w") as archive:
         archive.writestr("report/summary.txt", "ok")
@@ -695,7 +695,7 @@ def test_contract_artifact_egress_allows_normal_archive(tmp_path):
     err = _validate_contract_artifact_egress(
         path=archive_path,
         outdir=outdir,
-        rel="turn_1/outputs/report.zip",
+        rel="turn_1/files/report.zip",
         mime="application/zip",
     )
 
@@ -704,14 +704,14 @@ def test_contract_artifact_egress_allows_normal_archive(tmp_path):
 
 def test_contract_artifact_egress_rejects_corrupt_zip(tmp_path):
     outdir = tmp_path / "out"
-    archive_path = outdir / "turn_1" / "outputs" / "broken.zip"
+    archive_path = outdir / "turn_1" / "files" / "broken.zip"
     archive_path.parent.mkdir(parents=True)
     archive_path.write_bytes(b"not a zip")
 
     err = _validate_contract_artifact_egress(
         path=archive_path,
         outdir=outdir,
-        rel="turn_1/outputs/broken.zip",
+        rel="turn_1/files/broken.zip",
         mime="application/zip",
     )
 
@@ -722,7 +722,7 @@ def test_contract_artifact_egress_rejects_corrupt_zip(tmp_path):
 
 def test_contract_artifact_egress_rejects_empty_zip(tmp_path):
     outdir = tmp_path / "out"
-    archive_path = outdir / "turn_1" / "outputs" / "empty.zip"
+    archive_path = outdir / "turn_1" / "files" / "empty.zip"
     archive_path.parent.mkdir(parents=True)
     with zipfile.ZipFile(archive_path, "w"):
         pass
@@ -730,7 +730,7 @@ def test_contract_artifact_egress_rejects_empty_zip(tmp_path):
     err = _validate_contract_artifact_egress(
         path=archive_path,
         outdir=outdir,
-        rel="turn_1/outputs/empty.zip",
+        rel="turn_1/files/empty.zip",
         mime="application/zip",
     )
 
@@ -785,7 +785,7 @@ async def test_run_exec_tool_reports_runtime_quota_error_but_keeps_succeeded_art
 
         async def execute_py_code(self, **kwargs):
             artifact_root = exec_tools_module.artifact_outdir_for(kwargs["output_dir"])
-            target = artifact_root / "turn_1" / "outputs" / "stats" / "report.txt"
+            target = artifact_root / "turn_1" / "files" / "stats" / "report.txt"
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text("partial report\n", encoding="utf-8")
             return {
@@ -813,7 +813,7 @@ async def test_run_exec_tool_reports_runtime_quota_error_but_keeps_succeeded_art
         code="print('ok')",
         contract=[{
             "name": "report",
-            "filepath": "turn_1/outputs/stats/report.txt",
+            "filepath": "turn_1/files/stats/report.txt",
             "mime": "text/plain",
             "description": "Report text",
             "visibility": "external",
@@ -825,9 +825,9 @@ async def test_run_exec_tool_reports_runtime_quota_error_but_keeps_succeeded_art
 
     assert result["ok"] is False
     assert result["error"]["code"] == "workspace_size_limit"
-    assert result["succeeded"] == [{"artifact_id": "report", "filepath": "turn_1/outputs/stats/report.txt"}]
+    assert result["succeeded"] == [{"artifact_id": "report", "filepath": "turn_1/files/stats/report.txt"}]
     assert len(result["items"]) == 1
-    assert result["items"][0]["output"]["path"] == "turn_1/outputs/stats/report.txt"
+    assert result["items"][0]["output"]["path"] == "turn_1/files/stats/report.txt"
     assert "Status: error" in result["report_text"]
     assert "Succeeded:\n- report.txt" in result["report_text"]
 
@@ -942,7 +942,7 @@ async def test_run_exec_tool_uses_configured_text_preview_symbols(tmp_path, monk
         async def execute_py_code(self, **kwargs):
             output_dir = kwargs["output_dir"]
             artifact_root = exec_tools_module.artifact_outdir_for(output_dir)
-            target = artifact_root / "turn_1" / "outputs" / "report.txt"
+            target = artifact_root / "turn_1" / "files" / "report.txt"
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text("abcdef" * 20, encoding="utf-8")
             return {"ok": True, "returncode": 0}
@@ -964,7 +964,7 @@ async def test_run_exec_tool_uses_configured_text_preview_symbols(tmp_path, monk
         code="print('ok')",
         contract=[{
             "name": "report",
-            "filepath": "turn_1/outputs/report.txt",
+            "filepath": "turn_1/files/report.txt",
             "mime": "text/plain",
             "description": "Report text",
             "visibility": "external",
@@ -984,8 +984,8 @@ async def test_run_exec_tool_uses_configured_text_preview_symbols(tmp_path, monk
 
 
 @pytest.mark.asyncio
-async def test_run_exec_tool_auto_hosts_uncontracted_outputs_as_internal(tmp_path, monkeypatch):
-    # Backstop: a file produced under outputs/ but NOT listed in the contract must not
+async def test_run_exec_tool_auto_hosts_uncontracted_files_as_internal(tmp_path, monkeypatch):
+    # Backstop: a file produced under files/ but NOT listed in the contract must not
     # be silently lost — it is auto-kept as INTERNAL (never delivered to the user) and a
     # notice in report_text tells the agent to contract such files explicitly next time.
     class _FakeRuntime:
@@ -993,7 +993,7 @@ async def test_run_exec_tool_auto_hosts_uncontracted_outputs_as_internal(tmp_pat
             self.logger = logger
 
         async def execute_py_code(self, **kwargs):
-            root = exec_tools_module.artifact_outdir_for(kwargs["output_dir"]) / "turn_1" / "outputs"
+            root = exec_tools_module.artifact_outdir_for(kwargs["output_dir"]) / "turn_1" / "files"
             root.mkdir(parents=True, exist_ok=True)
             (root / "report.txt").write_text("hello", encoding="utf-8")          # contracted
             (root / "chart.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"x" * 64)    # NOT contracted
@@ -1015,7 +1015,7 @@ async def test_run_exec_tool_auto_hosts_uncontracted_outputs_as_internal(tmp_pat
         code="print('ok')",
         contract=[{
             "name": "report",
-            "filepath": "turn_1/outputs/report.txt",
+            "filepath": "turn_1/files/report.txt",
             "mime": "text/plain",
             "description": "Report text",
             "visibility": "external",
@@ -1031,9 +1031,9 @@ async def test_run_exec_tool_auto_hosts_uncontracted_outputs_as_internal(tmp_pat
     assert auto is not None
     assert auto["visibility"] == "internal"
     assert auto.get("auto_hosted") is True
-    assert auto["path"] == "turn_1/outputs/chart.png"
+    assert auto["path"] == "turn_1/files/chart.png"
     # The contracted report keeps its external visibility.
     assert outputs["artifact:report"]["visibility"] == "external"
     # The agent-visible report names the auto-kept file so the agent learns to contract it.
     assert "Auto-kept" in result["report_text"]
-    assert "turn_1/outputs/chart.png" in result["report_text"]
+    assert "turn_1/files/chart.png" in result["report_text"]

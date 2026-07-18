@@ -32,7 +32,7 @@ class _FakeComm:
 async def test_read_missing_paths_notice(tmp_path):
     runtime = RuntimeCtx(turn_id="turn_read", outdir=str(tmp_path), workdir=str(tmp_path))
     ctx = FakeBrowser(runtime)
-    state = {"last_decision": {"tool_call": {"params": {"paths": ["fi:turn_read.files/missing.md"]}}}}
+    state = {"last_decision": {"tool_call": {"params": {"paths": ["conv:fi:turn_read.files/missing.md"]}}}}
     await handle_react_read(ctx_browser=ctx, state=state, tool_call_id="r1")
     assert any(b.get("type") == "react.notice" for b in ctx.timeline.blocks)
 
@@ -41,12 +41,12 @@ async def test_read_missing_paths_notice(tmp_path):
 async def test_read_returns_latest_version(tmp_path):
     runtime = RuntimeCtx(turn_id="turn_read", outdir=str(tmp_path), workdir=str(tmp_path))
     ctx = FakeBrowser(runtime)
-    path = "fi:turn_read.files/report.md"
+    path = "conv:fi:turn_read.files/report.md"
     # older version
     ctx.timeline.blocks.append({
         "type": "react.tool.result",
         "mime": "application/json",
-        "text": '{"artifact_path":"fi:turn_read.files/report.md","physical_path":"turn_read/files/report.md"}',
+        "text": '{"artifact_path":"conv:fi:turn_read.files/report.md","physical_path":"turn_read/files/report.md"}',
         "turn_id": "turn_read",
     })
     ctx.timeline.blocks.append({
@@ -60,7 +60,7 @@ async def test_read_returns_latest_version(tmp_path):
     ctx.timeline.blocks.append({
         "type": "react.tool.result",
         "mime": "application/json",
-        "text": '{"artifact_path":"fi:turn_read.files/report.md","physical_path":"turn_read/files/report.md"}',
+        "text": '{"artifact_path":"conv:fi:turn_read.files/report.md","physical_path":"turn_read/files/report.md"}',
         "turn_id": "turn_read",
     })
     ctx.timeline.blocks.append({
@@ -76,18 +76,19 @@ async def test_read_returns_latest_version(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_read_supports_outdir_relative_fi_paths(tmp_path):
+async def test_read_supports_canonical_file_refs(tmp_path):
     runtime = RuntimeCtx(turn_id="turn_read", outdir=str(tmp_path), workdir=str(tmp_path))
     ctx = FakeBrowser(runtime)
-    logs_dir = tmp_path / "logs"
+    logs_dir = artifact_outdir_for(tmp_path) / "turn_read" / "files" / "logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
     (logs_dir / "docker.err.log").write_text("boom", encoding="utf-8")
 
-    state = {"last_decision": {"tool_call": {"params": {"paths": ["fi:logs/docker.err.log"]}}}}
+    path = "conv:fi:turn_read.files/logs/docker.err.log"
+    state = {"last_decision": {"tool_call": {"params": {"paths": [path]}}}}
     await handle_react_read(ctx_browser=ctx, state=state, tool_call_id="r3")
 
     assert any(
-        b.get("path") == "fi:logs/docker.err.log" and b.get("text") == "boom"
+        b.get("path") == path and b.get("text") == "boom"
         for b in ctx.timeline.blocks
         if b.get("type") == "react.tool.result"
     )
@@ -108,7 +109,7 @@ async def test_read_external_followup_svg_attachment_as_text(tmp_path):
     )
     physical.parent.mkdir(parents=True, exist_ok=True)
     physical.write_text('<svg xmlns="http://www.w3.org/2000/svg"><text>diagram</text></svg>', encoding="utf-8")
-    path = "fi:turn_read.external.external_event.attachments/evt_1/diagram.svg"
+    path = "conv:fi:turn_read.external.external_event.attachments/evt_1/diagram.svg"
     state = {"last_decision": {"tool_call": {"params": {"paths": [path]}}}}
 
     await handle_react_read(ctx_browser=ctx, state=state, tool_call_id="r_svg")
@@ -124,10 +125,10 @@ async def test_read_external_followup_svg_attachment_as_text(tmp_path):
 async def test_read_preserves_pulled_namespace_object_ref_metadata(tmp_path):
     runtime = RuntimeCtx(turn_id="turn_read", outdir=str(tmp_path), workdir=str(tmp_path))
     ctx = FakeBrowser(runtime)
-    physical = tmp_path / "turn_read" / "files" / "memory.json"
+    physical = artifact_outdir_for(tmp_path) / "turn_read" / "files" / "memory.json"
     physical.parent.mkdir(parents=True, exist_ok=True)
     physical.write_text('{"ok": true, "memory": {"memory": "Prefer concise docs"}}', encoding="utf-8")
-    path = "fi:turn_read.files/memory.json"
+    path = "conv:fi:turn_read.files/memory.json"
     state = {
         "last_decision": {"tool_call": {"params": {"paths": [path]}}},
         "pulled_logical_refs": {
@@ -199,10 +200,10 @@ async def test_read_stats_only_includes_original_object_stats_from_owner_policy(
     }])
     runtime = RuntimeCtx(turn_id="turn_read", outdir=str(tmp_path), workdir=str(tmp_path), event_sources=event_sources)
     ctx = FakeBrowser(runtime)
-    physical = tmp_path / "turn_read" / "files" / "memory.json"
+    physical = artifact_outdir_for(tmp_path) / "turn_read" / "files" / "memory.json"
     physical.parent.mkdir(parents=True, exist_ok=True)
     physical.write_text('{"ok": true, "memory": {"memory": "Prefer concise docs"}}', encoding="utf-8")
-    path = "fi:turn_read.files/memory.json"
+    path = "conv:fi:turn_read.files/memory.json"
     state = {
         "last_decision": {"tool_call": {"params": {"paths": [path], "stats_only": True}}},
         "pulled_logical_refs": {
@@ -219,7 +220,7 @@ async def test_read_stats_only_includes_original_object_stats_from_owner_policy(
     status = json.loads(next(
         b["text"]
         for b in ctx.timeline.blocks
-        if b.get("path") == "tc:turn_read.r_stats_original.result" and b.get("mime") == "application/json"
+        if b.get("path") == "conv:tc:turn_read.r_stats_original.result" and b.get("mime") == "application/json"
     ))
     stats = status["paths"][0]["original_object_stats"]
     assert stats["kind"] == "demo_object"
@@ -267,10 +268,10 @@ async def test_read_projects_pulled_namespace_ref_through_owner_event_source(tmp
     }])
     runtime = RuntimeCtx(turn_id="turn_read", outdir=str(tmp_path), workdir=str(tmp_path), event_sources=event_sources)
     ctx = FakeBrowser(runtime)
-    physical = tmp_path / "turn_read" / "files" / "memory.json"
+    physical = artifact_outdir_for(tmp_path) / "turn_read" / "files" / "memory.json"
     physical.parent.mkdir(parents=True, exist_ok=True)
     physical.write_text('{"ok": true, "memory": {"memory": "Prefer concise docs"}}', encoding="utf-8")
-    path = "fi:turn_read.files/memory.json"
+    path = "conv:fi:turn_read.files/memory.json"
     state = {
         "last_decision": {"tool_call": {"params": {"paths": [path]}}},
         "pulled_logical_refs": {
@@ -302,11 +303,12 @@ async def test_read_projects_pulled_namespace_ref_through_owner_event_source(tmp
 async def test_read_duplicate_visible_content_returns_visible_ref(tmp_path):
     runtime = RuntimeCtx(turn_id="turn_read", outdir=str(tmp_path), workdir=str(tmp_path))
     ctx = FakeBrowser(runtime)
-    logs_dir = tmp_path / "logs"
+    logs_dir = artifact_outdir_for(tmp_path) / "turn_read" / "files" / "logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
     (logs_dir / "note.md").write_text("already visible", encoding="utf-8")
 
-    state = {"last_decision": {"tool_call": {"params": {"paths": ["fi:logs/note.md"]}}}}
+    path = "conv:fi:turn_read.files/logs/note.md"
+    state = {"last_decision": {"tool_call": {"params": {"paths": [path]}}}}
     await handle_react_read(ctx_browser=ctx, state=state, tool_call_id="r_visible_1")
     await handle_react_read(ctx_browser=ctx, state=state, tool_call_id="r_visible_2")
 
@@ -314,7 +316,7 @@ async def test_read_duplicate_visible_content_returns_visible_ref(tmp_path):
     for b in ctx.timeline.blocks:
         if (
             b.get("type") != "react.tool.result"
-            or b.get("path") != "tc:turn_read.r_visible_2.result"
+            or b.get("path") != "conv:tc:turn_read.r_visible_2.result"
             or b.get("mime") != "application/json"
         ):
             continue
@@ -323,17 +325,17 @@ async def test_read_duplicate_visible_content_returns_visible_ref(tmp_path):
             summaries.append(payload)
 
     assert summaries
-    assert summaries[-1]["exists_in_visible_context"] == ["fi:logs/note.md"]
-    ref = summaries[-1]["visible_context_refs"]["fi:logs/note.md"]
-    assert ref["path"] == "fi:logs/note.md"
-    assert ref["tool_result_path"] == "tc:turn_read.r_visible_1.result"
+    assert summaries[-1]["exists_in_visible_context"] == [path]
+    ref = summaries[-1]["visible_context_refs"][path]
+    assert ref["path"] == path
+    assert ref["tool_result_path"] == "conv:tc:turn_read.r_visible_1.result"
 
 
 @pytest.mark.asyncio
 async def test_read_tc_result_prefers_inline_payload_over_meta(tmp_path):
     runtime = RuntimeCtx(turn_id="turn_read", outdir=str(tmp_path), workdir=str(tmp_path))
     ctx = FakeBrowser(runtime)
-    source_path = "tc:turn_src.pref1.result"
+    source_path = "conv:tc:turn_src.pref1.result"
 
     ctx.timeline.blocks.extend([
         {
@@ -341,7 +343,7 @@ async def test_read_tc_result_prefers_inline_payload_over_meta(tmp_path):
             "mime": "application/json",
             "path": source_path,
             "text": (
-                '{"artifact_path":"tc:turn_src.pref1.result","mime":"application/json",'
+                '{"artifact_path":"conv:tc:turn_src.pref1.result","mime":"application/json",'
                 '"kind":"file","visibility":"internal","tool_call_id":"pref1"}'
             ),
             "turn_id": "turn_src",
@@ -378,7 +380,7 @@ async def test_read_tc_result_prefers_inline_payload_over_meta(tmp_path):
 async def test_read_tc_items_materializes_line_range(tmp_path):
     runtime = RuntimeCtx(turn_id="turn_read", outdir=str(tmp_path), workdir=str(tmp_path), max_tokens=80_000)
     ctx = FakeBrowser(runtime)
-    source_path = "tc:turn_src.tc_big.call"
+    source_path = "conv:tc:turn_src.tc_big.call"
     ctx.timeline.blocks.append({
         "type": "react.tool.call",
         "mime": "text/plain",
@@ -424,7 +426,7 @@ async def test_read_tc_items_materializes_line_range(tmp_path):
     status = next(
         json.loads(b["text"])
         for b in ctx.timeline.blocks
-        if b.get("path") == "tc:turn_read.r_tc_range.result" and b.get("mime") == "application/json"
+        if b.get("path") == "conv:tc:turn_read.r_tc_range.result" and b.get("mime") == "application/json"
     )
     assert status["paths"][0]["read_range"]["line_start"] == 2
     assert status["paths"][0]["read_range"]["visible_lines"] == 2
@@ -434,7 +436,7 @@ async def test_read_tc_items_materializes_line_range(tmp_path):
 async def test_read_ev_event_path(tmp_path):
     runtime = RuntimeCtx(turn_id="turn_read", outdir=str(tmp_path), workdir=str(tmp_path), max_tokens=80_000)
     ctx = FakeBrowser(runtime)
-    event_path = "ev:turn_src.events/task-tracker/canvas/review/evt_1"
+    event_path = "conv:ev:turn_src.events/task-tracker/canvas/review/evt_1"
     ctx.timeline.blocks.append({
         "type": "event.external",
         "mime": "application/json",
@@ -469,7 +471,7 @@ async def test_read_ev_event_path(tmp_path):
 async def test_read_items_materializes_multiple_line_ranges(tmp_path):
     runtime = RuntimeCtx(turn_id="turn_read", outdir=str(tmp_path), workdir=str(tmp_path), max_tokens=80_000)
     ctx = FakeBrowser(runtime)
-    out_file = tmp_path / "turn_read" / "outputs" / "page.html"
+    out_file = artifact_outdir_for(tmp_path) / "turn_read" / "files" / "page.html"
     out_file.parent.mkdir(parents=True, exist_ok=True)
     out_file.write_text("\n".join([
         "<html>",
@@ -481,7 +483,7 @@ async def test_read_items_materializes_multiple_line_ranges(tmp_path):
         "</html>",
     ]), encoding="utf-8")
 
-    source_path = "fi:turn_read.outputs/page.html"
+    source_path = "conv:fi:turn_read.files/page.html"
     state = {
         "last_decision": {
             "tool_call": {
@@ -513,7 +515,7 @@ async def test_read_items_materializes_multiple_line_ranges(tmp_path):
     status = next(
         json.loads(b["text"])
         for b in ctx.timeline.blocks
-        if b.get("path") == "tc:turn_read.r_ranges.result" and b.get("mime") == "application/json"
+        if b.get("path") == "conv:tc:turn_read.r_ranges.result" and b.get("mime") == "application/json"
     )
     assert len(status["paths"]) == 2
     assert status["paths"][0]["read_range"]["line_start"] == 3
@@ -577,7 +579,7 @@ async def test_read_ks_items_materializes_line_range(tmp_path):
     status = json.loads(next(
         b["text"]
         for b in ctx.timeline.blocks
-        if b.get("path") == "tc:turn_read.r_ks_range.result" and b.get("mime") == "application/json"
+        if b.get("path") == "conv:tc:turn_read.r_ks_range.result" and b.get("mime") == "application/json"
     ))
     assert status["paths"][0]["read_range"]["line_start"] == 3
     assert status["paths"][0]["read_range"]["line_end"] == 4
@@ -617,7 +619,7 @@ async def test_read_ks_stats_includes_line_count(tmp_path):
     status = json.loads(next(
         b["text"]
         for b in ctx.timeline.blocks
-        if b.get("path") == "tc:turn_read.r_ks_stats.result" and b.get("mime") == "application/json"
+        if b.get("path") == "conv:tc:turn_read.r_ks_stats.result" and b.get("mime") == "application/json"
     ))
     assert status["paths"][0]["status"] == "stats_only"
     assert status["paths"][0]["kind"] == "text"
@@ -870,7 +872,7 @@ async def test_read_skill_is_materialized_once_by_logical_path(monkeypatch, tmp_
     for block in ctx.timeline.blocks:
         if (
             block.get("type") == "react.tool.result"
-            and block.get("path") == "tc:turn_read.r_skill_2.result"
+            and block.get("path") == "conv:tc:turn_read.r_skill_2.result"
             and block.get("mime") == "application/json"
         ):
             summaries.append(json.loads(block.get("text") or "{}"))
@@ -937,10 +939,10 @@ async def test_read_skill_hidden_by_pruning_is_not_treated_as_visible(monkeypatc
 async def test_read_range_materializes_even_when_full_path_visible(tmp_path):
     runtime = RuntimeCtx(turn_id="turn_read", outdir=str(tmp_path), workdir=str(tmp_path), max_tokens=80_000)
     ctx = FakeBrowser(runtime)
-    out_file = tmp_path / "turn_read" / "outputs" / "visible.md"
+    out_file = artifact_outdir_for(tmp_path) / "turn_read" / "files" / "visible.md"
     out_file.parent.mkdir(parents=True, exist_ok=True)
     out_file.write_text("line 1\nline 2\nline 3\nline 4\n", encoding="utf-8")
-    source_path = "fi:turn_read.outputs/visible.md"
+    source_path = "conv:fi:turn_read.files/visible.md"
 
     await handle_react_read(
         ctx_browser=ctx,
@@ -982,7 +984,7 @@ async def test_read_large_image_file_returns_downscaled_multimodal_preview(tmp_p
         read_visible_max_bytes=90_000,
     )
     ctx = FakeBrowser(runtime)
-    out_file = tmp_path / "turn_read" / "outputs" / "large.png"
+    out_file = artifact_outdir_for(tmp_path) / "turn_read" / "files" / "large.png"
     out_file.parent.mkdir(parents=True, exist_ok=True)
     rng = random.Random(123)
     width = height = 900
@@ -990,7 +992,7 @@ async def test_read_large_image_file_returns_downscaled_multimodal_preview(tmp_p
     Image.frombytes("RGB", (width, height), payload).save(out_file, "PNG")
     assert out_file.stat().st_size > runtime.read_visible_max_bytes
 
-    source_path = "fi:turn_read.outputs/large.png"
+    source_path = "conv:fi:turn_read.files/large.png"
     state = {"last_decision": {"tool_call": {"params": {"paths": [source_path]}}}}
     await handle_react_read(ctx_browser=ctx, state=state, tool_call_id="r_img")
 
@@ -1007,7 +1009,7 @@ async def test_read_large_image_file_returns_downscaled_multimodal_preview(tmp_p
     status = json.loads(next(
         b["text"]
         for b in read_blocks
-        if b.get("path") == "tc:turn_read.r_img.result" and b.get("mime") == "application/json"
+        if b.get("path") == "conv:tc:turn_read.r_img.result" and b.get("mime") == "application/json"
     ))
     assert status["paths"][0]["status"] == "image_downscaled_for_visible_context"
     assert status["paths"][0]["image_view"]["visible_size_bytes"] <= runtime.read_visible_max_bytes

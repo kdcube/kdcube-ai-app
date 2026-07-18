@@ -45,9 +45,9 @@ class FakeBackend:
         self.catalog_kwargs = kwargs
         return [{
             "turn_id": "turn_second",
-            "turn_index_path": "ar:turn_second.react.turn.index",
-            "working_summary_path": "ws:turn_second.conv.working.summary",
-            "user_path": "ar:turn_second.user.prompt",
+            "turn_index_path": "conv:ar:turn_second.react.turn.index",
+            "working_summary_path": "conv:ws:turn_second.conv.working.summary",
+            "user_path": "conv:ar:turn_second.user.prompt",
             "ordinal": 2,
             "total_turns": 8,
             "started_at": "2026-05-03T01:17:11Z",
@@ -68,7 +68,7 @@ async def test_hybrid_search_uses_explicit_context_no_ambient_state():
                 "type": "conv.working.summary",
                 "turn_id": "turn_prev",
                 "ts": "2026-05-05T10:00:00Z",
-                "path": "ws:turn_prev.conv.working.summary",
+                "path": "conv:ws:turn_prev.conv.working.summary",
                 "text": "Goal: retrieve invoices.",
                 "meta": {},
             }

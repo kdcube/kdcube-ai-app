@@ -16,7 +16,7 @@ async def _render_pdf_into_timeline(monkeypatch, tmp_path):
             "tool_call": {
                 "tool_id": "rendering_tools.write_pdf",
                 "params": {
-                    "path": "outputs/test/small_test.pdf",
+                    "path": "files/test/small_test.pdf",
                     "content": "<html><body>x</body></html>",
                 },
             }
@@ -51,7 +51,7 @@ async def test_react_hide_hides_rendered_pdf_artifact_path(monkeypatch, tmp_path
             "tool_call": {
                 "tool_id": "react.hide",
                 "params": {
-                    "path": "fi:turn_hide.outputs/test/small_test.pdf",
+                    "path": "conv:fi:turn_hide.files/test/small_test.pdf",
                     "replacement": "Small PDF hidden.",
                 },
             }
@@ -65,7 +65,7 @@ async def test_react_hide_hides_rendered_pdf_artifact_path(monkeypatch, tmp_path
     assert payload["blocks_hidden"] >= 1
     hidden = [
         b for b in ctx.timeline.blocks
-        if b.get("path") == "fi:turn_hide.outputs/test/small_test.pdf" and b.get("hidden") is True
+        if b.get("path") == "conv:fi:turn_hide.files/test/small_test.pdf" and b.get("hidden") is True
     ]
     assert hidden
     assert "react.read(paths=[path])" in (hidden[0].get("replacement_text") or "")
@@ -79,7 +79,7 @@ async def test_react_hide_hides_tool_result_path(monkeypatch, tmp_path):
             "tool_call": {
                 "tool_id": "react.hide",
                 "params": {
-                    "path": "tc:turn_hide.pdf1.result",
+                    "path": "conv:tc:turn_hide.pdf1.result",
                     "replacement": "PDF generation summary hidden.",
                 },
             }

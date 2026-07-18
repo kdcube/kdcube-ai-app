@@ -1338,10 +1338,10 @@ class ConvIndex:
                 if index_meta.get("blocks_count") is not None:
                     r["blocks_count"] = index_meta.get("blocks_count")
             if turn_id:
-                r["turn_index_path"] = f"ar:{turn_id}.react.turn.index"
-                r["working_summary_path"] = f"ws:{turn_id}.conv.working.summary"
-                r["user_path"] = f"ar:{turn_id}.user.prompt"
-                r["assistant_path"] = f"ar:{turn_id}.assistant.completion"
+                r["turn_index_path"] = f"conv:ar:{turn_id}.react.turn.index"
+                r["working_summary_path"] = f"conv:ws:{turn_id}.conv.working.summary"
+                r["user_path"] = f"conv:ar:{turn_id}.user.prompt"
+                r["assistant_path"] = f"conv:ar:{turn_id}.assistant.completion"
             r["started_at"] = r.get("ts")
             about = (
                 r.get("working_summary_text")

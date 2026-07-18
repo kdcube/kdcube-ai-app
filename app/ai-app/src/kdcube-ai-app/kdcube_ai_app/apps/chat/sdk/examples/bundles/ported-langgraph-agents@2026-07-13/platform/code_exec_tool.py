@@ -83,7 +83,7 @@ def _format_result(result: dict) -> str:
             link = str(f.get("logical_path") or "").strip()
             filename = str(f.get("filename") or "").strip() or "(file)"
             mime = str(f.get("mime") or "").strip() or "application/octet-stream"
-            # Prefer the downloadable `fi:conv_…` link (what the chat UI resolves);
+            # Prefer the downloadable `conv:fi:conv_…` link (what the chat UI resolves);
             # fall back to the rn if the link is unavailable.
             ref = f"link={link}" if link else f"rn={rn}"
             lines.append(f"- {filename} [{mime}] {ref}")

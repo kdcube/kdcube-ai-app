@@ -916,6 +916,24 @@ def build_announce_workspace_lines(
             marker = "/" if child.is_dir() else ""
             out.append(f"      {name}{marker}{suffix}")
 
+    def _render_snapshots_namespace(
+        out: List[str],
+        root_path: pathlib.Path,
+        *,
+        show_empty: bool = False,
+    ) -> None:
+        snapshots_root = root_path / "git" / "snapshots"
+        files, total = _rel_files(snapshots_root)
+        if not files:
+            if show_empty:
+                out.append("    git/snapshots/ (empty)")
+            return
+        out.append("    git/snapshots/")
+        for rel in files:
+            out.append(f"      {rel}")
+        if total > len(files):
+            out.append(f"      \u2026 +{total - len(files)} more")
+
     def _render_recursive_namespace(
         out: List[str],
         ns_path: pathlib.Path,
@@ -986,11 +1004,13 @@ def build_announce_workspace_lines(
         rendered: set[str] = set()
         if is_current:
             _render_projects_namespace(entry_lines, entry, is_current=is_current, show_empty=True)
+            _render_snapshots_namespace(entry_lines, entry, show_empty=True)
             rendered.add("git")
-        elif (entry / "git" / "projects").is_dir():
+        elif (entry / "git").is_dir():
             _render_projects_namespace(entry_lines, entry, is_current=is_current)
+            _render_snapshots_namespace(entry_lines, entry)
             rendered.add("git")
-        ordered_names = ["git", "attachments", "external"]
+        ordered_names = ["git", "files", "attachments", "external"]
         for child_name in ordered_names:
             child = by_name.get(child_name)
             if child_name in rendered:

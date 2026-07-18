@@ -48,8 +48,9 @@ class ArtifactNamespaceRehosterDeclaration:
     bytes into the ReAct artifact surface, returning normal `conv:fi:`/physical path
     rows that `react.read`, `react.pull`, and `react.checkout` already know how
     to use. The rehoster chooses the destination by artifact meaning: workspace
-    state goes to files, story/wizard state goes to snapshots, evidence goes to
-    external event attachments, and produced deliverables go to outputs.
+    state goes to git/projects, story/wizard state goes to git/snapshots,
+    evidence goes to external event attachments, and produced deliverables go
+    to files.
     """
 
     namespace: str

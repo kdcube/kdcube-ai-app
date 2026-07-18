@@ -145,6 +145,16 @@ async def handle_react_write(*, react: Any, ctx_browser: Any, state: Dict[str, A
         state["exit_reason"] = "error"
         state["error"] = {"where": "tool_execution", "error": "missing_artifact_name", "managed": True}
         return state
+    if ":" in artifact_name and not artifact_name.startswith(
+        CONVERSATION_FILE_REF_PREFIX
+    ):
+        state["exit_reason"] = "error"
+        state["error"] = {
+            "where": "tool_execution",
+            "error": "invalid_write_logical_path",
+            "managed": True,
+        }
+        return state
     ext_notice = None
     rewrite_notice = None
     if artifact_name.startswith(CONVERSATION_FILE_REF_PREFIX) and all(

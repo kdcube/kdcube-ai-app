@@ -26,8 +26,11 @@ def _path_prefixes(value: Any) -> list[str]:
             path = item.strip()
         if not path:
             continue
-        if ":" in path:
-            prefixes.add(path.split(":", 1)[0] + ":")
+        parts = path.split(":")
+        if len(parts) >= 3 and parts[0] == "conv" and parts[1]:
+            prefixes.add(f"conv:{parts[1]}:")
+        elif ":" in path:
+            prefixes.add(parts[0] + ":")
         else:
             prefixes.add("plain")
     return sorted(prefixes)

@@ -12,6 +12,7 @@ import pytest
 
 from kdcube_ai_app.apps.chat.sdk.events import event_source_declaration
 from kdcube_ai_app.apps.chat.sdk.events.subsystem import EventSourceSubsystem
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace import artifact_outdir_for
 from kdcube_ai_app.apps.chat.sdk.solutions.react.events.policies import announce_event_policy
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.timeline import Timeline
 from kdcube_ai_app.apps.chat.sdk.solutions.react.proto import RuntimeCtx
@@ -66,7 +67,7 @@ async def test_event_timeline_projection_renders_json_without_mutating_storage()
         "event_id": "ev_1",
         "event_source_id": "bundle.snapshot",
         "event_type": "event.snapshot",
-        "logical_path": "ev:turn_cur.events/ev_1",
+        "logical_path": "conv:ev:turn_cur.events/ev_1",
         "story_id": "issue:BUG-1",
         "reactive": False,
         "status": "success",
@@ -82,7 +83,7 @@ async def test_event_timeline_projection_renders_json_without_mutating_storage()
             author="user",
             turn_id="turn_cur",
             ts="2026-02-09T00:00:00Z",
-            path="ev:turn_cur.events/ev_1",
+            path="conv:ev:turn_cur.events/ev_1",
             mime="application/json",
             text=json.dumps(raw_event, indent=2),
             meta={
@@ -160,13 +161,13 @@ async def test_announce_production_runs_after_cache_markers_and_stays_uncached()
             author="user",
             turn_id="turn_cur",
             ts=ctx.started_at,
-            path="ev:turn_cur.events/ev_canvas",
+            path="conv:ev:turn_cur.events/ev_canvas",
             mime="application/json",
             text=json.dumps({
                 "event_id": "ev_canvas",
                 "event_source_id": "bundle.canvas",
                 "event_type": "event.canvas",
-                "logical_path": "ev:turn_cur.events/ev_canvas",
+                "logical_path": "conv:ev:turn_cur.events/ev_canvas",
                 "status": "success",
                 "ret": {"canvas_id": "canvas:user:main", "revision": 3},
             }),
@@ -185,13 +186,13 @@ async def test_announce_production_runs_after_cache_markers_and_stays_uncached()
 
     assert "[CANVAS EVENT]" in all_text
     assert "event_source_id: bundle.canvas" in all_text
-    assert "ANNOUNCE canvas ready: ev:turn_cur.events/ev_canvas" in all_text
+    assert "ANNOUNCE canvas ready: conv:ev:turn_cur.events/ev_canvas" in all_text
     assert announce_blocks and not announce_blocks[0].get("cache")
     assert not any((block.get("meta") or {}).get("event_render_policy") for block in tl.blocks)
 
 
 def test_bind_params_normalizes_visible_physical_artifact_ref_to_logical_ref(tmp_path):
-    artifact = tmp_path / "turn_cur" / "outputs" / "report.html"
+    artifact = artifact_outdir_for(tmp_path) / "turn_cur" / "files" / "report.html"
     artifact.parent.mkdir(parents=True)
     artifact.write_text("<html>ok</html>", encoding="utf-8")
     ctx = RuntimeCtx(turn_id="turn_cur", started_at="2026-02-09T00:00:00Z", outdir=str(tmp_path))
@@ -199,18 +200,18 @@ def test_bind_params_normalizes_visible_physical_artifact_ref_to_logical_ref(tmp
     tl.blocks.append({
         "type": "react.tool.result",
         "turn_id": "turn_cur",
-        "path": "fi:turn_cur.outputs/report.html",
+        "path": "conv:fi:turn_cur.files/report.html",
         "mime": "text/html",
         "text": "<html>ok</html>",
         "meta": {
-            "artifact_path": "fi:turn_cur.outputs/report.html",
-            "physical_path": "turn_cur/outputs/report.html",
+            "artifact_path": "conv:fi:turn_cur.files/report.html",
+            "physical_path": "turn_cur/files/report.html",
             "visibility": "external",
         },
     })
 
     params, _lineage, violations = tl.bind_params_with_refs(
-        base_params={"content": "ref:turn_cur/outputs/report.html"},
+        base_params={"content": "ref:turn_cur/files/report.html"},
         tool_id="rendering_tools.write_pdf",
         visible_paths=tl.visible_paths(),
     )
@@ -219,8 +220,8 @@ def test_bind_params_normalizes_visible_physical_artifact_ref_to_logical_ref(tmp
     assert params["content"] == "<html>ok</html>"
 
 
-def test_bind_params_assumes_fi_for_visible_bare_artifact_ref(tmp_path):
-    artifact = tmp_path / "outputs" / "report.html"
+def test_bind_params_resolves_visible_canonical_artifact_ref(tmp_path):
+    artifact = artifact_outdir_for(tmp_path) / "turn_cur" / "files" / "report.html"
     artifact.parent.mkdir(parents=True)
     artifact.write_text("<html>bare</html>", encoding="utf-8")
     ctx = RuntimeCtx(turn_id="turn_cur", started_at="2026-02-09T00:00:00Z", outdir=str(tmp_path))
@@ -228,18 +229,18 @@ def test_bind_params_assumes_fi_for_visible_bare_artifact_ref(tmp_path):
     tl.blocks.append({
         "type": "react.tool.result",
         "turn_id": "turn_cur",
-        "path": "fi:outputs/report.html",
+        "path": "conv:fi:turn_cur.files/report.html",
         "mime": "text/html",
         "text": "<html>bare</html>",
         "meta": {
-            "artifact_path": "fi:outputs/report.html",
-            "physical_path": "outputs/report.html",
+            "artifact_path": "conv:fi:turn_cur.files/report.html",
+            "physical_path": "turn_cur/files/report.html",
             "visibility": "external",
         },
     })
 
     params, _lineage, violations = tl.bind_params_with_refs(
-        base_params={"content": "ref:outputs/report.html"},
+        base_params={"content": "ref:conv:fi:turn_cur.files/report.html"},
         tool_id="rendering_tools.write_pdf",
         visible_paths=tl.visible_paths(),
     )
@@ -248,8 +249,8 @@ def test_bind_params_assumes_fi_for_visible_bare_artifact_ref(tmp_path):
     assert params["content"] == "<html>bare</html>"
 
 
-def test_bind_params_normalizes_current_turn_outputs_ref_when_visible(tmp_path):
-    artifact = tmp_path / "turn_cur" / "outputs" / "ai_security_news" / "slides.html"
+def test_bind_params_normalizes_current_turn_files_ref_when_visible(tmp_path):
+    artifact = artifact_outdir_for(tmp_path) / "turn_cur" / "files" / "ai_security_news" / "slides.html"
     artifact.parent.mkdir(parents=True)
     artifact.write_text("<html>slides</html>", encoding="utf-8")
     ctx = RuntimeCtx(turn_id="turn_cur", started_at="2026-02-09T00:00:00Z", outdir=str(tmp_path))
@@ -257,18 +258,18 @@ def test_bind_params_normalizes_current_turn_outputs_ref_when_visible(tmp_path):
     tl.blocks.append({
         "type": "react.tool.result",
         "turn_id": "turn_cur",
-        "path": "fi:turn_cur.outputs/ai_security_news/slides.html",
+        "path": "conv:fi:turn_cur.files/ai_security_news/slides.html",
         "mime": "text/html",
         "text": "<html>slides</html>",
         "meta": {
-            "artifact_path": "fi:turn_cur.outputs/ai_security_news/slides.html",
-            "physical_path": "turn_cur/outputs/ai_security_news/slides.html",
+            "artifact_path": "conv:fi:turn_cur.files/ai_security_news/slides.html",
+            "physical_path": "turn_cur/files/ai_security_news/slides.html",
             "visibility": "external",
         },
     })
 
     params, _lineage, violations = tl.bind_params_with_refs(
-        base_params={"content": "ref:outputs/ai_security_news/slides.html"},
+        base_params={"content": "ref:files/ai_security_news/slides.html"},
         tool_id="rendering_tools.write_pptx",
         visible_paths=tl.visible_paths(),
     )
@@ -277,12 +278,12 @@ def test_bind_params_normalizes_current_turn_outputs_ref_when_visible(tmp_path):
     assert violations == [{
         "code": "ref_path_normalized",
         "severity": "warning",
-        "path": "outputs/ai_security_news/slides.html",
+        "path": "files/ai_security_news/slides.html",
         "param": "content",
-        "resolved_ref": "fi:turn_cur.outputs/ai_security_news/slides.html",
+        "resolved_ref": "conv:fi:turn_cur.files/ai_security_news/slides.html",
         "message": (
-            "Accepted shorthand `ref:outputs/ai_security_news/slides.html` because it matched visible artifact "
-            "`ref:fi:turn_cur.outputs/ai_security_news/slides.html`. Prefer the canonical ref next time."
+            "Accepted shorthand `ref:files/ai_security_news/slides.html` because it matched visible artifact "
+            "`ref:conv:fi:turn_cur.files/ai_security_news/slides.html`. Prefer the canonical ref next time."
         ),
     }]
 
@@ -292,7 +293,7 @@ def test_bind_params_reports_logical_ref_hint_for_unresolved_physical_ref():
     tl = Timeline(runtime=ctx)
 
     params, _lineage, violations = tl.bind_params_with_refs(
-        base_params={"content": "ref:turn_cur/outputs/missing.html"},
+        base_params={"content": "ref:turn_cur/files/missing.html"},
         tool_id="rendering_tools.write_pdf",
         visible_paths=tl.visible_paths(),
     )
@@ -300,19 +301,19 @@ def test_bind_params_reports_logical_ref_hint_for_unresolved_physical_ref():
     assert params["content"] is None
     assert violations == [{
         "code": "ref_not_visible",
-        "path": "turn_cur/outputs/missing.html",
+        "path": "turn_cur/files/missing.html",
         "param": "content",
-        "suggested_ref": "fi:turn_cur.outputs/missing.html",
-        "message": "ref: bindings use logical artifact paths such as fi:<turn>.outputs/<file>, not physical turn/<namespace>/<file> paths.",
+        "suggested_ref": "conv:fi:turn_cur.files/missing.html",
+        "message": "ref: bindings use logical artifact paths such as conv:fi:conv_<conversation_id>.turn_<id>.files/<file>, not physical turn/<namespace>/<file> paths.",
     }]
 
 
-def test_bind_params_reports_fi_hint_for_unresolved_bare_artifact_ref():
+def test_bind_params_reports_canonical_hint_for_unresolved_files_shorthand():
     ctx = RuntimeCtx(turn_id="turn_cur", started_at="2026-02-09T00:00:00Z")
     tl = Timeline(runtime=ctx)
 
     params, _lineage, violations = tl.bind_params_with_refs(
-        base_params={"content": "ref:outputs/missing.html"},
+        base_params={"content": "ref:files/missing.html"},
         tool_id="rendering_tools.write_pdf",
         visible_paths=tl.visible_paths(),
     )
@@ -320,10 +321,10 @@ def test_bind_params_reports_fi_hint_for_unresolved_bare_artifact_ref():
     assert params["content"] is None
     assert violations == [{
         "code": "ref_not_visible",
-        "path": "outputs/missing.html",
+        "path": "files/missing.html",
         "param": "content",
-        "suggested_ref": "fi:outputs/missing.html",
-        "message": "ref: bindings use logical artifact paths such as fi:<turn>.outputs/<file>, not physical turn/<namespace>/<file> paths.",
+        "suggested_ref": "conv:fi:turn_cur.files/missing.html",
+        "message": "ref: bindings use logical artifact paths such as conv:fi:conv_<conversation_id>.turn_<id>.files/<file>, not physical turn/<namespace>/<file> paths.",
     }]
 
 
@@ -368,7 +369,7 @@ def test_multimodal_token_estimate_counts_visible_timeline_blocks_only():
             turn_id=ctx.turn_id,
             ts=ctx.started_at,
             mime="application/pdf",
-            path="fi:turn_mm.user.attachments/doc.pdf",
+            path="conv:fi:turn_mm.user.attachments/doc.pdf",
             text="[USER ATTACHMENT] doc.pdf",
             base64=pdf_b64,
         )
@@ -380,7 +381,7 @@ def test_multimodal_token_estimate_counts_visible_timeline_blocks_only():
             turn_id=ctx.turn_id,
             ts=ctx.started_at,
             mime="application/pdf",
-            path="fi:turn_mm.user.attachments/doc.pdf",
+            path="conv:fi:turn_mm.user.attachments/doc.pdf",
             base64=pdf_b64,
             meta={"hidden": True, "replacement_text": "[HIDDEN] doc.pdf"},
         )
@@ -405,7 +406,7 @@ def test_generated_pdf_tool_result_is_not_attached_as_model_document():
             turn_id=ctx.turn_id,
             ts=ctx.started_at,
             mime="application/pdf",
-            path="fi:turn_pdf.outputs/report.pdf",
+            path="conv:fi:turn_pdf.files/report.pdf",
             text="[FILE] report.pdf",
             base64=pdf_b64,
         ),
@@ -426,7 +427,7 @@ def test_tool_result_summary_accepts_string_error_payload():
     tl = Timeline(runtime=ctx)
 
     payload = {
-        "artifact_path": "tc:turn_tool_error.tc_1.result",
+        "artifact_path": "conv:tc:turn_tool_error.tc_1.result",
         "mime": "text/plain",
         "kind": "file",
         "visibility": "internal",
@@ -443,7 +444,7 @@ def test_tool_result_summary_accepts_string_error_payload():
             turn_id=ctx.turn_id,
             ts=ctx.started_at,
             mime="application/json",
-            path="tc:turn_tool_error.tc_1.result",
+            path="conv:tc:turn_tool_error.tc_1.result",
             text=json.dumps(payload),
         ),
     ])
@@ -471,8 +472,8 @@ def test_react_read_pdf_result_is_attached_as_model_document():
             turn_id=ctx.turn_id,
             ts=ctx.started_at,
             mime="application/json",
-            path="tc:turn_pdf_read.read1.call",
-            text=json.dumps({"tool_id": "react.read", "tool_call_id": "read1", "params": {"paths": ["fi:turn_pdf_read.outputs/report.pdf"]}}),
+            path="conv:tc:turn_pdf_read.read1.call",
+            text=json.dumps({"tool_id": "react.read", "tool_call_id": "read1", "params": {"paths": ["conv:fi:turn_pdf_read.files/report.pdf"]}}),
         ),
         tl._block(
             type="react.tool.result",
@@ -480,7 +481,7 @@ def test_react_read_pdf_result_is_attached_as_model_document():
             turn_id=ctx.turn_id,
             ts=ctx.started_at,
             mime="application/pdf",
-            path="fi:turn_pdf_read.outputs/report.pdf",
+            path="conv:fi:turn_pdf_read.files/report.pdf",
             base64=pdf_b64,
             meta={"tool_call_id": "read1", "tool_id": "react.read"},
         ),
@@ -503,16 +504,16 @@ def test_timeline_rendering_with_attachment_and_tool_blocks():
             author="user",
             turn_id=ctx.turn_id,
             ts=ctx.started_at,
-            path="ar:turn_123.user.prompt",
-            text="[USER MESSAGE]\n[path: ar:turn_123.user.prompt]\nhello",
+            path="conv:ar:turn_123.user.prompt",
+            text="[USER MESSAGE]\n[path: conv:ar:turn_123.user.prompt]\nhello",
         ),
         tl._block(
             type="user.attachment.meta",
             author="user",
             turn_id=ctx.turn_id,
             ts=ctx.started_at,
-            path="fi:turn_123.user.attachments/menu.pdf",
-            text="[USER ATTACHMENT] menu.pdf | application/pdf\n[logical_path: fi:turn_123.user.attachments/menu.pdf]\n[physical_path: exists (derive)]",
+            path="conv:fi:turn_123.user.attachments/menu.pdf",
+            text="[USER ATTACHMENT] menu.pdf | application/pdf\n[logical_path: conv:fi:turn_123.user.attachments/menu.pdf]\n[physical_path: exists (derive)]",
             meta={"physical_path": "turn_123/attachments/menu.pdf"},
         ),
         tl._block(
@@ -520,7 +521,7 @@ def test_timeline_rendering_with_attachment_and_tool_blocks():
             author="user",
             turn_id=ctx.turn_id,
             ts=ctx.started_at,
-            path="fi:turn_123.user.attachments/menu.pdf",
+            path="conv:fi:turn_123.user.attachments/menu.pdf",
             mime="application/pdf",
             base64="QUJD",
         ),
@@ -529,8 +530,8 @@ def test_timeline_rendering_with_attachment_and_tool_blocks():
             author="user",
             turn_id=ctx.turn_id,
             ts=ctx.started_at,
-            path="fi:turn_123.user.attachments/notes.txt",
-            text="[USER ATTACHMENT] notes.txt | text/plain\n[logical_path: fi:turn_123.user.attachments/notes.txt]\n[physical_path: exists (derive)]",
+            path="conv:fi:turn_123.user.attachments/notes.txt",
+            text="[USER ATTACHMENT] notes.txt | text/plain\n[logical_path: conv:fi:turn_123.user.attachments/notes.txt]\n[physical_path: exists (derive)]",
             meta={"physical_path": "turn_123/attachments/notes.txt"},
         ),
         tl._block(
@@ -538,8 +539,8 @@ def test_timeline_rendering_with_attachment_and_tool_blocks():
             author="user",
             turn_id=ctx.turn_id,
             ts=ctx.started_at,
-            path="fi:turn_123.user.attachments/notes.txt",
-            text="[USER ATTACHMENT TEXT]\n[path: fi:turn_123.user.attachments/notes.txt]\nhello notes",
+            path="conv:fi:turn_123.user.attachments/notes.txt",
+            text="[USER ATTACHMENT TEXT]\n[path: conv:fi:turn_123.user.attachments/notes.txt]\nhello notes",
         ),
         tl._block(
             type="react.tool.call",
@@ -547,7 +548,7 @@ def test_timeline_rendering_with_attachment_and_tool_blocks():
             turn_id=ctx.turn_id,
             ts=ctx.started_at,
             mime="application/json",
-            path="tc:turn_123.abc.call",
+            path="conv:tc:turn_123.abc.call",
             text='{"tool_id":"web_tools.web_search","tool_call_id":"abc"}',
         ),
         # react.write (display + file)
@@ -557,7 +558,7 @@ def test_timeline_rendering_with_attachment_and_tool_blocks():
             turn_id=ctx.turn_id,
             ts=ctx.started_at,
             mime="application/json",
-            path="tc:turn_123.write1.call",
+            path="conv:tc:turn_123.write1.call",
             text='{"tool_id":"react.write","tool_call_id":"write1","params":{"path":"turn_123/files/draft.md","kind":"file"}}',
         ),
         tl._block(
@@ -566,8 +567,8 @@ def test_timeline_rendering_with_attachment_and_tool_blocks():
             turn_id=ctx.turn_id,
             ts=ctx.started_at,
             mime="application/json",
-            path="tc:turn_123.write1.result",
-            text='{"artifact_path":"fi:turn_123.files/draft.md","physical_path":"turn_123/files/draft.md","tool_call_id":"write1","kind":"file","visibility":"external"}',
+            path="conv:tc:turn_123.write1.result",
+            text='{"artifact_path":"conv:fi:turn_123.files/draft.md","physical_path":"turn_123/files/draft.md","tool_call_id":"write1","kind":"file","visibility":"external"}',
         ),
         tl._block(
             type="react.tool.result",
@@ -575,7 +576,7 @@ def test_timeline_rendering_with_attachment_and_tool_blocks():
             turn_id=ctx.turn_id,
             ts=ctx.started_at,
             mime="text/markdown",
-            path="fi:turn_123.files/draft.md",
+            path="conv:fi:turn_123.files/draft.md",
             text="# Draft\\n",
         ),
         # exec tool call referencing the file written above
@@ -585,7 +586,7 @@ def test_timeline_rendering_with_attachment_and_tool_blocks():
             turn_id=ctx.turn_id,
             ts=ctx.started_at,
             mime="application/json",
-            path="tc:turn_123.exec1.call",
+            path="conv:tc:turn_123.exec1.call",
             text='{"tool_id":"exec_tools.execute_code_python","tool_call_id":"exec1","params":{"code":"open(\'turn_123/files/draft.md\').read()"}}',
         ),
     ])
@@ -596,12 +597,12 @@ def test_timeline_rendering_with_attachment_and_tool_blocks():
     assert all(b.get("type") in {"text", "document", "image"} for b in rendered)
 
     assert any("TURN turn_123" in b.get("text", "") for b in text_blocks)
-    assert any("[path: ar:turn_123.user.prompt]" in b.get("text", "") for b in text_blocks)
-    assert any("[logical_path: fi:turn_123.user.attachments/menu.pdf]" in b.get("text", "") for b in text_blocks)
+    assert any("[path: conv:ar:turn_123.user.prompt]" in b.get("text", "") for b in text_blocks)
+    assert any("[logical_path: conv:fi:turn_123.user.attachments/menu.pdf]" in b.get("text", "") for b in text_blocks)
     assert any("[physical_path: exists (derive)]" in b.get("text", "") for b in text_blocks)
-    assert any("fi:turn_123.user.attachments/notes.txt" in b.get("text", "") for b in text_blocks)
+    assert any("conv:fi:turn_123.user.attachments/notes.txt" in b.get("text", "") for b in text_blocks)
     assert any("hello notes" in b.get("text", "") for b in text_blocks)
-    assert any("fi:turn_123.files/draft.md" in b.get("text", "") for b in text_blocks)
+    assert any("conv:fi:turn_123.files/draft.md" in b.get("text", "") for b in text_blocks)
     assert doc_blocks, "Expected a document block for the PDF attachment"
 
 
@@ -644,7 +645,7 @@ def test_large_tool_result_is_rendered_as_preview_with_shape():
             turn_id=ctx.turn_id,
             ts=ctx.started_at,
             mime="application/json",
-            path="tc:turn_large.tc_email.call",
+            path="conv:tc:turn_large.tc_email.call",
             text=json.dumps({
                 "tool_id": "email.process_user_emails",
                 "tool_call_id": "tc_email",
@@ -657,7 +658,7 @@ def test_large_tool_result_is_rendered_as_preview_with_shape():
             turn_id=ctx.turn_id,
             ts=ctx.started_at,
             mime="application/json",
-            path="tc:turn_large.tc_email.result",
+            path="conv:tc:turn_large.tc_email.result",
             text=raw_text,
         ),
     ])
@@ -698,11 +699,11 @@ def test_large_text_artifact_is_rendered_as_bounded_preview():
             turn_id=ctx.turn_id,
             ts=ctx.started_at,
             mime="application/json",
-            path="tc:turn_artifact.tc_write.call",
+            path="conv:tc:turn_artifact.tc_write.call",
             text=json.dumps({
                 "tool_id": "react.write",
                 "tool_call_id": "tc_write",
-                "params": {"path": "outputs/report.md", "channel": "canvas", "kind": "display"},
+                "params": {"path": "files/report.md", "channel": "canvas", "kind": "display"},
             }),
         ),
         tl._block(
@@ -711,14 +712,14 @@ def test_large_text_artifact_is_rendered_as_bounded_preview():
             turn_id=ctx.turn_id,
             ts=ctx.started_at,
             mime="text/markdown",
-            path="fi:turn_artifact.outputs/report.md",
+            path="conv:fi:turn_artifact.files/report.md",
             text=artifact_text,
             meta={
                 "tool_call_id": "tc_write",
                 "text_symbols": len(artifact_text),
                 "size_bytes": len(artifact_text.encode("utf-8")),
                 "line_count": 29,
-                "physical_path": "turn_artifact/outputs/report.md",
+                "physical_path": "turn_artifact/files/report.md",
             },
         ),
     ])
@@ -728,7 +729,7 @@ def test_large_text_artifact_is_rendered_as_bounded_preview():
 
     assert tl.blocks[-1]["text"] == artifact_text
     assert "[ARTIFACT PREVIEW TRUNCATED]" in joined
-    assert "logical_path: fi:turn_artifact.outputs/report.md" in joined
+    assert "logical_path: conv:fi:turn_artifact.files/report.md" in joined
     assert "physical_path: exists (derive)" in joined
     assert "preview_lines: [1-" in joined
     assert "line_numbers: lines" in joined
@@ -754,7 +755,7 @@ def test_small_text_artifact_is_rendered_with_line_numbers():
             turn_id=ctx.turn_id,
             ts=ctx.started_at,
             mime="application/json",
-            path="tc:turn_small_artifact.tc_write.call",
+            path="conv:tc:turn_small_artifact.tc_write.call",
             text=json.dumps({
                 "tool_id": "react.write",
                 "tool_call_id": "tc_write",
@@ -767,7 +768,7 @@ def test_small_text_artifact_is_rendered_with_line_numbers():
             turn_id=ctx.turn_id,
             ts=ctx.started_at,
             mime="text/plain",
-            path="fi:turn_small_artifact.files/demo/a.txt",
+            path="conv:fi:turn_small_artifact.files/demo/a.txt",
             text=artifact_text,
             meta={
                 "tool_call_id": "tc_write",
@@ -783,7 +784,7 @@ def test_small_text_artifact_is_rendered_with_line_numbers():
     joined = "\n".join(b.get("text", "") for b in rendered if b.get("type") == "text")
 
     assert tl.blocks[-1]["text"] == artifact_text
-    assert "logical_path: fi:turn_small_artifact.files/demo/a.txt" in joined
+    assert "logical_path: conv:fi:turn_small_artifact.files/demo/a.txt" in joined
     assert "lines: [1-3]/3" in joined
     assert "line_numbers: lines" in joined
     assert "     1\talpha" in joined
@@ -820,7 +821,7 @@ def test_preformatted_text_file_preview_is_not_line_numbered_twice():
             turn_id=ctx.turn_id,
             ts=ctx.started_at,
             mime="application/json",
-            path="tc:turn_exec_preview.tc_exec.call",
+            path="conv:tc:turn_exec_preview.tc_exec.call",
             text=json.dumps({
                 "tool_id": "exec_tools.execute_code_python",
                 "tool_call_id": "tc_exec",
@@ -833,7 +834,7 @@ def test_preformatted_text_file_preview_is_not_line_numbered_twice():
             turn_id=ctx.turn_id,
             ts=ctx.started_at,
             mime="text/plain",
-            path="fi:turn_exec_preview.files/demo/a.py",
+            path="conv:fi:turn_exec_preview.files/demo/a.py",
             text=preview_text,
             meta={
                 "tool_call_id": "tc_exec",
@@ -854,7 +855,7 @@ def test_preformatted_text_file_preview_is_not_line_numbered_twice():
     rendered = _run(tl.render(cache_last=True))
     joined = "\n".join(b.get("text", "") for b in rendered if b.get("type") == "text")
 
-    assert "logical_path: fi:turn_exec_preview.files/demo/a.py" in joined
+    assert "logical_path: conv:fi:turn_exec_preview.files/demo/a.py" in joined
     assert "[TEXT FILE PREVIEW]" in joined
     assert "path: turn_exec_preview/files/demo/a.py" in joined
     assert "     1\talpha = 1" in joined
@@ -880,7 +881,7 @@ def test_large_internal_note_and_code_are_rendered_as_bounded_previews():
             author="agent",
             turn_id=ctx.turn_id,
             ts=ctx.started_at,
-            path="fi:turn_large_internal.outputs/app.html",
+            path="conv:fi:turn_large_internal.files/app.html",
             text=html_text,
         ),
         tl._block(
@@ -888,7 +889,7 @@ def test_large_internal_note_and_code_are_rendered_as_bounded_previews():
             author="agent",
             turn_id=ctx.turn_id,
             ts=ctx.started_at,
-            path="fi:turn_large_internal.code.tc_exec",
+            path="conv:fi:turn_large_internal.code.tc_exec",
             text=code_text,
             meta={"tool_call_id": "tc_exec"},
         ),
@@ -919,11 +920,11 @@ def test_file_artifact_render_includes_size_bytes():
             turn_id=ctx.turn_id,
             ts=ctx.started_at,
             mime="application/json",
-            path="tc:turn_file.tc_exec.call",
+            path="conv:tc:turn_file.tc_exec.call",
             text=json.dumps({
                 "tool_id": "exec_tools.execute_code_python",
                 "tool_call_id": "tc_exec",
-                "params": {"contract": [{"filename": "outputs/report.md"}]},
+                "params": {"contract": [{"filename": "files/report.md"}]},
             }),
         ),
         tl._block(
@@ -932,10 +933,10 @@ def test_file_artifact_render_includes_size_bytes():
             turn_id=ctx.turn_id,
             ts=ctx.started_at,
             mime="application/json",
-            path="tc:turn_file.tc_exec.result",
+            path="conv:tc:turn_file.tc_exec.result",
             text=json.dumps({
-                "artifact_path": "fi:turn_file.outputs/report.md",
-                "physical_path": "turn_file/outputs/report.md",
+                "artifact_path": "conv:fi:turn_file.files/report.md",
+                "physical_path": "turn_file/files/report.md",
                 "mime": "text/markdown",
                 "kind": "file",
                 "visibility": "external",
@@ -950,7 +951,7 @@ def test_file_artifact_render_includes_size_bytes():
             turn_id=ctx.turn_id,
             ts=ctx.started_at,
             mime="text/markdown",
-            path="fi:turn_file.outputs/report.md",
+            path="conv:fi:turn_file.files/report.md",
             text="# Report\n\n...[truncated]",
             meta={"tool_call_id": "tc_exec", "text_symbols": 12000, "size_bytes": 12345},
         ),
@@ -959,8 +960,8 @@ def test_file_artifact_render_includes_size_bytes():
     rendered = _run(tl.render(cache_last=True))
     joined = "\n".join(b.get("text", "") for b in rendered if b.get("type") == "text")
 
-    assert "- logical_path: fi:turn_file.outputs/report.md | physical_path: exists (derive) | kind: file | visibility: external | text_symbols: 12000 | size_bytes: 12345" in joined
-    assert "logical_path: fi:turn_file.outputs/report.md | text_symbols: 12000 | size_bytes: 12345" in joined
+    assert "- logical_path: conv:fi:turn_file.files/report.md | physical_path: exists (derive) | kind: file | visibility: external | text_symbols: 12000 | size_bytes: 12345" in joined
+    assert "logical_path: conv:fi:turn_file.files/report.md | text_symbols: 12000 | size_bytes: 12345" in joined
 
 
 def test_web_source_result_render_omits_items_stats_but_keeps_payload():
@@ -988,7 +989,7 @@ def test_web_source_result_render_omits_items_stats_but_keeps_payload():
             turn_id=ctx.turn_id,
             ts=ctx.started_at,
             mime="application/json",
-            path="tc:turn_sources.tc_search.call",
+            path="conv:tc:turn_sources.tc_search.call",
             text=json.dumps({
                 "tool_id": "web_tools.web_search",
                 "tool_call_id": "tc_search",
@@ -1001,7 +1002,7 @@ def test_web_source_result_render_omits_items_stats_but_keeps_payload():
             turn_id=ctx.turn_id,
             ts=ctx.started_at,
             mime="application/json",
-            path="so:sources_pool[1]",
+            path="conv:so:sources_pool[1]",
             text=json.dumps(payload, ensure_ascii=False),
             meta={
                 "tool_call_id": "tc_search",
@@ -1042,7 +1043,7 @@ def test_non_web_list_result_render_includes_items_stats():
             turn_id=ctx.turn_id,
             ts=ctx.started_at,
             mime="application/json",
-            path="tc:turn_items.tc_items.call",
+            path="conv:tc:turn_items.tc_items.call",
             text=json.dumps({
                 "tool_id": "custom_tools.list_items",
                 "tool_call_id": "tc_items",
@@ -1055,7 +1056,7 @@ def test_non_web_list_result_render_includes_items_stats():
             turn_id=ctx.turn_id,
             ts=ctx.started_at,
             mime="application/json",
-            path="tc:turn_items.tc_items.result",
+            path="conv:tc:turn_items.tc_items.result",
             text=json.dumps(payload, ensure_ascii=False),
             meta={
                 "tool_call_id": "tc_items",
@@ -1088,7 +1089,7 @@ def test_react_read_output_is_not_capped_again_by_tool_result_preview():
         "A" * 300,
         "",
         "[READ PREVIEW TRUNCATED]",
-        "path: tc:turn_src.tc_big.result",
+        "path: conv:tc:turn_src.tc_big.result",
         "visible_text_symbols: 300",
     ])
 
@@ -1100,11 +1101,11 @@ def test_react_read_output_is_not_capped_again_by_tool_result_preview():
             turn_id=ctx.turn_id,
             ts=ctx.started_at,
             mime="application/json",
-            path="tc:turn_read.r_big.call",
+            path="conv:tc:turn_read.r_big.call",
             text=json.dumps({
                 "tool_id": "react.read",
                 "tool_call_id": "r_big",
-                "params": {"paths": ["tc:turn_src.tc_big.result"]},
+                "params": {"paths": ["conv:tc:turn_src.tc_big.result"]},
             }),
         ),
         tl._block(
@@ -1113,7 +1114,7 @@ def test_react_read_output_is_not_capped_again_by_tool_result_preview():
             turn_id=ctx.turn_id,
             ts=ctx.started_at,
             mime="text/plain",
-            path="tc:turn_src.tc_big.result",
+            path="conv:tc:turn_src.tc_big.result",
             text=read_preview,
             meta={"tool_call_id": "r_big", "tool_id": "react.read", "read_preview_truncated": True},
         ),
@@ -1138,7 +1139,7 @@ def test_timeline_does_not_emit_non_pdf_binary_attachment_as_model_document():
             author="user",
             turn_id=ctx.turn_id,
             ts=ctx.started_at,
-            path="fi:turn_123.user.attachments/template.xlsx",
+            path="conv:fi:turn_123.user.attachments/template.xlsx",
             text="[USER ATTACHMENT] template.xlsx | application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             meta={
                 "filename": "template.xlsx",
@@ -1151,7 +1152,7 @@ def test_timeline_does_not_emit_non_pdf_binary_attachment_as_model_document():
             author="user",
             turn_id=ctx.turn_id,
             ts=ctx.started_at,
-            path="fi:turn_123.user.attachments/template.xlsx",
+            path="conv:fi:turn_123.user.attachments/template.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             base64="WFNTREFUQQ==",
         ),
@@ -1184,7 +1185,7 @@ def test_timeline_renders_plan_calls_but_hides_internal_plan_snapshots():
             author="react",
             turn_id=ctx.turn_id,
             ts=ctx.started_at,
-            path="ar:turn_plan.react.notes.tc_plan",
+            path="conv:ar:turn_plan.react.notes.tc_plan",
             text="Create the investigation plan.",
         ),
         tl._block(
@@ -1193,14 +1194,14 @@ def test_timeline_renders_plan_calls_but_hides_internal_plan_snapshots():
             turn_id=ctx.turn_id,
             ts=ctx.started_at,
             mime="application/json",
-            path="tc:turn_plan.tc_plan.call",
+            path="conv:tc:turn_plan.tc_plan.call",
             text=json.dumps(
                 {
                     "tool_id": "react.plan",
                     "tool_call_id": "tc_plan",
                     "params": {"mode": "new", "steps": ["collect metrics", "compare trends"]},
                     "new_plan_id": plan.plan_id,
-                    "new_snapshot_ref": f"ar:plan.latest:{plan.plan_id}",
+                    "new_snapshot_ref": f"conv:ar:plan.latest:{plan.plan_id}",
                 },
                 ensure_ascii=False,
             ),
@@ -1211,11 +1212,11 @@ def test_timeline_renders_plan_calls_but_hides_internal_plan_snapshots():
             turn_id=ctx.turn_id,
             ts=ctx.started_at,
             mime="text/markdown",
-            path="tc:turn_plan.tc_plan.result",
+            path="conv:tc:turn_plan.tc_plan.result",
             text="\n".join([
                 "mode: new",
                 f"plan_id: {plan.plan_id}",
-                f"latest_snapshot_ref: ar:plan.latest:{plan.plan_id}",
+                f"latest_snapshot_ref: conv:ar:plan.latest:{plan.plan_id}",
             ]),
             meta={"tool_call_id": "tc_plan", "render_role": "summary"},
         ),
@@ -1236,10 +1237,10 @@ def test_timeline_renders_plan_calls_but_hides_internal_plan_snapshots():
     assert '"steps": [' in text_dump
     assert "[TOOL RESULT tc_plan].summary react.plan" in text_dump
     assert f"plan_id: {plan.plan_id}" in text_dump
-    assert f"latest_snapshot_ref: ar:plan.latest:{plan.plan_id}" in text_dump
+    assert f"latest_snapshot_ref: conv:ar:plan.latest:{plan.plan_id}" in text_dump
     assert "[AI Agent say]: Create the investigation plan." in text_dump
     assert '"origin_turn_id": "turn_plan"' not in text_dump
-    assert "ar:turn_plan.react.plan.ack.1" not in text_dump
+    assert "conv:ar:turn_plan.react.plan.ack.1" not in text_dump
 
 
 def test_timeline_renders_interrupted_raw_generation_even_when_raw_hidden():
@@ -1252,7 +1253,7 @@ def test_timeline_renders_interrupted_raw_generation_even_when_raw_hidden():
             author="react",
             turn_id=ctx.turn_id,
             ts=ctx.started_at,
-            path="ar:turn_raw.react.decision.raw.interrupted.1",
+            path="conv:ar:turn_raw.react.decision.raw.interrupted.1",
             text="<channel:thinking>draft</channel:thinking><channel:code>print(1)</channel:code>",
             meta={
                 "interrupted": True,
@@ -1283,7 +1284,7 @@ def test_iteration_round_groups_multi_action_tool_calls_and_followup():
                 author="react",
                 turn_id=ctx.turn_id,
                 ts="2026-05-13T21:03:33Z",
-                path="ar:turn_multi_round.react.round.start.tc_pending_0",
+                path="conv:ar:turn_multi_round.react.round.start.tc_pending_0",
                 text="thinking",
                 meta={"tool_call_id": "tc_pending_0", "iteration": 0},
             ),
@@ -1294,7 +1295,7 @@ def test_iteration_round_groups_multi_action_tool_calls_and_followup():
             author="user",
             turn_id=ctx.turn_id,
             ts="2026-05-13T21:03:42Z",
-            path="ar:turn_multi_round.external.followup.evt_1",
+            path="conv:ar:turn_multi_round.external.followup.evt_1",
             text="and also in presentation and docx please",
             meta={"target_turn_id": ctx.turn_id, "event_kind": "followup"},
         ),
@@ -1303,7 +1304,7 @@ def test_iteration_round_groups_multi_action_tool_calls_and_followup():
             author="react",
             turn_id=ctx.turn_id,
             ts="2026-05-13T21:03:43Z",
-            path="ar:turn_multi_round.react.notes.tc_pending_0",
+            path="conv:ar:turn_multi_round.react.notes.tc_pending_0",
             text="Loading skill and searching in the same decision.",
             meta={"tool_call_id": "tc_pending_0", "iteration": 0, "action": "call_tool"},
         ),
@@ -1314,7 +1315,7 @@ def test_iteration_round_groups_multi_action_tool_calls_and_followup():
                 turn_id=ctx.turn_id,
                 ts="2026-05-13T21:03:43Z",
                 mime="application/json",
-                path="tc:turn_multi_round.tc_read.call",
+                path="conv:tc:turn_multi_round.tc_read.call",
                 text=json.dumps({"tool_id": "react.read", "tool_call_id": "tc_read", "params": {"paths": ["sk:product"]}}),
                 meta={"tool_call_id": "tc_read", "iteration": 0},
             ),
@@ -1327,7 +1328,7 @@ def test_iteration_round_groups_multi_action_tool_calls_and_followup():
                 turn_id=ctx.turn_id,
                 ts="2026-05-13T21:03:43Z",
                 mime="application/json",
-                path="tc:turn_multi_round.tc_read.result",
+                path="conv:tc:turn_multi_round.tc_read.result",
                 text=json.dumps({"paths": [{"path": "sk:product", "status": "ok"}], "total_tokens": 10}),
                 meta={"tool_call_id": "tc_read", "iteration": 0},
             ),
@@ -1340,7 +1341,7 @@ def test_iteration_round_groups_multi_action_tool_calls_and_followup():
                 turn_id=ctx.turn_id,
                 ts="2026-05-13T21:03:43Z",
                 mime="application/json",
-                path="tc:turn_multi_round.tc_search.call",
+                path="conv:tc:turn_multi_round.tc_search.call",
                 text=json.dumps({"tool_id": "web_tools.web_search", "tool_call_id": "tc_search", "params": {"queries": ["ai security"]}}),
                 meta={"tool_call_id": "tc_search", "iteration": 0},
             ),
@@ -1353,7 +1354,7 @@ def test_iteration_round_groups_multi_action_tool_calls_and_followup():
                 turn_id=ctx.turn_id,
                 ts="2026-05-13T21:03:52Z",
                 mime="application/json",
-                path="tc:turn_multi_round.tc_search.result",
+                path="conv:tc:turn_multi_round.tc_search.result",
                 text=json.dumps([{"sid": 10, "title": "AI security news"}]),
                 meta={"tool_call_id": "tc_search", "iteration": 0},
             ),
@@ -1365,7 +1366,7 @@ def test_iteration_round_groups_multi_action_tool_calls_and_followup():
                 author="react",
                 turn_id=ctx.turn_id,
                 ts="2026-05-13T21:03:52Z",
-                path="ar:turn_multi_round.react.round.start.tc_pending_1",
+                path="conv:ar:turn_multi_round.react.round.start.tc_pending_1",
                 text="thinking",
                 meta={"tool_call_id": "tc_pending_1", "iteration": 1},
             ),
@@ -1395,7 +1396,7 @@ def test_hidden_old_blocks_render_as_minimal_retrieval_refs():
             author="user",
             turn_id="turn_old",
             ts="2026-02-08T00:00:01Z",
-            path="ar:turn_old.user.prompt",
+            path="conv:ar:turn_old.user.prompt",
             text="long old user request",
         ),
         tl._block(
@@ -1404,7 +1405,7 @@ def test_hidden_old_blocks_render_as_minimal_retrieval_refs():
             turn_id="turn_old",
             ts="2026-02-08T00:00:02Z",
             mime="application/json",
-            path="tc:turn_old.tc_abc.call",
+            path="conv:tc:turn_old.tc_abc.call",
             text='{"tool_id":"email.process_user_emails","tool_call_id":"tc_abc","params":{"mailbox":"INBOX"}}',
         ),
         tl._block(
@@ -1413,7 +1414,7 @@ def test_hidden_old_blocks_render_as_minimal_retrieval_refs():
             turn_id="turn_old",
             ts="2026-02-08T00:00:03Z",
             mime="application/json",
-            path="tc:turn_old.tc_abc.result",
+            path="conv:tc:turn_old.tc_abc.result",
             text='{"tool_id":"email.process_user_emails","tool_call_id":"tc_abc","result":{"messages":[]}}',
         ),
         tl._block(
@@ -1421,7 +1422,7 @@ def test_hidden_old_blocks_render_as_minimal_retrieval_refs():
             author="assistant",
             turn_id="turn_old",
             ts="2026-02-08T00:00:04Z",
-            path="ar:turn_old.assistant.completion",
+            path="conv:ar:turn_old.assistant.completion",
             text="old answer",
         ),
         tl._block(
@@ -1429,15 +1430,15 @@ def test_hidden_old_blocks_render_as_minimal_retrieval_refs():
             author="assistant",
             turn_id="turn_old",
             ts="2026-02-08T00:00:04Z",
-            path="ws:turn_old.conv.working.summary",
+            path="conv:ws:turn_old.conv.working.summary",
             text=(
                 "Goal: Fetch old email.\n"
                 "Outcome: Completed from cached data.\n"
                 "Key facts:\n"
                 "- Gmail scan returned no messages.\n"
                 "Refs:\n"
-                "- user: ar:turn_old.user.prompt\n"
-                "- result: tc:turn_old.tc_abc.result"
+                "- user: conv:ar:turn_old.user.prompt\n"
+                "- result: conv:tc:turn_old.tc_abc.result"
             ),
             meta={"kind": "working_summary"},
         ),
@@ -1446,17 +1447,17 @@ def test_hidden_old_blocks_render_as_minimal_retrieval_refs():
             author="system",
             turn_id="turn_old",
             ts="2026-02-08T00:00:05Z",
-            path="ar:turn_old.system.message.cache_pruned",
+            path="conv:ar:turn_old.system.message.cache_pruned",
             text="Context was pruned because the session TTL was exceeded.",
             meta={"kind": "cache_ttl_pruned"},
         ),
     ])
     for path in [
-        "ar:turn_old.user.prompt",
-        "tc:turn_old.tc_abc.call",
-        "tc:turn_old.tc_abc.result",
-        "ar:turn_old.assistant.completion",
-        "ar:turn_old.system.message.cache_pruned",
+        "conv:ar:turn_old.user.prompt",
+        "conv:tc:turn_old.tc_abc.call",
+        "conv:tc:turn_old.tc_abc.result",
+        "conv:ar:turn_old.assistant.completion",
+        "conv:ar:turn_old.system.message.cache_pruned",
     ]:
         tl.hide_paths([path], "[TRUNCATED] verbose replacement")
 
@@ -1464,10 +1465,10 @@ def test_hidden_old_blocks_render_as_minimal_retrieval_refs():
     text = "\n".join(b.get("text", "") for b in rendered if b.get("type") == "text")
 
     assert "[WORKING SUMMARY]" in text
-    assert "[path: ws:turn_old.conv.working.summary]" in text
+    assert "[path: conv:ws:turn_old.conv.working.summary]" in text
     assert "Goal: Fetch old email." in text
     assert "Outcome: Completed from cached data." in text
-    assert "- result: tc:turn_old.tc_abc.result" in text
+    assert "- result: conv:tc:turn_old.tc_abc.result" in text
     assert "[pruned user message]" not in text
     assert "[pruned tool call]" not in text
     assert "[pruned tool result]" not in text
@@ -1489,7 +1490,7 @@ def test_live_thinking_renders_as_thinking_block_and_compacted_thinking_is_suppr
                 author="react",
                 turn_id=ctx.turn_id,
                 ts="2026-05-13T10:00:01Z",
-                path="ar:turn_thinking.react.round.start.tc_live",
+                path="conv:ar:turn_thinking.react.round.start.tc_live",
                 text="thinking",
                 meta={"tool_call_id": "tc_live", "iteration": 0},
             ),
@@ -1501,7 +1502,7 @@ def test_live_thinking_renders_as_thinking_block_and_compacted_thinking_is_suppr
                 author="react",
                 turn_id=ctx.turn_id,
                 ts="2026-05-13T10:00:02Z",
-                path="ar:turn_thinking.react.thinking.0",
+                path="conv:ar:turn_thinking.react.thinking.0",
                 text="Checking the requested format before calling the tool.",
                 meta={"tool_call_id": "tc_live", "iteration": 0},
             ),
@@ -1513,7 +1514,7 @@ def test_live_thinking_renders_as_thinking_block_and_compacted_thinking_is_suppr
             turn_id=ctx.turn_id,
             ts="2026-05-13T10:00:03Z",
             mime="application/json",
-            path="ar:turn_thinking.react.rounds.compacted",
+            path="conv:ar:turn_thinking.react.rounds.compacted",
             text=json.dumps(
                 {
                     "turn_id": ctx.turn_id,
@@ -1559,7 +1560,7 @@ def test_live_thinking_rendering_can_be_disabled():
                 author="react",
                 turn_id=ctx.turn_id,
                 ts="2026-05-13T10:00:02Z",
-                path="ar:turn_thinking_off.react.thinking.0",
+                path="conv:ar:turn_thinking_off.react.thinking.0",
                 text="This thinking should be hidden.",
                 meta={"tool_call_id": "tc_live", "iteration": 0},
             ),
@@ -1628,7 +1629,7 @@ def test_assistant_completion_attempt_renders_until_committed_completion_exists(
             author="assistant",
             turn_id=ctx.turn_id,
             ts="2026-05-13T10:00:10Z",
-            path="ar:turn_answer_attempt.assistant.completion.attempt.1",
+            path="conv:ar:turn_answer_attempt.assistant.completion.attempt.1",
             text="Draft final answer before all artifacts are done.",
             meta={"completion_attempt_index": 1, "iteration": 2, "provisional": True},
         ),
@@ -1647,7 +1648,7 @@ def test_assistant_completion_attempt_renders_until_committed_completion_exists(
             author="assistant",
             turn_id=ctx.turn_id,
             ts="2026-05-13T10:00:20Z",
-            path="ar:turn_answer_attempt.assistant.completion",
+            path="conv:ar:turn_answer_attempt.assistant.completion",
             text="Committed final answer after all artifacts are done.",
         )
     )
@@ -1674,7 +1675,7 @@ def test_render_event_cursor_uses_source_block_when_event_block_is_hidden():
             "author": "user",
             "turn_id": ctx.turn_id,
             "ts": "2026-05-13T10:00:05Z",
-            "path": "ar:turn_event_cursor.external.followup.evt_1",
+            "path": "conv:ar:turn_event_cursor.external.followup.evt_1",
             "text": "hidden followup text",
             "hidden": True,
             "replacement_text": "[hidden followup]",
@@ -1694,7 +1695,7 @@ def test_render_event_cursor_uses_source_block_when_event_block_is_hidden():
     cursor = tl.last_rendered_event_cursor
     assert cursor.timestamp == "2026-05-13T10:00:05Z"
     assert cursor.event_id == "evt_1"
-    assert cursor.block_path == "ar:turn_event_cursor.external.followup.evt_1"
+    assert cursor.block_path == "conv:ar:turn_event_cursor.external.followup.evt_1"
     assert cursor.sequence == 7
 
     restored = Timeline.from_payload(tl.to_payload(), runtime=ctx)
@@ -1716,7 +1717,7 @@ async def test_render_event_cursor_is_captured_before_render_time_sanitization(m
             "author": "user",
             "turn_id": ctx.turn_id,
             "ts": "2026-05-13T10:00:06Z",
-            "path": "ar:turn_event_cursor_compacted.external.followup.evt_2",
+            "path": "conv:ar:turn_event_cursor_compacted.external.followup.evt_2",
             "text": "large followup text " * 100,
             "meta": {
                 "event_id": "evt_2",
@@ -1737,7 +1738,7 @@ async def test_render_event_cursor_is_captured_before_render_time_sanitization(m
                 "author": "system",
                 "turn_id": ctx.turn_id,
                 "ts": "2026-05-13T10:00:07Z",
-                "path": "su:turn_event_cursor_compacted.conv.range.summary",
+                "path": "conv:su:turn_event_cursor_compacted.conv.range.summary",
                 "text": "summary produced from compacted followup",
                 "meta": {"covered_turn_ids": [ctx.turn_id]},
             },
@@ -1750,4 +1751,4 @@ async def test_render_event_cursor_is_captured_before_render_time_sanitization(m
     cursor = tl.last_rendered_event_cursor
     assert cursor.timestamp == "2026-05-13T10:00:06Z"
     assert cursor.event_id == "evt_2"
-    assert cursor.block_path == "ar:turn_event_cursor_compacted.external.followup.evt_2"
+    assert cursor.block_path == "conv:ar:turn_event_cursor_compacted.external.followup.evt_2"

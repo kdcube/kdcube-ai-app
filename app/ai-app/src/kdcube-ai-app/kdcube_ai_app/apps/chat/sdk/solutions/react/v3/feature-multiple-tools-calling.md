@@ -210,7 +210,7 @@ Rules:
 Artifacts created:
   react.record.tc_r3.i0
   react.exec.exec_tc_r3
-  contracted exec outputs under files/... or outputs/...
+  contracted exec outputs under files/... or git/projects/...
 
 
 ROUND 4  supported now

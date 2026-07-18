@@ -27,6 +27,7 @@ import time
 import uuid
 from typing import Any, Dict, List, Optional
 
+from kdcube_ai_app.apps.chat.sdk.event_identity import build_event_logical_path
 from kdcube_ai_app.apps.chat.sdk.solutions.react.subagents.charter import SubagentCharter
 from kdcube_ai_app.apps.chat.sdk.solutions.react.subagents.events import (
     SUBAGENT_CHARTER_EVENT_KIND,
@@ -63,7 +64,10 @@ def build_charter_external_event(
         "event_id": _event_id("subch"),
         "type": SUBAGENT_CHARTER_EVENT_KIND,
         "event_source_id": SUBAGENT_EVENT_SOURCE_ID,
-        "logical_path": f"ev:{child_turn_id}.subagent.charter",
+        "logical_path": build_event_logical_path(
+            turn_id=child_turn_id,
+            event_path="subagent.charter",
+        ),
         "timestamp": _utc_iso(),
         "reactive": False,
         "agent_id": parent.agent_id or "main",
@@ -92,7 +96,10 @@ def build_completion_external_event(
         "event_id": _event_id("subco"),
         "type": semantic_type,
         "event_source_id": SUBAGENT_EVENT_SOURCE_ID,
-        "logical_path": f"ev:{continuation_turn_id}.{semantic_type}",
+        "logical_path": build_event_logical_path(
+            turn_id=continuation_turn_id,
+            event_path=semantic_type,
+        ),
         "timestamp": _utc_iso(),
         "reactive": False,
         "agent_id": parent.agent_id or "main",

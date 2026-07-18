@@ -18,14 +18,14 @@ def test_interleaves_by_ts_and_surfaces_files_sources_thinking():
                 {"type": "chat:assistant", "ts": "2026-07-01T22:05:00Z", "data": {"text": "done"}},
                 {"type": "chat:user", "ts": "2026-07-01T22:00:00Z",
                  "data": {"text": "make a chart", "attachments": [
-                     {"filename": "input.csv", "mime": "text/csv", "artifact_path": "fi:turn_t1.user.attachments/input.csv"}]}},
+                     {"filename": "input.csv", "mime": "text/csv", "artifact_path": "conv:fi:turn_t1.user.attachments/input.csv"}]}},
                 {"type": "artifact:conv.thinking.stream", "ts": "2026-07-01T22:01:00Z",
                  "data": {"payload": {"items": [{"agent": "solver", "text": "I will plot it"}, {"agent": "solver", "text": ""}]}}},
                 {"type": "artifact:solver.program.citables", "ts": "2026-07-01T22:02:00Z",
                  "data": {"payload": {"items": [{"sid": 1, "title": "Src", "url": "http://x", "text": "big body dropped"}]}}},
                 {"type": "artifact:assistant.file", "ts": "2026-07-01T22:03:00Z",
                  "data": {"payload": {"filename": "chart.png", "mime": "image/png",
-                                       "artifact_path": "fi:turn_t1.outputs/chart.png"}}},
+                                       "artifact_path": "conv:fi:turn_t1.files/chart.png"}}},
                 {"type": "artifact:conv.artifacts.stream", "ts": "2026-07-01T22:04:00Z",
                  "data": {"payload": {"items": [{"artifact_name": "ai.md", "title": "Summary", "format": "markdown",
                                                   "text": "huge body dropped"}]}}},
@@ -53,9 +53,9 @@ def test_interleaves_by_ts_and_surfaces_files_sources_thinking():
     ]
 
     by_type = {e["type"]: e for e in events}
-    # Refs are scoped to the conversation (fi:conv_<id>.…) so external clients resolve them.
+    # Refs are scoped to the conversation (conv:fi:conv_<id>.…) so external clients resolve them.
     assert by_type["user.attachment"]["ref"] == "conv:fi:conv_c1.turn_t1.user.attachments/input.csv"
-    assert by_type["assistant.file"]["ref"] == "conv:fi:conv_c1.turn_t1.outputs/chart.png"
+    assert by_type["assistant.file"]["ref"] == "conv:fi:conv_c1.turn_t1.files/chart.png"
     # thinking drops the empty item
     assert by_type["assistant.thinking"]["items"] == [{"agent": "solver", "text": "I will plot it"}]
     # sources keep only sid/title/url (heavy text dropped)

@@ -236,7 +236,6 @@ async def emit_policy_artifact_blocks(
                 phys_path_override, rel_path_override, rewritten_override = normalize_physical_path(
                     candidate,
                     turn_id=turn_id,
-                    allow_generic_fi=True,
                 )
             value = phys_path_override or candidate
             rewrite_original = candidate
@@ -269,7 +268,6 @@ async def emit_policy_artifact_blocks(
                     phys_hint, _, _ = normalize_physical_path(
                         file_hint,
                         turn_id=turn_id,
-                        allow_generic_fi=True,
                     )
                     file_for_stats = phys_hint or file_hint
                 try:
@@ -435,7 +433,6 @@ async def emit_policy_artifact_blocks(
                 phys_path, rel_path, rewritten = normalize_physical_path(
                     artifact_rel,
                     turn_id=turn_id,
-                    allow_generic_fi=True,
                 )
                 if rewritten:
                     original_path = (artifact_view.path or (artifact_view.raw.get("value") or {}).get("path") or artifact_id or "")

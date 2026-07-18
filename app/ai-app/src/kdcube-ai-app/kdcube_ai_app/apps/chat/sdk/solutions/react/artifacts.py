@@ -225,7 +225,6 @@ def materialize_inline_artifact_to_file(
         physical_hint, rel_hint, _ = normalize_physical_path(
             hint,
             turn_id=turn_id,
-            allow_generic_fi=True,
         )
         _, namespace, rel = split_physical_artifact_path(physical_hint)
         namespace = namespace or infer_artifact_namespace(hint, default=ARTIFACT_NAMESPACE_FILES)

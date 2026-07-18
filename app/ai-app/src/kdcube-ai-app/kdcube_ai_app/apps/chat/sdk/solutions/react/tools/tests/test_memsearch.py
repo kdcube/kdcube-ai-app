@@ -79,7 +79,7 @@ async def test_memsearch_attachment_target_includes_external_followup_attachment
                 "type": "user.followup",
                 "turn_id": "turn_prev",
                 "ts": "2026-04-26T10:00:00Z",
-                "path": "ar:turn_prev.external.followup.msg_1",
+                "path": "conv:ar:turn_prev.external.followup.msg_1",
                 "text": "See the attached brief",
                 "meta": {
                     "message_id": "msg_1",
@@ -93,7 +93,7 @@ async def test_memsearch_attachment_target_includes_external_followup_attachment
                 "type": "user.attachment.meta",
                 "turn_id": "turn_prev",
                 "ts": "2026-04-26T10:00:00Z",
-                "path": "fi:turn_prev.external.followup.attachments/msg_1/brief.txt",
+                "path": "conv:fi:turn_prev.external.followup.attachments/msg_1/brief.txt",
                 "text": "{\"kind\":\"file\"}",
                 "meta": {
                     "filename": "brief.txt",
@@ -110,7 +110,7 @@ async def test_memsearch_attachment_target_includes_external_followup_attachment
                 "type": "user.attachment.text",
                 "turn_id": "turn_prev",
                 "ts": "2026-04-26T10:00:00Z",
-                "path": "fi:turn_prev.external.followup.attachments/msg_1/brief.txt",
+                "path": "conv:fi:turn_prev.external.followup.attachments/msg_1/brief.txt",
                 "text": "Attachment content from followup",
                 "meta": {
                     "filename": "brief.txt",
@@ -141,13 +141,13 @@ async def test_memsearch_attachment_target_includes_external_followup_attachment
     snippets = hits[0]["snippets"]
     assert len(snippets) == 1
     assert snippets[0]["role"] == "attachment"
-    assert snippets[0]["path"] == "fi:turn_prev.external.followup.attachments/msg_1/brief.txt"
+    assert snippets[0]["path"] == "conv:fi:turn_prev.external.followup.attachments/msg_1/brief.txt"
     assert snippets[0]["text"] == "Attachment content from followup"
     assert snippets[0]["meta"]["message_id"] == "msg_1"
 
     summary = _latest_summary_payload(ctx)
     assert summary["hits"][0]["snippets"] == [{
-        "path": "fi:turn_prev.external.followup.attachments/msg_1/brief.txt",
+        "path": "conv:fi:turn_prev.external.followup.attachments/msg_1/brief.txt",
         "role": "attachment",
         "text": "Attachment content from followup",
     }]
@@ -193,7 +193,7 @@ async def test_memsearch_summary_target_includes_working_summary_blocks(tmp_path
                 "author": "assistant",
                 "turn_id": "turn_prev",
                 "ts": "2026-05-05T19:37:00Z",
-                "path": "ws:turn_prev.conv.working.summary.attempt.1",
+                "path": "conv:ws:turn_prev.conv.working.summary.attempt.1",
                 "text": "Goal: Create ZIP with all Anthropic April 2026 invoice PDFs.\nOutcome: Failed at hosted artifact boundary.",
                 "meta": {
                     "kind": "working_summary",
@@ -219,19 +219,19 @@ async def test_memsearch_summary_target_includes_working_summary_blocks(tmp_path
 
     out = await handle_react_memsearch(ctx_browser=ctx, state=state, tool_call_id="ms2")
 
-    assert captured_search["targets"] == [{"where": "assistant", "query": "Anthropic invoices zip"}]
+    assert captured_search["targets"] == [{"where": "summary", "query": "Anthropic invoices zip"}]
     assert captured_search["scope"] == "conversation"
     hits = out["last_tool_result"]
     assert len(hits) == 1
     snippets = hits[0]["snippets"]
     assert len(snippets) == 1
     assert snippets[0]["role"] == "summary"
-    assert snippets[0]["path"] == "ws:turn_prev.conv.working.summary.attempt.1"
+    assert snippets[0]["path"] == "conv:ws:turn_prev.conv.working.summary.attempt.1"
     assert "Anthropic April 2026" in snippets[0]["text"]
 
     summary = _latest_summary_payload(ctx)
     assert summary["hits"][0]["snippets"] == [{
-        "path": "ws:turn_prev.conv.working.summary.attempt.1",
+        "path": "conv:ws:turn_prev.conv.working.summary.attempt.1",
         "role": "summary",
         "text": "Goal: Create ZIP with all Anthropic April 2026 invoice PDFs.\nOutcome: Failed at hosted artifact boundary.",
     }]
@@ -269,8 +269,8 @@ async def test_memsearch_notes_target_includes_internal_note_blocks(tmp_path):
                 "author": "react",
                 "turn_id": "turn_prev",
                 "ts": "2026-05-05T19:37:00Z",
-                "path": "fi:turn_prev.outputs/internal_notes/rendering.md",
-                "text": "[K] fi:turn_prev.outputs/report.html - source for rendered PDF\n[D] Renderer refs point at text source artifacts.",
+                "path": "conv:fi:turn_prev.files/internal_notes/rendering.md",
+                "text": "[K] conv:fi:turn_prev.files/report.html - source for rendered PDF\n[D] Renderer refs point at text source artifacts.",
                 "meta": {"channel": "internal", "note_tags": ["K", "D"]},
             }
         ],
@@ -297,15 +297,15 @@ async def test_memsearch_notes_target_includes_internal_note_blocks(tmp_path):
     snippets = hits[0]["snippets"]
     assert len(snippets) == 1
     assert snippets[0]["role"] == "notes"
-    assert snippets[0]["path"] == "fi:turn_prev.outputs/internal_notes/rendering.md"
+    assert snippets[0]["path"] == "conv:fi:turn_prev.files/internal_notes/rendering.md"
     assert "[K]" in snippets[0]["text"]
     assert "[D]" in snippets[0]["text"]
 
     summary = _latest_summary_payload(ctx)
     assert summary["hits"][0]["snippets"] == [{
-        "path": "fi:turn_prev.outputs/internal_notes/rendering.md",
+        "path": "conv:fi:turn_prev.files/internal_notes/rendering.md",
         "role": "notes",
-        "text": "[K] fi:turn_prev.outputs/report.html - source for rendered PDF\n[D] Renderer refs point at text source artifacts.",
+        "text": "[K] conv:fi:turn_prev.files/report.html - source for rendered PDF\n[D] Renderer refs point at text source artifacts.",
     }]
 
 
@@ -325,10 +325,10 @@ async def test_memsearch_ordinal_mode_uses_turn_catalog_without_query(tmp_path):
         captured_catalog.update(kwargs)
         return [{
             "turn_id": "turn_second",
-            "turn_index_path": "ar:turn_second.react.turn.index",
-            "working_summary_path": "ws:turn_second.conv.working.summary",
-            "user_path": "ar:turn_second.user.prompt",
-            "assistant_path": "ar:turn_second.assistant.completion",
+            "turn_index_path": "conv:ar:turn_second.react.turn.index",
+            "working_summary_path": "conv:ws:turn_second.conv.working.summary",
+            "user_path": "conv:ar:turn_second.user.prompt",
+            "assistant_path": "conv:ar:turn_second.assistant.completion",
             "ordinal": 2,
             "total_turns": 8,
             "started_at": "2026-05-03T01:17:11Z",
@@ -365,7 +365,7 @@ async def test_memsearch_ordinal_mode_uses_turn_catalog_without_query(tmp_path):
     assert hits[0]["turn_id"] == "turn_second"
     assert hits[0]["ordinal"] == 2
     assert hits[0]["total_turns"] == 8
-    assert hits[0]["turn_index_path"] == "ar:turn_second.react.turn.index"
+    assert hits[0]["turn_index_path"] == "conv:ar:turn_second.react.turn.index"
     assert [sn["role"] for sn in hits[0]["snippets"]] == ["summary", "user"]
 
     summary = _latest_summary_payload(ctx)
@@ -373,12 +373,12 @@ async def test_memsearch_ordinal_mode_uses_turn_catalog_without_query(tmp_path):
     assert summary["hits"][0]["ordinal"] == 2
     assert summary["hits"][0]["snippets"] == [
         {
-            "path": "ws:turn_second.conv.working.summary",
+            "path": "conv:ws:turn_second.conv.working.summary",
             "role": "summary",
             "text": "Goal: Find two exciting recent medicine stories. Outcome: Answered with sources.",
         },
         {
-            "path": "ar:turn_second.user.prompt",
+            "path": "conv:ar:turn_second.user.prompt",
             "role": "user",
             "text": "le'ts then check the 2 most exciting news in medicine for last 2 weeks",
         },
@@ -417,7 +417,7 @@ async def test_memsearch_semantic_with_temporal_bounds_passes_timestamp_filters(
                 "author": "assistant",
                 "turn_id": "turn_prev",
                 "ts": "2026-03-12T10:00:00Z",
-                "path": "ws:turn_prev.conv.working.summary.attempt.1",
+                "path": "conv:ws:turn_prev.conv.working.summary.attempt.1",
                 "text": "Goal: retrieve March invoices.",
                 "meta": {},
             }
@@ -481,7 +481,7 @@ async def test_memsearch_semantic_user_scope_is_forwarded(tmp_path):
                 "type": "conv.working.summary",
                 "turn_id": "turn_cross",
                 "ts": "2026-03-12T10:00:00Z",
-                "path": "ws:turn_cross.conv.working.summary",
+                "path": "conv:ws:turn_cross.conv.working.summary",
                 "text": "Goal: retrieve March invoices.",
                 "meta": {},
             }
@@ -512,7 +512,7 @@ async def test_memsearch_semantic_user_scope_is_forwarded(tmp_path):
     # the conversation via the conv_<id>. segment.
     assert "conversation_id" not in summary["hits"][0]
     assert "conversation_id" not in summary["hits"][0]["snippets"][0]
-    assert summary["hits"][0]["snippets"][0]["path"] == "ws:conv_conv_2.turn_cross.conv.working.summary"
+    assert summary["hits"][0]["snippets"][0]["path"] == "conv:ws:conv_conv_2.turn_cross.conv.working.summary"
 
 
 @pytest.mark.asyncio
@@ -545,7 +545,7 @@ async def test_memsearch_scopes_cross_conversation_fi_refs(tmp_path):
                 "type": "react.note",
                 "turn_id": "turn_cross",
                 "ts": "2026-03-12T10:00:00Z",
-                "path": "fi:turn_cross.snapshots/wizard/current.yaml",
+                "path": "conv:fi:turn_cross.git/snapshots/wizard/current.yaml",
                 "text": "state: needs_triage\n",
                 "meta": {},
             }
@@ -569,7 +569,7 @@ async def test_memsearch_scopes_cross_conversation_fi_refs(tmp_path):
 
     summary = _latest_summary_payload(ctx)
     assert summary["hits"][0]["snippets"] == [{
-        "path": "fi:conv_conv_2.turn_cross.snapshots/wizard/current.yaml",
+        "path": "conv:fi:conv_conv_2.turn_cross.git/snapshots/wizard/current.yaml",
         "role": "notes",
         "text": "state: needs_triage",
     }]
@@ -577,7 +577,7 @@ async def test_memsearch_scopes_cross_conversation_fi_refs(tmp_path):
         b for b in ctx.timeline.blocks
         if b.get("type") == "react.tool.result" and b.get("mime") == "text/markdown"
     ]
-    assert text_blocks[-1]["path"] == "fi:conv_conv_2.turn_cross.snapshots/wizard/current.yaml"
+    assert text_blocks[-1]["path"] == "conv:fi:conv_conv_2.turn_cross.git/snapshots/wizard/current.yaml"
     assert "conversation_id" not in text_blocks[-1].get("meta", {})
 
 
@@ -597,8 +597,8 @@ async def test_memsearch_timeline_mode_reports_ignored_generic_query(tmp_path):
         captured_catalog.update(kwargs)
         return [{
             "turn_id": "turn_1",
-            "turn_index_path": "ar:turn_1.react.turn.index",
-            "working_summary_path": "ws:turn_1.conv.working.summary",
+            "turn_index_path": "conv:ar:turn_1.react.turn.index",
+            "working_summary_path": "conv:ws:turn_1.conv.working.summary",
             "ordinal": 1,
             "total_turns": 1,
             "started_at": "2026-05-06T10:00:00Z",

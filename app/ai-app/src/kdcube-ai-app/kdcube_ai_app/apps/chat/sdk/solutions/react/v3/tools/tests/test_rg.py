@@ -36,7 +36,7 @@ async def test_rg_finds_file_under_outdir_root(tmp_path):
     runtime = RuntimeCtx(turn_id="turn_search", outdir=str(outdir), workdir=str(workdir))
     ctx = FakeBrowser(runtime)
 
-    logs_dir = outdir / "logs"
+    logs_dir = artifact_outdir_for(outdir) / "turn_search" / "files" / "logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
     target = logs_dir / "docker.err.log"
     target.write_text("boom", encoding="utf-8")
@@ -59,11 +59,11 @@ async def test_rg_finds_file_under_outdir_root(tmp_path):
     payload = _latest_payload(ctx)
     assert payload["root"] == "outdir"
     assert payload["hits"] == [{
-        "path": "logs/docker.err.log",
+        "path": "turn_search/files/logs/docker.err.log",
         "size_bytes": 4,
         "text_symbols": 4,
         "line_count": 1,
-        "logical_path": "fi:logs/docker.err.log",
+        "logical_path": "conv:fi:turn_search.files/logs/docker.err.log",
     }]
 
 
@@ -105,7 +105,7 @@ async def test_rg_includes_logical_path_for_turn_files(tmp_path):
     runtime = RuntimeCtx(turn_id="turn_search", outdir=str(outdir), workdir=str(workdir))
     ctx = FakeBrowser(runtime)
 
-    target = outdir / "turn_prev" / "files" / "report.md"
+    target = artifact_outdir_for(outdir) / "turn_prev" / "files" / "report.md"
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text("hello", encoding="utf-8")
 
@@ -129,7 +129,7 @@ async def test_rg_includes_logical_path_for_turn_files(tmp_path):
         "size_bytes": 5,
         "text_symbols": 5,
         "line_count": 1,
-        "logical_path": "fi:turn_prev.files/report.md",
+        "logical_path": "conv:fi:turn_prev.files/report.md",
     }]
 
 
@@ -148,7 +148,7 @@ async def test_rg_accepts_fi_root_syntax(tmp_path):
         "last_decision": {
             "tool_call": {
                 "params": {
-                    "root": "fi:turn_search.files/demo",
+                    "root": "conv:fi:turn_search.files/demo",
                     "name_regex": r"app\.py$",
                 }
             }
@@ -159,8 +159,8 @@ async def test_rg_accepts_fi_root_syntax(tmp_path):
     await handle_react_rg(ctx_browser=ctx, state=state, tool_call_id="rg3")
 
     payload = _latest_payload(ctx)
-    assert payload["root"] == "fi:turn_search.files/demo"
-    assert payload["hits"][0]["logical_path"] == "fi:turn_search.files/demo/app.py"
+    assert payload["root"] == "conv:fi:turn_search.files/demo"
+    assert payload["hits"][0]["logical_path"] == "conv:fi:turn_search.files/demo/app.py"
 
 
 @pytest.mark.asyncio
@@ -178,7 +178,7 @@ async def test_rg_accepts_fi_attachment_root_syntax(tmp_path):
         "last_decision": {
             "tool_call": {
                 "params": {
-                    "root": "fi:turn_search.user.attachments/note.txt",
+                    "root": "conv:fi:turn_search.user.attachments/note.txt",
                     "pattern": "TODO",
                     "context_lines": 0,
                 }
@@ -190,10 +190,10 @@ async def test_rg_accepts_fi_attachment_root_syntax(tmp_path):
     await handle_react_rg(ctx_browser=ctx, state=state, tool_call_id="rg_attachment")
 
     payload = _latest_payload(ctx)
-    assert payload["root"] == "fi:turn_search.user.attachments/note.txt"
-    assert payload["hits"][0]["logical_path"] == "fi:turn_search.user.attachments/note.txt"
+    assert payload["root"] == "conv:fi:turn_search.user.attachments/note.txt"
+    assert payload["hits"][0]["logical_path"] == "conv:fi:turn_search.user.attachments/note.txt"
     assert payload["read_items"] == [
-        {"path": "fi:turn_search.user.attachments/note.txt", "line_start": 1, "line_count": 1}
+        {"path": "conv:fi:turn_search.user.attachments/note.txt", "line_start": 1, "line_count": 1}
     ]
 
 
@@ -226,7 +226,7 @@ async def test_rg_accepts_current_turn_files_root(tmp_path):
     payload = _latest_payload(ctx)
     assert payload["root"] == "files/demo"
     assert payload["read_items"] == [
-        {"path": "fi:turn_search.files/demo/app.py", "line_start": 1, "line_count": 1}
+        {"path": "conv:fi:turn_search.files/demo/app.py", "line_start": 1, "line_count": 1}
     ]
 
 
@@ -259,7 +259,7 @@ async def test_rg_accepts_current_turn_file_root(tmp_path):
     payload = _latest_payload(ctx)
     assert payload["hits"][0]["path"] == "app.py"
     assert payload["read_items"] == [
-        {"path": "fi:turn_search.files/demo/app.py", "line_start": 1, "line_count": 1}
+        {"path": "conv:fi:turn_search.files/demo/app.py", "line_start": 1, "line_count": 1}
     ]
 
 
@@ -270,7 +270,7 @@ async def test_rg_returns_line_matches_and_read_items(tmp_path):
     runtime = RuntimeCtx(turn_id="turn_search", outdir=str(outdir), workdir=str(workdir))
     ctx = FakeBrowser(runtime)
 
-    target = outdir / "turn_search" / "outputs" / "page.html"
+    target = artifact_outdir_for(outdir) / "turn_search" / "files" / "page.html"
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text("\n".join([
         "<html>",
@@ -302,10 +302,10 @@ async def test_rg_returns_line_matches_and_read_items(tmp_path):
     payload = _latest_payload(ctx)
     assert payload["match_count"] == 2
     assert payload["read_items"] == [
-        {"path": "fi:turn_search.outputs/page.html", "line_start": 2, "line_count": 3},
-        {"path": "fi:turn_search.outputs/page.html", "line_start": 3, "line_count": 3},
+        {"path": "conv:fi:turn_search.files/page.html", "line_start": 2, "line_count": 3},
+        {"path": "conv:fi:turn_search.files/page.html", "line_start": 3, "line_count": 3},
     ]
     hit = payload["hits"][0]
-    assert hit["logical_path"] == "fi:turn_search.outputs/page.html"
+    assert hit["logical_path"] == "conv:fi:turn_search.files/page.html"
     assert hit["matches"][0]["line"] == 3
     assert hit["matches"][0]["read_item"] == payload["read_items"][0]

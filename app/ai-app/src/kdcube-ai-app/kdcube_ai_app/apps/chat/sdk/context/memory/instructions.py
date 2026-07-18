@@ -27,7 +27,7 @@ If the visible memory text is enough for the task, use it directly.
 
 When a memory block shows `object_ref: mem:record:<id>` and exact saved memory
 content is needed, import that object ref with `react.pull(paths=["mem:record:<id>"])`,
-then inspect the returned `fi:` logical path or physical path.
+then inspect the returned `conv:fi:` logical path or physical path.
 """.strip()
 
 

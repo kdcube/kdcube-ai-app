@@ -39,7 +39,7 @@ async def test_react_round_emits_redacted_tool_call_event(monkeypatch, tmp_path)
                 "tool_call_id": "tc_rg",
                 "params": {
                     "query": "sensitive search text",
-                    "paths": ["fi:turn_tool.files/report.md", "sk:public.skill"],
+                    "paths": ["conv:fi:turn_tool.files/report.md", "sk:public.skill"],
                     "items": [{"path": "ks:docs/readme.md"}],
                     "top_k": 5,
                 },
@@ -62,7 +62,7 @@ async def test_react_round_emits_redacted_tool_call_event(monkeypatch, tmp_path)
     assert call_event["data"]["params"]["redacted"] is True
     assert call_event["data"]["params"]["query_len"] == len("sensitive search text")
     assert call_event["data"]["params"]["paths_count"] == 2
-    assert call_event["data"]["params"]["path_prefixes"] == ["fi:", "sk:"]
+    assert call_event["data"]["params"]["path_prefixes"] == ["conv:fi:", "sk:"]
     assert call_event["data"]["params"]["item_path_prefixes"] == ["ks:"]
     assert result_event["type"] == "react.tool.result"
     assert result_event["step"] == "react.tool.result.tc_rg"
@@ -90,7 +90,7 @@ async def test_react_round_tool_call_event_reports_managed_error(monkeypatch, tm
             "tool_call": {
                 "tool_id": "react.pull",
                 "tool_call_id": "tc_pull",
-                "params": {"paths": ["fi:turn_tool.files/missing.md"]},
+                "params": {"paths": ["conv:fi:turn_tool.files/missing.md"]},
             },
         },
     }

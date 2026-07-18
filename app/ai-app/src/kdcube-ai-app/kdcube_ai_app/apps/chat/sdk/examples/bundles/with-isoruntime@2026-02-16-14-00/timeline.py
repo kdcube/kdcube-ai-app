@@ -27,6 +27,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import (
 )
 from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace.references import (
     normalize_physical_path,
+    physical_path_to_logical_path,
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.react.tools.common import (
     tool_call_block,  # Creates a "tool was called" block
@@ -88,7 +89,7 @@ async def build_exec_timeline(
             "call_id": tool_call_id,
             "tool_id": tool_id,
             "mime": "text/x-python",
-            "path": f"fi:{runtime_ctx.turn_id}.code.{tool_call_id}" if runtime_ctx.turn_id else "",
+            "path": f"conv:fi:{runtime_ctx.turn_id}.code.{tool_call_id}" if runtime_ctx.turn_id else "",
             "text": code_text,
             "meta": {
                 "lang": "python",
@@ -163,14 +164,14 @@ async def build_exec_timeline(
             artifact_rel = tr_path
         phys_path, rel_path, _ = normalize_physical_path(artifact_rel, turn_id=runtime_ctx.turn_id or "")
         physical_path = phys_path or artifact_rel
-        artifact_path = f"fi:{physical_path}" if physical_path else tc_result_path(
+        artifact_path = physical_path_to_logical_path(physical_path) if physical_path else tc_result_path(
             turn_id=runtime_ctx.turn_id or "", call_id=tool_call_id
         )
 
         # Check if this artifact already exists in the timeline (edit vs create)
         edited = detect_edit(
             timeline=getattr(ctx_browser, "timeline", None),
-            artifact_path=artifact_path if artifact_path.startswith("fi:") else "",
+            artifact_path=artifact_path if artifact_path.startswith("conv:fi:") else "",
             tool_call_id=tool_call_id,
         )
         # Add artifact metadata block (filename, mime type, edit status)

@@ -11,20 +11,19 @@ from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace.references import (
 )
 
 
-def test_normalize_physical_path_accepts_generic_fi_for_outdir_tools():
+def test_normalize_physical_path_rejects_generic_conversation_file_ref():
     physical, rel, rewritten = normalize_physical_path(
         "conv:fi:logs/docker.err.log",
         turn_id="turn_cur",
-        allow_generic_fi=True,
     )
 
-    assert physical == "logs/docker.err.log"
-    assert rel == "logs/docker.err.log"
+    assert physical == ""
+    assert rel == ""
     assert rewritten is False
 
 
-def test_physical_path_to_logical_path_supports_generic_outdir_paths():
-    assert physical_path_to_logical_path("logs/docker.err.log") == "conv:fi:logs/docker.err.log"
+def test_physical_path_to_logical_path_requires_canonical_physical_paths():
+    assert physical_path_to_logical_path("logs/docker.err.log") == ""
     assert physical_path_to_logical_path("turn_prev/git/projects/repo/README.md") == "conv:fi:turn_prev.git/projects/repo/README.md"
     assert physical_path_to_logical_path("turn_prev/files/report.md") == "conv:fi:turn_prev.files/report.md"
     assert physical_path_to_logical_path("turn_prev/git/snapshots/wizard-state.yaml") == "conv:fi:turn_prev.git/snapshots/wizard-state.yaml"
@@ -32,7 +31,7 @@ def test_physical_path_to_logical_path_supports_generic_outdir_paths():
         physical_path_to_logical_path("turn_2026-05-19-01-01-49-177/files/report.md")
         == "conv:fi:turn_2026-05-19-01-01-49-177.files/report.md"
     )
-    assert physical_path_to_logical_path("turn_prev.files/report.md") == "conv:fi:turn_prev.files/report.md"
+    assert physical_path_to_logical_path("turn_prev.files/report.md") == ""
     assert (
         physical_path_to_logical_path("turn_prev/external/followup/attachments/mabc123/brief.txt")
         == "conv:fi:turn_prev.external.followup.attachments/mabc123/brief.txt"

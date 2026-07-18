@@ -24,7 +24,7 @@ async def test_write_rewrites_old_turn_path_and_notice(tmp_path):
 async def test_write_rewrites_logical_path(tmp_path):
     runtime = RuntimeCtx(turn_id="turn_cur", outdir=str(tmp_path), workdir=str(tmp_path))
     ctx = FakeBrowser(runtime)
-    state = {"last_decision": {"tool_call": {"params": {"path": "fi:turn_old.files/draft.md", "content": "hi", "kind": "display"}}},
+    state = {"last_decision": {"tool_call": {"params": {"path": "conv:fi:turn_old.files/draft.md", "content": "hi", "kind": "display"}}},
              "outdir": str(tmp_path)}
 
     await handle_react_write(react=FakeReact(), ctx_browser=ctx, state=state, tool_call_id="c1")
@@ -80,7 +80,7 @@ async def test_write_rejects_generic_outdir_fi_path(tmp_path):
 async def test_write_resolves_ref_content_before_materializing(tmp_path):
     runtime = RuntimeCtx(turn_id="turn_cur", outdir=str(tmp_path), workdir=str(tmp_path))
     ctx = FakeBrowser(runtime)
-    source_path = "fi:turn_prev.files/b1-german-knowledge.mmd"
+    source_path = "conv:fi:turn_prev.files/b1-german-knowledge.mmd"
     # ref:fi bindings consume materialized bytes, so the source must be present on disk
     # (produced this turn, or pulled). Materialize it and point the block at its physical_path.
     source_rel = "turn_prev/files/b1-german-knowledge.mmd"
@@ -113,7 +113,7 @@ async def test_write_resolves_ref_content_before_materializing(tmp_path):
 
     out_file = tmp_path / "workdir" / "turn_cur" / "files" / "b1-german-knowledge-resent.mmd"
     assert out_file.read_text() == "graph TD\nA-->B\n"
-    result_blocks = [b for b in ctx.timeline.blocks if b.get("path") == "fi:turn_cur.files/b1-german-knowledge-resent.mmd"]
+    result_blocks = [b for b in ctx.timeline.blocks if b.get("path") == "conv:fi:turn_cur.files/b1-german-knowledge-resent.mmd"]
     assert any((b.get("text") or "") == "graph TD\nA-->B\n" for b in result_blocks)
 
 
@@ -142,7 +142,7 @@ async def test_write_relative_files_path_stays_in_single_files_namespace(tmp_pat
 
 
 @pytest.mark.asyncio
-async def test_write_outputs_path_materializes_outside_workspace_namespace(tmp_path):
+async def test_write_rejects_removed_outputs_namespace(tmp_path):
     runtime = RuntimeCtx(turn_id="turn_cur", outdir=str(tmp_path), workdir=str(tmp_path))
     ctx = FakeBrowser(runtime)
     state = {
@@ -161,13 +161,12 @@ async def test_write_outputs_path_materializes_outside_workspace_namespace(tmp_p
 
     await handle_react_write(react=FakeReact(), ctx_browser=ctx, state=state, tool_call_id="c6")
 
-    assert (tmp_path / "workdir" / "turn_cur" / "outputs" / "demo_proj" / "test_results.txt").read_text() == "all tests passed\n"
-    assert not (tmp_path / "workdir" / "turn_cur" / "files" / "demo_proj" / "test_results.txt").exists()
-    assert any(b.get("path") == "fi:turn_cur.outputs/demo_proj/test_results.txt" for b in ctx.timeline.blocks)
+    assert state["error"]["error"] == "unsafe_path"
+    assert not (tmp_path / "workdir" / "turn_cur" / "files" / "outputs").exists()
 
 
 @pytest.mark.asyncio
-async def test_write_unqualified_path_defaults_to_outputs_namespace(tmp_path):
+async def test_write_unqualified_path_defaults_to_files_namespace(tmp_path):
     runtime = RuntimeCtx(turn_id="turn_cur", outdir=str(tmp_path), workdir=str(tmp_path))
     ctx = FakeBrowser(runtime)
     state = {
@@ -186,6 +185,5 @@ async def test_write_unqualified_path_defaults_to_outputs_namespace(tmp_path):
 
     await handle_react_write(react=FakeReact(), ctx_browser=ctx, state=state, tool_call_id="c7")
 
-    assert (tmp_path / "workdir" / "turn_cur" / "outputs" / "demo_proj" / "report.md").read_text() == "# Report\n"
-    assert not (tmp_path / "workdir" / "turn_cur" / "files" / "demo_proj" / "report.md").exists()
-    assert any(b.get("path") == "fi:turn_cur.outputs/demo_proj/report.md" for b in ctx.timeline.blocks)
+    assert (tmp_path / "workdir" / "turn_cur" / "files" / "demo_proj" / "report.md").read_text() == "# Report\n"
+    assert any(b.get("path") == "conv:fi:turn_cur.files/demo_proj/report.md" for b in ctx.timeline.blocks)

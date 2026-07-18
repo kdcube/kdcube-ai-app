@@ -325,7 +325,7 @@ def build_named_services_mcp_app(
         ],
         file_ref: Annotated[
             str,
-            Field(description="A fi:/ef: artifact ref or provider-accepted file reference."),
+            Field(description="A conv:fi: or ef: artifact ref, or a provider-accepted file reference."),
         ],
         object_ref: Annotated[
             str,

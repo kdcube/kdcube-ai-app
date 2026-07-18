@@ -1299,7 +1299,6 @@ async def _handle_external_tool_legacy(*,
             physical, rel, rewritten = normalize_physical_path(
                 path_val,
                 turn_id=turn_id,
-                allow_generic_fi=True,
             )
             if "/attachments/" in physical:
                 # writing to attachments is not allowed; rewrite to files/<name>
@@ -1510,7 +1509,6 @@ async def _handle_external_tool_legacy(*,
                 phys_path_override, rel_path_override, rewritten_override = normalize_physical_path(
                     candidate,
                     turn_id=turn_id,
-                    allow_generic_fi=True,
                 )
             if phys_path_override:
                 value = phys_path_override
@@ -1544,7 +1542,6 @@ async def _handle_external_tool_legacy(*,
                     phys_hint, _, _ = normalize_physical_path(
                         file_hint,
                         turn_id=turn_id,
-                        allow_generic_fi=True,
                     )
                     file_for_stats = phys_hint or file_hint
                 try:
@@ -1680,7 +1677,6 @@ async def _handle_external_tool_legacy(*,
                 phys_path, rel_path, rewritten = normalize_physical_path(
                     artifact_rel,
                     turn_id=turn_id,
-                    allow_generic_fi=True,
                 )
                 if rewritten:
                     original_path = (artifact_view.path or (artifact_view.raw.get("value") or {}).get("path") or artifact_id or "")
@@ -1977,7 +1973,6 @@ async def _handle_external_tool_legacy(*,
             phys_path, rel_path, rewritten = normalize_physical_path(
                 artifact_rel,
                 turn_id=turn_id,
-                allow_generic_fi=True,
             )
             if rewritten:
                 original_path = artifact_rel

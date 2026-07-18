@@ -584,7 +584,7 @@ def normalize_exec_contract_for_turn(
 
 
 _PATH_TOKEN_RE = re.compile(r"[^\s'\"\)\];,]+")
-_UNQUALIFIED_ARTIFACT_PREFIXES = ("git/projects/", "files/", "outputs/", "attachments/")
+_UNQUALIFIED_ARTIFACT_PREFIXES = ("git/projects/", "files/", "attachments/")
 
 
 def _is_unqualified_artifact_path_token(token: str) -> bool:

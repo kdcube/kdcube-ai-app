@@ -35,13 +35,13 @@ async def test_rehost_files_from_timeline_base64(tmp_path):
             {
                 "type": "react.tool.result",
                 "mime": "application/json",
-                "text": '{"artifact_path":"fi:turn_prev.files/old.txt","physical_path":"turn_prev/files/old.txt"}',
+                "text": '{"artifact_path":"conv:fi:turn_prev.files/old.txt","physical_path":"turn_prev/files/old.txt"}',
                 "turn_id": "turn_prev",
             },
             {
                 "type": "react.tool.result",
                 "mime": "text/plain",
-                "path": "fi:turn_prev.files/old.txt",
+                "path": "conv:fi:turn_prev.files/old.txt",
                 "text": "hello",
                 "turn_id": "turn_prev",
             },
@@ -66,13 +66,13 @@ async def test_rehost_outputs_from_timeline_exact_file(tmp_path):
             {
                 "type": "react.tool.result",
                 "mime": "application/json",
-                "text": '{"artifact_path":"fi:turn_prev.outputs/test_results.txt","physical_path":"turn_prev/outputs/test_results.txt"}',
+                "text": '{"artifact_path":"conv:fi:turn_prev.files/test_results.txt","physical_path":"turn_prev/files/test_results.txt"}',
                 "turn_id": "turn_prev",
             },
             {
                 "type": "react.tool.result",
                 "mime": "text/plain",
-                "path": "fi:turn_prev.outputs/test_results.txt",
+                "path": "conv:fi:turn_prev.files/test_results.txt",
                 "text": "ok\n",
                 "turn_id": "turn_prev",
             },
@@ -87,13 +87,13 @@ async def test_rehost_outputs_from_timeline_exact_file(tmp_path):
 
     res = await rehost_files_from_timeline(
         ctx_browser=ctx,
-        paths=["turn_prev/outputs/test_results.txt"],
+        paths=["turn_prev/files/test_results.txt"],
         outdir=tmp_path,
     )
 
-    assert "turn_prev/outputs/test_results.txt" in res.get("rehosted", [])
+    assert "turn_prev/files/test_results.txt" in res.get("rehosted", [])
     artifact_outdir = artifact_outdir_for(tmp_path)
-    assert (artifact_outdir / "turn_prev" / "outputs" / "test_results.txt").read_text(encoding="utf-8") == "ok\n"
+    assert (artifact_outdir / "turn_prev" / "files" / "test_results.txt").read_text(encoding="utf-8") == "ok\n"
 
 
 @pytest.mark.asyncio
@@ -105,46 +105,46 @@ async def test_rehost_files_from_timeline_expands_directory_prefix(tmp_path):
             {
                 "type": "react.tool.result",
                 "mime": "application/json",
-                "text": '{"artifact_path":"fi:turn_prev.files/user-prefs@2026-03-30/settings.json","physical_path":"turn_prev/files/user-prefs@2026-03-30/settings.json"}',
+                "text": '{"artifact_path":"conv:fi:turn_prev.files/user-prefs@2026-03-30/settings.json","physical_path":"turn_prev/files/user-prefs@2026-03-30/settings.json"}',
                 "turn_id": "turn_prev",
             },
             {
                 "type": "react.tool.result",
                 "mime": "application/json",
-                "text": '{"artifact_path":"fi:turn_prev.files/user-prefs@2026-03-30/theme/colors.json","physical_path":"turn_prev/files/user-prefs@2026-03-30/theme/colors.json"}',
+                "text": '{"artifact_path":"conv:fi:turn_prev.files/user-prefs@2026-03-30/theme/colors.json","physical_path":"turn_prev/files/user-prefs@2026-03-30/theme/colors.json"}',
                 "turn_id": "turn_prev",
             },
             {
                 "type": "react.tool.result",
                 "mime": "application/json",
-                "text": '{"artifact_path":"fi:turn_prev.files/other.txt","physical_path":"turn_prev/files/other.txt"}',
+                "text": '{"artifact_path":"conv:fi:turn_prev.files/other.txt","physical_path":"turn_prev/files/other.txt"}',
                 "turn_id": "turn_prev",
             },
             {
                 "type": "react.tool.result",
                 "mime": "application/json",
-                "text": '{"artifact_path":"fi:turn_prev.files/user-prefs@2026-03-30/settings.json","physical_path":"turn_prev/files/user-prefs@2026-03-30/settings.json"}',
-                "path": "fi:turn_prev.files/user-prefs@2026-03-30/settings.json",
+                "text": '{"artifact_path":"conv:fi:turn_prev.files/user-prefs@2026-03-30/settings.json","physical_path":"turn_prev/files/user-prefs@2026-03-30/settings.json"}',
+                "path": "conv:fi:turn_prev.files/user-prefs@2026-03-30/settings.json",
                 "turn_id": "turn_prev",
             },
             {
                 "type": "react.tool.result",
                 "mime": "text/plain",
-                "path": "fi:turn_prev.files/user-prefs@2026-03-30/settings.json",
+                "path": "conv:fi:turn_prev.files/user-prefs@2026-03-30/settings.json",
                 "text": "{\"theme\": \"dark\"}",
                 "turn_id": "turn_prev",
             },
             {
                 "type": "react.tool.result",
                 "mime": "application/json",
-                "text": '{"artifact_path":"fi:turn_prev.files/user-prefs@2026-03-30/theme/colors.json","physical_path":"turn_prev/files/user-prefs@2026-03-30/theme/colors.json"}',
-                "path": "fi:turn_prev.files/user-prefs@2026-03-30/theme/colors.json",
+                "text": '{"artifact_path":"conv:fi:turn_prev.files/user-prefs@2026-03-30/theme/colors.json","physical_path":"turn_prev/files/user-prefs@2026-03-30/theme/colors.json"}',
+                "path": "conv:fi:turn_prev.files/user-prefs@2026-03-30/theme/colors.json",
                 "turn_id": "turn_prev",
             },
             {
                 "type": "react.tool.result",
                 "mime": "application/json",
-                "path": "fi:turn_prev.files/user-prefs@2026-03-30/theme/colors.json",
+                "path": "conv:fi:turn_prev.files/user-prefs@2026-03-30/theme/colors.json",
                 "text": '{"primary": "#000"}',
                 "turn_id": "turn_prev",
             },
@@ -177,7 +177,7 @@ def test_build_exec_snapshot_workspace_copies_referenced_directory_tree(tmp_path
     workdir.mkdir(parents=True, exist_ok=True)
     outdir.mkdir(parents=True, exist_ok=True)
     (workdir / "main.py").write_text("print('ok')\n", encoding="utf-8")
-    source_dir = outdir / "turn_prev" / "files" / "user-prefs@2026-03-30"
+    source_dir = artifact_outdir_for(outdir) / "turn_prev" / "files" / "user-prefs@2026-03-30"
     (source_dir / "theme").mkdir(parents=True, exist_ok=True)
     (source_dir / "settings.json").write_text("{\"theme\": \"dark\"}", encoding="utf-8")
     (source_dir / "theme" / "colors.json").write_text("{\"primary\": \"#000\"}", encoding="utf-8")
@@ -201,12 +201,12 @@ def _init_git_workspace_repo(tmp_path):
     subprocess.run(["git", "-C", str(repo), "config", "user.name", "Test User"], check=True, capture_output=True)
     subprocess.run(["git", "-C", str(repo), "config", "user.email", "test@example.com"], check=True, capture_output=True)
 
-    (repo / "files" / "projectA" / "src").mkdir(parents=True, exist_ok=True)
-    (repo / "files" / "projectA" / "docs").mkdir(parents=True, exist_ok=True)
-    (repo / "files" / "projectA" / "assets").mkdir(parents=True, exist_ok=True)
-    (repo / "files" / "projectA" / "src" / "app.py").write_text("print('git')\n", encoding="utf-8")
-    (repo / "files" / "projectA" / "docs" / "readme.md").write_text("# readme\n", encoding="utf-8")
-    (repo / "files" / "projectA" / "assets" / "logo.bin").write_bytes(b"\x00PNG")
+    (repo / "git" / "projects" / "projectA" / "src").mkdir(parents=True, exist_ok=True)
+    (repo / "git" / "projects" / "projectA" / "docs").mkdir(parents=True, exist_ok=True)
+    (repo / "git" / "projects" / "projectA" / "assets").mkdir(parents=True, exist_ok=True)
+    (repo / "git" / "projects" / "projectA" / "src" / "app.py").write_text("print('git')\n", encoding="utf-8")
+    (repo / "git" / "projects" / "projectA" / "docs" / "readme.md").write_text("# readme\n", encoding="utf-8")
+    (repo / "git" / "projects" / "projectA" / "assets" / "logo.bin").write_bytes(b"\x00PNG")
 
     subprocess.run(["git", "-C", str(repo), "add", "."], check=True, capture_output=True)
     subprocess.run(["git", "-C", str(repo), "commit", "-m", "init"], check=True, capture_output=True)
@@ -269,11 +269,11 @@ def test_build_exec_snapshot_workspace_copies_git_turn_root_when_repo_file_is_re
     (workdir / "main.py").write_text("print('ok')\n", encoding="utf-8")
 
     turn_root = artifact_outdir_for(outdir) / "turn_ctx"
-    (turn_root / "files" / "projectA" / "src").mkdir(parents=True, exist_ok=True)
+    (turn_root / "git" / "projects" / "projectA" / "src").mkdir(parents=True, exist_ok=True)
     subprocess.run(["git", "init", str(turn_root)], check=True, capture_output=True)
     subprocess.run(["git", "-C", str(turn_root), "config", "user.name", "Test User"], check=True, capture_output=True)
     subprocess.run(["git", "-C", str(turn_root), "config", "user.email", "test@example.com"], check=True, capture_output=True)
-    (turn_root / "files" / "projectA" / "src" / "app.py").write_text("print('ctx')\n", encoding="utf-8")
+    (turn_root / "git" / "projects" / "projectA" / "src" / "app.py").write_text("print('ctx')\n", encoding="utf-8")
     subprocess.run(["git", "-C", str(turn_root), "add", "."], check=True, capture_output=True)
     subprocess.run(["git", "-C", str(turn_root), "commit", "-m", "init"], check=True, capture_output=True)
 
@@ -281,12 +281,12 @@ def test_build_exec_snapshot_workspace_copies_git_turn_root_when_repo_file_is_re
         workdir=workdir,
         outdir=outdir,
         timeline={},
-        code='from pathlib import Path\napp = Path(OUTPUT_DIR) / "turn_ctx/files/projectA/src/app.py"\nprint(app.read_text())\n',
+        code='from pathlib import Path\napp = Path(OUTPUT_DIR) / "turn_ctx/git/projects/projectA/src/app.py"\nprint(app.read_text())\n',
     )
 
     snap_out = ws["outdir"]
     assert (snap_out / "turn_ctx" / ".git").exists()
-    assert (snap_out / "turn_ctx" / "files" / "projectA" / "src" / "app.py").read_text(encoding="utf-8") == "print('ctx')\n"
+    assert (snap_out / "turn_ctx" / "git" / "projects" / "projectA" / "src" / "app.py").read_text(encoding="utf-8") == "print('ctx')\n"
 
 
 @pytest.mark.asyncio
@@ -310,9 +310,9 @@ async def test_ensure_current_turn_git_workspace_bootstraps_lineage_branch(tmp_p
     turn_root = await ensure_current_turn_git_workspace(runtime_ctx=runtime, outdir=outdir)
 
     assert (turn_root / ".git").exists()
-    assert not (turn_root / "files" / "projectA" / "src" / "app.py").exists()
+    assert not (turn_root / "git" / "projects" / "projectA" / "src" / "app.py").exists()
     proc_show = subprocess.run(
-        ["git", "-C", str(turn_root), "show", "workspace:files/projectA/src/app.py"],
+        ["git", "-C", str(turn_root), "show", "workspace:git/projects/projectA/src/app.py"],
         check=True,
         capture_output=True,
         text=True,
@@ -377,8 +377,8 @@ async def test_publish_current_turn_git_workspace_pushes_lineage_and_version_ref
     )
 
     turn_root = await ensure_current_turn_git_workspace(runtime_ctx=runtime, outdir=outdir)
-    (turn_root / "files" / "projectA" / "src").mkdir(parents=True, exist_ok=True)
-    (turn_root / "files" / "projectA" / "src" / "new.py").write_text("print('new')\n", encoding="utf-8")
+    (turn_root / "git" / "projects" / "projectA" / "src").mkdir(parents=True, exist_ok=True)
+    (turn_root / "git" / "projects" / "projectA" / "src" / "new.py").write_text("print('new')\n", encoding="utf-8")
 
     result = await publish_current_turn_git_workspace(runtime_ctx=runtime, outdir=outdir)
 
@@ -390,7 +390,7 @@ async def test_publish_current_turn_git_workspace_pushes_lineage_and_version_ref
             "-C",
             str(remote_repo),
             "show",
-            "refs/heads/kdcube/demo-tenant/demo-project/admin-user/conversation-1:files/projectA/src/new.py",
+            "refs/heads/kdcube/demo-tenant/demo-project/admin-user/conversation-1:git/projects/projectA/src/new.py",
         ],
         check=True,
         capture_output=True,
@@ -403,7 +403,7 @@ async def test_publish_current_turn_git_workspace_pushes_lineage_and_version_ref
             "-C",
             str(remote_repo),
             "show",
-            "refs/kdcube/demo-tenant/demo-project/admin-user/conversation-1/versions/turn_ctx:files/projectA/src/new.py",
+            "refs/kdcube/demo-tenant/demo-project/admin-user/conversation-1/versions/turn_ctx:git/projects/projectA/src/new.py",
         ],
         check=True,
         capture_output=True,
@@ -473,7 +473,7 @@ async def test_publish_current_turn_git_workspace_aliases_unchanged_workspace_ve
     )
     assert version_exists.returncode == 0
     show_version = subprocess.run(
-        ["git", "-C", str(remote_repo), "show", f"{version_ref}:files/projectA/src/app.py"],
+        ["git", "-C", str(remote_repo), "show", f"{version_ref}:git/projects/projectA/src/app.py"],
         check=True,
         capture_output=True,
         text=True,
@@ -483,10 +483,10 @@ async def test_publish_current_turn_git_workspace_aliases_unchanged_workspace_ve
     ctx = FakeBrowser(runtime)
     pull_result = await hydrate_workspace_paths(
         ctx_browser=ctx,
-        paths=["turn_ctx/files/projectA"],
+        paths=["turn_ctx/git/projects/projectA"],
         outdir=outdir,
     )
-    assert "turn_ctx/files/projectA/src/app.py" in pull_result.get("rehosted", [])
+    assert "turn_ctx/git/projects/projectA/src/app.py" in pull_result.get("rehosted", [])
 
 
 def test_ensure_workspace_repo_rewrites_ssh_origin_to_https_when_pat_is_configured(tmp_path, monkeypatch):
@@ -540,11 +540,11 @@ async def test_publish_current_turn_git_workspace_skips_transient_and_ignored_fi
 
     turn_root = await ensure_current_turn_git_workspace(runtime_ctx=runtime, outdir=outdir)
     (turn_root / ".gitignore").write_text(".ignored.txt\n", encoding="utf-8")
-    (turn_root / "files" / "demo_proj").mkdir(parents=True, exist_ok=True)
-    (turn_root / "files" / "demo_proj" / "LICENSE").write_text("MIT\n", encoding="utf-8")
-    (turn_root / "files" / "demo_proj" / ".ignored.txt").write_text("skip\n", encoding="utf-8")
-    (turn_root / "files" / "demo_proj" / ".pytest_cache" / "v" / "cache").mkdir(parents=True, exist_ok=True)
-    (turn_root / "files" / "demo_proj" / ".pytest_cache" / "README.md").write_text("cache\n", encoding="utf-8")
+    (turn_root / "git" / "projects" / "demo_proj").mkdir(parents=True, exist_ok=True)
+    (turn_root / "git" / "projects" / "demo_proj" / "LICENSE").write_text("MIT\n", encoding="utf-8")
+    (turn_root / "git" / "projects" / "demo_proj" / ".ignored.txt").write_text("skip\n", encoding="utf-8")
+    (turn_root / "git" / "projects" / "demo_proj" / ".pytest_cache" / "v" / "cache").mkdir(parents=True, exist_ok=True)
+    (turn_root / "git" / "projects" / "demo_proj" / ".pytest_cache" / "README.md").write_text("cache\n", encoding="utf-8")
 
     result = await publish_current_turn_git_workspace(runtime_ctx=runtime, outdir=outdir)
 
@@ -555,7 +555,7 @@ async def test_publish_current_turn_git_workspace_skips_transient_and_ignored_fi
             "-C",
             str(remote_repo),
             "show",
-            "refs/heads/kdcube/demo-tenant/demo-project/admin-user/conversation-1:files/demo_proj/LICENSE",
+            "refs/heads/kdcube/demo-tenant/demo-project/admin-user/conversation-1:git/projects/demo_proj/LICENSE",
         ],
         check=True,
         capture_output=True,
@@ -568,7 +568,7 @@ async def test_publish_current_turn_git_workspace_skips_transient_and_ignored_fi
             "-C",
             str(remote_repo),
             "show",
-            "refs/heads/kdcube/demo-tenant/demo-project/admin-user/conversation-1:files/demo_proj/.ignored.txt",
+            "refs/heads/kdcube/demo-tenant/demo-project/admin-user/conversation-1:git/projects/demo_proj/.ignored.txt",
         ],
         check=False,
         capture_output=True,
@@ -581,7 +581,7 @@ async def test_publish_current_turn_git_workspace_skips_transient_and_ignored_fi
             "-C",
             str(remote_repo),
             "show",
-            "refs/heads/kdcube/demo-tenant/demo-project/admin-user/conversation-1:files/demo_proj/.pytest_cache/README.md",
+            "refs/heads/kdcube/demo-tenant/demo-project/admin-user/conversation-1:git/projects/demo_proj/.pytest_cache/README.md",
         ],
         check=False,
         capture_output=True,
@@ -609,7 +609,7 @@ async def test_checkout_current_turn_git_workspace_materializes_requested_versio
     )
 
     turn_root = await ensure_current_turn_git_workspace(runtime_ctx=runtime, outdir=outdir)
-    assert not (turn_root / "files" / "projectA" / "src" / "app.py").exists()
+    assert not (turn_root / "git" / "projects" / "projectA" / "src" / "app.py").exists()
 
     result = await checkout_current_turn_git_workspace(
         runtime_ctx=runtime,
@@ -618,8 +618,8 @@ async def test_checkout_current_turn_git_workspace_materializes_requested_versio
     )
 
     assert result["checked_out_version"] == "turn_prev"
-    assert (turn_root / "files" / "projectA" / "src" / "app.py").read_text(encoding="utf-8") == "print('git')\n"
-    assert (turn_root / "files" / "projectA" / "docs" / "readme.md").read_text(encoding="utf-8") == "# readme\n"
+    assert (turn_root / "git" / "projects" / "projectA" / "src" / "app.py").read_text(encoding="utf-8") == "print('git')\n"
+    assert (turn_root / "git" / "projects" / "projectA" / "docs" / "readme.md").read_text(encoding="utf-8") == "# readme\n"
 
 
 def test_stage_current_turn_text_workspace_surfaces_git_stderr(tmp_path, monkeypatch):
@@ -694,15 +694,15 @@ async def test_react_checkout_rejects_nonempty_current_workspace(tmp_path, monke
     )
     ctx = FakeBrowser(runtime)
     turn_root = await ensure_current_turn_git_workspace(runtime_ctx=runtime, outdir=outdir)
-    (turn_root / "files" / "projectA").mkdir(parents=True, exist_ok=True)
-    (turn_root / "files" / "projectA" / "scratch.md").write_text("dirty\n", encoding="utf-8")
+    (turn_root / "git" / "projects" / "projectA").mkdir(parents=True, exist_ok=True)
+    (turn_root / "git" / "projects" / "projectA" / "scratch.md").write_text("dirty\n", encoding="utf-8")
 
     state = {
         "last_decision": {
             "tool_call": {
                 "params": {
                     "mode": "replace",
-                    "version": "turn_prev",
+                    "paths": ["conv:fi:turn_prev.git/projects/projectA"],
                 }
             }
         },
@@ -724,7 +724,7 @@ async def test_react_checkout_requires_pull_for_unmaterialized_source(tmp_path):
             "tool_call": {
                 "params": {
                     "mode": "replace",
-                    "paths": ["fi:turn_prev.files/projectA"],
+                    "paths": ["conv:fi:turn_prev.git/projects/projectA"],
                 }
             }
         },
@@ -759,26 +759,26 @@ async def test_react_checkout_copies_pulled_paths_into_current_turn_custom(tmp_p
             {
                 "type": "react.tool.result",
                 "mime": "application/json",
-                "text": '{"artifact_path":"fi:turn_prev.files/projectA/src/app.py","physical_path":"turn_prev/files/projectA/src/app.py"}',
+                "text": '{"artifact_path":"conv:fi:turn_prev.git/projects/projectA/src/app.py","physical_path":"turn_prev/git/projects/projectA/src/app.py"}',
                 "turn_id": "turn_prev",
             },
             {
                 "type": "react.tool.result",
                 "mime": "text/plain",
-                "path": "fi:turn_prev.files/projectA/src/app.py",
+                "path": "conv:fi:turn_prev.git/projects/projectA/src/app.py",
                 "text": "print(\"old\")\n",
                 "turn_id": "turn_prev",
             },
             {
                 "type": "react.tool.result",
                 "mime": "application/json",
-                "text": '{"artifact_path":"fi:turn_prev.files/projectA/docs/readme.md","physical_path":"turn_prev/files/projectA/docs/readme.md"}',
+                "text": '{"artifact_path":"conv:fi:turn_prev.git/projects/projectA/docs/readme.md","physical_path":"turn_prev/git/projects/projectA/docs/readme.md"}',
                 "turn_id": "turn_prev",
             },
             {
                 "type": "react.tool.result",
                 "mime": "text/plain",
-                "path": "fi:turn_prev.files/projectA/docs/readme.md",
+                "path": "conv:fi:turn_prev.git/projects/projectA/docs/readme.md",
                 "text": "# readme\n",
                 "turn_id": "turn_prev",
             },
@@ -792,7 +792,7 @@ async def test_react_checkout_copies_pulled_paths_into_current_turn_custom(tmp_p
 
     cfg.get_settings = lambda: _Settings()
     artifact_outdir = artifact_outdir_for(tmp_path)
-    pulled_root = artifact_outdir / "turn_prev" / "files" / "projectA"
+    pulled_root = artifact_outdir / "turn_prev" / "git" / "projects" / "projectA"
     (pulled_root / "src").mkdir(parents=True, exist_ok=True)
     (pulled_root / "docs").mkdir(parents=True, exist_ok=True)
     (pulled_root / "src" / "app.py").write_text('print("old")\n', encoding="utf-8")
@@ -803,7 +803,7 @@ async def test_react_checkout_copies_pulled_paths_into_current_turn_custom(tmp_p
             "tool_call": {
                 "params": {
                     "mode": "replace",
-                    "paths": ["fi:turn_prev.files/projectA"],
+                    "paths": ["conv:fi:turn_prev.git/projects/projectA"],
                 }
             }
         },
@@ -812,8 +812,8 @@ async def test_react_checkout_copies_pulled_paths_into_current_turn_custom(tmp_p
 
     await handle_react_checkout(ctx_browser=ctx, state=state, tool_call_id="checkout_custom")
 
-    assert (artifact_outdir / "turn_ctx" / "files" / "projectA" / "src" / "app.py").read_text(encoding="utf-8") == 'print("old")\n'
-    assert (artifact_outdir / "turn_ctx" / "files" / "projectA" / "docs" / "readme.md").read_text(encoding="utf-8") == "# readme\n"
+    assert (artifact_outdir / "turn_ctx" / "git" / "projects" / "projectA" / "src" / "app.py").read_text(encoding="utf-8") == 'print("old")\n'
+    assert (artifact_outdir / "turn_ctx" / "git" / "projects" / "projectA" / "docs" / "readme.md").read_text(encoding="utf-8") == "# readme\n"
     checkout_events = [b for b in ctx.timeline.blocks if b.get("type") == "react.workspace.checkout"]
     assert checkout_events
 
@@ -838,17 +838,17 @@ async def test_react_checkout_copies_pulled_paths_into_current_turn_git(tmp_path
     ctx = FakeBrowser(runtime)
     pull_result = await hydrate_workspace_paths(
         ctx_browser=ctx,
-        paths=["turn_prev/files/projectA"],
+        paths=["turn_prev/git/projects/projectA"],
         outdir=outdir,
     )
-    assert "turn_prev/files/projectA/src/app.py" in pull_result.get("rehosted", [])
+    assert "turn_prev/git/projects/projectA/src/app.py" in pull_result.get("rehosted", [])
 
     state = {
         "last_decision": {
             "tool_call": {
                 "params": {
                     "mode": "replace",
-                    "paths": ["fi:turn_prev.files/projectA"],
+                    "paths": ["conv:fi:turn_prev.git/projects/projectA"],
                 }
             }
         },
@@ -858,15 +858,15 @@ async def test_react_checkout_copies_pulled_paths_into_current_turn_git(tmp_path
     await handle_react_checkout(ctx_browser=ctx, state=state, tool_call_id="checkout_git")
 
     artifact_outdir = artifact_outdir_for(outdir)
-    assert (artifact_outdir / "turn_ctx" / "files" / "projectA" / "src" / "app.py").read_text(encoding="utf-8") == "print('git')\n"
-    assert (artifact_outdir / "turn_ctx" / "files" / "projectA" / "docs" / "readme.md").read_text(encoding="utf-8") == "# readme\n"
+    assert (artifact_outdir / "turn_ctx" / "git" / "projects" / "projectA" / "src" / "app.py").read_text(encoding="utf-8") == "print('git')\n"
+    assert (artifact_outdir / "turn_ctx" / "git" / "projects" / "projectA" / "docs" / "readme.md").read_text(encoding="utf-8") == "# readme\n"
     payload = next(
         json.loads(b["text"])
         for b in ctx.timeline.blocks
         if b.get("type") == "react.workspace.checkout"
     )
     assert payload["mode"] == "replace"
-    assert payload["checked_out_from"] == ["fi:turn_prev.files/projectA"]
+    assert payload["checked_out_from"] == ["conv:fi:turn_prev.git/projects/projectA"]
 
 
 @pytest.mark.asyncio
@@ -878,13 +878,13 @@ async def test_react_checkout_overlay_overwrites_selected_file_without_clearing_
             {
                 "type": "react.tool.result",
                 "mime": "application/json",
-                "text": '{"artifact_path":"fi:turn_prev.files/projectA/src/app.py","physical_path":"turn_prev/files/projectA/src/app.py"}',
+                "text": '{"artifact_path":"conv:fi:turn_prev.git/projects/projectA/src/app.py","physical_path":"turn_prev/git/projects/projectA/src/app.py"}',
                 "turn_id": "turn_prev",
             },
             {
                 "type": "react.tool.result",
                 "mime": "text/plain",
-                "path": "fi:turn_prev.files/projectA/src/app.py",
+                "path": "conv:fi:turn_prev.git/projects/projectA/src/app.py",
                 "text": "print(\"old\")\n",
                 "turn_id": "turn_prev",
             },
@@ -898,11 +898,11 @@ async def test_react_checkout_overlay_overwrites_selected_file_without_clearing_
 
     cfg.get_settings = lambda: _Settings()
     artifact_outdir = artifact_outdir_for(tmp_path)
-    pulled_root = artifact_outdir / "turn_prev" / "files" / "projectA" / "src"
+    pulled_root = artifact_outdir / "turn_prev" / "git" / "projects" / "projectA" / "src"
     pulled_root.mkdir(parents=True, exist_ok=True)
     (pulled_root / "app.py").write_text('print("old")\n', encoding="utf-8")
 
-    current_root = artifact_outdir / "turn_ctx" / "files" / "projectA" / "src"
+    current_root = artifact_outdir / "turn_ctx" / "git" / "projects" / "projectA" / "src"
     current_root.mkdir(parents=True, exist_ok=True)
     (current_root / "app.py").write_text('print("new")\n', encoding="utf-8")
     (current_root / "extra.py").write_text('print("keep")\n', encoding="utf-8")
@@ -912,7 +912,7 @@ async def test_react_checkout_overlay_overwrites_selected_file_without_clearing_
             "tool_call": {
                 "params": {
                     "mode": "overlay",
-                    "paths": ["fi:turn_prev.files/projectA/src/app.py"],
+                    "paths": ["conv:fi:turn_prev.git/projects/projectA/src/app.py"],
                 }
             }
         },
@@ -929,7 +929,7 @@ async def test_react_checkout_overlay_overwrites_selected_file_without_clearing_
         if b.get("type") == "react.workspace.checkout"
     )
     assert payload["mode"] == "overlay"
-    assert payload["checked_out_from"] == ["fi:turn_prev.files/projectA/src/app.py"]
+    assert payload["checked_out_from"] == ["conv:fi:turn_prev.git/projects/projectA/src/app.py"]
 
 
 @pytest.mark.asyncio
@@ -952,16 +952,16 @@ async def test_hydrate_workspace_paths_git_folder_pull_materializes_text_only(tm
 
     result = await hydrate_workspace_paths(
         ctx_browser=ctx,
-        paths=["turn_prev/files/projectA"],
+        paths=["turn_prev/git/projects/projectA"],
         outdir=outdir,
     )
 
-    assert "turn_prev/files/projectA/src/app.py" in result["rehosted"]
-    assert "turn_prev/files/projectA/docs/readme.md" in result["rehosted"]
-    assert "turn_prev/files/projectA" not in result["missing"]
+    assert "turn_prev/git/projects/projectA/src/app.py" in result["rehosted"]
+    assert "turn_prev/git/projects/projectA/docs/readme.md" in result["rehosted"]
+    assert "turn_prev/git/projects/projectA" not in result["missing"]
     artifact_outdir = artifact_outdir_for(outdir)
-    assert not (artifact_outdir / "turn_prev" / "files" / "projectA" / "assets" / "logo.bin").exists()
-    assert (artifact_outdir / "turn_prev" / "files" / "projectA" / "src" / "app.py").read_text(encoding="utf-8") == "print('git')\n"
+    assert not (artifact_outdir / "turn_prev" / "git" / "projects" / "projectA" / "assets" / "logo.bin").exists()
+    assert (artifact_outdir / "turn_prev" / "git" / "projects" / "projectA" / "src" / "app.py").read_text(encoding="utf-8") == "print('git')\n"
 
 
 @pytest.mark.asyncio
@@ -996,8 +996,8 @@ async def test_hydrate_workspace_paths_git_dedupes_version_fetch_per_turn(tmp_pa
     result = await hydrate_workspace_paths(
         ctx_browser=ctx,
         paths=[
-            "turn_prev/files/projectA/src/app.py",
-            "turn_prev/files/projectA/docs/readme.md",
+            "turn_prev/git/projects/projectA/src/app.py",
+            "turn_prev/git/projects/projectA/docs/readme.md",
         ],
         outdir=outdir,
     )
@@ -1005,8 +1005,8 @@ async def test_hydrate_workspace_paths_git_dedupes_version_fetch_per_turn(tmp_pa
     assert result["errors"] == []
     assert calls == ["turn_prev"]
     artifact_outdir = artifact_outdir_for(outdir)
-    assert (artifact_outdir / "turn_prev" / "files" / "projectA" / "src" / "app.py").read_text(encoding="utf-8") == "print('git')\n"
-    assert (artifact_outdir / "turn_prev" / "files" / "projectA" / "docs" / "readme.md").read_text(encoding="utf-8") == "# readme\n"
+    assert (artifact_outdir / "turn_prev" / "git" / "projects" / "projectA" / "src" / "app.py").read_text(encoding="utf-8") == "print('git')\n"
+    assert (artifact_outdir / "turn_prev" / "git" / "projects" / "projectA" / "docs" / "readme.md").read_text(encoding="utf-8") == "# readme\n"
 
 
 def test_ensure_local_version_ref_skips_refetch_when_local_ref_exists(tmp_path, monkeypatch):
@@ -1071,14 +1071,14 @@ async def test_hydrate_workspace_paths_git_exact_binary_pull_requires_hosting_ar
 
     result = await hydrate_workspace_paths(
         ctx_browser=ctx,
-        paths=["turn_prev/files/projectA/assets/logo.bin"],
+        paths=["turn_prev/git/projects/projectA/assets/logo.bin"],
         outdir=outdir,
     )
 
-    assert result["missing"] == ["turn_prev/files/projectA/assets/logo.bin"]
+    assert result["missing"] == ["turn_prev/git/projects/projectA/assets/logo.bin"]
     assert result["errors"] == []
     assert result["rehosted"] == []
-    assert not (artifact_outdir_for(outdir) / "turn_prev" / "files" / "projectA" / "assets" / "logo.bin").exists()
+    assert not (artifact_outdir_for(outdir) / "turn_prev" / "git" / "projects" / "projectA" / "assets" / "logo.bin").exists()
 
 
 @pytest.mark.asyncio
@@ -1103,7 +1103,7 @@ async def test_hydrate_workspace_paths_git_exact_binary_pull_falls_back_to_hosti
                 "type": "react.tool.result",
                 "mime": "application/json",
                 "text": (
-                    '{"artifact_path":"fi:turn_prev.files/dev-lifecycle.png",'
+                    '{"artifact_path":"conv:fi:turn_prev.files/dev-lifecycle.png",'
                     '"physical_path":"turn_prev/files/dev-lifecycle.png",'
                     '"mime":"image/png","hosted_uri":"hosted://artifact/dev-lifecycle.png"}'
                 ),
@@ -1112,7 +1112,7 @@ async def test_hydrate_workspace_paths_git_exact_binary_pull_falls_back_to_hosti
             {
                 "type": "react.tool.result",
                 "mime": "image/png",
-                "path": "fi:turn_prev.files/dev-lifecycle.png",
+                "path": "conv:fi:turn_prev.files/dev-lifecycle.png",
                 "base64": png_b64,
                 "turn_id": "turn_prev",
             },

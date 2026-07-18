@@ -330,7 +330,6 @@ async def rendering_tool_call_validation_policy(
         physical, rel, rewritten = normalize_physical_path(
             path_val,
             turn_id=turn_id,
-            allow_generic_fi=True,
         )
         if "/attachments/" in physical:
             rel = rel.split("/", 1)[-1] if rel else "output"

@@ -7,7 +7,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.agents.decision import build
 def test_get_workspace_implementation_guide_custom_mentions_hosting_backed_mode():
     guide = get_workspace_implementation_guide("custom")
     assert "react.pull(paths=[...])" in guide
-    assert 'react.checkout(mode="replace", paths=[...])' in guide or 'react.checkout(mode="replace", paths=["fi:' in guide
+    assert 'react.checkout(mode="replace", paths=[...])' in guide or 'react.checkout(mode="replace", paths=["conv:fi:' in guide
     assert "mode=\"overlay\"" in guide
     assert "exact file refs" in guide
     assert "hosted binaries require exact file refs" in guide
@@ -25,8 +25,8 @@ def test_get_workspace_implementation_guide_git_mentions_git_backed_mode():
     assert "local git repo" in guide
     assert "active lineage workspace" in guide
     assert "historical reference view" in guide
-    assert 'react.checkout(mode="replace", paths=[...])' in guide or 'react.checkout(mode="replace", paths=["fi:' in guide
-    assert "editable workspace state" in guide
+    assert 'react.checkout(mode="replace", paths=[...])' in guide or 'react.checkout(mode="replace", paths=["conv:fi:' in guide
+    assert "git/projects" in guide
     assert "mode=\"overlay\"" in guide
     assert "turn_<current>/files/..." in guide
     assert "previous saved workspace paths" in guide
@@ -46,8 +46,8 @@ def test_build_decision_system_text_uses_selected_workspace_implementation():
     assert "local git repo" in text
     assert "Workspace activation is explicit" in text
     assert "EACH TURN STARTS BLANK" in text
-    assert 'react.checkout(mode="replace", paths=[fi:...])' in text or 'react.checkout(mode="replace", paths=["fi:' in text
-    assert "editable workspace state" in text
+    assert 'react.checkout(mode="replace", paths=[...])' in text or 'react.checkout(mode="replace", paths=["conv:fi:' in text
+    assert "git/projects" in text
     assert "mode=\"overlay\"" in text
     assert "turn_<current>/files/..." in text
     assert "existing top-level scope" in text
