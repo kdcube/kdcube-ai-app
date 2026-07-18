@@ -181,6 +181,50 @@ def mcp_consent_from_denial(
     )
 
 
+async def announce_agent_consent(consent: "MCPConsentRequired") -> None:
+    """Raise ONE pending per-agent consent as the standard chat consent banner.
+
+    Call this at the tool ATTEMPT (consent is demand-driven per tool). Records
+    the demand once per conversation; on later attempts, while the block is
+    still real, the same consent event re-emits directly — the chat UI keeps
+    one banner per identical demand and honors a dismissal, so what the user
+    sees always matches what the agent says. Best effort; never raises."""
+    try:
+        from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube.consent_demand import (
+            announce_consent_demand,
+        )
+
+        payload = consent.chat_event_payload()
+        announced = await announce_consent_demand(
+            payload=payload,
+            provider_id="kdcube",
+            claims=list(consent.claims or []),
+            tool_name=str(consent.consent.get("tool_name") or ""),
+        )
+        if not announced:
+            from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import get_comm
+
+            communicator = get_comm()
+            event = getattr(communicator, "event", None) if communicator is not None else None
+            if callable(event):
+                result = event(
+                    agent="connection-hub",
+                    type="chat.step",
+                    route="chat.step",
+                    title="Access consent needed",
+                    step="delegated_to_kdcube.consent",
+                    data=dict(payload or {}),
+                    status="completed",
+                    broadcast=False,
+                )
+                if hasattr(result, "__await__"):
+                    await result
+    except Exception:
+        import logging
+
+        logging.getLogger(__name__).info("agent consent announce failed (non-fatal)", exc_info=True)
+
+
 def raise_for_mcp_consent(
     denial: Any,
     *,

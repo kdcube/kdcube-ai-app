@@ -464,7 +464,8 @@ You have a per-turn file workspace and file tools over CONVERSATION LINKS.
   each arriving file as METADATA + LINK (filename, mime, size, `conv:fi:...`).
   Nothing is read for you automatically — you decide which files to open, and you
   always trust the CURRENT turn's frame over your memory of earlier turns.
-- Conversation links look like `conv:fi:turn_<id>.user.attachments/<name>` (a user
+- Conversation links look like
+  `conv:fi:conv_<conversation_id>.turn_<id>.user.attachments/<name>` (a user
   upload) or `conv:fi:conv_<conversation_id>.turn_<id>.files/<name>` (a produced
   file). They appear beside files throughout the conversation: in `[Files arriving
   this turn]` and in {exec_tool} reports (produced files are listed as

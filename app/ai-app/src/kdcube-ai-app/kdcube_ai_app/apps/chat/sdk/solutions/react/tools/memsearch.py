@@ -13,7 +13,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.tools.common import (
     add_block,
     tc_result_path,
 )
-from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import (
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace.references import (
     build_logical_artifact_path,
     split_logical_artifact_ref,
 )

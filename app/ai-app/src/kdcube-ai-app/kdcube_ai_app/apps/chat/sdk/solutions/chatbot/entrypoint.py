@@ -3285,7 +3285,7 @@ class BaseEntrypoint:
             from kdcube_ai_app.apps.chat.sdk.storage.conversation_store import ConversationStore
 
             self._store = ConversationStore(self.settings.STORAGE_PATH)
-        from kdcube_ai_app.apps.chat.sdk.context.retrieval.ctx_rag import ContextRAGClient
+        from kdcube_ai_app.apps.chat.sdk.solutions.conversation.ctx_rag import ContextRAGClient
 
         self.ctx_client = ContextRAGClient(
             conv_idx=conv_idx,

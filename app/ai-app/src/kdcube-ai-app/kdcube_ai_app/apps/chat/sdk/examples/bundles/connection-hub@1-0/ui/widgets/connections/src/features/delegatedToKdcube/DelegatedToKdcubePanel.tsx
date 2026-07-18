@@ -37,7 +37,10 @@ function providerLabel(provider: DelegatedToKdcubeProvider): string {
 }
 
 function claimLabel(claim: DelegatedToKdcubeClaim | undefined, claimId: string): string {
-  return claim?.label || claimId;
+  // The REAL consent is the claim token; that is what renders. The friendly
+  // label stays descriptive metadata, shown as a hint where a surface adds one.
+  void claim;
+  return claimId;
 }
 
 function accountTitle(account: DelegatedToKdcubeAccount): string {

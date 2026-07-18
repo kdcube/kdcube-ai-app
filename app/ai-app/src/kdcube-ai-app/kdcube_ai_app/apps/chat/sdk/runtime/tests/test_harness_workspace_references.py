@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 
-from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import (
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace.references import (
     build_logical_artifact_path,
     build_physical_artifact_path,
     normalize_physical_path,

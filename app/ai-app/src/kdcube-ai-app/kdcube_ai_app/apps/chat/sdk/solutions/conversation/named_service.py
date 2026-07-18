@@ -567,7 +567,7 @@ class ConversationSearchNamedServiceProvider(NamedServiceProvider):
         (text) or bounded base64 (binary).
         """
         from kdcube_ai_app.apps.chat.sdk.solutions.conversation.files import is_text_mime
-        from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import logical_artifact_conversation_id
+        from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace.references import logical_artifact_conversation_id
 
         ref = _text(request.object_ref)
         if self._search_backend_factory is None:

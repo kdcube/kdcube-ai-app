@@ -9,7 +9,7 @@ import pytest
 from kdcube_ai_app.apps.chat.sdk.protocol import ExternalEventPayload, ExternalEventRouting
 from kdcube_ai_app.apps.chat.sdk.runtime import run_ctx
 from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import bind_current_request_context
-from kdcube_ai_app.apps.chat.sdk.runtime.workspace import artifact_outdir_for
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace import artifact_outdir_for
 
 from kdcube_ai_app.apps.chat.sdk.integrations.slack.named_service import (
     ACTION_POST_MESSAGE,

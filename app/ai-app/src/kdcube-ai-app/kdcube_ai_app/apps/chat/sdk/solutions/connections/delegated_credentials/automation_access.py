@@ -888,6 +888,60 @@ class AutomationAccessService:
                 "resources": selected_resources,
             }
         identity_scope = next(iter(identity_scopes), "grantor")
+
+        requested_client_id = _clean(client_id)
+        access_source = ACCESS_SOURCE_MANUAL
+        created_at_override: int | None = None
+        if requested_client_id:
+            # Deterministic per-agent grant: one record per (grantor, client,
+            # resources). Re-consent MERGES into it — sequential one-click
+            # grants on the same resource (memories today, slack tomorrow)
+            # accumulate; a replace would silently revoke the earlier consent.
+            client_id = requested_client_id
+            access_id = agent_grant_access_id(grantor_subject, client_id, selected_resources)
+            access_source = ACCESS_SOURCE_AGENT
+            existing_raw = await self._redis.get(self._record_key(access_id))
+            existing: AutomationAccessRecord | None = None
+            if existing_raw is not None:
+                try:
+                    existing = AutomationAccessRecord.from_mapping(json.loads(existing_raw))
+                except Exception:
+                    existing = None
+            if existing is not None:
+                created_at_override = existing.created_at or None
+                for resource_key, held in existing.resource_grants.items():
+                    merged = list(selected_resource_grants.get(resource_key, []))
+                    for grant in held:
+                        if grant not in merged:
+                            merged.append(grant)
+                    selected_resource_grants[resource_key] = merged
+                selected_grants = _as_list([
+                    grant
+                    for grants_for_resource in selected_resource_grants.values()
+                    for grant in grants_for_resource
+                ])
+                if selected_named_service_operations is not None:
+                    existing_narrowing = {
+                        res: {ns: list(ops) for ns, ops in namespaces.items()}
+                        for res, namespaces in existing.named_service_operations.items()
+                    }
+                    if not existing_narrowing:
+                        # The existing grant carried the FULL namespace policy;
+                        # full ⊇ any narrowing, so the merge stays full.
+                        selected_named_service_operations = None
+                    else:
+                        for res, namespaces in existing_narrowing.items():
+                            target = selected_named_service_operations.setdefault(res, {})
+                            for ns, ops in namespaces.items():
+                                current = list(target.get(ns, []))
+                                for op_name in ops:
+                                    if op_name not in current:
+                                        current.append(op_name)
+                                target[ns] = current
+        else:
+            access_id = "aut_" + secrets.token_urlsafe(10)
+            client_id = f"{AUTOMATION_CLIENT_PREFIX}:{access_id}"
+
         named_services: dict[str, Any] = {}
         for cfg in resource_configs:
             if isinstance(cfg.named_services, Mapping):
@@ -917,27 +971,9 @@ class AutomationAccessService:
             resources=selected_resources,
         )
 
-        requested_client_id = _clean(client_id)
-        access_source = ACCESS_SOURCE_MANUAL
-        if requested_client_id:
-            # Deterministic per-agent grant: one record per (grantor, client,
-            # resources) so re-consent updates it instead of accumulating rows.
-            client_id = requested_client_id
-            access_id = agent_grant_access_id(grantor_subject, client_id, selected_resources)
-            access_source = ACCESS_SOURCE_AGENT
-        else:
-            access_id = "aut_" + secrets.token_urlsafe(10)
-            client_id = f"{AUTOMATION_CLIENT_PREFIX}:{access_id}"
         ttl = _bounded_ttl(ttl_seconds)
         now = int(time.time())
-        created_at = now
-        if access_source == ACCESS_SOURCE_AGENT:
-            existing_raw = await self._redis.get(self._record_key(access_id))
-            if existing_raw is not None:
-                try:
-                    created_at = int(json.loads(existing_raw).get("created_at") or now)
-                except Exception:
-                    created_at = now
+        created_at = created_at_override or now
         credential = build_delegated_client_credential(
             grantor_subject=grantor_subject,
             client_id=client_id,
@@ -1051,6 +1087,85 @@ class AutomationAccessService:
             "resource_grants": {key: list(value) for key, value in record.resource_grants.items()},
             "client_id": record.client_id,
         }
+
+    async def agent_namespace_grant_state(
+        self,
+        *,
+        grantor_subject: str,
+        client_id: str,
+        namespace: str,
+        operation: str,
+    ) -> dict[str, Any]:
+        """Whether an agent client holds the delegated-by grant a NATIVE
+        named-service call needs: the configured named-services resource that
+        publishes ``namespace``, the operation's declared grants plus the
+        resource's entry grants, checked against the agent's grant record
+        (claims AND, when the record narrowed operations, the narrowing).
+
+        Returns ``{"governed": False}`` when no configured resource publishes
+        the namespace (nothing to gate). Otherwise ``{"governed": True,
+        "granted": bool, "resource", "claims"}`` — ``claims`` is the full
+        required set, ready for the one-click grant payload."""
+        ns = _clean(namespace).lower().rstrip(":")
+        op = _clean(operation)
+        if not ns or not op:
+            return {"governed": False}
+        for cfg in self._config.resources:
+            named = cfg.named_services if isinstance(cfg.named_services, Mapping) else None
+            raw_namespaces = named.get("namespaces") if named else None
+            if not isinstance(raw_namespaces, Mapping):
+                continue
+            policy = None
+            for raw_ns, raw_policy in raw_namespaces.items():
+                if _clean(raw_ns).lower().rstrip(":") == ns and isinstance(raw_policy, Mapping):
+                    policy = raw_policy
+                    break
+            if policy is None:
+                continue
+            # The common MCP entry requirement = the grants of the resource's
+            # generic tools (e.g. named_services:use) — NOT `cfg.grants`, which
+            # is the resource's full scope ceiling.
+            required: set[str] = set()
+            for tool_cfg in cfg.tools or ():
+                required |= set(_as_list(list(getattr(tool_cfg, "grants", ()) or ())))
+            raw_tools = policy.get("tools")
+            for tool_policy in (raw_tools or {}).values() if isinstance(raw_tools, Mapping) else ():
+                if not isinstance(tool_policy, Mapping):
+                    continue
+                operation_policies = tool_policy.get("operations")
+                if isinstance(operation_policies, Mapping) and operation_policies:
+                    for op_name, op_policy in operation_policies.items():
+                        if _clean(op_name) == op:
+                            required |= self._operation_grants(
+                                dict(op_policy) if isinstance(op_policy, Mapping) else {},
+                                dict(tool_policy),
+                            )
+                    continue
+                if _clean(tool_policy.get("operation") or "") == op:
+                    required |= self._operation_grants({}, dict(tool_policy))
+            record = await read_agent_grant_record(
+                self._redis,
+                tenant=self._tenant,
+                project=self._project,
+                grantor_subject=grantor_subject,
+                client_id=client_id,
+                resources=[cfg.resource],
+            )
+            granted = False
+            if record is not None:
+                held = set(record.resource_grants.get(cfg.resource, ()))
+                granted = required.issubset(held)
+                narrowed = record.named_service_operations.get(cfg.resource)
+                if granted and narrowed:
+                    granted = op in set(narrowed.get(ns, ()))
+            return {
+                "governed": True,
+                "granted": granted,
+                "resource": cfg.resource,
+                "claims": sorted(required),
+                "client_id": client_id,
+            }
+        return {"governed": False}
 
     async def record_oauth_grant(
         self,

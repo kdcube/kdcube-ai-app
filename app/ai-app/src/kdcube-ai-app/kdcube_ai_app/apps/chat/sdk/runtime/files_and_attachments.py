@@ -18,13 +18,13 @@ from kdcube_ai_app.infra.service_hub.multimodality import (
     MODALITY_MAX_DOC_BYTES,
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.react.artifact_analysis import prepare_summary_artifact
-from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import (
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace.references import (
     ARTIFACT_NAMESPACE_ATTACHMENTS,
     ARTIFACT_NAMESPACE_FILES,
     split_physical_artifact_path,
 )
 from kdcube_ai_app.apps.chat.sdk.tools.citations import extract_local_paths_any
-from kdcube_ai_app.apps.chat.sdk.runtime.workspace import artifact_outdir_for, resolve_artifact_path
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace import artifact_outdir_for, resolve_artifact_path
 
 
 def unwrap_llm_content_payload(payload: Any) -> Any:

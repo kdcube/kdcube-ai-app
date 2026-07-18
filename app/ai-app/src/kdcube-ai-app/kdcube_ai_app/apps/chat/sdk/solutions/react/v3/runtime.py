@@ -56,7 +56,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.call import get_react_tools_cat
 from kdcube_ai_app.apps.chat.sdk.solutions.react.proto import ReactResult
 from kdcube_ai_app.apps.chat.sdk.solutions.react.runtime_state import ReactRuntimeState as ReactStateV2
 from kdcube_ai_app.apps.chat.sdk.solutions.react.solution_workspace import ApplicationHostingService
-from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import REACT_FILE_REF_PREFIX
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace.references import CONVERSATION_FILE_REF_PREFIX
 from kdcube_ai_app.apps.chat.sdk.solutions.widgets.exec import DecisionExecCodeStreamer
 from kdcube_ai_app.apps.chat.sdk.solutions.widgets.canvas import (
     ReactPatchContentStreamer,
@@ -2233,8 +2233,8 @@ class ReactSolverV2:
             return ""
         if s.startswith("ref:"):
             s = s[4:].strip()
-        if s.startswith(REACT_FILE_REF_PREFIX):
-            body = s[len(REACT_FILE_REF_PREFIX):]
+        if s.startswith(CONVERSATION_FILE_REF_PREFIX):
+            body = s[len(CONVERSATION_FILE_REF_PREFIX):]
             for marker, replacement in (
                 (".files/", "/files/"),
                 (".git/projects/", "/git/projects/"),
@@ -5145,7 +5145,9 @@ class ReactSolverV2:
         # Emit citations used in this turn (files already emitted on host)
         try:
             if self.hosting_service and self.ctx_browser and self.ctx_browser.timeline:
-                from kdcube_ai_app.apps.chat.sdk.solutions.react.timeline import extract_sources_used_from_blocks
+                from kdcube_ai_app.apps.chat.sdk.runtime.harness.timeline.turn_view import (
+                    extract_sources_used_from_blocks,
+                )
                 blocks = self.ctx_browser.timeline.get_turn_blocks()
                 used_sids = extract_sources_used_from_blocks(blocks)
                 pool = list(self.ctx_browser.timeline.sources_pool or [])
@@ -5342,7 +5344,9 @@ class ReactSolverV2:
         try:
             timeline = getattr(self.ctx_browser, "timeline", None) if self.ctx_browser else None
             if timeline is not None:
-                from kdcube_ai_app.apps.chat.sdk.solutions.react.timeline import extract_assistant_completion_texts_from_blocks
+                from kdcube_ai_app.apps.chat.sdk.runtime.harness.timeline.turn_view import (
+                    extract_assistant_completion_texts_from_blocks,
+                )
                 block_completion_texts = extract_assistant_completion_texts_from_blocks(timeline.get_turn_blocks())
         except Exception:
             block_completion_texts = []

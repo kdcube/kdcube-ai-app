@@ -106,7 +106,7 @@ def _utc_iso() -> str:
 
 def _user_prompt_block(text: str, *, turn_id: str, ts: str) -> Optional[Dict[str, Any]]:
     """A ``user.prompt`` block — the reload reader (``iter_turn_user_input_entries``)
-    rebuilds the ``chat:user`` bubble from it, exactly like the React turn log."""
+    rebuilds the ``chat:user`` bubble from the common turn-log contract."""
     body = str(text or "").strip()
     if not body:
         return None
@@ -277,11 +277,11 @@ def build_minimal_turn_log_payload(
     now also — so a run-to-completion turn reloads like React — the USER prompt, any
     USER attachment refs, and any assistant-hosted FILE refs. Block shapes match the
     shared reload reader (``Timeline.build_turn_view`` + ``iter_turn_user_input_entries``).
-    Shape matches ``ctx_rag.save_turn_log_as_artifact`` (``V2TurnLog.from_dict``):
+    Shape matches ``ctx_rag.save_turn_log_as_artifact`` (``TurnLog.from_dict``):
     ``{ts, blocks, blocks_count}``.
 
     ``conversation_title`` (first turn only) is carried on the payload for symmetry
-    with the React turn log; the conversation LIST reads the title from the
+    with the rich ReAct producer; the conversation LIST reads the title from the
     per-conversation timeline artifact, not the turn log — see
     :func:`record_conversation_timeline`.
     """
@@ -427,7 +427,9 @@ async def _latest_conversation_timeline(
     recent = getattr(conversation_client, "recent", None)
     if not callable(recent):
         return None
-    from kdcube_ai_app.apps.chat.sdk.solutions.react.timeline import TIMELINE_KIND
+    from kdcube_ai_app.apps.chat.sdk.runtime.harness.timeline.payload import (
+        TIMELINE_KIND,
+    )
     try:
         res = await recent(
             kinds=[f"artifact:{TIMELINE_KIND}"],
@@ -485,8 +487,8 @@ async def record_conversation_timeline(
     the refresh advances ``last_activity_at`` without ever shadowing an earlier
     title with a blank one.
 
-    Reuses the React timeline primitives (the single source of truth for the
-    artifact kind + payload shape). No-op on a client without ``save_artifact``.
+    Uses the agent-harness timeline contract shared by ReAct and
+    run-to-completion agents. No-op on a client without ``save_artifact``.
     Returns whether it wrote.
     """
     save = getattr(conversation_client, "save_artifact", None)
@@ -509,9 +511,7 @@ async def record_conversation_timeline(
         title = str(prior.get("conversation_title") or "").strip()
     if not started_at:
         started_at = str(prior.get("conversation_started_at") or "").strip() or _utc_iso()
-    # Reuse the React timeline primitives (the single source of truth for the
-    # artifact kind + payload shape) rather than re-deriving the schema here.
-    from kdcube_ai_app.apps.chat.sdk.solutions.react.timeline import (
+    from kdcube_ai_app.apps.chat.sdk.runtime.harness.timeline.payload import (
         TIMELINE_KIND,
         build_timeline_payload,
     )
@@ -566,7 +566,7 @@ async def record_minimal_turn_log_if_absent(
 ) -> bool:
     """Record the minimal turn log when none was written this turn.
 
-    No-op when a turn log was already recorded (React path) or there is no
+    No-op when a turn log was already recorded by the active harness or there is no
     final answer to record. Returns whether it wrote. ``conversation_client`` is
     the platform's ``ContextRAGClient`` (has ``save_turn_log_as_artifact``);
     the caller owns it (the processor / turn lifecycle), not the bundle.

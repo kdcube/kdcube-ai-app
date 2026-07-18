@@ -621,7 +621,7 @@ class ContextTools:
                 return {"ret": None, "err": _err("invalid_path_skill", "fetch_ctx does not support sk: paths. Use react.read for skills before exec.")}
 
             from kdcube_ai_app.apps.chat.sdk.solutions.react.timeline import resolve_artifact_from_timeline
-            from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import localize_conversation_ref
+            from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace.references import localize_conversation_ref
 
             # A ref qualified with the current conversation's scope segment
             # resolves exactly like its local form.

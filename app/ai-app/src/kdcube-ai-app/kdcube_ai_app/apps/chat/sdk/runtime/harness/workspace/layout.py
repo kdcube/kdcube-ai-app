@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+"""Filesystem layout and change detection for harness turn workspaces."""
+
 from pathlib import Path
 from typing import Any, Dict, List, Callable, Optional
 import mimetypes

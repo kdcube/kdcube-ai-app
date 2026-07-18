@@ -15,7 +15,7 @@ from typing import Any
 from kdcube_ai_app.apps.chat.sdk.solutions.conversation.instructions import (
     CONVERSATION_NAMED_SERVICE_NAMESPACE,
 )
-from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import qualify_conversation_ref
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace.references import qualify_conversation_ref
 
 NAMESPACE = CONVERSATION_NAMED_SERVICE_NAMESPACE  # "conv"
 

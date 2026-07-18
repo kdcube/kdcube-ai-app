@@ -6,7 +6,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, MutableMapping
 from typing import Any
 
-from kdcube_ai_app.apps.chat.sdk.solutions.react.events.common import block_event_source_id
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.timeline import block_event_source_id
 from kdcube_ai_app.apps.chat.sdk.solutions.react.events.policies.rendering_common import (
     apply_structural_event_render_defaults,
 )
@@ -134,14 +134,14 @@ async def apply_event_source_transformers_async(
     )
     if react_phase == "timeline_projection" and context.get("provider_render", True) is not False:
         try:
-            from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers.block_policy_adapter import (
+            from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers.timeline_projection import (
                 apply_named_service_block_render_projection,
             )
 
             await apply_named_service_block_render_projection(
                 event_sources=event_sources,
                 timeline_blocks=timeline_blocks,
-                react_phase=react_phase,
+                phase=react_phase,
                 **context,
             )
         except Exception:

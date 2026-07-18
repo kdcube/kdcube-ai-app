@@ -168,7 +168,10 @@ function claimLabel(
   requirement: DelegatedAccessConnectedAccountRequirement,
   provider?: DelegatedToKdcubeProvider,
 ): string {
-  return provider?.claims?.[claim]?.label || requirement.claim_labels?.[claim] || claim;
+  // The REAL consent is the claim token; friendly labels stay metadata.
+  void requirement;
+  void provider;
+  return claim;
 }
 
 export function DelegatedResourceCatalog({

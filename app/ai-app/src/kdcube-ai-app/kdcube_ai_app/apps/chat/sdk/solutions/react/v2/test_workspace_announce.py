@@ -6,7 +6,7 @@ import subprocess
 
 from kdcube_ai_app.apps.chat.sdk.solutions.react.layout import build_announce_text
 from kdcube_ai_app.apps.chat.sdk.solutions.react.proto import RuntimeCtx
-from kdcube_ai_app.apps.chat.sdk.runtime.workspace import artifact_outdir_for
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace import artifact_outdir_for
 
 
 def test_build_announce_text_includes_git_workspace_summary(tmp_path):

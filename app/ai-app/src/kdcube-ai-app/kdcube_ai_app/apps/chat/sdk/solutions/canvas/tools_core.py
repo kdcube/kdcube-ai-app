@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, Mapping
 
-from kdcube_ai_app.apps.chat.sdk.solutions.react.events import canonicalize_event_ref_for_context
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.events import canonicalize_event_ref_for_context
 
 from kdcube_ai_app.apps.chat.sdk.solutions.canvas.ids import timestamp_id
 from kdcube_ai_app.apps.chat.sdk.solutions.canvas.storage import CanvasStore

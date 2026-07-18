@@ -36,7 +36,7 @@ from kdcube_ai_app.apps.chat.ingress.resolvers import (
 )
 from kdcube_ai_app.auth.AuthManager import RequireUser
 from kdcube_ai_app.auth.sessions import UserSession
-from kdcube_ai_app.apps.chat.sdk.context.retrieval.ctx_rag import normalize_rank_weights
+from kdcube_ai_app.apps.chat.sdk.solutions.conversation.ctx_rag import normalize_rank_weights
 from kdcube_ai_app.apps.chat.sdk.solutions.conversation.api import (
     ALLOWED_TARGETS,
     SCOPE_AGENT,

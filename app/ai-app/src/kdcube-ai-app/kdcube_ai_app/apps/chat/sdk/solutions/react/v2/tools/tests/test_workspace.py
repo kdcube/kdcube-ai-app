@@ -23,7 +23,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.solution_workspace import (
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.tools.checkout import handle_react_checkout
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.tools.tests.helpers import FakeBrowser
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.workspace import hydrate_workspace_paths
-from kdcube_ai_app.apps.chat.sdk.runtime.workspace import artifact_outdir_for
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace import artifact_outdir_for
 
 
 @pytest.mark.asyncio

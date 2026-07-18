@@ -26,7 +26,7 @@ from kdcube_ai_app.apps.chat.sdk.events.event_bus import (
 )
 from kdcube_ai_app.apps.chat.sdk.event_identity import normalize_agent_id, index_agent_id
 # from kdcube_ai_app.apps.chat.sdk.context.memory.conv_memories import ConvMemoriesStore
-from kdcube_ai_app.apps.chat.sdk.context.retrieval.ctx_rag import ContextRAGClient
+from kdcube_ai_app.apps.chat.sdk.solutions.conversation.ctx_rag import ContextRAGClient
 
 from kdcube_ai_app.apps.chat.sdk.context.vector.conv_index import ConvIndex
 from kdcube_ai_app.apps.chat.sdk.context.vector.conv_ticket_index import ConvTicketIndex
@@ -68,7 +68,7 @@ from kdcube_ai_app.apps.chat.sdk.runtime.user_inputs import (
     ingest_user_attachments,
     iter_turn_user_input_entries,
 )
-from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import (
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace.references import (
     peel_conversation_prefix,
     qualify_conversation_ref,
 )
@@ -3994,9 +3994,8 @@ class BaseWorkflow():
             end_ts = datetime.datetime.utcnow().isoformat() + "Z"
             total_tokens = 0
             try:
-                extract_sources_used_from_blocks = _react_symbol(
-                    "timeline",
-                    "extract_sources_used_from_blocks",
+                from kdcube_ai_app.apps.chat.sdk.runtime.harness.timeline.turn_view import (
+                    extract_sources_used_from_blocks,
                 )
                 used_sids = extract_sources_used_from_blocks(contrib_log)
             except Exception:
@@ -4025,7 +4024,9 @@ class BaseWorkflow():
                 total_tokens = sum(_block_tokens(b) for b in (contrib_log or []))
             except Exception:
                 total_tokens = 0
-            TurnLog = _react_symbol("turn_log", "TurnLog")
+            from kdcube_ai_app.apps.chat.sdk.runtime.harness.timeline.turn_log import (
+                TurnLog,
+            )
             tlog = TurnLog(
                 turn_id=turn_id,
                 ts=(scratchpad.started_at or ""),

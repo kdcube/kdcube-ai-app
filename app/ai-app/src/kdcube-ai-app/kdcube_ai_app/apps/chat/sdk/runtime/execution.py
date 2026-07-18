@@ -21,7 +21,7 @@ from kdcube_ai_app.infra.service_hub.inventory import AgentLogger
 from kdcube_ai_app.apps.chat.sdk.runtime.iso_runtime import _InProcessRuntime
 from kdcube_ai_app.apps.chat.sdk.runtime.tool_index import read_index
 import kdcube_ai_app.apps.chat.sdk.tools.tools_insights as tools_insights
-from kdcube_ai_app.apps.chat.sdk.runtime.workspace import artifact_outdir_for
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace import artifact_outdir_for
 
 def _safe_label(s: str, *, maxlen: int = 96) -> str:
     """Filesystem-safe label from tool_id."""

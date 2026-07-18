@@ -1726,7 +1726,7 @@ async def test_reload_persona_reads_off_the_folded_completion_block_meta():
     fetch helper reads authored_by/agent_title/handoff from it to surface the
     continuation turn's `chat:user` record — the same fields, same shape as the
     live start payload."""
-    from kdcube_ai_app.apps.chat.sdk.context.retrieval.ctx_rag import (
+    from kdcube_ai_app.apps.chat.sdk.solutions.conversation.ctx_rag import (
         _SUBAGENT_COMPLETION_BLOCK_TYPES,
         _subagent_completion_persona_from_block_meta,
     )

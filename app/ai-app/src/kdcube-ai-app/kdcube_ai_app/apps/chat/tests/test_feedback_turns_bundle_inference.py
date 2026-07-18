@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from kdcube_ai_app.apps.chat.sdk.context.retrieval.ctx_rag import ContextRAGClient
+from kdcube_ai_app.apps.chat.sdk.solutions.conversation.ctx_rag import ContextRAGClient
 
 
 @pytest.mark.asyncio

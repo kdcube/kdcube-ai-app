@@ -114,7 +114,7 @@ async def test_object_get_returns_interleaved_timeline():
                 {"type": "chat:user", "ts": "2026-07-01T22:00:00Z", "data": {"text": "make a chart"}},
                 {"type": "artifact:assistant.file", "ts": "2026-07-01T22:02:00Z",
                  "data": {"payload": {"filename": "chart.png", "mime": "image/png",
-                                       "artifact_path": "fi:turn_t1.outputs/chart.png"}}},
+                                       "artifact_path": "conv:fi:turn_t1.outputs/chart.png"}}},
                 {"type": "chat:assistant", "ts": "2026-07-01T22:03:00Z", "data": {"text": "here it is"}},
             ],
         }],
@@ -239,7 +239,7 @@ async def test_object_get_conv_fi_returns_text_inline():
     assert obj["body"]["content"] == "hello"
     assert obj["body"]["filename"] == "summary.md"
     # fi ref carries no conv_ prefix -> conversation_id falls back to the caller's ctx.
-    assert backend.calls == [("fi:turn_1.outputs/summary.md", "c1")]
+    assert backend.calls == [("conv:fi:turn_1.outputs/summary.md", "c1")]
 
 
 @pytest.mark.asyncio
@@ -279,8 +279,8 @@ async def test_object_get_conv_fi_binary_prefers_download_url():
     assert body["url"].endswith("download_token=tok")
     assert body["expires_at"] == 1900
     assert "content" not in body
-    # The factory is handed the stripped fi ref + descriptor.
-    assert seen["fi_ref"] == "fi:conv_c1.turn_1.outputs/chart.png"
+    # The factory receives the canonical conversation-file ref + descriptor.
+    assert seen["fi_ref"] == "conv:fi:conv_c1.turn_1.outputs/chart.png"
     assert seen["mime"] == "image/png"
 
 

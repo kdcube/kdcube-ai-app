@@ -3,15 +3,15 @@
 """`pull_refs_into_dir` — the framework-neutral core of a "pull" tool.
 
 Refs resolve through the registered namespace byte resolver
-(`react/events/resolver.read_event_ref_bytes`) and land as plain local files
+(`runtime/harness/events/resolver.read_event_ref_bytes`) and land as plain local files
 under the destination directory (e.g. an exec workspace). Offline: the
 resolver is faked; no store."""
 from __future__ import annotations
 
 import asyncio
 
-import kdcube_ai_app.apps.chat.sdk.solutions.react.events.resolver as resolver
-from kdcube_ai_app.apps.chat.sdk.runtime.workspace import pull_refs_into_dir
+import kdcube_ai_app.apps.chat.sdk.runtime.harness.events.resolver as resolver
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace import pull_refs_into_dir
 
 
 def _fake_resolver(payload: dict):

@@ -137,7 +137,7 @@ def _with_ctx(tw, ctx, coro_factory):
 
 
 def _fake_resolver(monkeypatch, payload: dict):
-    import kdcube_ai_app.apps.chat.sdk.solutions.react.events.resolver as resolver
+    import kdcube_ai_app.apps.chat.sdk.runtime.harness.events.resolver as resolver
 
     async def read_event_ref_bytes(*, ref, tenant, project, user_id, storage_path=None, conversation_id=""):
         if ref not in payload:
@@ -205,7 +205,9 @@ def test_pull_files_materializes_through_the_shared_workspace_core(tmp_path, mon
     code_exec = _module("code_exec")
     ctx = _ctx(tmp_path)
 
-    from kdcube_ai_app.apps.chat.sdk.runtime import workspace as sdk_workspace
+    from kdcube_ai_app.apps.chat.sdk.runtime.harness import (
+        workspace as sdk_workspace,
+    )
 
     async def _fake_pull(*, refs, dest_dir, tenant, project, user_id, conversation_id="", storage_path=None):
         assert tenant == "tenant-a" and project == "project-a" and user_id == "user-1"

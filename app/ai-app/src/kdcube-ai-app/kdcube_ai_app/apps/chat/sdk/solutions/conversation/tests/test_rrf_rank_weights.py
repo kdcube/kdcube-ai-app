@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import pytest
 
-from kdcube_ai_app.apps.chat.sdk.context.retrieval.ctx_rag import search_context
+from kdcube_ai_app.apps.chat.sdk.solutions.conversation.ctx_rag import search_context
 
 
 def _row(turn_id: str, *, rec: float) -> dict:

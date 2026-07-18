@@ -32,7 +32,7 @@ from kdcube_ai_app.infra.config import (
     prepare_external_runtime_globals,
 )
 from kdcube_ai_app.apps.chat.sdk.runtime.isolated.executor_payload import build_executor_runtime_globals
-from kdcube_ai_app.apps.chat.sdk.runtime.workspace import (
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace import (
     ARTIFACT_OUTPUT_ENV,
     RUNTIME_OUTPUT_ENV,
     artifact_outdir_for,

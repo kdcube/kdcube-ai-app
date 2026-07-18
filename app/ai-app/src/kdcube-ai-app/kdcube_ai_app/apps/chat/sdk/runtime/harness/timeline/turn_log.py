@@ -8,8 +8,11 @@ from datetime import datetime
 
 @dataclass
 class TurnLog:
-    """
-    Minimal turn log: timestamp + ordered timeline blocks for this turn.
+    """Framework-neutral persisted turn-log envelope.
+
+    ReAct records a rich ordered block set; run-to-completion frameworks use
+    the platform fallback to record a minimal set. Both persist this exact
+    envelope as ``artifact:turn.log``.
     """
     turn_id: str
     ts: str

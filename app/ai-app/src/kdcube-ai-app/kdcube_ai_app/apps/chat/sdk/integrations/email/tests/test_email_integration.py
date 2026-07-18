@@ -81,7 +81,7 @@ def test_email_delivery_builds_html_and_text_parts():
 async def test_delivery_resolves_turn_relative_attachment_from_outdir_contextvar(tmp_path, monkeypatch):
     from kdcube_ai_app.apps.chat.sdk.integrations import delivery as delivery_mod
     from kdcube_ai_app.apps.chat.sdk.runtime.run_ctx import OUTDIR_CV
-    from kdcube_ai_app.apps.chat.sdk.runtime.workspace import artifact_outdir_for
+    from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace import artifact_outdir_for
 
     monkeypatch.delenv("OUTPUT_DIR", raising=False)
     monkeypatch.chdir(tmp_path)

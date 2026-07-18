@@ -31,7 +31,7 @@ from kdcube_ai_app.infra.plugin.bundle_registry import BundleSpec
 from kdcube_ai_app.infra.service_hub.inventory import ModelServiceBase, AgentLogger
 from kdcube_ai_app.infra.service_hub.cache import create_kv_cache
 from kdcube_ai_app.apps.chat.emitters import ChatCommunicator
-from kdcube_ai_app.apps.chat.sdk.context.retrieval.ctx_rag import ContextRAGClient
+from kdcube_ai_app.apps.chat.sdk.solutions.conversation.ctx_rag import ContextRAGClient
 
 
 def parse_tool_id(tool_id: str) -> Tuple[str, str, str]:

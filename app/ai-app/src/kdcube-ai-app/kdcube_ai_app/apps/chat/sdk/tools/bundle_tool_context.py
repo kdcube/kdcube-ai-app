@@ -143,7 +143,7 @@ def scope() -> Dict[str, Any]:
     artifact_outdir = ""
     if outdir:
         try:
-            from kdcube_ai_app.apps.chat.sdk.runtime.workspace import artifact_outdir_for
+            from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace import artifact_outdir_for
 
             artifact_outdir = str(artifact_outdir_for(pathlib.Path(outdir)))
         except Exception:

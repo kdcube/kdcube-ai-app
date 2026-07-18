@@ -421,48 +421,14 @@ def _agent_grant_bearer_provider(ep: "LGPortedAgentsBundle", client_id: str):
 async def _announce_mcp_consent(c: Any) -> None:
     """Raise ONE pending MCP consent as the standard chat consent banner — the
     consent-gated stub calls this at the tool ATTEMPT, so only the capability
-    the turn actually needs asks the user (best effort; identity + comm come
-    from the bound turn context)."""
-    try:
-        from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube.consent_demand import (
-            announce_consent_demand,
-        )
+    the turn actually needs asks the user. The SDK announcer records the demand
+    once per conversation and re-emits the event on later attempts while the
+    block is still real (best effort; never raises)."""
+    from kdcube_ai_app.apps.chat.sdk.solutions.connections.mcp_consent import (
+        announce_agent_consent,
+    )
 
-        # The canonical nested consent-event shape (same banner path Slack
-        # uses); carries the claims + the one-click grant action.
-        payload = c.chat_event_payload() if hasattr(c, "chat_event_payload") else (getattr(c, "consent", {}) or {})
-        announced = await announce_consent_demand(
-            payload=payload,
-            provider_id="kdcube",
-            claims=list(getattr(c, "claims", []) or []),
-            tool_name=str((getattr(c, "consent", {}) or {}).get("tool_name") or ""),
-        )
-        if not announced:
-            # The demand was recorded at an earlier attempt in this
-            # conversation, so announce stayed quiet — but the capability is
-            # STILL pending and the agent is telling the user so. Re-emit the
-            # consent event: the chat UI keeps one banner per identical demand
-            # and honors a dismissal, so the user always sees an actionable
-            # banner while the block is real.
-            from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import get_comm
-
-            communicator = get_comm()
-            event = getattr(communicator, "event", None) if communicator is not None else None
-            if callable(event):
-                result = event(
-                    agent="connection-hub",
-                    type="chat.step",
-                    route="chat.step",
-                    title="Access consent needed",
-                    step="delegated_to_kdcube.consent",
-                    data=dict(payload or {}),
-                    status="completed",
-                    broadcast=False,
-                )
-                if asyncio.iscoroutine(result):
-                    await result
-    except Exception:
-        LOGGER.info("[ported-langgraph] MCP consent bubble failed (non-fatal)", exc_info=True)
+    await announce_agent_consent(c)
 
 
 def _prebuilt_system_prompt(tools: List[Any], mcp_consents: Optional[List[Any]] = None) -> Optional[str]:
@@ -478,7 +444,7 @@ def _prebuilt_system_prompt(tools: List[Any], mcp_consents: Optional[List[Any]] 
     note tells the agent how the gate works: call the tool when the user's
     request needs it, which raises the consent request for the user to
     approve."""
-    consent_note = _mcp_consent_prompt_note(mcp_consents)
+    consent_note = _mcp_consent_prompt_note(mcp_consents) + _named_services_usage_note(tools)
     names = {str(getattr(tool, "name", "") or "") for tool in tools or []}
     if "run_python" not in names:
         return consent_note or None
@@ -493,6 +459,28 @@ def _prebuilt_system_prompt(tools: List[Any], mcp_consents: Optional[List[Any]] 
         read_tool="read_file" if "read_file" in names else "",
     )
     return prompt + consent_note if consent_note else prompt
+
+
+def _named_services_usage_note(tools: List[Any]) -> str:
+    """Usage guidance appended when the named-services bridge tools are bound.
+
+    The bridge is generic: each namespace declares its own objects, actions,
+    and files contract, and the ONLY reliable way to call it is schema-first.
+    Files move by reference — the service hosts bytes server-side; the exec
+    sandbox has no network egress, so URL flows can never run there."""
+    if not any(str(getattr(t, "name", "") or "").startswith("named_services") for t in tools or []):
+        return ""
+    return (
+        "\n\n[Named-service tools] These are generic doors into per-namespace "
+        "services (mail, slack, ...). Before the FIRST call into a namespace, "
+        "call its schema/about operation and follow what it declares — objects, "
+        "actions, argument shapes, and the files contract. Files move BY "
+        "REFERENCE: pass the file's ref (a conv:fi:... or staged:... reference) "
+        "to the service's own upload/file action and the service hosts the bytes "
+        "server-side. run_python has no network access — fetching or POSTing "
+        "URLs from it always fails; URL-based upload flows belong to external "
+        "clients, and your path is the ref-based action."
+    )
 
 
 def _mcp_consent_prompt_note(mcp_consents: Optional[List[Any]]) -> str:

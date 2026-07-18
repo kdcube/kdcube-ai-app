@@ -4,7 +4,7 @@ import pytest
 from types import SimpleNamespace
 
 from kdcube_ai_app.apps.chat.sdk.events import EventSourceSubsystem
-from kdcube_ai_app.apps.chat.sdk.runtime.workspace import artifact_outdir_for
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace import artifact_outdir_for
 from kdcube_ai_app.apps.chat.sdk.solutions.react.events import block_event_id, block_event_source_id
 from kdcube_ai_app.apps.chat.sdk.solutions.react.proto import RuntimeCtx
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v3.tools.external import (

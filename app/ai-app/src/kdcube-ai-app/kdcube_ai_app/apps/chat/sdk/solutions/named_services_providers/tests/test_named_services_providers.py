@@ -1119,7 +1119,10 @@ async def test_configured_artifact_rehoster_streams_named_service_bytes(tmp_path
     rehoster = event_sources.namespace_rehoster("task")
     assert rehoster is not None
     assert getattr(rehoster.handler, "operation", None) == "object.get"
-    runtime = SimpleNamespace(turn_id="turn_rehost")
+    runtime = SimpleNamespace(
+        turn_id="turn_rehost",
+        conversation_id="conversation_rehost",
+    )
     ctx_browser = SimpleNamespace(runtime_ctx=runtime)
     with bind_bundle_operation_stream_caller(_stream_caller):
         result = await event_sources.rehost_namespace_ref(
@@ -1130,7 +1133,9 @@ async def test_configured_artifact_rehoster_streams_named_service_bytes(tmp_path
 
     assert result["errors"] == []
     assert result["missing"] == []
-    assert result["materialized"][0]["logical_path"].startswith("fi:")
+    assert result["materialized"][0]["logical_path"].startswith(
+        "conv:fi:conv_conversation_rehost.turn_rehost."
+    )
     assert result["materialized"][0]["mime"] == "text/markdown"
     assert result["materialized"][0]["size_bytes"] == len(b"alphabeta")
     assert result["materialized"][0]["response"]["ok"] is True
@@ -1188,7 +1193,10 @@ async def test_configured_artifact_rehoster_materializes_named_service_json_obje
     )
 
     assert count == 1
-    runtime = SimpleNamespace(turn_id="turn_rehost")
+    runtime = SimpleNamespace(
+        turn_id="turn_rehost",
+        conversation_id="conversation_rehost",
+    )
     ctx_browser = SimpleNamespace(runtime_ctx=runtime)
     with bind_bundle_operation_stream_caller(_stream_caller):
         result = await event_sources.rehost_namespace_ref(
@@ -1200,7 +1208,9 @@ async def test_configured_artifact_rehoster_materializes_named_service_json_obje
     assert result["errors"] == []
     assert result["missing"] == []
     materialized = result["materialized"][0]
-    assert materialized["logical_path"].startswith("fi:")
+    assert materialized["logical_path"].startswith(
+        "conv:fi:conv_conversation_rehost.turn_rehost."
+    )
     assert materialized["mime"] == "application/json"
     assert materialized["response"]["ok"] is True
     assert materialized["response"]["ret"]["attrs"]["object_ref"] == object_ref
@@ -1435,7 +1445,7 @@ async def test_configured_event_source_delegates_block_production_to_named_servi
 
 @pytest.mark.asyncio
 async def test_named_service_block_render_projection_fans_out_and_merges_owned_patches(monkeypatch):
-    import kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers.block_policy_adapter as adapter
+    import kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers.timeline_projection as projection
 
     calls: list[NamedServiceRequest] = []
 
@@ -1491,7 +1501,7 @@ async def test_named_service_block_render_projection_fans_out_and_merges_owned_p
             },
         )
 
-    monkeypatch.setattr(adapter, "call_named_service_endpoint", _call)
+    monkeypatch.setattr(projection, "call_named_service_endpoint", _call)
 
     event_sources = EventSourceSubsystem()
     register_configured_named_service_event_sources(
@@ -1517,7 +1527,7 @@ async def test_named_service_block_render_projection_fans_out_and_merges_owned_p
         },
     ]
 
-    await adapter.apply_named_service_block_render_projection(
+    await projection.apply_named_service_block_render_projection(
         event_sources=event_sources,
         timeline_blocks=timeline,
     )
@@ -2547,7 +2557,7 @@ async def test_named_service_client_tool_normalizes_physical_external_attachment
         calls.append(call)
         assert call.data["operation"] == "object.host_file"
         assert call.data["payload"]["file"] == {
-            "ref": "fi:turn_1.external.external_event.attachments/evt_1/Design.md",
+            "ref": "conv:fi:turn_1.external.external_event.attachments/evt_1/Design.md",
             "filename": "Design.md",
             "mime": "text/markdown",
             "description": "Design document attached by user",

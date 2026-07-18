@@ -9,7 +9,7 @@ import shlex
 import subprocess
 from typing import Any, Dict, List, Optional
 
-from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import (
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace.references import (
     ARTIFACT_NAMESPACE_PROJECTS,
     ARTIFACT_NAMESPACE_SNAPSHOTS,
     split_physical_artifact_ref,
@@ -27,7 +27,7 @@ from kdcube_ai_app.infra.git.auth import (
     normalize_git_remote_url,
 )
 from kdcube_ai_app.infra.service_hub.inventory import AgentLogger
-from kdcube_ai_app.apps.chat.sdk.runtime.workspace import artifact_outdir_for, runtime_outdir_for_artifact_outdir
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace import artifact_outdir_for, runtime_outdir_for_artifact_outdir
 
 _SKIP_WORKSPACE_DIRS = {".git", "__pycache__", ".pytest_cache", "node_modules", ".venv", "logs", "executed_programs"}
 _GIT_WORKSPACE_NAMESPACES = (ARTIFACT_NAMESPACE_PROJECTS, ARTIFACT_NAMESPACE_SNAPSHOTS)

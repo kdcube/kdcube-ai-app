@@ -12,7 +12,7 @@ from types import ModuleType
 from typing import Any
 
 from kdcube_ai_app.apps.chat.sdk.util import normalize_artifact_visibility
-from kdcube_ai_app.apps.chat.sdk.solutions.react.events.common import block_matches_event_source
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.timeline import block_matches_event_source
 
 
 REACT_POLICY_PHASES = {

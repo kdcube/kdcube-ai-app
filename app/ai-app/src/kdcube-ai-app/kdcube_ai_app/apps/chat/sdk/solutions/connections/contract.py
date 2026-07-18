@@ -36,6 +36,12 @@ OAUTH_START = "oauth.start"
 # per-turn read a bundle makes; the GRANT itself is created by the user in the
 # Connection Hub (the "Delegated by KDCube" tab), not through this op.
 AGENT_GRANT_GET_TOKEN = "agent_grant.get_token"
+# The NATIVE named-service gate's question: does this agent client hold the
+# delegated-by grant that a (namespace, operation) call needs? The provider maps
+# the namespace onto its configured named-services resource and answers
+# governed/granted plus the required claims — ready for the one-click grant
+# payload when pending.
+AGENT_GRANT_CHECK = "agent_grant.check"
 
 CONNECTION_OPERATIONS = (
     CONNECTION_CATALOG,
@@ -44,6 +50,7 @@ CONNECTION_OPERATIONS = (
     CONNECTION_DISCONNECT,
     OAUTH_START,
     AGENT_GRANT_GET_TOKEN,
+    AGENT_GRANT_CHECK,
 )
 
 
@@ -273,6 +280,7 @@ __all__ = [
     "CONNECTION_DISCONNECT",
     "OAUTH_START",
     "AGENT_GRANT_GET_TOKEN",
+    "AGENT_GRANT_CHECK",
     "CONNECTION_OPERATIONS",
     "build_connection_operations",
     "Connection",

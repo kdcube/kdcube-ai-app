@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2025 Elena Viter
 
-# chat/sdk/context/retrieval/ctx_rag.py
+# chat/sdk/solutions/conversation/ctx_rag.py
 
 from __future__ import annotations
 
@@ -11,10 +11,13 @@ from typing import Optional, Sequence, List, Dict, Any, Union, Callable
 
 from kdcube_ai_app.apps.chat.sdk.util import _turn_id_from_tags_safe, ts_key, isoz
 from kdcube_ai_app.infra.service_hub.inventory import ModelServiceBase
-from kdcube_ai_app.apps.chat.sdk.solutions.react.timeline import (
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.timeline.payload import (
     TIMELINE_KIND,
     SOURCES_POOL_KIND,
     parse_timeline_payload,
+)
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.timeline.turn_view import (
+    build_turn_view,
 )
 import kdcube_ai_app.apps.chat.sdk.tools.citations as citation_utils
 
@@ -647,10 +650,10 @@ class ContextRAGClient:
             extra_tags: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """Writes artifact to store and/or index (see index_only/store_only flags)."""
-        from kdcube_ai_app.apps.chat.sdk.solutions.react.turn_log import TurnLog as V2TurnLog
+        from kdcube_ai_app.apps.chat.sdk.runtime.harness.timeline.turn_log import TurnLog
         payload = payload or {}
-        log = V2TurnLog.from_dict(payload)
-        index_text = V2TurnLog.build_index_text(payload) or ""
+        log = TurnLog.from_dict(payload)
+        index_text = TurnLog.build_index_text(payload) or ""
 
         tags = TURN_LOG_TAGS_BASE + [f"turn:{turn_id}"]
         if extra_tags:
@@ -1074,8 +1077,8 @@ class ContextRAGClient:
             # Build compact turn_log index text for SQL entry
             index_text = ""
             try:
-                from kdcube_ai_app.apps.chat.sdk.solutions.react.turn_log import TurnLog as V2TurnLog
-                index_text = V2TurnLog.build_index_text(payload)
+                from kdcube_ai_app.apps.chat.sdk.runtime.harness.timeline.turn_log import TurnLog
+                index_text = TurnLog.build_index_text(payload)
             except Exception:
                 index_text = ""
 
@@ -1294,8 +1297,8 @@ class ContextRAGClient:
             # Build compact turn_log index text for SQL entry
             index_text = ""
             try:
-                from kdcube_ai_app.apps.chat.sdk.solutions.react.turn_log import TurnLog as V2TurnLog
-                index_text = V2TurnLog.build_index_text(payload)
+                from kdcube_ai_app.apps.chat.sdk.runtime.harness.timeline.turn_log import TurnLog
+                index_text = TurnLog.build_index_text(payload)
             except Exception:
                 index_text = ""
 
@@ -2506,9 +2509,7 @@ class ContextRAGClient:
             view: Dict[str, Any] = {}
 
             if blocks:
-                from kdcube_ai_app.apps.chat.sdk.solutions.react.timeline import Timeline
-                from kdcube_ai_app.apps.chat.sdk.solutions.react.proto import RuntimeCtx
-                view = Timeline(runtime=RuntimeCtx()).build_turn_view(
+                view = build_turn_view(
                     turn_id=tid,
                     blocks=blocks,
                     sources_pool=(sources_pool or sources_pool_for_conv or []),
@@ -2621,7 +2622,7 @@ class ContextRAGClient:
 
                 for f in view.get("files") or []:
                     if isinstance(f, dict):
-                        from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import normalize_file_payload
+                        from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace.references import normalize_file_payload
                         f = normalize_file_payload(f)
                     file_meta = {"kind": "assistant.file", "turn_id": tid}
                     for key in ("artifact_path", "tool_id", "tool_call_id", "call_id", "sub_type", "ts"):

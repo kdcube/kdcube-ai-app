@@ -20,12 +20,12 @@ from kdcube_ai_app.apps.chat.emitters import ChatCommunicator
 from kdcube_ai_app.apps.chat.sdk.storage.conversation_store import ConversationStore
 from kdcube_ai_app.infra.service_hub.inventory import AgentLogger
 from kdcube_ai_app.apps.chat.sdk.solutions.react.timeline import resolve_artifact_from_timeline
-from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import (
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace.references import (
     ARTIFACT_NAMESPACE_ATTACHMENTS,
     ARTIFACT_NAMESPACE_FILES,
     ARTIFACT_NAMESPACE_PROJECTS,
     ARTIFACT_NAMESPACE_SNAPSHOTS,
-    REACT_FILE_REF_PREFIX,
+    CONVERSATION_FILE_REF_PREFIX,
     build_logical_artifact_path,
     localize_conversation_ref,
     build_physical_artifact_path,
@@ -45,7 +45,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.workspace import (
     extract_workspace_turn_roots,
     hydrate_workspace_paths,
 )
-from kdcube_ai_app.apps.chat.sdk.runtime.workspace import (
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace import (
     artifact_outdir_for,
     resolve_artifact_path,
     runtime_outdir_for_artifact_outdir,
@@ -213,7 +213,7 @@ async def read_artifact_for_react(
     if not isinstance(path, str) or not path.strip():
         return {"missing": True}
     raw_path = path.strip()
-    if not raw_path.startswith(REACT_FILE_REF_PREFIX):
+    if not raw_path.startswith(CONVERSATION_FILE_REF_PREFIX):
         return {"missing": True}
     embedded_conversation_id, source_turn_id, source_namespace, source_rel = split_logical_artifact_ref(raw_path)
     if embedded_conversation_id:
@@ -389,7 +389,7 @@ async def resolve_logical_artifact(
         except Exception:
             pass
 
-    if not raw_path.startswith(REACT_FILE_REF_PREFIX):
+    if not raw_path.startswith(CONVERSATION_FILE_REF_PREFIX):
         return None
     tid = source_turn_id
     if not tid:
@@ -912,10 +912,10 @@ def build_exec_snapshot_workspace(
     code_paths, _ = extract_code_file_paths(code, turn_id="")
     file_paths = list(code_paths)
     for p in fetch_paths:
-        if p.startswith(REACT_FILE_REF_PREFIX):
+        if p.startswith(CONVERSATION_FILE_REF_PREFIX):
             file_paths.append(p)
     for p in file_paths:
-        if p.startswith(REACT_FILE_REF_PREFIX):
+        if p.startswith(CONVERSATION_FILE_REF_PREFIX):
             # logical -> physical
             try:
                 art = resolve_artifact_from_timeline({"blocks": tl_blocks, "sources_pool": tl_sources}, p)
@@ -936,7 +936,7 @@ def build_exec_snapshot_workspace(
         if (artifact_outdir / turn_id / ".git").exists():
             git_turn_roots.add(turn_id)
     for phys in file_paths:
-        if not isinstance(phys, str) or not phys.strip() or phys.startswith(REACT_FILE_REF_PREFIX):
+        if not isinstance(phys, str) or not phys.strip() or phys.startswith(CONVERSATION_FILE_REF_PREFIX):
             continue
         root_name = phys.split("/", 1)[0]
         artifact_outdir = artifact_outdir_for(outdir)
@@ -966,7 +966,7 @@ def build_exec_snapshot_workspace(
     for phys in file_paths:
         if not isinstance(phys, str) or not phys.strip():
             continue
-        if phys.startswith(REACT_FILE_REF_PREFIX):
+        if phys.startswith(CONVERSATION_FILE_REF_PREFIX):
             continue
         if phys in seen:
             continue
@@ -1507,7 +1507,7 @@ class ApplicationHostingService:
         """
         if not self.comm:
             return
-        from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import normalize_file_payload
+        from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace.references import normalize_file_payload
         service = getattr(self.comm, "service", None) or {}
         conversation_id = str(service.get("conversation_id") or "").strip()
         event_dt = datetime.now(timezone.utc)

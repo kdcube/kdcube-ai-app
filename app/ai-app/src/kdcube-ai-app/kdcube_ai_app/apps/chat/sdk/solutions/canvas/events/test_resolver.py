@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from kdcube_ai_app.apps.chat.sdk.runtime.workspace import artifact_outdir_for
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace import artifact_outdir_for
 from kdcube_ai_app.apps.chat.sdk.solutions.canvas.events.policies import (
     canvas_read_block_policy,
     produce_canvas_announce_blocks,

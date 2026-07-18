@@ -8,8 +8,8 @@ from types import ModuleType
 import pytest
 
 from kdcube_ai_app.apps.chat.sdk.events import EventSourceSubsystem, artifact_namespace_rehoster
-from kdcube_ai_app.apps.chat.sdk.runtime.workspace import resolve_artifact_path
-from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import (
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace import resolve_artifact_path
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace.references import (
     build_physical_artifact_path,
     physical_path_to_logical_path,
 )

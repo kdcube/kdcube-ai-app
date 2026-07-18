@@ -18,12 +18,12 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.tools.common import (
     tool_call_block,
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.react.solution_workspace import _safe_relpath
-from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import (
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace.references import (
     ARTIFACT_NAMESPACE_ATTACHMENTS,
     ARTIFACT_NAMESPACE_FILES,
     ARTIFACT_NAMESPACE_PROJECTS,
     ARTIFACT_NAMESPACE_SNAPSHOTS,
-    REACT_FILE_REF_PREFIX,
+    CONVERSATION_FILE_REF_PREFIX,
     build_physical_artifact_path,
     localize_conversation_ref,
     physical_path_to_logical_path,
@@ -31,7 +31,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import (
     split_logical_artifact_ref,
     split_physical_artifact_path,
 )
-from kdcube_ai_app.apps.chat.sdk.runtime.workspace import artifact_outdir_for
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace import artifact_outdir_for
 from kdcube_ai_app.tools.content_type import is_text_mime_type
 
 
@@ -198,7 +198,7 @@ def _resolve_root(
     if root_sel_lc.startswith("outdir/"):
         # Backwards compatibility only.
         rel = root_sel[len("outdir/"):].lstrip("/")
-    elif root_sel.startswith(REACT_FILE_REF_PREFIX):
+    elif root_sel.startswith(CONVERSATION_FILE_REF_PREFIX):
         source_conversation_id, logical_turn, namespace, logical_rel = split_logical_artifact_ref(root_sel)
         if logical_turn and namespace in {
             ARTIFACT_NAMESPACE_PROJECTS,

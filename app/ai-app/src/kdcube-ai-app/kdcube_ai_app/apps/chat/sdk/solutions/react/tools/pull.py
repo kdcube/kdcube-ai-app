@@ -12,9 +12,9 @@ import pathlib
 from kdcube_ai_app.apps.chat.sdk.solutions.react.solution_workspace import (
     resolve_logical_artifact,
 )
-from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import (
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace.references import (
     ARTIFACT_NAMESPACE_SNAPSHOTS,
-    REACT_FILE_REF_PREFIX,
+    CONVERSATION_FILE_REF_PREFIX,
     localize_conversation_ref,
     qualify_conversation_ref,
     split_logical_artifact_ref,
@@ -267,7 +267,7 @@ async def handle_react_pull(*, react: Any = None, ctx_browser: Any, state: Dict[
         raw = localize_conversation_ref(req["path"], current_conversation_id)
         embedded_conversation_id, _, _, _ = split_logical_artifact_ref(raw)
         source_conversation_id = str(embedded_conversation_id or "").strip()
-        if not raw.startswith(REACT_FILE_REF_PREFIX):
+        if not raw.startswith(CONVERSATION_FILE_REF_PREFIX):
             namespace = raw.partition(":")[0].strip() if ":" in raw else ""
             rehoster = getattr(event_sources, "namespace_rehoster", lambda _namespace: None)(namespace) if namespace else None
             if rehoster is None:

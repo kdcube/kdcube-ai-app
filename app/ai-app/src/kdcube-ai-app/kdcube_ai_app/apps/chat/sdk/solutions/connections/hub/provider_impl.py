@@ -236,6 +236,33 @@ class ConnectionHubProvider(ConnectionsProviderBase):
         scope = grants.get(resource) or next(iter(grants.values()), [])
         return ConnectionToken(access_token=access_token, scope=tuple(scope or ()))
 
+    async def agent_grant_state(
+        self,
+        ctx: NamedServiceContext,
+        *,
+        client_id: str,
+        namespace: str,
+        operation: str,
+    ) -> dict[str, Any]:
+        """The native named-service gate over the delegated-grant catalog: maps
+        the namespace to its configured named-services resource and answers
+        governed/granted with the required claims (see
+        ``AutomationAccessService.agent_namespace_grant_state``)."""
+        if self._automation_access_factory is None:
+            return {"governed": False}
+        user_id = self._user_id(ctx)
+        if not user_id:
+            return {"governed": False}
+        service = self._automation_access_factory()
+        if service is None:
+            return {"governed": False}
+        return await service.agent_namespace_grant_state(
+            grantor_subject=user_id,
+            client_id=client_id,
+            namespace=namespace,
+            operation=operation,
+        )
+
     async def _refresh_tokens(
         self,
         *,

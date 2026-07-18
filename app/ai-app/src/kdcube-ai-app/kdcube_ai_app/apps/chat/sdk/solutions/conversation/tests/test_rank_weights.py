@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from kdcube_ai_app.apps.chat.sdk.context.retrieval.ctx_rag import normalize_rank_weights
+from kdcube_ai_app.apps.chat.sdk.solutions.conversation.ctx_rag import normalize_rank_weights
 from kdcube_ai_app.apps.chat.sdk.solutions.conversation.api import (
     ConversationSearchContext,
     ConversationSearchParams,

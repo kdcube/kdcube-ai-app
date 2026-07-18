@@ -34,7 +34,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import qualify_conversation_ref
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace.references import qualify_conversation_ref
 
 LOGGER = logging.getLogger("kdcube.react.subagents")
 

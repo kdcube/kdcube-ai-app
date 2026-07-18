@@ -10,7 +10,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.layout import (
     latest_assistant_completion_text,
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.react.proto import RuntimeCtx
-from kdcube_ai_app.apps.chat.sdk.solutions.react.timeline import (
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.timeline.turn_view import (
     extract_assistant_completion_texts_from_blocks,
     extract_sources_used_from_blocks,
 )
@@ -52,9 +52,9 @@ def test_build_assistant_completion_blocks_numbers_earlier_entries_and_keeps_lat
     )
 
     assert [b["path"] for b in blocks] == [
-        "ar:turn_1.assistant.completion.1",
-        "ar:turn_1.assistant.completion.2",
-        "ar:turn_1.assistant.completion",
+        "conv:ar:turn_1.assistant.completion.1",
+        "conv:ar:turn_1.assistant.completion.2",
+        "conv:ar:turn_1.assistant.completion",
     ]
     assert blocks[-1]["text"] == "Final answer"
     assert blocks[-1]["meta"]["completion_index"] == 3
@@ -76,8 +76,8 @@ def test_build_assistant_completion_blocks_appends_settled_answer_when_latest_at
 
     assert [b["text"] for b in blocks] == ["Visible draft", "Settled answer"]
     assert [b["path"] for b in blocks] == [
-        "ar:turn_2.assistant.completion.1",
-        "ar:turn_2.assistant.completion",
+        "conv:ar:turn_2.assistant.completion.1",
+        "conv:ar:turn_2.assistant.completion",
     ]
 
 
@@ -95,7 +95,7 @@ def test_build_assistant_completion_blocks_keeps_latest_alias_at_first_visible_t
     )
 
     assert len(blocks) == 1
-    assert blocks[0]["path"] == "ar:turn_3.assistant.completion"
+    assert blocks[0]["path"] == "conv:ar:turn_3.assistant.completion"
     assert blocks[0]["ts"] == "2026-04-26T10:01:00Z"
 
 
@@ -129,7 +129,10 @@ def test_build_assistant_completion_attempt_blocks_marks_attempt_provisional():
 
     assert len(blocks) == 1
     assert blocks[0]["type"] == "assistant.completion.attempt"
-    assert blocks[0]["path"] == "ar:turn_attempt.assistant.completion.attempt.2"
+    assert (
+        blocks[0]["path"]
+        == "conv:ar:turn_attempt.assistant.completion.attempt.2"
+    )
     assert blocks[0]["text"] == "Provisional answer"
     assert blocks[0]["meta"]["completion_attempt_index"] == 2
     assert blocks[0]["meta"]["provisional"] is True
@@ -182,7 +185,10 @@ def test_build_working_summary_attempt_blocks_uses_stable_attempt_paths():
     )
 
     assert len(blocks) == 1
-    assert blocks[0]["path"] == "ws:turn_5.conv.working.summary.attempt.2"
+    assert (
+        blocks[0]["path"]
+        == "conv:ws:turn_5.conv.working.summary.attempt.2"
+    )
     assert blocks[0]["text"] == "Goal: second\nOutcome: done"
     assert blocks[0]["meta"]["summary_scope"] == "completion_attempt"
     assert blocks[0]["meta"]["assistant_completion_attempt_index"] == 2

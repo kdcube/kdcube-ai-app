@@ -5,7 +5,7 @@
 # (``conv:fi:`` — user attachments from any turn, files produced by code
 # execution in earlier turns, external-event attachments) materialize as plain
 # local files under a workspace directory. Byte resolution is the registered
-# namespace byte resolver (`react/events/resolver.read_event_ref_bytes`) — the
+# event ref resolver (`runtime/harness/events/resolver.read_event_ref_bytes`) — the
 # SAME resolution the object download action uses, so a ref that downloads
 # also pulls. Framework-neutral: identity in, files out; no timeline, no
 # browser, no framework runtime.
@@ -39,7 +39,7 @@ async def pull_refs_into_dir(
     The framework-neutral core of a "pull" tool: each ref (``conv:fi:`` — a user
     attachment from any turn, a produced file from an earlier turn, an external-event
     attachment) resolves to bytes through the registered namespace byte resolver
-    (`react/events/resolver.read_event_ref_bytes`, the same resolution the object
+    (`runtime/harness/events/resolver.read_event_ref_bytes`, the same resolution the object
     download action uses) and is written into ``dest_dir`` under its own filename —
     e.g. an exec workspace, where generated code then reads it with a bare relative
     path. Identity fields are the request identity that owns the storage keys
@@ -48,7 +48,7 @@ async def pull_refs_into_dir(
     Returns one report dict per ref: ``{"ref", "ok", "filename", "path", "size",
     "mime"}`` on success, ``{"ref", "ok": False, "error"}`` on failure — a bad ref
     never aborts the batch."""
-    from kdcube_ai_app.apps.chat.sdk.solutions.react.events.resolver import (
+    from kdcube_ai_app.apps.chat.sdk.runtime.harness.events.resolver import (
         read_event_ref_bytes,
     )
 

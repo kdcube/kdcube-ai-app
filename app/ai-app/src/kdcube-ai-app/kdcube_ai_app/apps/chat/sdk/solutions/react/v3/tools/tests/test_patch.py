@@ -7,7 +7,7 @@ import pytest
 from kdcube_ai_app.apps.chat.sdk.solutions.react.proto import RuntimeCtx
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.tools.patch import handle_react_patch
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.tools.tests.helpers import FakeBrowser, FakeReact
-from kdcube_ai_app.apps.chat.sdk.runtime.workspace import artifact_outdir_for
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace import artifact_outdir_for
 
 
 class _FakeComm:

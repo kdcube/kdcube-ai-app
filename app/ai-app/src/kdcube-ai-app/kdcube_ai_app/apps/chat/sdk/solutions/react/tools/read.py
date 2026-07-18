@@ -20,8 +20,10 @@ from kdcube_ai_app.apps.chat.sdk.util import (
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import (
     build_artifact_meta_block,
+)
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace.references import (
     peel_conversation_prefix,
-    REACT_FILE_REF_PREFIX,
+    CONVERSATION_FILE_REF_PREFIX,
     split_logical_artifact_ref,
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.react.solution_workspace import (
@@ -609,7 +611,7 @@ async def handle_react_read(*, ctx_browser: Any, state: Dict[str, Any], tool_cal
     if turn_index_paths:
         artifact_paths = [p for p in artifact_paths if p not in turn_index_paths]
     for item_path in item_paths:
-        if item_path.startswith((REACT_FILE_REF_PREFIX, "sk:", "SK", "skill:", "skills.", "ks:")) or parse_turn_index_path(item_path):
+        if item_path.startswith((CONVERSATION_FILE_REF_PREFIX, "sk:", "SK", "skill:", "skills.", "ks:")) or parse_turn_index_path(item_path):
             continue
         if item_path not in artifact_paths:
             artifact_paths.append(item_path)
@@ -1320,7 +1322,7 @@ async def handle_react_read(*, ctx_browser: Any, state: Dict[str, Any], tool_cal
 
     missing_artifacts: List[str] = []
     items: List[Dict[str, Any]] = []
-    fi_paths = [p for p in artifact_paths if isinstance(p, str) and p.startswith(REACT_FILE_REF_PREFIX)]
+    fi_paths = [p for p in artifact_paths if isinstance(p, str) and p.startswith(CONVERSATION_FILE_REF_PREFIX)]
     other_paths = [p for p in artifact_paths if p not in fi_paths]
     try:
         items = ctx_browser.timeline_artifacts(
@@ -2090,7 +2092,7 @@ async def handle_react_read(*, ctx_browser: Any, state: Dict[str, Any], tool_cal
         item_path = str(item_req.get("path") or "").strip()
         if not item_path:
             continue
-        if item_path.startswith(REACT_FILE_REF_PREFIX):
+        if item_path.startswith(CONVERSATION_FILE_REF_PREFIX):
             await _emit_fi_path(item_path, item_req)
             continue
         if item_path.startswith("ks:"):
@@ -2109,7 +2111,7 @@ async def handle_react_read(*, ctx_browser: Any, state: Dict[str, Any], tool_cal
             await _emit_ks_path(ks_path)
 
     for raw_path in artifact_paths:
-        if isinstance(raw_path, str) and raw_path.startswith(REACT_FILE_REF_PREFIX):
+        if isinstance(raw_path, str) and raw_path.startswith(CONVERSATION_FILE_REF_PREFIX):
             await _emit_fi_path(raw_path)
             continue
 

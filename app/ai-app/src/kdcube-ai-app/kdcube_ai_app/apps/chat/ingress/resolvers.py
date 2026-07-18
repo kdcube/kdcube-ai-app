@@ -13,7 +13,7 @@ from fastapi import HTTPException
 from starlette.requests import Request
 
 from kdcube_ai_app.apps.chat.sdk.config import get_settings, resolve_asyncpg_ssl
-from kdcube_ai_app.apps.chat.sdk.context.retrieval.ctx_rag import ContextRAGClient
+from kdcube_ai_app.apps.chat.sdk.solutions.conversation.ctx_rag import ContextRAGClient
 from kdcube_ai_app.apps.chat.sdk.context.vector.conv_index import ConvIndex
 from kdcube_ai_app.apps.chat.sdk.storage.conversation_store import ConversationStore
 from kdcube_ai_app.apps.middleware.gateway_policy import GatewayPolicyResolver

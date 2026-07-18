@@ -22,6 +22,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers import (
 from kdcube_ai_app.apps.chat.sdk.solutions.connections.authority_registry_client import AuthorityRegistryClient
 from kdcube_ai_app.apps.chat.sdk.solutions.connections.contract import (
     NAMESPACE,
+    AGENT_GRANT_CHECK,
     AGENT_GRANT_GET_TOKEN,
     CONNECTION_CATALOG,
     CONNECTION_DISCONNECT,
@@ -104,6 +105,15 @@ class ConnectionsClient:
             return None
         return ConnectionToken.coerce(obj)
 
+    async def agent_grant_check(self, client_id: str, namespace: str, operation: str) -> dict[str, Any]:
+        """The native named-service gate's answer for (agent client, namespace,
+        operation): ``{"governed": False}`` or ``{"governed": True, "granted":
+        bool, "resource", "claims"}`` — claims ready for the one-click grant."""
+        response = await self._call(
+            AGENT_GRANT_CHECK, client_id=client_id, namespace=namespace, operation=operation,
+        )
+        return dict(response.object)
+
     async def disconnect(self, provider: str, account_id: str) -> dict[str, Any]:
         response = await self._call(CONNECTION_DISCONNECT, provider=provider, account_id=account_id)
         return dict(response.object)
@@ -128,7 +138,7 @@ class ConnectionsClient:
 
     # ── internals ────────────────────────────────────────────────────────────
 
-    async def _call(self, operation: str, **payload: Any) -> NamedServiceResponse:
+    async def _call(self, operation: str, /, **payload: Any) -> NamedServiceResponse:
         request = NamedServiceRequest(
             operation=operation,
             namespace=NAMESPACE,

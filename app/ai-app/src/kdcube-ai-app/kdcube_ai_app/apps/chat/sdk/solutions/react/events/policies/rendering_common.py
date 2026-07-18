@@ -7,7 +7,7 @@ import json
 from collections.abc import Mapping, MutableMapping
 from typing import Any
 
-from kdcube_ai_app.apps.chat.sdk.solutions.react.events.common import block_matches_event_source
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.timeline import block_matches_event_source
 
 EVENT_RENDER_POLICY_META_KEY = "event_render_policy"
 EVENT_RENDER_POLICY_SKIP_META_KEY = "event_render_policy_skip"

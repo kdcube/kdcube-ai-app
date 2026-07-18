@@ -156,7 +156,7 @@ def _attachment_resolution_roots() -> list[pathlib.Path]:
 
 def _resolve_relative_attachment_path(path_value: str) -> str:
     try:
-        from kdcube_ai_app.apps.chat.sdk.runtime.workspace import resolve_artifact_path
+        from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace import resolve_artifact_path
     except Exception:
         resolve_artifact_path = None
 

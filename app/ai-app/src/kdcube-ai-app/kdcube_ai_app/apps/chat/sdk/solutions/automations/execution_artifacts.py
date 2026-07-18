@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Iterable
 from urllib.parse import quote, unquote, urlparse
 
-from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import qualify_conversation_ref
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace.references import qualify_conversation_ref
 
 
 def execution_completed_at(execution: Dict[str, Any]) -> str:

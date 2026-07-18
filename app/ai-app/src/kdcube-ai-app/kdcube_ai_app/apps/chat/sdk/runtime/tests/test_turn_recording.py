@@ -24,7 +24,9 @@ from kdcube_ai_app.apps.chat.sdk.runtime.turn_recording import (
     turn_error_was_surfaced,
     turn_log_was_recorded,
 )
-from kdcube_ai_app.apps.chat.sdk.solutions.react.timeline import TIMELINE_KIND
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.timeline.payload import (
+    TIMELINE_KIND,
+)
 
 
 class _FakeConversationClient:

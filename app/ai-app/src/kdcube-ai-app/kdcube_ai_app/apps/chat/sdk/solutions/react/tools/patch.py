@@ -9,18 +9,20 @@ import json
 import pathlib
 import re
 
-from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import (
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace.references import (
     ARTIFACT_NAMESPACE_FILES,
     ARTIFACT_NAMESPACE_PROJECTS,
-    REACT_FILE_REF_PREFIX,
+    CONVERSATION_FILE_REF_PREFIX,
     build_physical_artifact_path,
-    build_artifact_meta_block,
-    build_artifact_view,
     localize_conversation_ref,
     physical_path_to_logical_path,
     qualify_conversation_ref,
     split_logical_artifact_path,
     split_physical_artifact_path,
+)
+from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import (
+    build_artifact_meta_block,
+    build_artifact_view,
     detect_edit,
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.react.tools.common import (
@@ -37,7 +39,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.tools.common import (
     infer_format_from_path,
     enrich_artifact_file_metadata,
 )
-from kdcube_ai_app.apps.chat.sdk.runtime.workspace import resolve_artifact_path
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace import resolve_artifact_path
 
 TOOL_SPEC = {
     "id": "react.patch",
@@ -140,7 +142,7 @@ def _normalize_patch_target(path_value: str, *, turn_id: str) -> tuple[str, str,
     raw = (path_value or "").strip().lstrip("/")
     if not raw:
         return "", "", "", {"code": "missing_artifact_name", "message": "react.patch requires params.path."}
-    if raw.startswith(REACT_FILE_REF_PREFIX):
+    if raw.startswith(CONVERSATION_FILE_REF_PREFIX):
         old_turn, namespace, rel = split_logical_artifact_path(raw)
         extra: Dict[str, Any] = {"path": path_value}
         if old_turn and namespace and rel:

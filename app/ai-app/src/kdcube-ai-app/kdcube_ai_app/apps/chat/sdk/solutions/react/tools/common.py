@@ -17,7 +17,7 @@ import json
 import pathlib
 
 from kdcube_ai_app.apps.chat.sdk.util import count_text_lines, count_text_symbols, guess_mime_type
-from kdcube_ai_app.apps.chat.sdk.runtime.workspace import resolve_artifact_path
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace import resolve_artifact_path
 from kdcube_ai_app.tools.content_type import is_text_mime_type
 
 _LOG = logging.getLogger("kdcube.react.artifacts")

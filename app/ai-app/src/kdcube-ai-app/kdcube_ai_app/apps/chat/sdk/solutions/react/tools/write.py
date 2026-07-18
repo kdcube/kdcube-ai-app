@@ -8,18 +8,20 @@ from typing import Any, Dict, List
 import json
 import pathlib
 
-from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import (
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace.references import (
     ARTIFACT_NAMESPACE_FILES,
     ARTIFACT_NAMESPACE_PROJECTS,
     ARTIFACT_NAMESPACE_SNAPSHOTS,
-    REACT_FILE_REF_PREFIX,
+    CONVERSATION_FILE_REF_PREFIX,
     build_logical_artifact_path,
-    materialize_inline_artifact_to_file,
-    build_artifact_view,
     normalize_physical_path,
     infer_artifact_namespace,
     physical_path_to_logical_path,
     qualify_conversation_ref,
+)
+from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import (
+    materialize_inline_artifact_to_file,
+    build_artifact_view,
 )
 from kdcube_ai_app.apps.chat.sdk.tools.citations import extract_citation_sids_any
 from kdcube_ai_app.apps.chat.sdk.solutions.react.tools.common import (
@@ -145,8 +147,8 @@ async def handle_react_write(*, react: Any, ctx_browser: Any, state: Dict[str, A
         return state
     ext_notice = None
     rewrite_notice = None
-    if artifact_name.startswith(REACT_FILE_REF_PREFIX) and all(
-        marker not in artifact_name[len(REACT_FILE_REF_PREFIX):]
+    if artifact_name.startswith(CONVERSATION_FILE_REF_PREFIX) and all(
+        marker not in artifact_name[len(CONVERSATION_FILE_REF_PREFIX):]
         for marker in (f".{ARTIFACT_NAMESPACE_PROJECTS}/", f".{ARTIFACT_NAMESPACE_FILES}/", f".{ARTIFACT_NAMESPACE_SNAPSHOTS}/")
     ):
         state["exit_reason"] = "error"

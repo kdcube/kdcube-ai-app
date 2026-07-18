@@ -17,7 +17,7 @@ import time
 from collections.abc import Mapping
 from typing import Any
 
-from kdcube_ai_app.apps.chat.sdk.solutions.react.events.common import stamp_event_identity_many
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.timeline import stamp_event_identity_many
 from kdcube_ai_app.apps.chat.sdk.solutions.react.events.core import (
     REACT_USER_ATTACHMENT_EVENT_SOURCE_ID,
 )

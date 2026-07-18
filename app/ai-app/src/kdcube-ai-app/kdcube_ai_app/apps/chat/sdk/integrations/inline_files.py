@@ -34,7 +34,7 @@ from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import (
     bind_current_request_context,
     get_current_request_context,
 )
-from kdcube_ai_app.apps.chat.sdk.runtime.workspace import artifact_outdir_for
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace import artifact_outdir_for
 
 MAX_INLINE_FILE_BYTES = 10 * 1024 * 1024
 MAX_INLINE_TOTAL_BYTES = 25 * 1024 * 1024

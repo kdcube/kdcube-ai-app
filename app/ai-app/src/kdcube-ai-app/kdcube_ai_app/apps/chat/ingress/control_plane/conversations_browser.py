@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 from kdcube_ai_app.apps.chat.ingress.resolvers import auth_without_pressure, get_pg_pool
 from kdcube_ai_app.apps.chat.sdk.config import get_settings
 from kdcube_ai_app.ops.deployment.sql.db_deployment import project_schema as _project_schema
-from kdcube_ai_app.apps.chat.sdk.context.retrieval.ctx_rag import ContextRAGClient
+from kdcube_ai_app.apps.chat.sdk.solutions.conversation.ctx_rag import ContextRAGClient
 from kdcube_ai_app.apps.chat.sdk.context.vector.conv_index import ConvIndex
 from kdcube_ai_app.apps.chat.sdk.storage.conversation_store import ConversationStore
 from kdcube_ai_app.infra.service_hub.inventory import (

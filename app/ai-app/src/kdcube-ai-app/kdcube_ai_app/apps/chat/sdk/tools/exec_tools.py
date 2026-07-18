@@ -29,7 +29,7 @@ from kdcube_ai_app.apps.chat.sdk.runtime.diagnose import (
     find_user_code_start_line,
     remap_traceback_line_numbers,
 )
-from kdcube_ai_app.apps.chat.sdk.runtime.workspace import (
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace import (
     artifact_outdir_for,
     resolve_artifact_path,
     snapshot_outdir,
@@ -44,6 +44,8 @@ from kdcube_ai_app.apps.chat.sdk.events import event_source
 from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import (
     build_tool_result_error_block,
     error_block_details,
+)
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace.references import (
     physical_path_to_logical_path,
     qualify_conversation_ref,
 )

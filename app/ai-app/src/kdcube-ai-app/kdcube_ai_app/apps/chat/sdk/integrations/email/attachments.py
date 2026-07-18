@@ -10,7 +10,7 @@ import re
 from typing import Any, Dict, Iterable, Mapping
 
 from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import get_current_user_identity
-from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import qualify_conversation_ref
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace.references import qualify_conversation_ref
 
 from .accounts import (
     EmailAccountStore,

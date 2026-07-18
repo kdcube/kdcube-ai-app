@@ -247,6 +247,17 @@ class _AgentGrantProvider(FakeConnectionsProvider):
             return ConnectionToken(access_token="agent-bound-tok", scope=("memories:read",))
         return None
 
+    async def agent_grant_state(self, ctx, *, client_id, namespace, operation):
+        if namespace != "mail":
+            return {"governed": False}
+        granted = client_id == "kdcube-agent:app:lg-react" and operation == "object.search"
+        return {
+            "governed": True,
+            "granted": granted,
+            "resource": "*/named_services*",
+            "claims": ["mail:read", "named_services:use"],
+        }
+
 
 def _agent_client() -> ConnectionsClient:
     registry = NamedServiceRegistry()
@@ -275,6 +286,24 @@ async def test_agent_grant_default_provider_has_no_grants():
     # The base provider does not back per-agent grants -> concrete default None.
     connections = _client()
     assert await connections.agent_grant_token("kdcube-agent:app:lg-react", "https://h/mcp/mem") is None
+
+
+@pytest.mark.asyncio
+async def test_agent_grant_check_round_trip():
+    connections = _agent_client()
+    # Granted for the exact (agent, namespace, operation).
+    granted = await connections.agent_grant_check("kdcube-agent:app:lg-react", "mail", "object.search")
+    assert granted == {
+        "governed": True, "granted": True,
+        "resource": "*/named_services*", "claims": ["mail:read", "named_services:use"],
+    }
+    # Same namespace, costlier operation -> pending, claims ready for the grant.
+    pending = await connections.agent_grant_check("kdcube-agent:app:lg-react", "mail", "object.action")
+    assert pending["governed"] is True and pending["granted"] is False
+    # An unpublished namespace imposes no gate.
+    assert await connections.agent_grant_check("kdcube-agent:app:lg-react", "calendar", "object.search") == {"governed": False}
+    # The base provider governs nothing (concrete default).
+    assert await _client().agent_grant_check("kdcube-agent:app:lg-react", "mail", "object.search") == {"governed": False}
 
 
 @pytest.mark.asyncio

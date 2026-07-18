@@ -5,7 +5,7 @@ import base64
 import zipfile
 
 from kdcube_ai_app.apps.chat.sdk.runtime.run_ctx import OUTDIR_CV, WORKDIR_CV
-from kdcube_ai_app.apps.chat.sdk.runtime.workspace import (
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace import (
     ARTIFACT_OUTPUT_ENV,
     RUNTIME_OUTPUT_ENV,
 )

@@ -10,7 +10,7 @@ from dataclasses import dataclass, replace
 from typing import Any, Dict, List, Optional, Tuple
 
 from kdcube_ai_app.apps.chat.sdk.solutions.react.proto import ToolCallView
-from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import REACT_FILE_REF_PREFIX
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace.references import CONVERSATION_FILE_REF_PREFIX
 from kdcube_ai_app.apps.chat.sdk.solutions.react.events.common import event_source_pipeline_enabled
 from kdcube_ai_app.apps.chat.sdk.solutions.react.events.projection import (
     apply_event_source_transformers,
@@ -658,7 +658,7 @@ def _ttl_retrieval_stub(
         kind = "tool_call"
     elif btype == "react.tool.result":
         kind = "tool_result"
-    elif path.startswith(REACT_FILE_REF_PREFIX):
+    elif path.startswith(CONVERSATION_FILE_REF_PREFIX):
         kind = "file"
     elif path.startswith("sk:"):
         kind = "skill"
@@ -827,7 +827,7 @@ def _build_skill_prune_message(path: str) -> str:
         kind = "skill"
     elif label.startswith("conv:so:"):
         kind = "source"
-    elif label.startswith(REACT_FILE_REF_PREFIX):
+    elif label.startswith(CONVERSATION_FILE_REF_PREFIX):
         kind = "file"
     elif label.startswith("conv:ar:"):
         kind = "artifact"
@@ -1121,7 +1121,7 @@ def apply_cache_ttl_pruning(
         if not isinstance(blk, dict):
             continue
         path = (blk.get("path") or "").strip()
-        if not path or not path.startswith(REACT_FILE_REF_PREFIX):
+        if not path or not path.startswith(CONVERSATION_FILE_REF_PREFIX):
             continue
         if _extract_turn_id(blk) not in recent_turns:
             continue
@@ -1214,7 +1214,7 @@ def apply_cache_ttl_pruning(
             else:
                 view = _get_view(tool_id)
                 rep = view.build_result_replacement(tool_result_block=blk, payload=payload or {}, cfg=cfg)
-        elif path.startswith(REACT_FILE_REF_PREFIX):
+        elif path.startswith(CONVERSATION_FILE_REF_PREFIX):
             meta = blk.get("meta") if isinstance(blk.get("meta"), dict) else {}
             call_id = (meta.get("tool_call_id") or blk.get("call_id") or "").strip()
             tool_id = ""

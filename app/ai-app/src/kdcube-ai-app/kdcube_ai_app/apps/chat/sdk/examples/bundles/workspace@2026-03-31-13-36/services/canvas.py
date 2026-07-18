@@ -41,7 +41,10 @@ from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers import (
     named_service_canvas_resolver_namespaces,
     register_configured_named_service_canvas_resolvers,
 )
-from kdcube_ai_app.apps.chat.sdk.solutions.react.events.resolver import resolve_event_ref_action
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.events.resolver import (
+    CONVERSATION_FILE_EVENT_RESOLVER_ID,
+    resolve_event_ref_action,
+)
 from kdcube_ai_app.apps.chat.sdk.runtime.data_bus import DataBusResult
 from kdcube_ai_app.apps.chat.sdk.runtime.http_ops import BundleBinaryResponse
 
@@ -651,7 +654,7 @@ class WorkspaceCanvasService:
         registry.register(
             CallableCanvasObjectResolver(
                 namespace="fi",
-                resolver="react.event_ref",
+                resolver=CONVERSATION_FILE_EVENT_RESOLVER_ID,
                 resolver_status="implemented",
                 capabilities={"preview": False, "open": False, "download": True, "rehost": False},
                 handler=_resolve_fi,
@@ -663,7 +666,7 @@ class WorkspaceCanvasService:
             conversation_id: str,
             bundle_id: Optional[str],
         ) -> Optional[Mapping[str, Any]]:
-            from kdcube_ai_app.apps.chat.sdk.context.retrieval.ctx_rag import ContextRAGClient
+            from kdcube_ai_app.apps.chat.sdk.solutions.conversation.ctx_rag import ContextRAGClient
             from kdcube_ai_app.apps.chat.sdk.context.vector.conv_index import ConvIndex
             from kdcube_ai_app.apps.chat.sdk.storage.conversation_store import ConversationStore
 

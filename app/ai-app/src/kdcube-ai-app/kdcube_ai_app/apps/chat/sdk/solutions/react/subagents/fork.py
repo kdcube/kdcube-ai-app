@@ -21,7 +21,7 @@ import copy
 import time
 from typing import Any, Dict, List, Optional
 
-from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import (
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace.references import (
     qualify_conversation_ref,
     qualify_conversation_refs_in_text,
 )

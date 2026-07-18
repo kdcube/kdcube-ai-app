@@ -22,6 +22,20 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.caching import (
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.react.proto import RuntimeCtx
 from kdcube_ai_app.apps.chat.sdk.event_identity import index_agent_id
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.timeline.payload import (
+    SOURCES_POOL_KIND,
+    TIMELINE_KIND,
+    TimelineEventCursor,
+    build_timeline_payload,
+    extract_turn_ids_from_blocks,
+    parse_timeline_payload,
+)
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.timeline.turn_view import (
+    build_turn_view as build_harness_turn_view,
+    extract_source_sids,
+    extract_sources_used_from_blocks,
+    materialize_sources_by_sids,
+)
 
 from kdcube_ai_app.apps.chat.sdk.tools import citations as citations_module
 from kdcube_ai_app.apps.chat.sdk.util import (
@@ -43,9 +57,9 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.layout import (
 from kdcube_ai_app.apps.chat.sdk.solutions.react.plan import (
     latest_plan_block_by_id,
 )
-from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import (
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace.references import (
     ARTIFACT_NAMESPACE_FILES,
-    REACT_FILE_REF_PREFIX,
+    CONVERSATION_FILE_REF_PREFIX,
     localize_conversation_ref,
     peel_conversation_prefix,
     physical_path_to_logical_path,
@@ -73,9 +87,6 @@ from kdcube_ai_app.infra.service_hub.multimodality import (
     estimate_pdf_tokens_from_base64,
 )
 
-TIMELINE_KIND = "conv.timeline.v1"
-SOURCES_POOL_KIND = "conv:sources_pool"
-
 TIMELINE_FILENAME = "timeline.json"
 
 DEFAULT_TOOL_RESULT_PREVIEW_MAX_TEXT_SYMBOLS = 12_000
@@ -91,7 +102,7 @@ CONV_SO_PREFIX = "conv:so:"
 CONV_WS_PREFIX = "conv:ws:"
 CONV_SU_PREFIX = "conv:su:"
 CONV_NAMESPACE_PREFIXES = (
-    REACT_FILE_REF_PREFIX,
+    CONVERSATION_FILE_REF_PREFIX,
     CONV_AR_PREFIX,
     CONV_TC_PREFIX,
     CONV_SO_PREFIX,
@@ -99,59 +110,6 @@ CONV_NAMESPACE_PREFIXES = (
     CONV_SU_PREFIX,
 )
 
-
-@dataclass(frozen=True)
-class TimelineEventCursor:
-    timestamp: str = ""
-    event_id: str = ""
-    block_path: str = ""
-    block_index: Optional[int] = None
-    sequence: Optional[int] = None
-    fingerprint: str = ""
-
-    def to_dict(self) -> Dict[str, Any]:
-        out: Dict[str, Any] = {}
-        if self.timestamp:
-            out["timestamp"] = self.timestamp
-        if self.event_id:
-            out["event_id"] = self.event_id
-        if self.block_path:
-            out["block_path"] = self.block_path
-        if self.block_index is not None:
-            out["block_index"] = self.block_index
-        if self.sequence is not None:
-            out["sequence"] = self.sequence
-        if self.fingerprint:
-            out["fingerprint"] = self.fingerprint
-        return out
-
-    @classmethod
-    def from_any(cls, raw: Any) -> "TimelineEventCursor":
-        if not isinstance(raw, dict):
-            return cls()
-        block_index = raw.get("block_index")
-        if block_index is not None:
-            try:
-                block_index = int(block_index)
-            except Exception:
-                block_index = None
-        sequence = raw.get("sequence")
-        if sequence is not None:
-            try:
-                sequence = int(sequence)
-            except Exception:
-                sequence = None
-        return cls(
-            timestamp=_block_ts({"ts": raw.get("timestamp")}),
-            event_id=str(raw.get("event_id") or "").strip(),
-            block_path=str(raw.get("block_path") or "").strip(),
-            block_index=block_index,
-            sequence=sequence,
-            fingerprint=str(raw.get("fingerprint") or "").strip(),
-        )
-
-    def is_empty(self) -> bool:
-        return not (self.timestamp or self.event_id or self.block_path or self.fingerprint)
 
 def _maybe_parse_json(val: str) -> Optional[Any]:
     try:
@@ -185,19 +143,6 @@ class TimelineView:
         return materialize_show_artifacts(self.payload, show_paths)
 
 
-def extract_turn_ids_from_blocks(blocks: List[Dict[str, Any]]) -> List[str]:
-    out: List[str] = []
-    seen: set[str] = set()
-    for blk in blocks or []:
-        if not isinstance(blk, dict):
-            continue
-        tid = (blk.get("turn_id") or "").strip()
-        if tid and tid not in seen:
-            seen.add(tid)
-            out.append(tid)
-    return out
-
-
 def _merge_turn_ids(*groups: Any) -> List[str]:
     out: List[str] = []
     seen: set[str] = set()
@@ -210,116 +155,6 @@ def _merge_turn_ids(*groups: Any) -> List[str]:
                 seen.add(tid)
                 out.append(tid)
     return out
-
-
-def build_timeline_payload(
-    *,
-    blocks: List[Dict[str, Any]],
-    sources_pool: Optional[List[Dict[str, Any]]] = None,
-    conversation_title: Optional[str] = None,
-    conversation_started_at: Optional[str] = None,
-    last_external_event_id: Optional[str] = None,
-    last_external_event_seq: Optional[int] = None,
-    last_rendered_event_cursor: Optional[TimelineEventCursor] = None,
-    cache_last_touch_at: Optional[int] = None,
-    cache_last_ttl_seconds: Optional[int] = None,
-    agent_selection_snapshot: Optional[Dict[str, Any]] = None,
-    last_known_feedback_ts: Optional[str] = None,
-    include_sources_pool: bool = True,
-    forked_from: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
-    last_activity_at = _tail_ts(blocks or [])
-    return {
-        "version": 1,
-        "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "blocks": list(blocks or []),
-        "sources_pool": list(sources_pool or []) if include_sources_pool else [],
-        "turn_ids": extract_turn_ids_from_blocks(blocks or []),
-        "conversation_title": conversation_title or "",
-        "conversation_started_at": conversation_started_at or "",
-        # Fork backref: {conversation_id, turn_id} of the conversation/turn
-        # this conversation was forked from (subagent children carry it).
-        "forked_from": dict(forked_from) if isinstance(forked_from, dict) and forked_from else None,
-        "last_activity_at": last_activity_at or "",
-        "last_external_event_id": last_external_event_id or "",
-        "last_external_event_seq": last_external_event_seq,
-        "last_rendered_event_cursor": (
-            last_rendered_event_cursor.to_dict()
-            if isinstance(last_rendered_event_cursor, TimelineEventCursor)
-            else {}
-        ),
-        "cache_last_touch_at": cache_last_touch_at,
-        "cache_last_ttl_seconds": cache_last_ttl_seconds,
-        "agent_selection_snapshot": dict(agent_selection_snapshot) if isinstance(agent_selection_snapshot, dict) else None,
-        "last_known_feedback_ts": last_known_feedback_ts or "",
-    }
-
-
-def parse_timeline_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
-    if not isinstance(payload, dict):
-        return {}
-    blocks = payload.get("blocks")
-    if not isinstance(blocks, list):
-        blocks = []
-    sources_pool = payload.get("sources_pool")
-    if not isinstance(sources_pool, list):
-        sources_pool = []
-    last_external_event_id = payload.get("last_external_event_id")
-    if isinstance(last_external_event_id, str):
-        last_external_event_id = last_external_event_id.strip()
-    else:
-        last_external_event_id = ""
-    last_external_event_seq = payload.get("last_external_event_seq")
-    if last_external_event_seq is not None:
-        try:
-            last_external_event_seq = int(last_external_event_seq)
-        except Exception:
-            last_external_event_seq = None
-    last_rendered_event_cursor = TimelineEventCursor.from_any(payload.get("last_rendered_event_cursor"))
-    turn_ids = payload.get("turn_ids")
-    if not isinstance(turn_ids, list) or not turn_ids:
-        turn_ids = extract_turn_ids_from_blocks(blocks)
-    cache_last_touch_at = payload.get("cache_last_touch_at")
-    if cache_last_touch_at is not None:
-        try:
-            cache_last_touch_at = int(cache_last_touch_at)
-        except Exception:
-            cache_last_touch_at = None
-    cache_last_ttl_seconds = payload.get("cache_last_ttl_seconds")
-    if cache_last_ttl_seconds is not None:
-        try:
-            cache_last_ttl_seconds = int(cache_last_ttl_seconds)
-        except Exception:
-            cache_last_ttl_seconds = None
-    agent_selection_snapshot = payload.get("agent_selection_snapshot")
-    if not isinstance(agent_selection_snapshot, dict):
-        agent_selection_snapshot = None
-    last_known_feedback_ts = payload.get("last_known_feedback_ts")
-    if isinstance(last_known_feedback_ts, str):
-        last_known_feedback_ts = last_known_feedback_ts.strip()
-    else:
-        last_known_feedback_ts = ""
-    forked_from = payload.get("forked_from")
-    if not isinstance(forked_from, dict) or not forked_from:
-        forked_from = None
-    return {
-        "blocks": blocks,
-        "sources_pool": sources_pool,
-        "turn_ids": turn_ids,
-        "ts": payload.get("ts"),
-        "version": payload.get("version", 1),
-        "conversation_title": payload.get("conversation_title") or "",
-        "conversation_started_at": payload.get("conversation_started_at") or "",
-        "last_activity_at": payload.get("last_activity_at") or "",
-        "last_external_event_id": last_external_event_id or "",
-        "last_external_event_seq": last_external_event_seq,
-        "last_rendered_event_cursor": last_rendered_event_cursor,
-        "cache_last_touch_at": cache_last_touch_at,
-        "cache_last_ttl_seconds": cache_last_ttl_seconds,
-        "agent_selection_snapshot": agent_selection_snapshot,
-        "last_known_feedback_ts": last_known_feedback_ts,
-        "forked_from": forked_from,
-    }
 
 
 def _tail_ts(blocks: List[Dict[str, Any]]) -> str:
@@ -680,100 +515,6 @@ def resolve_sources_pool_selector(timeline: Dict[str, Any], selector: str) -> Li
     return [row for row in pool if isinstance(row, dict) and row.get("sid") in sids]
 
 
-def extract_source_sids(sources: Any) -> List[int]:
-    out: List[int] = []
-    if isinstance(sources, list):
-        for item in sources:
-            if isinstance(item, dict):
-                sid = item.get("sid")
-                if isinstance(sid, (int, float)):
-                    out.append(int(sid))
-            elif isinstance(item, (int, float)):
-                out.append(int(item))
-    return out
-
-
-def extract_sources_used_from_blocks(blocks: List[Dict[str, Any]]) -> List[int]:
-    """
-    Gather unique sources_used SIDs from block meta or from react.tool.result meta blocks.
-    """
-    used: List[int] = []
-    seen: set[int] = set()
-    for b in blocks or []:
-        if not isinstance(b, dict):
-            continue
-        btype = b.get("type") or ""
-        if btype in {"assistant.completion", "assistant.completion.attempt"}:
-            text_val = b.get("text")
-            if isinstance(text_val, str) and text_val.strip():
-                for sid in citations_module.extract_citation_sids_any(text_val):
-                    if sid not in seen:
-                        seen.add(sid)
-                        used.append(sid)
-        meta = b.get("meta")
-        if isinstance(meta, dict):
-            for sid in extract_source_sids(meta.get("sources_used")):
-                if sid not in seen:
-                    seen.add(sid)
-                    used.append(sid)
-        if (b.get("type") or "") == "react.tool.result" and (b.get("mime") or "") == "application/json":
-            txt = b.get("text")
-            if isinstance(txt, str):
-                meta_obj = _parse_meta_json(txt)
-                for sid in extract_source_sids(meta_obj.get("sources_used")):
-                    if sid not in seen:
-                        seen.add(sid)
-                        used.append(sid)
-    return used
-
-
-def extract_assistant_completion_texts_from_blocks(blocks: List[Dict[str, Any]]) -> List[str]:
-    canonical: List[str] = []
-    attempts: List[str] = []
-    for b in blocks or []:
-        if not isinstance(b, dict):
-            continue
-        btype = b.get("type") or ""
-        if btype not in {"assistant.completion", "assistant.completion.attempt"}:
-            continue
-        text = str(b.get("text") or "").strip()
-        if not text:
-            continue
-        if btype == "assistant.completion":
-            canonical.append(text)
-        else:
-            attempts.append(text)
-    return canonical or attempts
-
-
-def extract_user_prompt_block(blocks: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-    for b in blocks or []:
-        if not isinstance(b, dict):
-            continue
-        if (b.get("type") or "") == "user.prompt":
-            return b
-    return None
-
-
-def extract_assistant_completion_block(blocks: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-    for b in reversed(blocks or []):
-        if not isinstance(b, dict):
-            continue
-        if (b.get("type") or "") == "assistant.completion":
-            return b
-    return None
-
-
-def extract_assistant_completion_blocks(blocks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    items: List[Dict[str, Any]] = []
-    for b in blocks or []:
-        if not isinstance(b, dict):
-            continue
-        if (b.get("type") or "") == "assistant.completion":
-            items.append(b)
-    return items
-
-
 TURN_INDEX_SUFFIX = ".react.turn.index"
 
 
@@ -1106,7 +847,7 @@ def build_turn_index_text(
     artifacts: Dict[str, Dict[str, Any]] = {}
     for blk in filtered:
         bpath = (blk.get("path") or "").strip()
-        if bpath.startswith(REACT_FILE_REF_PREFIX):
+        if bpath.startswith(CONVERSATION_FILE_REF_PREFIX):
             meta = blk.get("meta") if isinstance(blk.get("meta"), dict) else {}
             entry = artifacts.setdefault(bpath, {"path": bpath})
             if blk.get("mime"):
@@ -1121,7 +862,7 @@ def build_turn_index_text(
             if not isinstance(parsed, dict):
                 continue
             apath = str(parsed.get("artifact_path") or "").strip()
-            if not apath or not apath.startswith(REACT_FILE_REF_PREFIX):
+            if not apath or not apath.startswith(CONVERSATION_FILE_REF_PREFIX):
                 continue
             meta = blk.get("meta") if isinstance(blk.get("meta"), dict) else {}
             entry = artifacts.setdefault(apath, {"path": apath})
@@ -1174,330 +915,6 @@ def build_turn_index_text(
         lines.pop()
     return "\n".join(lines).rstrip() + "\n"
 
-
-def extract_followups_from_blocks(blocks: List[Dict[str, Any]]) -> List[str]:
-    items: List[str] = []
-    for b in blocks or []:
-        if not isinstance(b, dict):
-            continue
-        if (b.get("type") or "") != "stage.suggested_followups":
-            continue
-        meta = b.get("meta") if isinstance(b.get("meta"), dict) else {}
-        vals = meta.get("items") if isinstance(meta, dict) else None
-        if isinstance(vals, list):
-            for v in vals:
-                if isinstance(v, str) and v.strip():
-                    items.append(v.strip())
-    return items
-
-
-def extract_clarification_questions_from_blocks(blocks: List[Dict[str, Any]]) -> List[str]:
-    items: List[str] = []
-    for b in blocks or []:
-        if not isinstance(b, dict):
-            continue
-        if (b.get("type") or "") != "stage.clarification":
-            continue
-        meta = b.get("meta") if isinstance(b.get("meta"), dict) else {}
-        vals = meta.get("questions") if isinstance(meta, dict) else None
-        if isinstance(vals, list):
-            for v in vals:
-                if isinstance(v, str) and v.strip():
-                    items.append(v.strip())
-    return items
-
-
-def _attachment_name_from_path(path: str) -> str:
-    path = (path or "").rstrip("/")
-    if "/" in path:
-        return path.rsplit("/", 1)[-1]
-    return path
-
-
-def extract_user_attachments_from_blocks(blocks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    by_path: Dict[str, Dict[str, Any]] = {}
-    for b in blocks or []:
-        if not isinstance(b, dict):
-            continue
-        btype = (b.get("type") or "")
-        if btype not in ("user.attachment.meta", "user.attachment"):
-            continue
-        path = (b.get("path") or "").strip()
-        if not path:
-            continue
-        entry = by_path.setdefault(path, {"path": path})
-        ts = (b.get("ts") or "").strip() if isinstance(b.get("ts"), str) else ""
-        if ts and not entry.get("ts"):
-            entry["ts"] = ts
-        if btype == "user.attachment.meta":
-            meta = b.get("meta") if isinstance(b.get("meta"), dict) else {}
-            entry["meta"] = dict(meta or {})
-            entry["text"] = b.get("text") if isinstance(b.get("text"), str) else entry.get("text")
-        else:
-            entry["mime"] = (b.get("mime") or "").strip()
-    out: List[Dict[str, Any]] = []
-    for path, entry in by_path.items():
-        meta = entry.get("meta") if isinstance(entry.get("meta"), dict) else {}
-        filename = _attachment_name_from_path(path)
-        mime = (entry.get("mime") or meta.get("mime") or "").strip() or "application/octet-stream"
-        payload = {
-            "filename": filename,
-            "mime": mime,
-            "artifact_path": path,
-        }
-        if entry.get("ts"):
-            payload["ts"] = entry.get("ts")
-        for key in ("rn", "hosted_uri", "key", "physical_path"):
-            if meta.get(key):
-                payload[key] = meta.get(key)
-        if not payload.get("physical_path") and meta.get("local_path"):
-            payload["physical_path"] = meta.get("local_path")
-        if meta.get("summary") or meta.get("description"):
-            payload["summary"] = meta.get("summary") or meta.get("description")
-        for key in ("event_kind", "event_type", "is_continuation", "message_id", "sequence"):
-            if meta.get(key) is not None:
-                payload[key] = meta.get(key)
-        out.append(payload)
-    return out
-
-
-def extract_assistant_files_from_blocks(blocks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    file_rows: List[Dict[str, Any]] = []
-    seen: set[str] = set()
-    for b in blocks or []:
-        if not isinstance(b, dict):
-            continue
-        if (b.get("type") or "") != "react.tool.result":
-            continue
-        if (b.get("mime") or "").strip() != "application/json":
-            continue
-        txt = b.get("text")
-        if not isinstance(txt, str):
-            continue
-        meta = _parse_meta_json(txt)
-        if isinstance(meta, dict) and meta.get("error"):
-            continue
-        if meta.get("visibility") != "external":
-            continue
-        if (meta.get("kind") or "").strip() != "file":
-            continue
-        if not (meta.get("hosted_uri") or meta.get("rn") or meta.get("key") or meta.get("physical_path") or meta.get("local_path")):
-            continue
-        p = (meta.get("artifact_path") or "").strip()
-        if not p or p in seen:
-            continue
-        seen.add(p)
-        file_rows.append({
-            "path": p,
-            "ts": (b.get("ts") or "").strip() if isinstance(b.get("ts"), str) else "",
-            "meta": meta,
-        })
-    out: List[Dict[str, Any]] = []
-    for row in file_rows:
-        p = str(row.get("path") or "").strip()
-        art = resolve_artifact_from_timeline({"blocks": blocks, "sources_pool": []}, p)
-        if not isinstance(art, dict):
-            continue
-        filename = art.get("filename") or art.get("filepath") or ""
-        if not filename:
-            phys = art.get("physical_path") or ""
-            if isinstance(phys, str) and phys.strip():
-                try:
-                    import pathlib
-                    filename = pathlib.Path(phys).name
-                except Exception:
-                    filename = ""
-        payload = {
-            "filename": filename,
-            "mime": art.get("mime") or "application/octet-stream",
-            "artifact_path": p,
-        }
-        if row.get("ts"):
-            payload["ts"] = row.get("ts")
-        for key in ("rn", "hosted_uri", "key", "physical_path"):
-            if art.get(key):
-                payload[key] = art.get(key)
-        if not payload.get("physical_path") and art.get("local_path"):
-            payload["physical_path"] = art.get("local_path")
-        if art.get("summary") or art.get("description"):
-            payload["summary"] = art.get("summary") or art.get("description")
-        meta = row.get("meta") if isinstance(row.get("meta"), dict) else {}
-        for key in ("tool_id", "tool_call_id", "call_id", "sub_type"):
-            if meta.get(key):
-                payload[key] = meta.get(key)
-        out.append(payload)
-    return out
-
-
-def _build_turn_view(
-    *,
-    turn_id: str,
-    blocks: List[Dict[str, Any]],
-    sources_pool: Optional[List[Dict[str, Any]]] = None,
-    render_thinking: bool = True,
-) -> Dict[str, Any]:
-    sources_pool = list(sources_pool or [])
-    user_block = extract_user_prompt_block(blocks)
-    assistant_block = extract_assistant_completion_block(blocks)
-    assistant_blocks = extract_assistant_completion_blocks(blocks)
-    attachments = extract_user_attachments_from_blocks(blocks)
-    files = extract_assistant_files_from_blocks(blocks)
-    used_sids = extract_sources_used_from_blocks(blocks)
-    suggested_followups = extract_followups_from_blocks(blocks)
-    clarifications = extract_clarification_questions_from_blocks(blocks)
-    used_sources = materialize_sources_by_sids(sources_pool, used_sids)
-    timeline_text_items = _extract_timeline_text_items(blocks, turn_id)
-    thinking_items = _extract_thinking_items(blocks, turn_id) if render_thinking else []
-    return {
-        "turn_id": turn_id,
-        "user": {
-            "text": user_block.get("text") if isinstance(user_block, dict) else "",
-            "ts": user_block.get("ts") if isinstance(user_block, dict) else "",
-        },
-        "assistant": {
-            "text": assistant_block.get("text") if isinstance(assistant_block, dict) else "",
-            "ts": assistant_block.get("ts") if isinstance(assistant_block, dict) else "",
-        },
-        "assistants": [
-            {
-                "text": blk.get("text") if isinstance(blk.get("text"), str) else "",
-                "ts": blk.get("ts") if isinstance(blk.get("ts"), str) else "",
-                "path": blk.get("path") if isinstance(blk.get("path"), str) else "",
-                "meta": blk.get("meta") if isinstance(blk.get("meta"), dict) else {},
-            }
-            for blk in assistant_blocks
-            if isinstance(blk.get("text"), str) and str(blk.get("text") or "").strip()
-        ],
-        "attachments": attachments,
-        "files": files,
-        "citations": used_sources,
-        "timeline_text": timeline_text_items,
-        "thinking": thinking_items,
-        "followups": suggested_followups,
-        "clarification_questions": clarifications,
-    }
-
-
-def _extract_timeline_text_items(blocks: List[Dict[str, Any]], turn_id: str) -> List[Dict[str, Any]]:
-    items: List[Dict[str, Any]] = []
-    if not blocks or not turn_id:
-        return items
-    text_by_path: Dict[str, Dict[str, Any]] = {}
-    for b in blocks:
-        if not isinstance(b, dict):
-            continue
-        if b.get("turn_id") != turn_id:
-            continue
-        path = (b.get("path") or "").strip()
-        if path and isinstance(b.get("text"), str):
-            text_by_path[path] = b
-
-    def _to_ms(ts_val: str) -> Optional[int]:
-        if not ts_val:
-            return None
-        try:
-            sec = ts_key(ts_val)
-            if sec == float("-inf"):
-                return None
-            return int(sec * 1000)
-        except Exception:
-            return None
-
-    idx = 0
-    for b in blocks:
-        if not isinstance(b, dict):
-            continue
-        if b.get("turn_id") != turn_id:
-            continue
-        btype = b.get("type") or ""
-        if btype == "react.notes":
-            text = b.get("text") or ""
-            if not isinstance(text, str) or not text.strip():
-                continue
-            ts_val = (b.get("ts") or "").strip()
-            ts_ms = _to_ms(ts_val)
-            item = {
-                "artifact_name": f"timeline_text.react.notes.{idx}",
-                "text": text,
-            }
-            if ts_ms is not None:
-                item["ts_first"] = ts_ms
-                item["ts_last"] = ts_ms
-            items.append(item)
-            idx += 1
-            continue
-        if btype != "react.tool.result":
-            continue
-        if (b.get("mime") or "").strip() != "application/json":
-            continue
-        meta = _parse_meta_json(b.get("text") or "")
-        if not isinstance(meta, dict):
-            continue
-        if (meta.get("channel") or "").strip() != "timeline_text":
-            continue
-        ap = (meta.get("artifact_path") or "").strip()
-        if not ap:
-            continue
-        content_block = text_by_path.get(ap)
-        if not content_block:
-            continue
-        content = content_block.get("text")
-        if not isinstance(content, str) or not content.strip():
-            continue
-        ts_val = (content_block.get("ts") or b.get("ts") or "").strip()
-        ts_ms = _to_ms(ts_val)
-        item = {
-            "artifact_name": f"timeline_text.{turn_id}.{idx}",
-            "text": content,
-        }
-        if ts_ms is not None:
-            item["ts_first"] = ts_ms
-            item["ts_last"] = ts_ms
-        items.append(item)
-        idx += 1
-    return items
-
-
-def _extract_thinking_items(blocks: List[Dict[str, Any]], turn_id: str) -> List[Dict[str, Any]]:
-    items: List[Dict[str, Any]] = []
-    if not blocks or not turn_id:
-        return items
-    for blk in blocks:
-        if not isinstance(blk, dict):
-            continue
-        if blk.get("turn_id") != turn_id:
-            continue
-        if (blk.get("type") or "") != "react.thinking":
-            continue
-        txt = blk.get("text")
-        if not isinstance(txt, str) or not txt.strip():
-            continue
-        meta = blk.get("meta") if isinstance(blk.get("meta"), dict) else {}
-        title = (meta.get("title") or "").strip() or "react"
-        ts_val = blk.get("ts") or ""
-        ts_ms = None
-        try:
-            sec = ts_key(ts_val)
-            if sec != float("-inf"):
-                ts_ms = int(sec * 1000)
-        except Exception:
-            ts_ms = None
-        item = {
-            "agent": title,
-            "text": txt,
-        }
-        if ts_ms is not None:
-            item["ts_first"] = ts_ms
-            item["ts_last"] = ts_ms
-        items.append(item)
-    return items
-
-
-def materialize_sources_by_sids(pool: List[Dict[str, Any]], sids: List[int]) -> List[Dict[str, Any]]:
-    if not sids or not pool:
-        return []
-    wanted = set(int(s) for s in sids if isinstance(s, (int, float)))
-    return [row for row in pool if isinstance(row, dict) and int(row.get("sid") or 0) in wanted]
 
 
 def ensure_sources_in_pool(pool: List[Dict[str, Any]], sources: Any) -> tuple[List[Dict[str, Any]], List[int]]:
@@ -2419,7 +1836,7 @@ class Timeline:
                 return None
             try:
                 import pathlib
-                from kdcube_ai_app.apps.chat.sdk.runtime.workspace import resolve_artifact_path
+                from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace import resolve_artifact_path
                 fp = resolve_artifact_path(pathlib.Path(outdir), rel_path).resolve()
                 if not fp.exists():
                     return None
@@ -2429,8 +1846,8 @@ class Timeline:
 
         def _current_turn_logical_ref(ref_value: str) -> str:
             raw = (ref_value or "").strip().lstrip("/")
-            if raw.startswith(REACT_FILE_REF_PREFIX):
-                raw = raw[len(REACT_FILE_REF_PREFIX):].strip().lstrip("/")
+            if raw.startswith(CONVERSATION_FILE_REF_PREFIX):
+                raw = raw[len(CONVERSATION_FILE_REF_PREFIX):].strip().lstrip("/")
             turn_id = (self.runtime.turn_id or "").strip()
             if not turn_id:
                 return ""
@@ -2440,12 +1857,12 @@ class Timeline:
                     rel = raw[len(prefix):].strip().lstrip("/")
                     if rel:
                         if namespace == "files":
-                            return f"{REACT_FILE_REF_PREFIX}{turn_id}.files/{rel}"
+                            return f"{CONVERSATION_FILE_REF_PREFIX}{turn_id}.files/{rel}"
                         if namespace == "git/projects":
-                            return f"{REACT_FILE_REF_PREFIX}{turn_id}.git/projects/{rel}"
+                            return f"{CONVERSATION_FILE_REF_PREFIX}{turn_id}.git/projects/{rel}"
                         if namespace == "git/snapshots":
-                            return f"{REACT_FILE_REF_PREFIX}{turn_id}.git/snapshots/{rel}"
-                        return f"{REACT_FILE_REF_PREFIX}{turn_id}.user.attachments/{rel}"
+                            return f"{CONVERSATION_FILE_REF_PREFIX}{turn_id}.git/snapshots/{rel}"
+                        return f"{CONVERSATION_FILE_REF_PREFIX}{turn_id}.user.attachments/{rel}"
             return ""
 
         def _visible_ref_exists(ref_value: str) -> bool:
@@ -2520,7 +1937,7 @@ class Timeline:
                     visibility = (resolved.get("visibility") or "").strip()
                 logical_ref = physical_path_to_logical_path(original_ref)
                 if not logical_ref and original_ref and not original_ref.startswith((*CONV_NAMESPACE_PREFIXES, "ks:", "sk:", "sources_pool[")):
-                    logical_ref = f"{REACT_FILE_REF_PREFIX}{original_ref.lstrip('/')}"
+                    logical_ref = f"{CONVERSATION_FILE_REF_PREFIX}{original_ref.lstrip('/')}"
                 logical_ref = qualify_conversation_ref(
                     logical_ref,
                     str(getattr(self.runtime, "conversation_id", "") or "").strip(),
@@ -2569,7 +1986,7 @@ class Timeline:
                     txt = _read_text_from_file(fp)
                     if isinstance(txt, str):
                         return txt
-                if ref.startswith(REACT_FILE_REF_PREFIX):
+                if ref.startswith(CONVERSATION_FILE_REF_PREFIX):
                     encoded = resolved.get("base64")
                     mime = (resolved.get("mime") or "").strip()
                     if encoded:
@@ -2763,7 +2180,7 @@ class Timeline:
         Build a normalized turn view from blocks + sources pool.
         Defaults to this timeline's blocks/sources_pool.
         """
-        return _build_turn_view(
+        return build_harness_turn_view(
             turn_id=turn_id or (self.runtime.turn_id or ""),
             blocks=blocks if blocks is not None else list(self.blocks or []),
             sources_pool=sources_pool if sources_pool is not None else list(self.sources_pool or []),
@@ -3260,7 +2677,7 @@ class Timeline:
     @staticmethod
     def _large_text_recovery_lines(*, path: str, physical_path: str = "") -> List[str]:
         lines: List[str] = []
-        if path.startswith(REACT_FILE_REF_PREFIX):
+        if path.startswith(CONVERSATION_FILE_REF_PREFIX):
             lines.append("- Use react.rg on the file to find relevant regions before editing.")
             lines.append("- Pass react.rg read_item ranges to react.read(items=[...]) for exact visible regions.")
             if physical_path:
@@ -3300,7 +2717,7 @@ class Timeline:
             if isinstance(obj, dict):
                 for key in ("artifact_path", "logical_path", "path"):
                     val = obj.get(key)
-                    if isinstance(val, str) and val.startswith(REACT_FILE_REF_PREFIX) and val not in seen:
+                    if isinstance(val, str) and val.startswith(CONVERSATION_FILE_REF_PREFIX) and val not in seen:
                         seen.add(val)
                         out.append(val)
                         if len(out) >= limit:
@@ -3392,7 +2809,7 @@ class Timeline:
             tool_id = tool_id or str(payload.get("tool_id") or "").strip()
             call_id = call_id or str(payload.get("tool_call_id") or "").strip()
 
-        if path.startswith(REACT_FILE_REF_PREFIX):
+        if path.startswith(CONVERSATION_FILE_REF_PREFIX):
             return {
                 "kind": "file",
                 "path": path,
@@ -3689,7 +3106,7 @@ class Timeline:
                 tokens = 0
 
             should_hide = already_current_compacted or btype in progress_types
-            if not should_hide and path.startswith((REACT_FILE_REF_PREFIX, CONV_SO_PREFIX)):
+            if not should_hide and path.startswith((CONVERSATION_FILE_REF_PREFIX, CONV_SO_PREFIX)):
                 should_hide = True
             if not should_hide and btype in user_visible_types and tokens >= min_user_tokens:
                 should_hide = True
@@ -4376,7 +3793,7 @@ class Timeline:
             kind = "tool_call"
         elif btype == "react.tool.result":
             kind = "tool_result"
-        elif path.startswith(REACT_FILE_REF_PREFIX):
+        elif path.startswith(CONVERSATION_FILE_REF_PREFIX):
             kind = "file"
         elif path.startswith("sk:"):
             kind = "skill"
@@ -4393,9 +3810,9 @@ class Timeline:
         if call_id:
             parts.append(f"call_id={call_id}")
         mime = (block.get("mime") or block.get("media_type") or meta.get("mime") or "").strip()
-        if include_path and mime and path.startswith(REACT_FILE_REF_PREFIX):
+        if include_path and mime and path.startswith(CONVERSATION_FILE_REF_PREFIX):
             parts.append(f"mime={mime}")
-        if include_path and path.startswith(REACT_FILE_REF_PREFIX):
+        if include_path and path.startswith(CONVERSATION_FILE_REF_PREFIX):
             filename = self._path_basename_for_stub(path)
             if filename:
                 parts.append(f"file={json.dumps(filename, ensure_ascii=False)}")
@@ -4411,7 +3828,7 @@ class Timeline:
                 payload = _maybe_parse_json(block.get("text") or "") if isinstance(block.get("text"), str) else None
             if payload is not None:
                 hint = self._tool_result_hint_for_stub(payload)
-        elif btype in {"user.prompt", "assistant.completion", "assistant.completion.attempt"} or path.startswith(("sk:", CONV_SO_PREFIX, REACT_FILE_REF_PREFIX)):
+        elif btype in {"user.prompt", "assistant.completion", "assistant.completion.attempt"} or path.startswith(("sk:", CONV_SO_PREFIX, CONVERSATION_FILE_REF_PREFIX)):
             hint = self._one_line_preview(block.get("text"), limit=180)
         else:
             hint = self._one_line_preview(block.get("text"), limit=140)
@@ -6375,16 +5792,16 @@ class Timeline:
             path = (raw_path or "").strip()
             if not path:
                 return ""
-            if path.startswith(REACT_FILE_REF_PREFIX):
+            if path.startswith(CONVERSATION_FILE_REF_PREFIX):
                 return path
             tid, namespace, rel = split_physical_artifact_path(path)
             if tid and namespace == ARTIFACT_NAMESPACE_FILES and rel:
-                return f"{REACT_FILE_REF_PREFIX}{tid}.files/{rel}"
+                return f"{CONVERSATION_FILE_REF_PREFIX}{tid}.files/{rel}"
             if "/files/" in path and ".files/" in path:
                 # already logical-ish
-                return f"{REACT_FILE_REF_PREFIX}{path}"
+                return f"{CONVERSATION_FILE_REF_PREFIX}{path}"
             if turn_id:
-                return f"{REACT_FILE_REF_PREFIX}{turn_id}.files/{path.lstrip('/')}"
+                return f"{CONVERSATION_FILE_REF_PREFIX}{turn_id}.files/{path.lstrip('/')}"
             return path
 
         def _sources_pool_range(rows: List[Dict[str, Any]]) -> str:
@@ -7198,7 +6615,7 @@ class Timeline:
                 ts_line = _ts_line(ts)
                 if ts_line:
                     lines.append(ts_line)
-                code_path = path or (f"{REACT_FILE_REF_PREFIX}{turn_id}.code.{tool_call_id}" if turn_id and tool_call_id else "")
+                code_path = path or (f"{CONVERSATION_FILE_REF_PREFIX}{turn_id}.code.{tool_call_id}" if turn_id and tool_call_id else "")
                 if code_path:
                     lines.append(f"[AI Agent wrote code] {code_path}:")
                 else:
@@ -7474,7 +6891,7 @@ class Timeline:
                     if ts_line:
                         lines.append(ts_line)
                     tool_id = call_id_to_tool_id.get(tool_call_id, "")
-                    is_artifact = path.startswith((REACT_FILE_REF_PREFIX, CONV_AR_PREFIX, "sk:", CONV_SO_PREFIX))
+                    is_artifact = path.startswith((CONVERSATION_FILE_REF_PREFIX, CONV_AR_PREFIX, "sk:", CONV_SO_PREFIX))
                     if is_artifact:
                         header = f"[TOOL RESULT {short_id}].artifact"
                         if tool_id:

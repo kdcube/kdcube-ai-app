@@ -280,7 +280,7 @@ def build_conversation_ctx_client(*, pg_pool: Any, tenant: str, project: str, mo
     chat-proc) that already hold the worker's pg_pool + model service + store.
     No app/router state, no fallback — resources are always passed in from above.
     """
-    from kdcube_ai_app.apps.chat.sdk.context.retrieval.ctx_rag import ContextRAGClient
+    from kdcube_ai_app.apps.chat.sdk.solutions.conversation.ctx_rag import ContextRAGClient
     from kdcube_ai_app.apps.chat.sdk.context.vector.conv_index import ConvIndex
     from kdcube_ai_app.ops.deployment.sql.db_deployment import project_schema
 

@@ -2799,7 +2799,9 @@ class ReactSolverV2:
         # Emit citations used in this turn (files already emitted on host)
         try:
             if self.hosting_service and self.ctx_browser and self.ctx_browser.timeline:
-                from kdcube_ai_app.apps.chat.sdk.solutions.react.timeline import extract_sources_used_from_blocks
+                from kdcube_ai_app.apps.chat.sdk.runtime.harness.timeline.turn_view import (
+                    extract_sources_used_from_blocks,
+                )
                 blocks = self.ctx_browser.timeline.get_turn_blocks()
                 used_sids = extract_sources_used_from_blocks(blocks)
                 try:
@@ -2996,7 +2998,9 @@ class ReactSolverV2:
         try:
             timeline = getattr(self.ctx_browser, "timeline", None) if self.ctx_browser else None
             if timeline is not None:
-                from kdcube_ai_app.apps.chat.sdk.solutions.react.timeline import extract_assistant_completion_texts_from_blocks
+                from kdcube_ai_app.apps.chat.sdk.runtime.harness.timeline.turn_view import (
+                    extract_assistant_completion_texts_from_blocks,
+                )
                 block_completion_texts = extract_assistant_completion_texts_from_blocks(timeline.get_turn_blocks())
         except Exception:
             block_completion_texts = []

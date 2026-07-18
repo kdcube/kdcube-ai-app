@@ -4,11 +4,12 @@
 """Qualification-at-birth for conversation-scoped refs.
 
 Every ref the runtime emits carries its `conv_<conversation_id>.` scope
-segment; the engineering layer resolves both dialects (legacy
-conversation-local refs keep resolving, forever). These tests pin:
+segment. Inside the owning conversation, the runtime may use the same ref
+without the owner segment; durable output is always owner-qualified. These
+tests pin:
   - the canonical helpers (qualify / localize / text pass),
   - the render funnel (model-visible text is qualified),
-  - dual-dialect resolution in the timeline,
+  - local and durable resolution in the timeline,
   - the zero-signal rule over instruction sources (no model-visible
     example shows an unqualified conversation-scoped ref body).
 """
@@ -18,7 +19,7 @@ from __future__ import annotations
 import pathlib
 import re
 
-from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import (
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace.references import (
     localize_conversation_ref,
     qualify_conversation_ref,
     qualify_conversation_refs_in_text,
@@ -126,13 +127,13 @@ def _timeline_with_file_block(path: str, *, meta_path: str | None = None) -> dic
     }
 
 
-def test_resolve_accepts_legacy_ref_against_legacy_block():
+def test_resolve_accepts_local_ref_against_local_block():
     tl = _timeline_with_file_block("conv:fi:turn_1.files/x.md")
     art = resolve_artifact_from_timeline(tl, "conv:fi:turn_1.files/x.md", current_conversation_id=CID)
     assert art and art.get("text") == "body"
 
 
-def test_resolve_accepts_qualified_ref_against_legacy_block():
+def test_resolve_accepts_durable_ref_against_local_block():
     tl = _timeline_with_file_block("conv:fi:turn_1.files/x.md")
     art = resolve_artifact_from_timeline(
         tl, f"conv:fi:conv_{CID}.turn_1.files/x.md", current_conversation_id=CID
@@ -140,7 +141,7 @@ def test_resolve_accepts_qualified_ref_against_legacy_block():
     assert art and art.get("text") == "body"
 
 
-def test_resolve_accepts_legacy_ref_against_qualified_block():
+def test_resolve_accepts_local_ref_against_durable_block():
     tl = _timeline_with_file_block(f"conv:fi:conv_{CID}.turn_1.files/x.md")
     art = resolve_artifact_from_timeline(
         tl, "conv:fi:turn_1.files/x.md", current_conversation_id=CID

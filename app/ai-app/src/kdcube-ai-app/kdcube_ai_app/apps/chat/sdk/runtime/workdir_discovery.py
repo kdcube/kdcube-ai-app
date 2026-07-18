@@ -6,7 +6,7 @@ import os, json
 import pathlib
 from kdcube_ai_app.apps.chat.sdk.runtime.run_ctx import OUTDIR_CV, WORKDIR_CV
 from kdcube_ai_app.apps.chat.sdk.tools.citations import normalize_sources_any
-from kdcube_ai_app.apps.chat.sdk.runtime.workspace import (
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace import (
     ARTIFACT_OUTPUT_ENV,
     RUNTIME_OUTPUT_ENV,
     artifact_outdir_for,

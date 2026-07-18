@@ -27,7 +27,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.workspace import (
     summarize_current_turn_scopes,
     latest_workspace_publish_event,
 )
-from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import REACT_FILE_REF_PREFIX
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace.references import CONVERSATION_FILE_REF_PREFIX
 
 from kdcube_ai_app.apps.chat.sdk.skills.skills_registry import (
     set_active_skill_tool_catalog,
@@ -803,7 +803,7 @@ def build_announce_workspace_lines(
     artifact_root = None
     if outdir_raw:
         try:
-            from kdcube_ai_app.apps.chat.sdk.runtime.workspace import artifact_outdir_for
+            from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace import artifact_outdir_for
             artifact_root = artifact_outdir_for(pathlib.Path(outdir_raw), create=False)
         except Exception:
             artifact_root = None
@@ -2014,7 +2014,7 @@ def build_sources_pool_text(
             if title and not (title.startswith("\"") and title.endswith("\"")):
                 title = f"\"{title}\""
             title = _shorten(title, title_w)
-            if artifact_path and (source_type in {"file", "attachment"} or artifact_path.startswith(REACT_FILE_REF_PREFIX)):
+            if artifact_path and (source_type in {"file", "attachment"} or artifact_path.startswith(CONVERSATION_FILE_REF_PREFIX)):
                 domain = artifact_path
             else:
                 domain = (src.get("domain") or "").strip() or _domain_from_url(url)

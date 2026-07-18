@@ -865,6 +865,123 @@ async def test_agent_access_token_none_when_no_grant_or_scope_mismatch():
 
 
 @pytest.mark.asyncio
+async def test_agent_regrant_MERGES_claims_never_replaces():
+    # Sequential one-click grants on the SAME resource must accumulate:
+    # granting write after read keeps read (a replace would silently revoke it).
+    service = _agent_service()
+    writer = {**_AGENT_USER, "permissions": ["records:write"]}
+    await service.create_access(
+        writer, label="a", client_id=_AGENT_CLIENT,
+        resource_grants={"https://example.test/mcp": ["records:read"]},
+    )
+    await service.create_access(
+        writer, label="a", client_id=_AGENT_CLIENT,
+        resource_grants={"https://example.test/mcp": ["records:write"]},
+    )
+    token = await service.agent_access_token(
+        grantor_subject="platform-user-1", client_id=_AGENT_CLIENT,
+        resources=["https://example.test/mcp"],
+    )
+    assert sorted(token["resource_grants"]["https://example.test/mcp"]) == ["records:read", "records:write"]
+    assert len((await service.list_access(_AGENT_USER))["items"]) == 1
+
+
+def _named_services_agent_service():
+    from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.oauth.config import (
+        oauth_delegated_config,
+    )
+    state = SimpleNamespace(
+        oauth_delegated_config={
+            "enabled": True,
+            "tenant": "demo-tenant",
+            "project": "demo-project",
+            "capabilities": [
+                {"grant": g, "label": g, "delegable_roles": ["kdcube:role:registered"]}
+                for g in ("named_services:use", "mail:read", "mail:send")
+            ],
+            "resources": [
+                {
+                    "resource": "*/kdcube-services@1-0/public/mcp/named_services*",
+                    "label": "Named services MCP",
+                    # The resource's scope ceiling: the entry grant AND every
+                    # namespace grant it publishes (the deployment contract).
+                    "grants": ["named_services:use", "mail:read", "mail:send"],
+                    # The generic entry tools carry the common MCP entry grant.
+                    "tools": {
+                        "named_services_call": {"label": "Named service call", "grants": ["named_services:use"]},
+                    },
+                    "named_services": {
+                        "namespaces": {
+                            "mail": {
+                                "label": "Mail",
+                                "tools": {
+                                    "search": {"operation": "object.search", "grants": ["mail:read"]},
+                                    "action": {
+                                        "operation": "object.action",
+                                        "operations": {
+                                            "object.action": {"grants": ["mail:read", "mail:send"]},
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            ],
+        }
+    )
+    return AutomationAccessService(
+        redis=_Redis(), tenant="demo-tenant", project="demo-project",
+        config=oauth_delegated_config(SimpleNamespace(state=state)),
+        grant_store=_Store(), authority=_Authority(), minter=_minter,
+    )
+
+
+@pytest.mark.asyncio
+async def test_agent_namespace_grant_state_governs_and_grants():
+    # The NATIVE named-service gate's answer: which resource publishes the
+    # namespace, the operation's required claims, and whether THIS agent holds
+    # them — pending before the grant, granted after, ungoverned namespaces
+    # impose no gate.
+    service = _named_services_agent_service()
+    ns_resource = "*/kdcube-services@1-0/public/mcp/named_services*"
+
+    pending = await service.agent_namespace_grant_state(
+        grantor_subject="platform-user-1", client_id=_AGENT_CLIENT,
+        namespace="mail", operation="object.search",
+    )
+    assert pending["governed"] is True and pending["granted"] is False
+    assert pending["resource"] == ns_resource
+    assert pending["claims"] == ["mail:read", "named_services:use"]
+
+    created = await service.create_access(
+        _AGENT_USER, label="agent", client_id=_AGENT_CLIENT,
+        resource_grants={ns_resource: pending["claims"]},
+    )
+    assert created["ok"] is True
+
+    granted = await service.agent_namespace_grant_state(
+        grantor_subject="platform-user-1", client_id=_AGENT_CLIENT,
+        namespace="mail", operation="object.search",
+    )
+    assert granted["granted"] is True
+
+    # A costlier operation needs MORE claims -> still pending until re-grant.
+    action = await service.agent_namespace_grant_state(
+        grantor_subject="platform-user-1", client_id=_AGENT_CLIENT,
+        namespace="mail", operation="object.action",
+    )
+    assert action["governed"] is True and action["granted"] is False
+    assert action["claims"] == ["mail:read", "mail:send", "named_services:use"]
+
+    # An unpublished namespace imposes no gate.
+    assert (await service.agent_namespace_grant_state(
+        grantor_subject="platform-user-1", client_id=_AGENT_CLIENT,
+        namespace="calendar", operation="object.search",
+    )) == {"governed": False}
+
+
+@pytest.mark.asyncio
 async def test_manual_automation_keeps_random_client_and_no_stored_token():
     service = _agent_service()
     created = await service.create_access(

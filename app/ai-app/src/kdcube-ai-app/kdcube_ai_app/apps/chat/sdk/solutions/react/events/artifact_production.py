@@ -7,16 +7,18 @@ import json
 import pathlib
 from typing import Any
 
-from kdcube_ai_app.apps.chat.sdk.runtime.workspace import artifact_outdir_for, resolve_artifact_path
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace import artifact_outdir_for, resolve_artifact_path
 from kdcube_ai_app.apps.chat.sdk.solutions.react.artifact_analysis import analyze_write_tool_output
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace.references import (
+    CONVERSATION_FILE_REF_PREFIX,
+    normalize_physical_path,
+    physical_path_to_logical_path,
+)
 from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import (
-    REACT_FILE_REF_PREFIX,
     build_artifact_binary_block,
     build_artifact_meta_block,
     build_artifact_view,
     detect_edit,
-    normalize_physical_path,
-    physical_path_to_logical_path,
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.react.events.heuristics import should_attach_binary_to_prompt
 from kdcube_ai_app.apps.chat.sdk.solutions.react.sources import (
@@ -474,7 +476,7 @@ async def emit_policy_artifact_blocks(
 
         edited = detect_edit(
             timeline=getattr(ctx_browser, "timeline", None),
-            artifact_path=artifact_path if artifact_path.startswith(REACT_FILE_REF_PREFIX) else "",
+            artifact_path=artifact_path if artifact_path.startswith(CONVERSATION_FILE_REF_PREFIX) else "",
             tool_call_id=tool_call_id,
         )
         enrich_artifact_file_metadata(

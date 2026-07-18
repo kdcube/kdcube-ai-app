@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Elena Viter
-"""The distributed turn workspace.
+"""The agent-harness distributed turn workspace.
 
 Every turn gets a per-turn workspace on the shared exec-workspace volume —
 ``work/`` + ``out/`` directories any worker can serve (turns hop machines;
@@ -12,17 +12,21 @@ workspace: same root (`get_exec_workspace_root`), same artifact layout, same
 pull resolution.
 
 Modules:
+  * ``references`` — canonical ``conv:*`` owner refs and the mapping between
+    durable ``conv:fi:`` identities and physical turn-workspace paths.
+  * ``artifacts`` — framework-neutral produced/materialized workspace objects.
   * ``layout`` — the artifact directory contract (``artifact_outdir_for``),
     snapshots/diffs of produced files, and the item shapes hosting consumes.
   * ``pull``  — materialize conversation artifact refs (``conv:fi:``) as plain
     local files under a workspace directory (the framework-neutral core a
     pull tool wraps).
-
-Import from the package: ``from kdcube_ai_app.apps.chat.sdk.runtime.workspace
-import artifact_outdir_for, pull_refs_into_dir``.
+Import the scoped contract from its module, for example
+``runtime.harness.workspace.references`` or
+``runtime.harness.workspace.pull``. Layout symbols remain re-exported here
+for the existing execution-runtime integration.
 """
 
-from kdcube_ai_app.apps.chat.sdk.runtime.workspace.layout import (
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace.layout import (
     ARTIFACT_OUTPUT_DIRNAME,
     ARTIFACT_OUTPUT_ENV,
     DEFAULT_IGNORE_NAMES,
@@ -37,10 +41,9 @@ from kdcube_ai_app.apps.chat.sdk.runtime.workspace.layout import (
     should_skip_relpath,
     snapshot_outdir,
 )
-from kdcube_ai_app.apps.chat.sdk.runtime.workspace.pull import (
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace.pull import (
     pull_refs_into_dir,
 )
-
 __all__ = [
     "ARTIFACT_OUTPUT_DIRNAME",
     "ARTIFACT_OUTPUT_ENV",

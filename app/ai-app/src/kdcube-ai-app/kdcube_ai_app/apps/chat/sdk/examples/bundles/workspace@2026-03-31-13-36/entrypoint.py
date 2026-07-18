@@ -237,7 +237,7 @@ class WorkspaceEntrypoint(BaseEntrypointWithEconomics):
         g = StateGraph(BundleState)
 
         async def orchestrate(state: BundleState) -> BundleState:
-            from kdcube_ai_app.apps.chat.sdk.context.retrieval.ctx_rag import ContextRAGClient
+            from kdcube_ai_app.apps.chat.sdk.solutions.conversation.ctx_rag import ContextRAGClient
             from kdcube_ai_app.apps.chat.sdk.context.vector.conv_index import ConvIndex
             from kdcube_ai_app.apps.chat.sdk.retrieval.kb_client import KBClient
             from kdcube_ai_app.apps.chat.sdk.storage.conversation_store import ConversationStore

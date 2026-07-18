@@ -6,7 +6,7 @@ import random
 from types import ModuleType, SimpleNamespace
 
 from kdcube_ai_app.apps.chat.sdk.events import EventSourceSubsystem, event_source_declaration
-from kdcube_ai_app.apps.chat.sdk.runtime.workspace import artifact_outdir_for
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace import artifact_outdir_for
 from kdcube_ai_app.apps.chat.sdk.solutions.react.events import block_production_policy
 from kdcube_ai_app.apps.chat.sdk.solutions.react.proto import RuntimeCtx
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.tools.read import handle_react_read

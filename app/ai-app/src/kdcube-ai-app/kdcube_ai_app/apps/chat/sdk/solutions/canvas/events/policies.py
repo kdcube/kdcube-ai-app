@@ -183,7 +183,7 @@ def _artifact_json_from_stats_target(
     if not physical_path or not outdir_raw:
         return {}
     try:
-        from kdcube_ai_app.apps.chat.sdk.runtime.workspace import resolve_artifact_path
+        from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace import resolve_artifact_path
 
         path = resolve_artifact_path(pathlib.Path(outdir_raw), physical_path, create_root=False)
         parsed = json.loads(path.read_text(encoding="utf-8"))

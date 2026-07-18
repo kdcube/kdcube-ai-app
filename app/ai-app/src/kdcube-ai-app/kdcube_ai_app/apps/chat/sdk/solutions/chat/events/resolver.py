@@ -23,7 +23,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.conversation.presentation import (
     CONVERSATION_FILE_OBJECT_KIND,
     is_conv_file_ref,
 )
-from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import (
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace.references import (
     build_physical_artifact_path,
     split_logical_artifact_ref,
 )

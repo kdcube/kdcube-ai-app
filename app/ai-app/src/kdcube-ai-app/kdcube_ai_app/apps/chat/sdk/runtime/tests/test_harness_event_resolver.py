@@ -1,11 +1,17 @@
 # SPDX-License-Identifier: MIT
 from __future__ import annotations
 
+"""Conversation-file resolution through the agent harness event scope."""
+
 import pytest
 
-from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import build_logical_artifact_path
-from kdcube_ai_app.apps.chat.sdk.solutions.react.events.resolver import (
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace.references import (
+    build_logical_artifact_path,
+)
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.events.resolver import (
+    CONVERSATION_FILE_EVENT_RESOLVER_ID,
     canonicalize_event_ref_for_context,
+    read_event_ref_bytes,
     resolve_event_ref_action,
 )
 from kdcube_ai_app.apps.chat.sdk.storage.conversation_store import ConversationStore
@@ -41,7 +47,7 @@ async def test_resolve_event_ref_action_downloads_canonical_fi_artifact(tmp_path
     )
 
     assert result["ok"] is True
-    assert result["resolver"] == "react.event_ref"
+    assert result["resolver"] == CONVERSATION_FILE_EVENT_RESOLVER_ID
     assert result["object_ref"] == ref
     assert result["filename"] == "problem.md"
     assert result["mime"] == "text/markdown"
@@ -67,7 +73,7 @@ async def test_resolve_event_ref_action_reports_unknown_namespace():
 
 @pytest.mark.asyncio
 async def test_resolve_event_ref_action_treats_bare_fi_refs_as_unregistered():
-    """`conv:fi:` is the only React file ref form; a bare `fi:` ref is an
+    """`conv:fi:` is the only conversation-file ref form; a bare `fi:` ref is an
     unregistered namespace and reports the explicit unsupported result."""
     result = await resolve_event_ref_action(
         {"object_ref": "fi:conv_abc.turn_1.files/report.md", "action": "capabilities"},
@@ -155,8 +161,6 @@ async def test_uploaded_attachment_resolves_by_its_plain_filename_ref(tmp_path):
     )
     # The literal shape the turn recorder / Files tab publish for uploads.
     ref = "conv:fi:conv_conversation.turn_1.user.attachments/report.docx"
-
-    from kdcube_ai_app.apps.chat.sdk.solutions.react.events.resolver import read_event_ref_bytes
 
     data, meta = await read_event_ref_bytes(
         ref=ref,

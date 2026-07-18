@@ -945,8 +945,8 @@ async def rehost_memory_ref(
     if not isinstance(result, dict) or not result.get("ok"):
         return {"missing": [{"object_ref": object_ref, "reason": str((result or {}).get("error") or "memory_not_found")}]}
 
-    from kdcube_ai_app.apps.chat.sdk.runtime.workspace import resolve_artifact_path
-    from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import (
+    from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace import resolve_artifact_path
+    from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace.references import (
         ARTIFACT_NAMESPACE_SNAPSHOTS,
         build_physical_artifact_path,
         physical_path_to_logical_path,

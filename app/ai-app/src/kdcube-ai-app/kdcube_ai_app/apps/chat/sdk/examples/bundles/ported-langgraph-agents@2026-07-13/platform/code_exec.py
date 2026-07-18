@@ -47,7 +47,7 @@ from kdcube_ai_app.apps.chat.sdk.runtime.exec_runtime_config import (
 )
 from kdcube_ai_app.apps.chat.sdk.runtime.run_ctx import OUTDIR_CV, WORKDIR_CV
 from kdcube_ai_app.apps.chat.sdk.runtime.tool_subsystem import create_tool_subsystem_with_mcp
-from kdcube_ai_app.apps.chat.sdk.runtime.workspace import (
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace import (
     artifact_outdir_for,
     build_items_from_diff,
 )

@@ -20,16 +20,16 @@ from typing import Any, Dict, List, Mapping, Optional
 
 from kdcube_ai_app.apps.chat.ids import new_exec_id
 from kdcube_ai_app.infra.service_hub.inventory import AgentLogger, ModelServiceBase
-from kdcube_ai_app.apps.chat.sdk.context.retrieval.ctx_rag import search_context, ContextRAGClient, unwrap_payload
+from kdcube_ai_app.apps.chat.sdk.solutions.conversation.ctx_rag import search_context, ContextRAGClient, unwrap_payload
 from kdcube_ai_app.apps.chat.sdk.solutions.infra import get_exec_workspace_root
 from kdcube_ai_app.apps.chat.sdk.runtime.run_ctx import OUTDIR_CV, WORKDIR_CV
-from kdcube_ai_app.apps.chat.sdk.solutions.react.timeline import (
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.timeline.payload import (
     TIMELINE_KIND,
     SOURCES_POOL_KIND,
     parse_timeline_payload,
-    Timeline,
     extract_turn_ids_from_blocks,
 )
+from kdcube_ai_app.apps.chat.sdk.solutions.react.timeline import Timeline
 from kdcube_ai_app.apps.chat.sdk.solutions.react.proto import RuntimeCtx
 from kdcube_ai_app.apps.chat.sdk.solutions.react.workspace import get_workspace_implementation
 from kdcube_ai_app.tools.content_type import is_text_mime_type

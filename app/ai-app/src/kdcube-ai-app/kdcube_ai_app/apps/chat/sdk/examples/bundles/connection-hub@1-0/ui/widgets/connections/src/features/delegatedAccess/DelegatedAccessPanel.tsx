@@ -307,13 +307,13 @@ export function DelegatedAccessPanel() {
                   {grants.map((grant) => {
                     const option = grantOptionByName.get(grant);
                     return (
-                      <label className="grant-chip" key={`${item.resource}:${grant}`}>
+                      <label className="grant-chip" key={`${item.resource}:${grant}`} title={option?.label || undefined}>
                         <input
                           type="checkbox"
                           checked={(resourceGrants[item.resource] || []).includes(grant)}
                           onChange={(event) => toggleResourceGrant(item.resource, grant, event.target.checked)}
                         />
-                        <span>{option?.label || grant}</span>
+                        <span>{grant}</span>
                       </label>
                     );
                   })}
@@ -366,9 +366,9 @@ export function DelegatedAccessPanel() {
           return (
             <li className="account" key={claim}>
               <div>
-                <div className="account-title">{option?.label || claim}</div>
+                <div className="account-title"><code>{claim}</code></div>
+                {option?.label ? <div className="account-sub">{option.label}</div> : null}
                 {option?.description ? <div className="account-sub">{option.description}</div> : null}
-                <div className="account-sub"><code>{claim}</code></div>
               </div>
             </li>
           );
@@ -420,7 +420,8 @@ export function DelegatedAccessPanel() {
   });
   const resourceLabelFor = (resource: string): string =>
     resources.find((r) => r.resource === resource)?.label || '';
-  const claimLabel = (claim: string): string => grantOptionByName.get(claim)?.label || claim;
+  // The REAL consent is the claim token — that is what renders in the rows.
+  const claimLabel = (claim: string): string => claim;
 
   const grantedPane = (
     <section className="card">

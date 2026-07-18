@@ -3,15 +3,15 @@
 
 """First-party ReAct event-source declarations and block helpers."""
 
-from kdcube_ai_app.apps.chat.sdk.solutions.react.events.common import (
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.timeline import (
     block_event_id,
     block_event_source_id,
     block_matches_event_source,
-    event_source_pipeline_enabled,
     event_identity_fields,
     stamp_event_identity,
     stamp_event_identity_many,
 )
+from kdcube_ai_app.apps.chat.sdk.solutions.react.events.common import event_source_pipeline_enabled
 from kdcube_ai_app.apps.chat.sdk.solutions.react.events.artifact_production import (
     emit_policy_artifact_blocks,
 )
@@ -65,13 +65,6 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.events.policies import (
     tool_call_validation_policy,
     unknown_policy_paths,
 )
-from kdcube_ai_app.apps.chat.sdk.solutions.react.events.resolver import (
-    canonicalize_event_ref_for_context,
-    read_event_ref_bytes,
-    resolve_event_ref_action,
-)
-
-
 def __getattr__(name: str):
     if name == "render_external_events_dry_run":
         from kdcube_ai_app.apps.chat.sdk.solutions.react.events.simulator import (
@@ -109,7 +102,6 @@ __all__ = [
     "block_event_id",
     "block_event_source_id",
     "block_matches_event_source",
-    "canonicalize_event_ref_for_context",
     "block_production_policy",
     "clear_timeline_segment_marks",
     "compaction_event_policy",
@@ -131,8 +123,6 @@ __all__ = [
     "react_event_policy_definition",
     "release_live_external_event_owner",
     "render_external_events_dry_run",
-    "read_event_ref_bytes",
-    "resolve_event_ref_action",
     "render_external_events_preview_payload",
     "run_live_external_event_listener_loop",
     "stamp_event_identity",

@@ -7,9 +7,11 @@ import json
 import pytest
 
 from kdcube_ai_app.apps.chat.external_events import build_conversation_external_event_source
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.timeline.turn_view import (
+    extract_user_attachments_from_blocks,
+)
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.browser import ContextBrowser
 from kdcube_ai_app.apps.chat.sdk.solutions.react.proto import RuntimeCtx
-from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.timeline import extract_user_attachments_from_blocks
 
 
 class _FakeRedis:
@@ -86,7 +88,7 @@ class _FakeCtxClient:
 
 
 @pytest.mark.asyncio
-async def test_browser_folds_external_events_into_history_and_current_turn(tmp_path):
+async def test_browser_materializes_accepted_events_into_current_turn(tmp_path):
     redis = _FakeRedis()
     source = build_conversation_external_event_source(
         redis=redis,
@@ -188,22 +190,39 @@ async def test_browser_folds_external_events_into_history_and_current_turn(tmp_p
     try:
         history_blocks = browser.timeline.get_history_blocks()
         current_blocks = browser.timeline.get_turn_blocks()
-        history_attachments = extract_user_attachments_from_blocks(history_blocks)
+        current_attachments = extract_user_attachments_from_blocks(
+            current_blocks
+        )
 
-        assert any(b.get("type") == "user.followup" and b.get("turn_id") == "turn_old" for b in history_blocks)
+        # accept() owns one effective turn. Even an event that originated while
+        # an older turn was active is materialized under runtime_ctx.turn_id;
+        # its ingress/owner turn remains explicit provenance in block metadata.
+        assert history_blocks == []
+        assert any(
+            b.get("type") == "user.followup"
+            and b.get("turn_id") == "turn_current"
+            and b.get("meta", {}).get("origin_turn_id") == "turn_old"
+            and b.get("meta", {}).get("materialized_turn_id")
+            == "turn_current"
+            for b in current_blocks
+        )
         assert any(
             b.get("type") == "user.attachment.meta"
-            and b.get("turn_id") == "turn_old"
-            and ".external.followup.attachments/" in str(b.get("path") or "")
-            for b in history_blocks
+            and b.get("turn_id") == "turn_current"
+            and ".external.followup.attachments/"
+            in str(b.get("path") or "")
+            for b in current_blocks
         )
         assert any(
             b.get("type") == "user.attachment.text"
-            and b.get("turn_id") == "turn_old"
+            and b.get("turn_id") == "turn_current"
             and b.get("text") == "attachment text from followup"
-            for b in history_blocks
+            for b in current_blocks
         )
-        assert any(att.get("filename") == "brief.txt" for att in history_attachments)
+        assert any(
+            attachment.get("filename") == "brief.txt"
+            for attachment in current_attachments
+        )
         assert any(
             b.get("type") == "user.prompt"
             and b.get("turn_id") == "turn_current"
@@ -240,7 +259,7 @@ async def test_browser_uses_default_policy_for_unregistered_snapshot_event(tmp_p
         project="project",
         conversation_id="conv_1",
     )
-    logical_path = "ev:turn_current.events/task-tracker/snapshots/draft-123/canvas/latest"
+    logical_path = "conv:ev:turn_current.events/task-tracker/snapshots/draft-123/canvas/latest"
     await source.publish(
         kind="external_event",
         event_id="evt_snapshot_1",
@@ -312,7 +331,7 @@ async def test_default_event_block_preserves_standard_tool_result_surfaces(tmp_p
         project="project",
         conversation_id="conv_1",
     )
-    logical_path = "ev:turn_current.events/task-tracker/snapshots/draft-123/canvas/latest"
+    logical_path = "conv:ev:turn_current.events/task-tracker/snapshots/draft-123/canvas/latest"
     await source.publish(
         kind="external_event",
         event_id="evt_snapshot_composite",
@@ -418,7 +437,7 @@ async def test_default_event_canvas_stores_mutable_canvas_json_occurrence(tmp_pa
         project="project",
         conversation_id="conv_1",
     )
-    logical_path = "ev:turn_current.events/task-tracker/canvas/draft-123/state/rev-7"
+    logical_path = "conv:ev:turn_current.events/task-tracker/canvas/draft-123/state/rev-7"
     await source.publish(
         kind="external_event",
         event_id="evt_canvas_rev_7",

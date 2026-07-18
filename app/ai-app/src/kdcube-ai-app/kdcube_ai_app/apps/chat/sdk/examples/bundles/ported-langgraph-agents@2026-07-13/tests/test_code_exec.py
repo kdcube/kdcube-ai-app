@@ -23,7 +23,7 @@ from types import SimpleNamespace
 
 from kdcube_ai_app.apps.chat.sdk.runtime.dynamic_module_loader import load_dynamic_module_for_path
 from kdcube_ai_app.apps.chat.sdk.runtime.run_ctx import OUTDIR_CV, WORKDIR_CV
-from kdcube_ai_app.apps.chat.sdk.runtime.workspace import artifact_outdir_for
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace import artifact_outdir_for
 from kdcube_ai_app.apps.chat.sdk.tools import bundle_tool_context
 
 BUNDLE_ROOT = Path(__file__).resolve().parents[1]

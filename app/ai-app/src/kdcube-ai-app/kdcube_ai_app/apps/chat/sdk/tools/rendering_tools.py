@@ -32,7 +32,7 @@ from kdcube_ai_app.apps.chat.sdk.tools.md2pdf_async import AsyncMarkdownPDF, PDF
 from kdcube_ai_app.apps.chat.sdk.util import _defence
 from kdcube_ai_app.apps.chat.sdk.config import get_plain, _resolve_current_bundle_id
 from kdcube_ai_app.apps.chat.sdk.events import event_source
-from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import normalize_physical_path
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace.references import normalize_physical_path
 from kdcube_ai_app.apps.chat.sdk.solutions.react.events import (
     tool_call_validation_policy,
     write_tool_source_policies,

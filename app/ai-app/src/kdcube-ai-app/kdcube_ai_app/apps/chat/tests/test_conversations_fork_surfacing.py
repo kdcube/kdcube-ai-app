@@ -19,7 +19,7 @@ from types import SimpleNamespace
 import pytest
 
 from kdcube_ai_app.apps.chat.ingress.conversations import conversations
-from kdcube_ai_app.apps.chat.sdk.context.retrieval.ctx_rag import ContextRAGClient
+from kdcube_ai_app.apps.chat.sdk.solutions.conversation.ctx_rag import ContextRAGClient
 
 FORKED_FROM = {"conversation_id": "conv_parent", "turn_id": "turn_parent"}
 FORKS = [{

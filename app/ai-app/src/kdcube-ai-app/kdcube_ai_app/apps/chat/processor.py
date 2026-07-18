@@ -23,7 +23,7 @@ from kdcube_ai_app.apps.chat.processor_scheduler_backend import (
     build_processor_scheduler_backend,
     normalize_processor_scheduler_backend,
 )
-from kdcube_ai_app.apps.chat.sdk.context.retrieval.ctx_rag import ContextRAGClient
+from kdcube_ai_app.apps.chat.sdk.solutions.conversation.ctx_rag import ContextRAGClient
 from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import (
     bind_current_request_context,
     bind_current_task_activity_touch,

@@ -1,24 +1,23 @@
 # SPDX-License-Identifier: MIT
 
-"""Tolerance tests for cross-conversation path syntax across the resolvers.
+"""Owner-qualified conversation ref tests across ReAct resolvers.
 
 The agent receives self-describing paths from memsearch like:
 
-    ev:conv_<id>.turn_<id>.events/...
-    ws:conv_<id>.turn_<id>.conv.working.summary
-    ar:conv_<id>.turn_<id>.react.turn.index
-    tc:conv_<id>.turn_<id>.<call_id>.result
-    fi:conv_<id>.turn_<id>.files/...
+    conv:ev:conv_<id>.turn_<id>.events/...
+    conv:ws:conv_<id>.turn_<id>.conv.working.summary
+    conv:ar:conv_<id>.turn_<id>.react.turn.index
+    conv:tc:conv_<id>.turn_<id>.<call_id>.result
+    conv:fi:conv_<id>.turn_<id>.files/...
 
-The legacy parsers expected the bare form (no `conv_<id>.` segment). These
-tests verify that each resolver/parser now accepts both forms without
-misparse, and that the generic `peel_conversation_prefix` returns the
-correct `(ns, conv_id, unscoped_path)` decomposition.
+The leading ``conv:`` is the owner namespace. The ``conv_<id>`` segment names
+the owning conversation and remains distinct from that namespace. These tests
+verify local versus owner-qualified forms without accepting orphan prefixes.
 """
 
 from __future__ import annotations
 
-from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import peel_conversation_prefix
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace.references import peel_conversation_prefix
 from kdcube_ai_app.apps.chat.sdk.solutions.react.timeline import (
     parse_turn_index_path,
     parse_turn_index_ref,
@@ -28,21 +27,21 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.timeline import (
 # ---------------------------------------------------------------- peeler ----
 
 def test_peel_bare_path_returns_empty_conv():
-    ns, conv_id, unscoped = peel_conversation_prefix("ar:turn_X.react.turn.index")
-    assert ns == "ar:"
+    ns, conv_id, unscoped = peel_conversation_prefix("conv:ar:turn_X.react.turn.index")
+    assert ns == "conv:ar:"
     assert conv_id == ""
-    assert unscoped == "ar:turn_X.react.turn.index"
+    assert unscoped == "conv:ar:turn_X.react.turn.index"
 
 
 def test_peel_scoped_path_splits_correctly():
-    ns, conv_id, unscoped = peel_conversation_prefix("ws:conv_abc.turn_X.conv.working.summary")
-    assert ns == "ws:"
+    ns, conv_id, unscoped = peel_conversation_prefix("conv:ws:conv_abc.turn_X.conv.working.summary")
+    assert ns == "conv:ws:"
     assert conv_id == "abc"
-    assert unscoped == "ws:turn_X.conv.working.summary"
+    assert unscoped == "conv:ws:turn_X.conv.working.summary"
 
 
 def test_peel_handles_all_supported_namespaces():
-    for ns in ("fi:", "ev:", "ar:", "ws:", "tc:", "so:"):
+    for ns in ("conv:fi:", "conv:ev:", "conv:ar:", "conv:ws:", "conv:tc:", "conv:so:"):
         out_ns, conv_id, unscoped = peel_conversation_prefix(f"{ns}conv_xyz.turn_Y.tail")
         assert out_ns == ns
         assert conv_id == "xyz"
@@ -67,32 +66,32 @@ def test_peel_does_not_invent_conversation_ids():
 def test_peel_no_segment_after_conv_prefix_returns_unchanged():
     # `ws:conv_abc` with no `.<rest>` after the conv segment is malformed; the
     # peeler must not strip it.
-    out_ns, conv_id, unscoped = peel_conversation_prefix("ws:conv_abc")
-    assert out_ns == "ws:"
+    out_ns, conv_id, unscoped = peel_conversation_prefix("conv:ws:conv_abc")
+    assert out_ns == "conv:ws:"
     assert conv_id == ""
-    assert unscoped == "ws:conv_abc"
+    assert unscoped == "conv:ws:conv_abc"
 
 
 # ----------------------------------------------------- turn-index parser ----
 
 def test_parse_turn_index_path_bare():
-    assert parse_turn_index_path("ar:turn_X.react.turn.index") == "turn_X"
+    assert parse_turn_index_path("conv:ar:turn_X.react.turn.index") == "turn_X"
 
 
 def test_parse_turn_index_path_cross_conv():
     # Strip the conv_<id>. prefix silently; return the turn_id alone.
-    assert parse_turn_index_path("ar:conv_abc.turn_X.react.turn.index") == "turn_X"
+    assert parse_turn_index_path("conv:ar:conv_abc.turn_X.react.turn.index") == "turn_X"
 
 
 def test_parse_turn_index_path_rejects_wrong_prefix_or_suffix():
-    assert parse_turn_index_path("ws:turn_X.conv.working.summary") is None
-    assert parse_turn_index_path("ar:turn_X") is None
+    assert parse_turn_index_path("conv:ws:turn_X.conv.working.summary") is None
+    assert parse_turn_index_path("conv:ar:turn_X") is None
     assert parse_turn_index_path("") is None
     assert parse_turn_index_path(None) is None  # type: ignore[arg-type]
 
 
 def test_parse_turn_index_ref_returns_both():
-    assert parse_turn_index_ref("ar:turn_X.react.turn.index") == ("", "turn_X")
-    assert parse_turn_index_ref("ar:conv_abc.turn_X.react.turn.index") == ("abc", "turn_X")
-    assert parse_turn_index_ref("ws:turn_X.conv.working.summary") is None
-    assert parse_turn_index_ref("ar:conv_abc") is None
+    assert parse_turn_index_ref("conv:ar:turn_X.react.turn.index") == ("", "turn_X")
+    assert parse_turn_index_ref("conv:ar:conv_abc.turn_X.react.turn.index") == ("abc", "turn_X")
+    assert parse_turn_index_ref("conv:ws:turn_X.conv.working.summary") is None
+    assert parse_turn_index_ref("conv:ar:conv_abc") is None

@@ -9,8 +9,9 @@ from typing import Any, Mapping
 from urllib.parse import quote
 
 from kdcube_ai_app.apps.chat.sdk.config import get_settings
-from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import (
-    REACT_FILE_REF_PREFIX,
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace.references import (
+    CONVERSATION_FILE_REF_PREFIX,
+    build_logical_artifact_path,
     build_physical_artifact_path,
     split_logical_artifact_ref,
 )
@@ -18,6 +19,7 @@ from kdcube_ai_app.apps.chat.sdk.storage.conversation_store import ConversationS
 
 
 LOGGER = logging.getLogger(__name__)
+CONVERSATION_FILE_EVENT_RESOLVER_ID = "runtime.harness.events.conv_file"
 
 
 def _ref_namespace(ref: str) -> str:
@@ -36,19 +38,18 @@ def canonicalize_event_ref_for_context(ref: Any, *, conversation_id: str = "") -
     Return the durable canonical form for an event/object ref when the current
     runtime context can disambiguate it.
 
-    `conv:fi:turn_...` is valid inside the current ReAct runtime, but durable
+    `conv:fi:turn_...` is valid inside a conversation-local runtime, but durable
     cross-surface consumers such as canvas need
-    `conv:fi:conv_<conversation>.turn_...`. React owns that rewrite because
-    `conv:fi:` is a React-owned file/event namespace.
+    `conv:fi:conv_<conversation>.turn_...`. The distributed workspace owns
+    that rewrite because `conv:fi:` is the conversation-file namespace shared
+    by agent runtimes.
     """
     value = str(ref or "").strip()
-    if not value.startswith(REACT_FILE_REF_PREFIX):
+    if not value.startswith(CONVERSATION_FILE_REF_PREFIX):
         return value
     embedded_conversation_id, turn_id, namespace, relpath = split_logical_artifact_ref(value)
     if embedded_conversation_id or not conversation_id or not turn_id or not namespace or not relpath:
         return value
-    from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import build_logical_artifact_path
-
     return build_logical_artifact_path(
         turn_id=turn_id,
         namespace=namespace,
@@ -127,8 +128,8 @@ async def read_event_ref_bytes(
     Resolve bytes for a namespaced event/object ref.
 
     For now the built-in byte-backed resolver is `conv:fi:`, the canonical
-    React-owned file/event reference. More namespaces should register here
-    instead of teaching bundles their storage layouts.
+    conversation-file reference. More namespaces should register through the
+    owning provider/rehoster instead of teaching apps their storage layouts.
     """
     namespace = _ref_namespace(ref)
     if namespace == "conv:fi":
@@ -178,7 +179,7 @@ async def resolve_event_ref_action(
                 "event_ref": ref,
                 "object_ref": ref,
                 "namespace": "conv:fi",
-                "resolver": "react.event_ref",
+                "resolver": CONVERSATION_FILE_EVENT_RESOLVER_ID,
                 "resolver_status": "invalid_ref",
                 "error": "fi_ref_requires_embedded_conversation",
                 "message": "Canvas conv:fi: refs must include the cross-conversation prefix: conv:fi:conv_<conversation_id>.turn_<turn_id>...",
@@ -240,7 +241,7 @@ async def _read_fi_bytes(
             except FileNotFoundError:
                 continue
             except Exception:
-                LOGGER.debug("[react.event_ref.resolve] candidate failed ref=%s candidate=%s", ref, candidate, exc_info=True)
+                LOGGER.debug("[runtime.harness.events.ref.resolve] candidate failed ref=%s candidate=%s", ref, candidate, exc_info=True)
                 continue
 
     # Uploaded-attachment fallback: user uploads are STORED under a
@@ -306,7 +307,7 @@ async def _resolve_fi_action(
         "event_ref": ref,
         "object_ref": ref,
         "namespace": "conv:fi",
-        "resolver": "react.event_ref",
+        "resolver": CONVERSATION_FILE_EVENT_RESOLVER_ID,
         "resolver_status": "implemented",
         "capabilities": {"preview": False, "open": False, "download": True, "rehost": False},
         "default_open_effect_action": "download",
@@ -330,7 +331,7 @@ async def _resolve_fi_action(
             conversation_id=conversation_id,
         )
     except Exception as exc:
-        LOGGER.warning("[react.event_ref.resolve] failed action=%s ref=%s", action, ref, exc_info=True)
+        LOGGER.warning("[runtime.harness.events.ref.resolve] failed action=%s ref=%s", action, ref, exc_info=True)
         return {**base, "ok": False, "error": "fi_ref_not_found", "message": str(exc), "status": 404}
 
     filename = PurePosixPath(relpath).name or "artifact"

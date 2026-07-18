@@ -12,8 +12,8 @@ import pathlib
 import re
 from typing import Any, Mapping
 
-from kdcube_ai_app.apps.chat.sdk.runtime.workspace import resolve_artifact_path
-from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import (
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace import resolve_artifact_path
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace.references import (
     ARTIFACT_NAMESPACE_ATTACHMENTS,
     build_physical_artifact_path,
     physical_path_to_logical_path,

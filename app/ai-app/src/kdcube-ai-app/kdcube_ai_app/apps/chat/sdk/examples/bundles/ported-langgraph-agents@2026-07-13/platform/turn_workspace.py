@@ -42,7 +42,7 @@
 #     into the working directory by its `conv:fi:` link. Byte resolution for
 #     both doors is the shared SDK core (the namespace byte resolver
 #     `read_event_ref_bytes` — the same resolution the file-download action
-#     uses; pull adds `runtime/workspace.pull_refs_into_dir` on top).
+#     uses; pull adds `runtime/harness/workspace.pull_refs_into_dir` on top).
 #
 # Fail-open per file, never per turn: a link that cannot be pulled is reported
 # by the pull result, and the turn proceeds.
@@ -202,7 +202,7 @@ def build_pull_files_tool() -> Any:
         The working directory starts EMPTY every turn — nothing from earlier
         turns is in it until you pull it again.
         """
-        from kdcube_ai_app.apps.chat.sdk.runtime.workspace import pull_refs_into_dir
+        from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace import pull_refs_into_dir
         from .code_exec import current_code_exec_context, exec_files_dir
 
         ctx = current_code_exec_context()
@@ -273,7 +273,7 @@ def build_read_file_tool() -> Any:
         run_python reports (``link=conv:fi:...``); pass the link exactly as
         shown. `max_text_symbols` optionally lowers the text bound.
         """
-        from kdcube_ai_app.apps.chat.sdk.solutions.react.events.resolver import read_event_ref_bytes
+        from kdcube_ai_app.apps.chat.sdk.runtime.harness.events.resolver import read_event_ref_bytes
         from .attachments import _DOC_MIME, _IMAGE_MIME
         from .code_exec import current_code_exec_context
 

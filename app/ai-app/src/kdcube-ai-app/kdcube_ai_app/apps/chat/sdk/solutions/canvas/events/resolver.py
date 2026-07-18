@@ -149,8 +149,8 @@ async def rehost_canvas_ref(
     if not uri or not turn_id or outdir is None:
         return {"missing": [{"object_ref": uri, "reason": "missing_ref_or_runtime"}]}
 
-    from kdcube_ai_app.apps.chat.sdk.runtime.workspace import resolve_artifact_path
-    from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import (
+    from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace import resolve_artifact_path
+    from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace.references import (
         ARTIFACT_NAMESPACE_ATTACHMENTS,
         ARTIFACT_NAMESPACE_SNAPSHOTS,
         build_physical_artifact_path,

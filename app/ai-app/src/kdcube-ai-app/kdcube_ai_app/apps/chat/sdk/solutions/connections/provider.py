@@ -211,6 +211,32 @@ class ConnectionsProviderBase(NamedServiceProvider):
             attrs={"has_token": True},
         )
 
+    async def agent_grant_check(
+        self,
+        ctx: NamedServiceContext,
+        request: NamedServiceRequest,
+    ) -> NamedServiceResponse:
+        payload = dict(request.payload or {})
+        client_id = str(payload.get("client_id") or "").strip()
+        namespace = str(payload.get("namespace") or "").strip()
+        operation = str(payload.get("operation") or "").strip()
+        if not client_id or not namespace or not operation:
+            return self._error(
+                "connections_agent_grant_args_required",
+                "client_id, namespace, and operation are required", status=400,
+            )
+        try:
+            state = await self.agent_grant_state(
+                ctx, client_id=client_id, namespace=namespace, operation=operation,
+            )
+        except Exception as exc:
+            return self._error("connections_agent_grant_check_failed", str(exc))
+        return NamedServiceResponse.ok_response(
+            provider=self.provider_identity(),
+            namespace=NAMESPACE,
+            object=dict(state or {"governed": False}),
+        )
+
     # ── error helper ─────────────────────────────────────────────────────────
 
     def _error(self, code: str, message: str, *, status: int = 500) -> NamedServiceResponse:
@@ -249,6 +275,24 @@ class ConnectionsProviderBase(NamedServiceProvider):
         delegated grants (the Connection Hub) overrides this over its automation
         access store; providers that do not simply expose no agent grants."""
         return None
+
+    async def agent_grant_state(
+        self,
+        ctx: NamedServiceContext,
+        *,
+        client_id: str,
+        namespace: str,
+        operation: str,
+    ) -> dict[str, Any]:
+        """The native named-service gate's answer for (agent client, namespace,
+        operation): ``{"governed": False}`` (this provider gates nothing) or
+        ``{"governed": True, "granted": bool, "resource", "claims"}``.
+
+        Concrete default: ungoverned — a provider without a delegated-grant
+        catalog imposes no per-agent gate, so callers fail open to the existing
+        connected-account boundary."""
+        del client_id, namespace, operation
+        return {"governed": False}
 
     @abstractmethod
     async def list_catalog(self, ctx: NamedServiceContext) -> list[CatalogEntry]:

@@ -21,7 +21,7 @@ from typing import Dict, Any, List, Tuple, Optional, Literal, Mapping
 from kdcube_ai_app.apps.chat.ids import new_exec_id
 from kdcube_ai_app.apps.chat.sdk.config import get_settings
 from kdcube_ai_app.apps.chat.sdk.runtime.exec_runtime_config import resolve_exec_runtime_profile
-from kdcube_ai_app.apps.chat.sdk.runtime.workspace import (
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace import (
     ARTIFACT_OUTPUT_ENV,
     RUNTIME_OUTPUT_ENV,
     artifact_outdir_for,

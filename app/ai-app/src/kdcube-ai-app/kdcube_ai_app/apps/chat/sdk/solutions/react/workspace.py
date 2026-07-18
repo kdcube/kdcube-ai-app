@@ -10,12 +10,12 @@ import re
 import shutil
 from typing import Any, Dict, List, Optional
 
-from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import (
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace.references import (
     ARTIFACT_NAMESPACE_ATTACHMENTS,
     ARTIFACT_NAMESPACE_FILES,
     ARTIFACT_NAMESPACE_PROJECTS,
     ARTIFACT_NAMESPACE_SNAPSHOTS,
-    REACT_FILE_REF_PREFIX,
+    CONVERSATION_FILE_REF_PREFIX,
     build_physical_artifact_path,
     is_turn_id,
     physical_path_to_logical_path,
@@ -25,7 +25,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import (
     split_physical_artifact_path,
     unscoped_logical_artifact_path,
 )
-from kdcube_ai_app.apps.chat.sdk.runtime.workspace import artifact_outdir_for, resolve_artifact_path
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace import artifact_outdir_for, resolve_artifact_path
 
 WORKSPACE_IMPLEMENTATION_CUSTOM = "custom"
 WORKSPACE_IMPLEMENTATION_GIT = "git"
@@ -168,8 +168,8 @@ def _infer_physical_from_fi(path: str) -> str:
         )
         if physical:
             return physical
-    if p.startswith(REACT_FILE_REF_PREFIX):
-        rel = p[len(REACT_FILE_REF_PREFIX):].strip().lstrip("/")
+    if p.startswith(CONVERSATION_FILE_REF_PREFIX):
+        rel = p[len(CONVERSATION_FILE_REF_PREFIX):].strip().lstrip("/")
         if rel and _safe_relpath(rel):
             return rel
     if ":" in p:
@@ -563,7 +563,7 @@ async def hydrate_workspace_paths(
 
 def _parse_checkout_file_ref(path: str) -> Optional[Dict[str, str]]:
     raw = str(path or "").strip()
-    if not raw.startswith(REACT_FILE_REF_PREFIX):
+    if not raw.startswith(CONVERSATION_FILE_REF_PREFIX):
         return None
     conversation_id, turn_id, namespace, rel = split_logical_artifact_ref(raw)
     if turn_id and namespace == ARTIFACT_NAMESPACE_PROJECTS and rel:
@@ -580,7 +580,7 @@ def _parse_checkout_file_ref(path: str) -> Optional[Dict[str, str]]:
             "rel": rel.strip("/"),
             "physical_path": physical_path,
         }
-    logical = unscoped_logical_artifact_path(raw)[len(REACT_FILE_REF_PREFIX):].strip()
+    logical = unscoped_logical_artifact_path(raw)[len(CONVERSATION_FILE_REF_PREFIX):].strip()
     project_suffix = f".{ARTIFACT_NAMESPACE_PROJECTS}"
     if logical.endswith(project_suffix):
         turn_id = logical[: -len(project_suffix)].strip()
@@ -818,10 +818,10 @@ async def checkout_workspace_paths(
     materialized = _tree_summary_for_relpaths(target_rels)
     materialized.update({
         "target_root": f"{turn_id}/{ARTIFACT_NAMESPACE_PROJECTS}",
-        "target_logical_root": f"{REACT_FILE_REF_PREFIX}{turn_id}.{ARTIFACT_NAMESPACE_PROJECTS}/",
+        "target_logical_root": f"{CONVERSATION_FILE_REF_PREFIX}{turn_id}.{ARTIFACT_NAMESPACE_PROJECTS}/",
         "path_rule": {
             "physical": f"{turn_id}/{ARTIFACT_NAMESPACE_PROJECTS}/<path shown in tree>",
-            "logical": f"{REACT_FILE_REF_PREFIX}{turn_id}.{ARTIFACT_NAMESPACE_PROJECTS}/<path shown in tree>",
+            "logical": f"{CONVERSATION_FILE_REF_PREFIX}{turn_id}.{ARTIFACT_NAMESPACE_PROJECTS}/<path shown in tree>",
         },
     })
     checked_out = [

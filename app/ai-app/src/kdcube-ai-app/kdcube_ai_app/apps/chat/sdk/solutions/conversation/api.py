@@ -47,10 +47,8 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Protocol
 
-from kdcube_ai_app.apps.chat.sdk.context.retrieval.ctx_rag import normalize_rank_weights
-from kdcube_ai_app.apps.chat.sdk.solutions.react.timeline import (
-    TimelineView,
-    build_timeline_payload,
+from kdcube_ai_app.apps.chat.sdk.solutions.conversation.ctx_rag import normalize_rank_weights
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.timeline.turn_view import (
     extract_assistant_completion_blocks,
     extract_user_attachments_from_blocks,
 )
@@ -622,12 +620,6 @@ async def run_conversation_search(
         try:
             turn_log = await search_backend.get_turn_log(turn_id=tid, conversation_id=hit_conversation_id)
             blocks = list((turn_log or {}).get("blocks") or [])
-            if blocks:
-                timeline_payload = build_timeline_payload(
-                    blocks=blocks,
-                    sources_pool=(turn_log or {}).get("sources_pool") or [],
-                )
-                TimelineView.from_payload(timeline_payload)
         except Exception:
             LOGGER.warning(
                 "[conversation.search] turn log unavailable turn_id=%s conversation_id=%s; "

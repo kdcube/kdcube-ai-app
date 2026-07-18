@@ -7,530 +7,23 @@ import json
 import pathlib
 import base64
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Dict, Optional, List
-import re
 
 from kdcube_ai_app.apps.chat.sdk.util import _truncate, token_count
 import kdcube_ai_app.apps.chat.sdk.tools.tools_insights as tools_insights
 from kdcube_ai_app.apps.chat.sdk.solutions.react.tools.common import tc_result_path
-
-REACT_CONVERSATION_NAMESPACE = "conv"
-REACT_FILE_NAMESPACE = "fi"
-REACT_FILE_REF_PREFIX = f"{REACT_CONVERSATION_NAMESPACE}:{REACT_FILE_NAMESPACE}:"
-
-ARTIFACT_NAMESPACE_PROJECTS = "git/projects"
-ARTIFACT_NAMESPACE_FILES = "files"
-ARTIFACT_NAMESPACE_ATTACHMENTS = "attachments"
-ARTIFACT_NAMESPACE_SNAPSHOTS = "git/snapshots"
-ARTIFACT_EXTERNAL_PREFIX = "external/"
-ARTIFACT_CONVERSATION_PREFIX = "conv_"
-_TIMESTAMP_TURN_ID_RE = re.compile(
-    r"^\d{4}-\d{2}-\d{2}-\d{2}-\d{2}(?:-\d{2})?(?:-\d{3,6})?$"
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace.artifacts import (
+    WorkspaceArtifact,
 )
-_EXTERNAL_LOGICAL_RE = re.compile(
-    r"^(?P<turn>[^.]+)\.external\.(?P<event_kind>[^.]+)\.attachments/(?P<message_id>[^/]+)/(?P<rel>.+)$"
-)
-_EXTERNAL_LOGICAL_LEGACY_RE = re.compile(
-    r"^(?P<turn>[^.]+)\.external\.(?P<event_kind>[^.]+)\.(?P<message_id>[^.]+)\.attachments/(?P<rel>.+)$"
-)
-_EXTERNAL_PHYSICAL_RE = re.compile(
-    r"^(?P<turn>[^/]+)/external/(?P<event_kind>[^/]+)/attachments/(?P<message_id>[^/]+)/(?P<rel>.+)$"
-)
-_EXTERNAL_PHYSICAL_LEGACY_RE = re.compile(
-    r"^(?P<turn>[^/]+)/external/(?P<event_kind>[^/]+)/(?P<message_id>[^/]+)/attachments/(?P<rel>.+)$"
-)
-_LOGICAL_ARTIFACT_NAMESPACES = (
-    ARTIFACT_NAMESPACE_PROJECTS,
-    ARTIFACT_NAMESPACE_SNAPSHOTS,
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace.references import (
     ARTIFACT_NAMESPACE_FILES,
-    ARTIFACT_NAMESPACE_ATTACHMENTS,
+    build_logical_artifact_path,
+    build_physical_artifact_path,
+    infer_artifact_namespace,
+    normalize_physical_path,
+    split_physical_artifact_path,
 )
-_PHYSICAL_ARTIFACT_NAMESPACES = _LOGICAL_ARTIFACT_NAMESPACES
-
-
-def is_turn_id(value: str) -> bool:
-    raw = str(value or "").strip()
-    if not raw:
-        return False
-    return raw.startswith("turn_") or raw.startswith("telegram_turn_") or bool(_TIMESTAMP_TURN_ID_RE.fullmatch(raw))
-
-
-def _split_external_attachment_rel(relpath: str) -> tuple[str, str, str]:
-    rel = (relpath or "").strip().lstrip("/")
-    if not rel.startswith(ARTIFACT_EXTERNAL_PREFIX):
-        return "", "", ""
-    parts = [part for part in rel.split("/") if part]
-    if len(parts) >= 5 and parts[0] == "external" and parts[2] == "attachments":
-        kind = parts[1]
-        message_id = parts[3]
-        file_rel = "/".join(parts[4:])
-        if kind and message_id and file_rel:
-            return kind, message_id, file_rel
-    if len(parts) >= 5 and parts[0] == "external" and parts[3] == "attachments":
-        kind = parts[1]
-        message_id = parts[2]
-        file_rel = "/".join(parts[4:])
-        if kind and message_id and file_rel:
-            return kind, message_id, file_rel
-    return "", "", ""
-
-
-def _conversation_segment(conversation_id: str = "") -> str:
-    raw = str(conversation_id or "").strip().strip("/")
-    if not raw:
-        return ""
-    if "." in raw or "/" in raw or "\\" in raw:
-        return ""
-    return f"{ARTIFACT_CONVERSATION_PREFIX}{raw}"
-
-
-def _split_logical_conversation_prefix(raw_value: str) -> tuple[str, str]:
-    raw = str(raw_value or "").strip()
-    if raw.startswith(REACT_FILE_REF_PREFIX):
-        raw = raw[len(REACT_FILE_REF_PREFIX):]
-    if not raw.startswith(ARTIFACT_CONVERSATION_PREFIX):
-        return "", raw
-    segment, sep, rest = raw.partition(".")
-    if not sep or not rest:
-        return "", raw
-    conversation_id = segment[len(ARTIFACT_CONVERSATION_PREFIX):].strip()
-    return conversation_id, rest
-
-
-def peel_conversation_prefix(path: str) -> tuple[str, str, str]:
-    """
-    Generic peeler for `conv:<ns>:conv_<conv_id>.<rest>` paths across all
-    conversation-owned ReAct namespaces (`conv:fi:`, `conv:ar:`,
-    `conv:ws:`, `conv:tc:`, `conv:so:`). Returns
-    `(ns_prefix, conversation_id, unscoped_path)` where `unscoped_path` retains
-    the namespace prefix (`conv:<ns>:<rest>`). If no conv prefix is present, the
-    returned `conversation_id` is empty and `unscoped_path` equals the input.
-
-    Used by read-side resolvers to support cross-conversation paths uniformly.
-    The runtime convention: a logical path is fully self-describing — its
-    namespace tells the resolver how to interpret it, and an optional
-    `conv_<id>.` segment immediately after the namespace tells the resolver
-    which conversation to resolve it in.
-
-    Examples:
-        "conv:ws:conv_abc.turn_X.conv.working.summary"
-          -> ("conv:ws:", "abc", "conv:ws:turn_X.conv.working.summary")
-        "conv:ar:turn_Y.react.turn.index"
-          -> ("conv:ar:", "", "conv:ar:turn_Y.react.turn.index")
-        "sources_pool[1,2]"
-          -> ("", "", "sources_pool[1,2]")
-    """
-    raw = str(path or "").strip()
-    if not raw:
-        return "", "", raw
-    if not raw.startswith(f"{REACT_CONVERSATION_NAMESPACE}:"):
-        return "", "", raw
-    _, _, rest = raw.partition(":")
-    ns_letters, sep, body = rest.partition(":")
-    if not sep or not ns_letters:
-        return "", "", raw
-    if not ns_letters.isalpha() or not ns_letters.islower():
-        return "", "", raw
-    ns = f"{REACT_CONVERSATION_NAMESPACE}:{ns_letters}:"
-    if not body.startswith(ARTIFACT_CONVERSATION_PREFIX):
-        return ns, "", raw
-    segment, sep, rest = body.partition(".")
-    if not sep or not rest:
-        return ns, "", raw
-    conv_id = segment[len(ARTIFACT_CONVERSATION_PREFIX) :].strip()
-    if not conv_id:
-        return ns, "", raw
-    return ns, conv_id, f"{ns}{rest}"
-
-
-def qualify_conversation_ref(ref: str, conversation_id: str) -> str:
-    """Return `ref` carrying its `conv_<conversation_id>.` scope segment.
-
-    The canonical emission-side helper: every runtime site that mints or
-    renders a conversation-owned ref (`conv:fi:`, `conv:ar:`, `conv:ws:`,
-    `conv:tc:`, `conv:so:`, ...) passes it through here so refs leave the
-    platform as absolute, location-independent identities.
-
-    Idempotent: a ref that already carries a scope segment (this or another
-    conversation's) is returned unchanged, so copies keep their origin.
-    Non-conversation refs, empty refs, and calls without a conversation id
-    pass through untouched.
-    """
-    raw = str(ref or "").strip()
-    conv_id = str(conversation_id or "").strip()
-    if not raw or not conv_id:
-        return ref
-    if not _conversation_segment(conv_id):
-        return ref
-    ns, existing_conv, _ = peel_conversation_prefix(raw)
-    if not ns or existing_conv:
-        return ref
-    body = raw[len(ns):]
-    if not body:
-        return ref
-    return f"{ns}{ARTIFACT_CONVERSATION_PREFIX}{conv_id}.{body}"
-
-
-def localize_conversation_ref(ref: str, current_conversation_id: str) -> str:
-    """Return `ref` without its scope segment when that segment names
-    `current_conversation_id` — the read-side twin of
-    :func:`qualify_conversation_ref`.
-
-    Resolvers and physical-path mappers operate on conversation-local refs;
-    this peels the current conversation's own scope segment so a qualified
-    ref resolves exactly like its local form. Refs scoped to another
-    conversation keep their segment (they are routed to that conversation's
-    store). Idempotent; non-conversation refs pass through untouched.
-    """
-    raw = str(ref or "").strip()
-    current = str(current_conversation_id or "").strip()
-    if not raw or not current:
-        return ref
-    ns, embedded_conv, unscoped = peel_conversation_prefix(raw)
-    if not ns or not embedded_conv:
-        return ref
-    if embedded_conv != current:
-        return ref
-    return unscoped
-
-
-_CONV_REF_BODY_STARTS = (
-    r"(?:telegram_)?turn_",          # turn-scoped bodies (files, blocks, tc, ws, ev)
-    r"\d{4}-\d{2}-\d{2}-\d{2}-\d{2}",  # timestamp-style turn ids
-    r"sources_pool\[",               # conv:so: selectors
-    r"plan\.latest:",                # conv:ar:plan.latest:<plan_id>
-)
-
-_CONV_REF_QUALIFY_RE = re.compile(
-    r"\bconv:([a-z]{2}):(?=(?:" + "|".join(_CONV_REF_BODY_STARTS) + r"))"
-)
-
-
-def qualify_conversation_refs_in_text(text: str, conversation_id: str) -> str:
-    """Qualify every conversation-scoped ref inside free text with the
-    `conv_<conversation_id>.` scope segment.
-
-    The render-side enforcement point: text leaving the runtime for the model
-    passes through here so each `conv:<ns>:` ref carries its home conversation.
-    Refs that already carry a scope segment (this or another conversation's)
-    are untouched (the lookahead only matches recognized unscoped body
-    shapes), and namespace mentions without a body are left as-is.
-    """
-    raw = str(text or "")
-    conv_id = str(conversation_id or "").strip()
-    if not raw or not conv_id or "conv:" not in raw:
-        return text
-    if not _conversation_segment(conv_id):
-        return text
-    return _CONV_REF_QUALIFY_RE.sub(
-        f"conv:\\1:{ARTIFACT_CONVERSATION_PREFIX}{conv_id}.", raw
-    )
-
-
-def _split_physical_conversation_prefix(raw_value: str) -> tuple[str, str]:
-    raw = str(raw_value or "").strip().lstrip("/")
-    if not raw.startswith(ARTIFACT_CONVERSATION_PREFIX):
-        return "", raw
-    segment, sep, rest = raw.partition("/")
-    if not sep or not rest:
-        return "", raw
-    conversation_id = segment[len(ARTIFACT_CONVERSATION_PREFIX):].strip()
-    return conversation_id, rest
-
-
-def build_external_attachment_physical_path(*, turn_id: str, kind: str, message_id: str, relpath: str, conversation_id: str = "") -> str:
-    rel = (relpath or "").strip().lstrip("/")
-    if not turn_id or not kind or not message_id or not rel:
-        return ""
-    prefix = _conversation_segment(conversation_id)
-    scoped = f"{turn_id}/external/{kind}/attachments/{message_id}/{rel}"
-    return f"{prefix}/{scoped}" if prefix else scoped
-
-
-def build_external_attachment_logical_path(*, turn_id: str, kind: str, message_id: str, relpath: str, conversation_id: str = "") -> str:
-    rel = (relpath or "").strip().lstrip("/")
-    if not turn_id or not kind or not message_id or not rel:
-        return ""
-    prefix = _conversation_segment(conversation_id)
-    scoped = f"{turn_id}.external.{kind}.attachments/{message_id}/{rel}"
-    return f"{REACT_FILE_REF_PREFIX}{prefix}.{scoped}" if prefix else f"{REACT_FILE_REF_PREFIX}{scoped}"
-
-
-def _is_safe_outdir_relpath(path_value: str) -> bool:
-    try:
-        p = pathlib.PurePosixPath(path_value)
-        if path_value.startswith(("/", "\\")):
-            return False
-        if any(part == ".." for part in p.parts):
-            return False
-        return True
-    except Exception:
-        return False
-
-
-def build_physical_artifact_path(*, turn_id: str, namespace: str, relpath: str, conversation_id: str = "") -> str:
-    rel = (relpath or "").strip().lstrip("/")
-    if not turn_id or not namespace or not rel:
-        return ""
-    prefix = _conversation_segment(conversation_id)
-    if namespace == ARTIFACT_NAMESPACE_ATTACHMENTS:
-        kind, message_id, event_rel = _split_external_attachment_rel(rel)
-        if kind and message_id and event_rel:
-            return build_external_attachment_physical_path(
-                turn_id=turn_id,
-                kind=kind,
-                message_id=message_id,
-                relpath=event_rel,
-                conversation_id=conversation_id,
-            )
-    scoped = f"{turn_id}/{namespace}/{rel}"
-    return f"{prefix}/{scoped}" if prefix else scoped
-
-
-def build_logical_artifact_path(*, turn_id: str, namespace: str, relpath: str, conversation_id: str = "") -> str:
-    rel = (relpath or "").strip().lstrip("/")
-    if not turn_id or not namespace or not rel:
-        return ""
-    prefix = _conversation_segment(conversation_id)
-    turn_prefix = f"{prefix}.{turn_id}" if prefix else turn_id
-    if namespace in {ARTIFACT_NAMESPACE_PROJECTS, ARTIFACT_NAMESPACE_FILES, ARTIFACT_NAMESPACE_SNAPSHOTS}:
-        return f"{REACT_FILE_REF_PREFIX}{turn_prefix}.{namespace}/{rel}"
-    if namespace == ARTIFACT_NAMESPACE_ATTACHMENTS:
-        kind, message_id, event_rel = _split_external_attachment_rel(rel)
-        if kind and message_id and event_rel:
-            return build_external_attachment_logical_path(
-                turn_id=turn_id,
-                kind=kind,
-                message_id=message_id,
-                relpath=event_rel,
-                conversation_id=conversation_id,
-            )
-        return f"{REACT_FILE_REF_PREFIX}{turn_prefix}.user.attachments/{rel}"
-    return ""
-
-
-def split_physical_artifact_path(path_value: str) -> tuple[str, str, str]:
-    raw = (path_value or "").strip().lstrip("/")
-    _, raw = _split_physical_conversation_prefix(raw)
-    if not raw:
-        return "", "", ""
-    match = _EXTERNAL_PHYSICAL_RE.match(raw) or _EXTERNAL_PHYSICAL_LEGACY_RE.match(raw)
-    if match:
-        turn_id = match.group("turn")
-        kind = match.group("event_kind")
-        message_id = match.group("message_id")
-        rel = match.group("rel")
-        if is_turn_id(turn_id) and kind and message_id and rel:
-            return turn_id, ARTIFACT_NAMESPACE_ATTACHMENTS, f"external/{kind}/attachments/{message_id}/{rel}"
-    if ".user.attachments/" in raw:
-        turn_id, rel = raw.split(".user.attachments/", 1)
-        if is_turn_id(turn_id) and rel:
-            return turn_id, ARTIFACT_NAMESPACE_ATTACHMENTS, rel
-    for namespace in (
-        ARTIFACT_NAMESPACE_PROJECTS,
-        ARTIFACT_NAMESPACE_FILES,
-        ARTIFACT_NAMESPACE_SNAPSHOTS,
-        ARTIFACT_NAMESPACE_ATTACHMENTS,
-    ):
-        marker = f"/{namespace}/"
-        if marker in raw:
-            turn_id, rel = raw.split(marker, 1)
-            if is_turn_id(turn_id) and rel:
-                return turn_id, namespace, rel
-        marker = f".{namespace}/"
-        if marker in raw:
-            turn_id, rel = raw.split(marker, 1)
-            if is_turn_id(turn_id) and rel:
-                return turn_id, namespace, rel
-    return "", "", ""
-
-
-def split_physical_artifact_ref(path_value: str) -> tuple[str, str, str, str]:
-    conversation_id, body = _split_physical_conversation_prefix(path_value)
-    turn_id, namespace, rel = split_physical_artifact_path(body)
-    return conversation_id, turn_id, namespace, rel
-
-
-def _split_logical_artifact_body(raw_value: str) -> tuple[str, str, str]:
-    raw = (raw_value or "").strip()
-    if not raw:
-        return "", "", ""
-    match = _EXTERNAL_LOGICAL_RE.match(raw) or _EXTERNAL_LOGICAL_LEGACY_RE.match(raw)
-    if match:
-        turn_id = match.group("turn")
-        kind = match.group("event_kind")
-        message_id = match.group("message_id")
-        rel = match.group("rel")
-        if is_turn_id(turn_id) and kind and message_id and rel:
-            return turn_id, ARTIFACT_NAMESPACE_ATTACHMENTS, f"external/{kind}/attachments/{message_id}/{rel}"
-    if ".user.attachments/" in raw:
-        turn_id, rel = raw.split(".user.attachments/", 1)
-        return turn_id, ARTIFACT_NAMESPACE_ATTACHMENTS, rel
-    if "/user.attachments/" in raw:
-        turn_id, rel = raw.split("/user.attachments/", 1)
-        if is_turn_id(turn_id) and rel:
-            return turn_id, ARTIFACT_NAMESPACE_ATTACHMENTS, rel
-    for namespace in _LOGICAL_ARTIFACT_NAMESPACES:
-        for marker in (f".{namespace}/", f"/{namespace}/"):
-            if marker not in raw:
-                continue
-            turn_id, rel = raw.split(marker, 1)
-            if is_turn_id(turn_id) and rel:
-                return turn_id, namespace, rel
-    return "", "", ""
-
-
-def split_logical_artifact_path(path_value: str) -> tuple[str, str, str]:
-    raw = (path_value or "").strip()
-    if not raw.startswith(REACT_FILE_REF_PREFIX):
-        return "", "", ""
-    _, body = _split_logical_conversation_prefix(raw)
-    return _split_logical_artifact_body(body)
-
-
-def split_logical_artifact_ref(path_value: str) -> tuple[str, str, str, str]:
-    conversation_id, body = _split_logical_conversation_prefix(path_value)
-    if str(path_value or "").strip().startswith(REACT_FILE_REF_PREFIX):
-        turn_id, namespace, rel = _split_logical_artifact_body(body)
-    else:
-        turn_id, namespace, rel = "", "", ""
-    return conversation_id, turn_id, namespace, rel
-
-
-def logical_artifact_conversation_id(path_value: str) -> str:
-    conversation_id, _, _, _ = split_logical_artifact_ref(path_value)
-    return conversation_id
-
-
-def unscoped_logical_artifact_path(path_value: str) -> str:
-    _, turn_id, namespace, rel = split_logical_artifact_ref(path_value)
-    if turn_id and namespace and rel:
-        return build_logical_artifact_path(turn_id=turn_id, namespace=namespace, relpath=rel)
-    return str(path_value or "").strip()
-
-
-def infer_artifact_namespace(path_value: str, *, default: str = ARTIFACT_NAMESPACE_FILES) -> str:
-    raw = (path_value or "").strip()
-    if not raw:
-        return default
-    _, namespace, _ = split_logical_artifact_path(raw)
-    if namespace:
-        return namespace
-    _, namespace, _ = split_physical_artifact_path(raw)
-    if namespace:
-        return namespace
-    if raw.startswith(f"{ARTIFACT_NAMESPACE_SNAPSHOTS}/"):
-        return ARTIFACT_NAMESPACE_SNAPSHOTS
-    if raw.startswith(f"{ARTIFACT_NAMESPACE_PROJECTS}/"):
-        return ARTIFACT_NAMESPACE_PROJECTS
-    if raw.startswith(f"{ARTIFACT_NAMESPACE_ATTACHMENTS}/"):
-        return ARTIFACT_NAMESPACE_ATTACHMENTS
-    if raw.startswith(f"{ARTIFACT_NAMESPACE_FILES}/"):
-        return ARTIFACT_NAMESPACE_FILES
-    return default
-
-
-def physical_path_to_logical_path(path_value: str) -> str:
-    raw = (path_value or "").strip().lstrip("/")
-    if not raw:
-        return ""
-    if raw.startswith(REACT_FILE_REF_PREFIX):
-        conversation_id, turn_id, namespace, rel = split_logical_artifact_ref(raw)
-        if turn_id and namespace and rel:
-            return build_logical_artifact_path(turn_id=turn_id, namespace=namespace, relpath=rel, conversation_id=conversation_id)
-        return raw
-    if ":" in raw:
-        return ""
-    conversation_id, turn_id, namespace, rel = split_physical_artifact_ref(raw)
-    if turn_id and namespace and rel:
-        return build_logical_artifact_path(turn_id=turn_id, namespace=namespace, relpath=rel, conversation_id=conversation_id)
-    if _is_safe_outdir_relpath(raw):
-        return f"{REACT_FILE_REF_PREFIX}{raw}"
-    return ""
-
-
-def normalize_physical_path(
-    path_value: str,
-    *,
-    turn_id: str,
-    allow_generic_fi: bool = False,
-    default_namespace: str = ARTIFACT_NAMESPACE_FILES,
-) -> tuple[str, str, bool]:
-    """
-    Normalize a user-supplied path to a physical OUT_DIR-relative path.
-    For writer-like callers, paths are normalized to "turn_<id>/<namespace>/...".
-    When allow_generic_fi=True, generic conv:fi:<outdir-relative-path> inputs are
-    preserved as OUT_DIR-relative physical paths instead of being rewritten to
-    current turn files.
-    Returns (physical_path, relpath, rewritten_flag).
-    """
-    raw = (path_value or "").strip()
-    if not raw:
-        return "", "", False
-    # Accept logical paths and convert to physical
-    if raw.startswith(REACT_FILE_REF_PREFIX):
-        conversation_id, tid, namespace, rel = split_logical_artifact_ref(raw)
-        if tid and namespace and rel:
-            rel = rel.lstrip("/")
-            use_turn = tid if conversation_id else (turn_id or tid)
-            physical = build_physical_artifact_path(
-                turn_id=use_turn,
-                namespace=namespace,
-                relpath=rel,
-                conversation_id=conversation_id,
-            )
-            return physical, rel, True
-        if allow_generic_fi:
-            logical = raw[len(REACT_FILE_REF_PREFIX):]
-            logical = logical.lstrip("/")
-            if _is_safe_outdir_relpath(logical):
-                return logical, logical, False
-        # unknown logical -> return as-is
-        return raw, raw, False
-    rel = raw
-    rewritten = False
-    namespace = infer_artifact_namespace(raw, default=default_namespace or ARTIFACT_NAMESPACE_FILES)
-    if raw.startswith(f"{ARTIFACT_NAMESPACE_PROJECTS}/"):
-        rel = raw[len(f"{ARTIFACT_NAMESPACE_PROJECTS}/"):]
-        rewritten = True
-    elif raw.startswith(f"{ARTIFACT_NAMESPACE_FILES}/"):
-        rel = raw[len(f"{ARTIFACT_NAMESPACE_FILES}/"):]
-        rewritten = True
-    elif raw.startswith(f"{ARTIFACT_NAMESPACE_SNAPSHOTS}/"):
-        rel = raw[len(f"{ARTIFACT_NAMESPACE_SNAPSHOTS}/"):]
-        rewritten = True
-    elif raw.startswith(f"{ARTIFACT_NAMESPACE_ATTACHMENTS}/"):
-        rel = raw[len(f"{ARTIFACT_NAMESPACE_ATTACHMENTS}/"):]
-        physical = build_physical_artifact_path(turn_id=turn_id, namespace=ARTIFACT_NAMESPACE_ATTACHMENTS, relpath=rel) if turn_id else rel
-        if physical != raw:
-            rewritten = True
-        return physical, rel, rewritten
-    else:
-        _, raw_namespace, raw_rel = split_physical_artifact_path(raw)
-        if raw_namespace:
-            namespace = raw_namespace
-            rel = raw_rel
-            rewritten = True
-    prefix = f"{turn_id}/{namespace}/"
-    if turn_id and raw.startswith(prefix):
-        rel = raw[len(prefix):]
-        rewritten = True
-    physical = build_physical_artifact_path(turn_id=turn_id, namespace=namespace, relpath=rel) if turn_id else rel
-    if physical != raw:
-        rewritten = True
-    return physical, rel, rewritten
-
-
-def normalize_relpath(path_value: str, *, turn_id: str) -> str:
-    """
-    Return OUT_DIR-relative relpath for a user-supplied path.
-    """
-    try:
-        _, rel, _ = normalize_physical_path(path_value, turn_id=turn_id)
-        return rel
-    except Exception:
-        return (path_value or "").strip()
 
 
 def detect_edit(*, timeline: Any, artifact_path: str, tool_call_id: str) -> bool:
@@ -710,7 +203,7 @@ def build_tool_result_error_block(
 
 def materialize_inline_artifact_to_file(
     *,
-    artifact: "ArtifactView",
+    artifact: WorkspaceArtifact,
     outdir: pathlib.Path,
     turn_id: Optional[str],
     filename_hint: Optional[str] = None,
@@ -724,7 +217,7 @@ def materialize_inline_artifact_to_file(
     # out/turn_<id>/... (missing the workdir layer) — invisible to the workspace
     # map and never committed to the git lineage. artifact_outdir_for is
     # idempotent, so passing an already-artifact-root outdir is a no-op.
-    from kdcube_ai_app.apps.chat.sdk.runtime.workspace import artifact_outdir_for
+    from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace import artifact_outdir_for
     workdir = artifact_outdir_for(outdir)
     save_hint = filename_hint
     if turn_id:
@@ -788,8 +281,10 @@ def build_artifact_view(
     content_lineage: List[str] | None = None,
     tool_call_id: str | None = None,
     artifact_stats: Optional[Dict[str, Any]] = None,
-) -> "ArtifactView":
-    from kdcube_ai_app.apps.chat.sdk.solutions.react.timeline import extract_source_sids
+) -> "ReactArtifactView":
+    from kdcube_ai_app.apps.chat.sdk.runtime.harness.timeline.turn_view import (
+        extract_source_sids,
+    )
     value_norm = value
     if tools_insights.is_write_tool(tool_id):
         if isinstance(value, dict) and isinstance(value.get("path"), str) and value["path"].strip():
@@ -839,104 +334,20 @@ def build_artifact_view(
         path_val = (value_norm.get("path") or "").strip()
         if path_val:
             artifact["path"] = path_val
-    return ArtifactView.from_artifact_dict(
+    workspace_artifact = WorkspaceArtifact.from_artifact_dict(
         artifact,
         turn_id=turn_id,
+    )
+    return ReactArtifactView(
+        **vars(workspace_artifact),
         is_current=is_current,
     )
 
-def _artifact_fields_from_dict(
-    artifact: Dict[str, Any],
-    *,
-    turn_id: Optional[str],
-    is_current: bool,
-) -> Dict[str, Any]:
-    value = artifact.get("value") if isinstance(artifact.get("value"), dict) else {}
-    path_val = (artifact.get("path") or value.get("path") or "").strip()
-    filename = (value.get("filename") or artifact.get("filename") or "").strip()
-    if not filename and path_val:
-        filename = pathlib.Path(path_val).name
-    mime = (value.get("mime") or artifact.get("mime") or "").strip()
-    kind = (artifact.get("artifact_kind") or artifact.get("kind") or "").strip()
-    visibility = (artifact.get("visibility") or "").strip()
-    channel = (artifact.get("channel") or "").strip()
-    summary = (artifact.get("summary") or "").strip()
-    text = (
-        (artifact.get("text") or "")
-        if isinstance(artifact.get("text"), str)
-        else (value.get("text") or value.get("content") or "")
-    )
-    sources_used = artifact.get("sources_used") or artifact.get("used_sids") or []
-    tool_id = (artifact.get("tool_id") or "").strip()
-    tool_call_id = (artifact.get("tool_call_id") or "").strip()
-    size_bytes = value.get("size_bytes") if isinstance(value, dict) else None
-    return {
-        "path": path_val,
-        "filename": filename,
-        "mime": mime,
-        "kind": kind,
-        "visibility": visibility,
-        "channel": channel,
-        "summary": summary,
-        "text": text if isinstance(text, str) else "",
-        "sources_used": sources_used if isinstance(sources_used, list) else [],
-        "tool_id": tool_id,
-        "tool_call_id": tool_call_id,
-        "size_bytes": size_bytes,
-        "turn_id": turn_id or "",
-        "is_current": is_current,
-        "raw": artifact,
-    }
-
-
 @dataclass
-class ArtifactView:
-    path: str = ""
-    filename: str = ""
-    mime: str = ""
-    kind: str = ""
-    visibility: str = ""
-    channel: str = ""
-    summary: str = ""
-    text: str = ""
-    sources_used: List[Any] = field(default_factory=list)
-    tool_id: str = ""
-    tool_call_id: str = ""
-    size_bytes: Optional[int] = None
-    turn_id: str = ""
+class ReactArtifactView(WorkspaceArtifact):
+    """ReAct rendering adapter over a harness workspace artifact."""
+
     is_current: bool = False
-    raw: Dict[str, Any] = field(default_factory=dict)
-
-    @classmethod
-    def from_output(cls, output: Dict[str, Any]) -> "ArtifactView":
-        if not isinstance(output, dict):
-            return cls()
-        path_val = (output.get("path") or "").strip()
-        filename = (output.get("filename") or "").strip()
-        if not filename and path_val:
-            filename = pathlib.Path(path_val).name
-        mime = (output.get("mime") or "").strip()
-        return cls(path=path_val, filename=filename, mime=mime)
-
-    @classmethod
-    def from_artifact_dict(
-        cls,
-        artifact: Dict[str, Any],
-        *,
-        turn_id: Optional[str] = None,
-        is_current: bool = False,
-    ) -> "ArtifactView":
-        if not isinstance(artifact, dict):
-            return cls(turn_id=turn_id or "", is_current=is_current)
-        fields = _artifact_fields_from_dict(artifact, turn_id=turn_id, is_current=is_current)
-        try:
-            return cls(**fields)
-        except TypeError:
-            # Fallback if __init__ signature is not accepting kwargs in some runtime contexts.
-            inst = cls()
-            for key, val in fields.items():
-                setattr(inst, key, val)
-            return inst
 
     @staticmethod
     def extract_files_from_contrib_log(contrib_log: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -991,179 +402,12 @@ class ArtifactView:
             files.append(rec)
         return files
 
-    def save_inline(
-            self,
-            *,
-            workdir: pathlib.Path,
-            filename_hint: Optional[str] = None,
-            mime_hint: Optional[str] = None,
-            visibility: Optional[str] = None,
-    ) -> tuple[Dict[str, Any], Optional[Dict[str, Any]]]:
-        artifact = dict(self.raw or {})
-        value = artifact.get("value")
-        artifact_id = (artifact.get("artifact_id") or "").strip()
-
-        # If already marked as file, ensure the file exists on disk.
-        if isinstance(value, dict) and value.get("type") == "file":
-            path = value.get("path")
-            if isinstance(path, str) and path.strip():
-                file_path = pathlib.Path(path)
-                if not file_path.is_absolute():
-                    file_path = workdir / file_path
-                if not file_path.exists():
-                    text = value.get("text")
-                    if text is None:
-                        text = value.get("content")
-                    if text is None:
-                        try:
-                            text = json.dumps(value, ensure_ascii=False, indent=2)
-                        except Exception:
-                            text = ""
-                    file_path.parent.mkdir(parents=True, exist_ok=True)
-                    file_path.write_text(str(text), encoding="utf-8")
-            return artifact, None
-
-        if (artifact.get("artifact_kind") or "").strip() == "file":
-            return artifact, None
-
-        text = None
-        fmt = None
-        if isinstance(value, dict):
-            fmt = value.get("format") if isinstance(value.get("format"), str) else None
-            if isinstance(value.get("content"), str):
-                text = value.get("content")
-            elif isinstance(value.get("text"), str):
-                text = value.get("text")
-        if text is None and isinstance(value, str):
-            text = value
-
-        if text is None:
-            try:
-                text = json.dumps(value, ensure_ascii=False, indent=2)
-                fmt = fmt or "json"
-            except Exception:
-                return artifact, None
-
-        ext = "txt"
-        if isinstance(fmt, str):
-            f = fmt.strip().lower()
-            if f in {"md", "markdown"}:
-                ext = "md"
-            elif f in {"json"}:
-                ext = "json"
-            elif f in {"html", "htm"}:
-                ext = "html"
-            elif f in {"yaml", "yml"}:
-                ext = "yaml"
-
-        files_dir = workdir
-        files_dir.mkdir(parents=True, exist_ok=True)
-        filename = str(filename_hint).strip() if isinstance(filename_hint, str) and filename_hint.strip() else ""
-        if not filename:
-            filename = (self.filename or "").strip()
-        if not filename:
-            filename = f"{artifact_id or 'artifact'}.{ext}"
-        elif "." not in filename:
-            filename = f"{filename}.{ext}"
-        file_path = files_dir / filename
-        file_path.parent.mkdir(parents=True, exist_ok=True)
-        file_path.write_text(text, encoding="utf-8")
-
-        mime = str(mime_hint).strip() if isinstance(mime_hint, str) and mime_hint.strip() else ""
-        if not mime:
-            mime = (self.mime or "").strip()
-        if not mime:
-            try:
-                from kdcube_ai_app.tools.content_type import get_mime_type_enhanced
-                mime = get_mime_type_enhanced(filename)
-            except Exception:
-                mime = ""
-        if not mime:
-            if ext == "md":
-                mime = "text/markdown"
-            elif ext == "json":
-                mime = "application/json"
-            elif ext == "html":
-                mime = "text/html"
-            elif ext == "yaml":
-                mime = "application/x-yaml"
-            else:
-                mime = "text/plain"
-
-        if not (artifact.get("artifact_kind") or "").strip():
-            artifact["artifact_kind"] = "file"
-        final_visibility = visibility or (self.visibility or "").strip() or None
-        if final_visibility:
-            artifact["visibility"] = final_visibility
-        artifact["value"] = {
-            "type": "file",
-            "path": filename,
-            "text": text,
-            "mime": mime,
-            "filename": filename,
-        }
-        produced_file = {
-            "filename": filename,
-            "path": filename,
-            "artifact_name": artifact_id,
-            "mime": mime,
-            "size": len(text.encode("utf-8")),
-            "summary": artifact.get("summary") or "",
-            "visibility": final_visibility or "internal",
-            "kind": (artifact.get("artifact_kind") or "file"),
-        }
-        return artifact, produced_file
-
-
-    def physical_path(self, *, run_outdir: pathlib.Path) -> pathlib.Path:
-        """
-        Engineering helper: resolve absolute path for execution / IO.
-        Do NOT use for journal/presentation (those use OUT_DIR-relative paths).
-        """
-        if self.path:
-            return pathlib.Path(run_outdir) / self.path
-        return pathlib.Path("")
-
-    def _namespace_and_rel(self) -> tuple[str, str]:
-        candidates = [
-            self.path,
-            ((self.raw.get("value") or {}) if isinstance(self.raw.get("value"), dict) else {}).get("path") or "",
-            ((self.raw.get("inputs") or {}) if isinstance(self.raw.get("inputs"), dict) else {}).get("path") or "",
-        ]
-        for candidate in candidates:
-            candidate = str(candidate or "").strip()
-            if not candidate:
-                continue
-            _, namespace, rel = split_logical_artifact_path(candidate)
-            if namespace and rel:
-                return namespace, rel
-            _, namespace, rel = split_physical_artifact_path(candidate)
-            if namespace and rel:
-                return namespace, rel
-            namespace = infer_artifact_namespace(candidate, default="")
-            if namespace and candidate.startswith(f"{namespace}/"):
-                return namespace, candidate[len(namespace) + 1:].lstrip("/")
-        fallback_rel = (self.path or self.filename or "").strip().lstrip("/")
-        return (
-            infer_artifact_namespace(
-                ((self.raw.get("inputs") or {}) if isinstance(self.raw.get("inputs"), dict) else {}).get("path") or "",
-                default=ARTIFACT_NAMESPACE_FILES,
-            ),
-            fallback_rel,
-        )
-
-    def artifact_path(self) -> str:
-        namespace, rel = self._namespace_and_rel()
-        if self.turn_id and namespace and rel:
-            return build_logical_artifact_path(turn_id=self.turn_id, namespace=namespace, relpath=rel)
-        return ""
-
     def to_historical_format(self, *, max_tokens: int = 200) -> List[str]:
         lines: List[str] = []
         name = self.path or self.filename or "artifact"
         lines.append(f"- {name}")
-        namespace, rel = self._namespace_and_rel()
-        art_path = self.artifact_path() or (
+        namespace, rel = self.namespace_and_relpath()
+        art_path = self.artifact_ref() or (
             build_logical_artifact_path(turn_id=self.turn_id, namespace=namespace, relpath=rel)
             if self.turn_id and namespace and rel
             else ""
@@ -1225,8 +469,8 @@ class ArtifactView:
         lines: List[str] = []
         name = self.path or self.filename or (fallback_name or "artifact")
         lines.append(f"- {name}")
-        namespace, rel = self._namespace_and_rel()
-        art_path = self.artifact_path() or (
+        namespace, rel = self.namespace_and_relpath()
+        art_path = self.artifact_ref() or (
             build_logical_artifact_path(turn_id=self.turn_id, namespace=namespace, relpath=rel)
             if self.turn_id and namespace and rel
             else ""
@@ -1283,16 +527,3 @@ class ArtifactView:
         elif self.summary:
             lines.append(f"    summary: {self.summary}")
         return lines
-
-
-def normalize_file_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Ensure filename is basename only (no directories).
-    """
-    if not isinstance(payload, dict):
-        return payload
-    out = dict(payload)
-    filename = out.get("filename")
-    if isinstance(filename, str) and filename.strip():
-        out["filename"] = filename.strip().split("/")[-1]
-    return out

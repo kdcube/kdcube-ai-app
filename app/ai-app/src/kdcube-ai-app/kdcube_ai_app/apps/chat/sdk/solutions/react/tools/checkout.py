@@ -8,7 +8,7 @@ from typing import Any, Dict
 
 import json
 
-from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import (
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.workspace.references import (
     localize_conversation_ref,
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.react.tools.common import (
