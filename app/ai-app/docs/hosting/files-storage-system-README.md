@@ -19,7 +19,7 @@ produces artifacts during a turn.
 All artifacts are stored under `KDCUBE_STORAGE_PATH` (local FS or S3).
 
 Layout reference:
-https://github.com/kdcube/kdcube-ai-app/blob/main/app/ai-app/docs/sdk/storage/sdk-store-README.md
+https://github.com/kdcube/kdcube/blob/main/app/ai-app/docs/sdk/storage/sdk-store-README.md
 
 ## Lifecycle (high‑level)
 1. **Agent produces a file** during a turn (e.g., image, PDF, dataset).

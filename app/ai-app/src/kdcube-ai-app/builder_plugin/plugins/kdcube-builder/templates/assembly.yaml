@@ -94,7 +94,7 @@ paths:
   host_git_ssh_known_hosts_path: ""
 
 platform:
-  repo: "https://github.com/kdcube/kdcube-ai-app.git"
+  repo: "https://github.com/kdcube/kdcube.git"
   ref: "2026.4.12.318"
   config:
     version: "2026.4.12.318"

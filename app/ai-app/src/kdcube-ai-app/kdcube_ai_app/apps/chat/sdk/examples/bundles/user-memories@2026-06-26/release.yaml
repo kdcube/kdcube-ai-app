@@ -1,5 +1,5 @@
 bundle:
-  repo: "https://github.com/kdcube/kdcube-ai-app.git"
+  repo: "https://github.com/kdcube/kdcube.git"
   ref: ""
   description: |
     Initial release for user-memories@2026-06-26.

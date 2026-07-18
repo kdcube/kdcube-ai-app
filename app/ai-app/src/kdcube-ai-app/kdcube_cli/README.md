@@ -537,4 +537,4 @@ write). `--git-ref` is required with `--git-repo`. `--git-subdir` requires
 ## Full documentation
 
 See `additional-README.md` in this package or the platform docs:  
-https://github.com/kdcube/kdcube-ai-app/blob/main/app/ai-app/docs/service/cicd/cli-README.md
+https://github.com/kdcube/kdcube/blob/main/app/ai-app/docs/service/cicd/cli-README.md

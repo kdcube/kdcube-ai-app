@@ -1383,7 +1383,7 @@ bundles:
 
             For the example above:
 
-            https://github.com/kdcube/kdcube-ai-app/blob/main/app/ai-app/docs/sdk/tools/mcp-README.md
+            https://github.com/kdcube/kdcube/blob/main/app/ai-app/docs/sdk/tools/mcp-README.md
 
             The segment after "repo:" up to the first "/" is the repository name; everything after
 

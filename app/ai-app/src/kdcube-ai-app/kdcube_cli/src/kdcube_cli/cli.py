@@ -37,7 +37,7 @@ from kdcube_cli.tty_keys import (
 )
 
 
-DEFAULT_REPO = "https://github.com/kdcube/kdcube-ai-app.git"
+DEFAULT_REPO = "https://github.com/kdcube/kdcube.git"
 DEFAULT_DIR = Path.home() / ".kdcube" / "kdcube-ai-app"
 DEFAULT_WORKDIR = Path.home() / ".kdcube" / "kdcube-runtime"
 DEFAULT_DEFAULTS_FILE = Path.home() / ".kdcube" / "cli-defaults.json"

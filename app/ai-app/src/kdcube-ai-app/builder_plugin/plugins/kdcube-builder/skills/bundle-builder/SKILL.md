@@ -27,25 +27,25 @@ One KDCube bundle can combine:
 
 Prefer a local `kdcube-ai-app` checkout if you have one. Otherwise use these public docs first:
 
-1. `https://github.com/kdcube/kdcube-ai-app/blob/main/README.md`
-2. `https://github.com/kdcube/kdcube-ai-app/blob/main/app/ai-app/docs/sdk/bundle/bundle-index-README.md`
-3. `https://github.com/kdcube/kdcube-ai-app/blob/main/app/ai-app/docs/sdk/bundle/workspace-reference-bundle-README.md`
-4. `https://github.com/kdcube/kdcube-ai-app/blob/main/app/ai-app/docs/sdk/bundle/build/how-to-write-bundle-README.md`
-5. `https://github.com/kdcube/kdcube-ai-app/blob/main/app/ai-app/docs/configuration/bundle-runtime-configuration-and-secrets-README.md`
-6. `https://github.com/kdcube/kdcube-ai-app/blob/main/app/ai-app/docs/sdk/bundle/bundle-platform-integration-README.md`
-7. `https://github.com/kdcube/kdcube-ai-app/blob/main/app/ai-app/docs/sdk/bundle/bundle-props-secrets-README.md`
-8. `https://github.com/kdcube/kdcube-ai-app/blob/main/app/ai-app/docs/sdk/bundle/bundle-node-backend-bridge-README.md`
+1. `https://github.com/kdcube/kdcube/blob/main/README.md`
+2. `https://github.com/kdcube/kdcube/blob/main/app/ai-app/docs/sdk/bundle/bundle-index-README.md`
+3. `https://github.com/kdcube/kdcube/blob/main/app/ai-app/docs/sdk/bundle/workspace-reference-bundle-README.md`
+4. `https://github.com/kdcube/kdcube/blob/main/app/ai-app/docs/sdk/bundle/build/how-to-write-bundle-README.md`
+5. `https://github.com/kdcube/kdcube/blob/main/app/ai-app/docs/configuration/bundle-runtime-configuration-and-secrets-README.md`
+6. `https://github.com/kdcube/kdcube/blob/main/app/ai-app/docs/sdk/bundle/bundle-platform-integration-README.md`
+7. `https://github.com/kdcube/kdcube/blob/main/app/ai-app/docs/sdk/bundle/bundle-props-secrets-README.md`
+8. `https://github.com/kdcube/kdcube/blob/main/app/ai-app/docs/sdk/bundle/bundle-node-backend-bridge-README.md`
 
 ## Primary examples
 
 Use these examples first:
 
 - workspace reference bundle:
-  `https://github.com/kdcube/kdcube-ai-app/tree/main/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/workspace@2026-03-31-13-36`
+  `https://github.com/kdcube/kdcube/tree/main/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/workspace@2026-03-31-13-36`
 - isolated exec example:
-  `https://github.com/kdcube/kdcube-ai-app/tree/main/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/with-isoruntime@2026-02-16-14-00`
+  `https://github.com/kdcube/kdcube/tree/main/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/with-isoruntime@2026-02-16-14-00`
 - public Node/TS bridge example:
-  `https://github.com/kdcube/kdcube-ai-app/tree/main/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/resources/node-backend-bridge`
+  `https://github.com/kdcube/kdcube/tree/main/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/resources/node-backend-bridge`
 
 Default to `workspace` unless the task is specifically about:
 

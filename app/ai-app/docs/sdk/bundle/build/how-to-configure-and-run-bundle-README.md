@@ -3,7 +3,7 @@ id: repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-configure-and-run
 title: "How To Configure And Run A Bundle"
 summary: "Current bundle-development runtime workflow: tenant/project environment setup, descriptor staging, local-path and git bundles, configuration translation, start/stop/reload loop, configuration/secret scopes, bundle events, and the rule that one machine may hold many local deployment snapshots but should not be treated as running many local compose-backed KDCubes at once."
 tags: ["sdk", "bundle", "configuration", "runtime", "cli", "bundles.yaml"]
-keywords: ["local bundle development workflow", "tenant project environment boundary", "descriptor driven runtime setup", "local path bundle loop", "git bundle loop", "bundle reload workflow", "runtime sandbox selection", "bundle config and secret scopes", "shared sdk widget sources", "bundle events", "event sources", "artifact rehosters", "bundle configurator workflow", "bundle deployer workflow", "current kdcube cli workflow", "multiple local runtime snapshots", "single active local compose deployment", "run multiple kdcubes on one machine", "kdcube bundle command", "patch bundle config cli", "patch bundle secret cli"]
+keywords: ["local bundle development workflow", "tenant project deployment scope", "descriptor driven runtime setup", "local path bundle loop", "git bundle loop", "bundle reload workflow", "runtime directory selection", "bundle config and secret scopes", "shared sdk widget sources", "bundle events", "event sources", "artifact rehosters", "bundle configurator workflow", "bundle deployer workflow", "current kdcube cli workflow", "multiple local runtime snapshots", "single active local compose deployment", "run multiple kdcubes on one machine", "kdcube bundle command", "patch bundle config cli", "patch bundle secret cli"]
 updated_at: 2026-07-16
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/how-to-integrate-with-kdcube-apps-README.md
@@ -94,7 +94,7 @@ Runtime failure recipes:
 
 Important:
 
-- `tenant/project` isolation already exists in the current model
+- `tenant/project` deployment scoping already exists in the current model
 - the CLI uses that namespace to target one concrete runtime workdir
 - one machine may hold many local deployment snapshots on disk
 - one machine should not be treated as supporting many concurrently running
@@ -440,9 +440,10 @@ If there are multiple runtimes under one parent directory, pass the concrete nam
 ### 5. What `tenant/project` means today
 
 In the current CLI/runtime model, `tenant/project` is the namespace that
-selects one concrete local runtime sandbox.
+selects one concrete local runtime directory and deployment scope.
 
-That sandbox encloses all three state scopes used by a local deployment:
+That deployment scope encloses all three state scopes used by a local
+deployment:
 
 - platform/global deployment config and secrets
 - deployment-scoped bundle props and bundle secrets
@@ -460,10 +461,14 @@ It is the boundary of one local deployment snapshot.
 
 Practical interpretation:
 
-- use a separate `tenant/project` when you need full storage isolation between
-  different applications or account environments
+- use a separate `tenant/project` when you need an independent logical storage
+  and configuration scope for different applications or account environments
 - use a separate `tenant/project` when you want different lifecycle stages such
   as `dev`, `staging`, and `prod`
+
+Tenant/project namespacing is not an operating-system or hostile-tenant
+security boundary. Use separate deployments or dedicated backing
+infrastructure when that stronger boundary is required.
 
 Examples:
 
@@ -527,7 +532,7 @@ workspace/
   tenant1__project2/
 ```
 
-That is already part of the current `tenant/project` isolation model.
+That is already part of the current `tenant/project` deployment model.
 
 Each runtime snapshot keeps its own:
 
@@ -599,7 +604,7 @@ It does not mean:
 
 Use this as the quick decision table for bundle development.
 
-All rows below are inside one current `tenant/project` runtime sandbox.
+All rows below are inside one current `tenant/project` deployment scope.
 
 For the exact helper contract and cloud-mode differences, use:
 

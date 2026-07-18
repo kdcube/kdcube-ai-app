@@ -28,7 +28,7 @@ set from an existing environment (the CI/CD path), use
 
 ```shell
 export REPO="$HOME/src/kdcube-ai-app"          # your platform checkout
-git clone https://github.com/kdcube/kdcube-ai-app.git "$REPO" 2>/dev/null || true
+git clone https://github.com/kdcube/kdcube.git "$REPO" 2>/dev/null || true
 export CLI_VENV="$REPO/app/venvs/ai-app/kdcube-cli"
 export KDCUBE="$CLI_VENV/bin/kdcube"
 

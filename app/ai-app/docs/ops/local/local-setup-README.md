@@ -55,14 +55,14 @@ S3 (object storage):
 - `KDCUBE_STORAGE_PATH=s3://<bucket>/<prefix>`
 
 Reference:
-- Storage layout: https://github.com/kdcube/kdcube-ai-app/blob/main/app/ai-app/docs/sdk/storage/sdk-store-README.md
+- Storage layout: https://github.com/kdcube/kdcube/blob/main/app/ai-app/docs/sdk/storage/sdk-store-README.md
 
 ### What lives under KDCube storage
 - **Accounting (raw events)** — per service / bundle / turn  
   See accounting system and layout:
-  https://github.com/kdcube/kdcube-ai-app/blob/main/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/infra/accounting/__init__.py
+  https://github.com/kdcube/kdcube/blob/main/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/infra/accounting/__init__.py
 - **Analytics aggregates** — daily/weekly/monthly accounting summaries  
-  See: https://github.com/kdcube/kdcube-ai-app/blob/main/app/ai-app/docs/sdk/storage/sdk-store-README.md
+  See: https://github.com/kdcube/kdcube/blob/main/app/ai-app/docs/sdk/storage/sdk-store-README.md
 - **Conversation artifacts & attachments** — per turn, per user  
   See:
   - https://github.com/kdcube/kdcube/blob/main/app/ai-app/docs/runtime/harness/timeline/conversation-artifacts-README.md
@@ -71,7 +71,7 @@ Reference:
   Enabled by `REACT_PERSIST_WORKSPACE=1`  
   See:
   - https://github.com/kdcube/kdcube/blob/main/app/ai-app/docs/runtime/harness/workspace/workspace-lifecycle-and-distribution-README.md
-  - https://github.com/kdcube/kdcube-ai-app/blob/main/app/ai-app/docs/sdk/storage/sdk-store-README.md
+  - https://github.com/kdcube/kdcube/blob/main/app/ai-app/docs/sdk/storage/sdk-store-README.md
 
 Example layout (abbreviated):
 ```
@@ -103,7 +103,7 @@ Files produced during a turn are **hosted immediately** and served by ingress
 resources routes (RN-based lookup).
 
 See:
-- Hosting / retrieval overview: https://github.com/kdcube/kdcube-ai-app/blob/main/app/ai-app/docs/hosting/files-storage-system-README.md
+- Hosting / retrieval overview: https://github.com/kdcube/kdcube/blob/main/app/ai-app/docs/hosting/files-storage-system-README.md
 - Resource routes: `kdcube_ai_app/apps/chat/ingress/resources/resources.py`
 
 ### Storage + hosting flow (local)

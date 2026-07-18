@@ -8,7 +8,10 @@
 The KB is a standalone service that allow the versioned content ingestion (URLs, Markdown, PDFs) by processing it into 
 rich, navigable representations, and serves **high-precision search** with **source backtracking**. 
 It exposes **REST** and **Socket.IO** interfaces, supports **local FS or S3 storage** as artifactory and logging storage
-backends, and uses **PostgreSQL + pgvector** for search. It leverages KDCube accounting and traceability to support full audit.
+backends, and uses **PostgreSQL + pgvector** for search. Integrated accounting
+and traceability paths can emit structured operational records for review;
+their coverage, retention, integrity, and audit suitability depend on the
+deployed application and operator controls.
 
 ---
 
@@ -109,7 +112,7 @@ ef:home_tenant:default-project:knowledge_base:segmentation:retrieval:url|...:1:s
 * `datasource(id, version, title, uri, system_uri, metadata, status, expiration, …)`
 * `retrieval_segment(id, version, resource_id, content, title, entities, tags, search_vector, embedding VECTOR(1536), …)`
 * `content_hash(name, value, type, …)`
-* `events` (append-only audit)
+* `events` (operational event records; append-only or immutable retention is not implied)
 * Triggers & views to maintain `search_vector` and filter **active (non-expired)** data.
 
 > See the bundled SQL for `CREATE EXTENSION` and index creation. Adjust embedding dimension if needed.

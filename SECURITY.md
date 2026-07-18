@@ -17,7 +17,9 @@ The short version is:
   subprocess mode provides crash containment but inherits host environment and
   network access. Legacy combined Docker shares one container/mount trust zone.
   The reference split-Docker profile uses a separate networkless executor with
-  narrow mounts and a filtered environment.
+  narrow mounts and a filtered environment. The Fargate remote-task profile
+  uses a filtered, privilege-dropped child in one task/container; it is not
+  split Docker's separate-container mount boundary.
 - In the managed production path, secrets stay in server-side secret providers
   and stores. Trusted tools may resolve an authorized credential for a request;
   the split executor and model context should receive neither the credential
@@ -52,9 +54,11 @@ A production operator should:
    loading that code into processors.
 3. Configure platform authority, protected-surface guards, TLS, secure cookies,
    allowed origins, and least-privilege infrastructure identities.
-4. Use the split-Docker execution profile for untrusted generated code in
-   production. Do not treat local subprocess mode as a security sandbox, or
-   legacy combined Docker as a separate supervisor/executor mount boundary.
+4. Use the split-Docker execution profile when production policy requires the
+   built-in separate executor-container boundary. Do not treat local subprocess
+   mode as a security sandbox, legacy combined Docker as a separate
+   supervisor/executor mount boundary, or Fargate as equivalent to split
+   Docker; assess the selected remote-task controls explicitly.
 5. Give executors only required mounts and resources; keep provider
    credentials, deployment descriptors, and platform storage roots on the
    trusted side.

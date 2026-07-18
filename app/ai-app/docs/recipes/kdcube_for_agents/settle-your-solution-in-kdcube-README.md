@@ -557,7 +557,7 @@ with no way to run code would be inert):
   how the model's history accumulates pullable links for its own artifacts.
 
 **One resolver serves every door.** `read_event_ref_bytes`
-(`react/events/resolver.py`) resolves a `conv:fi:` link to bytes for read, for
+(`runtime/harness/events/resolver.py`) resolves a `conv:fi:` link to bytes for read, for
 pull (via the SDK core
 `runtime/harness/workspace/pull.py::pull_refs_into_dir`), and for
 the Download button (`scene_object_action`) — a link that downloads also reads and

@@ -586,10 +586,16 @@ The strongest documented generated-code boundary is split Docker execution:
 | Resolves and executes approved tools under the carried user authority. | Calls approved tools through the authenticated supervisor socket. |
 | Keeps app/platform storage and secrets on the trusted side. | Runs with read-only root and narrow writable mounts. |
 
-Local subprocess execution provides process/crash separation. Split
-Docker/Fargate execution adds supervisor/executor credential separation,
-network isolation, and narrow container mounts; documentation should name that
-mode when making those stronger claims.
+Local subprocess execution provides process/crash separation. Split Docker adds
+separate supervisor/executor containers, filtered executor state, a networkless
+executor, and narrow executor mounts.
+
+Fargate uses the same logical supervisor/tool contract inside one remote
+task/container. Its generated-code child receives filtered state, drops
+privileges, and creates a network namespace, but it does not gain split
+Docker's separate-container mount boundary. Remote-task guarantees must
+therefore be assessed from the task definition, IAM role, filesystem,
+networking, child-process isolation, snapshot transport, and return contract.
 
 The isolated-execution guarantee is structural for generated code:
 

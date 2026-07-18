@@ -851,7 +851,7 @@ treated as a secret and is **not stored** in `.env.proc`. It is staged into
 `config/secrets.yaml` and reused on later local runs.
 
 More details:
-https://github.com/kdcube/kdcube-ai-app/blob/main/app/ai-app/docs/ops/local/local-setup-README.md
+https://github.com/kdcube/kdcube/blob/main/app/ai-app/docs/ops/local/local-setup-README.md
 
 Current scope: the wizard is **optimized for docker‑compose** (all‑in‑one).
 It creates a workdir (default: `~/.kdcube/kdcube-runtime`) and lets you:
@@ -966,8 +966,8 @@ Template:
 - [`app/ai-app/deployment/assembly.yaml`](../../../deployment/assembly.yaml) (copied into the workdir if no path is provided)
 
 References:
-- https://github.com/kdcube/kdcube-ai-app/blob/main/app/ai-app/docs/service/cicd/descriptors-README.md
-- https://github.com/kdcube/kdcube-ai-app/blob/main/app/ai-app/docs/configuration/assembly-descriptor-README.md
+- https://github.com/kdcube/kdcube/blob/main/app/ai-app/docs/service/cicd/descriptors-README.md
+- https://github.com/kdcube/kdcube/blob/main/app/ai-app/docs/configuration/assembly-descriptor-README.md
 
 ### Bundles descriptor (optional)
 You can provide a **bundles descriptor** (`bundles.yaml`) and an optional
@@ -1067,8 +1067,8 @@ For AWS deployment:
 - do not carry local `assembly.paths.host_bundles_path` values into the AWS descriptor set
 
 References:
-- https://github.com/kdcube/kdcube-ai-app/blob/main/app/ai-app/docs/configuration/bundles-descriptor-README.md
-- https://github.com/kdcube/kdcube-ai-app/blob/main/app/ai-app/docs/configuration/bundles-secrets-descriptor-README.md
+- https://github.com/kdcube/kdcube/blob/main/app/ai-app/docs/configuration/bundles-descriptor-README.md
+- https://github.com/kdcube/kdcube/blob/main/app/ai-app/docs/configuration/bundles-secrets-descriptor-README.md
 
 ### Secrets descriptor (optional)
 You can provide a `secrets.yaml` path in the wizard (or via `KDCUBE_SECRETS_DESCRIPTOR_PATH`).
@@ -1089,7 +1089,7 @@ Template:
 - [`app/ai-app/deployment/secrets.yaml`](../../../deployment/secrets.yaml)
 
 Reference:
-- https://github.com/kdcube/kdcube-ai-app/blob/main/app/ai-app/docs/configuration/secrets-descriptor-README.md
+- https://github.com/kdcube/kdcube/blob/main/app/ai-app/docs/configuration/secrets-descriptor-README.md
 
 ### Gateway config descriptor (optional)
 You can provide a `gateway.yaml` path in the wizard (or via `KDCUBE_GATEWAY_DESCRIPTOR_PATH`).
@@ -1110,7 +1110,7 @@ Template:
 - [`app/ai-app/deployment/gateway.yaml`](../../../deployment/gateway.yaml)
 
 Reference:
-- https://github.com/kdcube/kdcube-ai-app/blob/main/app/ai-app/docs/configuration/gateway-descriptor-README.md
+- https://github.com/kdcube/kdcube/blob/main/app/ai-app/docs/configuration/gateway-descriptor-README.md
 
 ### Custom UI via assembly descriptor (build or image)
 If your `assembly.yaml` includes `frontend.build` or `frontend.image`, the CLI will switch to
@@ -1153,10 +1153,10 @@ How to activate:
 4) The CLI selects `deployment/docker/custom-ui-managed-infra/docker-compose.yaml`.
 
 Full details:
-- https://github.com/kdcube/kdcube-ai-app/blob/main/app/ai-app/docs/service/cicd/descriptors-README.md
-- https://github.com/kdcube/kdcube-ai-app/blob/main/app/ai-app/docs/configuration/assembly-descriptor-README.md
-- https://github.com/kdcube/kdcube-ai-app/blob/main/app/ai-app/docs/service/cicd/custom-cicd-README.md
-- https://github.com/kdcube/kdcube-ai-app/blob/main/app/ai-app/docs/service/cicd/cli-README.md
+- https://github.com/kdcube/kdcube/blob/main/app/ai-app/docs/service/cicd/descriptors-README.md
+- https://github.com/kdcube/kdcube/blob/main/app/ai-app/docs/configuration/assembly-descriptor-README.md
+- https://github.com/kdcube/kdcube/blob/main/app/ai-app/docs/service/cicd/custom-cicd-README.md
+- https://github.com/kdcube/kdcube/blob/main/app/ai-app/docs/service/cicd/cli-README.md
 
 ## Where data is stored
 - **Config:** `workdir/config/` (env files, nginx config, UI config)
@@ -1208,13 +1208,13 @@ If the UI is calling the wrong tenant/project, check:
 - `curl http://localhost:<ui_port>/config.json`
 
 See the full local setup flow on GitHub:
-https://github.com/kdcube/kdcube-ai-app/blob/main/app/ai-app/docs/ops/local/local-setup-README.md
+https://github.com/kdcube/kdcube/blob/main/app/ai-app/docs/ops/local/local-setup-README.md
 
 More documentation:
-- https://github.com/kdcube/kdcube-ai-app/blob/main/app/ai-app/docs/service/cicd/descriptors-README.md
-- https://github.com/kdcube/kdcube-ai-app/blob/main/app/ai-app/docs/configuration/assembly-descriptor-README.md
-- https://github.com/kdcube/kdcube-ai-app/blob/main/app/ai-app/docs/configuration/bundles-descriptor-README.md
-- https://github.com/kdcube/kdcube-ai-app/blob/main/app/ai-app/docs/configuration/service-runtime-configuration-mapping-README.md
+- https://github.com/kdcube/kdcube/blob/main/app/ai-app/docs/service/cicd/descriptors-README.md
+- https://github.com/kdcube/kdcube/blob/main/app/ai-app/docs/configuration/assembly-descriptor-README.md
+- https://github.com/kdcube/kdcube/blob/main/app/ai-app/docs/configuration/bundles-descriptor-README.md
+- https://github.com/kdcube/kdcube/blob/main/app/ai-app/docs/configuration/service-runtime-configuration-mapping-README.md
 
 ## License
 MIT License. See `app/ai-app/src/kdcube-ai-app/LICENSE`.

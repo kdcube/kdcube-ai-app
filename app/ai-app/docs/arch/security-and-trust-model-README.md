@@ -5,7 +5,7 @@ summary: "Canonical KDCube security model: one tenant/project runtime, trusted a
 status: current
 tags: ["arch", "security", "trust", "tenancy", "apps", "execution", "credentials", "mcp"]
 updated_at: 2026-07-18
-keywords: ["KDCube security model", "multi-tenant", "tenant isolation", "trusted application", "generated code sandbox", "MCP security", "secret isolation"]
+keywords: ["KDCube security model", "tenant/project deployment scope", "multi-user runtime", "trusted application", "generated-code isolation", "MCP security", "secret isolation"]
 see_also:
   - repo:kdcube-ai-app/SECURITY.md
   - repo:kdcube-ai-app/app/ai-app/docs/runtime/tenant-project-user-and-execution-boundaries-README.md
@@ -17,8 +17,7 @@ see_also:
 # Security And Trust Model
 
 This page is the canonical statement of what KDCube isolates, what it trusts,
-and which guarantees depend on deployment configuration. It is deliberately
-more precise than the shorthand phrase "multi-tenant agent runtime."
+and which guarantees depend on deployment configuration.
 
 ## What KDCube Is
 
@@ -52,6 +51,7 @@ platform operator
 |          v                                                       |
 | generated/untrusted code boundary                                |
 |   local subprocess | legacy Docker combined | Docker split       |
+|   remote Fargate task profile                                    |
 +------------------------------------------------------------------+
        |
        +-- namespaced PostgreSQL / Redis / object or file storage
@@ -64,7 +64,7 @@ code sandbox. A generated code sandbox is not an application trust decision.
 An authenticated user is not automatically authorized for every application
 operation.
 
-## What "Multi-Tenant" Means
+## Deployment Scope And Shared Users
 
 KDCube supports a platform composed of many tenant/project environments. The
 current runtime binding is:
@@ -155,10 +155,12 @@ operator:
 | Local subprocess | Process and crash containment for development; not a security sandbox and not a network boundary. |
 | Docker combined (legacy, configurable) | Container boundary and filtered child environment, but supervisor and executor share one container and mount namespace. It is not the production reference for untrusted code. |
 | Docker split (reference) | Strongest built-in profile: a separate executor container with narrow mounts, no platform secret store, and no network by default. |
+| Fargate remote task | The trusted supervisor and generated-code child run in one remote task/container. The child receives filtered state, drops privileges, and creates a network namespace, but this is not split Docker's separate-container mount boundary. Assess the task definition, IAM, filesystem, networking, and child-process controls. |
 
 The reference deployment descriptors explicitly select `split`. The runtime
 still accepts `combined` for legacy deployments; operators should not rely on
 an omitted or unrecognized strategy value to establish the stronger boundary.
+Fargate is a separate remote profile and must not be described as split Docker.
 
 For isolated execution, model-proposed paths and references are untrusted
 requests. A trusted resolver first binds the current tenant/project/user and

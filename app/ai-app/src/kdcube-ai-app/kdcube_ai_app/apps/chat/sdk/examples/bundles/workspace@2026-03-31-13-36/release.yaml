@@ -1,5 +1,5 @@
 bundle:
-  repo: "https://github.com/kdcube/kdcube-ai-app.git"
+  repo: "https://github.com/kdcube/kdcube.git"
   ref: "2026.6.18.2105"
   description: |
     Scene, SDK component, canvas, memory, and Telegram release for workspace@2026-03-31-13-36.

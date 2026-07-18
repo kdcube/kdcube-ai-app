@@ -138,8 +138,8 @@ economics, storage, hosting, and control surfaces.
 | --- | --- | --- | --- |
 | Keep an existing agent implementation | Yes | Native implementation | Integrate it |
 | Multi-user conversation serving, streaming, files, and UI | Built in | Assemble around the agent | Not their primary role |
-| Pre-run per-user budgets and cross-runtime accounting | Built in | Implement in application code | Primarily observe and analyze |
-| Isolated generated-code workspace with brokered trusted tools | Built in | Add separately | Varies by product |
+| Pre-run per-user budgets and cross-runtime accounting | Built in for integrated calls | Implement in application code | Primarily observe and analyze |
+| Isolated generated-code workspace with brokered trusted tools | Built in; strength depends on the selected profile | Add separately | Varies by product |
 | User identity, connected accounts, delegated operators, and grants | Built in | Add separately | Not their primary role |
 | Tracing and evaluation workflows | Runtime records; use your preferred evaluation stack | Integrate an ops tool | Core strength |
 | Self-hosted open-source runtime | MIT | Common for libraries | Varies by product and plan |

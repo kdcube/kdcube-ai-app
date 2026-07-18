@@ -4,7 +4,7 @@ import type { ConnectionsTab } from './AppShell';
 // One short line per tab saying what the user can do there, with an
 // expandable Learn more list linking the public docs/recipes on GitHub.
 
-const DOCS = 'https://github.com/kdcube/kdcube-ai-app/blob/main/app/ai-app/docs';
+const DOCS = 'https://github.com/kdcube/kdcube/blob/main/app/ai-app/docs';
 
 interface GuideLink {
   label: string;

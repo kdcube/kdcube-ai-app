@@ -4,10 +4,10 @@
   "author": {
     "name": "KDCube",
     "email": "team@kdcube.tech",
-    "url": "https://github.com/kdcube/kdcube-ai-app"
+    "url": "https://github.com/kdcube/kdcube"
   },
-  "homepage": "https://github.com/kdcube/kdcube-ai-app",
-  "repository": "https://github.com/kdcube/kdcube-ai-app",
+  "homepage": "https://github.com/kdcube/kdcube",
+  "repository": "https://github.com/kdcube/kdcube",
   "license": "MIT",
   "keywords": [
     "kdcube",

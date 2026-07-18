@@ -615,7 +615,12 @@ sudo chmod -R g+rwX /path/to/exec-workspace
   - Split executor log root.
 - `LOG_FILE_PREFIX=supervisor` (supervisor) or `executor` (executor)
 
-## Security model summary
+## Split Docker Security Model Summary
+
+The guarantees in this section describe the reference split-Docker profile.
+Local subprocess, combined Docker, and Fargate use different boundaries; see
+[Generated-Code Isolation Depends On The Runtime Profile](../arch/security-and-trust-model-README.md#generated-code-isolation-depends-on-the-runtime-profile)
+before choosing a production profile.
 
 - **No network for executor**: unshared net namespace, only supervisor can call networked tools.
 - **Read-only root FS**: the exec container root filesystem is read-only.

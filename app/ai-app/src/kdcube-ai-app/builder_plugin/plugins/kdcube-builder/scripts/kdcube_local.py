@@ -15,7 +15,7 @@ DEFAULT_TENANT = "demo-tenant"
 DEFAULT_PROJECT = "demo-project"
 DEFAULT_WORKDIR = str(Path.home() / ".kdcube" / "kdcube-runtime")
 DEFAULT_PLUGIN_DATA = Path.home() / ".kdcube" / "builder-plugin"
-DEFAULT_KDCUBE_REPO = "https://github.com/kdcube/kdcube-ai-app.git"
+DEFAULT_KDCUBE_REPO = "https://github.com/kdcube/kdcube.git"
 
 
 def _plugin_root() -> Path:

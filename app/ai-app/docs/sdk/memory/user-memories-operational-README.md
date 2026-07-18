@@ -104,8 +104,8 @@ user_memory_events
 
 For memories that emerge from a chat turn, `conversation_id` and `turn_id` are
 stored on the event. The aggregate entry also keeps `source JSONB`, but the
-event table is the audit trail because one memory may be supported by many
-turns and conversations.
+event table is the memory's source history because one memory may be supported
+by many turns and conversations.
 
 ## Alias Rows
 

@@ -460,7 +460,7 @@ tree is documented in
 │  • Bootstrap runtime (ModelService, KB, Redis, comm_ctx)                │
 │  • Start Unix socket server                                            │
 │  • Execute privileged tool calls                                       │
-│  • Manage tool accounting & audit trail                                │
+│  • Manage tool accounting & operational records                        │
 │  • Dump delta cache & cleanup                                          │
 │                                                                         │
 │  Executor (main.py loader subprocess):                                 │
