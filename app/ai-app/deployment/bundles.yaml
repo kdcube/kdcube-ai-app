@@ -1161,8 +1161,8 @@ bundles:
           #         views: false
           #         params:
           #           tab: delegated_by_kdcube
-          #         size: { w: 760, h: 640 }
-          #         full: { w: 1040, h: 760 }
+          #         size: { w: 880, h: 720 }
+          #         full: { w: 1120, h: 820 }
           #         target_surfaces:
           #           - connection_hub.connections
           #           - connection_hub.settings

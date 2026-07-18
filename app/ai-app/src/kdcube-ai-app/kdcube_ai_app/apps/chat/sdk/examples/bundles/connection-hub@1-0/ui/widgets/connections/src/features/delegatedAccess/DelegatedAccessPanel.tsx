@@ -5,6 +5,7 @@ import { subscribeConnectionHubEvents } from '../../api/dataBus';
 import { DelegatedResourceCatalog, operationRows } from './DelegatedResourceCatalog';
 import type {
   DelegatedAccessNamedServiceOperations,
+  DelegatedAccessRecord,
   DelegatedAccessResourceOption,
 } from '../../api/types';
 import {
@@ -14,6 +15,34 @@ import {
   loadDelegatedAccess,
   revokeDelegatedAccess,
 } from './delegatedAccessSlice';
+
+/** Whether a resource card matches a catalog search: its label/id, its grants
+ *  (tokens and their vocabulary labels), its operations, and its named-service
+ *  namespaces/tools all count — matching keeps the WHOLE card so the row stays
+ *  understandable in context. */
+function resourceMatchesQuery(
+  item: DelegatedAccessResourceOption,
+  query: string,
+  grantOptionByName: Map<string, { label?: string; description?: string } | undefined>,
+): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  const haystack: string[] = [item.label || '', item.resource];
+  (item.grants || []).forEach((grant) => {
+    const option = grantOptionByName.get(grant);
+    haystack.push(grant, option?.label || '', option?.description || '');
+  });
+  (item.operations || []).forEach((operation) => {
+    haystack.push(operation.name, operation.label || '', operation.description || '', ...(operation.grants || []));
+  });
+  (item.named_services || []).forEach((ns) => {
+    haystack.push(ns.namespace, ns.label || '', ns.description || '');
+    Object.entries(ns.tools || {}).forEach(([tool, option]) => {
+      haystack.push(tool, option.label || '', option.description || '', ...(option.grants || []));
+    });
+  });
+  return haystack.some((text) => text.toLowerCase().includes(q));
+}
 
 /** Human parts of a `kdcube-agent:<app>:<agent>` client id — the agent and the
  *  app it lives in, version tag stripped from the app for display. */
@@ -71,6 +100,14 @@ export function DelegatedAccessPanel() {
   const [namedServiceOperations, setNamedServiceOperations] = useState<DelegatedAccessNamedServiceOperations>({});
   const [ttlSeconds, setTtlSeconds] = useState(ttlOptions[0].value);
   const [pendingGrant, setPendingGrant] = useState(pendingAgentGrantFromLocation);
+  // Catalog search: narrows the delegable-resource cards (labels, grants,
+  // named-service rows) wherever the shared list renders.
+  const [resourceQuery, setResourceQuery] = useState('');
+  // Accordion state per resource card. Undefined = derived default: open while
+  // it matches an active search or already carries a selection, else closed —
+  // the list reads as compact rows in the small pane, and only what the user
+  // works with takes vertical space.
+  const [openResources, setOpenResources] = useState<Record<string, boolean>>({});
   const grantOptionByName = useMemo(
     () => new Map(grantOptions.map((item) => [item.grant, item])),
     [grantOptions],
@@ -219,50 +256,86 @@ export function DelegatedAccessPanel() {
   // The full delegable catalog (resource -> grant chips -> named-service
   // operation rows), bound to the shared selection state. Rendered in the
   // manual create flow AND in the pending agent card's "add more" section.
+  // The search narrows the CARDS; selections live outside the filter, so a
+  // grant checked earlier stays selected while the user searches on.
+  const visibleResources = resources.filter((item) => resourceMatchesQuery(item, resourceQuery, grantOptionByName));
+  const searching = Boolean(resourceQuery.trim());
   const renderResourceList = () => (
     <div className="resource-list">
-      {resources.map((item) => {
+      <input
+        className="input"
+        type="search"
+        value={resourceQuery}
+        onChange={(event) => setResourceQuery(event.target.value)}
+        placeholder="Search resources and access (e.g. memories, read, slack)"
+        aria-label="Search delegable resources and access"
+      />
+      {searching && !visibleResources.length ? (
+        <p className="muted">Nothing delegable matches “{resourceQuery.trim()}”.</p>
+      ) : null}
+      {visibleResources.map((item) => {
         const grants = grantsForResource(item);
+        const selectedCount = (resourceGrants[item.resource] || []).length;
+        const isOpen = openResources[item.resource] ?? (searching || selectedCount > 0);
         return (
           <div className="resource-option resource-option-stack" key={item.resource}>
-            <span>
-              <strong>
-                {item.label || item.resource}
-                {item.admin_only ? <span className="badge badge-admin">admin</span> : null}
-              </strong>
-              <small>{item.resource}</small>
-            </span>
-            <div className="resource-grants">
-              {grants.map((grant) => {
-                const option = grantOptionByName.get(grant);
-                return (
-                  <label className="grant-chip" key={`${item.resource}:${grant}`}>
-                    <input
-                      type="checkbox"
-                      checked={(resourceGrants[item.resource] || []).includes(grant)}
-                      onChange={(event) => toggleResourceGrant(item.resource, grant, event.target.checked)}
-                    />
-                    <span>{option?.label || grant}</span>
-                  </label>
-                );
-              })}
-            </div>
-            <DelegatedResourceCatalog
-              resource={item}
-              selectedGrants={resourceGrants[item.resource] || []}
-              selectedOperations={namedServiceOperations[item.resource] || {}}
-              onOperationChange={(namespace, operation, operationGrants, checked) => (
-                toggleNamedServiceOperation(
-                  item.resource,
-                  namespace,
-                  operation,
-                  operationGrants,
-                  checked,
-                )
-              )}
-              providers={providers}
-              accounts={accounts}
-            />
+            <button
+              type="button"
+              onClick={() => setOpenResources((current) => ({ ...current, [item.resource]: !isOpen }))}
+              aria-expanded={isOpen}
+              style={{
+                display: 'flex', width: '100%', alignItems: 'baseline', gap: 8,
+                background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+                textAlign: 'left', font: 'inherit', color: 'inherit',
+              }}
+            >
+              <span aria-hidden="true" className="muted">{isOpen ? '▾' : '▸'}</span>
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <strong>
+                  {item.label || item.resource}
+                  {item.admin_only ? <span className="badge badge-admin">admin</span> : null}
+                </strong>
+                {isOpen ? <small style={{ display: 'block' }}>{item.resource}</small> : null}
+              </span>
+              {selectedCount
+                ? <span className="badge badge-ok">{selectedCount}/{grants.length} selected</span>
+                : <span className="muted"><small>{grants.length} options</small></span>}
+            </button>
+            {isOpen ? (
+              <>
+                <div className="resource-grants">
+                  {grants.map((grant) => {
+                    const option = grantOptionByName.get(grant);
+                    return (
+                      <label className="grant-chip" key={`${item.resource}:${grant}`}>
+                        <input
+                          type="checkbox"
+                          checked={(resourceGrants[item.resource] || []).includes(grant)}
+                          onChange={(event) => toggleResourceGrant(item.resource, grant, event.target.checked)}
+                        />
+                        <span>{option?.label || grant}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+                <DelegatedResourceCatalog
+                  resource={item}
+                  selectedGrants={resourceGrants[item.resource] || []}
+                  selectedOperations={namedServiceOperations[item.resource] || {}}
+                  onOperationChange={(namespace, operation, operationGrants, checked) => (
+                    toggleNamedServiceOperation(
+                      item.resource,
+                      namespace,
+                      operation,
+                      operationGrants,
+                      checked,
+                    )
+                  )}
+                  providers={providers}
+                  accounts={accounts}
+                />
+              </>
+            ) : null}
           </div>
         );
       })}
@@ -330,28 +403,94 @@ export function DelegatedAccessPanel() {
     </section>
   ) : null;
 
+  // One CARD PER AGENT: every record of the same agent client (a per-resource
+  // grant) lists inside it as an individually revocable permission row — so
+  // "what can lg-react do for me" reads in one place, and dropping one
+  // permission never touches the others. Non-agent grants keep the flat rows.
+  const agentGroups = new Map<string, DelegatedAccessRecord[]>();
+  const otherItems: DelegatedAccessRecord[] = [];
+  items.forEach((item) => {
+    if (item.source === 'agent' && item.client_id) {
+      const group = agentGroups.get(item.client_id) || [];
+      group.push(item);
+      agentGroups.set(item.client_id, group);
+    } else {
+      otherItems.push(item);
+    }
+  });
+  const resourceLabelFor = (resource: string): string =>
+    resources.find((r) => r.resource === resource)?.label || '';
+  const claimLabel = (claim: string): string => grantOptionByName.get(claim)?.label || claim;
+
   const grantedPane = (
     <section className="card">
       <div className="card-head">
         <p className="muted" style={{ margin: 0 }}>
-          Access this user granted to external automations and clients. Revoking
-          a grant stops that automation from calling KDCube.
+          Access this user granted to agents, automations, and external clients.
+          Revoking stops that caller immediately.
         </p>
         {platformUserId ? <span className="badge badge-ok" title={platformUserId}>you</span> : null}
       </div>
 
-      {items.length ? (
+      {agentGroups.size ? (
+        <div>
+          {Array.from(agentGroups.entries()).map(([clientId, records]) => {
+            const who = parseAgentClientId(clientId);
+            return (
+              <div className="resource-option resource-option-stack" key={clientId}>
+                <span>
+                  <strong>
+                    {who ? `${who.agent} · ${who.app}` : clientId}
+                    <span className="badge badge-ok">agent</span>
+                  </strong>
+                  <small>{clientId}</small>
+                </span>
+                <ul className="accounts">
+                  {records.map((item) => (
+                    <li className="account" key={item.access_id}>
+                      <div>
+                        {Object.entries(item.resource_grants || {}).map(([resource, grants]) => (
+                          <div key={resource}>
+                            <div className="account-title">{resourceLabelFor(resource) || resource}</div>
+                            <div className="account-sub">{grants.map(claimLabel).join(', ')}</div>
+                            {resourceLabelFor(resource) ? <div className="account-sub"><code>{resource}</code></div> : null}
+                          </div>
+                        ))}
+                        {item.named_service_operations && Object.keys(item.named_service_operations).length ? (
+                          <div className="account-sub">
+                            Named services: {Object.values(item.named_service_operations)
+                              .flatMap((namespaces) => Object.entries(namespaces))
+                              .map(([namespace, operations]) => `${namespace} (${operations.join(', ')})`)
+                              .join('; ')}
+                          </div>
+                        ) : null}
+                        <div className="account-sub">
+                          Granted {formatDate(item.created_at) || 'unknown'}
+                          {' · '}expires {formatDate(item.expires_at) || 'unknown'}
+                        </div>
+                      </div>
+                      <button className="btn btn-danger" type="button" disabled={busy} onClick={() => revoke(item.access_id)}>
+                        Revoke
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+
+      {otherItems.length ? (
         <ul className="accounts">
-          {items.map((item) => (
+          {otherItems.map((item) => (
             <li className="account" key={item.access_id}>
               <div>
                 <div className="account-title">
                   {item.label || item.access_id}
                   {item.source === 'oauth'
                     ? <span className="badge badge-ok">connected app</span>
-                    : item.source === 'agent'
-                      ? <span className="badge badge-ok">agent</span>
-                      : <span className="badge badge-warn">manual token</span>}
+                    : <span className="badge badge-warn">manual token</span>}
                 </div>
                 {item.client_id && item.client_id !== item.label ? <div className="account-sub">{item.client_id}</div> : null}
                 {item.resource_grants && Object.keys(item.resource_grants).length ? (
@@ -380,12 +519,15 @@ export function DelegatedAccessPanel() {
             </li>
           ))}
         </ul>
-      ) : (
+      ) : null}
+
+      {!items.length ? (
         <p className="muted">
-          Nothing granted yet. Access appears here when you create an automation
-          token or approve an external client's OAuth connect.
+          Nothing granted yet. Access appears here when an agent asks and you
+          approve, when you create an automation token, or when you approve an
+          external client's OAuth connect.
         </p>
-      )}
+      ) : null}
     </section>
   );
 
