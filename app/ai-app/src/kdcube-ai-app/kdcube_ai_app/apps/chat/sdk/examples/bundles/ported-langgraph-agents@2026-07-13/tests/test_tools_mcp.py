@@ -102,6 +102,39 @@ def test_demand_keys_on_the_declared_resource_id_not_the_url() -> None:
     assert c.consent["grant"]["payload"]["resource"] == conn["resource"]
 
 
+def test_consent_stub_raises_the_demand_at_the_ATTEMPT_not_at_build() -> None:
+    # Consent is demand-driven per tool (surfaced live: asking about memories
+    # raised the SLACK demand, because every pending connection announced at
+    # build — a turn-start claim union). Pending connections bind consent-gated
+    # stubs instead: nothing announces at build; CALLING the stub announces
+    # exactly that connection's demand and returns the consent tool-result.
+    m = _mcp_module()
+
+    async def no_grant(conn, user_sub):
+        return None
+
+    _tools, consents = asyncio.run(m.load_mcp_tools_for_connections(
+        [_MCP_CONN], user_sub="u1", application="app", agent_id="lg-react",
+        bearer_provider=no_grant,
+    ))
+    announced: list = []
+
+    async def announce(c):
+        announced.append(c)
+
+    stubs = m.consent_request_tools(consents, announce=announce)
+    assert len(stubs) == 1
+    stub = stubs[0]
+    assert stub.name == "memory"                       # the connection's alias
+    assert "consent" in stub.description.lower()
+    assert announced == []                             # nothing at build
+
+    result = asyncio.run(stub.coroutine(reason="user asked about cities"))
+    assert announced == consents                       # the ATTEMPT announced it
+    assert result["ok"] is False
+    assert result["consent"]["grant"]["payload"]["claims"] == ["memories:read"]
+
+
 def test_no_user_drop_stays_silent() -> None:
     # An anonymous turn cannot grant; the delegated connection is dropped with
     # no demand (nothing for the user to act on).

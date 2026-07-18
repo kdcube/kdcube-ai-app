@@ -48,7 +48,68 @@ from kdcube_ai_app.apps.chat.sdk.frameworks.langchain.mcp import (
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["mcp_connections", "load_mcp_tools_for_connections", "mcp_adapters_available"]
+__all__ = [
+    "mcp_connections",
+    "load_mcp_tools_for_connections",
+    "consent_request_tools",
+    "mcp_adapters_available",
+]
+
+
+def consent_request_tools(
+    consents: List[MCPConsentRequired],
+    *,
+    announce: Any,
+) -> List[Any]:
+    """One consent-gated STUB tool per pending delegated connection.
+
+    Consent is demand-driven per tool: a turn's build cannot know which
+    capabilities the turn will use, so a pending connection must NOT raise a
+    turn-start demand. Instead it binds a stub carrying the connection's name
+    and claims; when the MODEL decides the user's request needs that
+    capability, calling the stub raises exactly that connection's consent
+    demand in chat (via ``announce``) and returns the agent-explainable consent
+    result — the same attempt-time semantics connected-account tools have.
+    Once the user grants, the next build binds the real tools and the stub
+    disappears. Returns ``[]`` when LangChain is unavailable."""
+    try:
+        from langchain_core.tools import StructuredTool
+        from pydantic import BaseModel, Field
+    except Exception:  # pragma: no cover - langchain-less environments
+        return []
+
+    class _ConsentRequestArgs(BaseModel):
+        reason: str = Field(
+            default="",
+            description="One line on what the user asked for that needs this capability.",
+        )
+
+    tools: List[Any] = []
+    for c in consents:
+        alias = str((getattr(c, "consent", {}) or {}).get("tool_name") or "").strip() or "restricted_capability"
+        claims = ", ".join(getattr(c, "claims", []) or []) or "the required access"
+
+        async def _request(reason: str = "", _consent: MCPConsentRequired = c) -> Dict[str, Any]:
+            del reason
+            try:
+                await announce(_consent)
+            except Exception:
+                logger.info("consent stub: announce failed (non-fatal)", exc_info=True)
+            return _consent.to_tool_result()
+
+        tools.append(StructuredTool.from_function(
+            coroutine=_request,
+            name=alias,
+            description=(
+                f"{alias}: this capability needs the user's consent to {claims}. "
+                "Call it when the user's request needs this capability — the call "
+                "raises a consent request in chat for the user to approve and "
+                "returns the consent status. After the user grants, the real "
+                f"{alias} tools become available on the next turn."
+            ),
+            args_schema=_ConsentRequestArgs,
+        ))
+    return tools
 
 
 def _conn_alias(conn: Mapping[str, Any]) -> str:

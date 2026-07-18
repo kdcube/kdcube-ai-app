@@ -86,7 +86,7 @@ from .platform.turn_batch import fold_turn_external_events
 from .platform.identity import turn_identity, normalize_agent_id
 from .platform.stream_solution import stream_graph_turn
 from .platform.stream_prebuilt import stream_react_turn
-from .platform.tools_mcp import load_mcp_tools_for_connections
+from .platform.tools_mcp import load_mcp_tools_for_connections, consent_request_tools
 from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_mcp import (
     delegated_client_id_for_agent,
     connection_resource,
@@ -359,9 +359,13 @@ async def _build_prebuilt_graph(
         bearer_provider=_agent_grant_bearer_provider(ep, agent_client_id),
     )
     tools += mcp_tools
-    # Bubble each pending consent into chat (the same banner connected-account
-    # tools raise) so the user can grant it in Connection Hub, per agent.
-    await _bubble_mcp_consents(ep, mcp_consents)
+    # Consent is demand-driven per tool: a build cannot know which capabilities
+    # THIS turn will use, so pending connections raise nothing here. Each binds
+    # a consent-gated stub instead — when the model decides the user's request
+    # needs that capability, calling the stub raises exactly that connection's
+    # consent demand in chat (the same attempt-time semantics connected-account
+    # tools have) and returns the agent-explainable consent result.
+    tools += consent_request_tools(mcp_consents, announce=_announce_mcp_consent)
 
     checkpointer = await ep._open_checkpointer("lg-react", config.database_url)
     return build_prebuilt_agent(
@@ -414,54 +418,51 @@ def _agent_grant_bearer_provider(ep: "LGPortedAgentsBundle", client_id: str):
     return _provider
 
 
-async def _bubble_mcp_consents(ep: "LGPortedAgentsBundle", consents: List[Any]) -> None:
-    """Raise each pending MCP consent as the standard chat consent banner (best
-    effort; identity + comm come from the bound turn context)."""
-    if not consents:
-        return
+async def _announce_mcp_consent(c: Any) -> None:
+    """Raise ONE pending MCP consent as the standard chat consent banner — the
+    consent-gated stub calls this at the tool ATTEMPT, so only the capability
+    the turn actually needs asks the user (best effort; identity + comm come
+    from the bound turn context)."""
     try:
         from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube.consent_demand import (
             announce_consent_demand,
         )
-    except Exception:
-        return
-    for c in consents:
-        try:
-            # The canonical nested consent-event shape (same banner path Slack
-            # uses); carries the claims + the one-click grant action.
-            payload = c.chat_event_payload() if hasattr(c, "chat_event_payload") else (getattr(c, "consent", {}) or {})
-            announced = await announce_consent_demand(
-                payload=payload,
-                provider_id="kdcube",
-                claims=list(getattr(c, "claims", []) or []),
-                tool_name=str((getattr(c, "consent", {}) or {}).get("tool_name") or ""),
-            )
-            if not announced:
-                # The demand was recorded in an earlier turn of this
-                # conversation, so announce stayed quiet — but the capability is
-                # STILL pending this turn and the agent will say so. Re-emit the
-                # consent event: the chat UI keeps one banner per identical
-                # demand and honors a dismissal, so the user always sees an
-                # actionable banner while the block is real.
-                from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import get_comm
 
-                communicator = get_comm()
-                event = getattr(communicator, "event", None) if communicator is not None else None
-                if callable(event):
-                    result = event(
-                        agent="connection-hub",
-                        type="chat.step",
-                        route="chat.step",
-                        title="Access consent needed",
-                        step="delegated_to_kdcube.consent",
-                        data=dict(payload or {}),
-                        status="completed",
-                        broadcast=False,
-                    )
-                    if asyncio.iscoroutine(result):
-                        await result
-        except Exception:
-            LOGGER.info("[ported-langgraph] MCP consent bubble failed (non-fatal)", exc_info=True)
+        # The canonical nested consent-event shape (same banner path Slack
+        # uses); carries the claims + the one-click grant action.
+        payload = c.chat_event_payload() if hasattr(c, "chat_event_payload") else (getattr(c, "consent", {}) or {})
+        announced = await announce_consent_demand(
+            payload=payload,
+            provider_id="kdcube",
+            claims=list(getattr(c, "claims", []) or []),
+            tool_name=str((getattr(c, "consent", {}) or {}).get("tool_name") or ""),
+        )
+        if not announced:
+            # The demand was recorded at an earlier attempt in this
+            # conversation, so announce stayed quiet — but the capability is
+            # STILL pending and the agent is telling the user so. Re-emit the
+            # consent event: the chat UI keeps one banner per identical demand
+            # and honors a dismissal, so the user always sees an actionable
+            # banner while the block is real.
+            from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import get_comm
+
+            communicator = get_comm()
+            event = getattr(communicator, "event", None) if communicator is not None else None
+            if callable(event):
+                result = event(
+                    agent="connection-hub",
+                    type="chat.step",
+                    route="chat.step",
+                    title="Access consent needed",
+                    step="delegated_to_kdcube.consent",
+                    data=dict(payload or {}),
+                    status="completed",
+                    broadcast=False,
+                )
+                if asyncio.iscoroutine(result):
+                    await result
+    except Exception:
+        LOGGER.info("[ported-langgraph] MCP consent bubble failed (non-fatal)", exc_info=True)
 
 
 def _prebuilt_system_prompt(tools: List[Any], mcp_consents: Optional[List[Any]] = None) -> Optional[str]:
@@ -473,9 +474,10 @@ def _prebuilt_system_prompt(tools: List[Any], mcp_consents: Optional[List[Any]] 
     tools, None keeps the solution default.
 
     `mcp_consents`: a note is appended for any MCP tool the user has not yet
-    consented THIS agent to use — so the agent, which does NOT see that tool
-    this turn, can still explain to the user that it needs their approval rather
-    than claiming the capability is missing."""
+    consented THIS agent to use — those bind as consent-gated stubs, and the
+    note tells the agent how the gate works: call the tool when the user's
+    request needs it, which raises the consent request for the user to
+    approve."""
     consent_note = _mcp_consent_prompt_note(mcp_consents)
     names = {str(getattr(tool, "name", "") or "") for tool in tools or []}
     if "run_python" not in names:
@@ -500,14 +502,16 @@ def _mcp_consent_prompt_note(mcp_consents: Optional[List[Any]]) -> str:
     for c in mcp_consents:
         claims = ", ".join(getattr(c, "claims", []) or []) or "required access"
         label = str((getattr(c, "consent", {}) or {}).get("tool_name") or "a tool")
-        lines.append(f"- {label}: needs the user's consent to {claims}")
+        lines.append(f"- {label}: consent-gated; needs the user's approval for {claims}")
     return (
-        "\n\n[Pending consent] These tools are NOT available this turn because the "
-        "user has not yet granted YOU (this agent) access to them:\n"
+        "\n\n[Consent-gated tools] These capabilities exist but need the user's "
+        "approval for YOU (this agent) before they work:\n"
         + "\n".join(lines)
-        + "\nIf the user asks for something needing one of these, tell them you need "
-        "their approval and that a consent request has been raised for them to grant "
-        "in Connection Hub. Do not claim the capability is missing or unavailable."
+        + "\nWhen the user's request needs one of them, CALL that tool: the call "
+        "raises a consent request the user can approve right in this chat, and "
+        "returns the consent status. Tell the user you have asked for their "
+        "approval and what it covers. After they grant it, the real capability "
+        "is available from the next message on."
     )
 
 

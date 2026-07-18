@@ -161,14 +161,20 @@ three coordinated things:
    plus `load_error_looks_like_denial(error)` capture it out of the wrapped
    exception group.
 
+Consent stays demand-driven per tool: a pending connection binds a
+consent-gated stub, and the demand rises when the model CALLS it — only the
+capability the user's request actually needs asks for approval, never a
+turn-start union of everything pending.
+
 ```text
 turn 1: user asks about memory
-  agent's memory tool absent (no grant) -> consent demand bubbles in chat
+  memories is consent-gated -> the agent calls its stub
+  -> THAT consent demand bubbles in chat (slack, also pending, stays silent)
   agent: "I need your approval for memories:read"
   user: clicks Grant access -> hub tab -> Grant  (one grant, THIS agent)
 turn 2: bearer_provider returns the bound token
   memory tools bind -> the agent reads the user's own memory
-later: user revokes in the same tab -> the tool drops back to pending
+later: user revokes in the same tab -> the tool drops back to the gated stub
 ```
 
 The proactive counterpart — showing given/pending consent per claim in the

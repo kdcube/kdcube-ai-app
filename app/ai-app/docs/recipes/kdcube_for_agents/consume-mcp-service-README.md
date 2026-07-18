@@ -265,8 +265,10 @@ be the configured id.
 At bind time the runtime injects the bearer bound by the user's per-agent
 consent grant (the agent is a Delegated-By-KDCube client entity,
 `kdcube-agent:<app>:<agent>`). While the user has not granted this agent, the
-connection stays unbound and a consent demand rises in chat with a one-click
-grant. Identity model, grant round-trip, and the consent middleware:
+connection binds a consent-gated stub instead: when the model calls it — i.e.
+when the user's request actually needs the capability — that connection's
+consent demand rises in chat with a one-click grant. Identity model, grant
+round-trip, and the consent middleware:
 [Agents Acting On Behalf Of The User](../../sdk/solutions/connections/agent-acting-for-user/agent-acting-for-user-README.md).
 
 The same shape reaches the user's EXTERNAL accounts through the named-services
