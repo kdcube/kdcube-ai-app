@@ -145,3 +145,39 @@ test('a per-agent grant demand routes the banner to the Delegated-by-KDCube tab 
   assert.equal(banner.consent.params.resource, 'https://h/api/mcp/mem')
   assert.deepEqual(banner.consentClaims, ['memories:read'])
 })
+
+test('one agent, two pending resources -> TWO coexisting banners (surfaced live: slack swallowed memories)', () => {
+  function agentDemand(resource, claims, toolName) {
+    return {
+      type: 'chat.step',
+      timestamp: '2026-07-07T12:00:00.000Z',
+      service: { request_id: 'req:turn-1' },
+      conversation: { session_id: 'session-1', conversation_id: 'conv-1', turn_id: 'turn-1' },
+      event: { step: 'delegated_to_kdcube.consent', status: 'completed', title: 'Consent', agent: null },
+      data: {
+        error: { code: 'needs_connected_account_consent', message: `${toolName} needs your consent to ${claims.join(', ')}.` },
+        consent: {
+          kind: 'delegated_agent_grant',
+          claims,
+          resource,
+          url: '',
+          action_label: 'Grant access',
+          agent_client_id: 'kdcube-agent:app:lg-react',
+          grant: {
+            operation: 'delegated_agent_grant_create',
+            payload: { client_id: 'kdcube-agent:app:lg-react', resource, claims },
+          },
+        },
+      },
+    }
+  }
+  let state = applyChatStep(baseState(), agentDemand('*/user-memories@2026-06-26/public/mcp/memories*', ['memories:read'], 'memories'))
+  state = applyChatStep(state, agentDemand('*/kdcube-services@1-0/public/mcp/named_services*', ['named_services:use', 'slack:read'], 'slack'))
+  // Both demands stay visible — the second must NOT supersede the first.
+  assert.equal(state.banners.length, 2)
+  const resources = state.banners.map((b) => b.consent.params.resource).sort()
+  assert.ok(resources[0].includes('kdcube-services') && resources[1].includes('user-memories'))
+  // Re-emitting the SAME demand (the per-turn re-announce) keeps ONE banner.
+  const again = applyChatStep(state, agentDemand('*/user-memories@2026-06-26/public/mcp/memories*', ['memories:read'], 'memories'))
+  assert.equal(again.banners.length, 2)
+})

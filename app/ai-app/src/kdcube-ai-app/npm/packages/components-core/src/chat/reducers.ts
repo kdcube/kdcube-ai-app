@@ -210,7 +210,11 @@ function connectedAccountConsentBanner(data: Record<string, unknown> | undefined
       actionLabel: stringValue(consent.action_label) || 'Grant access',
       actionUrl: url,
       consent: agentGrantConsentOpen({ agentClientId, resource, claims: grantClaims, url }),
-      signature: `agent:${agentClientId}|${resource}`,
+      // The supersession prefix runs through the FIRST '|': keep agent AND
+      // resource before it, so one agent's demands on different resources
+      // coexist as separate banners (memories next to the named-services
+      // bridge), and only a changed claim set on the SAME resource supersedes.
+      signature: `agent:${agentClientId}:${resource}|${[...grantClaims].sort().join(',')}`,
       tools: blockedTools,
       claims: grantClaims,
     }

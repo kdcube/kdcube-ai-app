@@ -430,12 +430,36 @@ async def _bubble_mcp_consents(ep: "LGPortedAgentsBundle", consents: List[Any]) 
             # The canonical nested consent-event shape (same banner path Slack
             # uses); carries the claims + the one-click grant action.
             payload = c.chat_event_payload() if hasattr(c, "chat_event_payload") else (getattr(c, "consent", {}) or {})
-            await announce_consent_demand(
+            announced = await announce_consent_demand(
                 payload=payload,
                 provider_id="kdcube",
                 claims=list(getattr(c, "claims", []) or []),
                 tool_name=str((getattr(c, "consent", {}) or {}).get("tool_name") or ""),
             )
+            if not announced:
+                # The demand was recorded in an earlier turn of this
+                # conversation, so announce stayed quiet — but the capability is
+                # STILL pending this turn and the agent will say so. Re-emit the
+                # consent event: the chat UI keeps one banner per identical
+                # demand and honors a dismissal, so the user always sees an
+                # actionable banner while the block is real.
+                from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import get_comm
+
+                communicator = get_comm()
+                event = getattr(communicator, "event", None) if communicator is not None else None
+                if callable(event):
+                    result = event(
+                        agent="connection-hub",
+                        type="chat.step",
+                        route="chat.step",
+                        title="Access consent needed",
+                        step="delegated_to_kdcube.consent",
+                        data=dict(payload or {}),
+                        status="completed",
+                        broadcast=False,
+                    )
+                    if asyncio.iscoroutine(result):
+                        await result
         except Exception:
             LOGGER.info("[ported-langgraph] MCP consent bubble failed (non-fatal)", exc_info=True)
 
@@ -1270,7 +1294,7 @@ class LGPortedAgentsBundle(BaseEntrypointWithEconomics):
         Identity: the file is stored under the turn owner (svc-first — see
         `resolve_request_identity`), so the download resolves under that same owner;
         tenant/project come from the bundle runtime."""
-        from kdcube_ai_app.apps.chat.sdk.solutions.react.events.resolver import resolve_event_ref_action
+        from kdcube_ai_app.apps.chat.sdk.runtime.harness.events.resolver import resolve_event_ref_action
         from kdcube_ai_app.apps.chat.sdk.event_identity import resolve_request_identity
 
         payload: Dict[str, Any] = (
