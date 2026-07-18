@@ -14,6 +14,8 @@ import os
 import pathlib
 import re
 import shlex
+import signal
+import tempfile
 import time
 import traceback
 from contextlib import contextmanager
@@ -73,6 +75,61 @@ from kdcube_ai_app.apps.chat.sdk.viz.tsx_transpiler import ClientSideTSXTranspil
 from kdcube_ai_app.infra.service_hub.cache import create_kv_cache_from_env
 
 _REQUEST_LOCAL_UNSET = object()
+
+
+async def _terminate_ui_build_process(
+    proc: asyncio.subprocess.Process,
+    *,
+    grace_seconds: float = 5.0,
+) -> None:
+    """Terminate and reap a UI build subprocess and its descendants."""
+    if proc.returncode is not None:
+        return
+
+    def _signal_process_group(sig: int) -> None:
+        try:
+            os.killpg(proc.pid, sig)
+            return
+        except (AttributeError, OSError):
+            pass
+        try:
+            if sig == signal.SIGTERM:
+                proc.terminate()
+            else:
+                proc.kill()
+        except OSError:
+            pass
+
+    _signal_process_group(signal.SIGTERM)
+    try:
+        await asyncio.wait_for(proc.wait(), timeout=max(0.1, float(grace_seconds)))
+        return
+    except asyncio.TimeoutError:
+        pass
+
+    _signal_process_group(signal.SIGKILL)
+    try:
+        await proc.wait()
+    except OSError:
+        pass
+
+
+async def _communicate_ui_build_process(
+    proc: asyncio.subprocess.Process,
+    *,
+    timeout_seconds: float,
+) -> tuple[bytes, bytes]:
+    try:
+        return await asyncio.wait_for(
+            proc.communicate(),
+            timeout=max(0.1, float(timeout_seconds)),
+        )
+    except asyncio.TimeoutError as exc:
+        await _terminate_ui_build_process(proc)
+        raise TimeoutError(f"UI build timed out after {int(timeout_seconds)}s") from exc
+    except BaseException:
+        await _terminate_ui_build_process(proc)
+        raise
 
 
 class BaseEntrypoint:
@@ -1494,160 +1551,168 @@ class BaseEntrypoint:
             self.logger.log(f"[bundle.ui] {kind} build skipped: signature unavailable", "WARNING")
             return
 
+        cleanup_paths: list[pathlib.Path] = []
+
         async def _build_ui() -> None:
             tmp_dest = storage_root / f".ui.build.tmp.{os.getpid()}.{_uuid.uuid4().hex}"
-            tmp_src = storage_root / f".ui.src.tmp.{os.getpid()}.{_uuid.uuid4().hex}"
+            work_root = pathlib.Path(
+                os.environ.get("BUNDLE_UI_BUILD_WORK_ROOT")
+                or (pathlib.Path(tempfile.gettempdir()) / "kdcube-ui-build")
+            ).expanduser()
+            work_root.mkdir(parents=True, exist_ok=True)
+            tmp_src = work_root / f"{operation}.{os.getpid()}.{_uuid.uuid4().hex}"
             previous_dest = storage_root / f".ui.previous.{os.getpid()}.{_uuid.uuid4().hex}"
+            cleanup_paths.extend((tmp_dest, tmp_src, previous_dest))
             swapped_old = False
-            try:
-                # Filesystem materialization is offloaded to worker threads so the
-                # copy/rmtree work never blocks the event loop. A blocked loop here
-                # starves the once-lock heartbeat (lock_age climbs) and freezes every
-                # other widget/request in the proc until the build finishes.
-                await asyncio.to_thread(shutil.rmtree, tmp_dest, ignore_errors=True)
-                await asyncio.to_thread(shutil.rmtree, tmp_src, ignore_errors=True)
-                tmp_dest.mkdir(parents=True, exist_ok=True)
+            # Filesystem materialization is offloaded to worker threads so the
+            # copy/rmtree work never blocks the event loop. A blocked loop here
+            # starves the once-lock heartbeat (lock_age climbs) and freezes every
+            # other widget/request in the proc until the build finishes.
+            await asyncio.to_thread(shutil.rmtree, tmp_dest, ignore_errors=True)
+            await asyncio.to_thread(shutil.rmtree, tmp_src, ignore_errors=True)
+            tmp_dest.mkdir(parents=True, exist_ok=True)
+            await asyncio.to_thread(
+                shutil.copytree,
+                src_path,
+                tmp_src,
+                ignore=self._ui_copy_ignore_patterns(),
+            )
+            tmp_src_resolved = tmp_src.resolve()
+            for spec in shared_specs:
+                shared_target = (tmp_src / spec["target_path"]).resolve()
+                try:
+                    shared_target.relative_to(tmp_src_resolved)
+                except ValueError as exc:
+                    raise ValueError(f"shared UI target escapes build workspace: {spec['target_path']}") from exc
+                await asyncio.to_thread(shutil.rmtree, shared_target, ignore_errors=True)
+                shared_target.parent.mkdir(parents=True, exist_ok=True)
                 await asyncio.to_thread(
                     shutil.copytree,
-                    src_path,
-                    tmp_src,
+                    spec["src_path"],
+                    shared_target,
                     ignore=self._ui_copy_ignore_patterns(),
                 )
-                tmp_src_resolved = tmp_src.resolve()
-                for spec in shared_specs:
-                    shared_target = (tmp_src / spec["target_path"]).resolve()
-                    try:
-                        shared_target.relative_to(tmp_src_resolved)
-                    except ValueError as exc:
-                        raise ValueError(f"shared UI target escapes build workspace: {spec['target_path']}") from exc
-                    await asyncio.to_thread(shutil.rmtree, shared_target, ignore_errors=True)
-                    shared_target.parent.mkdir(parents=True, exist_ok=True)
-                    await asyncio.to_thread(
-                        shutil.copytree,
-                        spec["src_path"],
-                        shared_target,
-                        ignore=self._ui_copy_ignore_patterns(),
-                    )
-                    self.logger.log(
-                        f"[bundle.ui] {kind} materialized shared source {spec['name']}: "
-                        f"{spec['src_path']} -> {shared_target}",
-                        "INFO",
-                    )
-                final_command = self._prepare_ui_build_command(build_command=build_command, tmp_dest=tmp_dest)
                 self.logger.log(
-                    f"[bundle.ui] {kind} build start: src={src_path} build_src={tmp_src} dest={build_dest}",
+                    f"[bundle.ui] {kind} materialized shared source {spec['name']}: "
+                    f"{spec['src_path']} -> {shared_target}",
                     "INFO",
                 )
+            final_command = self._prepare_ui_build_command(build_command=build_command, tmp_dest=tmp_dest)
+            self.logger.log(
+                f"[bundle.ui] {kind} build start: src={src_path} build_src={tmp_src} dest={build_dest}",
+                "INFO",
+            )
 
-                env = os.environ.copy()
-                env["OUTDIR"] = str(tmp_dest)
-                env["VI_BUILD_DEST_ABSOLUTE_PATH"] = str(tmp_dest)
-                env["VITE_BUILD_DEST_ABSOLUTE_PATH"] = str(tmp_dest)
-                env["VITE_APP_OUT_DIR"] = str(tmp_dest)
-                for env_key in list(env.keys()):
-                    if env_key.startswith("npm_"):
-                        env.pop(env_key, None)
-                if bundle_delivery_id:
-                    env["VI_BUNDLE_ID"] = bundle_delivery_id
-                    env["VITE_BUNDLE_ID"] = bundle_delivery_id
-                nvm_bin = os.path.expanduser("~/.nvm/versions/node")
-                if os.path.exists(nvm_bin):
-                    for version_dir in sorted(os.listdir(nvm_bin), reverse=True):
-                        bin_path = os.path.join(nvm_bin, version_dir, "bin")
-                        if os.path.exists(os.path.join(bin_path, "npm")):
-                            env["PATH"] = bin_path + ":" + env.get("PATH", "")
-                            break
-                env["PATH"] = str(tmp_src / "node_modules" / ".bin") + ":" + env.get("PATH", "")
-                # Lift inline build-step env (e.g. VITE_CHAT_UI=package) into the
-                # subprocess env. The direct-build path runs the package.json script,
-                # so inline assignments on `npm run build` would otherwise be lost.
-                for _env_key, _env_val in self._build_env_from_command(final_command).items():
-                    env[_env_key] = _env_val
+            env = os.environ.copy()
+            env["OUTDIR"] = str(tmp_dest)
+            env["VI_BUILD_DEST_ABSOLUTE_PATH"] = str(tmp_dest)
+            env["VITE_BUILD_DEST_ABSOLUTE_PATH"] = str(tmp_dest)
+            env["VITE_APP_OUT_DIR"] = str(tmp_dest)
+            for env_key in list(env.keys()):
+                if env_key.startswith("npm_"):
+                    env.pop(env_key, None)
+            if bundle_delivery_id:
+                env["VI_BUNDLE_ID"] = bundle_delivery_id
+                env["VITE_BUNDLE_ID"] = bundle_delivery_id
+            nvm_bin = os.path.expanduser("~/.nvm/versions/node")
+            if os.path.exists(nvm_bin):
+                for version_dir in sorted(os.listdir(nvm_bin), reverse=True):
+                    bin_path = os.path.join(nvm_bin, version_dir, "bin")
+                    if os.path.exists(os.path.join(bin_path, "npm")):
+                        env["PATH"] = bin_path + ":" + env.get("PATH", "")
+                        break
+            env["PATH"] = str(tmp_src / "node_modules" / ".bin") + ":" + env.get("PATH", "")
+            # Lift inline build-step env (e.g. VITE_CHAT_UI=package) into the
+            # subprocess env. The direct-build path runs the package.json script,
+            # so inline assignments on `npm run build` would otherwise be lost.
+            for _env_key, _env_val in self._build_env_from_command(final_command).items():
+                env[_env_key] = _env_val
 
-                async def _run_build_process(args: Optional[list[str]] = None, shell_command: Optional[str] = None):
-                    if args:
-                        self.logger.log(f"[bundle.ui] {kind} build command: {' '.join(args)}", "INFO")
-                        proc = await asyncio.create_subprocess_exec(
-                            *args,
-                            cwd=str(tmp_src),
-                            stdout=asyncio.subprocess.PIPE,
-                            stderr=asyncio.subprocess.PIPE,
-                            env=env,
-                        )
-                    else:
-                        self.logger.log(f"[bundle.ui] {kind} build command: {shell_command}", "INFO")
-                        proc = await asyncio.create_subprocess_shell(
-                            str(shell_command or ""),
-                            cwd=str(tmp_src),
-                            stdout=asyncio.subprocess.PIPE,
-                            stderr=asyncio.subprocess.PIPE,
-                            env=env,
-                        )
-                    try:
-                        stdout_b, stderr_b = await asyncio.wait_for(proc.communicate(), timeout=600)
-                    except asyncio.TimeoutError:
-                        proc.kill()
-                        await proc.wait()
-                        raise TimeoutError("UI build timed out after 600s")
-                    return (
-                        int(proc.returncode or 0),
-                        stdout_b.decode("utf-8", errors="replace") if stdout_b else "",
-                        stderr_b.decode("utf-8", errors="replace") if stderr_b else "",
+            async def _run_build_process(args: Optional[list[str]] = None, shell_command: Optional[str] = None):
+                if args:
+                    self.logger.log(f"[bundle.ui] {kind} build command: {' '.join(args)}", "INFO")
+                    proc = await asyncio.create_subprocess_exec(
+                        *args,
+                        cwd=str(tmp_src),
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
+                        env=env,
+                        start_new_session=True,
                     )
-
-                stdout_parts: list[str] = []
-                stderr_parts: list[str] = []
-                exit_code = 0
-                npm_install_args = self._npm_install_args_for_ui_build(final_command)
-                if npm_install_args:
-                    exit_code, stdout, stderr = await _run_build_process(args=npm_install_args)
-                    stdout_parts.append(stdout)
-                    stderr_parts.append(stderr)
-                    if exit_code == 0:
-                        package_json = tmp_src / "package.json"
-                        try:
-                            scripts = json.loads(package_json.read_text(encoding="utf-8")).get("scripts") or {}
-                            build_script = str(scripts.get("build") or "").strip()
-                        except Exception as exc:
-                            raise RuntimeError(f"UI build failed: unable to read scripts.build from {package_json}: {exc}") from exc
-                        if not build_script:
-                            raise RuntimeError(f"UI build failed: scripts.build missing in {package_json}")
-                        build_script = self._prepare_ui_build_command(build_command=build_script, tmp_dest=tmp_dest)
-                        exit_code, stdout, stderr = await _run_build_process(shell_command=build_script)
-                        stdout_parts.append(stdout)
-                        stderr_parts.append(stderr)
                 else:
-                    exit_code, stdout, stderr = await _run_build_process(shell_command=final_command)
+                    self.logger.log(f"[bundle.ui] {kind} build command: {shell_command}", "INFO")
+                    proc = await asyncio.create_subprocess_shell(
+                        str(shell_command or ""),
+                        cwd=str(tmp_src),
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
+                        env=env,
+                        start_new_session=True,
+                    )
+                build_timeout_seconds = max(
+                    30,
+                    int(os.environ.get("BUNDLE_UI_BUILD_TIMEOUT_SECONDS", "600") or "600"),
+                )
+                stdout_b, stderr_b = await _communicate_ui_build_process(
+                    proc,
+                    timeout_seconds=build_timeout_seconds,
+                )
+                return (
+                    int(proc.returncode or 0),
+                    stdout_b.decode("utf-8", errors="replace") if stdout_b else "",
+                    stderr_b.decode("utf-8", errors="replace") if stderr_b else "",
+                )
+
+            stdout_parts: list[str] = []
+            stderr_parts: list[str] = []
+            exit_code = 0
+            npm_install_args = self._npm_install_args_for_ui_build(final_command)
+            if npm_install_args:
+                exit_code, stdout, stderr = await _run_build_process(args=npm_install_args)
+                stdout_parts.append(stdout)
+                stderr_parts.append(stderr)
+                if exit_code == 0:
+                    package_json = tmp_src / "package.json"
+                    try:
+                        scripts = json.loads(package_json.read_text(encoding="utf-8")).get("scripts") or {}
+                        build_script = str(scripts.get("build") or "").strip()
+                    except Exception as exc:
+                        raise RuntimeError(f"UI build failed: unable to read scripts.build from {package_json}: {exc}") from exc
+                    if not build_script:
+                        raise RuntimeError(f"UI build failed: scripts.build missing in {package_json}")
+                    build_script = self._prepare_ui_build_command(build_command=build_script, tmp_dest=tmp_dest)
+                    exit_code, stdout, stderr = await _run_build_process(shell_command=build_script)
                     stdout_parts.append(stdout)
                     stderr_parts.append(stderr)
+            else:
+                exit_code, stdout, stderr = await _run_build_process(shell_command=final_command)
+                stdout_parts.append(stdout)
+                stderr_parts.append(stderr)
 
-                stdout = "\n".join(part for part in stdout_parts if part)
-                stderr = "\n".join(part for part in stderr_parts if part)
-                if exit_code != 0:
-                    build_output = "\n".join(part for part in [stderr.strip(), stdout.strip()] if part)
-                    raise RuntimeError(f"UI build failed (exit={exit_code}):\n{build_output[-4000:]}")
-                if not (tmp_dest / "index.html").exists():
-                    raise RuntimeError(f"UI build failed: index.html missing in temp output {tmp_dest}")
+            stdout = "\n".join(part for part in stdout_parts if part)
+            stderr = "\n".join(part for part in stderr_parts if part)
+            if exit_code != 0:
+                build_output = "\n".join(part for part in [stderr.strip(), stdout.strip()] if part)
+                raise RuntimeError(f"UI build failed (exit={exit_code}):\n{build_output[-4000:]}")
+            if not (tmp_dest / "index.html").exists():
+                raise RuntimeError(f"UI build failed: index.html missing in temp output {tmp_dest}")
 
-                await asyncio.to_thread(shutil.rmtree, previous_dest, ignore_errors=True)
-                if build_dest.exists():
-                    build_dest.rename(previous_dest)
-                    swapped_old = True
-                try:
-                    tmp_dest.rename(build_dest)
-                except Exception:
-                    if swapped_old and previous_dest.exists() and not build_dest.exists():
-                        previous_dest.rename(build_dest)
-                    raise
+            await asyncio.to_thread(shutil.rmtree, previous_dest, ignore_errors=True)
+            if build_dest.exists():
+                build_dest.rename(previous_dest)
+                swapped_old = True
+            try:
+                tmp_dest.rename(build_dest)
+            except Exception:
+                if swapped_old and previous_dest.exists() and not build_dest.exists():
+                    previous_dest.rename(build_dest)
+                raise
 
-                await asyncio.to_thread(shutil.rmtree, previous_dest, ignore_errors=True)
-                self.logger.log(
-                    f"[bundle.ui] {kind} build done: dest={build_dest} index_html={(build_dest / 'index.html').exists()}",
-                    "INFO",
-                )
-            finally:
-                await asyncio.to_thread(shutil.rmtree, tmp_dest, ignore_errors=True)
-                await asyncio.to_thread(shutil.rmtree, tmp_src, ignore_errors=True)
+            await asyncio.to_thread(shutil.rmtree, previous_dest, ignore_errors=True)
+            self.logger.log(
+                f"[bundle.ui] {kind} build done: dest={build_dest} index_html={(build_dest / 'index.html').exists()}",
+                "INFO",
+            )
 
         try:
             await run_once_for_shared_bundle_storage(
@@ -1670,12 +1735,15 @@ class BaseEntrypoint:
                 allow_existing_while_locked=False,
                 log_prefix="[bundle.ui]",
             )
-        except TimeoutError:
-            self.logger.log(f"[bundle.ui] {kind} build failed: timeout after 600s", "ERROR")
+        except TimeoutError as exc:
+            self.logger.log(f"[bundle.ui] {kind} build failed: {exc}", "ERROR")
             raise
         except Exception:
             self.logger.log(f"[bundle.ui] {kind} build failed:\n{_tb.format_exc()}", "ERROR")
             raise
+        finally:
+            for cleanup_path in cleanup_paths:
+                await asyncio.to_thread(shutil.rmtree, cleanup_path, ignore_errors=True)
 
     def _active_ui_widget_aliases(self, widget_cfgs: Any) -> set[str]:
         aliases: set[str] = set()

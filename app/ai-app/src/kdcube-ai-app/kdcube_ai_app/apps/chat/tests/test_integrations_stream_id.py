@@ -106,6 +106,45 @@ async def test_load_bundle_props_defaults_preserves_request_stream_id(monkeypatc
 
 
 @pytest.mark.asyncio
+async def test_load_bundle_props_defaults_can_skip_runtime_lifecycle(monkeypatch):
+    calls: list[str] = []
+
+    async def _resolve_bundle_async(*args, **kwargs):
+        bundle_id = kwargs.get("bundle_id") or (args[0] if args else None)
+        return SimpleNamespace(id=bundle_id, path="/tmp/demo", module="entrypoint", singleton=False)
+
+    def _create_workflow_config(_cfg_req):
+        return SimpleNamespace(ai_bundle_spec=None)
+
+    def _get_workflow_instance(spec, wf_config, comm_context=None, redis=None, pg_pool=None):
+        del spec, wf_config, comm_context, redis, pg_pool
+        calls.append("instantiate")
+        return SimpleNamespace(bundle_props_defaults={"demo": True}, configuration={}), None
+
+    async def _get_workflow_instance_async(*args, **kwargs):
+        del args, kwargs
+        raise AssertionError("code-default reads must not run lifecycle hooks")
+
+    monkeypatch.setattr(integrations, "_resolve_bundle_spec_from_runtime", _resolve_bundle_async)
+    monkeypatch.setattr(integrations, "create_workflow_config", _create_workflow_config)
+    monkeypatch.setattr(integrations, "get_workflow_instance", _get_workflow_instance)
+    monkeypatch.setattr(integrations, "get_workflow_instance_async", _get_workflow_instance_async)
+
+    result = await integrations._load_bundle_props_defaults(
+        bundle_id="bundle.demo",
+        tenant="tenant-a",
+        project="project-a",
+        request=_request(stream_id="stream-abc"),
+        session=_session(),
+        evict_before_load=False,
+        run_lifecycle_hooks=False,
+    )
+
+    assert calls == ["instantiate"]
+    assert result["demo"] is True
+
+
+@pytest.mark.asyncio
 async def test_call_bundle_op_inner_preserves_request_stream_id(monkeypatch):
     captured = {}
 

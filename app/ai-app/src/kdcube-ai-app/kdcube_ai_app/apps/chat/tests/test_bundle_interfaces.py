@@ -875,13 +875,13 @@ async def test_admin_bundle_props_survives_code_defaults_load_failure(monkeypatc
         del args, kwargs
         return {"saved": True}
 
-    async def _get_workflow_instance_async(*args, **kwargs):
+    def _get_workflow_instance(*args, **kwargs):
         del args, kwargs
         raise AttributeError("No decorated bundle entrypoint found in module 'bundle.bad.entrypoint'")
 
     monkeypatch.setattr(integrations, "_resolve_bundle_spec_from_runtime", _resolve_bundle_async)
     monkeypatch.setattr(integrations, "store_get_bundle_props", _store_get_bundle_props)
-    monkeypatch.setattr(integrations, "get_workflow_instance_async", _get_workflow_instance_async)
+    monkeypatch.setattr(integrations, "get_workflow_instance", _get_workflow_instance)
     monkeypatch.setattr(integrations, "_get_app_pg_pool", lambda request: object())
 
     result = await integrations.get_bundle_props(
@@ -896,6 +896,35 @@ async def test_admin_bundle_props_survives_code_defaults_load_failure(monkeypatc
     assert result["defaults"] == {}
     assert result["defaults_error"]["code"] == "AttributeError"
     assert "No decorated bundle entrypoint found" in result["defaults_error"]["message"]
+
+
+@pytest.mark.asyncio
+async def test_admin_bundle_props_read_does_not_evict_loaded_bundle(monkeypatch):
+    captured = {}
+
+    async def _store_get_bundle_props(*args, **kwargs):
+        del args, kwargs
+        return {"saved": True}
+
+    async def _load_bundle_props_defaults(**kwargs):
+        captured.update(kwargs)
+        return {"default": True}
+
+    monkeypatch.setattr(integrations, "store_get_bundle_props", _store_get_bundle_props)
+    monkeypatch.setattr(integrations, "_load_bundle_props_defaults", _load_bundle_props_defaults)
+
+    result = await integrations.get_bundle_props(
+        bundle_id="bundle.demo",
+        request=_request(),
+        tenant="tenant-a",
+        project="project-a",
+        session=_session(),
+    )
+
+    assert captured["evict_before_load"] is False
+    assert captured["run_lifecycle_hooks"] is False
+    assert result["props"] == {"saved": True}
+    assert result["defaults"] == {"default": True}
 
 
 @pytest.mark.asyncio

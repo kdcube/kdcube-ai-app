@@ -15,13 +15,18 @@ Covers:
 
 from __future__ import annotations
 
+import asyncio
 import os
 import pathlib
+import signal
 from types import SimpleNamespace
 
 import pytest
 
-from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint import BaseEntrypoint
+from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint import (
+    BaseEntrypoint,
+    _communicate_ui_build_process,
+)
 
 
 def _make_entrypoint(
@@ -60,6 +65,49 @@ def _bump_mtime(path: pathlib.Path) -> None:
     # writes (e.g. some EFS configurations).
     stat = path.stat()
     os.utime(path, ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000))
+
+
+@pytest.mark.asyncio
+async def test_cancelled_ui_build_reaps_its_process_group(monkeypatch):
+    started = asyncio.Event()
+    signals: list[tuple[int, int]] = []
+
+    class _Process:
+        pid = 4312
+        returncode = None
+        wait_calls = 0
+
+        async def communicate(self):
+            started.set()
+            await asyncio.Event().wait()
+            return b"", b""
+
+        async def wait(self):
+            self.wait_calls += 1
+            self.returncode = -signal.SIGTERM
+            return self.returncode
+
+        def terminate(self):
+            raise AssertionError("process-group termination should be used")
+
+        def kill(self):
+            raise AssertionError("process-group termination should be used")
+
+    proc = _Process()
+    monkeypatch.setattr(os, "killpg", lambda pid, sig: signals.append((pid, sig)))
+
+    task = asyncio.create_task(
+        _communicate_ui_build_process(proc, timeout_seconds=60)
+    )
+    await started.wait()
+    task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert signals == [(proc.pid, signal.SIGTERM)]
+    assert proc.wait_calls == 1
+    assert proc.returncode == -signal.SIGTERM
 
 
 def test_compute_ui_widget_signature_changes_when_source_mtime_changes(tmp_path):

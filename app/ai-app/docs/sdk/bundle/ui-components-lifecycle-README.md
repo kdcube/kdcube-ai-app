@@ -45,7 +45,8 @@ Execution contexts:
 | Proc preload task | Imports bundles and runs `on_bundle_load()` for configured bundles. |
 | Proc request handler | Serves widget/main-view routes and may trigger a build if output is missing. |
 | Build subprocess | Runs `npm install`, `npm ci`, `vite build`, or the configured command. |
-| Shared storage | Stores built UI files, signatures, temporary source/output, and locks. |
+| Local temporary storage | Stores the copied build source and transient `node_modules` for the worker performing the build. |
+| Shared storage | Stores built UI files, temporary output, signatures, and cross-worker locks. |
 | ISO runtime | Not involved in UI component builds. |
 
 In ECS, Docker Compose, or any multi-worker deployment, each Uvicorn worker is a
@@ -191,7 +192,7 @@ For a widget alias `x`, the builder uses:
 | Item | Location |
 | --- | --- |
 | Source folder | `<bundle_root>/<src_folder>` or a resolved `bundle://` / `sdk://` path |
-| Temporary source | `<bundle_storage_root>/.ui.src.tmp.<pid>.<uuid>` |
+| Temporary source | `${BUNDLE_UI_BUILD_WORK_ROOT:-<system-temp>/kdcube-ui-build}/<operation>.<pid>.<uuid>` |
 | Temporary output | `<bundle_storage_root>/.ui.build.tmp.<pid>.<uuid>` |
 | Final widget output | `<bundle_storage_root>/ui/widgets/x` |
 | Widget signature | `<bundle_storage_root>/.ui.widgets/x.signature` |
@@ -202,6 +203,13 @@ For a widget alias `x`, the builder uses:
 
 The final output must contain `index.html`. For Vite apps, assets should be
 relative to the widget route, normally by setting `base: './'`.
+
+The temporary source is intentionally local to the proc worker. In particular,
+`npm install` must not create or remove `node_modules` on EFS or another shared
+bundle-storage mount. The temporary output stays on the shared filesystem so
+the final directory replacement is atomic. `BUNDLE_UI_BUILD_WORK_ROOT` can
+override the local work root when the container needs a specific writable
+volume.
 
 ## Build Algorithm
 
@@ -220,7 +228,7 @@ For each configured main view or widget:
    - shared source tree signatures
 6. If signature is current and `index.html` exists, skip.
 7. Acquire a shared-storage lock.
-8. Copy source into a temporary build source folder.
+8. Copy source into a worker-local temporary build source folder.
 9. Copy each `shared_sources` item into its configured target under the
    temporary source folder.
 10. Run the configured build command in the temporary source folder.
@@ -228,17 +236,19 @@ For each configured main view or widget:
 12. Atomically swap temporary output into the final output folder.
 13. Write the signature.
 14. Release the lock.
+15. Remove local source and any remaining temporary paths.
 
 ```mermaid
 flowchart TD
   Start["ensure UI build"]
   SigCurrent{"signature current<br/>and index.html exists?"}
   Lock["acquire shared-storage lock"]
-  Copy["copy source + shared_sources<br/>to .ui.src.tmp"]
+  Copy["copy source + shared_sources<br/>to worker-local temp"]
   Build["run npm/vite subprocess<br/>OUTDIR=.ui.build.tmp"]
   Valid{"temp index.html exists?"}
   Swap["atomic swap temp output<br/>to final ui path"]
   Sig["write signature"]
+  Cleanup["release lock, then clean<br/>worker-local source"]
   Done["serve or preload complete"]
   Fail["raise build error"]
 
@@ -251,11 +261,45 @@ flowchart TD
   Valid -- no --> Fail
   Valid -- yes --> Swap
   Swap --> Sig
-  Sig --> Done
+  Sig --> Cleanup
+  Cleanup --> Done
 ```
 
 The source folder is never modified by the builder. `npm install` runs inside
-the copied temporary source tree.
+the copied temporary source tree. Signature publication and shared-lock release
+happen before potentially expensive cleanup of that tree, so waiting workers
+observe the completed artifact without waiting for `node_modules` deletion.
+
+```text
+Browser request
+      |
+      v
+static entrypoint loader
+      |
+      +-- owns task in strong process-local registry
+      |          |
+      |          v
+      |   shared-storage lock + heartbeat
+      |          |
+      |          v
+      |   worker-local source tree
+      |   + npm/vite process group
+      |          |
+      |          v
+      |   shared temporary output
+      |          |
+      |          v
+      |   atomic artifact swap
+      |   -> signature write
+      |   -> lock release
+      |          |
+      |          v
+      |   local source cleanup
+      |
+      +-- HTTP client disconnects
+                 |
+                 +---- does not cancel the owned build task
+```
 
 ## Startup Preload
 
@@ -462,23 +506,59 @@ Browser iframe requests can be canceled by:
 - network/proxy timeout
 
 The platform must not let a canceled browser request poison shared UI state.
-The current static entrypoint loader shields the entrypoint load/build task from
-request cancellation. This means:
+The static entrypoint loader stores the load/build task in a strong
+process-local task registry and shields it from request cancellation. It is not
+an unowned fire-and-forget task: the registry owns it until completion and
+removes it through a completion callback. This means:
 
 - the original HTTP request may still fail or return a client-disconnect
   response
-- the build task should continue inside the worker
+- the build task continues inside the worker
 - the shared-storage signature should be written when the build completes
 - a later request should see a cache hit or "became current" instead of
   restarting the same build
 
 Build subprocess timeout:
 
-- each npm/vite subprocess is limited to 600 seconds
-- timeout kills the subprocess
+- each npm/vite subprocess is limited by
+  `BUNDLE_UI_BUILD_TIMEOUT_SECONDS`, default `600` seconds and minimum `30`
+- npm/vite runs in a dedicated process group
+- timeout or explicit task cancellation sends `SIGTERM` to the entire process
+  group, waits for a bounded grace period, then sends `SIGKILL` if necessary
+- the subprocess is awaited after termination so it is reaped
 - no signature is written
 - the lock is released in `finally`
 - the next request/preload can attempt the build again
+
+Normal HTTP disconnects therefore do not orphan or cancel the build.
+Administrative cancellation and timeout terminate the subprocess tree instead
+of leaving npm or Vite descendants behind. If the worker itself dies, its lock
+heartbeat stops; lock expiry lets another worker recover the shared operation.
+The process/container supervisor remains responsible for a hard worker crash.
+
+```text
+                         build task
+                             |
+              +--------------+---------------+
+              |              |               |
+      HTTP disconnect   timeout/admin     worker dies
+              |          cancellation          |
+              v              |                 v
+       task continues         v          heartbeat stops
+       under registry    SIGTERM group          |
+              |              |                 v
+              v         grace period       lock TTL expires
+       publish artifact       |                 |
+       + signature            v                 v
+       + release lock    SIGKILL if needed  another worker
+                             |              may retry
+                             v
+                        await/reap group
+                             |
+                             v
+                    release lock without
+                    publishing signature
+```
 
 Shared-lock wait behavior:
 
@@ -487,6 +567,24 @@ Shared-lock wait behavior:
 - lock TTL is controlled by `BUNDLE_UI_BUILD_LOCK_TTL_SECONDS`, default `900`
 - static UI builds do not serve stale output while locked unless the code
   explicitly opts into that mode
+
+## Administrative Reads Versus Runtime Lifecycle
+
+Reading effective app properties in Bundle Admin is a configuration inspection,
+not a bundle lifecycle transition. The props read path:
+
+- instantiates bundle code only to inspect `bundle_props_defaults`
+- does not evict the active bundle scope
+- does not invoke `on_bundle_load()`
+- therefore does not start, cancel, or restart a UI build
+
+Resetting props from code may reload code defaults, but it also skips runtime
+lifecycle hooks. UI preload and live UI routes remain the owners of
+`on_bundle_load()` and request-time fallback builds.
+
+This separation matters because an admin polling request can be retried by a
+browser or proxy. Such a read must never turn a transient timeout into repeated
+`npm install` executions.
 
 ## Concurrency Rules
 
@@ -641,6 +739,8 @@ Useful filters:
 | Widget route returns method-rendered payload instead of static app | `ui.widgets.<alias>` missing/disabled | Effective `ui.widgets` |
 | Static widget iframe is blank | Built `index.html` references root-relative assets | Vite `base: './'`, browser asset URLs |
 | Build repeats across workers | Signature not written, request cancellation before shielded build, stale lock, or differing signatures | `[bundle.ui] done`, `.ui.widgets/<alias>.signature`, lock owner logs |
+| Opening Bundle Admin props starts or restarts npm | Runtime is older than the non-lifecycle props-read contract, or a custom admin path invokes `on_bundle_load()` | Confirm props reads use non-evicting, non-lifecycle defaults inspection |
+| `build done` is followed by prolonged lock waits | Runtime is cleaning a shared `node_modules` tree before signature/lock completion | Confirm build source is under `BUNDLE_UI_BUILD_WORK_ROOT` and `[bundle.ui] done: op=...` follows artifact publication promptly |
 | Source edit not picked up on next HTML hit | Signature provider returned `None` (config disabled / src_folder missing) — falls back to legacy short-circuit | Workflow's `compute_ui_widget_signature(alias)` value, `ui.widgets.<alias>` props, log line "[bundle.ui] widget:<alias> build skipped" |
 | Source edit picked up on HTML hit but assets 404 | Browser cached old `index.html` referencing pre-rebuild asset hashes | Hard-reload the iframe; new `index.html` references new content-hashed assets |
 | One worker fails and another succeeds | Process-local manifest/cache/preload mismatch or request cancellation | `X-KDCube-Worker-Pid`, manifest validation logs |

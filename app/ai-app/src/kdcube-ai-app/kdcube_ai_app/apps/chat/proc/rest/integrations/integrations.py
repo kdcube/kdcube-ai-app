@@ -98,6 +98,7 @@ from kdcube_ai_app.infra.plugin.bundle_loader import (
     discover_bundle_interface_manifest,
     evict_bundle_scope,
     get_cached_manifest,
+    get_workflow_instance,
     get_workflow_instance_async,
     is_static_bundle_entrypoint_path,
     load_bundle_manifest,
@@ -1404,6 +1405,7 @@ async def _load_bundle_props_defaults(
         request: Request,
         session: UserSession,
         evict_before_load: bool = True,
+        run_lifecycle_hooks: bool = True,
         resolved_spec: Optional[BundleSpec] = None,
 ) -> Dict[str, Any]:
     spec_resolved = resolved_spec
@@ -1465,9 +1467,14 @@ async def _load_bundle_props_defaults(
     wf_config.ai_bundle_spec = spec_resolved
     redis = _get_app_redis(request)
     pg_pool = _get_app_pg_pool(request)
-    workflow, _mod = await get_workflow_instance_async(
-        spec, wf_config, comm_context=comm_context, redis=redis, pg_pool=pg_pool,
-    )
+    if run_lifecycle_hooks:
+        workflow, _mod = await get_workflow_instance_async(
+            spec, wf_config, comm_context=comm_context, redis=redis, pg_pool=pg_pool,
+        )
+    else:
+        workflow, _mod = get_workflow_instance(
+            spec, wf_config, comm_context=comm_context, redis=redis, pg_pool=pg_pool,
+        )
     defaults = getattr(workflow, "bundle_props_defaults", None) or {}
     defaults = dict(defaults)
     try:
@@ -1947,6 +1954,8 @@ async def get_bundle_props(
             project=project_id,
             request=request,
             session=session,
+            evict_before_load=False,
+            run_lifecycle_hooks=False,
         )
     except HTTPException:
         raise
@@ -2040,6 +2049,7 @@ async def reset_bundle_props_from_code(
             project=project_id,
             request=request,
             session=session,
+            run_lifecycle_hooks=False,
         )
     except HTTPException:
         raise
