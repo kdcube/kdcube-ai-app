@@ -4,7 +4,7 @@ title: "Namespace Services"
 summary: "Index and mental model for namespace-owning service providers, clients, object resolution, and app-to-app integration."
 status: current
 tags: ["sdk", "namespace-services", "providers", "clients", "resolvers", "apps"]
-updated_at: 2026-06-23
+updated_at: 2026-07-18
 keywords:
   [
     "namespace services",
@@ -80,6 +80,14 @@ The host uses only the routing namespace to find the provider. The provider's
 `event.resolve`, `object.get`, `object.schema`, and related operations decide
 what the owner key and remaining URI tail mean.
 
+Provider publication is explicit. A provider decorator describes a provider;
+the owning app must also contribute that provider instance to its current
+registry. Inheriting a provider-capable base class does not publish the
+provider. On app load, that complete registry is reconciled into discovery:
+current providers are upserted and providers that the same app no longer
+publishes are withdrawn. The exact lifecycle and Redis model live only in
+[Discovery Registry](discovery-README.md#ownership-and-publication-invariant).
+
 The same provider can be consumed by canvas cards, chat context chips,
 model-callable tools, API operations, MCP clients, Data Bus handlers, and
 scheduled jobs. The client surface is transport-neutral; each runtime chooses
@@ -100,7 +108,7 @@ Two apps, one configured edge, no shared code:
  └────────────────────────────┘         └─────────────────────────────────┘
         owner logic lives here       in-runtime bridge keeps tenant/user/project
 
-  Provider registers in Named Service Discovery when loaded.
+  Provider app publishes its explicit current registry when loaded.
   Consumer config names the namespace and client policy; provider location is
   normally resolved from the Redis-backed discovery table at call time.
 ```
@@ -135,10 +143,10 @@ and provider-backed refs gain a live cross-app/object-owner bridge.
 | [Providers](providers-README.md) | Provider contract, operation vocabulary, auth context, transport adapters, the presentation layer (the realm's human reader), and connected-account requirement declarations. |
 | [Clients](clients-README.md) | Client config, tool exposure, current resolver behavior, and client ids. |
 | [Integration](integration-README.md) | Visual provider-host/client-app flow using task-tracker and workspace. |
-| [Discovery Registry](discovery-README.md) | The per-tenant/project Redis discovery table: the provider record, key schema, TTL/expiry, the registration write path, and the rule that reads go through the discovery module. |
+| [Discovery Registry](discovery-README.md) | Canonical provider-publication lifecycle: explicit ownership, authoritative per-app reconciliation and withdrawal, Redis record/index schema, TTL/expiry, resolution, and the rule that reads go through the discovery module. |
 | [Object Refs, Presentation, And Actions](object-ref-presentation-and-actions-README.md) | Canonical UI/provider boundary: `object_ref` is opaque to components, visual identity comes from `namespace_presentation_config`, and actions come from provider resolvers. |
-| [ReAct Object Materialization](react-object-materialization-README.md) | Runtime-boundary diagram for `react.pull`, streamed `object.get`, `react.read`, owner `block.produce`, and prompt rendering. |
-| [ReAct Object Policy Bridge](react-object-policy-bridge-README.md) | Owner policy contract for namespace rehosters, event-source routing, block production, render hooks, and `original_object_stats`. |
+| [ReAct Object Materialization](react-object-materialization-README.md) | ReAct adapter diagram over the shared harness: `react.pull`, streamed `object.get`, `react.read`, owner `block.produce`, and prompt rendering. |
+| [ReAct Object Policy Bridge](react-object-policy-bridge-README.md) | ReAct policy adapter for harness rehosters, event-source routing, block production, render hooks, and `original_object_stats`. |
 | [Logical Reference Namespaces](../events/namespaces-README.md) | Foundational rules for `task:`, `mem:`, `cnv:`, `conv:fi:`, and other refs. |
 
 ## Current Scope
@@ -148,9 +156,10 @@ through Named Service Discovery:
 
 - a provider app exposes a `named_services()` registry object and may also
   expose a `named_service` API operation backed by that registry;
-- a provider app registers its providers into Redis-backed Named Service
-  Discovery after its local prerequisites are ready, including provider
-  `search_scopes` when it exposes multiple searchable object spaces;
+- a provider app explicitly contributes its owned providers and publishes its
+  complete current registry into Redis-backed Named Service Discovery after
+  local prerequisites are ready, including provider `search_scopes` when it
+  exposes multiple searchable object spaces;
 - a client app configures `surfaces.as_consumer` for the model tools,
   event-source/pull policies, and resolver surfaces allowed to use that
   namespace;

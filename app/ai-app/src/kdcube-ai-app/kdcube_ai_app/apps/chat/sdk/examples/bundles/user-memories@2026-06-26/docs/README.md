@@ -30,10 +30,12 @@ hosting app is sufficient and correct.
 ## What this app owns vs. derives
 
 - **Derives** (from `BaseEntrypointWithEconomicsAndMemory`): all memory widget
-  operations, the `mem` named-service provider + Redis discovery, reconciliation,
-  snapshots, schema-ensure, and the economics guard.
-- **Owns**: only the configuration that enables the widget and sets its scope,
-  plus this documentation. No domain code, no UI, no storage of its own.
+  operations, optional named-service provider/discovery plumbing,
+  reconciliation, snapshots, schema-ensure, and the economics guard.
+- **Owns**: the configuration that enables the widget, sets its scope, and sets
+  `memory.named_service.enabled: true` to publish `sdk.memory` for `mem`.
+  Other memory-capable apps leave that provider switch false and consume this
+  app through discovery. No domain code, no UI, no storage of its own.
 
 ## Storages
 

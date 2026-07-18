@@ -120,7 +120,9 @@ class MemoryEntrypointMixin:
 
     Bundle authors mounting memory must also configure the full subsystem
     surface: memory.* props, ui.widgets.memories, visibility.widget.memories,
-    tools/announce policy, storage/schema behavior, and tests. See
+    tools/announce policy, storage/schema behavior, and tests. Embedded memory
+    use does not publish the shared ``mem`` namespace. Only the app that owns
+    that provider should set ``memory.named_service.enabled: true``. See
     repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-subsystem-integration-README.md
     and repo:kdcube-ai-app/app/ai-app/docs/sdk/memory/user-memories-overview-README.md.
     """
@@ -134,6 +136,9 @@ class MemoryEntrypointMixin:
         return {
             "memory": {
                 "enabled": False,
+                "named_service": {
+                    "enabled": False,
+                },
                 "announce": {
                     "enabled": False,
                     "limit": 8,
@@ -196,7 +201,15 @@ class MemoryEntrypointMixin:
 
     def _memory_named_service_enabled(self) -> bool:
         memory_cfg = self._memory_config()
-        return _truthy(memory_cfg.get("enabled"), False)
+        named_service_cfg = (
+            memory_cfg.get("named_service")
+            if isinstance(memory_cfg.get("named_service"), dict)
+            else {}
+        )
+        return _truthy(memory_cfg.get("enabled"), False) and _truthy(
+            named_service_cfg.get("enabled"),
+            False,
+        )
 
     def _memory_named_service_default_scope_filter(self) -> str:
         memory_cfg = self._memory_config()

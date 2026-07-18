@@ -7,14 +7,14 @@ realm's storage or action rules.
 
 This is not the only way apps interact in KDCube. Apps can also expose API/MCP,
 Event Bus, Data Bus, cron/jobs, or UI surfaces. Use named services when the
-realm needs generic ReAct exploration/exploitation, Pinboard pins, Chat context,
-Scene open actions, and provenance.
+realm needs generic agent exploration/exploitation (including ReAct), Pinboard
+pins, Chat context, Scene open actions, and provenance.
 
 ## Runtime Shape
 
 ```text
 provider app
-  declares namespace: task
+  explicitly publishes namespace: task
   implements operations
     object.search
     object.get
@@ -32,6 +32,28 @@ consumer app
   receives normalized response
   renders through shared contracts
 ```
+
+## Publish Only From The Owner
+
+Defining a provider class is not enough to publish it. The owner app contributes
+the provider instance through `_named_service_providers()`; the base entrypoint
+assembles and publishes the complete registry.
+
+```python
+def _named_service_providers(self) -> list:
+    return [
+        *super()._named_service_providers(),
+        self._task_provider(),
+    ]
+```
+
+Do not contribute the provider from composition apps that merely use the
+realm, and do not make reusable mixins publish by inheritance. The current app
+registry is reconciled on load, so removing a contribution withdraws that
+app's old discovery record. Keep the lifecycle details in
+[Discovery Registry](../../sdk/namespace-services/discovery-README.md);
+consumer configuration stays in
+[Namespace Service Clients](../../sdk/namespace-services/clients-README.md).
 
 ## The Human Layer (Required Authoring Step)
 
@@ -142,4 +164,5 @@ implements neither check — both ride the platform boundary. Model:
 - [Namespace Service Providers](../../sdk/namespace-services/providers-README.md)
 - [Namespace Service Clients](../../sdk/namespace-services/clients-README.md)
 - [Namespace Service Integration](../../sdk/namespace-services/integration-README.md)
+- [Namespace Service Discovery](../../sdk/namespace-services/discovery-README.md)
 - [Resolver And Policy Registration](../../sdk/solutions/event-hub/resolver-and-policy-registration-README.md)

@@ -1,10 +1,10 @@
 ---
 id: repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/clients-README.md
 title: "Namespace Services: Clients"
-summary: "How bundles, agents, widgets, jobs, and external clients consume configured namespace service providers."
+summary: "How apps (bundles), agents, widgets, jobs, and external clients consume configured namespace service providers."
 status: design
-tags: ["sdk", "namespace-services", "clients", "tools", "resolvers", "bundles"]
-updated_at: 2026-06-23
+tags: ["sdk", "namespace-services", "clients", "tools", "resolvers", "apps", "bundles"]
+updated_at: 2026-07-18
 keywords:
   [
     "namespace service client",
@@ -90,10 +90,12 @@ surfaces:
             allowed: [object.resolve, object.action]
 ```
 
-The namespace key declares that this bundle may consume refs in that namespace.
-Provider location is normally resolved from Named Service Discovery. A provider
-bundle registers its available providers into the tenant/project Redis table
-when it is loaded.
+The namespace key declares that this app may consume refs in that namespace.
+Provider location is normally resolved from Named Service Discovery. The
+provider app explicitly publishes its complete current registry; the consumer
+does not acquire provider ownership by enabling a namespace. Publication,
+withdrawal, and Redis indexing are defined once in
+[Discovery Registry](discovery-README.md#ownership-and-publication-invariant).
 
 The discovery scope itself is portable runtime context. The platform carries a
 JSON-safe tenant/project discovery descriptor through `comm_ctx`, and the
@@ -551,15 +553,23 @@ object are different operations.
 
 ## Consent On The Named-Service Path
 
-A provider-backed realm's tool call can fail on a missing connected-account
-claim. The error is the standard structured consent envelope
-(`needs_connected_account_consent`: scoped claims, labeled candidates,
-absolute Connection Hub deep link, retry hint, agent instructions), and the
-in-chat path records the demand + raises the scoped banner exactly like a
-dedicated tool — consent is demand-driven at the ATTEMPT, never a turn-start
-sweep. Semantics owned by
+Agent calls can cross two independent consent boundaries:
+
+1. The hosted or external agent needs the user's per-agent grant for the
+   named-service resource (`delegated_agent_grant`, managed under **Delegated
+   by KDCube**).
+2. A provider-backed realm may additionally need the user's connected-account
+   claims (`needs_connected_account_consent`, managed under **Delegated to
+   KDCube**).
+
+The first missing boundary raises its structured consent demand at the tool
+attempt; there is no turn-start consent sweep. The agent never receives the
+external provider credential, and revoking either grant stops a call that needs
+both. The canonical model is
+[Agents Acting On Behalf Of The User](../solutions/connections/agent-acting-for-user/agent-acting-for-user-README.md);
+connected-account semantics are in
 [Delegated Accounts](../solutions/connections/delegated-accounts/delegated-accounts-README.md);
-what users see and narrow in the picker by
+picker presentation is in
 [Per-User Agent Capabilities](../solutions/user-settings/capabilities-README.md).
 
 ## Resolver Use

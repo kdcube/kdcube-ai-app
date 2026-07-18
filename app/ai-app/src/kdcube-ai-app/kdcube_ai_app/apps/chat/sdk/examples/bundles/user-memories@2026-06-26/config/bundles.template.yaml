@@ -38,6 +38,8 @@ bundles:
         # The mixin fills in reconciliation/snapshots/schema defaults.
         memory:
           enabled: true
+          named_service:
+            enabled: true
           announce:
             enabled: false
           tools:

@@ -1,10 +1,10 @@
 ---
 id: repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/discovery-README.md
 title: "Namespace Services: Discovery Registry"
-summary: "The per-tenant/project, Redis-backed discovery table where named-service providers announce themselves so consumers across processes can find them: the discovery record, Redis key schema, the registration write path, and the rule that reads always go through the discovery module."
-status: design
+summary: "The per-tenant/project, Redis-backed discovery table where explicitly owned named-service providers publish an authoritative per-app registry snapshot so consumers across processes can find them."
+status: current
 tags: ["sdk", "namespace-services", "discovery", "registry", "redis", "named-service-provider", "providers", "namespaces", "cross-process"]
-updated_at: 2026-06-26
+updated_at: 2026-07-18
 keywords:
   [
     "named service discovery",
@@ -15,6 +15,9 @@ keywords:
     "redis key schema",
     "register_provider",
     "register_registry",
+    "authoritative provider snapshot",
+    "provider withdrawal",
+    "discovery reconciliation",
     "service discovery read path",
     "namespace roster intros",
     "cross-process provider table",
@@ -35,10 +38,11 @@ to find which provider owns a namespace, **across processes**.
 
 The in-process `NamedServiceRegistry` (`registry.py`) is process-local: it holds
 the live provider objects loaded in one runtime and is the fastest local
-dispatch path. The discovery registry is the shared source of truth a consumer
-uses when the provider may live in another bundle, another process, or behind a
-transport. A provider bundle publishes its registry into discovery on load; any
-consumer with the same tenant/project then resolves the provider from Redis.
+dispatch path. The discovery registry is the shared routing source a consumer
+uses when the provider may live in another app package, another process, or
+behind a transport. A provider app publishes its registry into discovery on
+load; any consumer with the same tenant/project then resolves the provider from
+Redis. The provider remains the semantic authority for the realm.
 
 The implementation is `RedisNamedServiceDiscovery` in
 `kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers.discovery`. One
@@ -51,6 +55,46 @@ from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers import (
 
 discovery = RedisNamedServiceDiscovery(redis, tenant=tenant, project=project)
 ```
+
+## Ownership And Publication Invariant
+
+Discovery records what an app **currently publishes**. It does not decide which
+domain an app owns and it does not turn inherited code into a provider surface.
+
+```text
+provider implementation
+  describes one realm and its operations
+
+app registry
+  explicitly chooses which provider instances this app publishes
+
+discovery
+  indexes that current registry for cross-process lookup
+```
+
+The `@named_service_provider(...)` decorator describes a provider class. An app
+publishes an instance only by contributing it to its `NamedServiceRegistry`,
+normally through `_named_service_providers()` on `BaseEntrypoint`. A reusable
+base class or mixin may implement provider support, but support alone is not
+ownership. Any provider switch on reusable infrastructure must default off; the
+dedicated owner enables it explicitly.
+
+For example, `user-memories@2026-06-26` explicitly enables and publishes the
+`sdk.memory` provider for `mem`. Task Tracker publishes its task provider only.
+Using memory helpers or inheriting memory-capable infrastructure in another app
+must not make that app a second memory provider.
+
+Each publication is authoritative only for one app identity (`bundle_id`):
+
+- providers present in the app's current registry are upserted;
+- previous records for that same app that are absent now are withdrawn;
+- publishing an empty registry withdraws every previous provider for that app.
+
+This does **not** make discovery a global one-namespace/one-provider map.
+Different apps may intentionally publish providers for the same base namespace
+when operations, refs, or object kinds are partitioned. That is an explicit
+architecture choice; accidental duplicate ownership through inheritance is
+not. Request resolution ranks the eligible entries.
 
 ## The Discovery Record Per Provider
 
@@ -134,17 +178,19 @@ longer resolves and logs a `missing_records` count.
 
 ## Registration (Write Path)
 
-A provider bundle publishes its providers into discovery when the bundle is
-loaded and its local prerequisites (storage, indexes) are ready — typically in
-`on_bundle_load`. Two methods write:
+A provider app publishes its current registry into discovery when the app is
+loaded — typically through `BaseEntrypoint.on_bundle_load`. Two methods write,
+with deliberately different lifecycle semantics:
 
 - `register_registry(registry, *, bundle_id, transport="bundle_registry",
-  registry_method="named_services", ttl_seconds=None)` — iterates
-  `registry.providers()` and registers each provider's spec.
+  registry_method="named_services", ttl_seconds=None)` — reconciles the app's
+  complete current provider set. It upserts current providers and withdraws
+  records previously published by the same `bundle_id` that are now omitted.
 - `register_provider(spec, *, bundle_id, transport="bundle_registry",
   registry_method="named_services", endpoint=None, ttl_seconds=None)` —
-  registers one spec. Requires a resolvable `bundle_id` (from the argument or
-  `spec.bundle_id`), else it raises `ValueError`.
+  upserts one spec without reconciling the rest of the app's registry. Requires
+  a resolvable `bundle_id` (from the argument or `spec.bundle_id`), else it
+  raises `ValueError`.
 
 `register_provider` stores the **full** spec — including `intro`, `search_scopes`,
 `operations`, `refs`, and `object_kinds` — as the JSON entry under the
@@ -153,15 +199,33 @@ per-provider key, then adds that key to the `:providers` set and to each
 logs a structured registration line (scope, provider, bundle, namespaces,
 endpoint, retention, refs, object_kinds, search_scopes, operations).
 
+When an existing provider changes namespaces, registration removes its key from
+the old namespace indexes before adding the new memberships. When
+`register_registry` withdraws a provider, it removes the provider key from the
+global index, every namespace index recorded in the old entry, and Redis
+itself. Persistent discovery (`ttl == 0`) therefore remains correct when an app
+stops publishing a provider; operators should not need routine manual Redis
+cleanup.
+
 ```python
-discovery = RedisNamedServiceDiscovery(redis, tenant=tenant, project=project)
-await discovery.register_registry(
-    self.named_services(),
-    bundle_id="task-tracker@1-0",
-    transport="bundle_registry",
-    registry_method="named_services",
+from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers import (
+    publish_registry_discovery,
+)
+
+await publish_registry_discovery(
+    self.named_services(),  # may be empty: empty is an authoritative snapshot
+    redis=self.redis,
+    tenant=tenant,
+    project=project,
+    bundle_id=self.BUNDLE_ID,
+    logger=self.logger,
 )
 ```
+
+`publish_registry_discovery(...)` is the normal app-level entry point. It must
+still call `register_registry` for an empty registry so previous records can be
+withdrawn. It no-ops only when Redis or tenant/project/app identity is
+unavailable.
 
 The discovery scope itself is portable runtime context. `bind_named_service_discovery(...)`
 binds an instance to a `ContextVar` and publishes a JSON-safe
@@ -173,11 +237,11 @@ client through tool registries. See
 
 ## Reading: Go Through The Discovery Module
 
-**The discovery module is the single entry point for reads.** Consumers resolve
+**The discovery module is the single entry point for routing reads.** Consumers resolve
 providers through its read methods; they do not SCAN raw Redis keys and do not
 treat the process-local `NamedServiceRegistry` as the authoritative provider
 table. The process-local registry only knows providers loaded in the current
-runtime; the discovery table is the cross-process source of truth. Reading
+runtime; the discovery table is the cross-process routing source. Reading
 through the module keeps record decoding, missing-record tolerance, namespace
 scoping, and ranking in one place.
 

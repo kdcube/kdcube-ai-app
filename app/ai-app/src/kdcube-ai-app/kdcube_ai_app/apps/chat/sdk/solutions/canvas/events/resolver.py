@@ -289,10 +289,12 @@ class CanvasObjectResolver:
     resolver_status = "unknown"
 
     def matches_ref(self, ref: str) -> bool:
-        return bool(self.namespace) and namespace_for_ref(ref) == self.namespace
+        namespace = str(self.namespace or "").strip().lower().rstrip(":")
+        raw = str(ref or "").strip().lower()
+        return bool(namespace) and (raw == namespace or raw.startswith(f"{namespace}:"))
 
     def match_score(self, ref: str) -> int:
-        return 100 if self.matches_ref(ref) else 0
+        return 100 + len(str(self.namespace or "")) if self.matches_ref(ref) else 0
 
     def capabilities_for_ref(self, ref: str) -> Dict[str, bool]:
         return {"preview": False, "open": False, "download": False, "rehost": False}
@@ -308,7 +310,7 @@ class CanvasObjectResolver:
         return ""
 
     def base_response(self, *, ref: str, action: str) -> Dict[str, Any]:
-        namespace = namespace_for_ref(ref)
+        namespace = str(self.namespace or "").strip().lower() or namespace_for_ref(ref)
         response: Dict[str, Any] = {
             "ok": True,
             "action": action,

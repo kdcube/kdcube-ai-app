@@ -2,9 +2,9 @@
 id: repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/integration-README.md
 title: "Namespace Services: Integration Flow"
 summary: "Visual host/client integration flow for namespace service providers, using task-tracker and workspace as the current reference path."
-status: design
+status: current
 tags: ["sdk", "namespace-services", "integration", "task-tracker", "workspace", "scene", "canvas", "chat"]
-updated_at: 2026-07-09
+updated_at: 2026-07-18
 keywords:
   [
     "namespace service integration",
@@ -28,9 +28,9 @@ see_also:
 ---
 # Namespace Services: Integration Flow
 
-This is the current reference shape for connecting one bundle that owns a
-namespace to another bundle that wants to display, search, open, or otherwise
-act on that namespace.
+This is the current reference shape for connecting one app (bundle) that owns a
+namespace to another app that wants to display, search, open, or otherwise act
+on that namespace.
 
 ## Notation
 
@@ -102,8 +102,9 @@ TaskProvider bundle load
         v
 
 TaskProvider.entrypoint.on_bundle_load
-  reads TaskProvider.named_services().providers()
-  writes Discovery.entry into Redis:
+  explicitly contributes TaskProvider to the app registry
+  publishes the complete current registry
+  upserts Discovery.entry into Redis:
     Discovery.entry.scope = Request.tenant/project
     Discovery.entry.bundle_id = task-tracker@1-0
     Discovery.entry.provider_id = task.issue
@@ -111,6 +112,7 @@ TaskProvider.entrypoint.on_bundle_load
     Discovery.entry.refs = TaskProvider.spec.refs
     Discovery.entry.object_kinds = TaskProvider.spec.object_kinds
     Discovery.entry.search_scopes = TaskProvider.spec.search_scopes
+  withdraws any previous task-tracker provider omitted from this registry
 
         |
         v
@@ -128,6 +130,11 @@ These adapters do not own task semantics. They only know:
   Consumer.config.allowed surfaces/operations
   Discovery can find the provider when a request happens
 ```
+
+The registry snapshot is authoritative for Task Tracker only. It does not
+withdraw another app's entries, and it does not make discovery globally
+exclusive by namespace. Full ownership and reconciliation semantics are in
+[Discovery Registry](discovery-README.md#ownership-and-publication-invariant).
 
 ## The Two Readers Of One Self-Description
 
@@ -182,7 +189,7 @@ argument should I use for search?" path.
         v
 
 2. Named Service Discovery
-   executor: RedisNamedServiceDiscovery.register(...)
+   executor: publish_registry_discovery(...) -> register_registry(...)
    surface: tenant/project discovery table
    customized: no, generic SDK persistence
    stores:
@@ -960,11 +967,14 @@ operation name or the two-step host/cite strategy.
 ## Provider Host Checklist
 
 1. Define a provider class using `@named_service_provider(...)`.
-2. Register that provider in a `NamedServiceRegistry`.
-3. Expose `named_services()` so same-KDCube clients can call the registry
-   directly.
-4. Register the provider registry into Named Service Discovery during
-   `on_bundle_load` after required local storage/indexes are ready.
+2. Make the owner app contribute the provider instance through
+   `_named_service_providers()`. A decorator or provider-capable base class is
+   not publication.
+3. Let `BaseEntrypoint.named_services()` assemble the registry so same-KDCube
+   clients can call it directly.
+4. Let `BaseEntrypoint.on_bundle_load` publish the complete registry snapshot
+   into discovery. Omitted providers for this app are withdrawn, including when
+   the current registry is empty.
 5. Expose one bounded API operation, normally `@api(alias="named_service")`,
    when `bundle_operation` or external clients need an API facade.
 6. Dispatch the operation with `dispatch_named_service_api_request(...)`; the
@@ -1032,7 +1042,9 @@ object_ref -> namespace -> Named Service Discovery -> provider endpoint -> provi
 Named Service Discovery is a Redis-backed tenant/project provider table. It is
 not a one-namespace/one-bundle map: multiple bundles may register providers for
 the same namespace when they expose different operations, refs, or object
-kinds. The runtime selects a provider per request.
+kinds. The runtime selects a provider per request. This page only shows the
+flow; the canonical write/read lifecycle is
+[Discovery Registry](discovery-README.md).
 
 For model clients, `provider.about` explains the service and base objects.
 `object.schema` explains concrete object payloads. Provider ids may use an

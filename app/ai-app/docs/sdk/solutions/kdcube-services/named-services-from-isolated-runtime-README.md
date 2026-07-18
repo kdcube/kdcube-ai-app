@@ -256,9 +256,13 @@ user-visible. The relay therefore makes the *effect* exactly-once:
 | `DATA_BUS_HANDLER_TIMEOUT_SECONDS` | 120 | worker-side cap on one handler invocation |
 | `DATA_BUS_MAX_RETRIES` | 5 | worker retry budget before the DLQ |
 
-## What a provider bundle must do to serve relayed calls
+## What A Provider App Must Do To Serve Relayed Calls
 
-Declare the handler — one method:
+The app must already own and explicitly publish the provider through its
+named-service registry. Discovery publication is separate from relay
+transport; see
+[Discovery Registry](../../namespace-services/discovery-README.md#ownership-and-publication-invariant).
+Then declare the relay handler:
 
 ```python
 from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers.relay import (
@@ -271,9 +275,10 @@ async def named_service_relay(self, ctx, message):
     return await handle_named_service_relay(ctx, message)
 ```
 
-`kdcube-services@1-0` ships this handler, so mail, slack, and conversations
-are relay-reachable out of the box. A bundle serving its own namespace adds
-the same three lines to become callable from isolated runtimes.
+`kdcube-services@1-0` ships this handler for its published providers, so mail,
+Slack, and conversations are relay-reachable out of the box. An owner app
+serving another namespace adds the same method to make its already-published
+provider callable from isolated runtimes.
 
 ## Related
 

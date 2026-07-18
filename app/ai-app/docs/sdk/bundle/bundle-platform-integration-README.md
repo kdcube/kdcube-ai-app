@@ -1610,6 +1610,11 @@ Use these rules for new bundles:
    default) unless process-local or instance-local semantics are required.
    See [docs/sdk/bundle/bundle-scheduled-jobs-README.md](bundle-scheduled-jobs-README.md)
    for details on span semantics, `expr_config` resolution, and local debug.
+12. Publish a named-service realm only from its owner app. A provider
+    decorator or provider-capable base class is not publication: contribute the
+    provider explicitly through `_named_service_providers()` and let the base
+    entrypoint reconcile the complete registry on load. See
+    [Namespace Service Discovery](../namespace-services/discovery-README.md#ownership-and-publication-invariant).
 
 Important current rule:
 

@@ -1,10 +1,10 @@
 ---
 id: repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/providers-README.md
 title: "Namespace Services: Providers"
-summary: "Transport-neutral SDK concept for bundles and platform subsystems that publish namespace service provider surfaces: namespace ownership, object operations, resolvers, capabilities, relations, and integrations over API, MCP, Data Bus, or local adapters."
-status: design
-tags: ["sdk", "namespace-services", "named-service-provider", "services", "namespaces", "objects", "resolvers", "mcp", "api", "data-bus", "bundles"]
-updated_at: 2026-07-09
+summary: "Transport-neutral SDK concept for apps (bundles) and platform subsystems that publish namespace service provider surfaces: namespace ownership, object operations, resolvers, capabilities, relations, and integrations over API, MCP, Data Bus, or local adapters."
+status: current
+tags: ["sdk", "namespace-services", "named-service-provider", "services", "namespaces", "objects", "resolvers", "mcp", "api", "data-bus", "apps", "bundles"]
+updated_at: 2026-07-18
 keywords:
   [
     "named service provider",
@@ -62,6 +62,33 @@ Use **named service provider** for the top-level concept. Use **namespaced
 service** for the namespace-owning subtype. Use **object resolver** for one
 operation family inside a provider. Use **scene surface** for mounted UI
 iframe/widget targets.
+
+## Provider Ownership Is Explicit
+
+Declaring a provider class and publishing it from an app are separate actions.
+The decorator defines the provider contract; the app registry declares
+ownership in this deployment.
+
+```python
+class FreightEntrypoint(BaseEntrypointWithEconomics):
+    def _named_service_providers(self) -> list:
+        providers = list(super()._named_service_providers())
+        providers.append(self._freight_provider())
+        return providers
+```
+
+`BaseEntrypoint` builds `named_services()` from that list and publishes the
+complete registry on load. Reusable base classes and mixins must not publish a
+provider merely because they implement its helpers. Optional provider
+contributions default off; the dedicated owner enables and contributes them
+explicitly.
+
+The app's published registry is an authoritative snapshot for that app:
+providers omitted from a later snapshot are withdrawn. Multiple apps may still
+serve the same namespace when that partition is intentional and their
+operations, refs, or object kinds let discovery select correctly. Redis keys,
+empty-registry withdrawal, namespace-index reconciliation, and resolution are
+owned by [Discovery Registry](discovery-README.md); they are not repeated here.
 
 ## Mental Model
 
@@ -370,7 +397,7 @@ from kdcube_ai_app.apps.chat.sdk.context.memory.instructions import (
 )
 
 @named_service_provider(
-    provider_id="memory.records",
+    provider_id="sdk.memory",
     namespace="mem",
     label="User memories",
     description="SDK memory namespace provider for durable user-memory records.",
@@ -1134,8 +1161,10 @@ decides how to mount or focus the iframe.
 
 ## Provider Declaration
 
-The SDK package lets a bundle declare a provider once and expose that provider
-through enabled transports.
+The SDK package lets an app define one provider contract and expose that
+provider through enabled transports. The owner must still contribute a provider
+instance to the app registry as described in
+[Provider Ownership Is Explicit](#provider-ownership-is-explicit).
 
 ```yaml
 named_service_providers:
@@ -1258,11 +1287,12 @@ Provider registration and consumer configuration are different surfaces.
 Provider bundles expose code and register provider records:
 
 ```text
-Provider bundle
+Provider app (bundle)
   @named_service_provider(...)
-  named_services() -> NamedServiceRegistry
+  _named_service_providers() -> explicit owned provider instances
+  BaseEntrypoint.named_services() -> NamedServiceRegistry
   @api(alias="named_service") optional transport facade
-  on_bundle_load() -> Redis Named Service Discovery registration
+  BaseEntrypoint.on_bundle_load() -> authoritative discovery publication
 ```
 
 Consumer bundles decide which of those registered provider surfaces they use:
@@ -1308,29 +1338,12 @@ agents, event-source policies, pull policies, and UI resolver surfaces may use
 that namespace. Provider location is normally resolved from Named Service
 Discovery.
 
-Provider bundles register their available providers into the Redis-backed
-tenant/project discovery table when the bundle is loaded and ready:
-
-```python
-from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers import (
-    RedisNamedServiceDiscovery,
-)
-
-discovery = RedisNamedServiceDiscovery(redis, tenant=tenant, project=project)
-await discovery.register_registry(
-    self.named_services(),
-    bundle_id="task-tracker@1-0",
-    transport="bundle_registry",
-    registry_method="named_services",
-)
-```
-
-Named Service Discovery is a provider index. It can contain multiple providers
-for the same namespace, including providers from different bundles. Each entry
-advertises operations, object kinds, and provider ref scopes so the runtime can
-choose the provider per request. Those ref scopes are not an event-source
-resolver. URI interpretation still belongs to the provider function exposed by
-`event.resolve`.
+The provider app publishes the complete registry assembled from its explicit
+contributions. Discovery can contain multiple intentional providers for one
+namespace and selects per request from advertised operations, refs, and object
+kinds. URI interpretation still belongs to provider `event.resolve`; discovery
+does not parse domain refs. The publication/reconciliation algorithm is
+canonical in [Discovery Registry](discovery-README.md#registration-write-path).
 
 `surfaces.as_consumer.agents.<agent>.tools[*].namespaces.<namespace>.allowed`
 controls which provider operations become model-callable tools for a specific
@@ -1665,32 +1678,21 @@ The helper registers `NamedServiceCanvasObjectResolver` instances. A `task:`
 card then resolves by calling the owning bundle's `named_service` operation
 through the request-bound bridge, preserving the user's current auth/session.
 
-## Implementation Order
+## Integration Rule
 
-1. Define SDK types and provider/client interfaces.
-2. Add local provider registry and local client dispatch.
-3. Add API adapter for widgets and scene hosts.
-4. Add MCP adapter for external tools/clients with request-level auth
-   context.
-5. Add Data Bus adapter for durable async commands.
-6. Migrate existing resolver actions such as `canvas_object_action` to delegate
-   to named service provider `object.action`.
-7. Add provider declarations for task, memory, canvas, ReAct artifacts, and
-   knowledge as each owner is ready.
+Use the named-service provider as the canonical cross-app contract for generic
+realm operations. A widget or app may also expose REST, MCP, Data Bus, or scene
+surfaces for its own product workflows; those are distinct surfaces, not proof
+that the app owns or publishes a named-service namespace.
 
-Existing bundle-specific operations can stay as compatibility routes while
-they delegate to the named service provider.
-
-For canvas, this means a scene or widget may keep calling the existing
-`canvas_search` and `canvas_patch` bundle operations. The consumer bundle should
-implement those aliases by dispatching to its registered `cnv` provider and then
-returning the same legacy result envelope the UI already expects. This keeps the
-browser transport stable while canvas search/upsert semantics move to the
-named-service contract.
+Add a provider contribution only in the owner app. Consumers configure access
+under `surfaces.as_consumer` and call through the generic client/resolver
+adapters. Do not add a provider to a convenient composition app merely to make
+another owner's namespace reachable.
 
 ## Current SDK Package
 
-The initial SDK package is:
+The SDK package is:
 
 ```text
 kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers
@@ -1722,6 +1724,9 @@ declare the intended exposure before each adapter is mounted.
 When introducing a named service provider:
 
 - choose one owner;
+- contribute the provider explicitly from that owner app's
+  `_named_service_providers()`; provider-capable inheritance is not
+  publication;
 - define provider id, labels, and purpose;
 - define canonical ref grammar and object kinds when the provider owns refs;
 - define `provider.about` and `provider.capabilities`;

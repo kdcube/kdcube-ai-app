@@ -38,7 +38,7 @@ an app with only widgets is as valid as one with only a chat workflow.
 | Background jobs | `@on_job`, `@cron` | Queue-driven and scheduled work | [Bundle Interfaces § Background job interface](../bundle-interfaces-README.md), [Scheduled Jobs](../bundle-scheduled-jobs-README.md) |
 | Data bus | `@data_bus_handler` | Durable widget↔app message exchange | [Bundle Interfaces § Durable Data Bus](../bundle-interfaces-README.md) |
 | Public content | `@public_content` | Discoverable published content | [Public Content Provider](../public-content-provider-README.md) |
-| Named services | provider registration | Typed operations other apps call in-process or over API | [Bundle Subsystem Integration](../bundle-subsystem-integration-README.md) |
+| Named services | explicit provider contribution to the app registry | Typed realm operations other apps call through local/API/MCP/Data Bus adapters | [Namespace Service Providers](../../namespace-services/providers-README.md) |
 
 ## The descriptor family: `surfaces.as_provider.*`
 
@@ -76,6 +76,11 @@ Two rules keep this honest:
   is public, app-authenticated, or Connection Hub managed — a per-surface
   choice with different guard stacks, detailed in
   [Bundle Transports § Who authenticates MCP](../bundle-transports-README.md).
+- **Named-service ownership is explicit.** A provider decorator or a
+  provider-capable base class does not publish a realm. The owner app
+  contributes the provider to its registry; discovery reconciles that complete
+  current registry. See
+  [Discovery Registry](../../namespace-services/discovery-README.md#ownership-and-publication-invariant).
 
 ## Provider surfaces are consumed as surfaces
 

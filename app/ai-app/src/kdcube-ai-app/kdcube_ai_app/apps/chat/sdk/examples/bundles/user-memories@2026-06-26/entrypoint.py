@@ -110,6 +110,7 @@ class UserMemoriesEntrypoint(BaseEntrypointWithEconomicsAndMemory):
             # WIDGET (and the `mem` named service) are the product.
             "memory": {
                 "enabled": True,
+                "named_service": {"enabled": True},
                 "announce": {"enabled": False},
                 "tools": {"enabled": False},
                 "widget": {

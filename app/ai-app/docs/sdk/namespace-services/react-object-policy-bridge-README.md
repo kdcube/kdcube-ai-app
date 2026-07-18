@@ -1,10 +1,10 @@
 ---
 id: repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/react-object-policy-bridge-README.md
 title: "Namespace Services: ReAct Object Policy Bridge"
-summary: "How named-service objects, event sources, namespace rehosters, block-production policies, rendering policies, and ReAct pull/read fit together without namespace-specific ReAct code."
-status: design
+summary: "How the shared harness, named-service owner policies, and the ReAct pull/read adapter fit together without namespace-specific generic code."
+status: current
 tags: ["sdk", "namespace-services", "react", "block-production", "object-ref", "event-source", "policies"]
-updated_at: 2026-06-23
+updated_at: 2026-07-18
 keywords:
   [
     "react.pull",
@@ -25,18 +25,28 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/events/event-subsystem-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/events/namespaces-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/event-source/block-production-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/runtime/harness/events/artifact-resolution-and-materialization-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/runtime/harness/timeline/provider-projection-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/runtime/harness/workspace/references-and-paths-README.md
 ---
 # Namespace Services: ReAct Object Policy Bridge
 
-This document defines the policy bridge between ReAct and namespace-owning
-providers. It is the contract for objects that are not native ReAct files but
-must become usable by an agent through the normal `react.pull` and
-`react.read` machinery.
+This document defines the ReAct policy adapter between the shared agentic
+harness and namespace-owning providers. It is the contract for objects that
+are not conversation files but must become usable through `react.pull` and
+`react.read`.
+
+The harness owns generic ref resolution, bytes, and workspace paths. ReAct owns
+the tool and prompt/timeline adaptation described here. Canonical generic
+materialization is documented in
+[Artifact Resolution And Materialization](../../runtime/harness/events/artifact-resolution-and-materialization-README.md);
+this page does not redefine it.
 
 The rule is strict:
 
 ```text
-Generic ReAct tools carry identity and materialized bytes.
+The shared harness carries identity, resolves bytes, and owns paths.
+ReAct tools adapt those primitives to the agent round and timeline.
 Namespace owners decide object semantics through registered policies.
 ```
 
@@ -48,10 +58,16 @@ policy system.
 ## Boundary
 
 ```text
-ReAct generic layer
+Shared agentic harness
+  owns:
+    - canonical ref parsing and authorized byte resolution
+    - conv:fi: logical identity and physical workspace path grammar
+    - materialization into files, projects, snapshots, attachments, or external
+    - framework-neutral pull primitives
+
+ReAct adapter
   owns:
     - tool protocol: react.pull, react.read
-    - conv:fi: materialized artifact paths
     - pull state mapping: conv:fi: logical_path -> original object_ref
     - generic read target fields:
         object_ref
@@ -130,7 +146,7 @@ Timeline.render()
 
 | Surface | Registered by | Called by | Purpose |
 | --- | --- | --- | --- |
-| `artifact_namespace_rehoster(namespace=...)` | namespace owner | `react.pull` | Materialize a namespace ref into a local `conv:fi:` artifact while preserving `object_ref`. |
+| `artifact_namespace_rehoster(namespace=...)` | namespace owner | harness resolution; `react.pull` is one caller | Materialize a namespace ref into a local `conv:fi:` artifact while preserving `object_ref`. |
 | `event_source_resolver(namespace=...)` | namespace owner or named-service adapter | `react.read` owner dispatch | Resolve an `object_ref` to the owner event source when `named_services.<namespace>` is not enough. |
 | `event_source_reader(namespace=...)` | namespace owner | runtime/policy code | Resolve a canonical ref to the owner's current structured payload. This is not the model-facing exact-content path. |
 | `block_production_policy(...)` | namespace owner | `react.read` | Convert an object/read target into bounded model-visible blocks or stats blocks. |
@@ -264,8 +280,8 @@ arrived; the object ref/revision identify the board.
 
 For a namespace-owning app/provider:
 
-- Register an `artifact_namespace_rehoster` if the object should be pullable by
-  `react.pull`.
+- Register an `artifact_namespace_rehoster` if the object should be pullable
+  through the harness, including by `react.pull`.
 - Preserve the canonical `object_ref` in the rehoster result.
 - Register an `event_source_resolver` when the namespace needs custom
   URI-to-event-source routing.

@@ -3,8 +3,8 @@ id: repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/ontologic-tools-RE
 title: "Namespace Services: Ontologic Tools"
 summary: "The named-service ontologic tools as one coherent model-facing surface for operating any realm by satisfying schemas."
 status: design
-tags: ["sdk", "namespace-services", "ontologic-tools", "react", "schema", "affordance"]
-updated_at: 2026-06-25
+tags: ["sdk", "namespace-services", "ontologic-tools", "agents", "schema", "affordance"]
+updated_at: 2026-07-18
 keywords:
   [
     "ontologic tools",
@@ -28,9 +28,11 @@ see_also:
 # Namespace Services: Ontologic Tools
 
 The named-service **ontologic tools** are the single model-facing interface for
-operating any realm. A realm owner registers a provider; an integrating app
-configures which operations its agents may call; the agent then works one
-realm through the same small, generic tool set regardless of domain.
+operating any realm. A realm owner explicitly publishes a provider; an
+integrating app configures which operations its agents may call; the agent then
+works one realm through the same small, generic tool set regardless of domain.
+Publication lifecycle details belong to
+[Discovery Registry](discovery-README.md), not this tool-model page.
 
 This page is the conceptual surface: how the tools compose and why "operate a
 realm" reduces to "satisfy a schema". It does not restate per-operation detail
@@ -226,8 +228,9 @@ itself** — the underlying file/record everywhere it is used — and is a separ
 rarer operation, never the way to take an item off a list.
 
 These bare-list / `{add, remove}` / `dedup_key` / removal defaults are also
-injected into the named-services ReAct agent instruction, so the agent applies
-them without reading each schema in detail.
+part of the shared named-service agent guidance. The ReAct harness injects that
+guidance directly; other agent integrations can expose the same provider
+contract and tools without changing their semantics.
 
 `update_strategy`, `dedup_key`, the `{add, remove}` delta, and these removal
 rules are **shipped** on the task realm. Other surface improvements below remain

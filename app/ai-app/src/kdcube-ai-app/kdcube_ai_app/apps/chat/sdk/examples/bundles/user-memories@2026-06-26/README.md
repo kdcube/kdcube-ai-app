@@ -33,9 +33,10 @@ points the build at the shared SDK widget source. It ships no UI of its own.
 - **`memories` widget** — the SDK memories widget, built from
   `sdk://context/memory/ui/widget/memories`. Reachable at
   `…/bundles/{tenant}/{project}/user-memories@2026-06-26/widgets/memories`.
-- **`mem` named service** — registered automatically when memory is enabled, so
-  another app's agent can resolve/search/mutate memory objects without embedding
-  the module.
+- **`mem` named service** — this owner app explicitly enables
+  `memory.named_service.enabled`; enabling embedded memory alone does not
+  publish the namespace. Other apps resolve/search/mutate memory objects
+  through this provider without republishing the module.
 - **`memories` MCP endpoint** — a public proc-served MCP endpoint guarded by
   Connection Hub delegated credentials. It requires authority `delegated_client`; each
   exposed MCP tool declares its required grant (`memories:read` for
@@ -55,8 +56,9 @@ The entrypoint derives `BaseEntrypointWithEconomicsAndMemory`
 (`kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint_with_memory`), which
 already wires the memory widget operations, the `mem` named-service provider,
 reconciliation, snapshots, and the economics guard. `configuration_defaults()`
-only turns the widget on and sets its scope; `memory_configuration_defaults()`
-from the mixin fills in everything else.
+turns the widget on, explicitly enables named-service publication, and sets its
+scope; `memory_configuration_defaults()` from the mixin fills in everything
+else.
 
 There is **no `ui/` folder** — the memories widget is built from the SDK source
 shared by every app, so there is a single copy to maintain.

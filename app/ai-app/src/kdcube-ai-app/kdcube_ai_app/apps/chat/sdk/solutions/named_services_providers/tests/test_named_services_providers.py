@@ -92,6 +92,23 @@ class FakeDiscoveryRedis:
     async def smembers(self, key):
         return set(self.sets.get(str(key), set()))
 
+    async def srem(self, key, *values):
+        bucket = self.sets.setdefault(str(key), set())
+        before = len(bucket)
+        for value in values:
+            bucket.discard(str(value))
+        return before - len(bucket)
+
+    async def delete(self, *keys):
+        removed = 0
+        for key in keys:
+            key = str(key)
+            removed += int(key in self.values)
+            self.values.pop(key, None)
+            self.set_ex.pop(key, None)
+            self.sets.pop(key, None)
+        return removed
+
     async def expire(self, key, seconds):
         self.expire_calls.append((str(key), seconds))
         return True
@@ -567,6 +584,97 @@ async def test_discovery_registration_is_persistent_by_default():
     assert redis.expire_calls == []
     assert "kdcube:named_services:tenant-a:project-a:providers" in redis.persist_calls
     assert "kdcube:named_services:tenant-a:project-a:namespace:task" in redis.persist_calls
+
+
+@pytest.mark.asyncio
+async def test_discovery_registry_withdraws_only_removed_providers_for_that_bundle():
+    redis = FakeDiscoveryRedis()
+    discovery = RedisNamedServiceDiscovery(redis, tenant="tenant-a", project="project-a")
+
+    task_registry = NamedServiceRegistry()
+    task_registry.register(
+        NamedServiceProvider(
+            NamedServiceProviderSpec(
+                provider_id="task.issue",
+                namespace="task",
+                operations={"object.search": {"transports": ["local"]}},
+            )
+        )
+    )
+    task_registry.register(
+        NamedServiceProvider(
+            NamedServiceProviderSpec(
+                provider_id="sdk.memory",
+                namespace="mem",
+                operations={"object.search": {"transports": ["local"]}},
+            )
+        )
+    )
+    memory_registry = NamedServiceRegistry()
+    memory_registry.register(
+        NamedServiceProvider(
+            NamedServiceProviderSpec(
+                provider_id="sdk.memory",
+                namespace="mem",
+                operations={"object.search": {"transports": ["local"]}},
+            )
+        )
+    )
+
+    await discovery.register_registry(task_registry, bundle_id="task-tracker@1-0")
+    await discovery.register_registry(memory_registry, bundle_id="user-memories@2026-06-26")
+
+    task_only_registry = NamedServiceRegistry()
+    task_only_registry.register(
+        NamedServiceProvider(
+            NamedServiceProviderSpec(
+                provider_id="task.issue",
+                namespace="task",
+                operations={"object.search": {"transports": ["local"]}},
+            )
+        )
+    )
+    await discovery.register_registry(task_only_registry, bundle_id="task-tracker@1-0")
+
+    base = "kdcube:named_services:tenant-a:project-a"
+    task_key = f"{base}:provider:task-tracker@1-0::task.issue"
+    withdrawn_memory_key = f"{base}:provider:task-tracker@1-0::sdk.memory"
+    canonical_memory_key = f"{base}:provider:user-memories@2026-06-26::sdk.memory"
+
+    assert withdrawn_memory_key not in redis.values
+    assert withdrawn_memory_key not in redis.sets[f"{base}:providers"]
+    assert withdrawn_memory_key not in redis.sets[f"{base}:namespace:mem"]
+    assert task_key in redis.sets[f"{base}:providers"]
+    assert canonical_memory_key in redis.sets[f"{base}:providers"]
+    assert canonical_memory_key in redis.sets[f"{base}:namespace:mem"]
+
+
+@pytest.mark.asyncio
+async def test_discovery_registry_removes_old_namespace_membership_on_provider_update():
+    redis = FakeDiscoveryRedis()
+    discovery = RedisNamedServiceDiscovery(redis, tenant="tenant-a", project="project-a")
+
+    await discovery.register_provider(
+        NamedServiceProviderSpec(
+            provider_id="documents",
+            namespace="legacy",
+            operations={"object.search": {"transports": ["local"]}},
+        ),
+        bundle_id="documents@1-0",
+    )
+    await discovery.register_provider(
+        NamedServiceProviderSpec(
+            provider_id="documents",
+            namespace="docs",
+            operations={"object.search": {"transports": ["local"]}},
+        ),
+        bundle_id="documents@1-0",
+    )
+
+    base = "kdcube:named_services:tenant-a:project-a"
+    provider_key = f"{base}:provider:documents@1-0::documents"
+    assert provider_key not in redis.sets[f"{base}:namespace:legacy"]
+    assert provider_key in redis.sets[f"{base}:namespace:docs"]
 
 
 def test_discovery_context_is_portable_through_comm_ctx(monkeypatch):

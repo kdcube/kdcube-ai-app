@@ -1,10 +1,10 @@
 ---
 id: repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/react-object-materialization-README.md
 title: "Namespace Services: ReAct Object Materialization"
-summary: "Runtime-boundary diagram for how ReAct pulls, reads, owner-projects, and renders named-service objects."
-status: design
+summary: "ReAct adapter diagram over the shared runtime harness for pulling, reading, owner-projecting, and rendering named-service objects."
+status: current
 tags: ["sdk", "namespace-services", "react", "pull", "read", "block-production", "events"]
-updated_at: 2026-06-23
+updated_at: 2026-07-18
 keywords:
   [
     "react.pull",
@@ -25,12 +25,19 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/events/event-subsystem-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/events/namespaces-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/artifact-discovery-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/runtime/harness/events/artifact-resolution-and-materialization-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/runtime/harness/workspace/references-and-paths-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/runtime/harness/timeline/provider-projection-README.md
 ---
 # Namespace Services: ReAct Object Materialization
 
-This page is the canonical runtime-boundary diagram for named-service objects in
-ReAct. It covers the automatic `react.pull -> react.read -> Timeline.render`
-path.
+This page is the ReAct-adapter diagram for named-service objects. Generic ref
+resolution, byte identity, and workspace placement are owned by the shared
+agentic [runtime harness](../../runtime/harness/README.md), with the canonical
+materialization contract in
+[Artifact Resolution And Materialization](../../runtime/harness/events/artifact-resolution-and-materialization-README.md).
+This page covers what ReAct adds on top:
+`react.pull -> react.read -> Timeline.render`.
 
 Current implementation state:
 
@@ -77,8 +84,8 @@ Current implementation state:
         |
         v
 
-3. Namespace rehoster calls owner provider
-   executor: named-service artifact rehoster
+3. Harness resolution calls the owner provider
+   executor: shared harness resolver + named-service artifact rehoster
    runtime: consumer backend, using Named Service Discovery
    provider call:
      object.get(
@@ -99,9 +106,9 @@ Current implementation state:
         |
         v
 
-4. ReAct workspace receives bytes
-   executor: named-service artifact rehoster / ReAct artifact layer
-   runtime: consumer ReAct runtime
+4. Harness workspace receives bytes
+   executor: named-service artifact rehoster / shared harness workspace
+   runtime: agentic harness, with ReAct as this call's adapter
    work:
      write streamed bytes under OUTPUT_DIR
      mint a local conv:fi: artifact path for the current turn
@@ -219,7 +226,7 @@ Current implementation state:
 
 | Stage | Operation | Caller | Callee | Automatic in ReAct path |
 | --- | --- | --- | --- | --- |
-| Pull bytes | `object.get(response_mode=stream)` | ReAct namespace rehoster | named-service provider | Yes |
+| Pull bytes | `object.get(response_mode=stream)` | harness namespace resolver used by `react.pull` | named-service provider | Yes |
 | Resolve owner source | `event.resolve` | EventSourceSubsystem / resolver bridge | named-service provider | Optional |
 | Produce read blocks | `block.produce` | ReAct owner-projection adapter | named-service provider | Yes, when owner projection is registered and `object_ref` is present |
 | Render provider representation | `block.render` | ReAct timeline projection or explicit custom client | named-service provider | Optional, only when provider-owned blocks are present and the provider implements it |
@@ -243,6 +250,8 @@ Current implementation state:
 `scope` describes where the bytes were materialized in the ReAct workspace. It
 is not the owner namespace and must not be used for named-service routing.
 Routing and owner policy selection use the preserved `object_ref`.
+The path grammar itself is canonical in
+[Harness References And Workspace Paths](../../runtime/harness/workspace/references-and-paths-README.md).
 
 ## Owner Identity Field
 

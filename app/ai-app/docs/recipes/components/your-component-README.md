@@ -138,6 +138,9 @@ labels per operation/action, object-kind one-liners — declared in
 their connected-account requirements. Agent access to the realm is granted per
 agent by the platform boundary (nothing to implement in the component — see
 [Agents Acting On Behalf Of The User](../../sdk/solutions/connections/agent-acting-for-user/agent-acting-for-user-README.md)).
+Only the realm's owner app contributes the provider through
+`_named_service_providers()`; consuming or inheriting provider-capable code does
+not publish the realm.
 See [Recipe: Named-Service App](named-service-README.md) and
 [Providers — The Presentation Layer](../../sdk/namespace-services/providers-README.md).
 

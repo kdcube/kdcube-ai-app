@@ -227,6 +227,9 @@ class RedisNamedServiceDiscovery:
     def _provider_key(self, uid: str) -> str:
         return f"{self._base}:provider:{uid}"
 
+    def _bundle_provider_prefix(self, bundle_id: str) -> str:
+        return f"{self._base}:provider:{_key_part(bundle_id)}::"
+
     def _all_key(self) -> str:
         return f"{self._base}:providers"
 
@@ -242,17 +245,77 @@ class RedisNamedServiceDiscovery:
         registry_method: str = "named_services",
         ttl_seconds: int | None = None,
     ) -> list[NamedServiceDiscoveryEntry]:
+        resolved_bundle_id = str(bundle_id or "").strip()
+        if not resolved_bundle_id:
+            raise ValueError("named-service discovery registration requires bundle_id")
+        providers = registry.providers()
+        expected_provider_keys = {
+            self._provider_key(
+                self._provider_uid(
+                    bundle_id=resolved_bundle_id,
+                    provider_id=provider.spec.provider_id,
+                )
+            )
+            for provider in providers
+        }
         entries: list[NamedServiceDiscoveryEntry] = []
-        for provider in registry.providers():
+        for provider in providers:
             entry = await self.register_provider(
                 provider.spec,
-                bundle_id=bundle_id,
+                bundle_id=resolved_bundle_id,
                 transport=transport,
                 registry_method=registry_method,
                 ttl_seconds=ttl_seconds,
             )
             entries.append(entry)
+        await self._remove_withdrawn_bundle_providers(
+            bundle_id=resolved_bundle_id,
+            expected_provider_keys=expected_provider_keys,
+        )
         return entries
+
+    async def _remove_provider_key(self, provider_key: str) -> None:
+        raw = await self.redis.get(provider_key)
+        namespaces: tuple[str, ...] = ()
+        if raw:
+            try:
+                entry = NamedServiceDiscoveryEntry.from_dict(json.loads(_decode(raw)))
+                namespaces = tuple(entry.spec.namespaces or ())
+            except Exception:
+                LOGGER.warning(
+                    "Named-service discovery could not decode withdrawn provider record: provider_key=%s",
+                    provider_key,
+                    exc_info=True,
+                )
+        for namespace in namespaces:
+            await self.redis.srem(self._namespace_key(namespace), provider_key)
+        await self.redis.srem(self._all_key(), provider_key)
+        await self.redis.delete(provider_key)
+        LOGGER.info(
+            "Named-service discovery provider withdrawn:\n"
+            "  scope: tenant=%s project=%s\n"
+            "  provider_key: %s\n"
+            "  namespaces:\n%s",
+            self.tenant,
+            self.project,
+            provider_key,
+            _report_list(namespaces),
+        )
+
+    async def _remove_withdrawn_bundle_providers(
+        self,
+        *,
+        bundle_id: str,
+        expected_provider_keys: set[str],
+    ) -> None:
+        prefix = self._bundle_provider_prefix(bundle_id)
+        registered_provider_keys = {
+            _decode(value)
+            for value in (await self.redis.smembers(self._all_key()) or ())
+            if _decode(value).startswith(prefix)
+        }
+        for provider_key in sorted(registered_provider_keys - expected_provider_keys):
+            await self._remove_provider_key(provider_key)
 
     async def register_provider(
         self,
@@ -284,6 +347,21 @@ class RedisNamedServiceDiscovery:
         )
         uid = self._provider_uid(bundle_id=resolved_bundle_id, provider_id=spec.provider_id)
         provider_key = self._provider_key(uid)
+        previous_raw = await self.redis.get(provider_key)
+        previous_namespaces: set[str] = set()
+        if previous_raw:
+            try:
+                previous_entry = NamedServiceDiscoveryEntry.from_dict(json.loads(_decode(previous_raw)))
+                previous_namespaces = set(previous_entry.spec.namespaces or ())
+            except Exception:
+                LOGGER.warning(
+                    "Named-service discovery could not decode replaced provider record: provider_key=%s",
+                    provider_key,
+                    exc_info=True,
+                )
+        current_namespaces = set(entry.spec.namespaces or ())
+        for namespace in sorted(previous_namespaces - current_namespaces):
+            await self.redis.srem(self._namespace_key(namespace), provider_key)
         await self.redis.set(provider_key, _json_dumps(entry.to_dict()), ex=ttl if ttl > 0 else None)
         await self.redis.sadd(self._all_key(), provider_key)
         if ttl > 0:
@@ -634,15 +712,14 @@ async def publish_registry_discovery(
     bundle_id: str,
     logger: Any = None,
 ) -> list:
-    """Register every provider in ``registry`` for cross-bundle discovery.
+    """Publish the app's complete provider registry for cross-app discovery.
 
     The single place bundle entrypoints (via ``BaseEntrypoint``) and other callers
-    publish a named-service registry. No-ops when redis is missing, the registry
-    is empty, or tenant/project/bundle_id are incomplete.
+    publish a named-service registry. The publication is authoritative for this
+    app: provider records omitted from the current registry are withdrawn.
+    No-ops only when Redis or tenant/project/app identity is unavailable.
     """
     if redis is None or not tenant or not project or not bundle_id:
-        return []
-    if not registry.providers():
         return []
     entries = await RedisNamedServiceDiscovery(redis, tenant=tenant, project=project).register_registry(
         registry,

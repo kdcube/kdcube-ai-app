@@ -4,7 +4,7 @@ title: "Object Refs, Presentation, And Actions"
 summary: "Canonical contract for ecosystem objects: object_ref is the universal handle, namespace presentation config owns visual identity, and provider resolvers own actions and subtype semantics."
 status: active
 tags: ["sdk", "namespace-services", "object-ref", "presentation", "resolvers", "scene", "canvas", "chat"]
-updated_at: 2026-06-22
+updated_at: 2026-07-18
 keywords:
   [
     "object_ref",
@@ -85,7 +85,7 @@ Everything else treats the URI as opaque.
 | Field | Owner | Meaning |
 | --- | --- | --- |
 | `object_ref` | provider/object owner | Canonical URI for the object. This is the handle for resolve, action, pull, read, and render. |
-| `namespace` | source component or provider | Root owner namespace such as `mem`, `task`, `fi`, `cnv`, or `conv`. This is a presentation/lookup key, not behavior. |
+| `namespace` | source component or provider | Owner or scoped presentation namespace such as `mem`, `task`, `cnv`, `conv`, or `conv:fi`. This is a presentation/lookup key, not behavior. |
 | `object_kind` | provider/source component | Optional presentation subtype such as `task:issue`, `task:attachment`, or `cnv:user:attachment`. This is a presentation/lookup key, not behavior. |
 | `kind` | source component | Legacy/display label on canvas cards. It must not drive behavior. |
 
@@ -116,11 +116,22 @@ configuration exposed by the public endpoint:
 POST /api/integrations/bundles/<tenant>/<project>/<app>/public/namespace_presentation_config
 ```
 
-The response is a map keyed by presentation keys. Consumers should look up:
+The response is a map keyed by presentation keys. All components should use
+the shared resolver exported by `@kdcube/components-core`
+(`namespacePresentationCandidates` + `namespaceStyleForContext`) so chat,
+Pinboard, scene drag/drop, and future components resolve identically.
+
+The lookup order is:
 
 1. exact `object_kind`, when present;
-2. root `namespace`, when present;
-3. neutral unknown fallback.
+2. exact explicitly declared `namespace`, when present;
+3. normalized scoped style key (`conv:<first-subnamespace>` for conversation
+   refs, such as `conv:fi`; otherwise the root namespace);
+4. root namespace;
+5. neutral unknown fallback.
+
+Object-ref parsing is used only to derive a presentation candidate when
+explicit namespace metadata is absent. It does not choose behavior.
 
 Example:
 
@@ -140,6 +151,10 @@ namespace_styles:
   mem:
     label: memory
     color: "#16a34a"
+    icon_svg: '<svg viewBox="0 0 24 24">...</svg>'
+  "conv:fi":
+    label: file
+    color: "#ca8a04"
     icon_svg: '<svg viewBox="0 0 24 24">...</svg>'
 ```
 
@@ -300,18 +315,18 @@ They are not a reason for other components to inspect URI tails.
 
 ## ReAct
 
-ReAct uses the same identity:
+ReAct uses the same identity through the shared harness:
 
 - `react.pull(paths=["cnv:main"])` materializes the current object into the
-  turn workspace while preserving `object_ref`;
+  turn workspace through harness resolution while preserving `object_ref`;
 - `react.read(conv:fi:...)` uses preserved `meta.object_ref` to ask the owner
   block-production policy for model-facing blocks;
 - block-production policies can include `original_object_stats` or other
   provider metadata directly on blocks so generic ReAct code stays provider
   agnostic.
 
-The generic ReAct read tool must not contain namespace-specific branches for
-canvas, task, memory, or any other provider.
+Neither the shared harness nor the generic ReAct read tool may contain
+namespace-specific branches for canvas, task, memory, or any other provider.
 
 ## Anti-Patterns
 

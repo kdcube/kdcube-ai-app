@@ -10,6 +10,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint_with_memory import
     MEMORY_RECONCILIATION_WORK_KIND,
     MemoryEntrypointMixin,
 )
+from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint import BaseEntrypoint
 from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers.discovery import RedisNamedServiceDiscovery
 
 
@@ -38,9 +39,18 @@ class _RedisStub:
     async def expire(self, key, ttl):
         return True
 
-    async def delete(self, key):
-        self.deleted.append(key)
-        self.values.pop(key, None)
+    async def srem(self, key, *values):
+        bucket = self.sets.setdefault(key, set())
+        before = len(bucket)
+        for value in values:
+            bucket.discard(value)
+        return before - len(bucket)
+
+    async def delete(self, *keys):
+        for key in keys:
+            self.deleted.append(key)
+            self.values.pop(key, None)
+            self.sets.pop(key, None)
 
 
 class _FakeMemoryStore:
@@ -114,7 +124,19 @@ class _MemoryStorageStub:
         return 1 if existed else 0
 
 
-class _MemoryHarness(MemoryEntrypointMixin):
+class _NamedServicesHarnessBase:
+    def _named_service_providers(self):
+        return []
+
+    named_services = BaseEntrypoint.named_services
+    _named_services_bundle_id = BaseEntrypoint._named_services_bundle_id
+    _publish_named_services_discovery = BaseEntrypoint._publish_named_services_discovery
+
+    async def on_turn_completed(self, **kwargs):
+        return None
+
+
+class _MemoryHarness(MemoryEntrypointMixin, _NamedServicesHarnessBase):
     def __init__(self):
         self.storage = {}
         self.redis = _RedisStub()
@@ -159,6 +181,9 @@ class _MemoryHarness(MemoryEntrypointMixin):
         return {
             "memory": {
                 "enabled": True,
+                "named_service": {
+                    "enabled": True,
+                },
                 "widget": {
                     "enabled": True,
                     "allow_all_user_memories": True,
@@ -231,6 +256,14 @@ class _MemoryHarness(MemoryEntrypointMixin):
         return self.storage[key]
 
 
+class _EmbeddedMemoryHarness(_MemoryHarness):
+    @property
+    def configuration(self):
+        config = json.loads(json.dumps(super().configuration))
+        config["memory"].pop("named_service", None)
+        return config
+
+
 def _deep_update(target, updates):
     for key, value in updates.items():
         if isinstance(value, dict) and isinstance(target.get(key), dict):
@@ -249,14 +282,21 @@ def test_memory_mixin_exposes_mem_named_service_registry():
     assert entry is not None
     assert entry.spec.provider_id == "sdk.memory"
     assert "mem" in entry.spec.namespaces
-    assert {scope.namespace for scope in entry.spec.search_scopes} == {"mem"}
+    assert {scope.namespace for scope in entry.spec.search_scopes} == {"mem", "mem:record"}
     assert entry.spec.object_kinds == ("memory.record",)
+
+
+def test_embedded_memory_does_not_publish_mem_named_service_implicitly():
+    harness = _EmbeddedMemoryHarness()
+
+    assert harness._memory_named_service_enabled() is False
+    assert harness.named_services().resolve_namespace("mem") is None
 
 
 @pytest.mark.asyncio
 async def test_memory_mixin_publishes_mem_named_service_discovery():
     harness = _MemoryHarness()
-    await harness._register_memory_named_service_discovery()
+    await harness._publish_named_services_discovery()
 
     discovery = RedisNamedServiceDiscovery(harness.redis, tenant="tenant-a", project="project-a")
     entries = await discovery.providers(namespace="mem")
@@ -265,7 +305,7 @@ async def test_memory_mixin_publishes_mem_named_service_discovery():
     assert entries[0].spec.provider_id == "sdk.memory"
     assert entries[0].endpoint["bundle_id"] == "bundle@1"
     assert entries[0].endpoint["registry_method"] == "named_services"
-    assert {scope.namespace for scope in entries[0].spec.search_scopes} == {"mem"}
+    assert {scope.namespace for scope in entries[0].spec.search_scopes} == {"mem", "mem:record"}
     assert entries[0].spec.object_kinds == ("memory.record",)
 
 
