@@ -26,11 +26,11 @@ agents".
   slack, and conversations are served by the always-running
   `kdcube-services@1-0` bundle.
 - **Isolated execution runtime** — where agent-generated Python code runs. In
-  the docker "split" strategy it is two containers:
+  the reference Docker `split` strategy it is two sibling containers:
   - the **executor**: runs the generated code itself. No network. It cannot
     call anything directly.
-  - the **supervisor**: a privileged sidecar in the same container
-    environment. It *has* network access (Redis, storage, the internet for
+  - the **supervisor**: a trusted sibling container. It *has* network access
+    (Redis, storage, the internet for
     integrations). Platform tools run here. The executor reaches it over a
     local Unix socket: when generated code calls
     `agent_io_tools.tool_call(...)`, the executor sends the request to the

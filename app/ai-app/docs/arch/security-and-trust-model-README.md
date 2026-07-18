@@ -51,7 +51,7 @@ platform operator
 |          | narrow requests and materialized inputs               |
 |          v                                                       |
 | generated/untrusted code boundary                                |
-|   local subprocess | Docker combined | Docker split              |
+|   local subprocess | legacy Docker combined | Docker split       |
 +------------------------------------------------------------------+
        |
        +-- namespaced PostgreSQL / Redis / object or file storage
@@ -148,8 +148,12 @@ operator:
 | --- | --- |
 | In-process or explicitly non-isolated execution | No security boundary. Use only for trusted code. |
 | Local subprocess | Process and crash containment for development; not a security sandbox and not a network boundary. |
-| Docker combined | Container boundary and controlled workspace, but supervisor and executor still share a container-level trust zone. |
-| Docker split | Strongest built-in profile: a separate executor with narrow mounts, no platform secret store, and no network by default. |
+| Docker combined (legacy, configurable) | Container boundary and filtered child environment, but supervisor and executor share one container and mount namespace. It is not the production reference for untrusted code. |
+| Docker split (reference) | Strongest built-in profile: a separate executor container with narrow mounts, no platform secret store, and no network by default. |
+
+The reference deployment descriptors explicitly select `split`. The runtime
+still accepts `combined` for legacy deployments; operators should not rely on
+an omitted or unrecognized strategy value to establish the stronger boundary.
 
 For isolated execution, model-proposed paths and references are untrusted
 requests. A trusted resolver first binds the current tenant/project/user and
@@ -168,7 +172,7 @@ trusted resolver / tool guard
        |                          |
        v                          v
 selected workspace bytes     server-side provider call
-       |                      credential never enters workspace
+       |                      split executor receives no credential
        v
 isolated executor
 ```
@@ -180,7 +184,7 @@ mount, network, and supervisor/executor contracts.
 
 Tracked deployment descriptors should contain configuration and secret
 references, not production credentials. Secret values are resolved by
-server-side providers or stores.
+server-side providers or stores in the managed runtime path.
 
 Connected external accounts follow the same rule. Connection Hub stores a
 server-side credential record for the KDCube user. A trusted tool resolves the
@@ -196,6 +200,15 @@ trusted tool + bound request + claims -------+
                                              v
                                       external provider
 ```
+
+This is a supervisor/tool-side guarantee, not a property of every execution
+profile. The local subprocess implementation inherits the host process
+environment and receives the portable runtime payload; it is for trusted
+development work, not secret isolation. Legacy combined Docker filters the
+generated-code child environment but keeps supervisor and executor in one
+container/mount trust zone. Split Docker is the profile that also removes
+supervisor descriptors, storage roots, and provider credentials from the
+executor container.
 
 ## REST And MCP Are Explicit Surfaces
 
@@ -229,7 +242,7 @@ security conclusion:
 ```text
 1. deployment topology   one runtime, backing services, network and IAM
 2. trusted applications  source refs and processor privileges
-3. execution profile     in-process, local subprocess, Docker, or split
+3. execution profile     in-process, local, legacy combined, split, or remote
 4. exposed surfaces      public/authenticated/delegated REST, MCP, UI, events
 ```
 
@@ -252,7 +265,8 @@ KDCube provides:
 - tenant/project-scoped runtime and storage contracts;
 - request identity and authority propagation across supported runtime
   boundaries;
-- server-side secret and connected-account credential resolution;
+- server-side secret and connected-account credential resolution in managed
+  trusted services;
 - explicit guards and grants for protected application surfaces;
 - configurable generated-code isolation, including a split executor profile;
 - per-request and per-operation records where the corresponding subsystem is
@@ -274,7 +288,9 @@ Before exposing a deployment:
 1. Configure a production platform authority and protect non-public surfaces.
 2. Store real credentials only in the configured secret provider/store.
 3. Review application code and pin immutable source revisions.
-4. Select the generated-code isolation profile that matches the threat model.
+4. Select split Docker for production execution of untrusted generated code;
+   treat local and legacy combined profiles according to their documented
+   weaker boundaries.
 5. Remove executor network access and mounts that are not required.
 6. Grant processors, storage, and external providers least privilege.
 7. Configure TLS, secure cookies, allowed origins, and trusted proxy headers.

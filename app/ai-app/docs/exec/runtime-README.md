@@ -133,15 +133,17 @@ store; small control vars stay inline; the executor path is untouched.
 
 Docker mode supports two container strategies:
 
-- `combined`: historical layout. One `py-code-exec` container hosts the
+- `combined` (legacy configurable): one `py-code-exec` container hosts the
   supervisor and the UID-dropped generated-code executor subprocess.
-- `split`: stronger filesystem isolation. The proc starts separate supervisor
+- `split` (reference): the proc starts separate supervisor
   and executor sibling containers. The supervisor receives descriptors,
   runtime storage, bundle code, and network. The executor receives only the
   work mount, artifact output mount, executor log mount, and supervisor socket.
 
-The diagram below shows the `combined` strategy because it is the baseline
-entrypoint flow. The split filesystem tree is documented in
+The diagram below preserves the legacy `combined` entrypoint flow for
+troubleshooting older deployments. It is not the production reference or a
+separate supervisor/executor mount boundary. The reference split filesystem
+tree is documented in
 [README-iso-runtime.md](README-iso-runtime.md).
 
 ```
@@ -321,12 +323,12 @@ entrypoint flow. The split filesystem tree is documented in
 │  │ Separate Process (on host)                                     │    │
 │  │                                                                │    │
 │  │  • Tools execute in subprocess                                │    │
-│  │  • Optional network isolation (unshare on Linux)              │    │
-│  │  • Limited filesystem isolation (CWD restrictions)            │    │
-│  │  • Used for: Development, light isolation                     │    │
+│  │  • Host network access and inherited host environment          │    │
+│  │  • No filesystem sandbox beyond ordinary process permissions   │    │
+│  │  • Used for: Trusted development and crash containment         │    │
 │  └───────────────────────────────────────────────────────────────┘    │
 │                                                                         │
-│  3. DOCKER ISOLATED (isolation="docker") ⭐ PRODUCTION                 │
+│  3. SPLIT DOCKER (isolation="docker", strategy="split") PRODUCTION    │
 │  ┌───────────────────────────────────────────────────────────────┐    │
 │  │ Docker runtime → Supervisor + Executor                         │    │
 │  │                                                                │    │
@@ -483,7 +485,10 @@ entrypoint flow. The split filesystem tree is documented in
 2. **Tool calls are transparent** - user code calls `await web_search(...)` like normal, but it's proxied
 3. **Bytes are supported** - images, PDFs, Excel files can flow through socket via base64 encoding
 4. **Supervisor is the trust boundary** - it has all privileges and validates all tool calls
-5. **Filesystem isolation is applied to the executor child, not the supervisor** - this preserves tool functionality while preventing untrusted code from browsing runtime internals
+5. **The split executor has its own narrow mount set** - this preserves
+   supervisor tool functionality while keeping supervisor runtime roots out of
+   the generated-code container. Legacy combined mode relies on a filtered
+   child environment and Unix permissions inside one shared mount namespace.
 6. **Network isolation doesn't break functionality** - tools that need network run in supervisor
 7. **`combined` vs `split` is configurable** - `split` keeps the same tool-call contract while removing supervisor runtime roots, descriptors, bundle mounts, and supervisor logs from the executor filesystem
 
@@ -566,7 +571,9 @@ When isolation is set to `local`, tools run in a standalone subprocess on the ho
 - No supervisor/executor split.
 - No Unix socket proxying.
 - Crash containment only (process boundary).
-- Use this mode when you want safety from native crashes but don’t need Docker sandboxing.
+- Host network access and inherited host process environment.
+- Use this mode for trusted development code when you want safety from native
+  crashes but do not need a credential, network, or filesystem sandbox.
 
 ---
 

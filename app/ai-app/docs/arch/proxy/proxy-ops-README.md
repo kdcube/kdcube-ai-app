@@ -282,7 +282,7 @@ location /api/chat/ {
 }
 ```
 
-### Option B — ModSecurity v3 + OWASP CRS (compliance-grade)
+### Option B — ModSecurity v3 + OWASP CRS (deeper request inspection)
 
 Use the pre-built image instead of the base OpenResty image:
 
@@ -316,7 +316,9 @@ SecRule REQUEST_HEADERS:Content-Type "application/json" \
 2. **Add `limit_conn`** and timeout hardening.
 3. **Deploy lua-resty-waf in `SIMULATE` mode** — review logs for false positives for one week before activating.
 4. **Switch WAF to `ACTIVE` mode** once the allowlist is tuned.
-5. **ModSecurity** only if PCI-DSS or SOC 2 compliance scope requires CRS depth.
+5. **ModSecurity** when the deployment threat model or security program calls
+   for CRS-based request inspection. It is one technical control; enabling it
+   does not establish PCI-DSS, SOC 2, or other compliance.
 
 ---
 

@@ -92,8 +92,11 @@ workdir/
   <turn_id>/attachments/<filename>
 ```
 
-Execution runs in a containerized environment (no network, workdir-only access),
-so attachments are accessible as local files for program logic.
+In the reference split-Docker profile, execution runs in a separate networkless
+container with narrow workspace mounts, so attachments are accessible as local
+files for program logic without mounting the source storage. Other execution
+profiles have weaker boundaries; local subprocess mode uses the host
+environment and network.
 
 ### 2.5 Tool-materialized attachments
 

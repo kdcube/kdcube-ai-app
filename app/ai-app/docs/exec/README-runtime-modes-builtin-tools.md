@@ -16,10 +16,13 @@ This document explains where built-in tools run (in-process vs isolated subproce
 ## Runtime modes
 
 - `none` (in-process): tool code runs in the main server process.
-- `local` (isolated subprocess): tool code runs in a separate Python process on the same host (no supervisor).
+- `local` (subprocess): tool code runs in a separate Python process on the same
+  host (no supervisor). It inherits the host environment and network; this is
+  crash containment, not a security sandbox.
 - `docker`: tool code runs with a Docker **supervisor** that executes approved
-  tools. The generated-code executor itself is locked down (no network, no
-  secrets, limited filesystem).
+  tools. The reference split strategy places generated code in a separate
+  networkless executor container with a filtered environment and narrow
+  filesystem mounts.
 
 The runtime selector lives in `kdcube_ai_app/apps/chat/sdk/tools/tools_insights.py` (`tool_isolation`).
 
@@ -40,7 +43,11 @@ Native libraries (HTML parsers, PDFs, browser bindings) can crash the process. I
 
 ## How isolation works (high level)
 
-Execution uses the ISO runtime (`kdcube_ai_app/apps/chat/sdk/runtime/iso_runtime.py`). For `local`, it spawns a standalone subprocess via `py_code_exec_entry.py`. For `docker`, the supervisor brokers tool execution while the exec sandbox stays restricted (no network, no secrets).
+Execution uses the ISO runtime (`kdcube_ai_app/apps/chat/sdk/runtime/iso_runtime.py`).
+For `local`, it spawns a standalone subprocess with the host environment and
+network. For reference `docker` split execution, the supervisor brokers tool
+execution while the separate executor has no network, platform credentials, or
+supervisor storage mounts.
 
 In supervised Docker/Fargate modes, proc ships descriptor payloads
 (`KDCUBE_RUNTIME_*_YAML_B64`) to the supervisor. The supervisor materializes
@@ -51,9 +58,9 @@ descriptor paths, or provider secret material.
 
 Docker currently supports two strategies:
 
-- `combined`: supervisor and generated-code executor run inside one
-  `py-code-exec` container. This preserves the historical layout.
-- `split`: supervisor and executor run in sibling containers. The executor
+- `combined` (legacy): supervisor and generated-code executor run inside one
+  `py-code-exec` container and share its mount namespace.
+- `split` (reference): supervisor and executor run in sibling containers. The executor
   container receives only work, artifact output, executor logs, and the
   supervisor socket. Descriptor payloads, bundle mounts, storage mounts,
   supervisor logs, and platform runtime roots are not mounted into the

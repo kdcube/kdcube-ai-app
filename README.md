@@ -35,8 +35,10 @@ event, and agent surfaces under explicit deployment policy.
 - Application backend code is trusted deployment code. Generated code is a
   separate boundary whose isolation strength depends on the configured
   execution profile.
-- Secrets and connected-account credentials stay server-side; trusted tools
-  resolve them only for an authorized request.
+- In the managed production path, secrets and connected-account credentials
+  stay on the trusted server side; trusted tools resolve them only for an
+  authorized request. The split executor receives neither the platform secret
+  store nor provider credentials.
 - Shared backing infrastructure is logically namespaced. Use separate
   deployments or dedicated infrastructure when a stronger boundary is
   required.
@@ -74,10 +76,12 @@ Apps may have no UI and no agent, or may host several agents and frontends.
 - **Deploy and update.** App code from Git, descriptor-based configuration,
   secret references, local/cloud parity, and near-live app reloads.
 - **Run generated code under explicit isolation policy.** Local subprocess
-  mode provides development-time crash containment; Docker and split profiles
-  add progressively stronger workspace, process, credential, and network
-  boundaries. Approved tools run on the trusted supervisor side under the
-  current request identity and policy.
+  mode provides development-time crash containment but inherits the host
+  environment and network. Legacy combined Docker adds a container and a
+  filtered child environment while retaining one container/mount trust zone.
+  The reference split-Docker profile places generated code in a separate,
+  networkless executor with narrow mounts. Approved tools run on the trusted
+  supervisor side under the current request identity and policy.
 - **Connect users and systems.** OIDC and application authority, external
   accounts, Telegram identity linking, managed grants, revocable automation
   access, and protected REST or MCP surfaces.
@@ -91,9 +95,10 @@ Apps may have no UI and no agent, or may host several agents and frontends.
   <img src="assets/runtime-path.svg" alt="What KDCube adds around your agent: people, systems, and live events reach your agent or graph — LangGraph, CrewAI, Claude Agent SDK, custom code, or KDCube ReAct. It perceives chat, files, events, memory, and knowledge; it acts through a trusted broker on tools, named services, MCP, connected accounts, and isolated code; responses and artifacts stream back — all standing on the production foundation of ordered delivery, identity, persistence, streaming, isolation, budgets, configuration, and recovery" width="900">
 </p>
 
-A KDCube deployment serves one tenant/project environment and many concurrent
-users. Shared infrastructure is namespaced, while request identity and policy
-travel across process, thread, subprocess, and isolated-runtime boundaries.
+A KDCube deployment is bound to one tenant/project scope and serves many
+concurrent users. Shared infrastructure may be namespaced rather than
+dedicated, while request identity and policy travel across process, thread,
+subprocess, and isolated-runtime boundaries.
 
 ## Bring your agent, or use KDCube ReAct Agent
 
@@ -105,9 +110,9 @@ checkpointer or storage, not in a process-local graph object.
 The optional built-in ReAct agent uses an event-aware timeline and semantic
 streaming channels rather than requiring a provider-native tool-calling
 protocol. It can react to user input, tool results, application events,
-followups, steering, and current runtime conditions. Model-written code runs
-in the isolated workspace and reaches approved capabilities only through
-trusted tools.
+followups, steering, and current runtime conditions. With the reference split
+isolation profile, model-written code runs in a separate, networkless executor
+and reaches privileged capabilities through trusted supervisor tools.
 
 [Settle an existing solution in KDCube](app/ai-app/docs/recipes/kdcube_for_agents/settle-your-solution-in-kdcube-README.md) ·
 [ReAct runtime](app/ai-app/docs/sdk/agents/react/flow-README.md) ·

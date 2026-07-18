@@ -196,7 +196,9 @@ Execution layout:
 
 ## Runtime constraints
 
-- Executor has **no network access**.
+- In the reference split-Docker profile, the executor has **no network
+  access**. Local subprocess mode uses the host network and environment; legacy
+  combined Docker uses a no-network child inside the supervisor container.
 - The intended writable surfaces are `/workspace/work`, `OUTPUT_DIR`
   (`/workspace/out`), executor-local logs, and the supervisor socket mount.
 - Generated file sizes are bounded by the ISO runtime. Defaults are `100MiB` for a single file and `250MiB` net new workspace bytes per run.

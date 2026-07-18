@@ -14,12 +14,15 @@ The short version is:
 - Application backend code loaded into a processor is trusted deployment code.
   KDCube does not sandbox mutually hostile applications inside one processor.
 - Model-generated or otherwise untrusted code is a separate boundary. Local
-  subprocess mode provides crash containment, while Docker and split execution
-  profiles provide progressively stronger filesystem, process, credential, and
-  network isolation.
-- Secrets stay in server-side secret providers and stores. Trusted tools may
-  resolve an authorized credential for a request; generated code and model
-  context should receive neither the credential nor the platform secret store.
+  subprocess mode provides crash containment but inherits host environment and
+  network access. Legacy combined Docker shares one container/mount trust zone.
+  The reference split-Docker profile uses a separate networkless executor with
+  narrow mounts and a filtered environment.
+- In the managed production path, secrets stay in server-side secret providers
+  and stores. Trusted tools may resolve an authorized credential for a request;
+  the split executor and model context should receive neither the credential
+  nor the platform secret store. Local subprocess mode is not a credential
+  boundary and must be limited to trusted development workloads.
 - Public, authenticated, and delegated REST or MCP surfaces are explicit
   application declarations. A surface is not protected merely because it is
   implemented by KDCube; its configured guard and grants define access.
@@ -49,8 +52,9 @@ A production operator should:
    loading that code into processors.
 3. Configure platform authority, protected-surface guards, TLS, secure cookies,
    allowed origins, and least-privilege infrastructure identities.
-4. Use a Docker or split execution profile for untrusted generated code. Do
-   not treat local subprocess mode as a security sandbox.
+4. Use the split-Docker execution profile for untrusted generated code in
+   production. Do not treat local subprocess mode as a security sandbox, or
+   legacy combined Docker as a separate supervisor/executor mount boundary.
 5. Give executors only required mounts and resources; keep provider
    credentials, deployment descriptors, and platform storage roots on the
    trusted side.

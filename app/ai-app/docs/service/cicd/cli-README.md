@@ -57,13 +57,16 @@ Short version of the difference:
 
 In both models, the deployment boundary is the same:
 
-- one `tenant/project` = one isolated environment
-- use separate `tenant/project` values for account isolation or lifecycle
-  stages such as `dev`, `staging`, and `prod`
+- one running deployment = one effective `tenant/project` scope
+- use separate deployments, and dedicated backing infrastructure where
+  required, for account-level or lifecycle isolation such as `dev`, `staging`,
+  and `prod`
 - keep multiple bundles inside one `tenant/project` when they belong to the
   same environment
 
-So `tenant/project` is the environment boundary, not the bundle boundary.
+So `tenant/project` is the deployment scope, not the bundle boundary. The name
+alone is not an infrastructure sandbox: backing services may be shared through
+tenant/project namespaces.
 
 Important local-runtime rule:
 

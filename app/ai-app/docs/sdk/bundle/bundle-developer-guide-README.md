@@ -197,9 +197,12 @@ and [bundle-runtime-README.md](bundle-runtime-README.md#request-scoped-role-mode
 
 ## Environment Boundary
 
-For bundle authors, `tenant/project` means one isolated environment.
+For bundle authors, `tenant/project` identifies the effective scope of one
+running deployment. It is a routing and data namespace, not by itself a
+dedicated infrastructure sandbox.
 
-Use a separate `tenant/project` when you need:
+Use a separate deployment (and dedicated backing services where required) when
+you need:
 
 - tenant isolation
 - a separate lifecycle stage such as `dev`, `staging`, or `prod`
@@ -209,8 +212,8 @@ same environment.
 
 So the platform model is:
 
-- one environment = one `tenant/project`
-- one environment can host many bundles
+- one running deployment = one effective `tenant/project`
+- one deployment can host many bundles
 - one bundle = one end-to-end application unit inside that environment
 
 ## Minimal Bundle Shape

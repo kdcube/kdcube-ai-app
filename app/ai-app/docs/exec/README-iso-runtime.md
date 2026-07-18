@@ -36,12 +36,21 @@ It is aligned with `exec/operations.md` and the current implementation in:
 
 ## Why ISO runtime exists
 
-We execute untrusted, LLM-generated Python (codegen + exec tools). To keep the system safe:
+We execute untrusted, LLM-generated Python (codegen + exec tools). In the
+reference split-Docker profile:
 
-- The **executor process** runs without network access.
+- The **executor container** runs without network access.
 - The container **root filesystem is read-only**.
-- The executor can only write inside its `workdir` and `outdir`.
-- In Docker mode, all **tool calls** are proxied via the supervisor. Any other code runs in the executor sandbox (no secrets, no network, filesystem access limited to the mounted work/artifact/log surfaces).
+- The executor receives only explicit work, artifact-output, executor-log, and
+  supervisor-socket mounts; its writable filesystem surfaces are narrow and
+  execution-scoped.
+- All **tool calls** are proxied via the supervisor. Generated code runs with
+  no platform secret store, no network, and only the mounted
+  work/artifact/log/socket surfaces.
+
+These guarantees are profile-specific. Local subprocess mode is crash
+containment only. Legacy combined Docker keeps supervisor and executor in one
+container and mount namespace.
 
 ## Local vs Docker (at a glance)
 
@@ -49,13 +58,22 @@ We execute untrusted, LLM-generated Python (codegen + exec tools). To keep the s
 - Separate Python process on the same host.  
 - No supervisor/executor split.  
 - Crash containment only; no extra sandboxing beyond process boundary.
+- Inherits the host process environment and uses host network access.
 - Because there is no privileged supervisor boundary, descriptor-backed secrets and bundle props cannot be made executor-invisible in this mode.
 
-**Docker (supervised sandbox)**  
-- Supervisor executes tool calls; executor runs untrusted code with no network/keys.  
-- Read‑only root FS; only the configured work/artifact/log mounts are writable.
-- Stronger isolation and policy enforcement.
+**Docker split (reference supervised sandbox)**
+- Supervisor executes tool calls; a separate executor container runs untrusted
+  code with no network or platform credentials.
+- Read-only root FS; only the configured work/artifact/log/socket mounts are
+  present in the executor container.
+- Strongest built-in isolation and policy enforcement.
 - Descriptor-backed platform config is restored only for the supervisor side; the executor child does not inherit descriptor payload env or descriptor path env.
+
+**Docker combined (legacy configurable profile)**
+- Supervisor and UID-dropped executor child share one container and mount
+  namespace.
+- The child receives a filtered environment and no network namespace, but
+  combined mode is not a separate filesystem/mount boundary.
 
 ## When ISO runtime is used
 
@@ -97,10 +115,11 @@ ReactSolver (chat container)
 When isolation is required, `docker.run_py_in_docker(...)` starts the
 **py-code-exec** runtime using one of two container strategies:
 
-- `combined`: one container contains both the trusted supervisor and the
+- `combined` (legacy): one container contains both the trusted supervisor and the
   generated-code executor subprocess. The executor child has no network and
-  drops to the executor uid/gid before user code starts.
-- `split`: the proc starts two sibling containers. The supervisor container
+  drops to the executor uid/gid before user code starts, but both roles share
+  the container's mounts.
+- `split` (reference): the proc starts two sibling containers. The supervisor container
   receives descriptor-backed configuration, bundle/tool mounts, network, and
   runtime storage. The executor container receives only the work mount, artifact
   output mount, executor log mount, supervisor socket, and a minimal safe env.
@@ -109,8 +128,9 @@ Common properties:
 
 - Root filesystem is read-only (`--read-only`).
 - `/tmp` is tmpfs.
-- Bundle code roots are mounted read-only only where the supervisor needs them.
-- Bundle readonly storage is mounted read-only only where the supervisor needs it.
+- In split mode, bundle code roots and readonly storage are mounted only into
+  the supervisor container. In combined mode they are read-only mounts in the
+  shared container namespace.
 - Generated code writes artifacts under `OUTPUT_DIR`; in split mode this maps
   to the artifact workspace, not to the full runtime output tree.
 
@@ -195,7 +215,9 @@ Chat container (UID/GID 1000:1000)
 Exec container in `combined` strategy (entrypoint runs as root)
 └─ /workspace/work (RW)
 └─ /workspace/out  (RW)
-└─ /tmp/kdcube-supervisor/... (RO, supervisor-only mounts for bundle code and bundle storage)
+└─ /tmp/kdcube-supervisor/... (RO, shared container mounts used by supervisor;
+                               Unix ownership/mode may restrict the child, but
+                               this is not a separate mount boundary)
 
 Host, split strategy
 └─ /exec-workspace/react_<id>/
@@ -277,7 +299,10 @@ Important:
 - bundle code and bundle readonly data are separate surfaces
 - bundle code contains bundle-local tool modules, for example a path like `tools/react_tools.py` under the bundle root
 - bundle readonly data contains prepared local assets such as built knowledge indexes or cloned docs repos
-- in Docker `combined` mode, those surfaces are mounted only for the supervisor side under `/tmp/kdcube-supervisor/...`
+- in legacy Docker `combined` mode, those surfaces are mounted into the shared
+  container under `/tmp/kdcube-supervisor/...`; the generated-code child does
+  not receive their path through env/runtime globals, but combined mode does
+  not provide a separate mount namespace
 - in Docker `split` mode, those surfaces are mounted only into the supervisor container and are not mounted into the executor container
 - generated code in the executor does not receive those mount paths in env or runtime globals
 
@@ -293,9 +318,10 @@ container. In `split` strategy, the same roles run in sibling containers:
    - Generates a per-execution supervisor auth token and requires it on every
      socket request before executing any tool.
 
-2) **Executor subprocess**
+2) **Executor process**
    - Runs LLM-generated Python.
-   - Has **no network** (network namespace unshared).
+   - In supervised Docker profiles, has **no network** (a separate container
+     network in split; an unshared child namespace in combined).
    - Drops to `EXECUTOR_UID` (default `1001`) / `EXECUTOR_GID` (default `1000`) before user code starts.
    - Receives only a minimal safe environment, plus `workdir`, `outdir`, and the supervisor socket.
    - Only writes to `workdir` and `outdir`.
@@ -341,10 +367,10 @@ per-execution random token generated by `py_code_exec_entry.py`.
 
 Docker ISO runtime supports two strategies:
 
-- `combined` (default): supervisor and generated-code executor run in one
+- `combined` (legacy configurable): supervisor and generated-code executor run in one
   `py-code-exec` container. Generated code still runs as a no-network
-  UID-dropped child process. This preserves the historical behavior.
-- `split`: the proc starts two sibling containers. The supervisor container
+  UID-dropped child process, but it shares the container's mount namespace.
+- `split` (reference and recommended for untrusted code): the proc starts two sibling containers. The supervisor container
   receives descriptors, bundle code, network, and tool modules. The executor
   container receives only the current `/workspace/work`, `/workspace/out`, a
   shared supervisor socket, a minimal safe env, and stripped runtime globals.
@@ -365,7 +391,7 @@ platform:
   services:
     proc:
       exec:
-        py_code_exec_container_strategy: "split"  # combined | split
+        py_code_exec_container_strategy: "split"  # split (reference) | combined (legacy)
 ```
 
 Per-bundle override:
@@ -378,9 +404,10 @@ config:
       container_strategy: "split"
 ```
 
-Use `split` when generated code must not be able to read supervisor-side
-descriptors, bundle storage, platform storage, or other runtime internals by
-filesystem access. Tool calls still go through the supervisor and must remain
+The checked-in platform descriptor selects `split`. Use it for production
+execution of untrusted generated code so supervisor-side descriptors, bundle
+storage, platform storage, and other runtime internals are absent from the
+executor container. Tool calls still go through the supervisor and must remain
 allowlisted there.
 
 ## Storage layout (per React run)

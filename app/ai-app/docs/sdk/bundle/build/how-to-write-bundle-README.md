@@ -222,14 +222,16 @@ Operational rule:
 
 Environment rule:
 
-- one `tenant/project` runtime is one isolated environment
-- use a different `tenant/project` when you need separate tenant data or
-  separate stages such as `dev`, `staging`, and `prod`
+- one running deployment is bound to one effective `tenant/project`
+- use separate deployments, and dedicated backing services where required,
+  when you need infrastructure isolation or separate stages such as `dev`,
+  `staging`, and `prod`
 - keep multiple bundles inside one `tenant/project` when they belong to the
   same environment
 
-So a bundle is the end-to-end application unit inside an environment.
-`tenant/project` is the environment boundary, not the bundle boundary.
+So a bundle is the end-to-end application unit inside a deployment.
+`tenant/project` is the deployment scope, not the bundle boundary or an
+automatic infrastructure sandbox.
 
 An app may also expose a deployment website. Give it a normal `ui.main_view`,
 expose any non-secret composition through an app API, and register

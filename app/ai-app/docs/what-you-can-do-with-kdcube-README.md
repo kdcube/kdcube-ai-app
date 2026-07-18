@@ -244,7 +244,8 @@ trusted side.
 
 Approved tool calls use an authenticated supervisor bridge. Their trusted
 implementations execute under the carried request identity, grants, provider
-claims, and economics context. Credentials do not move into generated code.
+claims, and economics context. In this split profile, credentials do not move
+into generated code.
 
 Other execution profiles provide different isolation strengths; `no network`
 is specifically a split-executor guarantee. Read

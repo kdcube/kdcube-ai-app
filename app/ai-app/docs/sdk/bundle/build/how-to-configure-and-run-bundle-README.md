@@ -472,7 +472,7 @@ Examples:
 - `demo/dev`
 - `demo/test`
 
-Inside one `tenant/project`, bundles share the same environment boundary:
+Inside one `tenant/project`, bundles share the same deployment scope:
 
 - the same platform snapshot
 - the same deployment-scoped config/secrets boundary
@@ -664,7 +664,7 @@ with lite/regular/strong". For that, the bundle should put
 
 ## One Environment Can Host Many Bundles
 
-One `tenant/project` runtime is one environment.
+One running deployment is bound to one effective `tenant/project`.
 
 That environment can host many bundles at the same time.
 
@@ -686,7 +686,9 @@ Examples:
 All of those can live inside the same `tenant/project` if they belong to the
 same environment and should share its deployment boundary.
 
-Create a new `tenant/project` only when you need a new isolated environment.
+Create a separate deployment, and dedicated backing infrastructure where
+required, when you need a new isolation boundary. Give that deployment its own
+`tenant/project`.
 
 ## What A Bundle Is In This Guide
 

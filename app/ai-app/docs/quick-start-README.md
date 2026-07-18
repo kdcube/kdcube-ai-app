@@ -55,7 +55,8 @@ assembly.yaml / bundles.yaml / ...       --path / --release / --latest
 
 The important boundaries:
 
-- `tenant/project` is one isolated runtime environment.
+- one running deployment is bound to one `tenant/project` scope; backing
+  services may be dedicated or shared through namespacing.
 - descriptors configure the environment and app registry.
 - `kdcube init` creates or reseeds a runtime workdir.
 - `kdcube start` starts the Docker Compose stack.

@@ -120,15 +120,15 @@
 
   <!-- isolated execution (featured) -->
   <rect x="76" y="512" width="560" height="100" rx="3" fill="#F6F2FA" stroke="#C5B3DC"/>
-  <text x="90" y="528" font-size="9.5" font-weight="700" letter-spacing="1" fill="#6E5694">ISOLATED EXECUTION — UNTRUSTED &amp; MODEL-GENERATED CODE · @venv(...)</text>
+  <text x="90" y="528" font-size="9.5" font-weight="700" letter-spacing="1" fill="#6E5694">REFERENCE SPLIT EXECUTION — UNTRUSTED &amp; MODEL-GENERATED CODE · @venv(...)</text>
   <rect x="90" y="534" width="206" height="46" rx="3" fill="#FFFFFF" stroke="#C5B3DC"/>
   <text x="193" y="552" text-anchor="middle" font-size="11" font-weight="700" fill="#6E5694">Supervisor</text>
   <text x="193" y="568" text-anchor="middle" font-size="9.5" fill="#7E93A0">network + settings / secrets provider</text>
   <line x1="298" y1="557" x2="324" y2="557" stroke="#93A6B3" stroke-width="1.4" marker-end="url(#arr)"/>
   <rect x="326" y="534" width="300" height="46" rx="3" fill="#FFFFFF" stroke="#C5B3DC"/>
   <text x="476" y="552" text-anchor="middle" font-size="11" font-weight="700" fill="#6E5694">Executor — runs the untrusted code</text>
-  <text x="476" y="568" text-anchor="middle" font-size="9.5" fill="#7E93A0">separate UID · NO network (unshare CLONE_NEWNET)</text>
-  <text x="90" y="600" font-size="10" fill="#5A7184">modes: in-proc · local subprocess · Docker (production) · Fargate / ECS (distributed exec)</text>
+  <text x="476" y="568" text-anchor="middle" font-size="9.5" fill="#7E93A0">separate container · --network none · narrow mounts</text>
+  <text x="90" y="600" font-size="10" fill="#5A7184">profiles: in-proc · local crash containment · combined (legacy) · split (reference) · remote</text>
 
   <!-- named service provider -->
   <rect x="76" y="620" width="560" height="92" rx="3" fill="#FBF6E9" stroke="#DCC489"/>

@@ -11,7 +11,9 @@ see_also:
 ---
 # Isolated Code Execution - Operations Guide
 
-This guide covers setup and configuration for running [AI-]generated Python code in isolated Docker containers with network isolation and privilege separation.
+This guide covers setup and configuration for running [AI-]generated Python
+code with the reference split-Docker profile: separate supervisor and executor
+containers, executor network isolation, and privilege separation.
 
 ## Table of Contents
 
@@ -29,8 +31,8 @@ This guide covers setup and configuration for running [AI-]generated Python code
 
 ## Overview
 
-The isolated execution system allows running untrusted AI-generated code safely by:
-- **Network isolation** - Executor code cannot access the internet or internal services
+The split-Docker execution profile constrains untrusted AI-generated code by:
+- **Network isolation** - The split executor container cannot access the internet or internal services
 - **Privilege separation** - Supervisor handles tool calls; untrusted code runs in isolated executor
 - **Tool proxying (Docker mode)** - All tool calls are proxied via Unix socket to the supervisor
 - **Read-only filesystem** - Container has read-only root, only workspace is writable
@@ -491,7 +493,10 @@ NO_PROXY=169.254.169.254,localhost,127.0.0.1
 AWS_SDK_LOAD_CONFIG=1
 ```
 
-**Security Note:** Executor subprocess NEVER sees AWS credentials (filtered from environment).
+**Security note:** The platform-built Docker executor environment filters AWS
+credentials, and the split executor does not receive supervisor descriptor or
+storage mounts. Local subprocess mode inherits the host environment and is not
+a credential boundary.
 
 ---
 

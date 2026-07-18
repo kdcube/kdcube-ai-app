@@ -718,7 +718,7 @@ Use claims that name the boundary they describe:
 | Agent-framework integration | Agent adapters can bind the same per-turn workspace, isolated executor, trusted supervisor tools, and file-hosting path. The LangGraph reference app exposes this as `run_python`. |
 | Isolated execution | In split execution, the restricted executor receives narrow work/output surfaces and reaches privileged operations through the trusted supervisor. |
 | Trusted apps/tools | Apps and tools are trusted server code and use scoped stores, surface guards, and carried request identity. |
-| Combined posture | KDCube combines namespace isolation at the deployment layer, identity and grant enforcement in the shared runtime, and structural isolation around model-generated code. |
+| Layered posture | KDCube combines namespace isolation at the deployment layer, identity and grant enforcement in the shared runtime, and structural isolation around model-generated code. |
 
 Keep these guarantees attached to their enforcing boundaries. Shared
 infrastructure can contain several tenant/project namespaces, trusted app code
