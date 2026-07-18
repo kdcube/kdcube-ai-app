@@ -235,9 +235,15 @@ function ConsentAside({
     return (
       <span
         className="k-menu-tag k-menu-tag-ok"
-        title={`${agentGrant ? 'Agent access' : 'Account access'} granted: ${consent.claims.join(', ')}`}
+        title={agentGrant
+          // The tag covers ONE leg: what the user granted THIS AGENT. Tools
+          // that act on the user's connected accounts also run under those
+          // accounts' own consents (Delegated to KDCube), asked per claim at
+          // the moment a call needs them.
+          ? `You granted this agent: ${consent.claims.join(', ')}. Tools that act on your connected accounts also use those accounts' own consents, asked when a call needs them.`
+          : `Account access granted: ${consent.claims.join(', ')}`}
       >
-        {agentGrant ? 'granted' : 'connected'}
+        {agentGrant ? 'granted to agent' : 'connected'}
       </span>
     )
   }
@@ -1110,15 +1116,25 @@ export function useCapabilityPickerBody({
     return () => window.clearTimeout(timer)
   }, [confirmState, presentation])
 
+  const capabilitiesRef = useRef(capabilities)
+  capabilitiesRef.current = capabilities
   useEffect(() => {
-    if (active) capabilities.load()
+    if (active) {
+      // Opening the menu is the moment fresh consent/grant state matters — a
+      // grant or revoke made in Connection Hub must show here. Re-fetch on the
+      // open TRANSITION (ref keeps this out of the per-state-change loop),
+      // except while local toggles are unsaved or saving — a reload would
+      // clobber them; those opens keep the cached inventory.
+      const caps = capabilitiesRef.current
+      caps.load(caps.dirty || caps.saving ? {} : { force: true })
+    }
     if (!active) {
       openInitialModelRef.current = null
       setToggledThisOpen(false)
       setConfirmState(null)
       setRememberChoice(false)
     }
-  }, [active, capabilities])
+  }, [active])
 
   useEffect(() => {
     if (active && capabilities.status === 'ready' && openInitialModelRef.current === null) {
