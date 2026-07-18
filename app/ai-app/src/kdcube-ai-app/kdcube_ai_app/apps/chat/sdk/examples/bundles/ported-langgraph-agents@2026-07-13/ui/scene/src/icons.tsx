@@ -44,9 +44,21 @@ export function ToolChatIcon() {
   )
 }
 
+/** Connection Hub — two linked plugs. */
+export function ConnectionHubIcon() {
+  return (
+    <StrokeSvg>
+      <path d="M9 7 7 9a4.2 4.2 0 0 0 0 6l2 2" />
+      <path d="m15 17 2-2a4.2 4.2 0 0 0 0-6l-2-2" />
+      <path d="M8.5 12h7" />
+    </StrokeSvg>
+  )
+}
+
 const ICONS: Record<string, () => React.JSX.Element> = {
   chat_lg_solution: ResearchChatIcon,
   chat_lg_react: ToolChatIcon,
+  connection_hub: ConnectionHubIcon,
 }
 
 export function componentIcon(alias: string): React.JSX.Element {

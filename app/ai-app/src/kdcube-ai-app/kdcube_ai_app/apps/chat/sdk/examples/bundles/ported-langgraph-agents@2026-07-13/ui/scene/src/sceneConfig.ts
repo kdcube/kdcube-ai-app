@@ -20,7 +20,9 @@ import {
   asRecord,
   asString,
   componentWidgetUrl,
+  postSceneOperation,
   requestSceneRuntimeConfig,
+  resolveComponentSpecs as resolveComponentSpecsWithDefaults,
   sceneContextFromConfig,
   sceneRouteContext,
   widgetUrlForBundle,
@@ -69,9 +71,17 @@ export function chatWidgetParams(ctx: RouteContext): Record<string, string> {
 }
 
 /**
- * The two docked chat tiles — one dedicated widget per hosted agent. Both mount
- * the app's SDK chat widget (different alias => different agent-bound build); the
- * scene mounts each by its own alias, side by side, as one integral surface.
+ * The two docked chat tiles — one dedicated widget per hosted agent. Each chat
+ * tile mounts the app's SDK chat widget (different alias => different
+ * agent-bound build); the scene mounts each by its own alias, side by side, as
+ * one integral surface.
+ *
+ * Further components come from the DESCRIPTOR: the app's
+ * `surfaces.as_consumer.ui.scene.components` block declares summonable widgets
+ * of other apps (e.g. the Connection Hub `connections_settings` widget with
+ * `target_surfaces: [connection_hub.connections, connection_hub.settings]`, so
+ * consent cards and the picker's Grant affordance open it in-house). Config
+ * merges over these defaults by alias — declaring is enough; no code change.
  */
 export function defaultComponentSpecs(): SceneComponentSpec[] {
   return [
@@ -108,4 +118,26 @@ export function defaultComponentSpecs(): SceneComponentSpec[] {
       order: 20,
     },
   ]
+}
+
+/** Configured `components` merged over the defaults (add/override/disable by
+ *  alias — the package merge, same as the workspace scene). */
+export function resolveComponentSpecs(configured: unknown): SceneComponentSpec[] {
+  return resolveComponentSpecsWithDefaults(configured, defaultComponentSpecs())
+}
+
+/** The scene's descriptor-declared composition, from the app's
+ *  `scene_surface_config` operation (`surfaces.as_consumer.ui.scene`). A miss
+ *  keeps the code defaults — the two chat tiles always render. */
+export async function loadSceneComponents(ctx: RouteContext): Promise<SceneComponentSpec[]> {
+  try {
+    const payload = await postSceneOperation<Record<string, never>, {
+      ok?: boolean
+      components?: unknown
+    }>(ctx, 'scene_surface_config', {})
+    return resolveComponentSpecs(payload?.components)
+  } catch (error) {
+    console.warn('[ported-lg-scene] scene surface config unavailable', error)
+    return resolveComponentSpecs(undefined)
+  }
 }

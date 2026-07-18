@@ -11,14 +11,23 @@
  * `useWindowManager`, and a right-edge rail re-summons a floated/closed tile.
  *
  * The scene only composes: the summon rail, floating windows, the docked stage,
- * the visible-viewport clip probe, focus-raise, and the
+ * the visible-viewport clip probe, focus-raise, the
  * CONFIG_REQUEST/CONFIG_RESPONSE handshake that feeds each frame its runtime
- * config. (No pinboard / memories / usage / drag brokering / event relay — those
- * are workspace-scene concerns this app does not need.)
+ * config, and surface-command routing for the summonable Connection Hub — chat
+ * consent cards and the capabilities picker's Grant affordance open it in-house
+ * (the `connections.hub.open` contract). (No pinboard / memories / usage / drag
+ * brokering / event relay — those are workspace-scene concerns this app does
+ * not need.)
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
+import {
+  SCENE_SURFACE_COMMAND,
+  createSceneRuntime,
+  providerSurfaceCommandFromOpen,
+  type SceneSurfaceRegistration,
+} from '@kdcube/components-core/scene'
 import {
   FloatingWindow,
   Rail,
@@ -36,6 +45,7 @@ import {
   componentWidgetUrl,
   contextFromConfig,
   defaultComponentSpecs,
+  loadSceneComponents,
   requestRuntimeConfig,
   routeContext,
   type RouteContext,
@@ -65,8 +75,15 @@ function App() {
   const ctxRef = useRef(ctx)
   ctxRef.current = ctx
 
-  const components = useMemo(() => defaultComponentSpecs(), [])
+  // Code defaults render immediately; the descriptor's
+  // `surfaces.as_consumer.ui.scene.components` merges over them at boot (this is
+  // where the Connection Hub component is declared — configured, not hardcoded).
+  const [components, setComponents] = useState<SceneComponentSpec[]>(() => defaultComponentSpecs())
   const specByAlias = useMemo(() => new Map(components.map((spec) => [spec.alias, spec])), [components])
+  // Routes `kdcube.surface.command` (the `connections.hub.open` contract) to the
+  // component that declared the target surface — the same runtime the workspace
+  // scene uses.
+  const sceneRuntime = useMemo(() => createSceneRuntime({ logger: console }), [])
 
   const postToFrame = useCallback((alias: string, message: Record<string, unknown>): boolean => {
     const target = frameRefs.current[alias]?.contentWindow
@@ -105,6 +122,15 @@ function App() {
     const mgr = managerRef.current
     const spec = specByAlias.get(alias)
     if (!spec) return
+    if (spec.placement !== 'docked') {
+      // A summonable floating component (the Connection Hub): open/raise it.
+      mgr.open(alias, windowSizing(spec))
+      if (options.expanded !== undefined && spec.views) {
+        mgr.setExpanded(alias, windowSizing(spec), options.expanded)
+        window.setTimeout(() => syncWidgetView(alias, options.expanded ? 'expanded' : 'compact'), 0)
+      }
+      return
+    }
     // Docked tiles are always present on the stage; an expand request promotes +
     // maximizes the tile, a collapse docks it home, a plain open raises it.
     mgr.ensureDocked(alias)
@@ -119,12 +145,44 @@ function App() {
     }
   }, [dockComponent, promoteComponent, specByAlias, syncWidgetView])
 
+  // ----------------------------------------------- surface-command routing
+  // Components that declared `targetSurfaces` receive the surface-open commands
+  // chat widgets emit (`connections.hub.open`: consent cards + the picker's
+  // Grant affordance) — the command opens the window and lands in the widget's
+  // own vocabulary once its frame is ready.
+  const surfaceRegistry = useMemo<Record<string, SceneSurfaceRegistration>>(() => {
+    const registry: Record<string, SceneSurfaceRegistration> = {}
+    components.forEach((spec) => {
+      spec.targetSurfaces.forEach((targetSurface) => {
+        registry[targetSurface] = {
+          label: spec.title,
+          ensureOpen: () => openComponent(spec.alias),
+          isReady: () => Boolean(frameRefs.current[spec.alias]?.contentWindow),
+          postCommand: (command) => postToFrame(spec.alias, command as Record<string, unknown>),
+          commandFromOpen: providerSurfaceCommandFromOpen,
+        }
+      })
+    })
+    return registry
+  }, [components, openComponent, postToFrame])
+
+  useEffect(() => {
+    const unregister = Object.entries(surfaceRegistry).map(([targetSurface, registration]) =>
+      sceneRuntime.registerSurface(targetSurface, registration),
+    )
+    return () => unregister.forEach((dispose) => dispose())
+  }, [sceneRuntime, surfaceRegistry])
+
   // ---------------------------------------------------------------- boot
   useEffect(() => {
     requestRuntimeConfig()
       .then((config) => {
-        setCtx(contextFromConfig(config, fallback))
+        const resolved = contextFromConfig(config, fallback)
+        setCtx(resolved)
         setReady(true)
+        // The descriptor's scene composition merges over the code defaults;
+        // a miss keeps the defaults (the two chat tiles always render).
+        loadSceneComponents(resolved).then(setComponents).catch(() => undefined)
       })
       .catch(() => setReady(true))
   }, [fallback])
@@ -290,11 +348,36 @@ function App() {
         if (spec) managerRef.current.setExpanded(sourceAlias, windowSizing(spec), data.view === 'expanded')
         return
       }
+
+      // A chat widget asking the scene to open a declared surface (the
+      // `connections.hub.open` contract: consent cards, the picker's Grant) —
+      // route it and ack so the widget knows the scene handled it (no
+      // deep-link fallback).
+      if (type === SCENE_SURFACE_COMMAND) {
+        const targetSurface = asString(data.target_surface) || asString(data.targetSurface)
+        const result = sceneRuntime.queueSurfaceCommand(targetSurface, data)
+        const commandId = asString(data.command_id)
+        if (commandId && event.source) {
+          try {
+            (event.source as Window).postMessage({
+              type: 'kdcube.surface.command.ack',
+              command_id: commandId,
+              target_surface: targetSurface,
+              ok: result.ok,
+              code: result.code || '',
+            }, '*')
+          } catch {
+            /* the requester falls back on its ack timeout */
+          }
+        }
+        if (!result.ok) console.warn('[ported-lg-scene] surface command rejected', targetSurface, result.code)
+        return
+      }
     }
 
     window.addEventListener('message', onMessage)
     return () => window.removeEventListener('message', onMessage)
-  }, [aliasForSource, openComponent, specByAlias])
+  }, [aliasForSource, openComponent, sceneRuntime, specByAlias])
 
   // ------------------------------------------------------------- render
   if (!ready) {
@@ -325,6 +408,26 @@ function App() {
     .filter((spec) => spec.rail)
     .map((spec) => {
       const state = manager.get(spec.alias)
+      if (spec.placement !== 'docked') {
+        // A summonable floating component (the Connection Hub): the rail opens
+        // it, raises it when buried, and closes it when it is already on top.
+        return {
+          id: spec.alias,
+          label: spec.title,
+          title: spec.title,
+          accent: spec.accent,
+          icon: componentIcon(spec.alias),
+          open: Boolean(state?.open),
+          onToggle: () => {
+            if (state?.open) {
+              if (state.z < topFloatingZ) managerRef.current.front(spec.alias)
+              else managerRef.current.close(spec.alias)
+            } else {
+              openComponent(spec.alias)
+            }
+          },
+        }
+      }
       return {
         id: spec.alias,
         label: spec.title,
@@ -349,7 +452,12 @@ function App() {
     const state = manager.get(spec.alias)
     if (!state?.everOpened) return null
     const buried = isBuried(spec.alias)
-    const params = { ...chatWidgetParams(ctx), ...(spec.params ?? {}) }
+    // Own chat tiles get the host-embed chat params; another app's widget (the
+    // Connection Hub) gets only its declared params — the chat vocabulary is
+    // not its contract.
+    const params = spec.bundleId
+      ? { ...(spec.params ?? {}) }
+      : { ...chatWidgetParams(ctx), ...(spec.params ?? {}) }
     const src = componentWidgetUrl(ctx, { ...spec, params })
     return (
       <FloatingWindow
@@ -430,6 +538,12 @@ function App() {
           })}
         </div>
       ) : null}
+
+      {/* Summonable floating components (the Connection Hub): rendered outside
+          the docked stage, opened by the rail or a surface command. */}
+      {components
+        .filter((spec) => spec.placement !== 'docked')
+        .map((spec) => renderComponentWindow(spec))}
     </main>
   )
 }

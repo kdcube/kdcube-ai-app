@@ -1234,6 +1234,26 @@ class LGPortedAgentsBundle(BaseEntrypointWithEconomics):
 
     @api(
         method="POST",
+        alias="scene_surface_config",
+        route="operations",
+        **_api_visibility("scene_surface_config"),
+    )
+    async def scene_surface_config(self, **kwargs: Any) -> Dict[str, Any]:
+        """The scene's descriptor-declared composition
+        (`surfaces.as_consumer.ui.scene`): components merged over the scene's
+        code defaults by alias — this is where the Connection Hub component is
+        configured (bundle_id/widget_alias/target_surfaces), not hardcoded."""
+        del kwargs
+        scene_config = self.bundle_prop("surfaces.as_consumer.ui.scene", {}) or {}
+        if not isinstance(scene_config, Mapping):
+            scene_config = {}
+        components = scene_config.get("components")
+        if not isinstance(components, Mapping):
+            components = {}
+        return {"ok": True, "components": dict(components)}
+
+    @api(
+        method="POST",
         alias="scene_object_action",
         route="operations",
         **_api_visibility("scene_object_action"),
