@@ -1160,7 +1160,7 @@ bundles:
           #         gated: true
           #         views: false
           #         params:
-          #           tab: delegated_to_kdcube
+          #           tab: delegated_by_kdcube
           #         size: { w: 760, h: 640 }
           #         full: { w: 1040, h: 760 }
           #         target_surfaces:

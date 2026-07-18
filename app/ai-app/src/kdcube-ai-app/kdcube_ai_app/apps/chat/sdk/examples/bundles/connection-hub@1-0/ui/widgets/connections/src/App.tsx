@@ -72,6 +72,9 @@ export default function App() {
   // A fresh nonce remounts the delegated panel so it re-reads the URL deep
   // link a summon just wrote (0 = stable initial mount).
   const [delegatedSummonNonce, setDelegatedSummonNonce] = useState(0);
+  // Same remount trick for the delegated-access panel (Delegated by KDCube):
+  // a per-agent grant summon writes its pending request to the URL first.
+  const [delegatedAccessSummonNonce, setDelegatedAccessSummonNonce] = useState(0);
   const [telegramConnectStatus] = useState<TelegramConnectStatus>('idle');
   const authenticatorsLoading = useAppSelector((s) => s.authenticators.loading);
   const authenticatorsAllowed = useAppSelector((s) => s.authenticators.allowed);
@@ -202,12 +205,30 @@ export default function App() {
       if (!command) return;
       const params = command.params;
       const tab = tabFromValue(command.tab)
-        ?? ((params.provider_id || params.connector_app_id || params.claims)
-          ? 'delegatedToKdcube'
-          : (params.provider || params.tiers || params.account_id)
-            ? 'providerConnections'
-            : null);
-      if (tab === 'delegatedToKdcube') {
+        ?? ((params.pending_agent_grant || params.agent_client_id)
+          ? 'delegatedAccess'
+          : (params.provider_id || params.connector_app_id || params.claims)
+            ? 'delegatedToKdcube'
+            : (params.provider || params.tiers || params.account_id)
+              ? 'providerConnections'
+              : null);
+      if (tab === 'delegatedAccess') {
+        // A pending per-agent grant summon (a chat consent card / the picker's
+        // Grant): the request rides the URL so the delegated-access panel can
+        // offer its one-click grant pane; the nonce remounts it to re-read.
+        try {
+          const url = new URL(window.location.href);
+          (['pending_agent_grant', 'agent_client_id', 'resource', 'claims'] as const).forEach((key) => {
+            const value = (params[key] || '').trim();
+            if (value) url.searchParams.set(key, value);
+            else url.searchParams.delete(key);
+          });
+          window.history.replaceState({}, '', url.toString());
+        } catch {
+          // Embedded/test contexts may not allow history mutation.
+        }
+        setDelegatedAccessSummonNonce(Date.now());
+      } else if (tab === 'delegatedToKdcube') {
         try {
           const url = new URL(window.location.href);
           (['provider_id', 'connector_app_id', 'claims', 'account_id'] as const).forEach((key) => {
@@ -280,7 +301,7 @@ export default function App() {
       {activeTab === 'identity' ? <ConnectionEdgesPanel telegramConnectStatus={telegramConnectStatus} /> : null}
       {activeTab === 'authenticators' && authenticatorsAllowed ? <AuthenticatorsPanel /> : null}
       {activeTab === 'accessMap' && authenticatorsAllowed ? <AccessMapPanel /> : null}
-      {activeTab === 'delegatedAccess' ? <DelegatedAccessPanel /> : null}
+      {activeTab === 'delegatedAccess' ? <DelegatedAccessPanel key={delegatedAccessSummonNonce} /> : null}
       {activeTab === 'delegatedToKdcube' ? <DelegatedToKdcubePanel key={delegatedSummonNonce} /> : null}
       {activeTab === 'providerConnections' ? <ProviderConnectionsPanel summon={hubSummon ?? undefined} /> : null}
     </AppShell>

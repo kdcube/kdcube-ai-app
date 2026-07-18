@@ -137,7 +137,9 @@ test('a per-agent grant demand routes the banner to the Delegated-by-KDCube tab 
   assert.equal(shown.banners.length, 1)
   const banner = shown.banners[0]
   assert.equal(banner.actionLabel, 'Grant access')
-  assert.equal(banner.consent.tab, 'delegated_to_kdcube')
+  // The AUTOMATION tab (Delegated by KDCube) — an agent grant is a kind of
+  // automation access; the connected-accounts tab is the wrong destination.
+  assert.equal(banner.consent.tab, 'delegated_by_kdcube')
   assert.equal(banner.consent.params.agent_client_id, 'kdcube-agent:app:lg-react')
   assert.equal(banner.consent.params.pending_agent_grant, '1')
   assert.equal(banner.consent.params.resource, 'https://h/api/mcp/mem')
