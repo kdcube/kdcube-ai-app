@@ -433,7 +433,9 @@ export function DelegatedToKdcubePanel() {
       <div className="card-head">
         <p className="muted" style={{ margin: 0 }}>
           External accounts this user allows KDCube applications or automation
-          to use.
+          to use. Connecting an account is only step one: each agent or app
+          still needs its own grant, per account, for what it may do with it
+          (approved under Delegated by KDCube).
         </p>
         <span className="badge badge-ok">{providerList.length} providers</span>
       </div>

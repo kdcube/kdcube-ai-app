@@ -517,8 +517,10 @@ export function DelegatedAccessPanel({ openParams }: { openParams?: Record<strin
     <section className="card">
       <div className="card-head">
         <p className="muted" style={{ margin: 0 }}>
-          Access this user granted to agents, automations, and external clients.
-          Revoking stops that caller immediately.
+          Access this user granted to agents, automations, and external clients —
+          each grant is per caller: an agent or connected app gets exactly what
+          you approve here, nothing more. Edit narrows or extends it live;
+          revoking stops that caller immediately.
         </p>
         {platformUserId ? <span className="badge badge-ok" title={platformUserId}>you</span> : null}
       </div>
@@ -617,41 +619,92 @@ export function DelegatedAccessPanel({ openParams }: { openParams?: Record<strin
 
       {otherItems.length ? (
         <ul className="accounts">
-          {otherItems.map((item) => (
-            <li className="account" key={item.access_id}>
-              <div>
-                <div className="account-title">
-                  {item.label || item.access_id}
-                  {item.source === 'oauth'
-                    ? <span className="badge badge-ok">connected app</span>
-                    : <span className="badge badge-warn">manual token</span>}
-                </div>
-                {item.client_id && item.client_id !== item.label ? <div className="account-sub">{item.client_id}</div> : null}
-                {item.resource_grants && Object.keys(item.resource_grants).length ? (
-                  <div className="account-sub">
-                    Access: {Object.entries(item.resource_grants).map(([resource, grants]) => `${resource === '*' ? 'all resources' : resource} → ${grants.join(', ')}`).join('; ')}
+          {otherItems.map((item) => {
+            // A connected external client (an OAuth app — Claude Code) is
+            // editable in place: its card is the authority the guard resolves
+            // live, so ticking/unticking claims narrows or extends what the
+            // client may do on the bearer it already holds. Manual tokens keep
+            // their own credential flow (only revoke).
+            const editable = item.source === 'oauth' && Boolean(item.client_id);
+            const editing = editable && editingAccessId === item.access_id;
+            return (
+              <li className="account" key={item.access_id}>
+                <div>
+                  <div className="account-title">
+                    {item.label || item.access_id}
+                    {item.source === 'oauth'
+                      ? <span className="badge badge-ok">connected app</span>
+                      : <span className="badge badge-warn">manual token</span>}
                   </div>
-                ) : null}
-                {item.operations?.length ? <div className="account-sub">Operations: {item.operations.join(', ')}</div> : null}
-                {item.named_service_operations && Object.keys(item.named_service_operations).length ? (
+                  {item.client_id && item.client_id !== item.label ? <div className="account-sub">{item.client_id}</div> : null}
+                  {item.resource_grants && Object.keys(item.resource_grants).length ? (
+                    editing ? (
+                      Object.entries(item.resource_grants).map(([resource, grants]) => (
+                        <div key={resource}>
+                          <div className="account-title">{resource === '*' ? 'all resources' : (resourceLabelFor(resource) || resource)}</div>
+                          <div className="resource-grants">
+                            {grants.map((claim) => (
+                              <label className="grant-chip" key={`${resource}:${claim}`} title={grantOptionByName.get(claim)?.label || undefined}>
+                                <input
+                                  type="checkbox"
+                                  checked={editPicks[`${resource}:${claim}`] !== false}
+                                  onChange={(event) => setEditPicks((current) => ({
+                                    ...current, [`${resource}:${claim}`]: event.target.checked,
+                                  }))}
+                                />
+                                <span>{claim}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="account-sub">
+                        Access: {Object.entries(item.resource_grants).map(([resource, grants]) => `${resource === '*' ? 'all resources' : resource} → ${grants.join(', ')}`).join('; ')}
+                      </div>
+                    )
+                  ) : null}
+                  {item.operations?.length ? <div className="account-sub">Operations: {item.operations.join(', ')}</div> : null}
+                  {item.named_service_operations && Object.keys(item.named_service_operations).length ? (
+                    <div className="account-sub">
+                      Named services: {Object.values(item.named_service_operations)
+                        .flatMap((namespaces) => Object.entries(namespaces))
+                        .map(([namespace, operations]) => `${namespace} (${operations.join(', ')})`)
+                        .join('; ')}
+                    </div>
+                  ) : null}
                   <div className="account-sub">
-                    Named services: {Object.values(item.named_service_operations)
-                      .flatMap((namespaces) => Object.entries(namespaces))
-                      .map(([namespace, operations]) => `${namespace} (${operations.join(', ')})`)
-                      .join('; ')}
+                    {item.source === 'oauth' ? 'Approved' : 'Created'} {formatDate(item.created_at) || 'unknown'}
+                    {' · '}expires {formatDate(item.expires_at) || 'unknown'}
+                    {item.last_four ? ` · token ends ${item.last_four}` : ''}
                   </div>
-                ) : null}
-                <div className="account-sub">
-                  {item.source === 'oauth' ? 'Approved' : 'Created'} {formatDate(item.created_at) || 'unknown'}
-                  {' · '}expires {formatDate(item.expires_at) || 'unknown'}
-                  {item.last_four ? ` · token ends ${item.last_four}` : ''}
                 </div>
-              </div>
-              <button className="btn btn-danger" type="button" disabled={busy} onClick={() => revoke(item.access_id)}>
-                Revoke
-              </button>
-            </li>
-          ))}
+                <div className="row" style={{ flexDirection: 'column', gap: 6, alignItems: 'stretch' }}>
+                  {editing ? (
+                    <>
+                      <button className="btn" type="button" disabled={busy} onClick={() => saveEdit(item)}>
+                        Save
+                      </button>
+                      <button className="btn" type="button" disabled={busy} onClick={() => { setEditingAccessId(null); setEditPicks({}); }}>
+                        Cancel
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      {editable ? (
+                        <button className="btn" type="button" disabled={busy} onClick={() => startEdit(item)}>
+                          Edit
+                        </button>
+                      ) : null}
+                      <button className="btn btn-danger" type="button" disabled={busy} onClick={() => revoke(item.access_id)}>
+                        Revoke
+                      </button>
+                    </>
+                  )}
+                </div>
+              </li>
+            );
+          })}
         </ul>
       ) : null}
 

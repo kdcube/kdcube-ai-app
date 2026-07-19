@@ -1061,3 +1061,31 @@ async def test_external_client_card_extends_and_refresh_registration_merges():
         scopes=["records:read"], resource=resource, access_token="tokB",
     )
     assert sorted(again.resource_grants[resource]) == ["records:read", "records:write"]
+
+
+@pytest.mark.asyncio
+async def test_external_client_edit_replaces_and_narrows():
+    # The pointer/card design: editing an external client's card REPLACES its
+    # resource grants exactly (narrowing allowed, read+write -> read). The
+    # guard resolves the card live, so it applies on the client's next call.
+    service = _agent_service()
+    resource = "https://example.test/mcp"
+
+    await service.record_oauth_grant(
+        grantor_subject="platform-user-1", client_id="claude",
+        scopes=["records:read", "records:write"], resource=resource, access_token="tokA",
+    )
+
+    writer = {**_AGENT_USER, "permissions": ["records:write"]}
+    # Merge (extension) — default: adds without dropping.
+    merged = await service.extend_client_access(
+        writer, client_id="claude", resource=resource, claims=["records:read"],
+    )
+    assert sorted(merged["resource_grants"][resource]) == ["records:read", "records:write"]
+
+    # Replace (edit) — narrow to read only.
+    narrowed = await service.extend_client_access(
+        writer, client_id="claude", resource=resource, claims=["records:read"], replace=True,
+    )
+    assert narrowed["ok"] is True
+    assert narrowed["resource_grants"][resource] == ["records:read"]  # write dropped

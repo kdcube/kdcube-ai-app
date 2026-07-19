@@ -1261,11 +1261,17 @@ class AutomationAccessService:
         client_id: str,
         resource: str,
         claims: Iterable[str],
+        replace: bool = False,
     ) -> dict[str, Any]:
-        """Merge claims into an EXISTING external client's card (extension only —
-        an unknown client is never created here; its card is born at OAuth
-        consent). The guard resolves the card live, so the client's very next
-        call carries the new claims on the bearer it already holds."""
+        """Edit an EXISTING external client's card (an unknown client is never
+        created here; its card is born at OAuth consent). ``replace=False``
+        MERGES the claims in (a one-click extension); ``replace=True`` makes the
+        submitted claim set the resource's grants EXACTLY (the edit-in-place
+        path — allowing narrowing, e.g. read+write -> read). The card is the
+        authority the guard resolves live, so either takes effect on the
+        client's very next call, on the bearer it already holds; a
+        pointer-carrying refresh re-derives from the card, so a narrowing
+        sticks across token rotations."""
         grantor_subject = _subject_from_user(user)
         if not grantor_subject:
             return {"ok": False, "error": "delegated_access_requires_authenticated_user"}
@@ -1292,10 +1298,14 @@ class AutomationAccessService:
             if outside:
                 return {"ok": False, "error": "delegated_access_grants_not_delegable", "grants": outside}
         key = resource_value or "*"
-        merged = list(record.resource_grants.get(key, ()))
-        for claim in claim_list:
-            if claim not in merged:
-                merged.append(claim)
+        if replace:
+            # Edit: the submitted set becomes the resource's grants exactly.
+            merged = list(claim_list)
+        else:
+            merged = list(record.resource_grants.get(key, ()))
+            for claim in claim_list:
+                if claim not in merged:
+                    merged.append(claim)
         resource_grants = {res: tuple(vals) for res, vals in record.resource_grants.items()}
         resource_grants[key] = tuple(merged)
         try:
@@ -1307,7 +1317,7 @@ class AutomationAccessService:
         await self._redis.setex(
             self._record_key(access_id), max(60, int(ttl or 0) or 60), json.dumps(record_dict),
         )
-        await self.notify_change(grantor_subject, action="extended", access={
+        await self.notify_change(grantor_subject, action="edited" if replace else "extended", access={
             k: v for k, v in record_dict.items() if k not in ("access_token", "refresh_token", "session_id")
         })
         return {"ok": True, "access_id": access_id, "resource_grants": {res: list(vals) for res, vals in resource_grants.items()}}

@@ -1797,15 +1797,17 @@ class ConnectionHubEntrypoint(BaseEntrypoint):
             return {"ok": False, "error": "delegated_agent_grant_requires_resource_and_claims"}
         if client_id and not client_id.startswith("kdcube-agent:"):
             # An EXTERNAL delegated client (an OAuth app — Claude Code): the
-            # user may EXTEND its existing card here (born at its own OAuth
-            # consent; never created from this operation). The guard resolves
-            # the card live, so the client's next call carries the new claims
-            # on the bearer it already holds.
+            # user EDITS its existing card here (born at its own OAuth consent;
+            # never created from this operation). `replace: true` is the
+            # edit-in-place semantics (the submitted set becomes the record —
+            # narrowing allowed); default merges. The guard resolves the card
+            # live, so the change carries on the bearer the client already holds.
             return await _automation_access_service(self, request).extend_client_access(
                 user,
                 client_id=client_id,
                 resource=resource,
                 claims=claims,
+                replace=bool(payload.get("replace")),
             )
         if not client_id.startswith("kdcube-agent:"):
             return {"ok": False, "error": "delegated_agent_grant_invalid_client"}
