@@ -49,7 +49,7 @@ signed-in user*:
   kind: mcp
   delegated: true            # carries the agent's consented bearer, never the raw session
   url: https://<host>/api/integrations/bundles/<t>/<p>/kdcube-services@1-0/public/mcp/named_services
-  scopes: [named_services:use, mail:read, slack:read]
+  scopes: [named_services:use]   # read/write on mail/slack is the per-account provider claim, not a door scope
 ```
 
 The first time the agent needs the capability, a **consent card appears in chat**

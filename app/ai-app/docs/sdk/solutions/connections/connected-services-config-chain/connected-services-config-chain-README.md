@@ -194,9 +194,17 @@ appear in the connection `scopes` alongside `named_services:use`:
 scopes: [named_services:use, conv:read]     # + mem's claim, to reach memory via this door
 ```
 
-Memory can be reached two ways — as the `mem` namespace on this shared
-`named_services` door (consistent with `conv`, one connection and one consent),
-or through the user-memories app's own dedicated `/public/mcp/memories` door (a
-separate connection with its own consent). Prefer the shared door unless memory
-must be granted and toggled independently of the rest of the named-services
-surface.
+Memory can be reached **two ways**, and both are valid — the point is that a
+delegated MCP binding is not only ever "the named-services door":
+
+- as the `mem` namespace on this shared `named_services` door (consistent with
+  `conv` — one connection, one consent for the whole surface); or
+- through the user-memories app's **own dedicated** `/public/mcp/memories` door —
+  a separate `delegated: true` connection with its own consent and its own picker
+  toggle.
+
+The built-in react-lg example **deliberately uses the dedicated door for memory**
+while using the shared door for `conv`, so a reader sees *both* binding shapes
+side by side: a service on its own MCP door, and a namespace on the shared door.
+Choose the dedicated door when a capability should be granted and revoked
+independently; choose the shared door to fold a namespace into one surface.

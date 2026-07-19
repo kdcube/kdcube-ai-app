@@ -117,7 +117,7 @@ as the fine-grained ceiling:
   resource: "*/api/integrations/bundles/*/*/kdcube-services@1-0/public/mcp/named_services*"
   transport: streamable_http
   delegated: true
-  scopes: [named_services:use, slack:read, slack:write, conv:read]
+  scopes: [named_services:use, conv:read]   # conv is built-in (no account); mail/slack read/write is per-account
 - name: named_services_roster       # binds no tools; teaches the prompt the realms
   kind: named_service
   alias: named_services
