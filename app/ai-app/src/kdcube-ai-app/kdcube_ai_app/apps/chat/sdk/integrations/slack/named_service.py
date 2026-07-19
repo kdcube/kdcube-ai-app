@@ -98,20 +98,19 @@ ACTION_ASSISTANT_SEARCH_INFO = "assistant_search_info"
 ACTION_REQUEST_UPLOAD = "request_upload"
 ACTION_DISCARD_UPLOAD = "discard_upload"
 
-# The door admits a slack operation on the umbrella `named_services:use` alone.
-# Read/write is NOT a namespace-level claim here — it is the REAL provider claim
-# (slack:read / slack:write) resolved PER ACCOUNT by the broker (see
-# SLACK_CONNECTED_ACCOUNT_REQUIREMENTS.claims_by_operation). One source of truth
-# for read/write: the per-account provider claim. The old namespace derivations
-# are gone.
+# Slack is a SINGLE provider, so it uses its OWN real provider claims — the exact
+# ones the Slack API needs per operation — not an invented namespace claim
+# (slack:read/slack:write are gone). These match SLACK_CONNECTED_ACCOUNT_CLAIMS,
+# so the door demand, the connected-account consent, and the per-account binding
+# all speak one vocabulary.
 SLACK_GRANT_HINTS = {
-    "object.list": ["named_services:use"],
-    "object.search": ["named_services:use"],
-    "object.get": ["named_services:use"],
-    "object.action.download_file": ["named_services:use"],
-    "object.action.assistant_search_info": ["named_services:use"],
-    "object.action.post_message": ["named_services:use"],
-    "object.action.upload_file": ["named_services:use"],
+    "object.list": [SLACK_CHANNELS_CLAIM],
+    "object.search": [SLACK_SEARCH_CLAIM],
+    "object.get": [SLACK_HISTORY_CLAIM],
+    "object.action.download_file": [SLACK_FILES_READ_CLAIM],
+    "object.action.assistant_search_info": [SLACK_ASSISTANT_SEARCH_CLAIM],
+    "object.action.post_message": [SLACK_POST_CLAIM],
+    "object.action.upload_file": [SLACK_FILES_WRITE_CLAIM],
 }
 
 SLACK_CONNECTED_ACCOUNT_CLAIMS = {
