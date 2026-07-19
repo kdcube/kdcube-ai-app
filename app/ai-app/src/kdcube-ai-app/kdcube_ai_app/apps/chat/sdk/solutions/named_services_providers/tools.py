@@ -812,6 +812,16 @@ async def _call(
         (payload.get("error") or {}).get("code") if isinstance(payload.get("error"), Mapping) else "",
         response.status,
     )
+    if payload.get("ok"):
+        # A file object carrying a download URL is delivered to the user as a
+        # chat file card (object ref, resolved at click time under the user's
+        # session); the model-visible result keeps a delivery note instead of
+        # the URL — signed links never ride the model's typing.
+        from kdcube_ai_app.apps.chat.sdk.solutions.widgets.send_to_user import (
+            deliver_result_files,
+        )
+
+        payload = await deliver_result_files(payload)
     return payload
 
 

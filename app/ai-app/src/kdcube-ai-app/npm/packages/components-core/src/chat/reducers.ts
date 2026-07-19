@@ -1383,6 +1383,7 @@ export function applyChatStep(state: ChatState, env: ChatStepEnvelope): ChatStat
             title: typeof item.title === 'string' ? item.title : null,
             body: typeof item.body === 'string' ? item.body : null,
             favicon: typeof item.favicon === 'string' ? item.favicon : null,
+            placement: item.placement === 'chat' ? 'chat' : undefined,
           })
         }
       }

@@ -157,3 +157,81 @@ def test_user_opt_out_drops_the_mcp_connection() -> None:
     assert m.mcp_connections([_MCP_CONN], None) == [_MCP_CONN]          # not opted out -> kept
     assert m.mcp_connections([_MCP_CONN], {"memory": True}) == []       # opted out -> dropped
     assert m.mcp_connections([_MCP_CONN], {"other": True}) == [_MCP_CONN]  # unrelated opt-out ignored
+
+
+def test_wrap_tools_delivers_files_to_user_and_strips_the_url(monkeypatch) -> None:
+    # A named-service MCP result carrying a signed download URL: the wrap
+    # emits the file to the USER as a chat.files card (object ref, no URL)
+    # and the MODEL-visible result keeps a delivery note instead of the URL —
+    # a hand-typed signed link is how the corrupted-token 403 happened.
+    import json as _json
+
+    m = _mcp_module()
+
+    slack_ref = "slack:acct:file:F123"
+    raw = _json.dumps({
+        "ok": True,
+        "object": {
+            "ref": slack_ref, "object_ref": slack_ref, "object_kind": "slack.file",
+            "name": "img.png", "mimetype": "image/png", "size": 75,
+            "download": {"encoding": "url", "url": "http://h/dl?download_token=SIGNED"},
+        },
+    })
+
+    class _Tool:
+        name = "named_services_action"
+
+        async def _run(self) -> str:
+            return raw
+
+    tool = _Tool()
+    tool.coroutine = tool._run
+
+    events: list = []
+
+    class _Comm:
+        async def event(self, **kwargs):
+            events.append(kwargs)
+
+    from kdcube_ai_app.apps.chat.sdk.runtime import comm_ctx
+    monkeypatch.setattr(comm_ctx, "get_comm", lambda: _Comm())
+
+    m.wrap_tools_with_user_delivery([tool])
+    out = asyncio.run(tool.coroutine())
+
+    assert len(events) == 1
+    assert events[0]["type"] == "chat.files"
+    assert events[0]["data"]["items"][0]["object_ref"] == slack_ref
+    assert "download_token" not in str(events[0])
+
+    parsed = _json.loads(out)
+    assert parsed["object"]["download"]["delivered"] is True
+    assert "download_token" not in out
+
+
+def test_wrap_tools_without_chat_lane_keeps_the_url(monkeypatch) -> None:
+    # Turn-less (no communicator): the URL contract stays for clients that
+    # fetch out-of-band; nothing is emitted, nothing rewritten.
+    import json as _json
+
+    m = _mcp_module()
+    raw = _json.dumps({
+        "ok": True,
+        "object": {"ref": "slack:a:file:F1", "name": "f.bin",
+                   "download": {"encoding": "url", "url": "http://h/dl?t=S"}},
+    })
+
+    class _Tool:
+        name = "named_services_get"
+
+        async def _run(self) -> str:
+            return raw
+
+    tool = _Tool()
+    tool.coroutine = tool._run
+
+    from kdcube_ai_app.apps.chat.sdk.runtime import comm_ctx
+    monkeypatch.setattr(comm_ctx, "get_comm", lambda: None)
+
+    m.wrap_tools_with_user_delivery([tool])
+    assert asyncio.run(tool.coroutine()) == raw

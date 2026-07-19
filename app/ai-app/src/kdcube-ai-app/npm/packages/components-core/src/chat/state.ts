@@ -69,6 +69,8 @@ export interface LinkArtifact {
   title?: string | null
   body?: string | null
   favicon?: string | null
+  /** 'chat' settles the link in the conversation flow as well as the Links tab. */
+  placement?: 'links' | 'chat'
 }
 
 export interface FileArtifact {

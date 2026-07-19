@@ -26,6 +26,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any, Dict, List, Mapping, Optional
 
@@ -54,6 +55,7 @@ __all__ = [
     "load_mcp_tools_for_connections",
     "consent_request_tools",
     "mcp_adapters_available",
+    "wrap_tools_with_user_delivery",
 ]
 
 
@@ -117,6 +119,60 @@ def _conn_alias(conn: Mapping[str, Any]) -> str:
     return str(conn.get("alias") or conn.get("name") or "").strip()
 
 
+def _deliverable(text: str) -> Any | None:
+    """Parse an MCP tool's text content when it can carry a file delivery."""
+    raw = str(text or "").strip()
+    if not raw.startswith("{") or '"download"' not in raw:
+        return None
+    try:
+        parsed = json.loads(raw)
+    except Exception:
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def wrap_tools_with_user_delivery(tools: List[Any]) -> List[Any]:
+    """Route file deliveries in MCP tool results to the user, not the model.
+
+    An MCP-served named-service result may carry a file object with an
+    out-of-band download URL (the turn-less contract). This agent runs INSIDE
+    a chat turn, so the file goes to the user as a chat file card (object ref,
+    click-time resolution) and the model-visible result keeps a delivery note
+    in place of the URL — a signed link the model would otherwise have to
+    re-type into its message, corrupting it some fraction of the time.
+    Mutates each tool's coroutine in place; tools without one pass through."""
+    from kdcube_ai_app.apps.chat.sdk.solutions.widgets.send_to_user import (
+        deliver_result_files,
+    )
+
+    def _wrap(orig: Any) -> Any:
+        async def run(*args: Any, **kwargs: Any) -> Any:
+            result = await orig(*args, **kwargs)
+            try:
+                if isinstance(result, str):
+                    parsed = _deliverable(result)
+                    if parsed is not None:
+                        delivered = await deliver_result_files(parsed)
+                        if delivered is not parsed:
+                            return json.dumps(delivered, ensure_ascii=False)
+                elif isinstance(result, dict):
+                    return await deliver_result_files(result)
+            except Exception:  # pragma: no cover - delivery is best-effort
+                logger.info("mcp tool delivery post-process failed (non-fatal)", exc_info=True)
+            return result
+
+        return run
+
+    for tool in tools or []:
+        orig = getattr(tool, "coroutine", None)
+        if callable(orig):
+            try:
+                tool.coroutine = _wrap(orig)
+            except Exception:
+                logger.info("mcp tool %s: delivery wrap failed (non-fatal)", getattr(tool, "name", "?"))
+    return tools
+
+
 def mcp_connections(
     connections: List[Dict[str, Any]],
     disabled_map: Optional[Mapping[str, Any]] = None,
@@ -172,6 +228,7 @@ async def load_mcp_tools_for_connections(
     )
     error_sink: Dict[str, Any] = {}
     tools = await load_mcp_tools_from_server_map(server_map, error_sink=error_sink)
+    tools = wrap_tools_with_user_delivery(tools)
 
     # An MCP server may publish an operating guide in its initialize result —
     # what MCP-native clients (e.g. Claude connectors) show their model. The

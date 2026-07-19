@@ -678,6 +678,23 @@ function ChatFileBlockImpl({
   )
 }
 
+/** A link explicitly delivered into the conversation flow (`placement:
+ *  'chat'`) — one compact `.k-result-row`, mirroring the Links tab rows. */
+function ChatDeliveredLinkRow({ artifact }: { artifact: LinkArtifact }) {
+  return (
+    <div className="k-result-list mt-1">
+      <a href={artifact.url} target="_blank" rel="noreferrer" className="k-result-row">
+        <FaviconImg url={artifact.url} favicon={artifact.favicon} />
+        <div className="k-result-main">
+          <span className="k-result-title">{artifact.title || artifact.url}</span>
+          <span className="k-result-host">{shortUrl(artifact.url)}</span>
+          {artifact.body ? <span className="k-result-body">{artifact.body}</span> : null}
+        </div>
+      </a>
+    </div>
+  )
+}
+
 /** Service error artifact in Chat view — inline error notice. */
 function ChatServiceErrorBlockImpl({ artifact }: { artifact: ServiceErrorArtifact }) {
   return (
@@ -703,16 +720,15 @@ function ChatArtifactRowImpl({
     case 'code_exec':  return <ChatCodeExecBlock artifact={artifact} />
     case 'canvas':     return <ChatCanvasBlock artifact={artifact} />
     case 'timeline':   return <ChatTimelineBlock artifact={artifact} />
-    /* Chat view intentionally suppresses bare citation cards.
-     *
-     *  Citation artifacts come from the `citations` step and overlap with
-     *  what `web_search` already shows. Surfacing them again at the top
-     *  level produced the "two raw HTML-entity cards above the search
-     *  block" symptom. If a future design needs a separate "Sources" list,
-     *  build it from `collectTurnLinks(turn.artifacts)` and render it as a
-     *  small footnote section below the answer — not as bordered cards in
-     *  the chronological flow. */
-    case 'citation':   return null
+    /* Chat view suppresses bare citation cards: they come from the
+     *  `citations` step and overlap with what `web_search` already shows;
+     *  surfacing them again produced the "two raw HTML-entity cards above
+     *  the search block" symptom. The ONE exception is a link the emitter
+     *  explicitly settled in the conversation (`placement: 'chat'` — the
+     *  send-to-user delivery contract): that renders as a compact link row,
+     *  never a bordered card. */
+    case 'citation':
+      return artifact.placement === 'chat' ? <ChatDeliveredLinkRow artifact={artifact} /> : null
     case 'file':       return <ChatFileBlock artifact={artifact} onError={onDownloadError} namespaceStyles={namespaceStyles} />
     case 'service_error': return <ChatServiceErrorBlock artifact={artifact} />
     default:           return null

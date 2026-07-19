@@ -618,7 +618,11 @@ def _named_services_usage_note(tools: List[Any]) -> str:
         "to the service's own upload/file action and the service hosts the bytes "
         "server-side. run_python has no network access — fetching or POSTing "
         "URLs from it always fails; URL-based upload flows belong to external "
-        "clients, and your path is the ref-based action."
+        "clients, and your path is the ref-based action. Files coming BACK to "
+        "the user ride the same rule: when a result says a file was delivered "
+        "as a file card, the user already sees it in this chat — mention it in "
+        "words. Never construct, guess, or re-type download URLs into your "
+        "message; a link you type by hand arrives broken."
     )
 
 
