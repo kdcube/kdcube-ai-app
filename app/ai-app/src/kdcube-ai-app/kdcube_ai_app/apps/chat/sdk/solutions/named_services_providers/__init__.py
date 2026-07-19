@@ -12,6 +12,10 @@ from __future__ import annotations
 
 from kdcube_ai_app.apps.chat.sdk.infra.auth_context import AuthContext
 
+from .agent_instructions import (
+    compose_named_service_agent_instructions,
+    named_service_agent_instruction_block,
+)
 from .client_tools import (
     NAMED_SERVICE_TOOLS_ALIAS,
     NAMED_SERVICE_TOOLS_MODULE,
@@ -158,7 +162,9 @@ __all__ = [
     "call_named_service_endpoint",
     "call_named_service_endpoint_stream",
     "client_has_named_service_tools",
+    "compose_named_service_agent_instructions",
     "compose_named_service_react_instructions",
+    "named_service_agent_instruction_block",
     "connected_named_service_namespaces",
     "render_named_service_namespace_roster",
     "dispatch_named_service_api_request",

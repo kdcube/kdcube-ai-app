@@ -2665,16 +2665,13 @@ class BaseWorkflow():
         ``BaseWorkflow`` can override it to customize or fully rebuild the section.
         Intros are read through the canonical discovery API (no in-process registry,
         no key scan). Self-contained: redis / tenant / project / bundle_props are
-        pulled from ``self``.
+        pulled from ``self``. Delegates to the agent-neutral mechanism in
+        ``named_services_providers.agent_instructions`` (surface="react") — the
+        same call a non-ReAct harness makes with its own surface.
         """
         try:
-            from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers.client_tools import (
-                compose_named_service_react_instructions,
-                connected_named_service_namespaces,
-            )
-            from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers.discovery import (
-                RedisNamedServiceDiscovery,
-                fetch_namespace_intros,
+            from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers.agent_instructions import (
+                named_service_agent_instruction_block,
             )
         except Exception:
             return ""
@@ -2683,29 +2680,14 @@ class BaseWorkflow():
             getattr(self, "runtime_ctx", None), "agent_id", None
         )
         bundle_props = self.bundle_props if isinstance(self.bundle_props, Mapping) else {}
-        namespaces = connected_named_service_namespaces(bundle_props, client_id=resolved_client_id)
-        if not namespaces:
-            return ""
-
-        intros: Dict[str, Dict[str, str]] = {}
-        try:
-            runtime_ctx = getattr(self, "runtime_ctx", None)
-            tenant = str(getattr(runtime_ctx, "tenant", "") or "").strip()
-            project = str(getattr(runtime_ctx, "project", "") or "").strip()
-            if self.redis is not None and tenant and project:
-                discovery = RedisNamedServiceDiscovery(self.redis, tenant=tenant, project=project)
-                intros = await fetch_namespace_intros(discovery, namespaces)
-        except Exception:
-            try:
-                self.logger.log("[named_services] roster intro fetch failed", level="WARNING")
-            except Exception:
-                pass
-            intros = {}
-
-        return compose_named_service_react_instructions(
-            bundle_props,
+        runtime_ctx = getattr(self, "runtime_ctx", None)
+        return await named_service_agent_instruction_block(
+            bundle_props=bundle_props,
             client_id=resolved_client_id,
-            intros=intros,
+            surface="react",
+            redis=self.redis,
+            tenant=str(getattr(runtime_ctx, "tenant", "") or "").strip(),
+            project=str(getattr(runtime_ctx, "project", "") or "").strip(),
         )
 
     def _conversation_cache_is_warm(self, timeline: Any) -> bool:

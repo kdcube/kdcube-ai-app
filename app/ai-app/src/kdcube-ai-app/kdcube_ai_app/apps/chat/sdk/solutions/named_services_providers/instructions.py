@@ -41,4 +41,60 @@ When a namespace ref or request appears, pick the visible path that fits the goa
 """.strip()
 
 
-__all__ = ["NAMED_SERVICES_REACT_ADDITIONAL_INSTRUCTIONS"]
+_NAMED_SERVICES_BRIDGE_INSTRUCTIONS_TEMPLATE = """
+[NAMED SERVICES — NAMESPACE OBJECT OPERATIONS]
+Named services expose bridges to external namespace refs. A namespace service explains and operates the ref grammar, searchable scopes, object schemas, stories, attachments, events, actions, and mutations it supports; the ultimate owner of a ref may be another app, storage system, integration, or a system not visible to this agent. A namespace ref you see in conversation events, prior tool results, or user messages is a HANDLE to an external namespace object, not a local file.
+
+Your bound tools carry the named-service operations. Match them by OPERATION NAME — `provider_about`, `object_schema`, `search_objects`, `list_objects`, `object_action`, `upsert_object`, `delete_object`, `host_file` — whatever exact tool naming your binding uses. The `namespace` argument selects the realm; the tool's own documentation states which namespaces it applies to.
+
+How to work a namespace:
+
+1. Understand an unfamiliar namespace -> `provider_about(namespace=...)`. It gives purpose, searchable ref scopes, refs/stories/attachments, and domain language.
+
+2. Know exact object fields, search filters, action payloads -> `object_schema(namespace=..., object_kind=... or object_ref=...)`. It is the contract source for searches, actions, and upserts.
+
+3. Discover objects when no exact ref is in hand -> `search_objects(namespace=..., query=...)` for text/semantic lookup, or `list_objects(namespace=..., ...)` for bounded browsing/pagination. Respect cursor/limit; avoid broad scans unless the user asks.
+
+4. Run a provider verb on an object (send, forward, download, upload, ...) -> `object_action`. CONTRACT FIRST: before your FIRST `object_action` or `upsert_object` on a namespace in a conversation, read that namespace's `object_schema` — an action is a realm-defined named protocol: the schema names each action's exact payload keys, value shapes, and file forms, and no general API pattern or other namespace predicts them. The platform holds this order: an action or upsert sent before that namespace's contract has been read in this conversation returns a protocol notice naming the schema call to make — read the contract, then retry with the documented arguments. Build the payload only from keys the contract names.
+   Files travel in action payloads BY REF: put the file's reference (its conversation file link, or the local path your file tools report) in the payload key the contract names for paths, and the service reads the bytes itself. Inside a turn the ref/path form is the correct one; file content stays out of payload fields.
+   After a state-changing action, read the result back and confirm it matches what you asked — counts, recipients, ids. A mismatch is a failure to investigate, not a success to report.
+
+5. Create/update or delete (only when the operation is exposed for that namespace) -> `upsert_object` for create/update, `delete_object` for delete/archive. The contract-first rule in 4 covers `upsert_object`: the schema names which fields exist, each field's shape, and its `update_strategy`. After a mutation, treat the returned ref/revision/body as the source of truth.
+   - Collection (array) fields in `upsert_object` accept EITHER a bare list or a `{{ "add": [...], "remove": [...] }}` delta; these semantics hold across namespaces:
+     - Bare list -> set/append per the field's `update_strategy`: `replace` overwrites the whole list; `append` adds the item(s). Omit the field to leave it unchanged.
+     - Delta `{{add, remove}}` -> incremental edit applied as removes first, then adds (`remove` matches by value for value-lists; by ref or `dedup_key` for ref-lists).
+     - Replace ONE item -> add it with a matching `dedup_key`; the new item supersedes the old. Do NOT add-then-delete.
+     - Remove ONE item -> the field's `{{remove: [...]}}` delta — the only way to take an item off a list. `delete_object` is NOT a list tool: it destroys the underlying object itself everywhere it is used.
+
+6. Send a local/workspace file INTO a namespace service -> `host_file(namespace=..., object_ref=..., file_ref=...)`. `file_ref` is the file's reference/path itself — the platform moves the bytes. Hosting a file does NOT attach or cite it on a domain object: if the object schema supports attachments or file links, `host_file` first, then cite the returned namespace ref in a separate `upsert_object` per that schema.
+
+7. Inspect a namespace object's content locally -> materialize it by its reference with `{pull_tool}`, then read/process the local file{read_hint}. A plain materialization is for YOUR use; sending the file onward to a service goes through the contract-named payload key (see 4).
+
+8. If a namespace/ref is visible but no bound tool lists that namespace, explain what is visible from the event/tool payload and state that the runtime has not exposed deeper access.
+""".strip()
+
+
+def named_services_bridge_instructions(
+    *,
+    pull_tool: str = "pull_files",
+    read_tool: str = "read_file",
+) -> str:
+    """The transport-neutral named-services teaching block for bridged agents.
+
+    For agents that reach named services through a bound tool surface (MCP,
+    LangChain bindings, or any non-ReAct harness). Teaches by OPERATION NAME —
+    the stable named-service contract vocabulary — so the exact tool naming of
+    the binding does not matter. ``pull_tool``/``read_tool`` name the agent's
+    own file-materialization tools (an empty ``read_tool`` drops the read hint).
+    """
+    read_hint = f" (view it with `{read_tool}`)" if str(read_tool or "").strip() else ""
+    return _NAMED_SERVICES_BRIDGE_INSTRUCTIONS_TEMPLATE.format(
+        pull_tool=str(pull_tool or "pull_files").strip(),
+        read_hint=read_hint,
+    )
+
+
+__all__ = [
+    "NAMED_SERVICES_REACT_ADDITIONAL_INSTRUCTIONS",
+    "named_services_bridge_instructions",
+]
