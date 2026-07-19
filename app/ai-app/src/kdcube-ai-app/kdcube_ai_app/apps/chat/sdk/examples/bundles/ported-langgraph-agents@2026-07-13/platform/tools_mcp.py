@@ -119,10 +119,14 @@ def _conn_alias(conn: Mapping[str, Any]) -> str:
     return str(conn.get("alias") or conn.get("name") or "").strip()
 
 
-def _deliverable(text: str) -> Any | None:
-    """Parse an MCP tool's text content when it can carry a file delivery."""
+_POSTPROCESS_MARKERS = ('"download"', '"delegated_consent_required"', '"consent"')
+
+
+def _postprocessable(text: str) -> Any | None:
+    """Parse an MCP tool's text content when it can carry a file delivery or a
+    consent denial."""
     raw = str(text or "").strip()
-    if not raw.startswith("{") or '"download"' not in raw:
+    if not raw.startswith("{") or not any(marker in raw for marker in _POSTPROCESS_MARKERS):
         return None
     try:
         parsed = json.loads(raw)
@@ -131,15 +135,66 @@ def _deliverable(text: str) -> Any | None:
     return parsed if isinstance(parsed, dict) else None
 
 
-def wrap_tools_with_user_delivery(tools: List[Any]) -> List[Any]:
-    """Route file deliveries in MCP tool results to the user, not the model.
+async def _consent_result(
+    parsed: Dict[str, Any],
+    *,
+    agent_client_id: str,
+    fallback_resource: str,
+) -> Dict[str, Any] | None:
+    """When a door result is a per-agent consent denial, raise the chat consent
+    demand and return the agent-explainable consent result; None otherwise.
 
-    An MCP-served named-service result may carry a file object with an
-    out-of-band download URL (the turn-less contract). This agent runs INSIDE
-    a chat turn, so the file goes to the user as a chat file card (object ref,
-    click-time resolution) and the model-visible result keeps a delivery note
-    in place of the URL — a signed link the model would otherwise have to
-    re-type into its message, corrupting it some fraction of the time.
+    The door (a KDCube @mcp named-services surface) denies an op whose grants
+    the agent's consented bearer lacks with `delegated_consent_required` and —
+    for hosted-agent callers — a full consent block (agent identity, resource,
+    missing claims, one-click grant action). The tool result alone reaches only
+    the model; announcing turns it into the standard scoped banner, so the user
+    sees exactly what is asked (e.g. mail:read) with the one-click grant, and
+    the Connection Hub landing offers the pending-claims pane."""
+    if str(parsed.get("error") or "") != "delegated_consent_required":
+        return None
+    block = parsed.get("consent") if isinstance(parsed.get("consent"), Mapping) else {}
+    claims = [str(c) for c in (block.get("claims") or parsed.get("missing_grants") or []) if str(c or "").strip()]
+    if not claims:
+        return None
+    client_id = str(block.get("agent_client_id") or agent_client_id or "").strip()
+    resource = str(block.get("resource") or fallback_resource or "").strip()
+    if not client_id or not resource:
+        return None
+    from kdcube_ai_app.apps.chat.sdk.solutions.connections.mcp_consent import (
+        announce_agent_consent,
+    )
+
+    consent = mcp_consent_from_denial(
+        {"status": 403, "reason": "authority_mismatch"},
+        resource=resource,
+        claims=claims,
+        tool_name=str(block.get("tool_name") or parsed.get("namespace") or ""),
+        agent_client_id=client_id,
+    )
+    await announce_agent_consent(consent)
+    return consent.to_tool_result()
+
+
+def wrap_tools_with_user_delivery(
+    tools: List[Any],
+    *,
+    agent_client_id: str = "",
+    fallback_resource: str = "",
+) -> List[Any]:
+    """Post-process MCP tool results for the chat surface, both directions.
+
+    * File deliveries go to the USER: a result carrying a file object with an
+      out-of-band download URL (the turn-less contract) becomes a chat file
+      card (object ref, click-time resolution); the model-visible result keeps
+      a delivery note in place of the URL — a signed link the model would
+      otherwise re-type into its message, corrupting it some fraction of the
+      time.
+    * Consent denials go to the USER too: a door op denied for missing
+      per-agent grants raises the scoped chat consent banner (the missing
+      claims + one-click grant), and the model gets the explainable consent
+      result instead of a bare error.
+
     Mutates each tool's coroutine in place; tools without one pass through."""
     from kdcube_ai_app.apps.chat.sdk.solutions.widgets.send_to_user import (
         deliver_result_files,
@@ -149,16 +204,21 @@ def wrap_tools_with_user_delivery(tools: List[Any]) -> List[Any]:
         async def run(*args: Any, **kwargs: Any) -> Any:
             result = await orig(*args, **kwargs)
             try:
-                if isinstance(result, str):
-                    parsed = _deliverable(result)
-                    if parsed is not None:
-                        delivered = await deliver_result_files(parsed)
-                        if delivered is not parsed:
-                            return json.dumps(delivered, ensure_ascii=False)
-                elif isinstance(result, dict):
-                    return await deliver_result_files(result)
-            except Exception:  # pragma: no cover - delivery is best-effort
-                logger.info("mcp tool delivery post-process failed (non-fatal)", exc_info=True)
+                parsed = _postprocessable(result) if isinstance(result, str) else (
+                    result if isinstance(result, dict) else None
+                )
+                if parsed is None:
+                    return result
+                consent = await _consent_result(
+                    parsed, agent_client_id=agent_client_id, fallback_resource=fallback_resource,
+                )
+                if consent is not None:
+                    return consent if isinstance(result, dict) else json.dumps(consent, ensure_ascii=False)
+                delivered = await deliver_result_files(parsed)
+                if delivered is not parsed:
+                    return delivered if isinstance(result, dict) else json.dumps(delivered, ensure_ascii=False)
+            except Exception:  # pragma: no cover - post-processing is best-effort
+                logger.info("mcp tool result post-process failed (non-fatal)", exc_info=True)
             return result
 
         return run
@@ -228,7 +288,15 @@ async def load_mcp_tools_for_connections(
     )
     error_sink: Dict[str, Any] = {}
     tools = await load_mcp_tools_from_server_map(server_map, error_sink=error_sink)
-    tools = wrap_tools_with_user_delivery(tools)
+    # The fallback resource for in-result consent denials: with ONE delegated
+    # connection (the common shape) its resource id is authoritative; with
+    # several, the door's own consent block names the resource.
+    delegated_conns = [c for c in conns if is_delegated_connection(c)]
+    tools = wrap_tools_with_user_delivery(
+        tools,
+        agent_client_id=client_id,
+        fallback_resource=connection_resource(delegated_conns[0]) if len(delegated_conns) == 1 else "",
+    )
 
     # An MCP server may publish an operating guide in its initialize result —
     # what MCP-native clients (e.g. Claude connectors) show their model. The

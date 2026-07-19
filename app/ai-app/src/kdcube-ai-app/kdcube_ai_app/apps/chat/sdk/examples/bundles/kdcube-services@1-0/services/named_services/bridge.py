@@ -305,7 +305,7 @@ class NamedServicesMcpBridge:
         missing = sorted(required - available)
         if not missing:
             return None
-        return {
+        denial: dict[str, Any] = {
             "ok": False,
             "error": "delegated_consent_required",
             "message": (
@@ -324,6 +324,37 @@ class NamedServicesMcpBridge:
                 "whose initial consent includes this grant."
             ),
         }
+        # A hosted-agent caller (a per-agent "Delegated by KDCube" client) has a
+        # richer consent path than reconnect-and-re-consent: the user extends the
+        # agent's grant in Connection Hub — one click from the chat consent card.
+        # Carry the full consent block so the caller's chat surface can raise it
+        # (agent identity, resource, missing claims, and the grant action).
+        grant_record = _delegated_grant_record(self._request)
+        client_id = str(grant_record.get("client_id") or "").strip()
+        if client_id.startswith("kdcube-agent:"):
+            resource_grants = grant_record.get("resource_grants")
+            resource = ""
+            if isinstance(resource_grants, Mapping) and resource_grants:
+                resource = str(next(iter(resource_grants.keys())) or "")
+            denial["code"] = "connections.consent_needed"
+            denial["consent"] = {
+                "kind": "delegated_agent_grant",
+                "reason": "delegated_consent_required",
+                "agent_client_id": client_id,
+                "resource": resource,
+                "claims": missing,
+                "tool_name": policy.namespace,
+                "grant": {
+                    "operation": "delegated_agent_grant_create",
+                    "payload": {"client_id": client_id, "resource": resource, "claims": missing},
+                },
+            }
+            denial["next_step"] = (
+                "The user extends this agent's grant with the missing access in "
+                "Connection Hub (Delegated by KDCube); the chat consent card "
+                "carries the one-click grant."
+            )
+        return denial
 
     async def call(
         self,

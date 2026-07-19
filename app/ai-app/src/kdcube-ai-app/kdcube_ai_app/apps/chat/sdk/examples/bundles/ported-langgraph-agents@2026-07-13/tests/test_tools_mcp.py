@@ -235,3 +235,98 @@ def test_wrap_tools_without_chat_lane_keeps_the_url(monkeypatch) -> None:
 
     m.wrap_tools_with_user_delivery([tool])
     assert asyncio.run(tool.coroutine()) == raw
+
+
+def test_wrap_tools_announces_the_doors_consent_denial(monkeypatch) -> None:
+    # The door denies a mail op the agent's bearer lacks grants for
+    # (delegated_consent_required + consent block). The wrap raises the scoped
+    # chat consent demand — the USER sees exactly what is asked (mail:read,
+    # one-click grant) — and the MODEL gets the explainable consent result
+    # instead of a bare error. Regression: the denial reached only the model,
+    # so no mail banner rose and the hub landing showed no pending claims.
+    import json as _json
+
+    m = _mcp_module()
+    client = "kdcube-agent:ported-langgraph-agents@2026-07-13:lg-react"
+    resource = "*/api/integrations/bundles/*/*/kdcube-services@1-0/public/mcp/named_services*"
+    raw = _json.dumps({
+        "ok": False,
+        "error": "delegated_consent_required",
+        "namespace": "mail",
+        "missing_grants": ["mail:read"],
+        "code": "connections.consent_needed",
+        "consent": {
+            "kind": "delegated_agent_grant",
+            "agent_client_id": client,
+            "resource": resource,
+            "claims": ["mail:read"],
+            "tool_name": "mail",
+        },
+    })
+
+    class _Tool:
+        name = "named_services_search"
+
+        async def _run(self) -> str:
+            return raw
+
+    tool = _Tool()
+    tool.coroutine = tool._run
+
+    announced: list = []
+
+    async def fake_announce(consent):
+        announced.append(consent)
+
+    from kdcube_ai_app.apps.chat.sdk.solutions.connections import mcp_consent as consent_mod
+    monkeypatch.setattr(consent_mod, "announce_agent_consent", fake_announce)
+
+    m.wrap_tools_with_user_delivery([tool], agent_client_id=client, fallback_resource=resource)
+    out = _json.loads(asyncio.run(tool.coroutine()))
+
+    assert len(announced) == 1
+    assert announced[0].claims == ["mail:read"]
+    assert announced[0].resource == resource
+
+    assert out["ok"] is False
+    assert out["consent"]["grant"]["payload"] == {
+        "client_id": client, "resource": resource, "claims": ["mail:read"],
+    }
+    assert "mail:read" in out["error"]["message"]
+
+
+def test_wrap_tools_consent_denial_without_block_uses_connection_context(monkeypatch) -> None:
+    # An older door returns the bare denial (no consent block): the wrap still
+    # raises the demand from its own connection context (this agent's client id
+    # + the single delegated connection's resource) and the missing grants.
+    import json as _json
+
+    m = _mcp_module()
+    client = "kdcube-agent:app:agent"
+    raw = _json.dumps({
+        "ok": False, "error": "delegated_consent_required",
+        "namespace": "mail", "missing_grants": ["mail:read"],
+    })
+
+    class _Tool:
+        name = "named_services_get"
+
+        async def _run(self) -> str:
+            return raw
+
+    tool = _Tool()
+    tool.coroutine = tool._run
+
+    announced: list = []
+
+    async def fake_announce(consent):
+        announced.append(consent)
+
+    from kdcube_ai_app.apps.chat.sdk.solutions.connections import mcp_consent as consent_mod
+    monkeypatch.setattr(consent_mod, "announce_agent_consent", fake_announce)
+
+    m.wrap_tools_with_user_delivery([tool], agent_client_id=client, fallback_resource="https://h/api/mcp/ns")
+    out = _json.loads(asyncio.run(tool.coroutine()))
+    assert len(announced) == 1
+    assert out["consent"]["grant"]["payload"]["claims"] == ["mail:read"]
+    assert out["consent"]["grant"]["payload"]["resource"] == "https://h/api/mcp/ns"
