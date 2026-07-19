@@ -218,8 +218,12 @@ chat when it needs a delegated resource; the user's one-click grant creates a
 record here keyed to the agent's client identity
 (`kdcube-agent:<app>:<agent>`, `source: agent`, shown with an *agent* badge).
 One record per (user, agent, resources) — re-consent updates it — and revoking
-it in this tab is what unbinds the agent's tool. External OAuth clients (Claude
-Code) are the third path. Identity model and the chat grant flow:
+it in this tab is what unbinds the agent's tool. The record extends the same
+demand-driven way it was born: an operation needing claims outside it raises a
+scoped demand naming exactly the missing grants, and the one-click approval
+MERGES them in; editing in this tab is the narrowing direction — the submitted
+claim set replaces the record. External OAuth clients (Claude Code) are the
+third path. Identity model and the chat grant flow:
 [Agents Acting On Behalf Of The User](../../sdk/solutions/connections/agent-acting-for-user/agent-acting-for-user-README.md).
 
 ## Runtime Use

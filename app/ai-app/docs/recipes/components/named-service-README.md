@@ -145,9 +145,12 @@ A realm's agent consumers — external MCP clients and agents hosted in KDCube
 apps alike — enter under the user's delegated-by grant for that specific agent
 (`kdcube-agent:<app>:<agent>`), checked at the tool attempt when the
 deployment's delegated catalog publishes the namespace; a missing grant raises
-a one-click consent demand in chat. Provider-backed realms keep the
-connected-account consent as a second, per-call-checked layer. The realm
-implements neither check — both ride the platform boundary. Model:
+a one-click consent demand in chat. The check is per operation and stays live
+after a first grant: an operation whose grants the agent's record lacks denies
+with exactly the missing ones, which rise as the same demand — the approval
+merges into the record. Provider-backed realms keep the connected-account
+consent as a second, per-call-checked layer. The realm implements neither
+check — both ride the platform boundary. Model:
 [Agents Acting On Behalf Of The User](../../sdk/solutions/connections/agent-acting-for-user/agent-acting-for-user-README.md).
 
 ## Current Gaps

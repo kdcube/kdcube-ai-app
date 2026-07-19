@@ -86,6 +86,17 @@ A claim's consent lives in one of two stores, selected by the claim's `source`:
   (`async (scopes) -> bool`) guards the mint fallback the same way when no
   provider is wired. The full acting-as-the-user model lives in
   [Agents Acting On Behalf Of The User](../agent-acting-for-user/agent-acting-for-user-README.md).
+- **`mcp_consent.py`** — the attempt-time middleware. Turns a KDCube `@mcp`
+  denial into an `MCPConsentRequired` carrying the agent identity, resource,
+  claims, and the one-click grant action; `announce_agent_consent` raises it as
+  the scoped chat banner (recorded once per conversation, re-emitted while the
+  block is real). It covers both denial moments: the connect-time drop (no
+  grant at all — the connection binds a consent-gated stub) and the
+  per-operation `delegated_consent_required` a door returns once the agent is
+  PARTIALLY granted — that one names exactly the missing claims. Approving
+  either closes the loop in-band: the grant authors a
+  `connections.consent.granted` external event into the conversation, so the
+  agent learns without guessing.
 
 ## Declaring the claims an integration needs
 

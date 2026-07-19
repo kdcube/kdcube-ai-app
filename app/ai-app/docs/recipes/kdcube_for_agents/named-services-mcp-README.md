@@ -270,6 +270,14 @@ User-scoped materialization.
 In-app readers are unaffected: a native `react.pull(conv:fi:...)` still streams raw
 bytes. The URL encoding is specifically for the agent-over-JSON boundary.
 
+A hosted agent running INSIDE a chat turn never relays this link itself: its
+tool gate delivers the file to the user as a chat file card (the object ref,
+resolved at click time under the user's own session) and the model-visible
+result carries a delivery note in place of the URL. The `url` encoding remains
+the contract for turn-less clients — machinery that fetches, where a model
+would have to re-type a signed token by hand. Caller-side behavior:
+[Connect An MCP Service To A KDCube Agent](consume-mcp-service-README.md).
+
 ## The Read Story
 
 `object.get conv:conversation:<id>` is not a raw dump. It fetches the rich per-turn
@@ -386,9 +394,35 @@ Connected-account provider claims:
 
 ## The Consent-Error Story
 
-If the agent has the MCP grant but the user-to-provider side cannot satisfy the
-call, integration namespaces answer with one structured consent error instead of
-guessing, retrying, or a vague server error:
+Two consents chain in front of an integration namespace, and each denies with a
+structured error naming its own fix.
+
+The FIRST boundary is the caller's own per-agent grant, and it stays live past
+the first approval: with no grant on this surface the connection refuses to bind
+(the consent-gated stub raises the demand), and once the agent holds SOME
+grants, the door checks each operation and denies precisely:
+
+```text
+error = delegated_consent_required
+  namespace / tool / operation
+  required_grants / missing_grants / available_grants   exact, per operation
+  code = connections.consent_needed                     (kdcube-agent:* callers)
+  consent          the full grant block: kind delegated_agent_grant,
+                   agent_client_id, resource, claims (= missing_grants), and
+                   the one-click delegated_agent_grant_create action
+  next_step        Connection Hub grant extension for agent callers;
+                   reconnect/incremental consent for external OAuth clients
+```
+
+A hosted in-turn agent's tool wrap raises that block as the standard scoped
+chat demand — the user approves exactly the missing claims, and the approval
+merges into the agent's existing grant record. This leg asks narrower than
+connect time ever can: a connection consents with its whole declared scope
+list, while the door names the single grant the operation missed.
+
+The SECOND boundary: if the agent has the MCP grant but the user-to-provider
+side cannot satisfy the call, integration namespaces answer with one structured
+consent error instead of guessing, retrying, or a vague server error:
 
 ```text
 error.code = needs_connected_account_consent            (status 403)

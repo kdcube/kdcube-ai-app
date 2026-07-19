@@ -294,6 +294,14 @@ revoking either stops the tool immediately. What the bridge's operations
 should return so an agent can use them:
 [Make A Named Service Agent-Friendly (MCP)](named-services-mcp-README.md).
 
+Consent stays demand-driven after the first grant lands. Once the agent holds
+SOME grants on the door (slack), a call into a namespace outside them (mail)
+denies per operation INSIDE the door, naming exactly the missing grants; the
+tool wrap raises that as the same scoped chat demand, and the one-click
+approval MERGES the new claims into the agent's existing grant record.
+Connect-time consent can only ask with a connection's whole declared scope
+list — this leg asks with the single grant the operation missed.
+
 ## 5. How A KDCube Agent Receives The Tools
 
 KDCube's agent configuration parser turns the descriptor into an agent-scoped
@@ -396,6 +404,14 @@ Do not return a large binary as base64 merely because MCP can carry JSON. If a
 tool creates a file in the current ReAct workspace, it may use KDCube's strict
 `ret.artifact_type == "files"` declaration. A remote server that cannot write to
 that workspace should return a signed URL or product object ref instead.
+
+For a KDCube-hosted agent running inside a chat turn, a result carrying a
+signed-URL file object (`download: {encoding: "url", ...}`) does not reach the
+model as a link: the tool gate delivers the file to the user as a chat file
+card (the object ref, resolved at click time under the user's session) and the
+model reads a delivery note instead. A signed URL a model re-types by hand
+arrives broken — the card removes the courier role entirely. Turn-less
+consumers keep the URL contract.
 
 ## 8. Economics: What Is And Is Not Automatic
 
