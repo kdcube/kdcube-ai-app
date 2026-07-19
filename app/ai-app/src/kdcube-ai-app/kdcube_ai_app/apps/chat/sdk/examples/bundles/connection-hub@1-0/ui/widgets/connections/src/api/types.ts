@@ -125,6 +125,9 @@ export interface DelegatedAccessRecord {
   operations?: string[];
   resource_grants?: Record<string, string[]>;
   named_service_operations?: DelegatedAccessNamedServiceOperations;
+  /** Per-provider account binding: {provider_id: [account_ids or "*"]}. Which
+   *  connected account(s) this client may use for a provider's claims. */
+  account_scope?: Record<string, string[]>;
   identity_scope?: string;
   created_at?: number;
   expires_at?: number;

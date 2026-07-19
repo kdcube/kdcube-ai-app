@@ -7,6 +7,7 @@ import type {
   DelegatedAccessNamedServiceOperations,
   DelegatedAccessRecord,
   DelegatedAccessResourceOption,
+  DelegatedToKdcubeAccount,
 } from '../../api/types';
 import {
   clearIssuedDelegatedAccess,
@@ -131,6 +132,9 @@ export function DelegatedAccessPanel({ openParams }: { openParams?: Record<strin
   // the checkbox set keyed `${resource}:${claim}`.
   const [editingAccessId, setEditingAccessId] = useState<string | null>(null);
   const [editPicks, setEditPicks] = useState<Record<string, boolean>>({});
+  // Per-provider account binding being edited: {provider_id: [account_ids]}.
+  // A provider absent (or with no accounts checked) means "any account" (*).
+  const [editAccountScope, setEditAccountScope] = useState<Record<string, string[]>>({});
   // Catalog search: narrows the delegable-resource cards (labels, grants,
   // named-service rows) wherever the shared list renders.
   const [resourceQuery, setResourceQuery] = useState('');
@@ -275,16 +279,21 @@ export function DelegatedAccessPanel({ openParams }: { openParams?: Record<strin
       const current = merged[resource] || [];
       merged[resource] = [...current, ...grants.filter((grant) => !current.includes(grant))];
     });
+    let first = true;
     for (const [resource, claims] of Object.entries(merged)) {
       await dispatch(grantAgentAccess({
         clientId: pendingGrant.clientId,
         resource,
         claims,
         namedServiceOperations: namedServiceOperations[resource],
+        // The account binding is per-client: send it once with the first grant.
+        ...(first && Object.keys(pendingAccountScope).length ? { accountScope: pendingAccountScope } : {}),
       })).unwrap().catch(() => undefined);
+      first = false;
     }
     setPendingGrant(null);
     setResourceGrants({});
+    setPendingAccountScope({});
     setNamedServiceOperations({});
     void dispatch(loadDelegatedAccess());
   };
@@ -296,6 +305,100 @@ export function DelegatedAccessPanel({ openParams }: { openParams?: Record<strin
     });
     setEditingAccessId(item.access_id);
     setEditPicks(picks);
+    // Seed the account binding from the record (a "*" entry means "any" — leave
+    // that provider unbound in the editor so no specific account is checked).
+    const scope: Record<string, string[]> = {};
+    Object.entries(item.account_scope || {}).forEach(([provider, ids]) => {
+      const concrete = (ids || []).filter((id) => id && id !== '*');
+      if (concrete.length) scope[provider] = concrete;
+    });
+    setEditAccountScope(scope);
+  };
+  const toggleEditAccount = (provider: string, accountId: string, checked: boolean) => {
+    setEditAccountScope((current) => {
+      const held = new Set(current[provider] || []);
+      if (checked) held.add(accountId); else held.delete(accountId);
+      const next = { ...current };
+      if (held.size) next[provider] = Array.from(held); else delete next[provider];
+      return next;
+    });
+  };
+  // Providers with at least one connected account — the account-binding editor
+  // only shows a provider the user actually has accounts for.
+  const providersWithAccounts = useMemo(() => {
+    const byProvider = new Map<string, DelegatedToKdcubeAccount[]>();
+    accounts.forEach((account) => {
+      const list = byProvider.get(account.provider_id) || [];
+      list.push(account);
+      byProvider.set(account.provider_id, list);
+    });
+    return byProvider;
+  }, [accounts]);
+  // Which provider account-lists are expanded (the "+ choose" disclosure).
+  const [expandedAccountProviders, setExpandedAccountProviders] = useState<Record<string, boolean>>({});
+  // Account binding chosen while granting a PENDING request (the consent card).
+  const [pendingAccountScope, setPendingAccountScope] = useState<Record<string, string[]>>({});
+  const togglePendingAccount = (provider: string, accountId: string, checked: boolean) => {
+    setPendingAccountScope((current) => {
+      const held = new Set(current[provider] || []);
+      if (checked) held.add(accountId); else held.delete(accountId);
+      const next = { ...current };
+      if (held.size) next[provider] = Array.from(held); else delete next[provider];
+      return next;
+    });
+  };
+
+  // The compact per-provider account picker: a disclosure per provider showing
+  // "<n>/<m> accounts" (or "any account" when unbound) so a large account list
+  // stays legible, expanding to a checkable list. Reused by the Edit blocks and
+  // the pending consent card.
+  const renderAccountScopePicker = (
+    scope: Record<string, string[]>,
+    onToggle: (provider: string, accountId: string, checked: boolean) => void,
+    who: string,
+  ) => {
+    if (!providersWithAccounts.size) return null;
+    return (
+      <div style={{ marginTop: 8 }}>
+        <div className="account-title">Which connected accounts may {who} use?</div>
+        {Array.from(providersWithAccounts.entries()).map(([provider, providerAccounts]) => {
+          const bound = (scope[provider] || []).filter((id) => id && id !== '*');
+          const total = providerAccounts.length;
+          const open = Boolean(expandedAccountProviders[provider]);
+          return (
+            <details
+              key={provider}
+              open={open}
+              onToggle={(event) => setExpandedAccountProviders((current) => ({
+                ...current, [provider]: (event.target as HTMLDetailsElement).open,
+              }))}
+            >
+              <summary className="muted" style={{ cursor: 'pointer' }}>
+                {providers[provider]?.label || provider}
+                {' — '}
+                {bound.length ? `${bound.length}/${total} accounts` : 'any account'}
+                {open ? null : <span className="account-sub"> · + choose</span>}
+              </summary>
+              <div className="resource-grants" style={{ marginTop: 6 }}>
+                {providerAccounts.map((account) => (
+                  <label className="grant-chip" key={account.account_id}>
+                    <input
+                      type="checkbox"
+                      checked={bound.includes(account.account_id)}
+                      onChange={(event) => onToggle(provider, account.account_id, event.target.checked)}
+                    />
+                    <span>{account.email || account.display_name || account.workspace || account.account_id}</span>
+                  </label>
+                ))}
+              </div>
+            </details>
+          );
+        })}
+        <div className="account-sub" style={{ marginTop: 4 }}>
+          Leave a provider unchecked to allow any of its accounts.
+        </div>
+      </div>
+    );
   };
 
   const saveEdit = async (item: DelegatedAccessRecord) => {
@@ -310,6 +413,11 @@ export function DelegatedAccessPanel({ openParams }: { openParams?: Record<strin
       // Removing everything is a revoke, not an edit.
       await dispatch(revokeDelegatedAccess({ accessId: item.access_id })).unwrap().catch(() => undefined);
     } else {
+      // The account binding is a per-client (not per-resource) edit, so send it
+      // once with the first resource; `replace` makes the submitted scope
+      // authoritative (an unchecked provider clears its binding -> any account).
+      const accountScope = editAccountScope;
+      let first = true;
       for (const [resource, claims] of Object.entries(kept)) {
         if (!claims.length) continue;
         await dispatch(grantAgentAccess({
@@ -317,11 +425,14 @@ export function DelegatedAccessPanel({ openParams }: { openParams?: Record<strin
           resource,
           claims,
           replace: true,
+          ...(first ? { accountScope } : {}),
         })).unwrap().catch(() => undefined);
+        first = false;
       }
     }
     setEditingAccessId(null);
     setEditPicks({});
+    setEditAccountScope({});
     void dispatch(loadDelegatedAccess());
   };
 
@@ -457,6 +568,7 @@ export function DelegatedAccessPanel({ openParams }: { openParams?: Record<strin
           );
         })}
       </ul>
+      {renderAccountScopePicker(pendingAccountScope, togglePendingAccount, 'this agent')}
       <p className="muted">
         Granting lets exactly this agent do exactly this for you — nothing else.
         The grant appears under Granted access below, where you can revoke it at
@@ -486,7 +598,12 @@ export function DelegatedAccessPanel({ openParams }: { openParams?: Record<strin
             ? 'Grant selected access'
             : 'Grant access'}
         </button>
-        <button className="btn" type="button" disabled={busy} onClick={() => setPendingGrant(null)}>
+        <button
+          className="btn"
+          type="button"
+          disabled={busy}
+          onClick={() => { setPendingGrant(null); setPendingAccountScope({}); }}
+        >
           Not now
         </button>
       </div>
@@ -581,6 +698,14 @@ export function DelegatedAccessPanel({ openParams }: { openParams?: Record<strin
                               per-operation narrowing was selected).
                             </div>
                           )}
+                          {editing ? renderAccountScopePicker(editAccountScope, toggleEditAccount, 'this agent')
+                            : (Object.keys(item.account_scope || {}).length ? (
+                            <div className="account-sub">
+                              Accounts: {Object.entries(item.account_scope || {})
+                                .map(([provider, ids]) => `${providers[provider]?.label || provider} → ${(ids || []).includes('*') ? 'any' : ids.join(', ')}`)
+                                .join('; ')}
+                            </div>
+                          ) : null)}
                           <div className="account-sub">
                             Granted {formatDate(item.created_at) || 'unknown'}
                             {' · '}expires {formatDate(item.expires_at) || 'unknown'}
@@ -592,7 +717,7 @@ export function DelegatedAccessPanel({ openParams }: { openParams?: Record<strin
                               <button className="btn" type="button" disabled={busy} onClick={() => saveEdit(item)}>
                                 Save
                               </button>
-                              <button className="btn" type="button" disabled={busy} onClick={() => { setEditingAccessId(null); setEditPicks({}); }}>
+                              <button className="btn" type="button" disabled={busy} onClick={() => { setEditingAccessId(null); setEditPicks({}); setEditAccountScope({}); }}>
                                 Cancel
                               </button>
                             </>
@@ -673,6 +798,14 @@ export function DelegatedAccessPanel({ openParams }: { openParams?: Record<strin
                         .join('; ')}
                     </div>
                   ) : null}
+                  {editing ? renderAccountScopePicker(editAccountScope, toggleEditAccount, 'this app')
+                    : (Object.keys(item.account_scope || {}).length ? (
+                    <div className="account-sub">
+                      Accounts: {Object.entries(item.account_scope || {})
+                        .map(([provider, ids]) => `${providers[provider]?.label || provider} → ${(ids || []).includes('*') ? 'any' : ids.join(', ')}`)
+                        .join('; ')}
+                    </div>
+                  ) : null)}
                   <div className="account-sub">
                     {item.source === 'oauth' ? 'Approved' : 'Created'} {formatDate(item.created_at) || 'unknown'}
                     {' · '}expires {formatDate(item.expires_at) || 'unknown'}
@@ -685,7 +818,7 @@ export function DelegatedAccessPanel({ openParams }: { openParams?: Record<strin
                       <button className="btn" type="button" disabled={busy} onClick={() => saveEdit(item)}>
                         Save
                       </button>
-                      <button className="btn" type="button" disabled={busy} onClick={() => { setEditingAccessId(null); setEditPicks({}); }}>
+                      <button className="btn" type="button" disabled={busy} onClick={() => { setEditingAccessId(null); setEditPicks({}); setEditAccountScope({}); }}>
                         Cancel
                       </button>
                     </>
