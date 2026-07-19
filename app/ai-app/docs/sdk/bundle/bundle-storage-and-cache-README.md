@@ -44,13 +44,24 @@ self.storage = BundleArtifactStorage(
 )
 ```
 
-Common operations:
+Async operations for proc/app request paths:
 ```python
-self.storage.write("logs/run1.txt", "hello\n", mime="text/plain")
-text = self.storage.read("logs/run1.txt", as_text=True)
-names = self.storage.list("logs/")
-self.storage.delete("logs/run1.txt")
+uri = await self.storage.write_a(
+    "logs/run1.txt",
+    "hello\n",
+    mime="text/plain",
+)
+text = await self.storage.read_a("logs/run1.txt", as_text=True)
+
+async for chunk in self.storage.iter_bytes("logs/run1.txt"):
+    ...
 ```
+
+`list(...)`, `exists(...)`, and `delete(...)` are synchronous compatibility
+methods today. Do not call them directly from a shared proc event loop. If a
+bounded operation must use one of them, place it behind an explicit thread
+boundary such as `await asyncio.to_thread(...)`; move unbounded work to an
+appropriate background or isolated execution boundary.
 
 Storage path layout (logical):
 ```

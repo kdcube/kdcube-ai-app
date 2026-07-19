@@ -74,7 +74,7 @@ one working assistant scene.
 
 | Domain | Canonical refs or event source | Owner module | Resolver location | Policy location | Default representation owner |
 | --- | --- | --- | --- | --- | --- |
-| ReAct artifacts | `conv:fi:<artifact-ref>` | ReAct event/artifact layer | `kdcube_ai_app.apps.chat.sdk.solutions.react.events.resolver` | ReAct event policies | ReAct SDK |
+| Conversation files/artifacts | `conv:fi:<artifact-ref>` | Shared agent harness | `kdcube_ai_app.apps.chat.sdk.runtime.harness.events.resolver` | Agent-specific event policies | Agent harness |
 | Memory | `mem:<memory-id>` | SDK memory module | `kdcube_ai_app.apps.chat.sdk.context.memory.events.resolver` | memory event policies when present | Memory SDK |
 | Task issue story | `task:issue:<issue-id>` | Task/issue subsystem | bundle task module, for example `issues/events/resolver.py` | task issue policies | Task subsystem |
 | Canvas board | canvas events and canvas-owned refs | Canvas subsystem | canvas module, for example `canvas/events/resolver.py` | canvas event policies | Canvas subsystem |
@@ -300,7 +300,7 @@ from kdcube_ai_app.apps.chat.sdk.context.memory.events.resolver import (
     memory_ref_capabilities,
     resolve_memory_ref_action,
 )
-from kdcube_ai_app.apps.chat.sdk.solutions.react.events.resolver import (
+from kdcube_ai_app.apps.chat.sdk.runtime.harness.events.resolver import (
     resolve_event_ref_action,
 )
 
@@ -410,7 +410,7 @@ card" ambiguous for ReAct.
 | Canvas stores `rn` or `ef` download handles as card identity. | Canvas stores only canonical refs such as `conv:fi:...`, `task:...`, `mem:...`, `cnv:...`. |
 | Composition bundle reimplements `mem:` preview. | Import memory resolver and register it. |
 | Task resolver lives in `canvas/`. | Task resolver lives in task domain, for example `issues/events/resolver.py`. |
-| ReAct `conv:fi:` canonicalization lives in canvas. | ReAct owns `conv:fi:` canonicalization in `react/events/resolver.py`. |
+| `conv:fi:` canonicalization lives in canvas. | The shared agent harness owns `conv:fi:` canonicalization in `runtime/harness/events/resolver.py`. |
 | Timeline policy dumps full JSON bodies. | Timeline policy renders compact facts and refs; ANNOUNCE carries current high-priority view. |
 | Agent instructions contain mutable per-turn state. | Mutable state is rendered by event policies into timeline/ANNOUNCE. Instructions describe stable rules only. |
 | Widget open silently replaces dirty editor state. | Target widget gates navigation and asks the user. |

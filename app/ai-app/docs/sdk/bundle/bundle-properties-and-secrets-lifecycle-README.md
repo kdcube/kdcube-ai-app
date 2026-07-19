@@ -42,7 +42,6 @@ Use helpers, not backing fields:
 | Effective non-secret bundle config | `self.bundle_prop("path.to.value", default)` |
 | Whole effective props snapshot | `dict(self.bundle_props or {})` only when a snapshot is required |
 | Current bundle deployment secret | `await get_secret("b:path.to.secret")` |
-| Sync-only code path | `get_secret("b:path.to.secret")` |
 
 Do not read deployment secrets from `self.bundle_secrets`, `config.secrets`, or
 raw descriptor helpers. Secrets have no code defaults and are not merged with

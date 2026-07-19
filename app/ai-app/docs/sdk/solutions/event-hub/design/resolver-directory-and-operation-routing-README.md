@@ -55,8 +55,8 @@ cnv:.../ut_...
 The surface that displays or pins an object should not own the object's
 semantics. A canvas card for `task:issue:...` should not know task storage. A
 chat widget that displays `mem:...` should not implement memory preview. A
-download button for `conv:fi:...` should go to the ReAct/platform artifact resolver,
-not to a canvas-specific file path.
+download button for `conv:fi:...` should go to the shared agent-harness
+conversation-file resolver, not to a canvas-specific file path.
 
 The first cross-bundle idea was request/reply over the Data Bus:
 
@@ -125,7 +125,7 @@ event plane:
 
 | Namespace | Owner | Resolver should live with |
 | --- | --- | --- |
-| `conv:fi:` | ReAct/platform artifact system | ReAct event/artifact module |
+| `conv:fi:` | Conversation file system | Agent-harness event/workspace modules |
 | `mem:` | Memory subsystem | SDK memory module |
 | `task:` | Task/issue subsystem | Task solution or bundle task domain |
 | `repo:` | Repository-backed knowledge subsystem | Knowledge bundle/module |
@@ -495,7 +495,7 @@ there are unsaved edits.
 user clicks Download on conv:fi: card
   -> object_action facade(conv:fi:..., download)
      current compatible alias: canvas_object_action
-  -> resolver client finds ReAct artifact resolver
+  -> resolver client finds the agent-harness conversation-file resolver
   -> direct resolver_execute(download)
   -> inline bytes or tmp: output_ref
   -> browser downloads through resolver/client response
@@ -718,7 +718,7 @@ The helper should:
 - Keep local resolver registry as first dispatch path.
 - Move common resolver interfaces to `sdk/solutions/event-hub`.
 - Keep namespace owner implementations in their domains:
-  - `react/events/resolver.py` for `conv:fi:`;
+  - `runtime/harness/events/resolver.py` for `conv:fi:`;
   - `memory/events/resolver.py` for `mem:`;
   - task domain resolver for `task:`;
   - canvas resolver for canvas-owned refs.
@@ -795,7 +795,7 @@ As of 2026-06-08:
 
 - local resolver registration is implemented in the task-tracker pilot;
 - SDK canvas has a local resolver registry and object action operation shape;
-- memory and ReAct artifact resolvers are moving into their owner modules;
+- memory and conversation-file resolvers live in their owner modules;
 - Data Bus exists for durable bundle-scoped messages;
 - Redis TTL resolver directory is not implemented;
 - cross-bundle resolver discovery is not implemented;
