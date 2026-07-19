@@ -1341,6 +1341,14 @@ code {
   flex-direction: column;
   gap: 10px;
   min-height: 0;
+  /* Safety net: the panes size with viewport units (100vh), but this widget
+     lives inside a modal that can be shorter than the viewport — so the stacked
+     panes can exceed the modal. Bound the group to the viewport and let IT
+     scroll, so a lead pane's action (an agent access request's account picker +
+     Grant) is always reachable even when a pane's own internal scroll doesn't
+     engage. Individual panes still scroll internally first. */
+  max-height: calc(100vh - 96px);
+  overflow-y: auto;
 }
 
 .pane {

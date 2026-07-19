@@ -8,7 +8,7 @@
  * that opens at EXACTLY the geometry it had while pinned.
  */
 
-import { useCallback, useRef, useState, type ReactNode, type PointerEvent as ReactPointerEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode, type PointerEvent as ReactPointerEvent } from 'react';
 
 const MIN_W = 320;
 const MIN_H = 160;
@@ -67,6 +67,33 @@ export function PaneGroup({ panes }: { panes: PaneDef[] }) {
   const [states, setStates] = useState<Record<string, PaneState>>({});
   const zRef = useRef(BASE_Z);
   const dockedEls = useRef<Record<string, HTMLElement | null>>({});
+  const groupRef = useRef<HTMLDivElement | null>(null);
+
+  // Layout diagnostics for the overflow bug: the panes size with viewport units
+  // but live inside a modal that can be shorter than the viewport. Log the
+  // group vs viewport vs each pane's clip so we can see, from real numbers,
+  // whether a pane's body actually scrolls or its content is clipped
+  // unreachable. Fires when the pane set or docking changes.
+  const paneIds = panes.map((p) => p.id).join(',');
+  useEffect(() => {
+    const group = groupRef.current;
+    if (!group) return;
+    const gr = group.getBoundingClientRect();
+    const rows: string[] = [];
+    Object.entries(dockedEls.current).forEach(([id, el]) => {
+      if (!el) return;
+      const body = el.querySelector('.pane-body') as HTMLElement | null;
+      rows.push(
+        `${id}: pane ${Math.round(el.clientHeight)}h/${Math.round(el.scrollHeight)}sc` +
+        (body ? ` · body ${Math.round(body.clientHeight)}h/${Math.round(body.scrollHeight)}sc ${body.scrollHeight > body.clientHeight ? 'SCROLLS' : 'fits'}` : ''),
+      );
+    });
+    // eslint-disable-next-line no-console
+    console.log(
+      `[connections.PaneGroup] viewport=${window.innerHeight} · group ${Math.round(gr.height)}h/${Math.round(group.scrollHeight)}sc ` +
+      `${group.scrollHeight > group.clientHeight ? 'GROUP-SCROLLS' : 'group-fits'} · panes[${rows.join(' | ')}]`,
+    );
+  }, [paneIds, states]);
 
   const stateOf = (id: string): PaneState =>
     states[id] ?? { floating: false, expanded: false, rect: { x: 24, y: 24, w: MIN_W, h: MIN_H, z: BASE_Z } };
@@ -202,7 +229,7 @@ export function PaneGroup({ panes }: { panes: PaneDef[] }) {
   };
 
   return (
-    <div className="pane-group">
+    <div className="pane-group" ref={groupRef}>
       {visibleDocked.map((item) => (
         <div
           key={item.pane.id}
