@@ -26,7 +26,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any, Dict, List, Mapping, Optional
 
@@ -55,7 +54,6 @@ __all__ = [
     "load_mcp_tools_for_connections",
     "consent_request_tools",
     "mcp_adapters_available",
-    "wrap_tools_with_user_delivery",
 ]
 
 
@@ -119,226 +117,6 @@ def _conn_alias(conn: Mapping[str, Any]) -> str:
     return str(conn.get("alias") or conn.get("name") or "").strip()
 
 
-_POSTPROCESS_MARKERS = ('"download"', '"delegated_consent_required"', '"consent"')
-
-
-def _postprocessable(text: str) -> Any | None:
-    """Parse an MCP tool's text content when it can carry a file delivery or a
-    consent denial."""
-    raw = str(text or "").strip()
-    if not raw.startswith("{") or not any(marker in raw for marker in _POSTPROCESS_MARKERS):
-        return None
-    try:
-        parsed = json.loads(raw)
-    except Exception:
-        return None
-    return parsed if isinstance(parsed, dict) else None
-
-
-async def _consent_result(
-    parsed: Dict[str, Any],
-    *,
-    agent_client_id: str,
-    fallback_resource: str,
-    resource_candidates: Optional[List[Mapping[str, Any]]] = None,
-) -> Dict[str, Any] | None:
-    """When a door result is a per-agent consent denial, raise the chat consent
-    demand and return the agent-explainable consent result; None otherwise.
-
-    The door (a KDCube @mcp named-services surface) denies an op whose grants
-    the agent's consented bearer lacks with `delegated_consent_required` and —
-    for hosted-agent callers — a full consent block (agent identity, resource,
-    missing claims, one-click grant action). The tool result alone reaches only
-    the model; announcing turns it into the standard scoped banner, so the user
-    sees exactly what is asked (e.g. mail:read) with the one-click grant, and
-    the Connection Hub landing offers the pending-claims pane."""
-    if str(parsed.get("error") or "") != "delegated_consent_required":
-        return None
-    block = parsed.get("consent") if isinstance(parsed.get("consent"), Mapping) else {}
-    claims = [str(c) for c in (block.get("claims") or parsed.get("missing_grants") or []) if str(c or "").strip()]
-    if not claims:
-        logger.warning("[mcp-wrap] consent denial with NO claims — cannot announce: %s", parsed)
-        return None
-    client_id = str(block.get("agent_client_id") or agent_client_id or "").strip()
-    resource = str(
-        block.get("resource")
-        or fallback_resource
-        or _resource_for_claims(claims, list(resource_candidates or []))
-        or ""
-    ).strip()
-    if not client_id or not resource:
-        logger.warning(
-            "[mcp-wrap] consent denial not announceable: client=%r resource=%r claims=%s "
-            "(block=%s fallback_resource=%r)",
-            client_id, resource, claims, dict(block or {}), fallback_resource,
-        )
-        return None
-    logger.info(
-        "[mcp-wrap] consent denial -> announcing demand: client=%s resource=%s claims=%s tool=%s",
-        client_id, resource, claims, str(block.get("tool_name") or parsed.get("namespace") or ""),
-    )
-    from kdcube_ai_app.apps.chat.sdk.solutions.connections.mcp_consent import (
-        announce_agent_consent,
-    )
-
-    consent = mcp_consent_from_denial(
-        {"status": 403, "reason": "authority_mismatch"},
-        resource=resource,
-        claims=claims,
-        tool_name=str(block.get("tool_name") or parsed.get("namespace") or ""),
-        agent_client_id=client_id,
-    )
-    await announce_agent_consent(consent)
-    return consent.to_tool_result()
-
-
-def _resource_for_claims(
-    claims: List[str],
-    candidates: List[Mapping[str, Any]],
-) -> str:
-    """The declared delegated connection whose scopes cover the denial's claims.
-
-    With several delegated connections the single-connection fallback cannot
-    decide; the connection that DECLARED the missing claims in its scopes is
-    the one whose resource the grant rides. Anything beyond that is the
-    SERVER's to say: every KDCube-served MCP surface names its own resource in
-    the denial's consent block, and that block always wins over this
-    fallback."""
-    matches = [
-        str(c.get("resource") or "")
-        for c in candidates
-        if set(claims) <= {str(s) for s in (c.get("scopes") or [])}
-    ]
-    return matches[0] if len(matches) == 1 else ""
-
-
-def wrap_tools_with_user_delivery(
-    tools: List[Any],
-    *,
-    agent_client_id: str = "",
-    fallback_resource: str = "",
-    resource_candidates: Optional[List[Mapping[str, Any]]] = None,
-) -> List[Any]:
-    """Post-process MCP tool results for the chat surface, both directions.
-
-    * File deliveries go to the USER: a result carrying a file object with an
-      out-of-band download URL (the turn-less contract) becomes a chat file
-      card (object ref, click-time resolution); the model-visible result keeps
-      a delivery note in place of the URL — a signed link the model would
-      otherwise re-type into its message, corrupting it some fraction of the
-      time.
-    * Consent denials go to the USER too: a door op denied for missing
-      per-agent grants raises the scoped chat consent banner (the missing
-      claims + one-click grant), and the model gets the explainable consent
-      result instead of a bare error.
-
-    Mutates each tool's coroutine in place; tools without one pass through."""
-    from kdcube_ai_app.apps.chat.sdk.solutions.widgets.send_to_user import (
-        deliver_result_files,
-    )
-
-    async def _process_dict(parsed: Dict[str, Any]) -> Dict[str, Any] | None:
-        consent = await _consent_result(
-            parsed,
-            agent_client_id=agent_client_id,
-            fallback_resource=fallback_resource,
-            resource_candidates=resource_candidates,
-        )
-        if consent is not None:
-            return consent
-        delivered = await deliver_result_files(parsed)
-        return delivered if delivered is not parsed else None
-
-    async def _process_text(text: str) -> str | None:
-        parsed = _postprocessable(text)
-        if parsed is None:
-            return None
-        replaced = await _process_dict(parsed)
-        return json.dumps(replaced, ensure_ascii=False) if replaced is not None else None
-
-    async def _process_content(content: Any) -> Any | None:
-        # langchain-mcp-adapters tools are `content_and_artifact`: content is a
-        # STRING (single text block) or a LIST of content blocks
-        # ({"type": "text", "text": ...}); plain dict/str cover direct callers.
-        if isinstance(content, str):
-            return await _process_text(content)
-        if isinstance(content, dict):
-            return await _process_dict(content)
-        if isinstance(content, list):
-            changed = False
-            out: List[Any] = []
-            for item in content:
-                replacement = None
-                if isinstance(item, str):
-                    replacement = await _process_text(item)
-                elif isinstance(item, Mapping) and item.get("type") == "text" and isinstance(item.get("text"), str):
-                    new_text = await _process_text(item["text"])
-                    if new_text is not None:
-                        replacement = {**item, "text": new_text}
-                if replacement is not None:
-                    out.append(replacement)
-                    changed = True
-                else:
-                    out.append(item)
-            return out if changed else None
-        return None
-
-    def _unprocessed_sentinel(result: Any) -> None:
-        # The silent-failure guard: a result that CARRIES a consent denial or a
-        # download URL but was not post-processed means the user saw nothing —
-        # no banner, no file card. That must never be quiet. (A result without
-        # the markers is the normal case and stays unlogged.)
-        raw = repr(result)
-        for marker in ("delegated_consent_required", "download_token"):
-            if marker in raw:
-                logger.warning(
-                    "mcp tool result carries %r but was NOT post-processed "
-                    "(unhandled shape %s) — no banner/file card reached the user",
-                    marker, type(result).__name__,
-                )
-                return
-
-    def _wrap(orig: Any) -> Any:
-        async def run(*args: Any, **kwargs: Any) -> Any:
-            result = await orig(*args, **kwargs)
-            try:
-                if isinstance(result, tuple) and len(result) == 2:
-                    replaced = await _process_content(result[0])
-                    if replaced is not None:
-                        return (replaced, result[1])
-                else:
-                    replaced = await _process_content(result)
-                    if replaced is not None:
-                        return replaced
-                _unprocessed_sentinel(result)
-            except Exception:  # pragma: no cover - post-processing is best-effort
-                logger.warning("mcp tool result post-process failed (non-fatal)", exc_info=True)
-            return result
-
-        return run
-
-    wrapped = 0
-    for tool in tools or []:
-        orig = getattr(tool, "coroutine", None)
-        if callable(orig):
-            try:
-                tool.coroutine = _wrap(orig)
-                wrapped += 1
-            except Exception:
-                logger.info("mcp tool %s: delivery wrap failed (non-fatal)", getattr(tool, "name", "?"))
-        else:
-            logger.warning(
-                "[mcp-wrap] tool %s has no coroutine — consent/delivery post-processing will NOT run for it",
-                getattr(tool, "name", "?"),
-            )
-    if tools:
-        logger.info(
-            "[mcp-wrap] %d/%d tools wrapped for consent+delivery post-processing (client=%s fallback_resource=%r)",
-            wrapped, len(tools), agent_client_id, fallback_resource,
-        )
-    return tools
-
-
 def mcp_connections(
     connections: List[Dict[str, Any]],
     disabled_map: Optional[Mapping[str, Any]] = None,
@@ -393,24 +171,10 @@ async def load_mcp_tools_for_connections(
         drop_sink=drop_sink,
     )
     error_sink: Dict[str, Any] = {}
+    # The shared loader applies chat consent+delivery post-processing to every
+    # bound tool (driven by the surface's self-describing result), so this thin
+    # bundle adapter carries none of that logic.
     tools = await load_mcp_tools_from_server_map(server_map, error_sink=error_sink)
-    # The fallback resource for in-result consent denials: with ONE delegated
-    # connection its resource id is authoritative; with several, the door's own
-    # consent block names it, or the candidate whose declared scopes cover the
-    # denial's claims decides (memories vs the named-services door).
-    delegated_conns = [c for c in conns if is_delegated_connection(c)]
-    tools = wrap_tools_with_user_delivery(
-        tools,
-        agent_client_id=client_id,
-        fallback_resource=connection_resource(delegated_conns[0]) if len(delegated_conns) == 1 else "",
-        resource_candidates=[
-            {
-                "resource": connection_resource(c),
-                "scopes": (c.get("scopes") or c.get("claims") or []),
-            }
-            for c in delegated_conns
-        ],
-    )
 
     # An MCP server may publish an operating guide in its initialize result —
     # what MCP-native clients (e.g. Claude connectors) show their model. The

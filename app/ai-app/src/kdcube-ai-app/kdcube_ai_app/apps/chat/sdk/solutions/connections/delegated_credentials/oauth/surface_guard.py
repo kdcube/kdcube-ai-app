@@ -14,13 +14,17 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
-from fnmatch import fnmatch
 from typing import Any, Dict, Iterable, Mapping, Optional
 
 from fastapi import Request
 from fastapi.responses import JSONResponse, Response
 
 from kdcube_ai_app.apps.chat.sdk.solutions.connections.authority_registry import CredentialEnvelope
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.credential_view import (
+    DelegatedCredentialView,
+    normalize_resource,
+    resource_matches,
+)
 from kdcube_ai_app.apps.chat.sdk.solutions.connections.authority_projection import (
     authority_has_platform_privilege,
 )
@@ -333,10 +337,7 @@ def _credential_scopes(envelope: CredentialEnvelope) -> set[str]:
 
 
 def _normalize_resource(value: Any) -> str:
-    raw = str(value or "").strip()
-    if not raw:
-        return ""
-    return raw.split("?", 1)[0].rstrip("/")
+    return normalize_resource(value)
 
 
 def _request_resource(request: Request) -> str:
@@ -385,37 +386,15 @@ def _connection_hub_rest_operation_policies(request: Request) -> dict[str, Manag
 
 
 def _credential_resources(envelope: CredentialEnvelope) -> tuple[str, ...]:
-    attrs = envelope.attrs or {}
-    resource_grants = attrs.get("resource_grants")
-    resource_keys = resource_grants.keys() if isinstance(resource_grants, Mapping) else []
-    out: list[str] = []
-    seen: set[str] = set()
-    for item in resource_keys:
-        normalized = _normalize_resource(item)
-        if normalized and normalized not in seen:
-            seen.add(normalized)
-            out.append(normalized)
-    return tuple(out)
+    return DelegatedCredentialView.from_envelope(envelope).resources
 
 
 def _credential_grants_for_resource(envelope: CredentialEnvelope, request_resource: str) -> set[str]:
-    attrs = envelope.attrs or {}
-    resource_grants = attrs.get("resource_grants")
-    if not isinstance(resource_grants, Mapping):
-        return set()
-    out: set[str] = set()
-    for resource, grants in resource_grants.items():
-        if _resource_matches(str(resource or ""), request_resource):
-            out.update(_as_list(grants))
-    return out
+    return DelegatedCredentialView.from_envelope(envelope).grants_for_resource(request_resource)
 
 
 def _resource_matches(credential_resource: str, request_resource: str) -> bool:
-    credential_resource = _normalize_resource(credential_resource)
-    request_resource = _normalize_resource(request_resource)
-    if not credential_resource or not request_resource:
-        return False
-    return credential_resource == request_resource or fnmatch(request_resource, credential_resource)
+    return resource_matches(credential_resource, request_resource)
 
 
 def _any_resource_matches(credential_resources: Iterable[str], request_resource: str) -> bool:

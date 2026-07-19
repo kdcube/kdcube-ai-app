@@ -244,6 +244,9 @@ def consent_error_response(
         tool_name=tool_name,
     )
     consent = _as_dict(payload.get("consent"))
+    # Self-describing contract: the block names the namespace the demand is
+    # for, so a consumer never re-derives it (from a tool_id or anywhere).
+    consent.setdefault("namespace", request.namespace or namespace)
     message = as_str(_as_dict(payload.get("error")).get("message")) or as_str(resolution.message) or (
         "Connect or reconnect the required external account in Connection Hub."
     )
@@ -294,6 +297,8 @@ def tool_error_response(
     status = 400
     if consent or code == CONSENT_NEEDED_CODE:
         status = 403
+        # Self-describing contract: the block names its namespace.
+        consent.setdefault("namespace", request.namespace or namespace)
         details.update(consent_details(consent))
         details["consent"] = consent
     return NamedServiceResponse.error_response(

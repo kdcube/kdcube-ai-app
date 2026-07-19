@@ -63,7 +63,21 @@ async def load_mcp_tools_from_server_map(
             "frameworks.langchain.mcp: loaded %d MCP tool(s) from %d server(s).",
             len(tools), len(server_map),
         )
-        return list(tools)
+        tools = list(tools)
+        # Chat-side post-processing, applied ONCE here so EVERY MCP consumer
+        # inherits it (no bundle re-implements it): a KDCube MCP result's
+        # self-describing consent block becomes a chat banner, and a file
+        # becomes a card. Driven entirely by the result; a no-op for non-KDCube
+        # or non-consent results, so it is always safe to apply.
+        try:
+            from kdcube_ai_app.apps.chat.sdk.solutions.connections.mcp_result import (
+                bind_chat_result_handling,
+            )
+
+            tools = bind_chat_result_handling(tools)
+        except Exception:  # pragma: no cover - never fail a load over the wrapper
+            logger.info("frameworks.langchain.mcp: chat result-handling bind skipped", exc_info=True)
+        return tools
     except Exception as e:  # noqa: BLE001 - never fail a build over an optional tool source
         if error_sink is not None:
             error_sink["_load_error"] = e

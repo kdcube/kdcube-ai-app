@@ -4,7 +4,9 @@ import json
 import logging
 from typing import Any, Mapping, Sequence
 
-from kdcube_ai_app.apps.chat.sdk.solutions.connections.authority_registry import CredentialEnvelope
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.credential_view import (
+    delegated_credential_view,
+)
 from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import (
     get_current_request_context,
     get_current_user_identity,
@@ -16,7 +18,6 @@ from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers import (
     NamedServiceRequest,
     NamedServiceResponse,
     NamespaceBoundaryPolicy,
-    as_list,
     call_named_service_endpoint,
     clean_namespace,
 )
@@ -101,33 +102,7 @@ def _result_count(payload: Mapping[str, Any]) -> int | None:
 
 
 def _credential_grants_from_request(request: Any) -> set[str]:
-    delegated = getattr(getattr(request, "state", None), "delegated_credential", None)
-    if not isinstance(delegated, Mapping):
-        return set()
-
-    grants: set[str] = set()
-    credential = delegated.get("credential")
-    if isinstance(credential, Mapping):
-        envelope = CredentialEnvelope.coerce(credential)
-        attrs = envelope.attrs or {}
-        grants.update(as_list(attrs.get("scopes")))
-        grants.update(as_list(attrs.get("scope")))
-        grants.update(as_list(attrs.get("grants")))
-
-    grant_record = delegated.get("grant_record")
-    if isinstance(grant_record, Mapping):
-        grants.update(as_list(grant_record.get("scopes")))
-        grants.update(as_list(grant_record.get("scope")))
-        grants.update(as_list(grant_record.get("grants")))
-        record_credential = grant_record.get("credential")
-        if isinstance(record_credential, Mapping):
-            envelope = CredentialEnvelope.coerce(record_credential)
-            attrs = envelope.attrs or {}
-            grants.update(as_list(attrs.get("scopes")))
-            grants.update(as_list(attrs.get("scope")))
-            grants.update(as_list(attrs.get("grants")))
-
-    return {item for item in grants if item}
+    return set(delegated_credential_view(request).grants)
 
 
 def _delegated_grant_record(request: Any) -> dict[str, Any]:
@@ -139,48 +114,27 @@ def _delegated_grant_record(request: Any) -> dict[str, Any]:
 
 
 def _named_service_catalog_config_from_request(request: Any) -> dict[str, Any]:
-    grant_record = _delegated_grant_record(request)
-    raw = grant_record.get("named_services")
+    raw = delegated_credential_view(request).named_services
     return dict(raw or {}) if isinstance(raw, Mapping) else {}
 
 
 def _credential_authority_id_from_request(request: Any) -> str:
-    grant_record = _delegated_grant_record(request)
-    for raw in (grant_record.get("credential"),):
-        if isinstance(raw, Mapping):
-            authority_id = CredentialEnvelope.coerce(raw).issuer_authority_id
-            if authority_id:
-                return authority_id
-    delegated = getattr(getattr(request, "state", None), "delegated_credential", None)
-    if isinstance(delegated, Mapping):
-        raw = delegated.get("credential")
-        if isinstance(raw, Mapping):
-            authority_id = CredentialEnvelope.coerce(raw).issuer_authority_id
-            if authority_id:
-                return authority_id
-    return ""
+    return delegated_credential_view(request).authority_id
 
 
 def _credential_trace_context(request: Any) -> dict[str, Any]:
-    delegated = getattr(getattr(request, "state", None), "delegated_credential", None)
-    if not isinstance(delegated, Mapping):
+    view = delegated_credential_view(request)
+    if not view.present:
         return {}
-    grant_record = delegated.get("grant_record")
-    grant_record = grant_record if isinstance(grant_record, Mapping) else {}
-    raw_credential = delegated.get("credential")
-    envelope = CredentialEnvelope.coerce(raw_credential) if isinstance(raw_credential, Mapping) else CredentialEnvelope()
-    attrs = envelope.attrs or {}
-    grantor_authority = grant_record.get("grantor_authority")
-    grantor_authority = grantor_authority if isinstance(grantor_authority, Mapping) else {}
     return {
-        "authority_id": envelope.issuer_authority_id,
-        "delegate_identity": envelope.subject,
-        "grantor_user_id": attrs.get("grantor_subject") or attrs.get("grantor_user_id") or "",
-        "identity_scope": attrs.get("identity_scope") or grant_record.get("identity_scope") or "",
-        "resource": attrs.get("resource") or "",
-        "grants": sorted(_credential_grants_from_request(request)),
-        "tools": list(grant_record.get("tools") or []),
-        "grantor_roles": list(grantor_authority.get("grantor_roles") or []),
+        "authority_id": view.authority_id,
+        "delegate_identity": view.subject,
+        "grantor_user_id": view.grantor_user_id,
+        "identity_scope": view.identity_scope,
+        "resource": view.resource,
+        "grants": sorted(view.grants),
+        "tools": list(view.tools),
+        "grantor_roles": list(view.grantor_roles),
     }
 
 

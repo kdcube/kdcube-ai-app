@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAppDispatch, useAppSelector } from '../../app/hooks';
 import { AccountRow, type AccountStatusTone } from '../../components/AccountRow';
 import { PaneGroup } from '../../components/Pane';
@@ -186,6 +186,10 @@ export function DelegatedToKdcubePanel() {
     targetClaims: string[],
     opts?: {accountId?: string; claimsMode?: 'add' | 'replace'},
   ) => {
+    console.info('[connect-route] launchOAuth', {
+      provider: targetProviderId, connectorApp: targetConnectorAppId,
+      claims: targetClaims, accountId: opts?.accountId || '', claimsMode: opts?.claimsMode || '',
+    });
     const result = await dispatch(startDelegatedToKdcubeOAuth({
       providerId: targetProviderId,
       connectorAppId: targetConnectorAppId,
@@ -193,8 +197,12 @@ export function DelegatedToKdcubePanel() {
       returnHint: window.location.href,
       accountId: opts?.accountId,
       claimsMode: opts?.claimsMode,
-    })).unwrap().catch(() => undefined);
+    })).unwrap().catch((err) => {
+      console.warn('[connect-route] startOAuth dispatch FAILED', err);
+      return undefined;
+    });
     if (result?.authorize_url) {
+      console.info('[connect-route] launchOAuth -> opening provider tab', result.authorize_url);
       // Arms the one-shot focus refresh in App: when the user returns from
       // the provider tab, the widget re-fetches once (no standing polling).
       try {
@@ -203,6 +211,10 @@ export function DelegatedToKdcubePanel() {
         // Storage unavailable: the BroadcastChannel push still covers it.
       }
       window.open(result.authorize_url, '_blank', 'noopener,noreferrer');
+    } else {
+      console.warn('[connect-route] launchOAuth got NO authorize_url — nothing opened', {
+        provider: targetProviderId, connectorApp: targetConnectorAppId, result,
+      });
     }
   };
 
@@ -255,6 +267,16 @@ export function DelegatedToKdcubePanel() {
   // ── consent-plan (deep-link) wiring ────────────────────────────────────
   const [planDismissed, setPlanDismissed] = useState(false);
   const planProvider = deepLink.providerId ? providers[deepLink.providerId] : undefined;
+  useEffect(() => {
+    console.info('[connect-route] delegated-to-kdcube panel mount', {
+      deepLink,
+      planProviderResolved: Boolean(planProvider),
+      knownProviders: Object.keys(providers || {}),
+      location: window.location.search,
+    });
+    // Mount-time snapshot only — the summon remounts the panel by key.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const planRequestedClaims = useMemo(() => {
     if (!planProvider) return [] as string[];
     const declared = Object.keys(planProvider.claims || {});
@@ -282,14 +304,23 @@ export function DelegatedToKdcubePanel() {
   // whatever the user kept ticked in step 3 (they may untick any requested
   // claim before connecting).
   const runPlanAction = (action: ConsentPlanAction, planClaims: string[]) => {
-    if (!planProvider) return;
+    if (!planProvider) {
+      console.warn('[connect-route] runPlanAction with NO planProvider — button did nothing', { action });
+      return;
+    }
     const appId = deepLink.connectorAppId || firstConnectorAppId(planProvider);
     const targetClaims = planClaims.length ? planClaims : planRequestedClaims;
+    console.info('[connect-route] runPlanAction', {
+      action, provider: planProvider.provider_id, appId,
+      oauthEnabled: oauthEnabled(planProvider, appId), targetClaims,
+      hasPlanAccount: Boolean(planAccount),
+    });
     if (action === 'connect') {
       if (oauthEnabled(planProvider, appId)) {
         void launchOAuth(planProvider.provider_id, appId, targetClaims);
         return;
       }
+      console.info('[connect-route] runPlanAction connect: OAuth NOT enabled -> prefill credential form (no direct connect)');
       setProviderId(planProvider.provider_id);
       setConnectorAppId(appId);
       setClaims(targetClaims);
@@ -364,7 +395,16 @@ export function DelegatedToKdcubePanel() {
   };
 
   const startOAuth = async () => {
-    if (!selectedProviderId || !selectedConnectorAppId || !canStartOAuth) return;
+    console.info('[connect-route] startOAuth (connect-pane button)', {
+      selectedProviderId, selectedConnectorAppId, canStartOAuth,
+      selectedClaims, managedAccountId,
+    });
+    if (!selectedProviderId || !selectedConnectorAppId || !canStartOAuth) {
+      console.warn('[connect-route] startOAuth guard blocked — nothing launched', {
+        selectedProviderId, selectedConnectorAppId, canStartOAuth,
+      });
+      return;
+    }
     await launchOAuth(
       selectedProviderId,
       selectedConnectorAppId,

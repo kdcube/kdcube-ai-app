@@ -24,6 +24,10 @@ from __future__ import annotations
 import logging
 from typing import Any, Mapping, Sequence
 
+from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.credential_view import (
+    delegated_credential_view,
+)
+
 LOGGER = logging.getLogger(__name__)
 
 AGENT_CLIENT_PREFIX = "kdcube-agent:"
@@ -31,76 +35,16 @@ CONSENT_NEEDED_CODE = "connections.consent_needed"
 DELEGATED_CONSENT_REQUIRED = "delegated_consent_required"
 
 
-def _grant_record(request: Any) -> Mapping[str, Any]:
-    delegated = getattr(getattr(request, "state", None), "delegated_credential", None)
-    if not isinstance(delegated, Mapping):
-        return {}
-    record = delegated.get("grant_record")
-    return record if isinstance(record, Mapping) else {}
-
-
-def _credential(request: Any) -> Mapping[str, Any]:
-    delegated = getattr(getattr(request, "state", None), "delegated_credential", None)
-    if not isinstance(delegated, Mapping):
-        return {}
-    credential = delegated.get("credential")
-    return credential if isinstance(credential, Mapping) else {}
-
-
 def agent_client_id_from_request(request: Any) -> str:
-    """The caller's ``kdcube-agent:<app>:<agent>`` identity, or "".
-
-    The grant record's ``client_id`` is authoritative; a projection without it
-    still names the agent in the delegate subject
-    (``integration:kdcube-agent:<app>:<agent>:<user>``)."""
-    record = _grant_record(request)
-    client_id = str(record.get("client_id") or "").strip()
-    if client_id.startswith(AGENT_CLIENT_PREFIX):
-        return client_id
-    from kdcube_ai_app.apps.chat.sdk.solutions.connections.authority_registry import (
-        CredentialEnvelope,
-    )
-
-    subject = str(CredentialEnvelope.coerce(_credential(request)).subject or "")
-    parts = subject.split(":")
-    if len(parts) >= 4 and parts[0] == "integration" and parts[1] == AGENT_CLIENT_PREFIX.rstrip(":"):
-        return ":".join(parts[1:4])
-    return ""
+    """The caller's ``kdcube-agent:<app>:<agent>`` identity, or "" for other
+    client families. Thin over the one canonical credential view."""
+    return delegated_credential_view(request).agent_client_id
 
 
 def granted_resource_from_request(request: Any) -> str:
-    """The delegated-resource id this bearer was granted under, or "".
-
-    An OAuth client carries a single ``attrs.resource``; an agent client carries
-    a ``resource_grants`` map (one key per delegated resource — for the
-    named-services door, the single door resource that covers every namespace).
-    Read both, in the credential envelope AND the token-bound grant record."""
-    from kdcube_ai_app.apps.chat.sdk.solutions.connections.authority_registry import (
-        CredentialEnvelope,
-    )
-
-    def _from_attrs(attrs: Mapping[str, Any]) -> str:
-        resource = str(attrs.get("resource") or "").strip()
-        if resource:
-            return resource
-        grants = attrs.get("resource_grants")
-        if isinstance(grants, Mapping) and grants:
-            return str(next(iter(grants.keys())) or "").strip()
-        return ""
-
-    # 1. The credential envelope (where an agent bearer stores resource_grants).
-    resource = _from_attrs(CredentialEnvelope.coerce(_credential(request)).attrs or {})
-    if resource:
-        return resource
-    # 2. The grant record, top level and via its embedded credential.
-    record = _grant_record(request)
-    grants = record.get("resource_grants")
-    if isinstance(grants, Mapping) and grants:
-        return str(next(iter(grants.keys())) or "").strip()
-    nested = record.get("credential")
-    if isinstance(nested, Mapping):
-        return _from_attrs(CredentialEnvelope.coerce(nested).attrs or {})
-    return ""
+    """The delegated-resource id this bearer was granted under, or "". Thin over
+    the one canonical credential view (which knows both envelope shapes)."""
+    return delegated_credential_view(request).resource
 
 
 def connection_hub_grant_url(
@@ -179,14 +123,13 @@ def agent_grant_consent_denial(
             "whose initial consent includes this grant."
         ),
     }
-    client_id = agent_client_id_from_request(request)
-    external_client_id = ""
-    if not client_id:
-        # Any OTHER delegated client (an external app connected via OAuth —
-        # Claude Code) gets the SAME focused path: the hub deep link below
-        # lands on its card with the missing claims pre-checked.
-        external_client_id = str(_grant_record(request).get("client_id") or "").strip()
-    resource = granted_resource_from_request(request)
+    view = delegated_credential_view(request)
+    client_id = view.agent_client_id
+    # Any OTHER delegated client (an external app connected via OAuth — Claude
+    # Code) gets the SAME focused path: the hub deep link below lands on its
+    # card with the missing claims pre-checked.
+    external_client_id = "" if client_id else view.client_id
+    resource = view.resource
     hub_url = connection_hub_grant_url(
         tenant=tenant,
         project=project,
@@ -209,6 +152,9 @@ def agent_grant_consent_denial(
         "resource": resource,
         "claims": missing_list,
         "tool_name": namespace,
+        # Self-describing contract: the block names its namespace so a consumer
+        # never re-derives it.
+        "namespace": namespace,
     }
     if hub_url:
         consent["connection_hub_url"] = hub_url
