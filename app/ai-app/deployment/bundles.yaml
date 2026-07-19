@@ -1268,6 +1268,12 @@ bundles:
                 # the namespace roster (+ the conversation-recovery block when
                 # `conv` is declared). Trade-offs:
                 # docs/agents/lg-react-named-services-config.md (in the bundle).
+                # Ships scoped to CONV only — the conversation namespace is
+                # built-in (served by kdcube-services), so it works on a fresh
+                # install with no extra setup. Provider namespaces (slack, mail)
+                # need their OAuth app configured in Connection Hub first, so add
+                # them here only after that: e.g. `slack:read, slack:write` or
+                # `mail:read` in `scopes` and the namespace under the roster.
                 - name: named_services
                   kind: mcp
                   server_id: named_services
@@ -1276,12 +1282,11 @@ bundles:
                   resource: "*/api/integrations/bundles/*/*/kdcube-services@1-0/public/mcp/named_services*"
                   transport: streamable_http
                   delegated: true
-                  scopes: [named_services:use, slack:read, slack:write, conv:read]
+                  scopes: [named_services:use, conv:read]
                 - name: named_services_roster
                   kind: named_service
                   alias: named_services
                   namespaces:
-                    slack: { allowed: [provider.about, object.schema, object.search, object.action] }
                     conv:  { allowed: [provider.about, object.search, object.get] }
       ui:
         main_view:
