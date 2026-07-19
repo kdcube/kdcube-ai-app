@@ -51,6 +51,7 @@ def compose_named_service_agent_instructions(
     namespaces: Sequence[str] | None = None,
     pull_tool: str = "pull_files",
     read_tool: str = "read_file",
+    operations: Mapping[str, str] | None = None,
 ) -> str:
     """Compose teaching block + namespace roster for one agent's surface.
 
@@ -71,7 +72,11 @@ def compose_named_service_agent_instructions(
     if key == "react":
         teaching = NAMED_SERVICES_REACT_ADDITIONAL_INSTRUCTIONS
     else:
-        teaching = named_services_bridge_instructions(pull_tool=pull_tool, read_tool=read_tool)
+        teaching = named_services_bridge_instructions(
+            pull_tool=pull_tool,
+            read_tool=read_tool,
+            operations=dict(operations) if operations else None,
+        )
     roster = render_named_service_namespace_roster(namespaces, intros)
     return f"{teaching}\n\n{roster}" if roster else teaching
 
@@ -89,6 +94,7 @@ async def named_service_agent_instruction_block(
     project: str | None = None,
     pull_tool: str = "pull_files",
     read_tool: str = "read_file",
+    operations: Mapping[str, str] | None = None,
 ) -> str:
     """Gather intros through discovery and compose the instruction block.
 
@@ -122,6 +128,7 @@ async def named_service_agent_instruction_block(
         namespaces=namespaces,
         pull_tool=pull_tool,
         read_tool=read_tool,
+        operations=operations,
     )
 
 

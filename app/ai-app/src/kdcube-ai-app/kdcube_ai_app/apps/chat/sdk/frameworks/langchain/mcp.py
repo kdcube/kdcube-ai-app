@@ -71,6 +71,53 @@ async def load_mcp_tools_from_server_map(
         return []
 
 
+async def load_mcp_server_instructions(
+    server_map: Dict[str, Dict[str, Any]],
+    *,
+    timeout_s: float = 6.0,
+) -> Dict[str, str]:
+    """Fetch each MCP server's `instructions` from its initialize handshake.
+
+    An MCP server may publish usage instructions in the initialize result —
+    the operating guide MCP-native clients (e.g. Claude's connectors) surface
+    to their model. ``MultiServerMCPClient.get_tools()`` drops them, so a
+    LangChain-bound agent never sees what a connector-bound agent is taught.
+    This helper recovers them with one short raw handshake per server
+    (streamable_http only), best-effort: ``{server_id: instructions}`` for the
+    servers that publish any; failures and absences are skipped silently —
+    never raises."""
+    out: Dict[str, str] = {}
+    if not server_map:
+        return out
+    try:
+        import asyncio
+
+        from mcp import ClientSession  # lazy, optional
+        from mcp.client.streamable_http import streamablehttp_client
+    except Exception:
+        return out
+    for server_id, entry in server_map.items():
+        url = str((entry or {}).get("url") or "").strip()
+        transport = str((entry or {}).get("transport") or "").strip().lower()
+        if not url or transport not in {"streamable_http", "http", ""}:
+            continue
+        headers = (entry or {}).get("headers") or None
+        try:
+            async with asyncio.timeout(timeout_s):
+                async with streamablehttp_client(url, headers=headers) as (read, write, _):
+                    async with ClientSession(read, write) as session:
+                        init = await session.initialize()
+                        instructions = str(getattr(init, "instructions", "") or "").strip()
+                        if instructions:
+                            out[server_id] = instructions
+        except Exception:
+            logger.info(
+                "frameworks.langchain.mcp: no server instructions from %r (non-fatal).",
+                server_id,
+            )
+    return out
+
+
 def _iter_exc_chain(error: Any):
     seen: set = set()
     stack = [error]

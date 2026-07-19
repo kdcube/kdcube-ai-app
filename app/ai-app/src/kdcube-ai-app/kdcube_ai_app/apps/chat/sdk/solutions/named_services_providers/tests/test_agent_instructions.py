@@ -66,10 +66,34 @@ def test_bridge_surface_teaches_by_operation_name_with_bundle_file_tools():
     assert "`pull_files`" in block
     assert "`read_file`" in block
     assert "- `mem` — Durable user memory" in block
-    # contract-first + delta semantics survive on the bridge surface
-    assert "protocol notice" in block
+    # contract-first + delta semantics survive on the bridge surface — and the
+    # bridge is honest that no platform gate enforces the order here
+    assert "CONTRACT FIRST" in block
+    assert "NOTHING checks this order" in block
+    assert "protocol notice" not in block
     assert '"add"' in block and '"remove"' in block
     assert "dedup_key" in block
+
+
+def test_bridge_surface_binds_the_door_tool_names_when_given():
+    from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers.instructions import (
+        NAMED_SERVICES_MCP_DOOR_TOOL_NAMES,
+    )
+
+    block = compose_named_service_agent_instructions(
+        _consumer_props("slack"), client_id="main", surface="bridge",
+        intros=INTROS, operations=NAMED_SERVICES_MCP_DOOR_TOOL_NAMES,
+    )
+    # the EXACT bound tool names, not the abstract operation vocabulary
+    for t in ("named_services_list", "named_services_capabilities", "named_services_schema",
+              "named_services_search", "named_services_get", "named_services_action",
+              "named_services_upsert", "named_services_host_file"):
+        assert f"`{t}`" in block
+    assert "`object_schema`" not in block
+    assert "`search_objects`" not in block
+    # the door adds the list-first step; contract-first binds to the real name
+    assert "source of truth for the namespaces" in block
+    assert "read that namespace's `named_services_schema`" in block
 
 
 def test_bridge_surface_without_read_tool_drops_read_hint():

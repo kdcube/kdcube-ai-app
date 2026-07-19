@@ -353,10 +353,12 @@ async def _build_prebuilt_graph(
     # demand per connection instead of the tools.
     application = ep._named_services_bundle_id()
     agent_client_id = delegated_client_id_for_agent(application, PREBUILT_AGENT_ID)
+    mcp_server_guides: Dict[str, str] = {}
     mcp_tools, mcp_consents = await load_mcp_tools_for_connections(
         connections, user_sub=_current_turn_user_sub(ep), disabled_map=disabled_tools or {},
         application=application, agent_id=PREBUILT_AGENT_ID,
         bearer_provider=_agent_grant_bearer_provider(ep, agent_client_id),
+        instructions_sink=mcp_server_guides,
     )
     tools += mcp_tools
     # Consent is demand-driven per tool: a build cannot know which capabilities
@@ -380,10 +382,17 @@ async def _build_prebuilt_graph(
             connected_named_service_namespaces,
             named_service_agent_instruction_block,
         )
+        from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers.instructions import (
+            NAMED_SERVICES_MCP_DOOR_TOOL_NAMES,
+        )
         tool_names = {str(getattr(t, "name", "") or "") for t in tools}
         connected_ns = connected_named_service_namespaces(
             getattr(ep, "bundle_props", None) or {}, client_id=PREBUILT_AGENT_ID
         )
+        # When the KDCube named-services door is bound, teach by its EXACT tool
+        # names — a model does not reliably map "read `object_schema`" onto a
+        # tool named `named_services_schema` on its own.
+        door_bound = any(n in tool_names for n in NAMED_SERVICES_MCP_DOOR_TOOL_NAMES.values())
         ns_block = await named_service_agent_instruction_block(
             bundle_props=getattr(ep, "bundle_props", None) or {},
             client_id=PREBUILT_AGENT_ID,
@@ -394,6 +403,7 @@ async def _build_prebuilt_graph(
             project=str(getattr(ep.settings, "PROJECT", "") or ""),
             pull_tool="pull_files" if "pull_files" in tool_names else "run_python",
             read_tool="read_file" if "read_file" in tool_names else "",
+            operations=NAMED_SERVICES_MCP_DOOR_TOOL_NAMES if door_bound else None,
         )
     except Exception:
         LOGGER.info("[ported-langgraph] named-services instruction block unavailable", exc_info=True)
@@ -417,6 +427,7 @@ async def _build_prebuilt_graph(
             tools, mcp_consents, named_services_block=ns_block,
             additional_instructions=additional_instructions,
             connected_namespaces=connected_ns,
+            mcp_server_guides=mcp_server_guides,
         ),
     )
 
@@ -484,6 +495,7 @@ def _prebuilt_system_prompt(
     named_services_block: str = "",
     additional_instructions: str = "",
     connected_namespaces: Optional[List[str]] = None,
+    mcp_server_guides: Optional[Dict[str, str]] = None,
 ) -> Optional[str]:
     """The lg-react system prompt for this turn's tool binding.
 
@@ -541,6 +553,16 @@ def _prebuilt_system_prompt(
         legacy_note = _named_services_usage_note(tools).strip()
         if legacy_note:
             parts.append(legacy_note)
+
+    # Each MCP server's own operating guide (its initialize-result
+    # `instructions`) — the text MCP-native clients surface to their model and
+    # the LangChain tool loader drops. The server is the authority on its own
+    # workflow (e.g. the named-services door's list-first / schema-first
+    # ritual with its exact tool names).
+    for server_id, guide in sorted((mcp_server_guides or {}).items()):
+        text = str(guide or "").strip()
+        if text:
+            parts.append(f"[SERVICE GUIDE — {server_id}]\n{text}")
 
     conv_ns = next(
         (str(ns) for ns in (connected_namespaces or []) if str(ns).strip().lower() == "conv"),

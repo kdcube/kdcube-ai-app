@@ -62,15 +62,23 @@ model call
 │                                              connection: what needs consent, how
 │                                              calling the stub raises the request
 │   6. [NAMED SERVICES — NAMESPACE OBJECT OPERATIONS]
-│      operation protocol by OPERATION NAME:   SDK bridge teaching surface —
-│      provider_about / object_schema /        contract-first, files by ref,
-│      search_objects / list_objects /         confirm-after-action, collection
-│      object_action / upsert_object /         deltas, host-then-cite
-│      delete_object / host_file
+│      operation protocol taught by the EXACT   SDK bridge teaching surface —
+│      BOUND TOOL NAMES when the KDCube door    contract-first (with the honest
+│      is bound (named_services_list /          note that NO gate enforces the
+│      _schema / _search / _action / …),        order on this path), files by
+│      by bare operation name otherwise;        ref, confirm-after-action,
+│      list-first when the door serves a        collection deltas,
+│      services_list tool                       host-then-cite, consent relay
 │      Named-service namespaces available to this agent:
 │      - `conv` — Conversation search realm …  roster: as_consumer-connected
 │      - `mem` — Durable user memory …         namespaces + discovery intros
 │      Sandbox note: run_python has no network …   bundle-specific caveat
+│   6b. [SERVICE GUIDE — <server_id>]          each MCP server's own operating
+│                                              guide (its initialize-result
+│                                              `instructions`) — the text
+│                                              MCP-native clients surface and
+│                                              the LangChain tool loader drops;
+│                                              recovered per build, best-effort
 │   7. [CONVERSATION RECOVERY — `conv` namespace]
 │                                              SDK conversation_recovery_guide:
 │                                              history beyond the window is

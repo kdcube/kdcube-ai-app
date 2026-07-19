@@ -41,6 +41,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.connections.mcp_consent import (
     mcp_consent_from_denial,
 )
 from kdcube_ai_app.apps.chat.sdk.frameworks.langchain.mcp import (
+    load_mcp_server_instructions,
     load_mcp_tools_from_server_map,
     load_error_looks_like_denial,
     mcp_adapters_available,  # re-exported for callers/tests
@@ -143,6 +144,7 @@ async def load_mcp_tools_for_connections(
     application: str = "",
     agent_id: str = "",
     bearer_provider: Optional[Any] = None,
+    instructions_sink: Optional[Dict[str, str]] = None,
 ) -> tuple[List[Any], List[MCPConsentRequired]]:
     """Bind the agent's declared, user-enabled `kind: mcp` connections as LangChain
     tools for THIS turn's user, AS this agent.
@@ -170,6 +172,16 @@ async def load_mcp_tools_for_connections(
     )
     error_sink: Dict[str, Any] = {}
     tools = await load_mcp_tools_from_server_map(server_map, error_sink=error_sink)
+
+    # An MCP server may publish an operating guide in its initialize result —
+    # what MCP-native clients (e.g. Claude connectors) show their model. The
+    # LangChain tool loader drops it, so recover it here for the system prompt.
+    # Only when tools actually loaded (a consent-denied door would just 403).
+    if instructions_sink is not None and tools:
+        try:
+            instructions_sink.update(await load_mcp_server_instructions(server_map))
+        except Exception:
+            logger.info("mcp server-instructions fetch failed (non-fatal)", exc_info=True)
 
     # A delegated connection the user hasn't granted THIS agent surfaces as a
     # consent demand, whichever way the block manifested:
