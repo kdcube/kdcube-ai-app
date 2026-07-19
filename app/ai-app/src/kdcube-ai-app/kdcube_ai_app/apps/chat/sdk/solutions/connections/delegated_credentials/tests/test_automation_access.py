@@ -1089,3 +1089,127 @@ async def test_external_client_edit_replaces_and_narrows():
     )
     assert narrowed["ok"] is True
     assert narrowed["resource_grants"][resource] == ["records:read"]  # write dropped
+
+
+@pytest.mark.asyncio
+async def test_agent_grant_carries_account_scope_and_merges():
+    # The agent card carries account_scope {provider: [account_ids]}; a re-grant
+    # MERGES the account lists (one-click accumulate), replace overwrites.
+    service = _agent_service()
+    resource = "https://example.test/mcp"
+
+    created = await service.create_access(
+        _AGENT_USER, label="a", client_id=_AGENT_CLIENT,
+        resource_grants={resource: ["records:read"]},
+        account_scope={"google": ["acct-2"]},
+    )
+    assert created["access"]["account_scope"] == {"google": ["acct-2"]}
+
+    # Merge: add acct-3 -> both.
+    merged = await service.create_access(
+        _AGENT_USER, label="a", client_id=_AGENT_CLIENT,
+        resource_grants={resource: ["records:read"]},
+        account_scope={"google": ["acct-3"]},
+    )
+    assert sorted(merged["access"]["account_scope"]["google"]) == ["acct-2", "acct-3"]
+
+    # Replace (edit): narrow back to acct-2 only.
+    replaced = await service.create_access(
+        _AGENT_USER, label="a", client_id=_AGENT_CLIENT,
+        resource_grants={resource: ["records:read"]},
+        account_scope={"google": ["acct-2"]},
+        merge_existing=False,
+    )
+    assert replaced["access"]["account_scope"] == {"google": ["acct-2"]}
+
+
+def test_credential_view_reads_account_scope_and_resolves_allowed():
+    # The one canonical reader exposes account_scope; allowed_account_ids honors
+    # "*"/absent as no-restriction.
+    from types import SimpleNamespace
+    from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.credential_view import (
+        delegated_credential_view,
+    )
+    req = SimpleNamespace(state=SimpleNamespace(delegated_credential={
+        "credential": {"attrs": {"account_scope": {"google": ["acct-2"], "slack": ["*"]}}},
+        "grant_record": {},
+    }))
+    view = delegated_credential_view(req)
+    assert view.account_scope["google"] == ("acct-2",)
+    assert view.allowed_account_ids("google") == {"acct-2"}
+    assert view.allowed_account_ids("slack") is None   # "*" -> no restriction
+    assert view.allowed_account_ids("icloud") is None  # absent -> no restriction
+
+
+@pytest.mark.asyncio
+async def test_external_client_edit_account_scope_merge_and_replace():
+    # Gap #1 closed: an external client's card account binding is editable
+    # (merge extends, replace narrows), same as its claims.
+    service = _agent_service()
+    resource = "https://example.test/mcp"
+    await service.record_oauth_grant(
+        grantor_subject="platform-user-1", client_id="claude",
+        scopes=["records:read"], resource=resource, access_token="tokA",
+    )
+    # Add account binding (merge).
+    added = await service.extend_client_access(
+        _AGENT_USER, client_id="claude", resource=resource,
+        claims=[], account_scope={"google": ["acct-1"]},
+    )
+    assert added["account_scope"] == {"google": ["acct-1"]}
+    # Merge a second account.
+    both = await service.extend_client_access(
+        _AGENT_USER, client_id="claude", resource=resource,
+        claims=[], account_scope={"google": ["acct-2"]},
+    )
+    assert sorted(both["account_scope"]["google"]) == ["acct-1", "acct-2"]
+    # Replace (narrow) to acct-2 only.
+    narrowed = await service.extend_client_access(
+        _AGENT_USER, client_id="claude", resource=resource,
+        claims=[], account_scope={"google": ["acct-2"]}, replace=True,
+    )
+    assert narrowed["account_scope"] == {"google": ["acct-2"]}
+
+
+@pytest.mark.asyncio
+async def test_agent_grant_state_exposes_account_scope_for_native_gate():
+    # Gap #3 source: the native gate reads account_scope off AGENT_GRANT_CHECK.
+    service = _named_services_agent_service()
+    door = "*/kdcube-services@1-0/public/mcp/named_services*"
+    await service.create_access(
+        _AGENT_USER, label="a", client_id=_AGENT_CLIENT,
+        resource_grants={door: ["named_services:use", "mail:read"]},
+        account_scope={"google": ["acct-2"]},
+    )
+    state = await service.agent_namespace_grant_state(
+        grantor_subject="platform-user-1", client_id=_AGENT_CLIENT,
+        namespace="mail", operation="object.search",
+    )
+    assert state["governed"] is True
+    assert state["account_scope"] == {"google": ["acct-2"]}
+
+
+@pytest.mark.asyncio
+async def test_agent_binding_carries_the_card_pointer_for_live_resolution():
+    # Gap #2 fix: an agent bearer's binding is a POINTER onto its card
+    # (registry_access_id = the card access_id), so the guard resolves the card
+    # live and an edit (claims OR account_scope) applies to the reused agent
+    # bearer on its next call — not only after a re-mint, matching OAuth.
+    service = _agent_service()
+    resource = "https://example.test/mcp"
+    result = await service.create_access(
+        _AGENT_USER, label="a", client_id=_AGENT_CLIENT,
+        resource_grants={resource: ["records:read"]},
+        account_scope={"google": ["acct-2"]},
+    )
+    access_id = result["access"]["access_id"]
+    assert access_id  # deterministic agent card id
+    # The last bind carries the pointer to that exact card.
+    assert store_bound_pointer(service) == access_id
+
+
+def store_bound_pointer(service):
+    # The _agent_service()'s store is a fresh _Store; its last bind records
+    # registry_access_id when the pointer was passed.
+    bound = getattr(service._store, "bound", [])
+    return bound[-1].get("registry_access_id") if bound else None

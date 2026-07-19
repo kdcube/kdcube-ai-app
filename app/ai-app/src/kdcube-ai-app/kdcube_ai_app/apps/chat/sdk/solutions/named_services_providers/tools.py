@@ -619,6 +619,16 @@ async def _agent_grant_gate(base_ns: str, operation: str, tool_name: str) -> Dic
         if response is None or not response.ok:
             return None
         state = dict(response.object or {})
+        # Bind the agent's per-provider account scope for the connected-account
+        # resolver — whether or not the call proceeds — so a granted native call
+        # restricts to the account(s) this agent may use (parity with the MCP
+        # door, which binds it from the bearer credential).
+        if isinstance(state.get("account_scope"), Mapping):
+            from kdcube_ai_app.apps.chat.sdk.solutions.connections.agent_account_scope import (
+                set_agent_account_scope,
+            )
+
+            set_agent_account_scope(state.get("account_scope"))
         if not state.get("governed") or state.get("granted"):
             return None
         from kdcube_ai_app.apps.chat.sdk.solutions.connections.mcp_consent import (

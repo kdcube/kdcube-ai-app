@@ -1793,20 +1793,26 @@ class ConnectionHubEntrypoint(BaseEntrypoint):
         client_id = str(payload.get("client_id") or "").strip()
         resource = str(payload.get("resource") or "").strip()
         claims = _safe_list(payload.get("claims") or payload.get("scopes"))
-        if not resource or not claims:
+        # Per-provider account binding: {provider_id: [account_ids or "*"]}.
+        raw_scope = payload.get("account_scope")
+        account_scope = dict(raw_scope) if isinstance(raw_scope, Mapping) and raw_scope else None
+        if not resource or (not claims and not account_scope):
             return {"ok": False, "error": "delegated_agent_grant_requires_resource_and_claims"}
         if client_id and not client_id.startswith("kdcube-agent:"):
             # An EXTERNAL delegated client (an OAuth app — Claude Code): the
             # user EDITS its existing card here (born at its own OAuth consent;
             # never created from this operation). `replace: true` is the
             # edit-in-place semantics (the submitted set becomes the record —
-            # narrowing allowed); default merges. The guard resolves the card
-            # live, so the change carries on the bearer the client already holds.
+            # narrowing allowed); default merges. account_scope edits which
+            # connected account(s) the client may use per provider. The guard
+            # resolves the card live, so the change carries on the bearer the
+            # client already holds.
             return await _automation_access_service(self, request).extend_client_access(
                 user,
                 client_id=client_id,
                 resource=resource,
                 claims=claims,
+                account_scope=account_scope,
                 replace=bool(payload.get("replace")),
             )
         if not client_id.startswith("kdcube-agent:"):
@@ -1829,6 +1835,7 @@ class ConnectionHubEntrypoint(BaseEntrypoint):
                 label=str(payload.get("label") or "").strip() or client_id,
                 resource_grants={resource: claims},
                 named_service_operations=named_service_operations,
+                account_scope=account_scope,
                 ttl_seconds=payload.get("ttl_seconds") or AGENT_GRANT_DEFAULT_TTL_SECONDS,
                 client_id=client_id,
                 merge_existing=not replace,

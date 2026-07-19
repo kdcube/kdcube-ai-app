@@ -172,6 +172,14 @@ class NamedServicesMcpBridge:
         # Capture the public origin the client connected to so downstream providers
         # can mint absolute out-of-band URLs (e.g. binary file downloads).
         set_public_base_url_from_request(request)
+        # Bind the calling agent's per-provider account scope so the shared
+        # connected-account resolver can restrict which account satisfies a
+        # provider claim (the agent's card names which account(s) per provider).
+        from kdcube_ai_app.apps.chat.sdk.solutions.connections.agent_account_scope import (
+            set_agent_account_scope,
+        )
+
+        set_agent_account_scope(delegated_credential_view(request).account_scope)
         self._catalog = NamedServiceBoundaryCatalog(
             _named_service_catalog_config_from_request(request) or self._config
         )

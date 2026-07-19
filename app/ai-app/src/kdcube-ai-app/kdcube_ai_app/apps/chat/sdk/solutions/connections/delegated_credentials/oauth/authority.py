@@ -56,6 +56,7 @@ def build_delegated_client_credential(
     resource: str | None = None,
     resources: list[str] | tuple[str, ...] | None = None,
     resource_grants: Mapping[str, list[str] | tuple[str, ...]] | None = None,
+    account_scope: Mapping[str, list[str] | tuple[str, ...]] | None = None,
     identity_scope: str = "",
     issued_at: int | None = None,
 ) -> CredentialEnvelope:
@@ -100,6 +101,11 @@ def build_delegated_client_credential(
             "scopes": list(scopes or []),
             "operations": operation_list,
             "resource_grants": cleaned_resource_grants,
+            "account_scope": {
+                str(provider).strip(): [str(a).strip() for a in (accounts or []) if str(a or "").strip()]
+                for provider, accounts in dict(account_scope or {}).items()
+                if str(provider or "").strip()
+            },
             "identity_scope": str(identity_scope or "grantor").strip() or "grantor",
         },
     )

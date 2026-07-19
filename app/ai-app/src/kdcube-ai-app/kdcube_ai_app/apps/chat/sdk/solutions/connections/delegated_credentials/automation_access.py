@@ -328,6 +328,10 @@ class AutomationAccessRecord:
     named_service_operations: Mapping[str, Mapping[str, tuple[str, ...]]] = field(
         default_factory=dict
     )
+    # Per-agent account binding: {provider_id: [account_ids or "*"]}. Which
+    # connected account(s) this client may use for a provider's claims. Absent
+    # provider key => "*" (any account), the default and the migration story.
+    account_scope: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
     identity_scope: str = ""
     session_id: str = ""
     created_at: int = 0
@@ -364,6 +368,11 @@ class AutomationAccessRecord:
                 ).items()
                 if _clean(resource) and isinstance(namespaces, Mapping)
             },
+            account_scope={
+                _clean(provider): tuple(_as_list(accounts))
+                for provider, accounts in dict(value.get("account_scope") or {}).items()
+                if _clean(provider)
+            },
             identity_scope=_clean(value.get("identity_scope")),
             session_id=_clean(value.get("session_id")),
             created_at=int(value.get("created_at") or 0),
@@ -390,6 +399,9 @@ class AutomationAccessRecord:
                     for namespace, operations in namespaces.items()
                 }
                 for resource, namespaces in self.named_service_operations.items()
+            },
+            "account_scope": {
+                provider: list(accounts) for provider, accounts in self.account_scope.items()
             },
             "identity_scope": self.identity_scope,
             "session_id": self.session_id,
@@ -807,6 +819,7 @@ class AutomationAccessService:
         resource_grants: Mapping[str, Any],
         operations: Iterable[str] = (),
         named_service_operations: Mapping[str, Any] | None = None,
+        account_scope: Mapping[str, Any] | None = None,
         ttl_seconds: Any = None,
         client_id: str | None = None,
         merge_existing: bool = True,
@@ -907,6 +920,13 @@ class AutomationAccessService:
             }
         identity_scope = next(iter(identity_scopes), "grantor")
 
+        # Per-agent account binding: {provider_id: [account_ids or "*"]}.
+        selected_account_scope: dict[str, list[str]] = {
+            _clean(provider): _as_list(list(accounts))
+            for provider, accounts in dict(account_scope or {}).items()
+            if _clean(provider)
+        }
+
         requested_client_id = _clean(client_id)
         access_source = ACCESS_SOURCE_MANUAL
         created_at_override: int | None = None
@@ -957,6 +977,15 @@ class AutomationAccessService:
                                     if op_name not in current:
                                         current.append(op_name)
                                 target[ns] = current
+                # Merge the account binding per provider: union the account
+                # lists (a one-click grant accumulates; a REPLACE edit sends the
+                # full desired scope and overwrites, same as resource_grants).
+                for provider, held in existing.account_scope.items():
+                    merged_accounts = list(selected_account_scope.get(provider, []))
+                    for acct in held:
+                        if acct not in merged_accounts:
+                            merged_accounts.append(acct)
+                    selected_account_scope[provider] = merged_accounts
         else:
             access_id = "aut_" + secrets.token_urlsafe(10)
             client_id = f"{AUTOMATION_CLIENT_PREFIX}:{access_id}"
@@ -1001,6 +1030,7 @@ class AutomationAccessService:
             tenant=self._tenant,
             project=self._project,
             resource_grants=selected_resource_grants,
+            account_scope=selected_account_scope,
             identity_scope=identity_scope,
             expires_in=ttl,
             issued_at=now,
@@ -1035,6 +1065,12 @@ class AutomationAccessService:
             grantor_authority=grantor_authority,
             delegation_edges=delegation_edges,
             named_services=named_services,
+            # The card is the authority: this binding is a POINTER onto it, so
+            # the guard resolves the card live (grants, resource_grants,
+            # account_scope) and an edit applies to the reused agent bearer on
+            # its very next call — not only after a re-mint. Same mechanism
+            # OAuth clients use; makes card-authority universal.
+            registry_access_id=access_id,
         )
 
         record = AutomationAccessRecord(
@@ -1053,6 +1089,9 @@ class AutomationAccessService:
                 for resource, namespaces in (
                     selected_named_service_operations or {}
                 ).items()
+            },
+            account_scope={
+                provider: tuple(accounts) for provider, accounts in selected_account_scope.items()
             },
             identity_scope=identity_scope,
             session_id=session_id,
@@ -1183,6 +1222,13 @@ class AutomationAccessService:
                 "resource": cfg.resource,
                 "claims": sorted(required),
                 "client_id": client_id,
+                # The agent's per-provider account binding, so the native gate
+                # can bind it for the connected-account resolver (which account
+                # this agent may use per provider). Empty => any account.
+                "account_scope": {
+                    provider: list(accounts)
+                    for provider, accounts in (record.account_scope.items() if record is not None else ())
+                },
             }
         return {"governed": False}
 
@@ -1261,13 +1307,16 @@ class AutomationAccessService:
         client_id: str,
         resource: str,
         claims: Iterable[str],
+        account_scope: Mapping[str, Any] | None = None,
         replace: bool = False,
     ) -> dict[str, Any]:
         """Edit an EXISTING external client's card (an unknown client is never
         created here; its card is born at OAuth consent). ``replace=False``
         MERGES the claims in (a one-click extension); ``replace=True`` makes the
         submitted claim set the resource's grants EXACTLY (the edit-in-place
-        path — allowing narrowing, e.g. read+write -> read). The card is the
+        path — allowing narrowing, e.g. read+write -> read). ``account_scope``
+        ({provider_id: [account_ids or "*"]}) edits the client's per-provider
+        account binding the same way (merge or replace). The card is the
         authority the guard resolves live, so either takes effect on the
         client's very next call, on the bearer it already holds; a
         pointer-carrying refresh re-derives from the card, so a narrowing
@@ -1278,7 +1327,12 @@ class AutomationAccessService:
         client = _clean(client_id)
         resource_value = _clean(resource)
         claim_list = _as_list(list(claims))
-        if not client or not claim_list:
+        scope_update: dict[str, list[str]] = {
+            _clean(provider): _as_list(list(accounts))
+            for provider, accounts in dict(account_scope or {}).items()
+            if _clean(provider)
+        }
+        if not client or (not claim_list and not scope_update):
             return {"ok": False, "error": "delegated_access_requires_client_and_claims"}
         access_id = oauth_access_id(grantor_subject, client, resource_value)
         raw = await self._redis.get(self._record_key(access_id))
@@ -1298,29 +1352,47 @@ class AutomationAccessService:
             if outside:
                 return {"ok": False, "error": "delegated_access_grants_not_delegable", "grants": outside}
         key = resource_value or "*"
-        if replace:
-            # Edit: the submitted set becomes the resource's grants exactly.
-            merged = list(claim_list)
-        else:
-            merged = list(record.resource_grants.get(key, ()))
-            for claim in claim_list:
-                if claim not in merged:
-                    merged.append(claim)
         resource_grants = {res: tuple(vals) for res, vals in record.resource_grants.items()}
-        resource_grants[key] = tuple(merged)
+        if claim_list:
+            if replace:
+                # Edit: the submitted set becomes the resource's grants exactly.
+                merged = list(claim_list)
+            else:
+                merged = list(record.resource_grants.get(key, ()))
+                for claim in claim_list:
+                    if claim not in merged:
+                        merged.append(claim)
+            resource_grants[key] = tuple(merged)
+        # Account binding edit, same merge/replace semantics per provider.
+        account_scope_out = {provider: tuple(accounts) for provider, accounts in record.account_scope.items()}
+        for provider, accounts in scope_update.items():
+            if replace:
+                account_scope_out[provider] = tuple(accounts)
+            else:
+                current = list(account_scope_out.get(provider, ()))
+                for acct in accounts:
+                    if acct not in current:
+                        current.append(acct)
+                account_scope_out[provider] = tuple(current)
         try:
             ttl = await self._redis.ttl(self._record_key(access_id))
         except Exception:
             ttl = 0
         record_dict = record.to_dict()
         record_dict["resource_grants"] = {res: list(vals) for res, vals in resource_grants.items()}
+        record_dict["account_scope"] = {p: list(a) for p, a in account_scope_out.items()}
         await self._redis.setex(
             self._record_key(access_id), max(60, int(ttl or 0) or 60), json.dumps(record_dict),
         )
         await self.notify_change(grantor_subject, action="edited" if replace else "extended", access={
             k: v for k, v in record_dict.items() if k not in ("access_token", "refresh_token", "session_id")
         })
-        return {"ok": True, "access_id": access_id, "resource_grants": {res: list(vals) for res, vals in resource_grants.items()}}
+        return {
+            "ok": True,
+            "access_id": access_id,
+            "resource_grants": {res: list(vals) for res, vals in resource_grants.items()},
+            "account_scope": {p: list(a) for p, a in account_scope_out.items()},
+        }
 
     async def revoke_access(self, user: Mapping[str, Any], *, access_id: str) -> dict[str, Any]:
         grantor_subject = _subject_from_user(user)

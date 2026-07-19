@@ -283,11 +283,19 @@ async def resolve_connected_account_claim(
         project=project,
         connection_hub_bundle_id=connection_hub_bundle_id,
     )
+    # The calling agent's per-provider account binding (if any) restricts which
+    # connected account may satisfy this claim. Unset / non-agent → None → no
+    # restriction (unchanged).
+    from kdcube_ai_app.apps.chat.sdk.solutions.connections.agent_account_scope import (
+        allowed_account_ids_for,
+    )
+
     result: ClaimResolution = await client.ensure_claim(
         provider_id=provider_id,
         connector_app_id=connector_app_id,
         claim=claim,
         account_id=account_id,
+        allowed_account_ids=allowed_account_ids_for(provider_id),
         force_refresh=force_refresh,
     )
     if not result.ok or result.credential is None:

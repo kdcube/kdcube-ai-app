@@ -480,6 +480,10 @@ async def _live_grant_record(request: Any, grant_record: Optional[Dict[str, Any]
     if card.get("operations"):
         resolved["operations"] = list(card.get("operations") or [])
     resolved["grants"] = all_grants
+    # Carry the card's per-agent account binding so the door can enforce it
+    # (which connected account(s) this client may use per provider).
+    if isinstance(card.get("account_scope"), dict):
+        resolved["account_scope"] = dict(card.get("account_scope") or {})
     return resolved
 
 

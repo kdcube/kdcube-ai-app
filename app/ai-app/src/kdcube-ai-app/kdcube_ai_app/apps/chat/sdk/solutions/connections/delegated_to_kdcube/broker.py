@@ -58,10 +58,19 @@ class DelegatedToKdcubeBroker:
         claim: str,
         connector_app_id: str | None = None,
         account_id: str | None = None,
+        allowed_account_ids: set[str] | None = None,
         purpose: str = "",
         force_refresh: bool = False,
     ) -> ClaimResolution:
         """Resolve one provider claim.
+
+        ``allowed_account_ids`` is the calling AGENT's account binding for this
+        provider (`account_scope[provider_id]` on the agent grant): when a
+        concrete set, only those accounts may satisfy the claim — the candidate
+        list is intersected with it before the 0/1/many decision. ``None``, an
+        empty set, or a set containing ``"*"`` means no restriction (the default
+        and every non-agent turn). An explicit ``account_id`` must itself be in
+        the set.
 
         ``force_refresh`` refreshes the credential even when its timestamps
         look valid — the live-401 retry path uses it when the provider
@@ -72,6 +81,19 @@ class DelegatedToKdcubeBroker:
         claim_key = as_str(claim)
         connector_key = as_str(connector_app_id)
         account_key = as_str(account_id)
+        # The agent's account binding for this provider. "*" (or empty/None)
+        # means any account — no restriction.
+        allowed = {a for a in (allowed_account_ids or set()) if a}
+        restrict = bool(allowed) and "*" not in allowed
+        if account_key and restrict and account_key not in allowed:
+            return self._needs_user_action(
+                reason=REASON_ACCOUNT_REQUIRED,
+                provider_id=provider_key,
+                claim=claim_key,
+                connector_app_id=connector_key,
+                account_id=account_key,
+                message=f"This agent may not use account {account_key} for {provider_key}.",
+            )
         provider = self.config.provider(provider_key)
         if not self.config.enabled or provider is None or not provider.enabled:
             return self._needs_user_action(
@@ -145,11 +167,13 @@ class DelegatedToKdcubeBroker:
             candidates = [
                 item for item in accounts
                 if item.connected and item.allows(claim_key) and (not connector_key or item.connector_app_id == connector_key)
+                and (not restrict or item.account_id in allowed)
             ]
             if not candidates:
                 connected = [
                     item for item in accounts
                     if item.connected and (not connector_key or item.connector_app_id == connector_key)
+                    and (not restrict or item.account_id in allowed)
                 ]
                 if connected:
                     # Accounts exist but none has approved this claim: the fix

@@ -82,7 +82,21 @@ class DelegatedCredentialView:
     tools: tuple[str, ...] = ()
     grantor_roles: tuple[str, ...] = ()
     named_services: Mapping[str, Any] = field(default_factory=dict)
+    # Per-agent account binding: {provider_id: (account_ids or "*")}. Which
+    # connected account(s) this client may use for a provider's claims.
+    account_scope: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
     present: bool = False
+
+    def allowed_account_ids(self, provider_id: str) -> set[str] | None:
+        """The account ids this client may use for ``provider_id`` — a set to
+        restrict to, or None for no restriction ("*"/absent/any account)."""
+        entry = self.account_scope.get(str(provider_id or "").strip())
+        if not entry:
+            return None
+        allowed = {str(a).strip() for a in entry if str(a or "").strip()}
+        if not allowed or "*" in allowed:
+            return None
+        return allowed
 
     # ── derived views ──────────────────────────────────────────────────────
 
@@ -214,6 +228,19 @@ class DelegatedCredentialView:
                 if isinstance(grant_record.get("named_services"), Mapping)
                 else {}
             ),
+            account_scope={
+                str(provider).strip(): tuple(
+                    str(a).strip() for a in accounts if str(a or "").strip()
+                )
+                for provider, accounts in (
+                    grant_record.get("account_scope")
+                    if isinstance(grant_record.get("account_scope"), Mapping)
+                    else cred_attrs.get("account_scope")
+                    if isinstance(cred_attrs.get("account_scope"), Mapping)
+                    else {}
+                ).items()
+                if str(provider or "").strip()
+            },
             present=present,
         )
 
