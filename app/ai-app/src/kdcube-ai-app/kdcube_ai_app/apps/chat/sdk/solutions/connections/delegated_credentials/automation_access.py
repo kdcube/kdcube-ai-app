@@ -205,6 +205,20 @@ def _subject_from_user(user: Mapping[str, Any]) -> str:
     return ""
 
 
+def automation_record_key(tenant: str, project: str, access_id: str) -> str:
+    """The registry card's Redis key — the guard resolves live against it."""
+    return f"{tenant}:{project}:kdcube:delegated-access:automation:{access_id}"
+
+
+def oauth_access_id(grantor_subject: str, client_id: str, resource: str = "") -> str:
+    """Deterministic card id for an OAuth-flow delegated client — one card per
+    (grantor, client, resource), stable across token refreshes."""
+    digest = hashlib.sha256(
+        f"{_clean(grantor_subject)}|{_clean(client_id)}|{_clean(resource)}".encode("utf-8")
+    ).hexdigest()[:16]
+    return f"oauth-{digest}"
+
+
 def _subject_key(subject: str) -> str:
     return hashlib.sha256(subject.encode("utf-8")).hexdigest()
 
@@ -1198,18 +1212,27 @@ class AutomationAccessService:
         if not grantor or not client:
             return None
         resource_value = _clean(resource)
-        digest = hashlib.sha256(f"{grantor}|{client}|{resource_value}".encode("utf-8")).hexdigest()[:16]
-        access_id = f"oauth-{digest}"
+        access_id = oauth_access_id(grantor, client, resource_value)
         now = int(time.time())
         created_at = now
+        existing_grants: list[str] = []
         existing_raw = await self._redis.get(self._record_key(access_id))
         if existing_raw is not None:
             try:
-                created_at = int(json.loads(existing_raw).get("created_at") or now)
+                existing_payload = json.loads(existing_raw)
+                created_at = int(existing_payload.get("created_at") or now)
+                existing_map = existing_payload.get("resource_grants") or {}
+                existing_grants = list(existing_map.get(resource_value or "*") or [])
             except Exception:
                 created_at = now
-        ttl = max(60, int(self._store.refresh_ttl))
+        ttl = max(60, int(getattr(self._store, "refresh_ttl", None) or 86400))
+        # MERGE with the card's current grants: the card is the authority the
+        # guard resolves live, and a hub-side extension must survive token
+        # refresh rotations (which re-register on every issuance).
         scope_list = _as_list(list(scopes))
+        for grant in existing_grants:
+            if grant not in scope_list:
+                scope_list.append(grant)
         record = AutomationAccessRecord(
             access_id=access_id,
             label=_clean(client_label) or client,
@@ -1230,6 +1253,64 @@ class AutomationAccessService:
         await self._redis.expire(self._index_key(grantor), BUNDLE_SESSION_MAX_TTL_SECONDS)
         await self.notify_change(grantor, action="granted", access=record.to_public_dict())
         return record
+
+    async def extend_client_access(
+        self,
+        user: Mapping[str, Any],
+        *,
+        client_id: str,
+        resource: str,
+        claims: Iterable[str],
+    ) -> dict[str, Any]:
+        """Merge claims into an EXISTING external client's card (extension only —
+        an unknown client is never created here; its card is born at OAuth
+        consent). The guard resolves the card live, so the client's very next
+        call carries the new claims on the bearer it already holds."""
+        grantor_subject = _subject_from_user(user)
+        if not grantor_subject:
+            return {"ok": False, "error": "delegated_access_requires_authenticated_user"}
+        client = _clean(client_id)
+        resource_value = _clean(resource)
+        claim_list = _as_list(list(claims))
+        if not client or not claim_list:
+            return {"ok": False, "error": "delegated_access_requires_client_and_claims"}
+        access_id = oauth_access_id(grantor_subject, client, resource_value)
+        raw = await self._redis.get(self._record_key(access_id))
+        if raw is None:
+            return {"ok": False, "error": "delegated_access_unknown_client",
+                    "message": "This client has no existing grant to extend; it connects via its own consent flow first."}
+        try:
+            record = AutomationAccessRecord.from_mapping(json.loads(raw))
+        except Exception:
+            return {"ok": False, "error": "delegated_access_record_unreadable"}
+        # Claims must stay inside the deployment's delegable ceiling for the
+        # resource when the catalog knows it.
+        cfg = self._config.resource_config(resource_value) if resource_value else None
+        ceiling = set(_as_list(list(getattr(cfg, "grants", ()) or ()))) if cfg is not None else set()
+        if ceiling:
+            outside = sorted(set(claim_list) - ceiling)
+            if outside:
+                return {"ok": False, "error": "delegated_access_grants_not_delegable", "grants": outside}
+        key = resource_value or "*"
+        merged = list(record.resource_grants.get(key, ()))
+        for claim in claim_list:
+            if claim not in merged:
+                merged.append(claim)
+        resource_grants = {res: tuple(vals) for res, vals in record.resource_grants.items()}
+        resource_grants[key] = tuple(merged)
+        try:
+            ttl = await self._redis.ttl(self._record_key(access_id))
+        except Exception:
+            ttl = 0
+        record_dict = record.to_dict()
+        record_dict["resource_grants"] = {res: list(vals) for res, vals in resource_grants.items()}
+        await self._redis.setex(
+            self._record_key(access_id), max(60, int(ttl or 0) or 60), json.dumps(record_dict),
+        )
+        await self.notify_change(grantor_subject, action="extended", access={
+            k: v for k, v in record_dict.items() if k not in ("access_token", "refresh_token", "session_id")
+        })
+        return {"ok": True, "access_id": access_id, "resource_grants": {res: list(vals) for res, vals in resource_grants.items()}}
 
     async def revoke_access(self, user: Mapping[str, Any], *, access_id: str) -> dict[str, Any]:
         grantor_subject = _subject_from_user(user)

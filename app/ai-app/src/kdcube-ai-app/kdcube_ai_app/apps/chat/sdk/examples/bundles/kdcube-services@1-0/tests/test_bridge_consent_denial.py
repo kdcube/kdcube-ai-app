@@ -83,14 +83,21 @@ def test_agent_caller_denial_carries_the_consent_block():
     assert "Connection Hub" in denial["next_step"]
 
 
-def test_non_agent_caller_keeps_the_reconnect_guidance():
+def test_external_caller_gets_identity_block_and_reconnect_fallback():
+    # An external delegated client (Claude Code) is part of the SAME universal
+    # contract: its denial carries the consent block naming the client and the
+    # missing claims. Without a configured public base URL there is no hub deep
+    # link, so the reconnect guidance stays as the fallback next step.
     m = _bridge_module()
     bridge = _bridge(m, _request("claude"))
 
     denial = bridge._authorize(_Policy(), "object.search", tool_name="search")
 
     assert denial["error"] == "delegated_consent_required"
-    assert "consent" not in denial
+    consent = denial["consent"]
+    assert consent["agent_client_id"] == "claude"
+    assert consent["claims"] == ["mail:read"]
+    assert "grant" not in consent          # one-click grant is hosted-agent only
     assert "Reconnect" in denial["next_step"]
 
 

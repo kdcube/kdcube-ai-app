@@ -15,7 +15,7 @@ import json
 import logging
 from dataclasses import dataclass
 from fnmatch import fnmatch
-from typing import Any, Iterable, Mapping
+from typing import Any, Dict, Iterable, Mapping, Optional
 
 from fastapi import Request
 from fastapi.responses import JSONResponse, Response
@@ -458,6 +458,52 @@ async def _authenticate_delegated_client_access_token(token: str) -> dict[str, A
     }
 
 
+
+async def _live_grant_record(request: Any, grant_record: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """The registry card is the authority: a binding carrying
+    ``registry_access_id`` re-derives its grant facts from the card AS IT IS
+    NOW — a hub-side extension applies to this bearer's next call, a narrowing
+    narrows it, and a revoked (absent) card ends its authority. A binding
+    without the pointer keeps its embedded snapshot (legacy)."""
+    if not isinstance(grant_record, dict):
+        return grant_record
+    access_id = str(grant_record.get("registry_access_id") or "").strip()
+    if not access_id:
+        return grant_record
+    try:
+        from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.automation_access import (
+            automation_record_key,
+        )
+
+        tenant, project = oauth_tenant_project(request)
+        store = await _default_grant_store(request)
+        raw = await store.redis.get(automation_record_key(tenant, project, access_id))
+    except Exception:
+        logger.warning("[connection-hub.oauth.guard] live card resolution unavailable; snapshot kept", exc_info=True)
+        return grant_record
+    if raw is None:
+        logger.info("[connection-hub.oauth.guard] registry card %s gone — binding treated as revoked", access_id)
+        return None
+    try:
+        card = json.loads(raw)
+    except Exception:
+        return grant_record
+    resource_grants = card.get("resource_grants") if isinstance(card.get("resource_grants"), dict) else {}
+    all_grants = sorted({str(g) for grants in resource_grants.values() for g in (grants or [])})
+    resolved = dict(grant_record)
+    credential = dict(resolved.get("credential") or {})
+    attrs = dict(credential.get("attrs") or {})
+    attrs["resource_grants"] = {res: list(grants or []) for res, grants in resource_grants.items()}
+    attrs["scopes"] = all_grants
+    attrs["grants"] = all_grants
+    credential["attrs"] = attrs
+    resolved["credential"] = credential
+    if card.get("operations"):
+        resolved["operations"] = list(card.get("operations") or [])
+    resolved["grants"] = all_grants
+    return resolved
+
+
 def _grant_record_credential(grant_record: Mapping[str, Any] | None) -> CredentialEnvelope:
     if not isinstance(grant_record, Mapping):
         return CredentialEnvelope()
@@ -598,6 +644,7 @@ async def delegated_platform_admin_runtime_projection(
 
     grant_store = await _default_grant_store(request)
     grant_record = await grant_store.get_access_grant_record(token)
+    grant_record = await _live_grant_record(request, grant_record)
     envelope = _grant_record_credential(grant_record)
     if authority_id and envelope.issuer_authority_id != authority_id:
         return {}
@@ -714,6 +761,7 @@ async def _authorize_delegated_managed_request(
 
     grant_store = await _default_grant_store(request)
     grant_record = await grant_store.get_access_grant_record(token)
+    grant_record = await _live_grant_record(request, grant_record)
     envelope = _grant_record_credential(grant_record)
     try:
         request.state.delegated_credential = {
@@ -815,6 +863,7 @@ async def authorize_delegated_mcp_request(
 
     grant_store = await _default_grant_store(request)
     grant_record = await grant_store.get_access_grant_record(token)
+    grant_record = await _live_grant_record(request, grant_record)
     envelope = _grant_record_credential(grant_record)
     try:
         request.state.delegated_credential = {

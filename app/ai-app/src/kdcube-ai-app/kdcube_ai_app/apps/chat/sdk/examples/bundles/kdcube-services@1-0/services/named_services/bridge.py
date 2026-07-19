@@ -322,6 +322,8 @@ class NamedServicesMcpBridge:
             required=sorted(required),
             missing=missing,
             available=sorted(available),
+            tenant=self._tenant,
+            project=self._project,
             message=(
                 f"Named service '{policy.namespace}' tool '{tool_name}' "
                 "requires additional delegated consent."

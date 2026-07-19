@@ -69,19 +69,77 @@ def agent_client_id_from_request(request: Any) -> str:
 
 
 def granted_resource_from_request(request: Any) -> str:
-    """The delegated-resource id this bearer was granted under, or ""."""
+    """The delegated-resource id this bearer was granted under, or "".
+
+    An OAuth client carries a single ``attrs.resource``; an agent client carries
+    a ``resource_grants`` map (one key per delegated resource — for the
+    named-services door, the single door resource that covers every namespace).
+    Read both, in the credential envelope AND the token-bound grant record."""
     from kdcube_ai_app.apps.chat.sdk.solutions.connections.authority_registry import (
         CredentialEnvelope,
     )
 
-    attrs = CredentialEnvelope.coerce(_credential(request)).attrs or {}
-    resource = str(attrs.get("resource") or "").strip()
+    def _from_attrs(attrs: Mapping[str, Any]) -> str:
+        resource = str(attrs.get("resource") or "").strip()
+        if resource:
+            return resource
+        grants = attrs.get("resource_grants")
+        if isinstance(grants, Mapping) and grants:
+            return str(next(iter(grants.keys())) or "").strip()
+        return ""
+
+    # 1. The credential envelope (where an agent bearer stores resource_grants).
+    resource = _from_attrs(CredentialEnvelope.coerce(_credential(request)).attrs or {})
     if resource:
         return resource
-    resource_grants = _grant_record(request).get("resource_grants")
-    if isinstance(resource_grants, Mapping) and resource_grants:
-        return str(next(iter(resource_grants.keys())) or "")
+    # 2. The grant record, top level and via its embedded credential.
+    record = _grant_record(request)
+    grants = record.get("resource_grants")
+    if isinstance(grants, Mapping) and grants:
+        return str(next(iter(grants.keys())) or "").strip()
+    nested = record.get("credential")
+    if isinstance(nested, Mapping):
+        return _from_attrs(CredentialEnvelope.coerce(nested).attrs or {})
     return ""
+
+
+def connection_hub_grant_url(
+    *,
+    tenant: str,
+    project: str,
+    client_id: str,
+    resource: str,
+    claims: Sequence[str],
+    hub_bundle_id: str = "connection-hub@1-0",
+) -> str:
+    """An absolute Connection Hub deep link that lands on the Delegated by
+    KDCube tab with THIS client's access request focused (the pending pane:
+    missing claims pre-checked, one-click grant).
+
+    Openable outside the app origin — an external agent (Claude Code) relays
+    it verbatim; the user signs in with their platform credentials and sees the
+    focused card. Empty when the deployment's public base URL is unknown."""
+    from urllib.parse import quote, urlencode
+
+    from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube.public_base import (
+        connection_hub_public_base_url,
+    )
+
+    base = connection_hub_public_base_url()
+    if not base or not tenant or not project or not client_id or not resource:
+        return ""
+    params = urlencode({
+        "tab": "delegated_by_kdcube",
+        "pending_agent_grant": "1",
+        "agent_client_id": client_id,
+        "resource": resource,
+        "claims": ",".join(str(c) for c in claims if str(c or "").strip()),
+    })
+    return (
+        f"{base}/api/integrations/bundles/"
+        f"{quote(str(tenant), safe='')}/{quote(str(project), safe='')}/"
+        f"{quote(hub_bundle_id, safe='')}/widgets/connections_settings?{params}"
+    )
 
 
 def agent_grant_consent_denial(
@@ -94,6 +152,8 @@ def agent_grant_consent_denial(
     missing: Sequence[str],
     available: Sequence[str],
     message: str = "",
+    tenant: str = "",
+    project: str = "",
 ) -> dict[str, Any]:
     """The uniform per-agent grant denial for a KDCube-served MCP surface.
 
@@ -120,37 +180,71 @@ def agent_grant_consent_denial(
         ),
     }
     client_id = agent_client_id_from_request(request)
+    external_client_id = ""
     if not client_id:
+        # Any OTHER delegated client (an external app connected via OAuth —
+        # Claude Code) gets the SAME focused path: the hub deep link below
+        # lands on its card with the missing claims pre-checked.
+        external_client_id = str(_grant_record(request).get("client_id") or "").strip()
+    resource = granted_resource_from_request(request)
+    hub_url = connection_hub_grant_url(
+        tenant=tenant,
+        project=project,
+        client_id=client_id or external_client_id,
+        resource=resource,
+        claims=missing_list,
+    )
+    if not client_id and not external_client_id:
         LOGGER.info(
-            "[agent-consent-denial] caller is not a kdcube-agent; reconnect guidance kept "
-            "(namespace=%s tool=%s)",
+            "[agent-consent-denial] caller carries no delegated client identity; "
+            "reconnect guidance kept (namespace=%s tool=%s)",
             namespace, tool,
         )
         return denial
-    resource = granted_resource_from_request(request)
     denial["code"] = CONSENT_NEEDED_CODE
-    denial["consent"] = {
+    consent: dict[str, Any] = {
         "kind": "delegated_agent_grant",
         "reason": DELEGATED_CONSENT_REQUIRED,
-        "agent_client_id": client_id,
+        "agent_client_id": client_id or external_client_id,
         "resource": resource,
         "claims": missing_list,
         "tool_name": namespace,
-        "grant": {
+    }
+    if hub_url:
+        consent["connection_hub_url"] = hub_url
+        denial["connection_hub_url"] = hub_url
+    if client_id:
+        # The one-click grant action rides only for hosted agents today; an
+        # external client's approval flows through the hub link (its record
+        # extension is the hub's own operation).
+        consent["grant"] = {
             "operation": "delegated_agent_grant_create",
             "payload": {"client_id": client_id, "resource": resource, "claims": missing_list},
-        },
-    }
-    denial["next_step"] = (
-        "The user extends this agent's grant with the missing access in "
-        "Connection Hub (Delegated by KDCube); the chat consent card carries "
-        "the one-click grant."
-    )
+        }
+        denial["next_step"] = (
+            "The user extends this agent's grant with the missing access in "
+            "Connection Hub (Delegated by KDCube); the chat consent card carries "
+            "the one-click grant."
+        )
+    else:
+        denial["next_step"] = (
+            "Give the user this link: they sign in with their platform account "
+            "and approve the missing access for this client in Connection Hub "
+            "(Delegated by KDCube). Reconnecting with incremental consent also "
+            "works when this client supports it."
+            if hub_url
+            else denial["next_step"]
+        )
+        denial["instructions"] = (
+            f"Ask the user to open {hub_url} and approve: {', '.join(missing_list)}. "
+            "Then retry the same call."
+        ) if hub_url else denial.get("instructions", "")
+    denial["consent"] = consent
     if not resource:
         LOGGER.warning(
             "[agent-consent-denial] consent block has NO resource (client=%s namespace=%s) — "
             "the caller must fill it from its connection declaration",
-            client_id, namespace,
+            client_id or external_client_id, namespace,
         )
     return denial
 

@@ -428,8 +428,12 @@ export function DelegatedAccessPanel({ openParams }: { openParams?: Record<strin
         <div className="form-title">An agent is asking for your permission</div>
       </div>
       <p style={{ marginTop: 0 }}>
-        The agent <strong>{pendingAgent?.agent || 'agent'}</strong>
-        {pendingAgent?.app ? <> of the app <strong>{pendingAgent.app}</strong></> : null} wants to
+        {pendingAgent ? (
+          <>The agent <strong>{pendingAgent.agent}</strong>
+          {pendingAgent.app ? <> of the app <strong>{pendingAgent.app}</strong></> : null}</>
+        ) : (
+          <>The connected client <strong>{pendingGrant.clientId}</strong></>
+        )} wants to
         act on your behalf on <strong>{pendingResourceLabel || 'this resource'}</strong>. It is asking for:
       </p>
       <ul className="accounts">

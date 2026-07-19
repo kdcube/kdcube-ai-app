@@ -1791,14 +1791,24 @@ class ConnectionHubEntrypoint(BaseEntrypoint):
         if not user:
             return {"ok": False, "error": "delegated_access_requires_authenticated_user"}
         client_id = str(payload.get("client_id") or "").strip()
-        if not client_id.startswith("kdcube-agent:"):
-            # Only the hosted-agent client family may be granted here; other client
-            # kinds (OAuth apps) consent through their own flows.
-            return {"ok": False, "error": "delegated_agent_grant_invalid_client"}
         resource = str(payload.get("resource") or "").strip()
         claims = _safe_list(payload.get("claims") or payload.get("scopes"))
         if not resource or not claims:
             return {"ok": False, "error": "delegated_agent_grant_requires_resource_and_claims"}
+        if client_id and not client_id.startswith("kdcube-agent:"):
+            # An EXTERNAL delegated client (an OAuth app — Claude Code): the
+            # user may EXTEND its existing card here (born at its own OAuth
+            # consent; never created from this operation). The guard resolves
+            # the card live, so the client's next call carries the new claims
+            # on the bearer it already holds.
+            return await _automation_access_service(self, request).extend_client_access(
+                user,
+                client_id=client_id,
+                resource=resource,
+                claims=claims,
+            )
+        if not client_id.startswith("kdcube-agent:"):
+            return {"ok": False, "error": "delegated_agent_grant_invalid_client"}
         # Optional named-service narrowing for THIS resource (namespace -> exact
         # operations), same selector the manual create flow sends — so extending
         # an agent's access from the hub can include named-service resources.

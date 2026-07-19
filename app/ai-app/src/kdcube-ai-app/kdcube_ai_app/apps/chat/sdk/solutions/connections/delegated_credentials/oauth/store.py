@@ -107,9 +107,11 @@ class GrantStore:
         grantor_authority: Optional[Dict[str, Any]] = None,
         delegation_edges: Optional[List[Dict[str, Any]]] = None,
         named_services: Optional[Dict[str, Any]] = None,
+        registry_access_id: str = "",
     ) -> str:
         rt = secrets.token_urlsafe(40)
         payload = {
+            "registry_access_id": str(registry_access_id or "").strip(),
             "client_id": client_id,
             "sub": sub,
             "scopes": scopes,
@@ -230,17 +232,24 @@ class GrantStore:
         grantor_authority: Optional[Dict[str, Any]] = None,
         delegation_edges: Optional[List[Dict[str, Any]]] = None,
         named_services: Optional[Dict[str, Any]] = None,
+        registry_access_id: str = "",
     ) -> None:
-        """Record the consented operation allowlist and credential envelope for a token."""
+        """Record the consented operation allowlist and credential envelope for a token.
+
+        ``registry_access_id`` makes the binding a POINTER: the guard resolves
+        the registry card live, so card edits (extend/narrow/revoke) apply to
+        this bearer immediately. A binding without it stays a legacy snapshot."""
+        payload: Dict[str, Any] = {
+            "operations": list(operations or []),
+            "credential": credential or {},
+            "grantor_authority": grantor_authority or {},
+            "delegation_edges": list(delegation_edges or []),
+            "named_services": named_services or {},
+        }
+        if str(registry_access_id or "").strip():
+            payload["registry_access_id"] = str(registry_access_id).strip()
         await self._r.setex(
-            self._agrant_key(access_token), max(1, int(ttl_seconds)),
-            json.dumps({
-                "operations": list(operations or []),
-                "credential": credential or {},
-                "grantor_authority": grantor_authority or {},
-                "delegation_edges": list(delegation_edges or []),
-                "named_services": named_services or {},
-            }),
+            self._agrant_key(access_token), max(1, int(ttl_seconds)), json.dumps(payload),
         )
 
     async def revoke_access_grant(self, access_token: str) -> bool:

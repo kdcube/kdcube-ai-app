@@ -13,6 +13,7 @@ records store them as generic delegated operations.
 from __future__ import annotations
 
 import inspect
+import json
 import logging
 from typing import Any, Iterable, Mapping, Optional, Tuple
 from urllib.parse import parse_qs, quote, urlsplit
@@ -858,7 +859,14 @@ async def _issue_tokens(
             expires_in=expires_in,
         )
     # Bind the consented operation allowlist to THIS access token so managed
-    # guards can enforce it.
+    # guards can enforce it. The binding carries the registry-card POINTER: the
+    # guard resolves the card live, so hub-side extend/narrow/revoke apply to
+    # this bearer immediately.
+    from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.automation_access import (
+        oauth_access_id,
+    )
+
+    registry_access_id = oauth_access_id(sub, client_id, str(resource or ""))
     await store.bind_access_grant(
         access_token,
         operations,
@@ -867,6 +875,7 @@ async def _issue_tokens(
         grantor_authority=dict(grantor_authority or {}),
         delegation_edges=list(delegation_edges or []),
         named_services=dict(named_services or {}),
+        registry_access_id=registry_access_id,
     )
     if refresh_token is None:
         refresh_token = await store.create_refresh_token(
@@ -877,6 +886,7 @@ async def _issue_tokens(
             grantor_authority=dict(grantor_authority or {}),
             delegation_edges=list(delegation_edges or []),
             named_services=dict(named_services or {}),
+            registry_access_id=registry_access_id,
         )
     # Register the grant in the user's Connection Hub registry (Delegated by
     # KDCube tab) so the connection is visible and revocable. Registry write
@@ -972,9 +982,32 @@ async def token(request: Request) -> Response:
         if client_id and rec["client_id"] != client_id:
             return _token_error("invalid_grant", "client mismatch")
         new_rt = await store.rotate_refresh_token(rt)
+        # The registry card is the authority: a pointer-carrying refresh record
+        # re-derives its scopes from the card AS IT IS NOW — a hub-side
+        # extension rides the next refresh, and a revoked card (gone) ends the
+        # session. Records without a pointer keep their frozen scopes.
+        scopes = rec["scopes"]
+        card_pointer = str(rec.get("registry_access_id") or "").strip()
+        if card_pointer:
+            from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.automation_access import (
+                automation_record_key,
+            )
+
+            tenant, project = oauth_tenant_project(request)
+            raw_card = await store.redis.get(automation_record_key(tenant, project, card_pointer))
+            if raw_card is None:
+                return _token_error("invalid_grant", "delegated consent was revoked")
+            try:
+                card = json.loads(raw_card)
+                card_map = card.get("resource_grants") or {}
+                entry = card_map.get(str(rec.get("resource") or "") or "*")
+                if isinstance(entry, list) and entry:
+                    scopes = [str(scope) for scope in entry]
+            except Exception:
+                scopes = rec["scopes"]
         return await _issue_tokens(
             request, store,
-            sub=rec["sub"], scopes=rec["scopes"], client_id=rec["client_id"],
+            sub=rec["sub"], scopes=scopes, client_id=rec["client_id"],
             operations=rec.get("operations") or [],
             resource=rec.get("resource"),
             identity_scope=rec.get("identity_scope") or "",

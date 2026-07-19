@@ -1015,3 +1015,49 @@ async def test_manual_automation_keeps_random_client_and_no_stored_token():
     assert created["access"]["client_id"].startswith("automation:")
     assert created["access"]["source"] == "manual"
     assert json.loads(next(iter(service._redis.values.values()))).get("access_token", "") == ""
+
+
+@pytest.mark.asyncio
+async def test_external_client_card_extends_and_refresh_registration_merges():
+    # The card is the authority (the guard resolves it live): a hub-side
+    # extension merges claims into an EXTERNAL client's existing card, an
+    # unknown client is never created here, and the refresh-time
+    # re-registration (record_oauth_grant on every issuance) MERGES with the
+    # card instead of clobbering the extension back to the frozen token scopes.
+    from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.automation_access import (
+        oauth_access_id,
+    )
+
+    service = _agent_service()
+    resource = "https://example.test/mcp"
+
+    # Extension before any consent: nothing to extend.
+    missing = await service.extend_client_access(
+        _AGENT_USER, client_id="claude", resource=resource, claims=["records:read"],
+    )
+    assert missing["ok"] is False and missing["error"] == "delegated_access_unknown_client"
+
+    # The card is born at OAuth consent (token issuance registers it).
+    record = await service.record_oauth_grant(
+        grantor_subject="platform-user-1", client_id="claude",
+        scopes=["records:read"], resource=resource, access_token="tokA",
+    )
+    assert record is not None
+    access_id = oauth_access_id("platform-user-1", "claude", resource)
+    assert record.access_id == access_id
+
+    # Hub-side extension merges the new claim into the card.
+    writer = {**_AGENT_USER, "permissions": ["records:write"]}
+    extended = await service.extend_client_access(
+        writer, client_id="claude", resource=resource, claims=["records:write"],
+    )
+    assert extended["ok"] is True
+    assert sorted(extended["resource_grants"][resource]) == ["records:read", "records:write"]
+
+    # A refresh rotation re-registers with the token's OLD scopes — the card
+    # keeps the extension (merge, not overwrite).
+    again = await service.record_oauth_grant(
+        grantor_subject="platform-user-1", client_id="claude",
+        scopes=["records:read"], resource=resource, access_token="tokB",
+    )
+    assert sorted(again.resource_grants[resource]) == ["records:read", "records:write"]
