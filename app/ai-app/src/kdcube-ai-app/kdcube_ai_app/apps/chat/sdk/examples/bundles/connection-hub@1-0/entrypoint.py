@@ -1812,7 +1812,7 @@ class ConnectionHubEntrypoint(BaseEntrypoint):
         # an edit — the UI calls delegated_access_revoke for that.
         replace = bool(payload.get("replace"))
         try:
-            return await _automation_access_service(self, request).create_access(
+            result = await _automation_access_service(self, request).create_access(
                 user,
                 label=str(payload.get("label") or "").strip() or client_id,
                 resource_grants={resource: claims},
@@ -1823,6 +1823,60 @@ class ConnectionHubEntrypoint(BaseEntrypoint):
             )
         except ValueError as exc:
             return {"ok": False, "error": "invalid_delegated_access_request", "message": str(exc)}
+        if result.get("ok"):
+            # Close the consent loop the same way connected-account consent
+            # does: author `connections.consent.granted` events into every
+            # conversation whose pending demand this grant now covers. Claims
+            # come from the RESULTING record (post-merge), so a grant that
+            # completes an earlier partial one still satisfies the demand.
+            await self._author_agent_grant_events(
+                user_id=str(user.get("sub") or ""),
+                client_id=client_id,
+                resource=resource,
+                fallback_claims=claims,
+                access=result.get("access"),
+            )
+        return result
+
+    async def _author_agent_grant_events(
+        self,
+        *,
+        user_id: str,
+        client_id: str,
+        resource: str,
+        fallback_claims: list,
+        access: Any,
+    ) -> None:
+        """Best-effort granted-event authoring for a per-agent grant."""
+        try:
+            from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube.consent_demand import (
+                author_consent_granted_events,
+            )
+
+            redis = getattr(self, "redis", None)
+            if redis is None or not user_id:
+                return
+            record = access if isinstance(access, Mapping) else {}
+            resource_grants = record.get("resource_grants")
+            granted = (
+                list(resource_grants.get(resource) or [])
+                if isinstance(resource_grants, Mapping)
+                else []
+            ) or list(fallback_claims or [])
+            await author_consent_granted_events(
+                redis=redis,
+                user_id=user_id,
+                provider_id="kdcube",
+                connector_app_id=client_id,
+                granted_claims=granted,
+                account_id=str(record.get("access_id") or ""),
+                connection_hub_bundle_id=BUNDLE_ID,
+            )
+        except Exception:
+            LOGGER.warning(
+                "[connection-hub.agent_grant] granted event authoring failed (non-fatal): client=%s resource=%s",
+                client_id, resource, exc_info=True,
+            )
 
     @api(method="POST", alias="delegated_access_revoke", route="operations", **_api_visibility("delegated_access_revoke"))
     async def delegated_access_revoke(

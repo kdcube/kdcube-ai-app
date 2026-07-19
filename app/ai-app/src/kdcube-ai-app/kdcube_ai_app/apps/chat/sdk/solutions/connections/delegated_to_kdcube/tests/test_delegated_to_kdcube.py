@@ -1615,6 +1615,64 @@ async def test_unrelated_grants_author_nothing(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_agent_grant_closes_only_that_agents_demand(monkeypatch):
+    """Per-agent consent (Delegated BY KDCube): the demand records the agent's
+    client id in the connector slot, and the grant — which passes the same
+    client id — authors the granted event for THAT agent's demand only. The
+    other agent's identical-claims demand stays open. Regression: the agent
+    grant path used to author no event at all (the conversation never learned
+    the consent landed)."""
+    from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube.consent_demand import (
+        PENDING_DEMANDS_REGISTRY_KEY,
+        author_consent_granted_events,
+        record_consent_demand,
+    )
+    from kdcube_ai_app.apps.chat.sdk import config as sdk_config
+
+    store: dict = {}
+    _install_async_user_prop_store(monkeypatch, sdk_config, store)
+
+    agent_a = "kdcube-agent:workspace@2026-03-31-13-36:main"
+    agent_b = "kdcube-agent:lg-react@2026-07-13:main"
+    await record_consent_demand(**_demand_kwargs(
+        provider_id="kdcube", provider_label="KDCube",
+        connector_app_id=agent_a, claims=["memories:read"], tool_name="mem",
+    ))
+    await record_consent_demand(**_demand_kwargs(
+        provider_id="kdcube", provider_label="KDCube",
+        connector_app_id=agent_b, claims=["memories:read"], tool_name="mem",
+        conversation_id="conv-2",
+    ))
+
+    sources: list[_FakeLaneSource] = []
+
+    def factory(entry):
+        source = _FakeLaneSource(entry)
+        sources.append(source)
+        return source
+
+    authored = await author_consent_granted_events(
+        redis=None,
+        user_id="user-1",
+        provider_id="kdcube",
+        granted_claims=["memories:read"],
+        connector_app_id=agent_a,
+        account_id="agent-abc",
+        connection_hub_bundle_id="connection-hub@1-0",
+        source_factory=factory,
+    )
+    assert authored == 1
+    assert len(sources) == 1 and sources[0].entry["conversation_id"] == "conv-1"
+    event = sources[0].published[0]
+    assert "approved KDCube access (memories:read)" in event["text"]
+    assert event["payload"]["connector_app_id"] == agent_a
+
+    # Agent B's demand survives — granting one agent never closes another's.
+    registry = store[("user-1", "connection-hub@1-0", PENDING_DEMANDS_REGISTRY_KEY)]
+    assert [d["connector_app_id"] for d in registry["demands"]] == [agent_b]
+
+
+@pytest.mark.asyncio
 async def test_connect_credential_fires_the_consent_granted_notifier(monkeypatch):
     """Hub wiring: a persisted consent (OAuth complete AND the credential-form
     path both land here) hands the granted facts to the notifier that authors

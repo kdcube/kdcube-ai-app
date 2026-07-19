@@ -198,6 +198,9 @@ async def announce_agent_consent(consent: "MCPConsentRequired") -> None:
         announced = await announce_consent_demand(
             payload=payload,
             provider_id="kdcube",
+            # The connector slot carries the agent's client id so the granted
+            # event on approval closes THIS agent's demand, not every agent's.
+            connector_app_id=str(consent.consent.get("agent_client_id") or ""),
             claims=list(consent.claims or []),
             tool_name=str(consent.consent.get("tool_name") or ""),
         )

@@ -325,10 +325,21 @@ async def author_consent_granted_events(
             if not isinstance(entry, dict):
                 continue
             entry_claims = {str(c) for c in (entry.get("claims") or [])}
+            # Connector narrows the match when both sides name one. For a
+            # per-agent grant the connector slot carries the agent's
+            # `kdcube-agent:<app>:<agent>` client id, so granting one agent
+            # never closes another agent's demand on the same claims.
+            entry_connector = str(entry.get("connector_app_id") or "").strip()
+            caller_connector = str(connector_app_id or "").strip()
             matches = (
                 str(entry.get("provider_id") or "") == provider_key
                 and entry_claims
                 and entry_claims <= granted
+                and (
+                    not entry_connector
+                    or not caller_connector
+                    or entry_connector == caller_connector
+                )
             )
             if not matches:
                 remaining.append(entry)
@@ -362,7 +373,11 @@ async def author_consent_granted_events(
                         user_id=clean_user,
                         agent_id=str(entry.get("agent_id") or "") or "main",
                     )
-                provider_label = (provider_key[:1].upper() + provider_key[1:])
+                provider_label = (
+                    "KDCube"
+                    if provider_key == "kdcube"
+                    else (provider_key[:1].upper() + provider_key[1:])
+                )
                 claims_list = sorted(entry_claims)
                 event_text = consent_granted_event_text(
                     provider_label=provider_label,
