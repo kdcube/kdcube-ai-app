@@ -155,6 +155,10 @@ Config ([config/bundles.template.yaml](config/bundles.template.yaml)):
   tool docs live — is
   [docs/agents/lg-react-system-prompt.md](docs/agents/lg-react-system-prompt.md).
 - `tools.mode` — lg-react's tools seam (plain | mcp | both).
+- Named services connect in two shapes — per-service scoped MCP connections, or
+  one whole-surface door connection + a `kind: named_service` roster entry that
+  feeds the prompt's namespace roster. Trade-offs and both YAML blocks:
+  [docs/agents/lg-react-named-services-config.md](docs/agents/lg-react-named-services-config.md).
 - `enabled.api.public.telegram_webhook.POST` + `integrations.telegram.default`.
 
 Agents' own env (read directly; not KDCube config keys): `LG_MEMORY_BACKEND`
@@ -182,6 +186,7 @@ entrypoint.py (BUNDLE_ID, DEFAULT_AGENT_ID, the AGENTS registry, roles, schemas,
   == interface/README.md + interface/ported-langgraph-agents.openapi.yaml
   == README.md + docs/README.md + docs/arch/README.md + docs/storage/README.md
   == docs/agents/lg-react-system-prompt.md (system-prompt block order + config keys)
+  == docs/agents/lg-react-named-services-config.md (the two named-services shapes)
   == docs/integrations/admin-integrational-homework.md
   == tests/ (dispatch, identity, storage, capabilities, both stream adapters,
              tools_mcp, telegram, interface contract) + the dated journal entry

@@ -225,12 +225,18 @@ bundles:
                   #   delegated: true
                   #   scopes: [memories:read]
                   #
-                  # Example 2: the named-services bridge (Slack via the user's
-                  # connected account). TWO consents chain here: the per-agent
-                  # grant admits the agent into the KDCube namespace boundary, and
-                  # the user's own connected-account Slack consent (Delegated to
-                  # KDCube) is checked at every call by the provider adapter —
-                  # revoking either stops the tool immediately.
+                  # Example 2 — PER-SERVICE SHAPE: the named-services bridge for
+                  # ONE service (Slack via the user's connected account), scoped
+                  # to that service's claims. TWO consents chain here: the
+                  # per-agent grant admits the agent into the KDCube namespace
+                  # boundary, and the user's own connected-account Slack consent
+                  # (Delegated to KDCube) is checked at every call by the provider
+                  # adapter — revoking either stops the tool immediately.
+                  # Trade-off: each service gets its OWN consent demand and its
+                  # OWN picker toggle (independent governance), at the cost of one
+                  # connection entry per service — and the system prompt carries
+                  # no namespace roster unless a `kind: named_service` entry
+                  # declares it (see Example 3).
                   # - name: slack
                   #   kind: mcp
                   #   server_id: slack
@@ -240,6 +246,34 @@ bundles:
                   #   transport: streamable_http
                   #   delegated: true
                   #   scopes: [named_services:use, slack:read, slack:write]
+                  #
+                  # Example 3 — WHOLE-SURFACE SHAPE: ONE delegated connection to
+                  # the same named-services door serves ALL namespaces the grant's
+                  # scopes allow. One per-agent consent covers the surface; one
+                  # picker toggle (the alias) turns it on/off; per-namespace
+                  # control lives in `scopes`. `named_services_list` on the door
+                  # is the runtime source of truth for what is actually served.
+                  # The companion `kind: named_service` entry binds NO tools in
+                  # this bundle — it declares which namespaces the agent consumes,
+                  # so the system prompt carries the namespace roster with
+                  # discovery intros (and the conversation-recovery block when
+                  # `conv` is declared). Docs:
+                  # docs/agents/lg-react-named-services-config.md
+                  # - name: named_services
+                  #   kind: mcp
+                  #   server_id: named_services
+                  #   alias: named_services
+                  #   url: "https://<PUBLIC_HOST>/api/integrations/bundles/<TENANT>/<PROJECT>/kdcube-services@1-0/public/mcp/named_services"
+                  #   resource: "*/api/integrations/bundles/*/*/kdcube-services@1-0/public/mcp/named_services*"
+                  #   transport: streamable_http
+                  #   delegated: true
+                  #   scopes: [named_services:use, slack:read, slack:write, conv:read]
+                  # - name: named_services_roster
+                  #   kind: named_service
+                  #   alias: named_services
+                  #   namespaces:
+                  #     slack: { allowed: [provider.about, object.schema, object.search, object.action] }
+                  #     conv:  { allowed: [provider.about, object.search, object.get] }
         # The Telegram Bot API webhook (a public @api that drives the SAME
         # execute_core for the DEFAULT agent). `route="public"` exposes it at the
         # proc layer; the trust boundary is the Telegram webhook secret, verified by
