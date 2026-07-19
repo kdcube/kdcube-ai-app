@@ -189,6 +189,9 @@ async def announce_agent_consent(consent: "MCPConsentRequired") -> None:
     still real, the same consent event re-emits directly — the chat UI keeps
     one banner per identical demand and honors a dismissal, so what the user
     sees always matches what the agent says. Best effort; never raises."""
+    import logging
+
+    log = logging.getLogger(__name__)
     try:
         from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube.consent_demand import (
             announce_consent_demand,
@@ -204,7 +207,15 @@ async def announce_agent_consent(consent: "MCPConsentRequired") -> None:
             claims=list(consent.claims or []),
             tool_name=str(consent.consent.get("tool_name") or ""),
         )
-        if not announced:
+        if announced:
+            log.info(
+                "[agent-consent] demand announced as banner: claims=%s tool=%s agent=%s",
+                consent.claims, consent.consent.get("tool_name"), consent.consent.get("agent_client_id"),
+            )
+        else:
+            # Not newly recorded (re-attempt of a pending demand, or no full
+            # conversation address) — re-emit the event directly so the chat
+            # surface still shows/refreshes the banner.
             from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import get_comm
 
             communicator = get_comm()
@@ -222,10 +233,18 @@ async def announce_agent_consent(consent: "MCPConsentRequired") -> None:
                 )
                 if hasattr(result, "__await__"):
                     await result
+                log.info(
+                    "[agent-consent] demand re-emitted directly (not newly recorded): claims=%s tool=%s",
+                    consent.claims, consent.consent.get("tool_name"),
+                )
+            else:
+                log.warning(
+                    "[agent-consent] demand NOT announced: no communicator bound and record path declined "
+                    "(claims=%s tool=%s agent=%s) — the user sees no banner",
+                    consent.claims, consent.consent.get("tool_name"), consent.consent.get("agent_client_id"),
+                )
     except Exception:
-        import logging
-
-        logging.getLogger(__name__).info("agent consent announce failed (non-fatal)", exc_info=True)
+        log.warning("agent consent announce failed (non-fatal)", exc_info=True)
 
 
 def raise_for_mcp_consent(

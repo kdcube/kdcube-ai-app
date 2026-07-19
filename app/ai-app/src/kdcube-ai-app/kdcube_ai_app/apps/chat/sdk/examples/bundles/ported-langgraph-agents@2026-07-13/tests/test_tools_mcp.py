@@ -330,3 +330,159 @@ def test_wrap_tools_consent_denial_without_block_uses_connection_context(monkeyp
     assert len(announced) == 1
     assert out["consent"]["grant"]["payload"]["claims"] == ["mail:read"]
     assert out["consent"]["grant"]["payload"]["resource"] == "https://h/api/mcp/ns"
+
+
+def test_wrap_tools_handles_adapter_tuple_results(monkeypatch) -> None:
+    # THE REAL SHAPE: langchain-mcp-adapters tools are content_and_artifact —
+    # the coroutine returns (content, artifact), content being a string or a
+    # list of {"type": "text", "text": ...} blocks. Regression: the wrap only
+    # handled bare strings, so live results (tuples) passed through untouched —
+    # no consent announce, no file delivery, exactly the observed silence.
+    import json as _json
+
+    m = _mcp_module()
+    client = "kdcube-agent:ported-langgraph-agents@2026-07-13:lg-react"
+    resource = "*/kdcube-services@1-0/public/mcp/named_services*"
+    denial = _json.dumps({
+        "ok": False, "error": "delegated_consent_required",
+        "namespace": "slack", "missing_grants": ["slack:read"],
+        "code": "connections.consent_needed",
+        "consent": {"kind": "delegated_agent_grant", "agent_client_id": client,
+                    "resource": resource, "claims": ["slack:read"], "tool_name": "slack"},
+    })
+
+    announced: list = []
+
+    async def fake_announce(consent):
+        announced.append(consent)
+
+    from kdcube_ai_app.apps.chat.sdk.solutions.connections import mcp_consent as consent_mod
+    monkeypatch.setattr(consent_mod, "announce_agent_consent", fake_announce)
+
+    # Content as a plain string inside the tuple.
+    class _StrTool:
+        name = "named_services_search"
+
+        async def _run(self):
+            return (denial, {"structured_content": None})
+
+    tool = _StrTool()
+    tool.coroutine = tool._run
+    m.wrap_tools_with_user_delivery([tool], agent_client_id=client, fallback_resource=resource)
+    content, artifact = asyncio.run(tool.coroutine())
+    assert artifact == {"structured_content": None}          # artifact preserved
+    out = _json.loads(content)
+    assert out["consent"]["grant"]["payload"]["claims"] == ["slack:read"]
+    assert len(announced) == 1 and announced[0].claims == ["slack:read"]
+
+    # Content as a list of text blocks inside the tuple.
+    class _BlockTool:
+        name = "named_services_action"
+
+        async def _run(self):
+            return ([{"type": "text", "text": denial}], None)
+
+    tool2 = _BlockTool()
+    tool2.coroutine = tool2._run
+    m.wrap_tools_with_user_delivery([tool2], agent_client_id=client, fallback_resource=resource)
+    content2, _ = asyncio.run(tool2.coroutine())
+    block = content2[0]
+    assert block["type"] == "text"
+    out2 = _json.loads(block["text"])
+    assert out2["consent"]["grant"]["payload"]["claims"] == ["slack:read"]
+    assert len(announced) == 2
+
+
+def test_wrap_tools_delivers_files_from_tuple_results(monkeypatch) -> None:
+    # File delivery through the REAL adapter shape: tuple with a text-block
+    # list carrying a download-URL file object -> chat.files card emitted,
+    # URL stripped from the model-visible text, artifact slot preserved.
+    import json as _json
+
+    m = _mcp_module()
+    raw = _json.dumps({
+        "ok": True,
+        "object": {"ref": "slack:a:file:F9", "object_ref": "slack:a:file:F9",
+                   "name": "pic.png", "mimetype": "image/png", "size": 10,
+                   "download": {"encoding": "url", "url": "http://h/dl?download_token=S"}},
+    })
+
+    class _Tool:
+        name = "named_services_get"
+
+        async def _run(self):
+            return ([{"type": "text", "text": raw}], "artifact-slot")
+
+    tool = _Tool()
+    tool.coroutine = tool._run
+
+    events: list = []
+
+    class _Comm:
+        async def event(self, **kwargs):
+            events.append(kwargs)
+
+    from kdcube_ai_app.apps.chat.sdk.runtime import comm_ctx
+    monkeypatch.setattr(comm_ctx, "get_comm", lambda: _Comm())
+
+    m.wrap_tools_with_user_delivery([tool])
+    content, artifact = asyncio.run(tool.coroutine())
+    assert artifact == "artifact-slot"
+    assert len(events) == 1 and events[0]["type"] == "chat.files"
+    assert events[0]["data"]["items"][0]["object_ref"] == "slack:a:file:F9"
+    assert "download_token" not in content[0]["text"]
+
+
+def test_wrap_tools_resolves_resource_from_candidates(monkeypatch) -> None:
+    # THE LIVE GAP: two delegated connections (memories + the named-services
+    # door) -> no single-connection fallback, and the running door returned a
+    # bare denial (block={}). The candidate whose declared scopes cover the
+    # missing claims decides; a claim outside every scope list (mail) rides
+    # the one generic door (named_services:use).
+    import json as _json
+
+    m = _mcp_module()
+    door = "*/kdcube-services@1-0/public/mcp/named_services*"
+    mem = "*/user-memories@2026-06-26/public/mcp/memories*"
+    candidates = [
+        {"resource": mem, "scopes": ["memories:read"]},
+        {"resource": door, "scopes": ["named_services:use", "slack:read", "slack:write"]},
+    ]
+
+    assert m._resource_for_claims(["slack:read"], candidates) == door
+    assert m._resource_for_claims(["memories:read"], candidates) == mem
+    # A claim outside every declared scope list resolves nothing client-side:
+    # the SERVER's consent block is the authority for that case (every
+    # KDCube-served MCP surface names its own resource in the denial).
+    assert m._resource_for_claims(["mail:read"], candidates) == ""
+
+    announced: list = []
+
+    async def fake_announce(consent):
+        announced.append(consent)
+
+    from kdcube_ai_app.apps.chat.sdk.solutions.connections import mcp_consent as consent_mod
+    monkeypatch.setattr(consent_mod, "announce_agent_consent", fake_announce)
+
+    denial = _json.dumps({
+        "ok": False, "error": "delegated_consent_required",
+        "namespace": "slack", "missing_grants": ["slack:read"],
+    })
+
+    class _Tool:
+        name = "named_services_search"
+
+        async def _run(self):
+            return (denial, None)
+
+    tool = _Tool()
+    tool.coroutine = tool._run
+    m.wrap_tools_with_user_delivery(
+        [tool],
+        agent_client_id="kdcube-agent:app:agent",
+        resource_candidates=candidates,
+    )
+    content, _ = asyncio.run(tool.coroutine())
+    out = _json.loads(content)
+    assert out["consent"]["grant"]["payload"]["resource"] == door
+    assert len(announced) == 1 and announced[0].resource == door

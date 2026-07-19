@@ -73,8 +73,12 @@ export default function App() {
   // link a summon just wrote (0 = stable initial mount).
   const [delegatedSummonNonce, setDelegatedSummonNonce] = useState(0);
   // Same remount trick for the delegated-access panel (Delegated by KDCube):
-  // a per-agent grant summon writes its pending request to the URL first.
+  // the `connections.hub.open` command carries its pending grant request as
+  // PROPS (the URL write is deep-link parity only — an embedded frame may not
+  // allow history mutation, and the pane must not depend on it).
   const [delegatedAccessSummonNonce, setDelegatedAccessSummonNonce] = useState(0);
+  const [delegatedAccessOpenParams, setDelegatedAccessOpenParams] =
+    useState<Record<string, string> | null>(null);
   const [telegramConnectStatus] = useState<TelegramConnectStatus>('idle');
   const authenticatorsLoading = useAppSelector((s) => s.authenticators.loading);
   const authenticatorsAllowed = useAppSelector((s) => s.authenticators.allowed);
@@ -203,6 +207,7 @@ export default function App() {
     const onSurfaceCommand = (event: MessageEvent) => {
       const command = parseConnectionsHubOpen(event.data);
       if (!command) return;
+      console.info('[consent-route] hub received', command.tab, JSON.stringify(command.params));
       const params = command.params;
       const tab = tabFromValue(command.tab)
         ?? ((params.pending_agent_grant || params.agent_client_id)
@@ -224,9 +229,13 @@ export default function App() {
             else url.searchParams.delete(key);
           });
           window.history.replaceState({}, '', url.toString());
-        } catch {
-          // Embedded/test contexts may not allow history mutation.
+          console.info('[consent-route] hub URL params applied', url.search);
+        } catch (err) {
+          // Embedded/test contexts may not allow history mutation — harmless:
+          // the pane seeds from the open-command params below, never the URL.
+          console.warn('[consent-route] hub URL mutation unavailable (props carry the request)', err);
         }
+        setDelegatedAccessOpenParams({ ...params });
         setDelegatedAccessSummonNonce(Date.now());
       } else if (tab === 'delegatedToKdcube') {
         try {
@@ -301,7 +310,12 @@ export default function App() {
       {activeTab === 'identity' ? <ConnectionEdgesPanel telegramConnectStatus={telegramConnectStatus} /> : null}
       {activeTab === 'authenticators' && authenticatorsAllowed ? <AuthenticatorsPanel /> : null}
       {activeTab === 'accessMap' && authenticatorsAllowed ? <AccessMapPanel /> : null}
-      {activeTab === 'delegatedAccess' ? <DelegatedAccessPanel key={delegatedAccessSummonNonce} /> : null}
+      {activeTab === 'delegatedAccess' ? (
+        <DelegatedAccessPanel
+          key={delegatedAccessSummonNonce}
+          openParams={delegatedAccessOpenParams ?? undefined}
+        />
+      ) : null}
       {activeTab === 'delegatedToKdcube' ? <DelegatedToKdcubePanel key={delegatedSummonNonce} /> : null}
       {activeTab === 'providerConnections' ? <ProviderConnectionsPanel summon={hubSummon ?? undefined} /> : null}
     </AppShell>

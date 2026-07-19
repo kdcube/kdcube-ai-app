@@ -32,6 +32,10 @@ export interface PaneDef {
   id: string;
   title: string;
   content: ReactNode;
+  /** The tab's lead pane: spans the full row at generous height while its
+   *  siblings stay visible beneath — for a pane whose content is THE pending
+   *  action (an agent access request). */
+  lead?: boolean;
 }
 
 const ICON_UNPIN = (
@@ -202,7 +206,7 @@ export function PaneGroup({ panes }: { panes: PaneDef[] }) {
       {visibleDocked.map((item) => (
         <div
           key={item.pane.id}
-          className={`pane${item.state.expanded ? ' pane--fill' : ''}`}
+          className={`pane${item.state.expanded ? ' pane--fill' : ''}${item.pane.lead ? ' pane--lead' : ''}`}
           ref={(el) => {
             dockedEls.current[item.pane.id] = el;
           }}

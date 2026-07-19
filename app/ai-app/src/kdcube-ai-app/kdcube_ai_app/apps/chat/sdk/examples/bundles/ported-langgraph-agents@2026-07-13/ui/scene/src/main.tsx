@@ -128,6 +128,11 @@ function App() {
       if (options.expanded !== undefined && spec.views) {
         mgr.setExpanded(alias, windowSizing(spec), options.expanded)
         window.setTimeout(() => syncWidgetView(alias, options.expanded ? 'expanded' : 'compact'), 0)
+      } else if (mgr.get(alias)?.expanded) {
+        // Expanded is a transient view state, not a home: an unqualified open
+        // (rail tap, a consent card's summon) arrives at the declared compact
+        // geometry even when the window was last left expanded.
+        mgr.setExpanded(alias, windowSizing(spec), false)
       }
       return
     }
@@ -355,7 +360,9 @@ function App() {
       // deep-link fallback).
       if (type === SCENE_SURFACE_COMMAND) {
         const targetSurface = asString(data.target_surface) || asString(data.targetSurface)
+        console.info('[consent-route] scene routing', targetSurface, JSON.stringify(data.ui_event ?? {}))
         const result = sceneRuntime.queueSurfaceCommand(targetSurface, data)
+        console.info('[consent-route] scene routed', targetSurface, 'ok=', result.ok, result.code || '')
         const commandId = asString(data.command_id)
         if (commandId && event.source) {
           try {

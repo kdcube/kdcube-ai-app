@@ -531,6 +531,13 @@ async def announce_consent_demand(
         bundle_id = str(identity.get("bundle_id") or "").strip()
         conversation_id = str(identity.get("conversation_id") or "").strip()
         provider_key = str(provider_id or "").strip()
+        if not user_id or not bundle_id or not conversation_id:
+            LOGGER.warning(
+                "[delegated.consent] demand has NO full conversation address "
+                "(user=%r bundle=%r conversation=%r provider=%s tool=%s) — "
+                "nothing recorded; only a direct event emit can reach the chat",
+                user_id, bundle_id, conversation_id, provider_key, tool_name,
+            )
         agent_id = ""
         try:
             from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import get_current_request_context

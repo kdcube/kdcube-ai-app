@@ -206,6 +206,7 @@ function postConnectionsCommandAndAwaitAck(source: string, consent?: Connections
           ...consent.params,
         }
       }
+      console.info('[consent-route] chat->host', command.target_surface, JSON.stringify(command.ui_event ?? {}))
       window.parent.postMessage(command, '*')
     } catch {
       finish(false)

@@ -305,56 +305,28 @@ class NamedServicesMcpBridge:
         missing = sorted(required - available)
         if not missing:
             return None
-        denial: dict[str, Any] = {
-            "ok": False,
-            "error": "delegated_consent_required",
-            "message": (
+        # The uniform per-agent grant denial every KDCube-served MCP surface
+        # returns: exact missing grants; for a hosted-agent caller the full
+        # consent block (agent identity, granted resource, one-click grant);
+        # for external clients the reconnect guidance. One shared helper — the
+        # bridge holds no consent-shape knowledge of its own.
+        from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.consent_denial import (
+            agent_grant_consent_denial,
+        )
+
+        return agent_grant_consent_denial(
+            self._request,
+            namespace=policy.namespace,
+            tool=tool_name,
+            operation=operation,
+            required=sorted(required),
+            missing=missing,
+            available=sorted(available),
+            message=(
                 f"Named service '{policy.namespace}' tool '{tool_name}' "
                 "requires additional delegated consent."
             ),
-            "namespace": policy.namespace,
-            "tool": tool_name,
-            "operation": operation,
-            "required_grants": sorted(required),
-            "missing_grants": missing,
-            "available_grants": sorted(available),
-            "next_step": (
-                "Reconnect this MCP resource and approve the missing grant if the "
-                "client supports incremental consent. Otherwise connect a resource "
-                "whose initial consent includes this grant."
-            ),
-        }
-        # A hosted-agent caller (a per-agent "Delegated by KDCube" client) has a
-        # richer consent path than reconnect-and-re-consent: the user extends the
-        # agent's grant in Connection Hub — one click from the chat consent card.
-        # Carry the full consent block so the caller's chat surface can raise it
-        # (agent identity, resource, missing claims, and the grant action).
-        grant_record = _delegated_grant_record(self._request)
-        client_id = str(grant_record.get("client_id") or "").strip()
-        if client_id.startswith("kdcube-agent:"):
-            resource_grants = grant_record.get("resource_grants")
-            resource = ""
-            if isinstance(resource_grants, Mapping) and resource_grants:
-                resource = str(next(iter(resource_grants.keys())) or "")
-            denial["code"] = "connections.consent_needed"
-            denial["consent"] = {
-                "kind": "delegated_agent_grant",
-                "reason": "delegated_consent_required",
-                "agent_client_id": client_id,
-                "resource": resource,
-                "claims": missing,
-                "tool_name": policy.namespace,
-                "grant": {
-                    "operation": "delegated_agent_grant_create",
-                    "payload": {"client_id": client_id, "resource": resource, "claims": missing},
-                },
-            }
-            denial["next_step"] = (
-                "The user extends this agent's grant with the missing access in "
-                "Connection Hub (Delegated by KDCube); the chat consent card "
-                "carries the one-click grant."
-            )
-        return denial
+        )
 
     async def call(
         self,

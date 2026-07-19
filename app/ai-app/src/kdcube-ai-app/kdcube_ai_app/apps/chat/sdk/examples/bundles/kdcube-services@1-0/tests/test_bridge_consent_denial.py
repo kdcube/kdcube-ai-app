@@ -92,3 +92,34 @@ def test_non_agent_caller_keeps_the_reconnect_guidance():
     assert denial["error"] == "delegated_consent_required"
     assert "consent" not in denial
     assert "Reconnect" in denial["next_step"]
+
+
+def _request_via_subject():
+    """The LIVE projection: grant_record without client_id; the delegate
+    subject on the credential is the only agent identity, and the credential
+    attrs carry the granted resource."""
+    return SimpleNamespace(state=SimpleNamespace(delegated_credential={
+        "credential": {
+            "sub": "integration:kdcube-agent:ported-langgraph-agents@2026-07-13:lg-react:user-1",
+            "attrs": {
+                "grants": ["named_services:use"],
+                "resource": "*/kdcube-services@1-0/public/mcp/named_services*",
+            },
+        },
+        "grant_record": {"grants": []},
+    }))
+
+
+def test_agent_identity_falls_back_to_the_delegate_subject():
+    # Regression (live 2026-07-19): the projected grant_record carried no
+    # client_id, so the denial went out bare (block={}) and no banner rose.
+    m = _bridge_module()
+    bridge = _bridge(m, _request_via_subject())
+
+    denial = bridge._authorize(_Policy(), "object.search", tool_name="search")
+
+    assert denial["missing_grants"] == ["mail:read"]
+    consent = denial["consent"]
+    assert consent["agent_client_id"] == "kdcube-agent:ported-langgraph-agents@2026-07-13:lg-react"
+    assert consent["resource"] == "*/kdcube-services@1-0/public/mcp/named_services*"
+    assert consent["grant"]["payload"]["claims"] == ["mail:read"]

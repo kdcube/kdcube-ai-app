@@ -53,17 +53,29 @@ function parseAgentClientId(clientId: string): { agent: string; app: string } | 
   return { agent: parts.slice(2).join(':'), app };
 }
 
-/** The pending per-agent grant a chat consent banner deep-links here (the
- *  `pending_agent_grant` params), so this panel offers a one-click grant. */
-function pendingAgentGrantFromLocation(): { clientId: string; resource: string; claims: string[] } | null {
+type PendingAgentGrant = { clientId: string; resource: string; claims: string[] };
+
+function pendingAgentGrantFromParams(get: (key: string) => string): PendingAgentGrant | null {
+  if (get('pending_agent_grant') !== '1') return null;
+  const clientId = get('agent_client_id').trim();
+  const resource = get('resource').trim();
+  if (!clientId || !resource) return null;
+  const claims = get('claims').split(',').map((item) => item.trim()).filter(Boolean);
+  return { clientId, resource, claims };
+}
+
+/** The pending per-agent grant a chat consent card carries here — as the
+ *  `connections.hub.open` command's params passed down as PROPS (an embedded
+ *  frame may not allow URL mutation), or as `pending_agent_grant` URL params
+ *  on a direct deep link. Props win. */
+function pendingAgentGrantRequest(openParams?: Record<string, string>): PendingAgentGrant | null {
+  if (openParams) {
+    const fromProps = pendingAgentGrantFromParams((key) => String(openParams[key] ?? ''));
+    if (fromProps) return fromProps;
+  }
   try {
     const p = new URLSearchParams(window.location.search);
-    if (p.get('pending_agent_grant') !== '1') return null;
-    const clientId = (p.get('agent_client_id') || '').trim();
-    const resource = (p.get('resource') || '').trim();
-    if (!clientId || !resource) return null;
-    const claims = (p.get('claims') || '').split(',').map((item) => item.trim()).filter(Boolean);
-    return { clientId, resource, claims };
+    return pendingAgentGrantFromParams((key) => p.get(key) ?? '');
   } catch {
     return null;
   }
@@ -91,7 +103,7 @@ function commonOperationGrants(resource: DelegatedAccessResourceOption): string[
   return Array.from(first).filter((grant) => rest.every((grants) => grants.has(grant)));
 }
 
-export function DelegatedAccessPanel() {
+export function DelegatedAccessPanel({ openParams }: { openParams?: Record<string, string> } = {}) {
   const dispatch = useAppDispatch();
   const { platformUserId, items, grantOptions, resources, issuedToken, issuedHeader, issuedAccess, busy } = useAppSelector((s) => s.delegatedAccess);
   const { providers, accounts } = useAppSelector((s) => s.delegatedToKdcube);
@@ -99,11 +111,21 @@ export function DelegatedAccessPanel() {
   const [resourceGrants, setResourceGrants] = useState<Record<string, string[]>>({});
   const [namedServiceOperations, setNamedServiceOperations] = useState<DelegatedAccessNamedServiceOperations>({});
   const [ttlSeconds, setTtlSeconds] = useState(ttlOptions[0].value);
-  const [pendingGrant, setPendingGrant] = useState(pendingAgentGrantFromLocation);
+  const [pendingGrant, setPendingGrant] = useState(() => pendingAgentGrantRequest(openParams));
+  useEffect(() => {
+    console.info(
+      '[consent-route] pending pane state on mount:',
+      pendingGrant ? JSON.stringify(pendingGrant) : 'NONE',
+      'openParams=', openParams ? JSON.stringify(openParams) : 'NONE',
+      'location.search=', window.location.search,
+    );
+    // Mount-time diagnostic only — the open command remounts this panel by key.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   // Which of the ASKED claims the user keeps checked — the request is a
   // proposal, not a bundle: granting a subset is always allowed.
   const [pendingClaimPicks, setPendingClaimPicks] = useState<Record<string, boolean>>(
-    () => Object.fromEntries((pendingAgentGrantFromLocation()?.claims || []).map((c) => [c, true])),
+    () => Object.fromEntries((pendingAgentGrantRequest(openParams)?.claims || []).map((c) => [c, true])),
   );
   // Per-record EDIT state for granted agent rows: access_id being edited and
   // the checkbox set keyed `${resource}:${claim}`.
@@ -401,7 +423,7 @@ export function DelegatedAccessPanel() {
     ? (resources.find((r) => r.resource === pendingGrant.resource)?.label || '')
     : '';
   const pendingGrantPane = pendingGrant ? (
-    <section className="card">
+    <section className="card card-attention">
       <div className="card-head">
         <div className="form-title">An agent is asking for your permission</div>
       </div>
@@ -698,7 +720,16 @@ export function DelegatedAccessPanel() {
   return (
     <PaneGroup
       panes={[
-        ...(pendingGrantPane ? [{ id: 'pending-grant', title: 'Agent access request', content: pendingGrantPane }] : []),
+        ...(pendingGrantPane ? [{
+          id: 'pending-grant',
+          // The claims ride the pane title so the ask reads from the bar alone.
+          title: `Agent access request — ${pendingGrant?.claims.join(', ') || ''}`,
+          content: pendingGrantPane,
+          // The request is THE pending action: it leads the tab — full-row,
+          // generous height, claims and Grant never below the fold — while
+          // Granted access and Create stay visible beneath.
+          lead: true,
+        }] : []),
         { id: 'granted', title: 'Granted access', content: grantedPane },
         { id: 'create', title: 'Create automation access', content: createPane },
       ]}

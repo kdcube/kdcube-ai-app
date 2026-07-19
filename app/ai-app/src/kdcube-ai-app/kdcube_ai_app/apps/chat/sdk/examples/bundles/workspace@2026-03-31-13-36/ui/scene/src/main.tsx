@@ -223,6 +223,11 @@ function App() {
     if (options.expanded !== undefined && spec.views) {
       mgr.setExpanded(alias, windowSizing(spec), options.expanded)
       window.setTimeout(() => syncWidgetView(alias, options.expanded ? 'expanded' : 'compact'), 0)
+    } else if (mgr.get(alias)?.expanded) {
+      // Expanded is a transient view state, not a home: an unqualified open
+      // (rail tap, a consent card's summon) arrives at the declared compact
+      // geometry even when the window was last left expanded.
+      mgr.setExpanded(alias, windowSizing(spec), false)
     }
   }, [dockComponent, externalAlias, externalPanel, promoteComponent, specByAlias, syncWidgetView])
 

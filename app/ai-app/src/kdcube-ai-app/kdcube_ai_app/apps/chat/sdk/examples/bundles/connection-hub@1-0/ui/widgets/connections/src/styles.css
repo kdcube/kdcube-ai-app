@@ -190,6 +190,13 @@ h2 {
   color: var(--ink);
 }
 
+/* The pending agent access request — the tab's attention item: a warm warn
+   accent from the site status palette, never a color-filled box. */
+.card.card-attention {
+  border-color: rgba(var(--warn-rgb), 0.55);
+  box-shadow: 0 0 0 3px rgba(var(--warn-rgb), 0.10);
+}
+
 /* Notices — website status palette: tinted success/warn/danger. */
 .note {
   background: rgba(var(--ok-rgb), 0.08);
@@ -1356,6 +1363,14 @@ code {
   min-height: 0;
 }
 
+/* The tab's lead pane (a pending agent access request): keeps its natural
+   height while siblings shrink around it — the action is never below a
+   shrunken pane's fold, and the rest of the tab stays visible. */
+.pane--lead {
+  flex-shrink: 0;
+  max-height: min(72vh, 640px);
+}
+
 /* Wide windows: the pinned panes tile TWO-UP so the width works instead of
    one narrow over-tall column — each pane caps at the viewport and scrolls
    internally (same shrink-and-scroll contract as the column mode). An
@@ -1372,6 +1387,7 @@ code {
     max-height: calc(100vh - 150px);
   }
   .pane--fill,
+  .pane--lead,
   .pane:only-child {
     grid-column: 1 / -1;
   }
