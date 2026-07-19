@@ -94,5 +94,15 @@ request identity.
   workspace;
 - download and materialization therefore resolve the same canonical file ref.
 
+`scene_object_action` itself is not a harness function. It is the app-operation
+alias used by the reusable chat client and by app scenes that implement the
+same object-action contract. A generic website scene can instead name its
+object-action gateway in scene configuration. In either case, the client
+chooses `capabilities`, `open`, or `download`, and the receiving app endpoint
+routes the supplied object ref. For `conv:fi`, the app delegates to
+`runtime.harness.events.resolve_event_ref_action`; provider-owned namespaces
+delegate to their own resolver or named-service action. The app operation and
+resolver enforce authority and return the supported response.
+
 See [Artifact Resolution And Materialization](artifact-resolution-and-materialization-README.md)
 for owner namespaces and rehosters.

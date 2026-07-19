@@ -121,6 +121,47 @@ Framework code belongs outside this tree. ReAct-specific implementations live
 under `sdk/solutions/react`; the worked ported-agent adapter lives under the
 `ported-langgraph-agents@2026-07-13` example app.
 
+## Remaining Source Extraction
+
+The contract boundary is established, but the source extraction is not
+complete. Common runtime and non-ReAct callers still import several mixed
+modules under `sdk/solutions/react`. Do not move those files wholesale: extract
+the shared primitive and leave the ReAct policy in the ReAct adapter.
+ReAct-specific terms in this inventory are described in
+[ReAct Structure](../../sdk/agents/react/structure-README.md) and
+[Round Generation Feedback](../../sdk/agents/react/round-generation-feedback-README.md).
+
+| Current ReAct location | Shared part to extract | Part that stays ReAct-specific |
+| --- | --- | --- |
+| `solution_workspace.py` | Conversation file hosting, timeline rehosting, and execution-snapshot workspace assembly into `runtime/harness/workspace/`. | ReAct-facing read/pull behavior and ReAct timeline integration. |
+| `workspace.py` | Code-path discovery, logical/physical path hydration, and framework-neutral checkout primitives into `runtime/harness/workspace/`. | ReAct tool semantics and ANNOUNCE, the uncached per-round runtime-state block shown to the model. |
+| `artifacts.py` and `artifact_analysis.py` | Generic artifact metadata, error normalization, summary preparation, and file materialization. | `ReactArtifactView`, ReAct's artifact presentation model, and ReAct tool-result block layout. |
+| `timeline.py` | Artifact lookup, source-pool selectors that choose citation/source blocks, and other block-only readers into `runtime/harness/timeline/`. | The live ReAct `Timeline`, plans, context compaction, memory-reminder blocks, and ANNOUNCE layout. |
+| `events/policies/`, `events/exploration.py`, and generic parts of `events/artifact_production.py` | Provider/tool event-source policy, which decides how source output enters the record, and safe block projection into the common event/timeline subsystem. | Native `react.*` event ids, live-listener ownership, bounded extra-round credit for folded events, and ReAct round folding. |
+| `proto.py` | A small framework-neutral execution/runtime context under `sdk/runtime/`. | `ReactResult`, `ReactStateSnapshot`, ReAct cache/session policy, and subagent state. |
+| `decision_prompt.py` | The wrapper that inserts administrator-owned instructions at their required priority into shared instruction helpers. | ReAct decision protocol and prompt composition. |
+
+Two dependencies need decoupling rather than relocation:
+
+- conversation search should use its common search backend without importing
+  the full ReAct `ContextBrowser`;
+- generic canvas/file/rendering helpers should use common content, artifact,
+  and event-policy utilities instead of importing `react.tools.common` or
+  `react.events`.
+
+One worked-adapter activation gap is separate from source extraction:
+`ported-langgraph-agents@2026-07-13/platform/code_exec.py` currently creates
+its isolated-execution tool subsystem with empty `raw_tool_specs` and
+`mcp_tool_specs`. Its `run_python` therefore demonstrates isolated computation
+and conversation file hosting, not nested KDCube/MCP tool calls. Enabling the
+shared supervisor tool bridge requires the adapter to export its narrowed,
+execution-enabled tool specs. The LangGraph-specific wrapper stays in the app;
+the runtime tool bridge stays under `sdk/runtime` and `sdk/tools`.
+
+New common runtime, conversation, tool, canvas, or ported-agent code should not
+add another `sdk.solutions.react` import. Extract or call the corresponding
+harness/runtime primitive instead.
+
 ## Reading Order
 
 1. [Events](events/README.md) for ref resolution and ownership.
