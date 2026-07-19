@@ -1112,6 +1112,11 @@ bundles:
                 selected_tool_grants: true
       memory:
         enabled: true
+        # Serve durable user memory as the `mem` named-service realm (discovery-
+        # registered provider) so agents can consume it via `as_consumer`
+        # named-service connections, not only through the MCP surface above.
+        named_service:
+          enabled: true
         widget:
           enabled: true
           allow_write: true
@@ -1149,28 +1154,28 @@ bundles:
           # capabilities picker's Grant affordance summon it via the declared
           # target_surfaces (the `connections.hub.open` contract). Requires
           # connection-hub@1-0 deployed with its connections_settings widget.
-          # ui:
-          #   scene:
-          #     components:
-          #       connection_hub:
-          #         bundle_id: connection-hub@1-0
-          #         widget_alias: connections_settings
-          #         title: Connection Hub
-          #         accent: purple
-          #         gated: true
-          #         views: false
-          #         params:
-          #           tab: delegated_by_kdcube
-          #         size: { w: 880, h: 720 }
-          #         full: { w: 1120, h: 820 }
-          #         target_surfaces:
-          #           - connection_hub.connections
-          #           - connection_hub.settings
-          #         placement: floating
-          #         rail: true
-          #         default_open: false
-          #         enabled: true
-          #         order: 30
+          ui:
+            scene:
+              components:
+                connection_hub:
+                  bundle_id: connection-hub@1-0
+                  widget_alias: connections_settings
+                  title: Connection Hub
+                  accent: purple
+                  gated: true
+                  views: false
+                  params:
+                    tab: delegated_by_kdcube
+                  size: { w: 880, h: 720 }
+                  full: { w: 1120, h: 820 }
+                  target_surfaces:
+                    - connection_hub.connections
+                    - connection_hub.settings
+                  placement: floating
+                  rail: true
+                  default_open: false
+                  enabled: true
+                  order: 30
           agents:
             lg-solution:
               # Answer-model OUTPUT budget (max output tokens per model call) — a
@@ -1192,6 +1197,10 @@ bundles:
               # mid-arguments and the agent loops on tool validation errors.
               model:
                 max_tokens: 16384
+              # Agent-admin customization — appended LAST in lg-react's system
+              # prompt inside the SDK's admin-customization HARD-OVERRIDE
+              # envelope (same convention ReAct agents honor). Empty = no block.
+              additional_instructions: ''
               capability_provider: simple_model_pick
               capabilities:
                 models:
@@ -1234,10 +1243,12 @@ bundles:
                 #   transport: streamable_http
                 #   delegated: true
                 #   scopes: [memories:read]
-                # The named-services bridge (Slack on the user's connected account):
+                # PER-SERVICE SHAPE — the named-services bridge for ONE service
+                # (Slack on the user's connected account), scoped to its claims:
                 # the per-agent grant admits the agent into the KDCube namespace
                 # boundary; the user's own connected-account Slack consent (Delegated
-                # to KDCube) is checked at every call — revoking either stops the tool.
+                # to KDCube) is checked at every call — revoking either stops the
+                # tool. Each service gets its OWN consent and its OWN picker toggle.
                 # - name: slack
                 #   kind: mcp
                 #   server_id: slack
@@ -1247,6 +1258,30 @@ bundles:
                 #   transport: streamable_http
                 #   delegated: true
                 #   scopes: [named_services:use, slack:read, slack:write]
+                # WHOLE-SURFACE SHAPE — one delegated connection to the SAME door
+                # serves ALL namespaces the grant's scopes allow: one consent, one
+                # picker toggle; per-namespace control lives in `scopes`, and
+                # `named_services_list` is the runtime source of truth. The
+                # companion `kind: named_service` roster entry binds NO tools —
+                # it declares the consumed namespaces so the system prompt gets
+                # the namespace roster (+ the conversation-recovery block when
+                # `conv` is declared). Trade-offs:
+                # docs/agents/lg-react-named-services-config.md (in the bundle).
+                # - name: named_services
+                #   kind: mcp
+                #   server_id: named_services
+                #   alias: named_services
+                #   url: "https://<PUBLIC_HOST>/api/integrations/bundles/<TENANT>/<PROJECT>/kdcube-services@1-0/public/mcp/named_services"
+                #   resource: "*/api/integrations/bundles/*/*/kdcube-services@1-0/public/mcp/named_services*"
+                #   transport: streamable_http
+                #   delegated: true
+                #   scopes: [named_services:use, slack:read, slack:write, conv:read]
+                # - name: named_services_roster
+                #   kind: named_service
+                #   alias: named_services
+                #   namespaces:
+                #     slack: { allowed: [provider.about, object.schema, object.search, object.action] }
+                #     conv:  { allowed: [provider.about, object.search, object.get] }
       ui:
         main_view:
           src_folder: ui/scene
@@ -1367,6 +1402,31 @@ bundles:
           - model: claude-haiku-4-5-20251001
             provider: anthropic
             label: Haiku 4.5
+          # Locally served models (provider: custom) route through the models
+          # gateway's custom endpoint (see the commented `services.llm.custom`
+          # block below). Uncomment both when the deployment runs a local
+          # server (e.g. Ollama) reachable from the gateway.
+          # - model: qwen3.6:35b
+          #   provider: custom
+          #   label: Qwen3.6 35B (local)
+          # - model: qwen3:8b
+          #   provider: custom
+          #   label: Qwen3 8B (local, fast)
+          # Users pick an instruction set per conversation alongside the model:
+          # `full` is the platform default body; `extra-lite` is the distilled
+          # set sized for serving-constrained local models (pairs with the
+          # provider: custom entries above).
+          instruction_profiles:
+            default: full
+            options:
+            - id: full
+              label: Full
+              description: The complete battle-proven instruction set.
+            - id: extra-lite
+              label: Extra Lite (local models)
+              description: Distilled instruction set sized for locally served models.
+              blocks:
+              - xlite:workspace_exec
           additional_instructions: '[KDCUBE DOC LINKS]
 
             Knowledge-base articles cite kdcube documentation sources with refs of the form
@@ -1398,6 +1458,18 @@ bundles:
           max_exec_workspace_delta_bytes: 50m
           max_workspace_bytes: 50m
           workspace_monitor_interval_s: 0.5
+      # Local model serving (pairs with the commented `provider: custom` picker
+      # entries above): the models gateway forwards custom-provider calls to
+      # this endpoint. `host.docker.internal` reaches the host's Ollama from
+      # the dockerized gateway; `num_ctx` caps the local context window. The
+      # api key, if the endpoint needs one, is the bundle secret
+      # `services.llm.custom.api_key`.
+      # services:
+      #   llm:
+      #     custom:
+      #       endpoint: http://host.docker.internal:11500/generate
+      #       model_name: qwen3.6:35b
+      #       num_ctx: 65536
       telemetry_sink:
         endpoint_url: https://<PUBLIC_HOST>/api/integrations/bundles/<TENANT>/<PROJECT>/kdcube.stats@2026-05-20-12-05/public/ingest
         auth_header: X-Telemetry-Token
