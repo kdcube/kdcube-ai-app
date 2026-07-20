@@ -1453,12 +1453,23 @@ bundles:
           # `full` is the platform default body; `extra-lite` is the distilled
           # set sized for serving-constrained local models (pairs with the
           # provider: custom entries above).
+          # A profile's `blocks` compose the instruction body in the order given.
+          # One unified vocabulary: `full` (the complete default set; monolithic),
+          # `lite:<profile>` / `xlite:<profile>` (a whole moderate/extra-lite
+          # profile in one token), single `REACT_LITE_*` / `REACT_XLITE_*` blocks,
+          # or literal text. A profile with no `blocks` uses the full default set.
+          # Profiles: core · workspace · workspace_exec · document · web · all_capabilities.
           instruction_profiles:
             default: full
             options:
             - id: full
               label: Full
               description: The complete battle-proven instruction set.
+            - id: lite
+              label: Lite (moderate)
+              description: Full-signal moderate set at ~40% of the full size.
+              blocks:
+              - lite:all_capabilities
             - id: extra-lite
               label: Extra Lite (local models)
               description: Distilled instruction set sized for locally served models.

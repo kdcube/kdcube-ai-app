@@ -488,6 +488,23 @@ def get_lite_instruction_block(name: str) -> str:
     return _BLOCKS[key].strip()
 
 
+def resolve_lite_item(item: str) -> str | None:
+    """Resolve one config item to moderate (lite) text, or None if not lite.
+
+    Mirrors ``resolve_extra_lite_item``: accepts block names (``REACT_LITE_*``)
+    and whole profiles as ``lite:<profile>`` (e.g. ``lite:workspace_exec``), so
+    a moderate profile can be named in one config token instead of listing every
+    block. The lite workspace block carries the git-mode text inline, so the
+    profile expansion needs no ``workspace_implementation`` argument.
+    """
+    text = str(item or "").strip()
+    if text in _BLOCKS:
+        return _BLOCKS[text].strip()
+    if text.lower().startswith("lite:"):
+        return default_lite_system_instruction(text.split(":", 1)[1])
+    return None
+
+
 def compose_lite_instruction_blocks(items: Iterable[str]) -> str:
     """Compose literal blocks and named lite blocks.
 

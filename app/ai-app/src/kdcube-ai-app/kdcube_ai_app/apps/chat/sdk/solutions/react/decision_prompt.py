@@ -38,11 +38,8 @@ from kdcube_ai_app.apps.chat.sdk.skills.instructions.shared_instructions import 
     REACT_PLANNING,
     REACT_SKILL_SELECTION_GUIDE,
 )
-from kdcube_ai_app.apps.chat.sdk.skills.instructions.shared_instructions_lite import (
-    compose_lite_instruction_blocks,
-)
-from kdcube_ai_app.apps.chat.sdk.skills.instructions.instructions_extra_lite import (
-    resolve_extra_lite_item,
+from kdcube_ai_app.apps.chat.sdk.solutions.agentic_instructions import (
+    compose_instruction_body,
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.react.layout import (
     build_tool_catalog,
@@ -111,23 +108,30 @@ You are the Decision module inside a ReAct loop.
 """.strip()
 
 
-def normalize_instruction_blocks(blocks: Optional[Iterable[str]]) -> str:
-    """Resolve named instruction blocks and join literal custom blocks.
+def normalize_instruction_blocks(
+    blocks: Optional[Iterable[str]],
+    *,
+    workspace_implementation: str = "custom",
+    module_label: str = "ReAct Action Module",
+) -> str:
+    """Resolve ReAct config instruction items into one body (order-preserving).
 
-    Names resolve from ``shared_instructions_lite.py`` (``REACT_LITE_*``) and
-    ``instructions_extra_lite.py`` (``REACT_XLITE_*`` blocks and
-    ``xlite:<profile>`` whole-profile refs); anything else is literal text.
+    Thin adapter over the agent-neutral
+    :func:`agentic_instructions.compose_instruction_body`: it injects the ReAct
+    default/full body as the ``full`` token's provider. The shared vocabulary is
+    ``full`` | ``lite:<profile>`` | ``xlite:<profile>`` | single
+    ``REACT_LITE_*``/``REACT_XLITE_*`` blocks | literal text. The runtime
+    protocol is always prepended and the tool/skill catalogs appended by the
+    decision agent; this composes only the body between them.
     """
-    if isinstance(blocks, str):
-        blocks = [blocks]
-    resolved: list[str] = []
-    for item in blocks or []:
-        text = str(item or "").strip()
-        if not text:
-            continue
-        xlite = resolve_extra_lite_item(text)
-        resolved.append(xlite if xlite is not None else text)
-    return compose_lite_instruction_blocks(resolved)
+    return compose_instruction_body(
+        blocks,
+        workspace_implementation=workspace_implementation,
+        full_body_provider=lambda: build_default_decision_instruction_body(
+            module_label=module_label,
+            workspace_implementation=workspace_implementation,
+        ),
+    )
 
 
 def build_decision_instruction_body(
@@ -148,7 +152,11 @@ def build_decision_instruction_body(
     body = str(instruction_body or "").strip()
     if body:
         return body
-    block_body = normalize_instruction_blocks(instruction_blocks)
+    block_body = normalize_instruction_blocks(
+        instruction_blocks,
+        workspace_implementation=workspace_implementation,
+        module_label=module_label,
+    )
     if block_body:
         return block_body
     return build_default_decision_instruction_body(

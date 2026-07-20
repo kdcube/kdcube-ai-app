@@ -293,17 +293,25 @@ def get_extra_lite_instruction_block(name: str) -> str:
     return _BLOCKS[key].strip()
 
 
-def resolve_extra_lite_item(item: str) -> str | None:
+def resolve_extra_lite_item(
+    item: str,
+    *,
+    workspace_implementation: str = "custom",
+) -> str | None:
     """Resolve one config item to extra-lite text, or None if not extra-lite.
 
     Accepts block names (``REACT_XLITE_*``) and whole profiles as
-    ``xlite:<profile>`` (e.g. ``xlite:workspace_exec``).
+    ``xlite:<profile>`` (e.g. ``xlite:workspace_exec``). ``workspace_implementation``
+    is passed to the profile expansion so ``xlite:<profile>`` honors git mode.
     """
     text = str(item or "").strip()
     if text in _BLOCKS:
         return _BLOCKS[text].strip()
     if text.lower().startswith("xlite:"):
-        return default_extra_lite_system_instruction(text.split(":", 1)[1])
+        return default_extra_lite_system_instruction(
+            text.split(":", 1)[1],
+            workspace_implementation=workspace_implementation,
+        )
     return None
 
 
