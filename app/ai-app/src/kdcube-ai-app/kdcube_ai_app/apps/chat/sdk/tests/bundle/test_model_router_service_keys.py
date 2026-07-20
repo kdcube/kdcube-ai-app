@@ -29,6 +29,7 @@ from kdcube_ai_app.infra.service_hub import inventory
 @pytest.mark.asyncio
 async def test_config_request_secret_resolution_prefers_bundle_secret(monkeypatch):
     calls = []
+    inventory._CONFIG_SECRET_CACHE.clear()
 
     async def fake_get_secret(key, default=None, **kwargs):
         calls.append((key, kwargs))
@@ -51,6 +52,71 @@ async def test_config_request_secret_resolution_prefers_bundle_secret(monkeypatc
     assert ("b:services.google.api_key", {"bundle_id": "bundle@1"}) not in calls
 
 
+@pytest.mark.asyncio
+async def test_config_request_secret_resolution_skips_unused_role_providers(monkeypatch):
+    calls = []
+    inventory._CONFIG_SECRET_CACHE.clear()
+
+    async def fake_get_secret(key, default=None, **kwargs):
+        calls.append((key, kwargs))
+        if key == "b:services.openai.api_key" and kwargs.get("bundle_id") == "bundle@1":
+            return "sk-bundle-openai"
+        if key == "services.anthropic.api_key":
+            return "sk-global-anthropic"
+        return default
+
+    monkeypatch.setattr(inventory, "get_secret", fake_get_secret)
+    monkeypatch.setattr(inventory, "get_settings", lambda: _settings(DEFAULT_EMBEDDER="openai-text-embedding-3-small"))
+
+    resolved = await inventory.resolve_config_request_secrets(
+        inventory.ConfigRequest(
+            role_models={
+                "quick.router": {"provider": "anthropic", "model": "claude-haiku"},
+            },
+        ),
+        bundle_id="bundle@1",
+    )
+
+    assert resolved.openai_api_key == "sk-bundle-openai"
+    assert resolved.claude_api_key == "sk-global-anthropic"
+    assert resolved.google_api_key is None
+    assert resolved.huggingface_api_key is None
+    assert resolved.openrouter_api_key is None
+    assert ("b:services.google.api_key", {"bundle_id": "bundle@1"}) not in calls
+    assert ("services.google.api_key", {}) not in calls
+    assert ("b:services.huggingface.api_key", {"bundle_id": "bundle@1"}) not in calls
+    assert ("services.huggingface.api_key", {}) not in calls
+    assert ("b:services.openrouter.api_key", {"bundle_id": "bundle@1"}) not in calls
+    assert ("services.openrouter.api_key", {}) not in calls
+
+
+@pytest.mark.asyncio
+async def test_config_request_secret_resolution_caches_missing_values(monkeypatch):
+    calls = []
+    inventory._CONFIG_SECRET_CACHE.clear()
+
+    async def fake_get_secret(key, default=None, **kwargs):
+        calls.append((key, kwargs))
+        return default
+
+    monkeypatch.setattr(inventory, "get_secret", fake_get_secret)
+    monkeypatch.setattr(inventory, "get_settings", lambda: _settings(DEFAULT_EMBEDDER="openai-text-embedding-3-small"))
+    monkeypatch.setenv("KDCUBE_CONFIG_SECRET_CACHE_TTL_SECONDS", "300")
+
+    req = inventory.ConfigRequest(
+        role_models={
+            "quick.router": {"provider": "anthropic", "model": "claude-haiku"},
+        },
+    )
+    await inventory.resolve_config_request_secrets(req, bundle_id="bundle@1")
+    await inventory.resolve_config_request_secrets(req, bundle_id="bundle@1")
+
+    assert calls.count(("b:services.openai.api_key", {"bundle_id": "bundle@1"})) == 1
+    assert calls.count(("services.openai.api_key", {})) == 1
+    assert calls.count(("b:services.anthropic.api_key", {"bundle_id": "bundle@1"})) == 1
+    assert calls.count(("services.anthropic.api_key", {})) == 1
+
+
 # ---------------------------------------------------------------------------
 # Fixture: minimal Config that avoids get_settings() calls
 # ---------------------------------------------------------------------------
@@ -67,8 +133,54 @@ def _make_config(*, openai_api_key="", claude_api_key="", google_api_key=""):
     cfg.custom_model_api_key = None
     cfg.role_models = {}
     cfg.default_llm_model = {"provider": "anthropic", "model_name": "claude-sonnet-static"}
+    cfg.format_fixer_provider = "anthropic"
     cfg.format_fixer_model = "claude-haiku-static"
     return cfg
+
+
+def test_format_fixer_role_uses_configured_provider_model():
+    cfg = _make_config()
+    cfg.format_fixer_provider = "openai"
+    cfg.format_fixer_model = "gpt-router-fixer"
+
+    role_map = cfg.default_role_map()
+
+    assert role_map["format_fixer"] == {"provider": "openai", "model": "gpt-router-fixer"}
+
+
+def test_format_fixer_defaults_to_active_default_llm_not_dead_id(monkeypatch):
+    # Building a real Config with no format-fixer env/config must resolve the
+    # fixer to the active default LLM, never the retired
+    # "claude-3-haiku-20240307" literal that the old code hardcoded.
+    for var in (
+        "KDCUBE_FORMAT_FIXER_PROVIDER", "FORMAT_FIXER_PROVIDER",
+        "KDCUBE_FORMAT_FIXER_MODEL", "FORMAT_FIXER_MODEL",
+    ):
+        monkeypatch.delenv(var, raising=False)
+
+    cfg = inventory.Config(default_llm_model="o3-mini")
+
+    assert cfg.format_fixer_provider == cfg.default_llm_model["provider"] == "openai"
+    assert cfg.format_fixer_model == cfg.default_llm_model["model_name"] == "o3-mini"
+    assert cfg.format_fixer_model != "claude-3-haiku-20240307"
+
+    # And the role map / lazy ensure use the same resolved pair.
+    assert cfg.default_role_map()["format_fixer"] == {"provider": "openai", "model": "o3-mini"}
+    assert cfg.ensure_role("format_fixer") == {"provider": "openai", "model": "o3-mini"}
+
+
+def test_format_fixer_env_override_wins(monkeypatch):
+    monkeypatch.delenv("FORMAT_FIXER_PROVIDER", raising=False)
+    monkeypatch.delenv("FORMAT_FIXER_MODEL", raising=False)
+    monkeypatch.setenv("KDCUBE_FORMAT_FIXER_PROVIDER", "anthropic")
+    monkeypatch.setenv("KDCUBE_FORMAT_FIXER_MODEL", "claude-3-5-haiku-20241022")
+
+    cfg = inventory.Config(default_llm_model="o3-mini")
+
+    # Env override wins over the active default LLM (o3-mini/openai).
+    assert cfg.format_fixer_provider == "anthropic"
+    assert cfg.format_fixer_model == "claude-3-5-haiku-20241022"
+    assert cfg.default_role_map()["format_fixer"] == {"provider": "anthropic", "model": "claude-3-5-haiku-20241022"}
 
 
 # ---------------------------------------------------------------------------
