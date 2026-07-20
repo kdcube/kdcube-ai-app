@@ -20,6 +20,17 @@ except ImportError:
     async_playwright = None
     Browser = None
 
+def _doc_rendering_disabled() -> bool:
+    """Return True when document rendering is hard-disabled via env.
+
+    Honors KDCUBE_DISABLE_DOC_RENDERING. Default (unset / falsy) leaves
+    rendering ENABLED so upstream behavior is unchanged. Truthy values
+    ("1", "true", "yes", "on", case-insensitive) gate the browser off.
+    """
+    val = os.getenv("KDCUBE_DISABLE_DOC_RENDERING", "")
+    return val.strip().lower() in ("1", "true", "yes", "on")
+
+
 def _looks_like_missing_browser_error(exc: Exception) -> bool:
     text = str(exc).lower()
     return (
@@ -110,6 +121,17 @@ class SharedBrowserService:
 
     async def start(self):
         """Launch Playwright + Chromium once."""
+        # Optional hard gate for slim/render-less deployments. When
+        # KDCUBE_DISABLE_DOC_RENDERING is truthy, refuse to launch (or
+        # auto-download) a browser and fail loudly instead. Default is OFF, so
+        # rendering stays enabled and behavior is unchanged.
+        if _doc_rendering_disabled():
+            raise RuntimeError(
+                "Document rendering is disabled in this deployment "
+                "(KDCUBE_DISABLE_DOC_RENDERING is set). SharedBrowserService will "
+                "not launch Chromium. Unset KDCUBE_DISABLE_DOC_RENDERING (and build "
+                "with --build-arg INSTALL_CHROMIUM=1) to enable document rendering."
+            )
         if not os.getenv("PLAYWRIGHT_BROWSERS_PATH") and Path("/opt/ms-playwright").exists():
             os.environ["PLAYWRIGHT_BROWSERS_PATH"] = "/opt/ms-playwright"
 
