@@ -82,7 +82,7 @@ Use this order.
    | Link | Meaning |
    | --- | --- |
    | `repo:kdcube-ai-app/...` | Path relative to the KDCube platform repo checkout. |
-   | `repo:applications/...` | Path relative to the applications/content repo checkout. |
+   | `repo:my-bundles/...` | Path relative to a configured bundle/content repo checkout. |
    | `repo:website/...` | Path relative to the website repo checkout. |
    | relative Markdown link | Resolve relative to the current doc file. |
 

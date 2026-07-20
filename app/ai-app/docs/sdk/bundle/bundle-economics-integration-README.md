@@ -190,9 +190,7 @@ for the actual agent work.
 | Memory named-service search | `kdcube_ai_app/apps/chat/sdk/solutions/chatbot/entrypoint_with_memory.py` and `context/memory/named_service.py` | `_memory_named_service_provider(... model_service=self.search_model_service(flow="memory.search"))` and provider `_search_embedding(...)` |
 | Canvas pin search | `kdcube_ai_app/apps/chat/sdk/solutions/canvas/search/service.py` | `CanvasPinSearch._model_service()` resolving `entrypoint.search_model_service(flow=self.flow)` |
 | Generic hybrid index | `kdcube_ai_app/infra/index/sqlite/hybrid_index.py` | `_embed_query(...)` calling `model_service.embed_search_query(...)` and skipping semantic ranking when it returns `None` |
-| Enforcement core + search guard | `kdcube_ai_app/apps/chat/sdk/infra/economics/enforcement.py` and `infra/economics/search_guard.py` | the central enforcement state machine, and the `embed_search_query(...)` guard wrapper that reserves/settles per query and returns `None` on denial |
-| Task tracker issue search | private applications repo, task tracker `issues/service.py` | `_embed_search(...)` calling `model_service.embed_search_query(..., flow="task_tracker.issue.search")`; attachment search logs metadata-only execution |
-| Task execution economics | `kdcube_ai_app/apps/chat/sdk/solutions/tasks/operations.py` | `_task_verify_economics(...)` before execution and later ReAct work through the economics entrypoint |
+| Enforcement core + search guard | `kdcube_ai_app/apps/chat/sdk/infra/economics/enforcement.py` and `infra/economics/search_guard.py` | the central enforcement state machine, and the `embed_search_query(...)` guard wrapper that reserves/settles per query and returns `None` on denial || Task execution economics | `kdcube_ai_app/apps/chat/sdk/solutions/tasks/operations.py` | `_task_verify_economics(...)` before execution and later ReAct work through the economics entrypoint |
 
 ## Logs And Verification
 

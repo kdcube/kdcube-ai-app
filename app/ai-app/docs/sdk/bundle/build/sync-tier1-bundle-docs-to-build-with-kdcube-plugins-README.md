@@ -62,8 +62,8 @@ absolute paths:
 
 - KDCube platform docs live under `repo:kdcube-ai-app/app/ai-app/docs/...`.
 - `repo:kdcube-ai-app/...` resolves to the local KDCube platform repository.
-- `repo:applications/...` resolves to the local applications/content
-  repository.
+- `repo:my-bundles/...` resolves to a local bundle/content
+  repository the operator configures.
 - `repo:website/...` resolves to the local website repository.
 
 If the plugin cannot resolve a repo alias, it should infer the checkout from

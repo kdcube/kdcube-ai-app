@@ -205,6 +205,38 @@ kdcube init --tenant acme --project staging \
   --build
 ```
 
+### Authentication
+
+The default identity is bundle-session (application-hosted login). Select a
+different method with `--auth-type {simple,cognito,delegated,bundle}`:
+
+```bash
+# Application-hosted (Google) login
+kdcube init --tenant acme --project staging \
+  --auth-type bundle \
+  --client-id "<google-web-oauth-client-id>" \
+  --bootstrap-admin-email admin@example.com
+
+# Cognito
+kdcube init --tenant acme --project staging \
+  --auth-type cognito \
+  --cognito-region eu-west-1 \
+  --cognito-user-pool-id <pool-id> \
+  --cognito-app-client-id <app-client-id>
+```
+
+To change the method on an already-initialized runtime, use `kdcube config apply`
+with the same flags; `--dry-run` shows the descriptor diff, `--restart` applies it:
+
+```bash
+kdcube config apply --tenant acme --project staging \
+  --auth-type cognito --cognito-region eu-west-1 \
+  --cognito-user-pool-id <pool-id> --cognito-app-client-id <app-client-id> \
+  --dry-run
+```
+
+See [Authentication modes](additional_README.md#authentication-modes) for per-mode fields.
+
 ### Typical day-to-day flow
 
 Pass `--tenant` / `--project` (or set them with `kdcube defaults`) to point
@@ -412,6 +444,7 @@ kdcube defaults \
 | `kdcube bundle reload <bundle_id> [--json] [--quiet]` | Reapply bundle config and clear proc caches — no full restart needed |
 | `kdcube bundle <bundle_id>` | Create, update, or delete a staged bundle entry |
 | `kdcube bundle config apply --descriptors-location <dir> [--dry-run] [--reload]` | User/operator flow to reapply seed `bundles.yaml` / `bundles.secrets.yaml` to an existing runtime — no platform refresh |
+| `kdcube config apply --auth-type <mode> [mode flags] [-i] [--dry-run] [--restart]` | Reconfigure the platform authentication of an initialized runtime; reconciles descriptors to the target mode and preserves unrelated config. `--dry-run` shows the diff without writing |
 | `kdcube config export --out-dir <dir> [--include-platform-descriptors]` | Export live local runtime descriptors for review/reuse |
 | `kdcube config export --tenant <t> --project <p> --aws-region <r> --out-dir <dir>` | Export deployment-scoped bundle descriptors from AWS Secrets Manager |
 | `kdcube config import --descriptors-location <dir> [--include-platform-descriptors] [--dry-run] [--reload]` | Import reviewed runtime descriptors into an existing local runtime |

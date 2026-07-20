@@ -158,7 +158,7 @@ Use this shape unless the bundle repo already has a stricter local format:
 
 ```yaml
 bundle:
-  repo: "https://github.com/org/applications.git"
+  repo: "https://github.com/your-org/your-bundles.git"
   ref: "2026.5.2.1643"
   description: |
     Release for my.bundle@1-0.
@@ -297,7 +297,7 @@ consume the new release:
 bundles:
   items:
     - id: "my.bundle@1-0"
-      repo: "https://github.com/org/applications.git"
+      repo: "https://github.com/your-org/your-bundles.git"
       ref: "2026.5.2.1643"
       subdir: "src"
       module: "my.bundle@1-0.entrypoint"

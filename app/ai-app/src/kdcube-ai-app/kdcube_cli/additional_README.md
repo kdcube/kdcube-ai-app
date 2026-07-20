@@ -379,6 +379,20 @@ cors:
     - "https://<stable-ngrok-domain>"
 ```
 
+Configuring the Telegram companion (interactive, `--enable-telegram --external-https-url <url>`,
+or the `KDCUBE_ENABLE_TELEGRAM` / `KDCUBE_TELEGRAM_EXTERNAL_HTTPS_URL` env vars) also appends the
+external URL's origin to `cors.allow_origins`. The Mini App is served from that origin, and its
+cross-origin WebSocket (the Connection Hub account-link flow) requires the origin to be allow-listed.
+
+The bot token has no flag (it is a secret) and is read from the `KDCUBE_TELEGRAM_BOT_TOKEN`
+env var. Non-interactive setup requires it to be set; interactive setup prompts for it. Example:
+
+```bash
+KDCUBE_TELEGRAM_BOT_TOKEN="<bot-token>" \
+kdcube init --tenant <t> --project <p> \
+  --enable-telegram --external-https-url https://<stable-ngrok-domain>
+```
+
 For bundle integrations, configure public URLs in `bundles.yaml` or in the
 staged bundle config under the runtime workdir. Telegram webhooks and any OAuth
 integration with redirect/public-base URLs follow this pattern. Example:
@@ -546,13 +560,14 @@ what is incomplete.
 
 | Subcommand | Purpose |
 |---|---|
-| `kdcube init [--workdir <full-path> \| --workdir-base <base> --tenant T --project P] [--path <repo>] [--descriptors-location <dir>] [--latest\|--upstream\|--release <ref>] [--build] [-i] [--reset-config] [--prompt-secrets] [--set-secret KEY VALUE]... [--cors-origin ORIGIN]...` | **First-time setup only.** Initialize a fresh runtime workdir (stage descriptors, generate env files). Pick one of `--workdir <full-path>` (the trailing segment must be `<tenant>__<project>`) or `--workdir-base <base> --tenant T --project P` (the CLI composes the namespaced path). Refuses if the resolved workdir is already initialized — use `kdcube refresh` for that case. Explicit `--path` stages that local source tree unless a version selector is used. With `--build`, also build images **without** starting containers. `--cors-origin` appends an allowed origin to staged `config/assembly.yaml`. |
+| `kdcube init [--workdir <full-path> \| --workdir-base <base> --tenant T --project P] [--path <repo>] [--descriptors-location <dir>] [--latest\|--upstream\|--release <ref>] [--build] [-i] [--reset-config] [--prompt-secrets] [--set-secret KEY VALUE]... [--cors-origin ORIGIN]... [--auth-type {simple,cognito,delegated,bundle}] [--provider google] [--client-id <id>] [--bootstrap-admin-email <email>] [--cognito-region <r>] [--cognito-user-pool-id <id>] [--cognito-app-client-id <id>] [--cognito-service-client-id <id>] [--enable-telegram --external-https-url <url>]` | **First-time setup only.** Initialize a fresh runtime workdir (stage descriptors, generate env files). Pick one of `--workdir <full-path>` (the trailing segment must be `<tenant>__<project>`) or `--workdir-base <base> --tenant T --project P` (the CLI composes the namespaced path). Refuses if the resolved workdir is already initialized — use `kdcube refresh` for that case. Explicit `--path` stages that local source tree unless a version selector is used. With `--build`, also build images **without** starting containers. `--cors-origin` appends an allowed origin to staged `config/assembly.yaml`. `--auth-type` selects the platform authentication method (see [Authentication modes](#authentication-modes)); `--provider`/`--client-id`/`--bootstrap-admin-email` fill the bundle (application-hosted) login; `--cognito-*` fill the Cognito/delegated fields; `--enable-telegram` with `--external-https-url` configures the Telegram companion (the bot token is read from the `KDCUBE_TELEGRAM_BOT_TOKEN` env var). |
 | `kdcube refresh [--workdir <full-path>] [--path <repo>] [--latest\|--upstream\|--release <ref>] [--build] [--no-restart]` | Re-init an already-initialized runtime: stop the stack, optionally select a platform ref, restage explicit local `--path` into `<workdir>/repo`, rebuild platform Docker images when `--build` is given, restart the stack (unless `--no-restart`). **Never** modifies staged descriptors (`assembly.yaml`, `secrets.yaml`, `bundles.yaml`, `bundles.secrets.yaml`, `gateway.yaml`). Refuses if the workdir is not initialized. |
 | `kdcube start [--workdir <path>] [--build]` | Start the Docker Compose stack for an already-initialized workdir. `--build` is a convenience rebuild before start, not required if `init --build` was already run; for a structured re-init after platform changes, prefer `kdcube refresh --build`. |
 | `kdcube stop [--workdir <path>] [--remove-volumes]` | Stop the local Docker Compose stack. |
 | `kdcube bundle reload <bundle_id> [--workdir <path>] [--json] [--quiet] [--verbose]` | Reapply `bundles.yaml` from the active runtime and clear proc bundle caches. Normal output is concise; `--json` is scriptable; `--verbose` shows the raw Docker Compose command and proc response. |
 | `kdcube reload <bundle_id> [--workdir <path>] [--json] [--quiet] [--verbose]` | Compatibility alias for bundle reload. |
 | `kdcube bundle config apply [--workdir <path>] [--tenant <id>] [--project <id>] --descriptors-location <dir> [--dry-run] [--reload]` | User/operator descriptor-sync flow. Reapply seed `bundles.yaml` and optional `bundles.secrets.yaml` to an existing runtime; with `--reload`, reload changed declared bundle ids. Does not touch platform descriptors, rebuild images, or restart Docker. |
+| `kdcube config apply [--workdir <path>] [--tenant <id>] [--project <id>] --auth-type {simple,cognito,delegated,bundle} [--provider google] [--client-id <id>] [--bootstrap-admin-email <email>] [--cognito-region <r>] [--cognito-user-pool-id <id>] [--cognito-app-client-id <id>] [--cognito-service-client-id <id>] [-i] [--dry-run] [--restart]` | Reconfigure the platform authentication of an initialized runtime. Reconciles the descriptors to `--auth-type`, removing the previous method's platform login artifacts and preserving unrelated configuration (including the Telegram companion). Bundle fields come from `--provider`/`--client-id`/`--bootstrap-admin-email`; Cognito/delegated fields from the `--cognito-*` flags. `-i` prompts for fields not passed as flags. `--dry-run` prints a per-descriptor semantic diff and writes nothing. Without `--restart`, descriptors are updated and `kdcube refresh` (or a later `--restart`) applies them to the running stack. |
 | `kdcube config export [--workdir <path>] [--tenant <id>] [--project <id>] --out-dir <dir> [--include-platform-descriptors]` | Export live local runtime descriptors. By default exports `bundles.yaml` and `bundles.secrets.yaml`; with `--include-platform-descriptors`, also exports `assembly.yaml`, `secrets.yaml`, and `gateway.yaml`. |
 | `kdcube config import [--workdir <path>] [--tenant <id>] [--project <id>] --descriptors-location <dir> [--include-platform-descriptors] [--dry-run] [--reload]` | Import reviewed descriptors into an existing local runtime. Bundle descriptors are path-normalized; with `--include-platform-descriptors`, platform descriptors are overwritten exactly and runtime env/config files are regenerated. |
 | `kdcube export [--workdir <path>] [--tenant <id>] [--project <id>] [--out-dir <dir>] [--aws-region <region>]` | Export effective live `bundles.yaml` and `bundles.secrets.yaml`. Local export normalizes runtime paths back to reusable descriptor paths. |
@@ -738,6 +753,12 @@ When you run `kdcube`, the **wizard** performs the steps below:
 ### Authentication modes
 The wizard prompts for an auth mode and updates both backend and frontend config.
 
+Pass `--auth-type {simple,cognito,delegated,bundle}` to select the mode without a
+prompt. The interactive picker lists `simple`, `cognito`, and `bundle`, with `bundle`
+preselected; `delegated` is listed only when it is already the configured mode, and is
+otherwise selected with `--auth-type delegated`. The per-mode input flags below apply to
+both `kdcube init` and `kdcube config apply`.
+
 **Simple (hardcoded)**
 - `AUTH_PROVIDER=simple`
 - Frontend config: `frontend.config.hardcoded.json`
@@ -746,7 +767,7 @@ The wizard prompts for an auth mode and updates both backend and frontend config
 **Cognito**
 - `AUTH_PROVIDER=cognito`
 - Frontend config: `frontend.config.cognito.json`
-- Required fields:
+- Required fields (flags `--cognito-region`, `--cognito-user-pool-id`, `--cognito-app-client-id`, `--cognito-service-client-id`, or the matching env vars / descriptor):
   - `COGNITO_REGION`
   - `COGNITO_USER_POOL_ID`
   - `COGNITO_APP_CLIENT_ID`
@@ -762,13 +783,25 @@ The wizard prompts for an auth mode and updates both backend and frontend config
   - `auth.totpAppName`
   - `auth.totpIssuer`
 
-**Bundle session**
+**Bundle session** (application-hosted login)
 - `AUTH_PROVIDER=session`
 - Frontend config auth type: `bundle`
+- Input flags: `--provider google` (currently the only supported provider),
+  `--client-id <google-web-oauth-client-id>`, `--bootstrap-admin-email <email>`
+  (verified Google email granted `super-admin` on first login).
 - A bundle/front shell validates an external identity, calls the platform bundle
   session authority, and sets the descriptor-configured platform cookies.
 - Requires `services.session_token.secret` in `secrets.yaml`; the CLI generates
   it when missing during init/refresh.
+
+**Reconfiguring an initialized runtime**
+
+`kdcube config apply --auth-type <mode> [mode flags] [--dry-run] [--restart]` changes the
+auth mode of an existing runtime. It reconciles the descriptors to the target mode:
+the previous mode's platform login provider, its upstream authority, admin bootstrap
+rule, and consent UI are removed, and unrelated configuration (bundles, connectors, the
+Telegram companion) is preserved. `--dry-run` prints the descriptor diff without writing.
+Without `--restart`, run `kdcube refresh` afterward to apply the change to the running stack.
 
 ### Routes prefix & nginx proxy
 The frontend config includes `routesPrefix` (default: `/chatbot`).
