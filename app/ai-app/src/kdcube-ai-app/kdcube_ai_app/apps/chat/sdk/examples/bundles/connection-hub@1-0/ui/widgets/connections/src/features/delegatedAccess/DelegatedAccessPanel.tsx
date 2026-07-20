@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAppDispatch, useAppSelector } from '../../app/hooks';
 import { PaneGroup } from '../../components/Pane';
 import { subscribeConnectionHubEvents } from '../../api/dataBus';
@@ -54,7 +54,15 @@ function parseAgentClientId(clientId: string): { agent: string; app: string } | 
   return { agent: parts.slice(2).join(':'), app };
 }
 
-type PendingAgentGrant = { clientId: string; resource: string; claims: string[] };
+type PendingAgentGrant = {
+  clientId: string;
+  resource: string;
+  claims: string[];
+  // A per-account ask (the account can do it, this agent is not bound): the
+  // exact account + claim to tick, so the card names it and pre-checks it.
+  accountId?: string;
+  accountClaim?: string;
+};
 
 function pendingAgentGrantFromParams(get: (key: string) => string): PendingAgentGrant | null {
   if (get('pending_agent_grant') !== '1') return null;
@@ -62,7 +70,9 @@ function pendingAgentGrantFromParams(get: (key: string) => string): PendingAgent
   const resource = get('resource').trim();
   if (!clientId || !resource) return null;
   const claims = get('claims').split(',').map((item) => item.trim()).filter(Boolean);
-  return { clientId, resource, claims };
+  const accountId = get('account_id').trim();
+  const accountClaim = get('account_claim').trim();
+  return { clientId, resource, claims, accountId: accountId || undefined, accountClaim: accountClaim || undefined };
 }
 
 /** The pending per-agent grant a chat consent card carries here — as the
@@ -258,9 +268,34 @@ export function DelegatedAccessPanel({ openParams }: { openParams?: Record<strin
     void dispatch(loadDelegatedAccess());
   };
 
+  // Revoke is destructive and easy to misclick, so it is a two-step inline
+  // confirm (our own .btn family, never a native browser dialog): the Revoke
+  // button arms a "Revoke? Confirm / Cancel" row on the same spot.
+  const [confirmRevokeId, setConfirmRevokeId] = useState<string | null>(null);
   const revoke = async (accessId: string) => {
+    setConfirmRevokeId(null);
     await dispatch(revokeDelegatedAccess({ accessId })).unwrap().catch(() => undefined);
     void dispatch(loadDelegatedAccess());
+  };
+  const renderRevokeControl = (accessId: string) => {
+    if (confirmRevokeId === accessId) {
+      return (
+        <span className="revoke-confirm">
+          <span className="revoke-confirm__q">Revoke?</span>
+          <button className="btn btn-danger" type="button" disabled={busy} onClick={() => revoke(accessId)}>
+            Confirm
+          </button>
+          <button className="btn btn-ghost" type="button" disabled={busy} onClick={() => setConfirmRevokeId(null)}>
+            Cancel
+          </button>
+        </span>
+      );
+    }
+    return (
+      <button className="btn btn-danger" type="button" disabled={busy} onClick={() => setConfirmRevokeId(accessId)}>
+        Revoke
+      </button>
+    );
   };
 
   const pendingCheckedClaims = pendingGrant
@@ -280,6 +315,14 @@ export function DelegatedAccessPanel({ openParams }: { openParams?: Record<strin
       const current = merged[resource] || [];
       merged[resource] = [...current, ...grants.filter((grant) => !current.includes(grant))];
     });
+    // A per-account-only change (the deep link from a binding miss: the door
+    // claim is already granted, the user only ticked a per-account permission)
+    // has no new door claim to send. Still emit the resource carrying its
+    // EXISTING claims so the account binding persists rather than being dropped.
+    if (Object.keys(pendingAccountScope).length && !merged[pendingGrant.resource]) {
+      const existing = items.find((record) => (record.client_id || '') === pendingGrant.clientId);
+      merged[pendingGrant.resource] = [...((existing?.resource_grants || {})[pendingGrant.resource] || [])];
+    }
     let first = true;
     for (const [resource, claims] of Object.entries(merged)) {
       await dispatch(grantAgentAccess({
@@ -306,24 +349,7 @@ export function DelegatedAccessPanel({ openParams }: { openParams?: Record<strin
     });
     setEditingAccessId(item.access_id);
     setEditPicks(picks);
-    // Seed the per-account claim binding from the record. An account "*" (any
-    // account) stays unbound in the editor; a claim "*" (any claim) materializes
-    // into that account's own approved claims, all checked.
-    const scope: Record<string, Record<string, string[]>> = {};
-    Object.entries(item.account_scope || {}).forEach(([provider, accountsMap]) => {
-      const providerAccounts = providersWithAccounts.get(provider) || [];
-      const seeded: Record<string, string[]> = {};
-      Object.entries(accountsMap || {}).forEach(([accountId, claims]) => {
-        if (accountId === '*') return;
-        const supported = providerAccounts.find((a) => a.account_id === accountId)?.claims || [];
-        const list = (claims || []).includes('*')
-          ? [...supported]
-          : (claims || []).filter((claim) => supported.includes(claim));
-        if (list.length) seeded[accountId] = list;
-      });
-      if (Object.keys(seeded).length) scope[provider] = seeded;
-    });
-    setEditAccountScope(scope);
+    setEditAccountScope(seedAccountScopeFromRecord(item));
   };
   // Toggle one claim on one account for a provider. An account with no claims
   // drops out; a provider with no bound accounts drops out (=> any account).
@@ -352,6 +378,29 @@ export function DelegatedAccessPanel({ openParams }: { openParams?: Record<strin
     });
     return byProvider;
   }, [accounts]);
+  // Seed a per-account claim binding {provider:{account_id:[claims]}} from a
+  // stored grant record: skip account "*" (unbound), expand claim "*" to the
+  // account's own approved claims, and keep only claims the account still holds.
+  // Shared by the Edit flow AND the pending consent card, so a re-consent for a
+  // newly-demanded door claim shows the bindings already granted — not an empty
+  // picker.
+  const seedAccountScopeFromRecord = useCallback((item: DelegatedAccessRecord): Record<string, Record<string, string[]>> => {
+    const scope: Record<string, Record<string, string[]>> = {};
+    Object.entries(item.account_scope || {}).forEach(([provider, accountsMap]) => {
+      const providerAccounts = providersWithAccounts.get(provider) || [];
+      const seeded: Record<string, string[]> = {};
+      Object.entries(accountsMap || {}).forEach(([accountId, claims]) => {
+        if (accountId === '*') return;
+        const supported = providerAccounts.find((a) => a.account_id === accountId)?.claims || [];
+        const list = (claims || []).includes('*')
+          ? [...supported]
+          : (claims || []).filter((claim) => supported.includes(claim));
+        if (list.length) seeded[accountId] = list;
+      });
+      if (Object.keys(seeded).length) scope[provider] = seeded;
+    });
+    return scope;
+  }, [providersWithAccounts]);
   // Human label for one connected account (falls back to the id).
   const accountLabelById = useMemo(() => {
     const map = new Map<string, string>();
@@ -365,6 +414,23 @@ export function DelegatedAccessPanel({ openParams }: { openParams?: Record<strin
   // Per-account claim binding chosen while granting a PENDING request (consent card).
   const [pendingAccountScope, setPendingAccountScope] = useState<Record<string, Record<string, string[]>>>({});
   const togglePendingAccount = makeToggleAccountClaim(setPendingAccountScope);
+  // Seed the pending consent card's per-account picker ONCE (per client) from
+  // the agent's existing grant, after the account list + grant registry load.
+  // Without this, re-consent for a newly-demanded door claim (e.g. mail:send)
+  // renders every prior per-account binding unchecked. The ref guard seeds the
+  // stored state but never clobbers the user's in-progress ticks.
+  const seededPendingFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!pendingGrant) { seededPendingFor.current = null; return; }
+    if (seededPendingFor.current === pendingGrant.clientId) return;
+    if (!accounts.length || !items.length) return; // wait for the registry + accounts
+    const existing = items.find(
+      (record) => (record.client_id || '') === pendingGrant.clientId
+        && !!record.account_scope && Object.keys(record.account_scope).length > 0,
+    );
+    seededPendingFor.current = pendingGrant.clientId;
+    if (existing) setPendingAccountScope(seedAccountScopeFromRecord(existing));
+  }, [pendingGrant, items, accounts, seedAccountScopeFromRecord]);
 
   // The per-account permission picker: a disclosure per provider showing
   // "<n>/<m> accounts" (or "any account" when unbound) so a large account list
@@ -570,6 +636,9 @@ export function DelegatedAccessPanel({ openParams }: { openParams?: Record<strin
   const pendingResourceLabel = pendingGrant
     ? (resources.find((r) => r.resource === pendingGrant.resource)?.label || '')
     : '';
+  const pendingAccountLabel = pendingGrant?.accountId
+    ? (accountLabelById.get(pendingGrant.accountId) || pendingGrant.accountId)
+    : '';
   const pendingGrantPane = pendingGrant ? (
     <section className="card card-attention">
       <div className="card-head">
@@ -582,8 +651,15 @@ export function DelegatedAccessPanel({ openParams }: { openParams?: Record<strin
         ) : (
           <>The connected client <strong>{pendingGrant.clientId}</strong></>
         )} wants to
-        act on your behalf on <strong>{pendingResourceLabel || 'this resource'}</strong>. It is asking for:
+        act on your behalf on <strong>{pendingResourceLabel || 'this resource'}</strong>.{pendingGrant.claims.length ? ' It is asking for:' : ''}
       </p>
+      {pendingGrant.accountClaim ? (
+        <div className="notice" style={{ marginTop: 0, marginBottom: 12 }}>
+          This agent needs <code>{pendingGrant.accountClaim}</code> on{' '}
+          <strong>{pendingAccountLabel || 'the account below'}</strong>. Tick it under
+          that account below, then <strong>Grant access</strong>.
+        </div>
+      ) : null}
       <ul className="accounts">
         {pendingGrant.claims.map((claim) => {
           const option = grantOptionByName.get(claim);
@@ -624,14 +700,14 @@ export function DelegatedAccessPanel({ openParams }: { openParams?: Record<strin
           </div>
         </details>
       ) : null}
-      <div className="row">
+      <div className="row pending-actions">
         <button
           className="btn"
           type="button"
-          disabled={busy || (!pendingCheckedClaims.length && !selectedResourceEntries.length)}
+          disabled={busy || (!pendingCheckedClaims.length && !selectedResourceEntries.length && !Object.keys(pendingAccountScope).length)}
           onClick={grantPending}
         >
-          {pendingCheckedClaims.length < (pendingGrant.claims.length || 0) || selectedResourceEntries.length
+          {pendingCheckedClaims.length < (pendingGrant.claims.length || 0) || selectedResourceEntries.length || Object.keys(pendingAccountScope).length
             ? 'Grant selected access'
             : 'Grant access'}
         </button>
@@ -763,9 +839,7 @@ export function DelegatedAccessPanel({ openParams }: { openParams?: Record<strin
                               <button className="btn" type="button" disabled={busy} onClick={() => startEdit(item)}>
                                 Edit
                               </button>
-                              <button className="btn btn-danger" type="button" disabled={busy} onClick={() => revoke(item.access_id)}>
-                                Revoke
-                              </button>
+                              {renderRevokeControl(item.access_id)}
                             </>
                           )}
                         </div>
@@ -866,9 +940,7 @@ export function DelegatedAccessPanel({ openParams }: { openParams?: Record<strin
                           Edit
                         </button>
                       ) : null}
-                      <button className="btn btn-danger" type="button" disabled={busy} onClick={() => revoke(item.access_id)}>
-                        Revoke
-                      </button>
+                      {renderRevokeControl(item.access_id)}
                     </>
                   )}
                 </div>

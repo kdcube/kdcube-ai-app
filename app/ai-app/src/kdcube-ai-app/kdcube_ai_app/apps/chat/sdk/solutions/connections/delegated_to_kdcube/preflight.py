@@ -54,6 +54,8 @@ def _connection_hub_widget_url(
     claims: Iterable[str] = (),
     tool_name: str = "",
     account_id: str = "",
+    agent_client_id: str = "",
+    agent_resource: str = "",
 ) -> str:
     if not tenant or not project:
         return ""
@@ -71,6 +73,13 @@ def _connection_hub_widget_url(
         query["tool_name"] = tool_name
     if account_id:
         query["account_id"] = account_id
+    # When the connect step was reached because an AGENT needed a per-account
+    # claim, carry the agent identity so the connect panel can offer a "continue
+    # -> grant it to this agent" hand-off once the provider step is done.
+    if agent_client_id:
+        query["agent_client_id"] = agent_client_id
+    if agent_resource:
+        query["agent_resource"] = agent_resource
     path = (
         "/api/integrations/bundles/"
         f"{quote(tenant, safe='')}/{quote(project, safe='')}/"
@@ -222,6 +231,8 @@ def connected_account_consent_payload(
     project: str,
     connection_hub_bundle_id: str,
     missing: list[dict[str, Any]],
+    agent_client_id: str = "",
+    agent_resource: str = "",
 ) -> dict[str, Any]:
     failure = _first_failure(missing)
     tool_names = _clean_list(item.get("tool_name") for item in missing)
@@ -270,6 +281,8 @@ def connected_account_consent_payload(
         claims=claims,
         tool_name=tool_name,
         account_id=account_id,
+        agent_client_id=as_str(agent_client_id),
+        agent_resource=as_str(agent_resource),
     )
     message = (
         consent_action_message(

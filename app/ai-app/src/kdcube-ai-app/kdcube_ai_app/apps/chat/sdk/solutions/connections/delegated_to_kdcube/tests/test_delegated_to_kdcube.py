@@ -475,12 +475,15 @@ async def test_broker_restricts_to_the_agents_allowed_accounts(monkeypatch):
     )
     assert bound.ok is True and bound.account_id == "acct-2"
 
-    # An explicit account_id OUTSIDE the allowed set is refused.
+    # An explicit account_id the agent is NOT bound to, but which IS
+    # provider-capable (acct-1 has gmail:read), routes to the AGENT's grant card
+    # (agent_grant_required) — NOT a provider connect / choose-account flow.
     denied = await broker.ensure_claim(
         provider_id="google", claim="gmail:read",
         account_id="acct-1", account_claim_scope={"acct-2": ["*"]},
     )
-    assert denied.ok is False and denied.error == "account_required"
+    assert denied.ok is False and denied.error == "agent_grant_required"
+    assert [c["account_id"] for c in denied.candidates] == ["acct-1"]
 
     # "*" (or None) means any account -> unchanged ambiguity across both.
     any_account = await broker.ensure_claim(
@@ -522,11 +525,13 @@ async def test_broker_enforces_claims_per_account(monkeypatch):
     )
     assert send.ok is True and send.account_id == "acct-1"
 
-    # Sending explicitly via acct-2 is refused even though acct-2 itself can send.
+    # Sending explicitly via acct-2 is refused even though acct-2 itself can send:
+    # the account IS provider-capable, but THIS agent is bound read-only, so the
+    # fix is the agent's grant card (agent_grant_required), not a provider flow.
     send_acct2 = await broker.ensure_claim(
         provider_id="google", claim="gmail:send", account_id="acct-2", account_claim_scope=scope,
     )
-    assert send_acct2.ok is False and send_acct2.error == "account_required"
+    assert send_acct2.ok is False and send_acct2.error == "agent_grant_required"
 
     # Reading is allowed on both -> ambiguous across acct-1 and acct-2.
     read = await broker.ensure_claim(
@@ -534,6 +539,51 @@ async def test_broker_enforces_claims_per_account(monkeypatch):
     )
     assert read.ok is False and read.error == "account_required"
     assert [c["account_id"] for c in read.candidates] == ["acct-1", "acct-2"]
+
+
+@pytest.mark.asyncio
+async def test_agent_binding_miss_on_capable_account_routes_to_agent_grant(monkeypatch):
+    # The live regression: the connected account HAS gmail:send (the user
+    # approved it under Delegated to KDCube), but the AGENT's grant binds the
+    # account read-only. The send must route to the agent's grant card
+    # (agent_grant_required), never a provider connect/reconnect flow — which
+    # sent the user to the wrong menu and left "try again" failing forever.
+    _install_fake_storage(monkeypatch)
+    config = _sample_config()
+    store = DelegatedToKdcubeStore(user_id="user-1")
+    cred = credential_id_for("acct-send")
+    await store.upsert_account(
+        ConnectedAccount(
+            account_id="acct-send", provider_id="google", connector_app_id="gmail",
+            external_subject="sub", claims=("gmail:read", "gmail:send"),  # provider-capable
+            credential_id=cred,
+        )
+    )
+    await store.set_credential(cred, {"access_token": "t"})
+    broker = DelegatedToKdcubeBroker(config=config, store=store)
+    scope = {"acct-send": ["gmail:read"]}  # the agent is bound read-only
+
+    # Explicit target (the object_ref path a forward/send uses).
+    explicit = await broker.ensure_claim(
+        provider_id="google", claim="gmail:send", account_id="acct-send", account_claim_scope=scope,
+    )
+    assert explicit.ok is False
+    assert explicit.error == "agent_grant_required"
+    assert explicit.retry_hint is True
+    assert [c["account_id"] for c in explicit.candidates] == ["acct-send"]
+
+    # No explicit target — same routing, since the only capable account is
+    # unbound for send (never a connect/upgrade flow when the account can do it).
+    implicit = await broker.ensure_claim(
+        provider_id="google", claim="gmail:send", account_claim_scope=scope,
+    )
+    assert implicit.ok is False and implicit.error == "agent_grant_required"
+
+    # Read still resolves on the same account — the read binding is intact.
+    read = await broker.ensure_claim(
+        provider_id="google", claim="gmail:read", account_id="acct-send", account_claim_scope=scope,
+    )
+    assert read.ok is True and read.account_id == "acct-send"
 
 
 @pytest.mark.asyncio
@@ -601,12 +651,13 @@ async def test_client_wrapper_forwards_account_claim_scope(monkeypatch):
     )
     assert bound.ok is True and bound.account_id == "acct-2"
 
-    # An explicit account outside the allowed set is still refused through the facade.
+    # An explicit account outside the allowed set is still refused through the
+    # facade — and carries the agent-grant routing (acct-1 is provider-capable).
     denied = await client.ensure_claim(
         provider_id="google", claim="gmail:read",
         account_id="acct-1", account_claim_scope={"acct-2": ["*"]},
     )
-    assert denied.ok is False and denied.error == "account_required"
+    assert denied.ok is False and denied.error == "agent_grant_required"
 
 
 @pytest.mark.asyncio

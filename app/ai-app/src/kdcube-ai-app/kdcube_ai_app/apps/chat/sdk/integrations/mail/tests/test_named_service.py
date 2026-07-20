@@ -264,6 +264,31 @@ async def test_search_fans_out_to_readable_gmail_accounts():
 
 
 @pytest.mark.asyncio
+async def test_search_fan_out_respects_the_agent_account_binding():
+    # Parity with the send path: a read fan-out must be limited to the accounts
+    # THIS agent is bound to. Two readable accounts, but the agent is bound to
+    # acc-1 only -> acc-2 is never searched (it once was — a per-account leak).
+    from kdcube_ai_app.apps.chat.sdk.solutions.connections.agent_account_scope import (
+        clear_agent_account_scope,
+        set_agent_account_scope,
+    )
+
+    provider = _Provider([_account("acc-1", "gmail:read"), _account("acc-2", "gmail:read")])
+    set_agent_account_scope({"google": {"acc-1": ["gmail:read"]}})
+    try:
+        response = await provider.object_search(
+            _ctx(),
+            NamedServiceRequest(operation=OBJECT_SEARCH, namespace=MAIL_NAMESPACE, query="receipt", limit=5),
+        )
+    finally:
+        clear_agent_account_scope()
+
+    assert response.ok is True
+    assert [item["ref"] for item in response.ret["items"]] == ["mail:gmail:acc-1:message:msg-acc-1"]
+    assert [call[1]["account_id"] for call in provider._gmail.calls] == ["acc-1"]
+
+
+@pytest.mark.asyncio
 async def test_search_with_explicit_account_id_targets_only_that_account():
     provider = _Provider([_account("acc-1", "gmail:read"), _account("acc-2", "gmail:read")])
 

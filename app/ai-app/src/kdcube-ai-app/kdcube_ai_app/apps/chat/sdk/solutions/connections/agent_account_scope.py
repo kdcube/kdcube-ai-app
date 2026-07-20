@@ -27,6 +27,15 @@ _ACCOUNT_SCOPE: contextvars.ContextVar[dict] = contextvars.ContextVar(
     "kdcube_agent_account_scope", default={}
 )
 
+# The calling agent's delegated identity (client_id + delegated-resource id) for
+# the current turn. The connected-account resolver reads it to route a
+# per-account claim miss to THIS agent's grant card (Delegated by KDCube) instead
+# of a connect-a-provider banner. Set alongside the account scope by the gate
+# that holds the agent's credential; unset / non-agent turns leave it empty.
+_AGENT_IDENTITY: contextvars.ContextVar[dict] = contextvars.ContextVar(
+    "kdcube_agent_identity", default={}
+)
+
 
 def set_agent_account_scope(scope: Mapping[str, Any] | None) -> None:
     """Bind the current agent's per-account claim scope
@@ -57,6 +66,22 @@ def set_agent_account_scope(scope: Mapping[str, Any] | None) -> None:
 
 def clear_agent_account_scope() -> None:
     _ACCOUNT_SCOPE.set({})
+    _AGENT_IDENTITY.set({})
+
+
+def set_agent_identity(*, client_id: str = "", resource: str = "") -> None:
+    """Bind the current agent's delegated identity (its
+    ``kdcube-agent:<app>:<agent>`` client id and the delegated-resource id its
+    grant is keyed under). Empty values clear the field."""
+    cid = str(client_id or "").strip()
+    res = str(resource or "").strip()
+    _AGENT_IDENTITY.set({"client_id": cid, "resource": res} if (cid and res) else {})
+
+
+def agent_identity() -> dict:
+    """The current agent's delegated identity ``{client_id, resource}``, or an
+    empty dict on a non-agent turn / when it was not set."""
+    return dict(_AGENT_IDENTITY.get() or {})
 
 
 def account_claim_scope_for(provider_id: str) -> dict[str, tuple[str, ...]] | None:
@@ -77,4 +102,6 @@ __all__ = [
     "set_agent_account_scope",
     "clear_agent_account_scope",
     "account_claim_scope_for",
+    "set_agent_identity",
+    "agent_identity",
 ]

@@ -626,9 +626,14 @@ async def _agent_grant_gate(base_ns: str, operation: str, tool_name: str) -> Dic
         if isinstance(state.get("account_scope"), Mapping):
             from kdcube_ai_app.apps.chat.sdk.solutions.connections.agent_account_scope import (
                 set_agent_account_scope,
+                set_agent_identity,
             )
 
             set_agent_account_scope(state.get("account_scope"))
+            # Carry the agent identity so a per-account claim miss at the broker
+            # routes to THIS agent's grant card (Delegated by KDCube), not a
+            # connect-a-provider banner.
+            set_agent_identity(client_id=client_id, resource=str(state.get("resource") or ""))
         if not state.get("governed") or state.get("granted"):
             return None
         from kdcube_ai_app.apps.chat.sdk.solutions.connections.mcp_consent import (

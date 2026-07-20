@@ -4,7 +4,7 @@ title: "Claim-Driven Consent For Integrations"
 summary: "One claim-first consent surface for EVERY integration an agent can use — delegated MCP, connected accounts, named-service realms. Each integration declares the raw claims it needs; a single resolver returns per-claim given/pending/unavailable from the two consent stores, rendered from the grant vocabulary so no service must author a friendly taxonomy; the mint gate refuses to act without consent. The service-defined Read/Actions grouping (Slack) is optional enrichment on top of the claim base."
 status: active
 tags: ["sdk", "connections", "consent", "claims", "delegated-mcp", "connected-accounts", "capabilities", "governance"]
-updated_at: 2026-07-18
+updated_at: 2026-07-20
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/agent-acting-for-user/agent-acting-for-user-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/connections/connection-hub-solution-README.md
@@ -23,7 +23,7 @@ not decide who may cross the endpoint or whose data the call reaches. KDCube
 answers that with one **claim-first** consent surface every integration shares.
 
 The base is the **raw grant vocabulary** — claims like `memories:read`,
-`slack:write`. Each integration declares the claims it needs; a single resolver
+`slack:post`. Each integration declares the claims it needs; a single resolver
 returns each claim's state; the capabilities picker shows it; the mint gate
 refuses to act without it. A service that ALSO authored a friendly operation
 taxonomy (Slack's Read/Actions groups) gets that as **enrichment** layered on
@@ -55,8 +55,75 @@ A claim's consent lives in one of two stores, selected by the claim's `source`:
 - **`connected_account`** — an EXTERNAL provider account (Slack, Gmail). Backed
   by the `delegated_to_kdcube` broker. A claim's state comes from the broker's
   per-claim resolution: a clean resolution is `given`; a `connect_required` /
-  `claim_upgrade_required` / `account_required` / `reconnect_required` reason is
-  `pending`.
+  `claim_upgrade_required` / `account_required` / `agent_grant_required` /
+  `reconnect_required` reason is `pending`.
+
+## Per-account claims: two gates, composed at runtime
+
+An account-backed claim (say `gmail:send` on ONE connected mailbox) is guarded by
+BOTH stores at once, and the broker resolves them **in order**:
+
+1. **Provider gate** (`connected_account`). Does the connected account hold the
+   claim at its provider — the OAuth scope? Missing → the broker returns
+   `claim_upgrade_required` / `connect_required` → a **connect-account** demand
+   (Connection Hub → *Delegated to KDCube*). This needs a provider OAuth
+   handshake; KDCube cannot call the provider without the scope.
+2. **Agent gate** (`delegated_by_kdcube`, the per-account `account_scope` on the
+   agent's grant). Is THIS agent bound to use the claim ON that account?
+   Provider-capable but unbound → the broker returns `agent_grant_required` → an
+   **agent-grant** demand (Connection Hub → *Delegated by KDCube*). No provider
+   round-trip — it is a KDCube grant.
+
+`delegated_to_kdcube/broker.py::ensure_claim` checks provider capability FIRST,
+then the binding — so a provider-capable-but-unbound account is never misrouted
+to "connect a provider", and the two demands never collide (they key on
+different providers: the real provider vs the agent identity `kdcube-agent:…`).
+
+**Guided hand-off.** When the provider gate fires *during an agent turn*, the
+connect deep-link carries the agent identity (`agent_client_id` /
+`agent_resource`); the connect panel's done-state then offers **"Continue → grant
+it to `<agent>`"**, which jumps to the agent's grant card pre-filled with the
+account + claim. One guided flow, not two disconnected steps the user must
+stitch together from chat.
+
+## Where a demand is RAISED — the emit surface (and why it matters)
+
+A consent banner is a **chat event**, so it can only be emitted where a chat
+communicator is bound. This is the least obvious — and most important — fact
+about the consent architecture, and getting it wrong makes a banner silently
+never appear:
+
+- **The tool that hits the unmet claim usually runs where there is NO
+  communicator.** A named-service action (mail send, Slack post) executes inside
+  the PROVIDER bundle (`kdcube-services`), reached by a cross-bundle call; the
+  workspace turn's chat lane does not propagate into it. Emitting from inside the
+  tool no-ops (`comm_bound=False`).
+- **The demand is therefore raised by the CALLER, after the tool returns**, in
+  the workspace turn where the communicator lives. The tool's only job is to
+  return a **self-describing consent envelope**; the caller turns it into a
+  banner. (The connect-account banner appears reliably only because it is raised
+  caller-side / proactively — not from inside the provider tool.)
+
+Two caller-side emit surfaces, one contract:
+
+| Consumer path | Post-processed by (caller side) | Emits via |
+| --- | --- | --- |
+| A KDCube `@mcp` tool (external client, lg-react MCP) | `mcp_result.py::announce_result_consent` (bound by the MCP loader) | `announce_agent_consent` / connect demand |
+| A native `named_services.*` tool (workspace React agent) | `named_services_providers/consent.py::raise_named_service_consent_demand` (called by the tool wrapper) | `announce_consent_demand` / direct emit |
+
+Both read the result's self-describing block and route by its shape:
+`agent_client_id` present → the **agent-grant** banner (→ *Delegated by KDCube*);
+a `provider_id` connect reason → the **connect-account** banner (→ *Delegated to
+KDCube*).
+
+**The record gate — a common silent trap.**
+`consent_demand.py::announce_consent_demand` records **and emits a demand only
+ONCE per `(provider, claims, tool)` per conversation** — so a repeated "try
+again" is deduped and re-emits nothing. A path that must show the banner on every
+attempt (the per-account agent demand) emits the event **directly**, past that
+gate; the chat reducer still collapses identical banners on-screen by signature,
+and a specific-provider demand supersedes the generic "connect an external
+account" one so the user is never shown two and asked which to click.
 
 ## The SDK (framework-neutral, reusable)
 
@@ -115,7 +182,7 @@ One vocabulary, per integration kind:
   connected_accounts:
     - provider_id: slack
       connector_app_id: <app>
-      claims: [slack:read, slack:write]   # -> connected_account claims
+      claims: [slack:search, slack:post]   # -> connected_account claims
 ```
 
 ## The integration contract (how the surface is assembled)

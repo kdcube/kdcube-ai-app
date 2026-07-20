@@ -55,10 +55,16 @@ def connection_hub_grant_url(
     resource: str,
     claims: Sequence[str],
     hub_bundle_id: str = "connection-hub@1-0",
+    account_id: str = "",
+    account_claim: str = "",
 ) -> str:
     """An absolute Connection Hub deep link that lands on the Delegated by
     KDCube tab with THIS client's access request focused (the pending pane:
     missing claims pre-checked, one-click grant).
+
+    ``account_id`` / ``account_claim`` focus a PER-ACCOUNT ask (the connected
+    account can do it, the agent is not bound): the card names the exact
+    account+claim to tick and pre-checks it.
 
     Openable outside the app origin — an external agent (Claude Code) relays
     it verbatim; the user signs in with their platform credentials and sees the
@@ -72,13 +78,18 @@ def connection_hub_grant_url(
     base = connection_hub_public_base_url()
     if not base or not tenant or not project or not client_id or not resource:
         return ""
-    params = urlencode({
+    query: dict[str, str] = {
         "tab": "delegated_by_kdcube",
         "pending_agent_grant": "1",
         "agent_client_id": client_id,
         "resource": resource,
         "claims": ",".join(str(c) for c in claims if str(c or "").strip()),
-    })
+    }
+    if str(account_id or "").strip():
+        query["account_id"] = str(account_id).strip()
+    if str(account_claim or "").strip():
+        query["account_claim"] = str(account_claim).strip()
+    params = urlencode(query)
     return (
         f"{base}/api/integrations/bundles/"
         f"{quote(str(tenant), safe='')}/{quote(str(project), safe='')}/"

@@ -28,6 +28,11 @@ REASON_CONNECT_REQUIRED = "connect_required"          # no eligible connected ac
 REASON_CLAIM_UPGRADE_REQUIRED = "claim_upgrade_required"  # account exists, claim not approved
 REASON_RECONNECT_REQUIRED = "reconnect_required"      # credential missing/unrefreshable/rejected
 REASON_ACCOUNT_REQUIRED = "account_required"          # several eligible accounts; pick one
+REASON_AGENT_GRANT_REQUIRED = "agent_grant_required"  # account IS provider-capable, but THIS
+                                                      # agent's grant is not bound for the claim
+                                                      # on it — fix on the agent's grant card
+                                                      # (Delegated by KDCube), NOT the provider
+                                                      # connection (Delegated to KDCube).
 
 # Reasons a USER can fix in Connection Hub (retryable after the fix). Operator
 # config errors (claim_not_configured, connector_app_not_configured,
@@ -38,6 +43,7 @@ USER_ACTIONABLE_REASONS = frozenset(
         REASON_CLAIM_UPGRADE_REQUIRED,
         REASON_RECONNECT_REQUIRED,
         REASON_ACCOUNT_REQUIRED,
+        REASON_AGENT_GRANT_REQUIRED,
     }
 )
 

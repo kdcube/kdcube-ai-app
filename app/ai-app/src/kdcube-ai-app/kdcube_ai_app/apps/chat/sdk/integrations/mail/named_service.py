@@ -888,8 +888,29 @@ class MailNamedServiceProvider(NamedServiceProvider):
         Explicit ``account_id`` pins one account (broker explains any failure);
         otherwise every account holding the claim participates. Empty means
         the broker minted connect/upgrade/reconnect — never a silent guess.
+
+        The calling AGENT's per-account binding (``account_scope`` on its grant)
+        restricts the fan-out the SAME way the send path is restricted at the
+        broker: a read is limited to the accounts this agent may use, so an
+        agent bound to one mailbox cannot read another. Unset / non-agent turns
+        impose no restriction. When the binding excludes every eligible account,
+        the empty set falls through to the broker below, which mints the
+        distinct agent-grant / upgrade / connect reason.
         """
         eligible = await self._gmail_accounts(ctx, claim=claim)
+        from kdcube_ai_app.apps.chat.sdk.solutions.connections.agent_account_scope import (
+            account_claim_scope_for,
+        )
+        scope = account_claim_scope_for(GMAIL_PROVIDER_ID)
+        if scope:
+            def _binding_allows(account_id: str) -> bool:
+                claims = scope.get(account_id)
+                if claims is None:
+                    claims = scope.get("*")
+                if claims is None:
+                    return False
+                return "*" in claims or (claim in claims if claim else True)
+            eligible = [item for item in eligible if _binding_allows(item.account_id)]
         if account_id:
             account = next((item for item in eligible if item.account_id == account_id), None)
             if account is None:

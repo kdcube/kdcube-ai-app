@@ -18,6 +18,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube.model
     CREDENTIAL_MISSING,
     CREDENTIAL_RECONNECT_REQUIRED,
     REASON_ACCOUNT_REQUIRED,
+    REASON_AGENT_GRANT_REQUIRED,
     REASON_CLAIM_UPGRADE_REQUIRED,
     REASON_CONNECT_REQUIRED,
     REASON_RECONNECT_REQUIRED,
@@ -107,15 +108,12 @@ class DelegatedToKdcubeBroker:
                 return True  # probe / connect hint: account membership is enough
             return "*" in claims or claim_key in claims
 
-        if account_key and restrict and not _binding_allows(account_key):
-            return self._needs_user_action(
-                reason=REASON_ACCOUNT_REQUIRED,
-                provider_id=provider_key,
-                claim=claim_key,
-                connector_app_id=connector_key,
-                account_id=account_key,
-                message=f"This agent may not use {claim_key or 'this provider'} on account {account_key}.",
-            )
+        # The agent-binding check runs AFTER provider capability is confirmed
+        # (below), so a bound-but-provider-incapable account yields a provider
+        # reason (connect/upgrade -> Delegated to KDCube) and a
+        # provider-capable-but-unbound account yields REASON_AGENT_GRANT_REQUIRED
+        # (-> the agent's grant card). Collapsing them here would misroute the
+        # user, as an agent-binding miss did before.
         provider = self.config.provider(provider_key)
         if not self.config.enabled or provider is None or not provider.enabled:
             return self._needs_user_action(
@@ -186,27 +184,50 @@ class DelegatedToKdcubeBroker:
                     message=f"Connected account {account_key} is not available.",
                 )
         else:
+            # Accounts this agent may use for the claim: provider-capable
+            # (connected + hold the claim) AND covered by the agent's binding.
             candidates = [
                 item for item in accounts
                 if item.connected and item.allows(claim_key) and (not connector_key or item.connector_app_id == connector_key)
                 and _binding_allows(item.account_id)
             ]
             if not candidates:
-                connected = [
+                # Provider-capable accounts the agent is NOT bound to for this
+                # claim: the account can do it, but this agent's grant is not
+                # bound -> fix on the agent's grant card (Delegated by KDCube),
+                # not the provider connection.
+                capable_unbound = [
+                    item for item in accounts
+                    if item.connected and item.allows(claim_key)
+                    and (not connector_key or item.connector_app_id == connector_key)
+                    and not _binding_allows(item.account_id)
+                ]
+                # Accounts the agent IS bound to but which have not approved the
+                # claim: the fix is a provider claim upgrade on one of them.
+                bound_connected = [
                     item for item in accounts
                     if item.connected and (not connector_key or item.connector_app_id == connector_key)
                     and _binding_allows(item.account_id)
                 ]
-                if connected:
-                    # Accounts exist but none has approved this claim: the fix
-                    # is a claim upgrade on one of them, not a new connection.
+                if bound_connected:
+                    # Prefer upgrading a bound account (respects the binding
+                    # intent) over rebinding to a different one.
                     return self._needs_user_action(
                         reason=REASON_CLAIM_UPGRADE_REQUIRED,
                         provider_id=provider_key,
                         claim=claim_key,
                         connector_app_id=connector_key,
                         message=f"Approve {claim_key} for your connected {provider.label or provider.provider_id} account.",
-                        candidates=tuple(account_choice(item) for item in connected),
+                        candidates=tuple(account_choice(item) for item in bound_connected),
+                    )
+                if capable_unbound:
+                    return self._needs_user_action(
+                        reason=REASON_AGENT_GRANT_REQUIRED,
+                        provider_id=provider_key,
+                        claim=claim_key,
+                        connector_app_id=connector_key,
+                        message=f"Grant this agent {claim_key} on your connected {provider.label or provider.provider_id} account.",
+                        candidates=tuple(account_choice(item) for item in capable_unbound),
                     )
                 return self._needs_user_action(
                     reason=REASON_CONNECT_REQUIRED,
@@ -244,6 +265,20 @@ class DelegatedToKdcubeBroker:
                 connector_app_id=connector_key,
                 account_id=account.account_id,
                 message=f"The connected account has not approved {claim_key}.",
+            )
+        if restrict and not _binding_allows(account.account_id):
+            # The account IS provider-capable (connected + approved the claim),
+            # but THIS agent's grant is not bound for the claim on it — fix on
+            # the agent's grant card (Delegated by KDCube), never the provider
+            # connection (Delegated to KDCube).
+            return self._needs_user_action(
+                reason=REASON_AGENT_GRANT_REQUIRED,
+                provider_id=provider_key,
+                claim=claim_key,
+                connector_app_id=connector_key,
+                account_id=account.account_id,
+                message=f"Grant this agent {claim_key} on account {account_choice(account).get('label') or account.account_id}.",
+                candidates=(account_choice(account),),
             )
         credential = await self.store.get_credential(account.credential_id)
         if not credential:

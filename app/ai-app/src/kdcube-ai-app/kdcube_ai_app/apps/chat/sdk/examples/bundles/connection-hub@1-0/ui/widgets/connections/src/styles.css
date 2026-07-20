@@ -708,6 +708,20 @@ h2 {
   align-self: flex-start;
 }
 
+/* Two-step inline confirm for a destructive action (Revoke). Arms in place of
+   the button, styled with our own tokens — never a native browser dialog. */
+.revoke-confirm {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.revoke-confirm__q {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--danger-text);
+}
+
 .form {
   margin: 16px 0 0;
   display: flex;
@@ -1341,24 +1355,24 @@ code {
   flex-direction: column;
   gap: 10px;
   min-height: 0;
-  /* Safety net: the panes size with viewport units (100vh), but this widget
-     lives inside a modal that can be shorter than the viewport — so the stacked
-     panes can exceed the modal. Bound the group to the viewport and let IT
-     scroll, so a lead pane's action (an agent access request's account picker +
-     Grant) is always reachable even when a pane's own internal scroll doesn't
-     engage. Individual panes still scroll internally first. */
+  /* Per-SECTION scroll: the group is bounded to the viewport (the page-viewport
+     wrapper, or this max-height fallback) and does NOT scroll as a whole.
+     Instead each pane shrinks to share the height and its OWN body scrolls
+     internally — so the tab is never one long scroll, and growing one section
+     shrinks the others rather than overlapping them. */
   max-height: calc(100vh - 96px);
-  overflow-y: auto;
+  overflow: hidden;
 }
 
 .pane {
   position: relative;
   display: flex;
   flex-direction: column;
-  /* Content-sized while pinned: natural height; when the column runs out,
-     panes shrink proportionally and their bodies scroll internally. */
-  flex: 0 1 auto;
-  min-height: 110px;
+  /* Each pane FILLS its share of the group height (never content-tiny) and its
+     OWN body scrolls internally — one scrollbar per section, so a long section
+     scrolls itself instead of pushing the others out or leaving them stranded. */
+  flex: 1 1 0;
+  min-height: 120px;
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
@@ -1375,8 +1389,11 @@ code {
    height while siblings shrink around it — the action is never below a
    shrunken pane's fold, and the rest of the tab stays visible. */
 .pane--lead {
-  flex-shrink: 0;
-  max-height: min(72vh, 640px);
+  /* The lead (a pending request) takes a larger share than its siblings, but
+     still fills-and-scrolls like them — its body scrolls and the Grant footer
+     stays pinned at the bottom. */
+  flex-grow: 1.7;
+  min-height: 240px;
 }
 
 /* Wide windows: the pinned panes tile TWO-UP so the width works instead of
@@ -1388,11 +1405,12 @@ code {
   .pane-group {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    align-items: start;
+    /* Rows STRETCH to equal fractions of the group height so each pane fills its
+       cell and scrolls its OWN body — never content-tiny, never a whole-tab
+       scroll. The lead spans the full width as its own row. */
+    grid-auto-rows: minmax(0, 1fr);
+    align-items: stretch;
     gap: 12px;
-  }
-  .pane {
-    max-height: calc(100vh - 150px);
   }
   .pane--fill,
   .pane--lead,
@@ -1502,6 +1520,20 @@ code {
   padding: 0;
   margin: 0;
   background: transparent;
+}
+
+/* The pending agent-access action row is pinned to the bottom of the pane body,
+   always reachable no matter how tall the account picker grows — the content
+   scrolls behind it, so Grant/Not now are never clipped below the fold. The
+   negative margins let it span the full pane width and sit flush at the base. */
+.pending-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  margin: 8px -12px -12px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border-top: 1px solid var(--line-soft);
 }
 
 /* ── delegated access map (admin, read-only) ─────────────────────────────

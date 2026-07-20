@@ -20,15 +20,28 @@ interface ConsentDeepLink {
   connectorAppId: string;
   claims: string[];
   accountId: string;
+  // Present when the connect step was reached because an AGENT needed a
+  // per-account claim: after the provider step, the panel offers a hand-off to
+  // grant it to this agent.
+  agentClientId: string;
+  agentResource: string;
 }
 
-function consentDeepLinkFromLocation(): ConsentDeepLink {
-  const params = new URLSearchParams(window.location.search);
+function consentDeepLink(openParams?: Record<string, string>): ConsentDeepLink {
+  // Host-passed openParams win over the URL — an embedded host may not be able
+  // to mutate this frame's URL, so the props ARE the deep link on first summon.
+  const url = new URLSearchParams(window.location.search);
+  const get = (key: string): string => {
+    const fromProps = openParams && typeof openParams[key] === 'string' ? openParams[key] : '';
+    return (fromProps || url.get(key) || '').trim();
+  };
   return {
-    providerId: params.get('provider_id') || '',
-    connectorAppId: params.get('connector_app_id') || '',
-    claims: (params.get('claims') || '').split(',').map((item) => item.trim()).filter(Boolean),
-    accountId: params.get('account_id') || '',
+    providerId: get('provider_id'),
+    connectorAppId: get('connector_app_id'),
+    claims: get('claims').split(',').map((item) => item.trim()).filter(Boolean),
+    accountId: get('account_id'),
+    agentClientId: get('agent_client_id'),
+    agentResource: get('agent_resource'),
   };
 }
 
@@ -144,14 +157,14 @@ function oauthEnabled(provider?: DelegatedToKdcubeProvider, connectorAppId?: str
   return Boolean(provider?.adapter?.includes('oauth') && app?.client_id);
 }
 
-export function DelegatedToKdcubePanel() {
+export function DelegatedToKdcubePanel({ openParams }: { openParams?: Record<string, string> } = {}) {
   const dispatch = useAppDispatch();
   const { enabled, providers, accounts, busy } = useAppSelector((s) => s.delegatedToKdcube);
   const providerList = useMemo(
     () => Object.values(providers).filter((provider) => provider.enabled !== false).sort((a, b) => providerLabel(a).localeCompare(providerLabel(b))),
     [providers],
   );
-  const [deepLink] = useState<ConsentDeepLink>(consentDeepLinkFromLocation);
+  const [deepLink] = useState<ConsentDeepLink>(() => consentDeepLink(openParams));
   const [providerId, setProviderId] = useState(deepLink.providerId);
   const selectedProviderId = providerId || firstProviderId(providerList);
   const selectedProvider = providers[selectedProviderId];
@@ -452,6 +465,12 @@ export function DelegatedToKdcubePanel() {
           busy={busy}
           onAction={runPlanAction}
           onDismiss={() => setPlanDismissed(true)}
+          agentHandoff={deepLink.agentClientId ? {
+            clientId: deepLink.agentClientId,
+            resource: deepLink.agentResource,
+            accountId: planAccount?.account_id || deepLink.accountId,
+            claim: planRequestedClaims[0] || '',
+          } : undefined}
         />
       ) : null}
 

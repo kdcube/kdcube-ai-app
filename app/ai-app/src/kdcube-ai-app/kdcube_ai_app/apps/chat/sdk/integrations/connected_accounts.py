@@ -18,6 +18,7 @@ from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import get_current_user_identi
 from kdcube_ai_app.apps.chat.sdk.runtime.tool_module_bindings import get_bound_context
 from kdcube_ai_app.apps.chat.sdk.solutions.connections.connection_edges import DEFAULT_CONNECTION_HUB_BUNDLE_ID
 from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube import (
+    REASON_AGENT_GRANT_REQUIRED,
     REASON_RECONNECT_REQUIRED,
     ClaimResolution,
     DelegatedToKdcubeClient,
@@ -227,6 +228,144 @@ def _scope(source: Mapping[str, Any] | Any) -> tuple[_ToolEntrypoint, str, str, 
     return entrypoint, tenant, project, user_id
 
 
+async def _announce_agent_grant_demand(
+    source: Mapping[str, Any] | Any,
+    *,
+    result: ClaimResolution,
+    claim: str,
+    tool_name: str,
+    tenant: str,
+    project: str,
+    connection_hub_bundle_id: str,
+) -> dict[str, Any] | None:
+    """A per-account claim the connected account CAN satisfy, but THIS agent's
+    grant is not bound for — route to the agent's own grant card (Delegated by
+    KDCube), where the account picker sets the per-account binding. NOT a
+    connect-a-provider banner.
+
+    A per-account claim is not a resource grant, so there is no one-click grant
+    here — the banner deep-links to the focused card and the user ticks the
+    permission on the account. Returns the explainable tool result, or None when
+    the agent identity is unknown (caller falls back to the connect payload)."""
+    from kdcube_ai_app.apps.chat.sdk.solutions.connections.agent_account_scope import (
+        agent_identity,
+    )
+
+    ident = agent_identity()
+    client_id = _clean(ident.get("client_id"))
+    resource = _clean(ident.get("resource"))
+    if not client_id or not resource:
+        return None
+    from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_credentials.consent_denial import (
+        connection_hub_grant_url,
+    )
+    from kdcube_ai_app.apps.chat.sdk.solutions.connections.mcp_consent import (
+        CONSENT_KIND_AGENT_GRANT,
+        mcp_consent_from_denial,
+    )
+
+    missing = _clean(result.claim) or _clean(claim)
+    account_label = _clean(result.account_id)
+    hub_url = connection_hub_grant_url(
+        tenant=tenant,
+        project=project,
+        client_id=client_id,
+        resource=resource,
+        claims=[],  # the per-account claim is set in the card's account picker
+        hub_bundle_id=connection_hub_bundle_id or DEFAULT_CONNECTION_HUB_BUNDLE_ID,
+        account_id=account_label,   # focus the card on the exact account + claim
+        account_claim=missing,
+    )
+    # No agent_client_id passed -> mcp_consent_from_denial adds NO one-click grant
+    # (that path is for resource claims). The deep link routes to the focused card.
+    consent = mcp_consent_from_denial(
+        {"status": 403, "reason": "agent_account_binding_required"},
+        resource=resource,
+        claims=[missing] if missing else [],
+        connection_hub_url=hub_url,
+        tool_name=tool_name,
+    )
+    consent.consent["kind"] = CONSENT_KIND_AGENT_GRANT
+    consent.consent["agent_client_id"] = client_id
+    if hub_url:
+        consent.consent["url"] = hub_url
+    if account_label:
+        consent.consent["account_id"] = account_label
+    consent.agent_message = (
+        f"This needs your permission to use {missing or 'this account'}"
+        + (f" on account {account_label}" if account_label else "")
+        + ". Grant it to THIS agent in Connection Hub -> Delegated by KDCube "
+        "(open the agent's access, tick the permission on that account, Save), "
+        "then ask again. Do not retry until it is granted."
+    )
+    # Raise the banner through the SAME bound-tool-communicator path the
+    # connect-account banner uses, so it renders in chat (announce_agent_consent's
+    # own fallback communicator is not bound in the native tool context, which is
+    # why the agent-grant banner did not appear). The event carries the
+    # needs_connected_account_consent code the chat renderer already renders.
+    # Raise the banner through the SAME bound-tool communicator the connect
+    # banner uses. announce_consent_demand emits ONLY when the demand is newly
+    # recorded for the conversation — so if it declines (already recorded, or an
+    # incomplete address), we emit the event DIRECTLY, so the banner shows for
+    # THIS attempt regardless. Logged so the live path is visible, not guessed.
+    event_payload = consent.chat_event_payload()
+    comm = None
+    try:
+        comm = getattr(get_bound_context(source), "communicator", None)
+    except Exception:
+        comm = None
+    announced = False
+    try:
+        from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube.consent_demand import (
+            announce_consent_demand,
+        )
+
+        announced = await announce_consent_demand(
+            comm=comm,
+            payload=event_payload,
+            provider_id="kdcube",
+            connector_app_id=client_id,
+            claims=[missing] if missing else [],
+            tool_name=tool_name,
+            identity=get_current_user_identity() or {},
+            connection_hub_bundle_id=connection_hub_bundle_id,
+        )
+    except Exception:
+        logger.warning("agent-grant announce failed", exc_info=True)
+    if not announced and comm is not None:
+        try:
+            emit = getattr(comm, "event", None)
+            if callable(emit):
+                res = emit(
+                    agent="connection-hub",
+                    type="chat.step",
+                    route="chat.step",
+                    title="Agent access needed",
+                    step="delegated_to_kdcube.consent",
+                    data=dict(event_payload or {}),
+                    status="completed",
+                    broadcast=False,
+                )
+                if hasattr(res, "__await__"):
+                    await res
+                announced = True
+        except Exception:
+            logger.warning("agent-grant direct emit failed", exc_info=True)
+    logger.info(
+        "[agent-grant-demand] announced=%s comm_bound=%s hub_url=%s client=%s account=%s claim=%s",
+        announced, comm is not None, bool(hub_url), client_id, account_label, missing,
+    )
+    payload = consent.to_tool_result()
+    # The banner is already raised above; use a code the shared chat
+    # post-processor does NOT re-route (neither a connect-account nor a
+    # resource-grant demand), so it stays an explainable result and raises no
+    # second banner.
+    err = payload.get("error")
+    if isinstance(err, dict):
+        err["code"] = "agent_account_binding_required"
+    return payload
+
+
 async def resolve_connected_account_claim(
     source: Mapping[str, Any] | Any,
     *,
@@ -299,6 +438,47 @@ async def resolve_connected_account_claim(
         force_refresh=force_refresh,
     )
     if not result.ok or result.credential is None:
+        # A per-account claim the account CAN satisfy but this AGENT is not bound
+        # for -> route to the agent's own grant card, not a connect-a-provider
+        # banner. Falls through when the agent identity is unknown.
+        if _clean(getattr(result, "error", "")) == REASON_AGENT_GRANT_REQUIRED:
+            try:
+                agent_payload = await _announce_agent_grant_demand(
+                    source,
+                    result=result,
+                    claim=claim,
+                    tool_name=tool_name,
+                    tenant=tenant,
+                    project=project,
+                    connection_hub_bundle_id=connection_hub_bundle_id,
+                )
+            except Exception:
+                # Never let the consent-routing helper crash the tool call — a
+                # failed agent-card demand degrades to the connect-account payload
+                # below, which still tells the user (and the model) what to do.
+                logger.warning("agent-grant consent demand failed; using connect payload", exc_info=True)
+                agent_payload = None
+            if agent_payload is not None:
+                return ConnectedAccountCredential(
+                    ok=False,
+                    account_id=result.account_id,
+                    provider_id=result.provider_id,
+                    connector_app_id=result.connector_app_id,
+                    claim=result.claim,
+                    tool_name=tool_name,
+                    tenant=tenant,
+                    project=project,
+                    connection_hub_bundle_id=connection_hub_bundle_id,
+                    error_payload=agent_payload,
+                )
+        # When an AGENT turn hits the provider gate (its account lacks the claim),
+        # carry the agent identity into the connect deep-link so the connect panel
+        # can offer a "continue -> grant it to this agent" hand-off after the
+        # provider step, instead of sending the user back to chat to retry blind.
+        from kdcube_ai_app.apps.chat.sdk.solutions.connections.agent_account_scope import (
+            agent_identity,
+        )
+        _agent = agent_identity()
         payload = connected_account_consent_payload(
             tenant=tenant,
             project=project,
@@ -310,6 +490,8 @@ async def resolve_connected_account_claim(
                     "failures": [result.to_dict(include_credential=False)],
                 }
             ],
+            agent_client_id=_clean(_agent.get("client_id")),
+            agent_resource=_clean(_agent.get("resource")),
         )
         if getattr(result, "retry_hint", False):
             # User-fixable: raise the ask (scoped banner + pending record).

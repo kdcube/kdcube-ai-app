@@ -165,6 +165,191 @@ async def test_same_tool_retry_in_one_conversation_emits_once(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_agent_binding_miss_routes_to_agent_card_not_connect(monkeypatch):
+    # Regression: this path (a per-account claim the account CAN do but THIS
+    # agent is not bound for) once crashed (`_announce_agent_grant_demand()`
+    # missing 'source') and once mis-routed to the connect-account banner. It
+    # must raise ONE agent-grant banner (agent_client_id + the Delegated by
+    # KDCube deep link, focused on the exact account+claim) and never crash.
+    from kdcube_ai_app.apps.chat.sdk.solutions.connections.agent_account_scope import (
+        clear_agent_account_scope,
+        set_agent_account_scope,
+        set_agent_identity,
+    )
+    from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube import (
+        public_base,
+    )
+
+    resolution = ClaimResolution(
+        ok=False,
+        provider_id="google",
+        claim="gmail:send",
+        connector_app_id="gmail",
+        account_id="acct-send",
+        error="agent_grant_required",
+        message="Grant this agent gmail:send on account acct-send.",
+        retry_hint=True,
+    )
+    source, comm, props, _client = _install_fakes(monkeypatch, resolution)
+    monkeypatch.setattr(public_base, "connection_hub_public_base_url", lambda: "https://hub.test")
+    set_agent_account_scope({"google": {"acct-send": ["gmail:read"]}})
+    set_agent_identity(
+        client_id="kdcube-agent:workspace@1-0:main",
+        resource="*/kdcube-services@1-0/public/mcp/named_services*",
+    )
+    try:
+        credential = await ca.resolve_connected_account_claim(
+            source,
+            provider_id="google",
+            connector_app_id="gmail",
+            claim="gmail:send",
+            tool_name="mail.send",
+        )
+    finally:
+        clear_agent_account_scope()
+
+    assert credential.ok is False
+    # ONE banner, an AGENT-grant demand pointing at the agent's own card.
+    assert len(comm.events) == 1
+    consent = comm.events[0]["data"]["consent"]
+    assert consent["agent_client_id"] == "kdcube-agent:workspace@1-0:main"
+    assert "tab=delegated_by_kdcube" in consent["url"]
+    assert "account_claim=gmail%3Asend" in consent["url"]
+    # The agent-facing result is explainable and NOT re-routed as a connect demand.
+    envelope = credential.error_envelope(where="mail.send")
+    assert envelope["error"]["code"] == "agent_account_binding_required"
+
+
+@pytest.mark.asyncio
+async def test_full_forward_two_gate_consent_sequence(monkeypatch):
+    """End-to-end SIMULATION of forwarding from a read-only-bound account, driven
+    through the REAL broker + resolver, mutating state between phases exactly as
+    the user does. Asserts the whole sequence: ONE banner per phase, the right
+    routing (provider connect -> agent card), and success once both gates pass.
+
+    Phase 1  provider gate  — the connected account has not approved gmail:send
+             -> connect-account banner (Delegated to KDCube), NOT an agent demand.
+    Phase 2  agent gate     — provider approved, but THIS agent is bound read-only
+             -> agent-card banner (Delegated by KDCube), focused on the account+claim.
+    Phase 3  both pass      — the credential resolves, no banner.
+    """
+    from types import SimpleNamespace
+
+    from kdcube_ai_app.apps.chat.sdk.solutions import connections
+    from kdcube_ai_app.apps.chat.sdk.solutions.connections.agent_account_scope import (
+        clear_agent_account_scope,
+        set_agent_account_scope,
+        set_agent_identity,
+    )
+    from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube import (
+        ConnectedAccount,
+        DelegatedToKdcubeBroker,
+        DelegatedToKdcubeStore,
+        public_base,
+    )
+    from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube.store import (
+        credential_id_for,
+    )
+    from kdcube_ai_app.apps.chat.sdk.solutions.connections.delegated_to_kdcube.tests.test_delegated_to_kdcube import (
+        _install_fake_storage,
+        _sample_config,
+    )
+
+    _install_fake_storage(monkeypatch)
+    config = _sample_config()
+    store = DelegatedToKdcubeStore(user_id="u1")
+    cred = credential_id_for("cached-buffer")
+
+    async def _seed(*claims: str) -> None:
+        await store.upsert_account(ConnectedAccount(
+            account_id="cached-buffer", provider_id="google", connector_app_id="gmail",
+            external_subject="cb", email="cached.buffer@gmail.com",
+            claims=tuple(claims), credential_id=cred,
+        ))
+        await store.set_credential(cred, {"access_token": "tok"})
+
+    await _seed("gmail:read")  # connected with READ only at the provider
+    client = connections.DelegatedToKdcubeClient(broker=DelegatedToKdcubeBroker(config=config, store=store))
+
+    monkeypatch.setattr(ca, "get_current_user_identity", lambda: {
+        "tenant_id": "acme", "project_id": "demo", "user_id": "u1",
+        "bundle_id": "workspace@1-0", "conversation_id": "conv-1",
+    })
+
+    async def _from_hub(entrypoint, **kwargs):
+        return client
+
+    monkeypatch.setattr(
+        ca.DelegatedToKdcubeClient, "from_connection_hub",
+        classmethod(lambda cls, entrypoint, **kwargs: _from_hub(entrypoint, **kwargs)),
+    )
+    monkeypatch.setattr(public_base, "connection_hub_public_base_url", lambda: "https://hub.test")
+
+    comm = _FakeComm()
+    source = {
+        "_SERVICE": SimpleNamespace(comm_context=None),
+        "_TOOL_SUBSYSTEM": SimpleNamespace(registry={}, comm=None),
+        "_COMMUNICATOR": comm,
+    }
+    set_agent_account_scope({"google": {"cached-buffer": ["gmail:read"]}})  # bound READ only
+    set_agent_identity(
+        client_id="kdcube-agent:workspace@1-0:main",
+        resource="*/kdcube-services@1-0/public/mcp/named_services*",
+    )
+
+    async def _forward_send():
+        return await ca.resolve_connected_account_claim(
+            source,
+            provider_id="google",
+            connector_app_id="gmail",
+            claim="gmail:send",
+            tool_name="mail.forward",
+            account_id="cached-buffer",  # a forward targets the ref's account
+        )
+
+    try:
+        # PHASE 1 — provider gate.
+        c1 = await _forward_send()
+        assert c1.ok is False
+        assert len(comm.events) == 1, f"phase 1 must raise exactly ONE banner, got {len(comm.events)}"
+        e1 = comm.events[0]["data"]
+        assert e1["error"]["code"] == "needs_connected_account_consent"
+        assert e1["consent"]["provider_id"] == "google"
+        assert "tab=delegated_to_kdcube" in e1["consent"]["url"]
+        assert not e1["consent"].get("agent_client_id")  # a CONNECT demand, not an agent demand
+        # ...but the connect deep-link carries the agent context, so the connect
+        # panel can hand off to the agent card once the provider step is done.
+        assert "agent_client_id=kdcube-agent" in e1["consent"]["url"]
+        assert "agent_resource=" in e1["consent"]["url"]
+
+        # The user approves gmail:send with Google (provider gate satisfied).
+        await _seed("gmail:read", "gmail:send")
+        comm.events.clear()
+
+        # PHASE 2 — agent gate.
+        c2 = await _forward_send()
+        assert c2.ok is False
+        assert len(comm.events) == 1, f"phase 2 must raise exactly ONE banner, got {len(comm.events)}"
+        e2 = comm.events[0]["data"]
+        assert e2["consent"]["agent_client_id"] == "kdcube-agent:workspace@1-0:main"
+        assert "tab=delegated_by_kdcube" in e2["consent"]["url"]
+        assert "account_claim=gmail%3Asend" in e2["consent"]["url"]
+        assert c2.error_envelope(where="mail.forward")["error"]["code"] == "agent_account_binding_required"
+
+        # The user grants THIS agent gmail:send on cached.buffer (agent gate satisfied).
+        set_agent_account_scope({"google": {"cached-buffer": ["gmail:read", "gmail:send"]}})
+        comm.events.clear()
+
+        # PHASE 3 — both gates pass.
+        c3 = await _forward_send()
+        assert c3.ok is True
+        assert c3.access_token == "tok"
+        assert comm.events == [], "no banner once both gates pass"
+    finally:
+        clear_agent_account_scope()
+
+
+@pytest.mark.asyncio
 async def test_config_errors_stay_tool_errors_without_a_banner(monkeypatch):
     resolution = ClaimResolution(
         ok=False,

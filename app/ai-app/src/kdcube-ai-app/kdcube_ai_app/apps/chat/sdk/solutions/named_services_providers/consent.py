@@ -42,11 +42,14 @@ async def raise_named_service_consent_demand(
         details = error.get("details") if isinstance(error.get("details"), Mapping) else {}
         consent: Mapping[str, Any] = {}
         if payload.get("ok") is False:
-            if str(error.get("code") or "") != "needs_connected_account_consent":
+            code = str(error.get("code") or "")
+            if code not in ("needs_connected_account_consent", "agent_account_binding_required"):
                 return
             consent = details.get("consent") if isinstance(details.get("consent"), Mapping) else {}
             if not consent:
                 consent = payload.get("consent") if isinstance(payload.get("consent"), Mapping) else {}
+            if not consent and isinstance(error.get("consent"), Mapping):
+                consent = error.get("consent")
         else:
             # A successful listing with ZERO connected accounts ships a
             # connect hint instead of an error (an empty list is not a
@@ -58,6 +61,62 @@ async def raise_named_service_consent_demand(
             if str(hint.get("reason") or "") != "connect_required":
                 return
             consent = hint
+        # An AGENT-grant demand (the connected account CAN satisfy the claim, but
+        # THIS agent's grant is not bound for it): raise the agent-card banner
+        # HERE on the workspace side, where the chat lane exists — the provider
+        # bundle where the tool ran had no communicator (comm_bound=False), which
+        # is why the agent banner never appeared. Detected by agent_client_id;
+        # provider_id is absent for it. Emitted directly (get_comm) so the
+        # once-per-conversation record gate cannot swallow it on a retry.
+        agent_client_id = str(consent.get("agent_client_id") or "").strip()
+        if agent_client_id:
+            ns_token = str(namespace or "").split(":", 1)[0].strip()
+            banner_payload = {
+                "ok": False,
+                "error": {
+                    # The reducer's consent path keys on this code; the
+                    # agent_client_id in the block routes it to the agent-grant
+                    # banner (not the connect-account one).
+                    "code": "needs_connected_account_consent",
+                    "message": str(
+                        error.get("message")
+                        or consent.get("message")
+                        or "This agent needs access you can grant in Connection Hub."
+                    ),
+                },
+                "consent": {
+                    **dict(consent),
+                    "tools": [ns_token] if ns_token else list(consent.get("tools") or []),
+                },
+                "tools": [tool_name] if tool_name else [],
+            }
+            try:
+                from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import get_comm
+
+                comm = get_comm()
+                emit = getattr(comm, "event", None) if comm is not None else None
+                if callable(emit):
+                    res = emit(
+                        agent="connection-hub",
+                        type="chat.step",
+                        route="chat.step",
+                        title="Agent access needed",
+                        step="delegated_to_kdcube.consent",
+                        data=banner_payload,
+                        status="completed",
+                        broadcast=False,
+                    )
+                    if hasattr(res, "__await__"):
+                        await res
+                    LOGGER.info("[named-service consent] agent-grant banner emitted (client=%s)", agent_client_id)
+                else:
+                    LOGGER.warning(
+                        "[named-service consent] no communicator for agent-grant banner (client=%s)",
+                        agent_client_id,
+                    )
+            except Exception:
+                LOGGER.debug("agent-grant banner emit unavailable", exc_info=True)
+            return
         provider_id = str(consent.get("provider_id") or details.get("provider_id") or "").strip()
         if not provider_id:
             return

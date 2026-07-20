@@ -79,6 +79,11 @@ export default function App() {
   const [delegatedAccessSummonNonce, setDelegatedAccessSummonNonce] = useState(0);
   const [delegatedAccessOpenParams, setDelegatedAccessOpenParams] =
     useState<Record<string, string> | null>(null);
+  // Same props-carry-the-request pattern for the connect panel — so an embedded
+  // host (where URL mutation is unavailable) still delivers the deep-link and the
+  // guided consent plan renders on the FIRST summon (no second click).
+  const [delegatedToKdcubeOpenParams, setDelegatedToKdcubeOpenParams] =
+    useState<Record<string, string> | null>(null);
   const [telegramConnectStatus] = useState<TelegramConnectStatus>('idle');
   const authenticatorsLoading = useAppSelector((s) => s.authenticators.loading);
   const authenticatorsAllowed = useAppSelector((s) => s.authenticators.allowed);
@@ -240,15 +245,17 @@ export default function App() {
       } else if (tab === 'delegatedToKdcube') {
         try {
           const url = new URL(window.location.href);
-          (['provider_id', 'connector_app_id', 'claims', 'account_id'] as const).forEach((key) => {
+          (['provider_id', 'connector_app_id', 'claims', 'account_id', 'agent_client_id', 'agent_resource'] as const).forEach((key) => {
             const value = (params[key] || '').trim();
             if (value) url.searchParams.set(key, value);
             else url.searchParams.delete(key);
           });
           window.history.replaceState({}, '', url.toString());
         } catch {
-          // Embedded/test contexts may not allow history mutation.
+          // Embedded/test contexts may not allow history mutation — the props
+          // below carry the request, so the guided plan still renders at once.
         }
+        setDelegatedToKdcubeOpenParams({ ...params });
         setDelegatedSummonNonce(Date.now());
       } else if (tab === 'providerConnections' && params.provider) {
         setHubSummon({
@@ -316,7 +323,7 @@ export default function App() {
           openParams={delegatedAccessOpenParams ?? undefined}
         />
       ) : null}
-      {activeTab === 'delegatedToKdcube' ? <DelegatedToKdcubePanel key={delegatedSummonNonce} /> : null}
+      {activeTab === 'delegatedToKdcube' ? <DelegatedToKdcubePanel key={delegatedSummonNonce} openParams={delegatedToKdcubeOpenParams ?? undefined} /> : null}
       {activeTab === 'providerConnections' ? <ProviderConnectionsPanel summon={hubSummon ?? undefined} /> : null}
     </AppShell>
   );

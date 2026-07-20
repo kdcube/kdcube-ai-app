@@ -91,6 +91,51 @@ async def test_named_service_consent_error_raises_the_scoped_demand(monkeypatch)
 
 
 @pytest.mark.asyncio
+async def test_agent_grant_demand_raises_the_agent_banner_on_the_workspace_side(monkeypatch):
+    # A per-account agent-grant demand: the tool ran in a provider bundle with no
+    # chat lane (comm_bound=False there), so the banner MUST be raised here on the
+    # workspace side. Detected by agent_client_id, emitted directly via get_comm.
+    import kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx as comm_ctx
+
+    events: list[dict[str, Any]] = []
+
+    class _Comm:
+        def event(self, **kwargs):
+            events.append(kwargs)
+
+    monkeypatch.setattr(comm_ctx, "get_comm", lambda: _Comm())
+
+    consent = {
+        "kind": "delegated_agent_grant",
+        "agent_client_id": "kdcube-agent:workspace@1-0:main",
+        "resource": "*/kdcube-services@1-0/public/mcp/named_services*",
+        "claims": ["gmail:send"],
+        "account_id": "google_50e4a2de220d1e26",
+        "url": "https://hub/w?tab=delegated_by_kdcube&pending_agent_grant=1&account_claim=gmail%3Asend",
+    }
+    # The REAL shape a mail forward/send produces: tool_error_response nests the
+    # consent under error.details.consent with the agent_account_binding_required code.
+    payload = {
+        "ok": False,
+        "error": {
+            "code": "agent_account_binding_required",
+            "message": "This needs your permission to use gmail:send on account Elena Viter.",
+            "details": {"consent": dict(consent)},
+        },
+    }
+    await _raise_named_service_consent_demand(payload, namespace="mail", tool_name="object_action")
+
+    assert len(events) == 1
+    data = events[0]["data"]
+    # The reducer's consent path keys on this code; agent_client_id routes it to
+    # the agent-grant banner (Delegated by KDCube), not a connect banner.
+    assert data["error"]["code"] == "needs_connected_account_consent"
+    assert data["consent"]["agent_client_id"] == "kdcube-agent:workspace@1-0:main"
+    assert "tab=delegated_by_kdcube" in data["consent"]["url"]
+    assert data["consent"]["tools"] == ["mail"]
+
+
+@pytest.mark.asyncio
 async def test_scoped_namespace_maps_to_its_menu_entry(monkeypatch):
     announced = _record_announces(monkeypatch)
     await _raise_named_service_consent_demand(

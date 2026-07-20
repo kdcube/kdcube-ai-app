@@ -66,6 +66,16 @@ function PlanStep({ done, index, children }: StepProps) {
   );
 }
 
+/** Set when the connect step was reached because an AGENT needed a per-account
+ *  claim: after the provider step, the panel offers a one-click hand-off to the
+ *  agent's grant card, pre-filled with the account + claim. */
+export interface ConsentPlanAgentHandoff {
+  clientId: string;
+  resource: string;
+  accountId: string;
+  claim: string;
+}
+
 export interface ConsentPlanProps {
   request: ConsentPlanRequest;
   claimLabel: (claimId: string) => string;
@@ -74,9 +84,33 @@ export interface ConsentPlanProps {
    *  claims plus the ones the user kept ticked. */
   onAction: (action: Exclude<ConsentPlanAction, 'done'>, claims: string[]) => void;
   onDismiss: () => void;
+  agentHandoff?: ConsentPlanAgentHandoff;
 }
 
-export function ConsentPlan({ request, claimLabel, busy, onAction, onDismiss }: ConsentPlanProps) {
+// The short agent name from a `kdcube-agent:<app>:<agent>` client id.
+function agentName(clientId: string): string {
+  const parts = clientId.split(':');
+  return parts.length ? parts[parts.length - 1] : clientId;
+}
+
+// The agent-grant card URL: this same widget, on the Delegated by KDCube tab,
+// with the pending agent grant pre-filled (account + claim focused).
+function agentCardHref(handoff: ConsentPlanAgentHandoff): string {
+  const url = new URL(window.location.href);
+  url.searchParams.set('tab', 'delegated_by_kdcube');
+  url.searchParams.set('pending_agent_grant', '1');
+  url.searchParams.set('agent_client_id', handoff.clientId);
+  url.searchParams.set('resource', handoff.resource);
+  if (handoff.accountId) url.searchParams.set('account_id', handoff.accountId);
+  if (handoff.claim) url.searchParams.set('account_claim', handoff.claim);
+  // Drop the connect step's own params so the agent card reads a clean state.
+  ['provider_id', 'connector_app_id', 'claims', 'agent_resource', 'tool_name'].forEach(
+    (key) => url.searchParams.delete(key),
+  );
+  return url.toString();
+}
+
+export function ConsentPlan({ request, claimLabel, busy, onAction, onDismiss, agentHandoff }: ConsentPlanProps) {
   const state = consentPlanState(request);
   // The tool asked for every requested claim, so all still-to-approve claims
   // start ticked; the user unticks what they choose to keep to themselves.
@@ -159,16 +193,36 @@ export function ConsentPlan({ request, claimLabel, busy, onAction, onDismiss }: 
         </PlanStep>
       </ol>
       {state.action === 'done' ? (
-        <p className="notice success">All set — go back to chat and retry your request.</p>
+        agentHandoff ? (
+          <div className="notice success">
+            <p style={{ margin: '0 0 8px' }}>
+              Approved for <strong>{accountName || 'this account'}</strong>. One more step —
+              grant it to the agent that needs it.
+            </p>
+            <a className="btn" href={agentCardHref(agentHandoff)}>
+              Continue — grant it to {agentName(agentHandoff.clientId)}
+            </a>
+          </div>
+        ) : (
+          <p className="notice success">All set — go back to chat and retry your request.</p>
+        )
       ) : (
-        <button
-          className="btn"
-          type="button"
-          disabled={actionDisabled}
-          onClick={() => onAction(state.action as Exclude<ConsentPlanAction, 'done'>, submitClaims)}
-        >
-          {ACTION_BUTTON[state.action as Exclude<ConsentPlanAction, 'done'>]}
-        </button>
+        <>
+          <button
+            className="btn"
+            type="button"
+            disabled={actionDisabled}
+            onClick={() => onAction(state.action as Exclude<ConsentPlanAction, 'done'>, submitClaims)}
+          >
+            {ACTION_BUTTON[state.action as Exclude<ConsentPlanAction, 'done'>]}
+          </button>
+          {agentHandoff ? (
+            <p className="muted" style={{ marginTop: 8 }}>
+              Then you'll grant it to <strong>{agentName(agentHandoff.clientId)}</strong> — a
+              Continue button appears here once this is approved.
+            </p>
+          ) : null}
+        </>
       )}
     </div>
   );

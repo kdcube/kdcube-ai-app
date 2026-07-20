@@ -343,9 +343,22 @@ export function upsertConsentBanner(
   if (state.dismissedConsentSignatures.includes(input.signature)) return state
   if (state.banners.some((banner) => banner.consentSignature === input.signature)) return state
   const providerPrefix = input.signature.slice(0, input.signature.indexOf('|') + 1)
-  const kept = state.banners.filter(
-    (banner) => !(banner.consentSignature && banner.consentSignature.startsWith(providerPrefix)),
-  )
+  // A signature's provider prefix is empty ("|") for the generic "connect an
+  // external account" demand, non-empty ("google|", "agent:…|") for a specific
+  // one. The user must never face two connect banners and be asked which to
+  // click, so a SPECIFIC demand collapses the generic, and a generic one is
+  // dropped when a specific one already stands.
+  const newHasProvider = providerPrefix.length > 1
+  const hasSpecific = (sig: string | undefined): boolean => /^[^|]+\|/.test(sig || '')
+  if (!newHasProvider && state.banners.some((banner) => hasSpecific(banner.consentSignature))) {
+    return state
+  }
+  const kept = state.banners.filter((banner) => {
+    const sig = banner.consentSignature || ''
+    if (sig.startsWith(providerPrefix)) return false
+    if (newHasProvider && sig.startsWith('|')) return false
+    return true
+  })
   const banners = [{
     id: createLocalId('banner'),
     tone: 'warning' as BannerTone,
