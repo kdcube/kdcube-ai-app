@@ -1,30 +1,45 @@
 platform:
   repo: "kdcube-ai-app"
-  ref: "2026.07.16.140"
+  ref: "2026.07.20.444"
   description: |
-    This release follows 2026.07.15.415.
+    This release follows 2026.07.16.140.
 
-    Run-to-completion hosted agents now receive complete external-event batches
-    and an explicit per-turn frame, while working from a fresh execution
-    directory backed by durable conversation-file links. Shared workspace APIs
-    let an agent inspect or pull prior-turn files, execute code against them, and
-    host generated outputs back into the conversation. Upload resolution also
-    bridges timestamped storage names to stable conversation refs, with focused
-    coverage for batch folding, workspace pulls, and hosted-agent turn behavior.
+    Agent-neutral runtime harness modules now own conversation records, timeline
+    projection, event resolution, workspace references, artifact storage, and
+    out-of-band file delivery. ReAct and hosted-agent implementations consume
+    these shared contracts instead of carrying parallel artifact and timeline
+    systems, while conversation-file references remain stable across turns,
+    agent frameworks, and materialization boundaries.
 
-    Public-content items can carry durable binary assets such as social-preview
-    images, served through validated content routes with cache headers and
-    durable-storage fallback. Conversation search gains an undockable served
-    surface, role-aware result navigation, persisted pane sizing, and improved
-    compact-mode controls.
+    Connection Hub now models delegated access at both agent and external-account
+    scope. Per-agent grants can select concrete connected accounts, consent is
+    editable in place, provider claims are enforced per account, and denial
+    produces a scoped demand that can guide the user back to the correct consent
+    surface. Reusable SDK contracts cover credential views, delegated MCP calls,
+    consent state, result normalization, and claim-aware authorization without
+    coupling application code to the Connection Hub bundle.
 
-    Live application delivery now covers both scene relay legs: session-routed
-    Socket.IO events and tenant/project SSE broadcasts. Delegated-access changes
-    are pushed to every registered Connection Hub session, and paired INFO traces
-    make project-event emission, fan-out, and zero-recipient drops observable.
-    New recipes document live widget updates, scene ownership, public-content
-    assets and styling, and distributed hosted-agent workspaces. Built-in
-    workspace defaults are aligned with the runtime agent inventory and the
-    one-owner-per-surface scene contract.
+    Named services gain agent-neutral discovery and instruction surfaces,
+    connected-account routing, explicit provider ownership, and governed MCP
+    integration paths. The built-in and ported LangGraph examples demonstrate
+    platform services, web tools, conversation and memory access, per-agent
+    consent, and bounded output delivery without making Slack or mail mandatory
+    defaults.
+
+    ReAct v3 now handles streamed decision feedback, rejected completions,
+    final-answer salvage, and retry lineage more deterministically. Lightweight
+    instruction profiles retain full protocol signal at smaller prompt sizes.
+    The model gateway adds custom-provider streaming, LangChain integration,
+    configurable serving context, disconnect cancellation, and a documented
+    local Ollama setup.
+
+    CLI initialization and config application now reconcile Cognito and
+    application-hosted authentication, Telegram companion settings, CORS, and
+    generated descriptors with expanded tests. Shared UI builds survive request
+    cancellation and expose clearer save, reload, preload, and retry boundaries.
+    User and application property paths are fully asynchronous, and the
+    crawler-visible architecture, execution-profile, security, and trust
+    documentation now states the deployed boundaries and operator
+    responsibilities precisely.
 config:
-  version: "2026.07.16.140"
+  version: "2026.07.20.444"
