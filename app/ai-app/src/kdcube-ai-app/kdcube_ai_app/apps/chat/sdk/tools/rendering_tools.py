@@ -558,6 +558,9 @@ class RenderingTools:
         mermaid_font_size_px: Annotated[Optional[int], "Force Mermaid font size in px (improves readability)."] = None,
         mermaid_font_family: Annotated[Optional[str], "Force Mermaid font family (CSS font-family)."] = None,
         mermaid_scale: Annotated[Optional[float], "Scale Mermaid SVG (e.g., 1.1–1.6) before screenshot."] = None,
+        url: Annotated[Optional[str], "Live URL to navigate to instead of writing a temp HTML file. When set, content/format are ignored for navigation."] = None,
+        eval_js: Annotated[Optional[str], "JavaScript expression to evaluate after page load (e.g. inject a token or trigger a render)."] = None,
+        ready_js: Annotated[str, "JS expression that must evaluate to true before screenshotting (polled by wait_for_function)."] = "window.__RENDER_READY__ === true",
     ) -> Annotated[dict, "Result envelope: {ok: bool, error: null|{code,message,where,managed}}."]:
         import html as html_lib
         import urllib.parse
@@ -641,7 +644,7 @@ class RenderingTools:
 
             mermaid_css = "\n            ".join(mermaid_css_bits)
 
-            if format == "mermaid":
+            if url is None and format == "mermaid":
                 canvas_pad = max(int(padding_px or 0), 0) if fit == "content" else 0
                 if isinstance(background, str) and background.strip().lower() in {"transparent", "none"}:
                     canvas_bg = "transparent"
@@ -732,17 +735,18 @@ class RenderingTools:
     </body>
     </html>"""
 
-            elif format == "html":
+            elif url is None and format == "html":
                 html_content = _ensure_html_wrapper(content, title=title)
 
-            else:
+            elif url is None:
                 base_href = conv._base_href_for(pathlib.Path(base_dir) if base_dir else None)
                 html_content = conv.markdown_to_html(content, base_href, title or "Document")
 
-            import time
-            html_filename = f"_render_{int(time.time() * 1000000)}.html"
-            html_path = outdir / html_filename
-            html_path.write_text(html_content, encoding="utf-8")
+            if url is None:
+                import time
+                html_filename = f"_render_{int(time.time() * 1000000)}.html"
+                html_path = outdir / html_filename
+                html_path.write_text(html_content, encoding="utf-8")
 
             try:
                 context = await conv._browser.new_context(
@@ -885,7 +889,21 @@ class RenderingTools:
                     finally:
                         await png_context.close()
 
-                if format == "mermaid":
+                if url is not None:
+                    await page.goto(url, wait_until="networkidle")
+                    if eval_js:
+                        await page.evaluate(eval_js)
+                    await page.wait_for_function(ready_js, timeout=30000)
+                    await page.wait_for_timeout(max(int(render_delay_ms or 0), 0))
+                    await _apply_background()
+                    await _apply_zoom()
+                    if fit == "content":
+                        box = await _compute_bbox(content_selector)
+                        if box:
+                            screenshot_opts["clip"] = _clip_from_box(box)
+                            screenshot_opts["full_page"] = False
+                    await page.screenshot(**screenshot_opts)
+                elif format == "mermaid":
                     try:
                         await page.goto(f"file://{html_path}", wait_until="networkidle")
                         await page.wait_for_function("window.__RENDER_READY__ === true", timeout=30000)
@@ -932,7 +950,7 @@ class RenderingTools:
                         else:
                             svg_content = await svg_element.evaluate("(el) => el.outerHTML")
                             await _screenshot_serialized_svg(svg_content)
-                        
+
                     except Exception as e:
                         print(f"⚠️ Mermaid SVG extraction failed: {e}")
                         return _error_result(
