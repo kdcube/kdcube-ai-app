@@ -474,12 +474,39 @@ async def edit_telegram_text_message(
 
 
 def _answer_texts_from_timeline(timeline: Mapping[str, Any]) -> list[str]:
+    # A turn can legitimately deliver MULTIPLE distinct final answers: the v3
+    # ReAct runtime emits one `react.final_answer.{iteration}.{safe_idx}` block
+    # per PARALLEL action it settles (solutions/react/v3/runtime.py), and each is
+    # a real deliverable that must be preserved and rendered in order.
+    #
+    # The duplication this function guards against comes from the COMPLETION
+    # HISTORY instead. `finish_turn` persists the full close-gate history via
+    # `build_assistant_completion_blocks` (react/layout.py): it re-emits ONE
+    # `assistant.completion` block per completion entry — the settled/final
+    # answer at the UNSUFFIXED path `conv:ar:{tid}.assistant.completion` and
+    # every earlier retry at `conv:ar:{tid}.assistant.completion.{idx}` (with
+    # meta.completion_index / meta.completion_count set when there is more than
+    # one). Rendering straight from the timeline (without
+    # `prefer_react_turn_answer`) used to resend every one of those history
+    # blocks, surfacing the same reply 3-7x back-to-back. So collapse the
+    # completion HISTORY to its FINAL entry only, while preserving DISTINCT
+    # `react.final_answer.*` deliverables untouched.
+    #
+    # `.attempt` blocks (`conv:ar:{tid}.assistant.completion.attempt.{idx}`) are
+    # provisional in-flight drafts and are never delivered — UNLESS the turn
+    # produced nothing else (an aborted turn with only attempt blocks), in which
+    # case we fall back to the last attempt text rather than going silent: this
+    # project has a stuck-turn history and an empty reply is the worst failure.
     blocks = timeline.get("blocks") if isinstance(timeline, Mapping) else None
     if not isinstance(blocks, list):
         return []
     turn_id = _timeline_turn_id(timeline)
-    texts: list[str] = []
-    seen: set[str] = set()
+
+    ordered: list[tuple[str, str]] = []  # (category, text) in timeline order
+    completion_texts: list[str] = []  # completion-HISTORY texts, in timeline order
+    final_completion_text = ""  # the single FINAL completion-history entry
+    attempt_fallback_text = ""  # last provisional draft, used only if nothing else
+
     for block in blocks:
         if not isinstance(block, Mapping):
             continue
@@ -493,6 +520,19 @@ def _answer_texts_from_timeline(timeline: Mapping[str, Any]) -> list[str]:
         owner_turn_id = _path_turn_id(path)
         if turn_id and owner_turn_id and owner_turn_id != turn_id:
             continue
+        text = str(block.get("text") or "").strip()
+
+        is_completion_related = (
+            "assistant.completion" in path
+            or block_type.startswith("assistant.completion")
+        )
+        # Provisional/in-flight drafts are never delivered directly; keep the
+        # newest answer-shaped one only as a last-resort fallback.
+        if block_type.endswith(".attempt") or ".attempt." in path:
+            if text and (is_completion_related or "final_answer" in path):
+                attempt_fallback_text = text
+            continue
+
         if (
             "react.final_answer" not in path
             and "assistant.completion" not in path
@@ -500,11 +540,46 @@ def _answer_texts_from_timeline(timeline: Mapping[str, Any]) -> list[str]:
             and marker != "answer"
         ):
             continue
-        text = str(block.get("text") or "").strip()
-        if text and text not in seen:
-            seen.add(text)
-            texts.append(text)
-    return texts
+        if not text:
+            continue
+
+        # Completion-HISTORY blocks are the duplication source (one per close-gate
+        # retry); `react.final_answer.*` blocks are distinct deliverables.
+        is_completion_history = (
+            "assistant.completion" in path or block_type == "assistant.completion"
+        ) and "react.final_answer" not in path
+        if is_completion_history:
+            completion_texts.append(text)
+            meta = block.get("meta")
+            index_is_final = False
+            if isinstance(meta, Mapping):
+                ci = meta.get("completion_index")
+                cc = meta.get("completion_count")
+                if ci is not None and cc is not None and ci == cc:
+                    index_is_final = True
+            if path.endswith(".assistant.completion") or index_is_final:
+                final_completion_text = text
+            ordered.append(("completion", text))
+        else:
+            ordered.append(("deliverable", text))
+
+    if not final_completion_text and completion_texts:
+        final_completion_text = completion_texts[-1]
+
+    result: list[str] = []
+    seen: set[str] = set()
+    for category, text in ordered:
+        # Drop every completion-history entry except the settled final one.
+        if category == "completion" and text != final_completion_text:
+            continue
+        if text in seen:
+            continue
+        seen.add(text)
+        result.append(text)
+
+    if not result and attempt_fallback_text:
+        result.append(attempt_fallback_text)
+    return result
 
 
 def _split_text_for_telegram(text: str, *, limit: int = TELEGRAM_SAFE_TEXT_LIMIT) -> list[str]:
