@@ -610,22 +610,44 @@ async def resolve_config_request_secrets(
     """Resolve provider-backed model credentials before sync client factories run."""
     updates: dict[str, str] = {}
     required_providers: set[str] = set()
+
+    # Providers explicitly referenced by role_models always need their key.
     if isinstance(config_request.role_models, dict) and config_request.role_models:
         for spec in config_request.role_models.values():
             if isinstance(spec, dict):
                 provider = str(spec.get("provider") or "").strip().lower()
                 if provider:
                     required_providers.add(provider)
-    else:
-        try:
-            settings = get_settings()
-            default_model_id = str(getattr(settings, "DEFAULT_MODEL_LLM_ID", "") or "").strip()
-            model_spec = MODEL_CONFIGS.get(default_model_id)
-            provider = str((model_spec or DEFAULT_MODEL_CONFIG).get("provider") or "").strip().lower()
-            if provider:
-                required_providers.add(provider)
-        except Exception:
-            required_providers.add("anthropic")
+
+    # The default-LLM provider is ALWAYS needed: any role that isn't pinned in
+    # role_models falls back to it, and the format-fixer defaults to it too.
+    # (Previously this was only added in the empty-role_models branch, so a
+    #  bundle sending openai-only roles never resolved the anthropic default
+    #  key -> FormatFixerService built an anthropic client with an empty key.)
+    default_llm_provider = "anthropic"
+    try:
+        settings = get_settings()
+        default_model_id = str(getattr(settings, "DEFAULT_MODEL_LLM_ID", "") or "").strip()
+        model_spec = MODEL_CONFIGS.get(default_model_id)
+        default_llm_provider = str(
+            (model_spec or DEFAULT_MODEL_CONFIG).get("provider") or "anthropic"
+        ).strip().lower() or "anthropic"
+    except Exception:
+        default_llm_provider = "anthropic"
+    if default_llm_provider:
+        required_providers.add(default_llm_provider)
+
+    # The EFFECTIVE format-fixer provider also needs its key resolved:
+    # request override -> env override -> default-LLM provider.
+    fixer_provider = str(
+        (config_request.format_fixer_provider or "")
+        or os.getenv("KDCUBE_FORMAT_FIXER_PROVIDER")
+        or os.getenv("FORMAT_FIXER_PROVIDER")
+        or default_llm_provider
+    ).strip().lower()
+    if fixer_provider:
+        required_providers.add(fixer_provider)
+
     try:
         settings = get_settings()
         embedder_id = str(getattr(settings, "DEFAULT_EMBEDDER", "") or "").strip()
@@ -881,6 +903,13 @@ def create_workflow_config(config_request: ConfigRequest) -> Config:
         cfg.format_fixer_provider = str(config_request.format_fixer_provider).strip().lower()
     if config_request.format_fixer_model:
         cfg.format_fixer_model = str(config_request.format_fixer_model).strip()
+    # Apply the same id -> model_name normalization the env path does: if the
+    # request passed a MODEL_CONFIGS id (e.g. "o3-mini"), resolve it to the
+    # concrete provider/model_name pair.
+    if cfg.format_fixer_model in MODEL_CONFIGS:
+        _fixer_spec = MODEL_CONFIGS[cfg.format_fixer_model]
+        cfg.format_fixer_provider = _fixer_spec.get("provider") or cfg.format_fixer_provider
+        cfg.format_fixer_model = _fixer_spec.get("model_name") or cfg.format_fixer_model
 
     # embeddings
     # try:
@@ -1150,7 +1179,10 @@ class FormatFixerService:
                 import anthropic
                 self.client = anthropic.Anthropic(api_key=config.claude_api_key)
             elif self.provider == "openai":
-                self.client = ChatOpenAI(
+                # Build via the caps-aware helper so o-series models (whose
+                # caps forbid a non-default temperature, e.g. the fallback
+                # default o3-mini) don't 400 on temperature=0.
+                self.client = make_chat_openai(
                     model=self.model,
                     api_key=config.openai_api_key or None,
                     temperature=0,

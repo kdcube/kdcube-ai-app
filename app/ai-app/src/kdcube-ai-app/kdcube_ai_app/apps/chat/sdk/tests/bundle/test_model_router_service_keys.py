@@ -386,6 +386,96 @@ class TestMkAnthropicAsync:
 # _mk_gemini
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# FormatFixerService runtime client build (finding 1 / finding 2)
+# ---------------------------------------------------------------------------
+
+class TestFormatFixerClientBuild:
+    def test_openai_o_series_fixer_omits_invalid_temperature(self, monkeypatch):
+        """An o-series fixer default (e.g. o3-mini) must build its OpenAI client
+        through make_chat_openai, whose caps logic drops temperature for models
+        that forbid it -- otherwise OpenAI 400s. The old code called
+        ChatOpenAI(..., temperature=0) directly and would 400."""
+        captured = {}
+
+        class FakeChatOpenAI:
+            def __init__(self, **kwargs):
+                captured.update(kwargs)
+
+        # Patch the module-global ChatOpenAI that make_chat_openai constructs,
+        # so the real caps-aware helper runs end to end.
+        monkeypatch.setattr(inventory, "ChatOpenAI", FakeChatOpenAI)
+
+        cfg = _make_config(openai_api_key="sk-openai")
+        cfg.format_fixer_provider = "openai"
+        cfg.format_fixer_model = "o3-mini"
+
+        fixer = inventory.FormatFixerService(cfg)
+
+        assert isinstance(fixer.client, FakeChatOpenAI)      # make_chat_openai was used
+        assert captured["model"] == "o3-mini"
+        # model_caps("o3-mini") -> temperature: False, so it must be dropped.
+        assert "temperature" not in captured
+
+    def test_openai_non_o_series_fixer_keeps_temperature(self, monkeypatch):
+        """A model whose caps allow temperature (gpt-4o) still gets it through
+        make_chat_openai, proving the helper -- not a hardcoded drop -- is used."""
+        captured = {}
+
+        class FakeChatOpenAI:
+            def __init__(self, **kwargs):
+                captured.update(kwargs)
+
+        monkeypatch.setattr(inventory, "ChatOpenAI", FakeChatOpenAI)
+
+        cfg = _make_config(openai_api_key="sk-openai")
+        cfg.format_fixer_provider = "openai"
+        cfg.format_fixer_model = "gpt-4o"
+
+        fixer = inventory.FormatFixerService(cfg)
+
+        assert isinstance(fixer.client, FakeChatOpenAI)
+        assert captured["model"] == "gpt-4o"
+        assert captured.get("temperature") == 0.0
+
+
+@pytest.mark.asyncio
+async def test_config_request_resolves_default_llm_provider_for_openai_only_roles(monkeypatch):
+    """anthropic default LLM + openai-only role_models: the default-LLM
+    (anthropic) provider key MUST still be resolved, or FormatFixerService
+    builds an anthropic client with an empty key and every fix fails."""
+    inventory._CONFIG_SECRET_CACHE.clear()
+    for var in ("KDCUBE_FORMAT_FIXER_PROVIDER", "FORMAT_FIXER_PROVIDER"):
+        monkeypatch.delenv(var, raising=False)
+
+    async def fake_get_secret(key, default=None, **kwargs):
+        if key == "services.anthropic.api_key":
+            return "sk-global-anthropic"
+        if key == "services.openai.api_key":
+            return "sk-global-openai"
+        return default
+
+    monkeypatch.setattr(inventory, "get_secret", fake_get_secret)
+    monkeypatch.setattr(
+        inventory, "get_settings",
+        lambda: _settings(
+            DEFAULT_MODEL_LLM_ID="claude-sonnet-4-20250514",   # anthropic
+            DEFAULT_EMBEDDER="openai-text-embedding-3-small",
+        ),
+    )
+
+    resolved = await inventory.resolve_config_request_secrets(
+        inventory.ConfigRequest(
+            role_models={"quick.router": {"provider": "openai", "model": "gpt-4o"}},
+        ),
+        bundle_id=None,
+    )
+
+    # openai came from role_models; anthropic came from the default LLM provider.
+    assert resolved.openai_api_key == "sk-global-openai"
+    assert resolved.claude_api_key == "sk-global-anthropic"
+
+
 class TestMkGemini:
     def _fake_gemini_client(self, captured: dict):
         class FakeGeminiModelClient:
