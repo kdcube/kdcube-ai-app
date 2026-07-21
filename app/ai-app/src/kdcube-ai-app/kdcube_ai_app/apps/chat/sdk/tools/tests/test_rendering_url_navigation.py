@@ -11,14 +11,32 @@ cover the two contracts that matter:
 * ``url is None`` -> the legacy path is byte-identical: ``content`` is written to
   a temp ``_render_*.html`` and screenshotted; no navigation happens.
 
-The browser-backed tests are marked ``playwright`` and skip cleanly where no
-Chromium is available (e.g. slim CI images). ``importorskip`` keeps collection
-working where the package itself is not installed.
+Event-loop contract
+-------------------
+``write_png`` reaches Chromium through the process-global shared browser
+(``get_shared_browser()``), which caches a Playwright browser bound to the event
+loop that first launched it. pytest-asyncio (``asyncio_mode = auto``) gives every
+test a *fresh* function-scoped loop, so a second browser-backed test in the same
+session would otherwise reuse a browser bound to the first test's now-closed
+loop. The ``_reset_shared_browser`` autouse fixture closes+resets that singleton
+after every test *in the same loop that used it*, so each browser-backed test
+re-initialises Chromium on its own loop. The two browser tests are therefore
+``async def`` (they run on the managed loop) rather than nesting ``asyncio.run``.
+
+The browser-backed tests are marked ``playwright`` and, via the
+``requires_browser`` fixture, skip cleanly where no Chromium is available (e.g.
+slim CI images) -- unless ``KDCUBE_REQUIRE_BROWSER=1`` is set, in which case a
+missing browser is a hard failure so a CI job can assert the playwright tests
+actually ran. The Chromium probe lives in that fixture (not at collection time),
+so ``-m "not playwright"`` never launches a browser. ``importorskip`` keeps
+collection working where the package itself is not installed.
 """
 
 import asyncio
 import functools
 import inspect
+import os
+import pathlib
 
 import pytest
 
@@ -34,9 +52,24 @@ from kdcube_ai_app.apps.chat.sdk.runtime.run_ctx import OUTDIR_CV, WORKDIR_CV
 from kdcube_ai_app.apps.chat.sdk.runtime.workdir_discovery import resolve_output_dir
 
 
+def _require_browser_env() -> bool:
+    """True iff KDCUBE_REQUIRE_BROWSER asks CI to hard-require a real browser."""
+    return os.getenv("KDCUBE_REQUIRE_BROWSER", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
 @functools.lru_cache(maxsize=1)
 def _browser_available() -> bool:
-    """True iff Playwright + a launchable Chromium are present locally."""
+    """True iff Playwright + a launchable Chromium are present locally.
+
+    Only ever called from the ``requires_browser`` fixture (test setup time),
+    never at import/collection time -- so collecting or running
+    ``-m "not playwright"`` never launches a browser.
+    """
     try:
         from playwright.async_api import async_playwright
     except Exception:
@@ -57,10 +90,44 @@ def _browser_available() -> bool:
         return False
 
 
-requires_browser = pytest.mark.skipif(
-    not _browser_available(),
-    reason="Playwright Chromium not available",
-)
+@pytest.fixture
+def requires_browser():
+    """Gate a browser-backed test on a launchable Chromium.
+
+    Skips when no browser is available, so slim CI images stay green. Set
+    ``KDCUBE_REQUIRE_BROWSER=1`` to turn that skip into a hard failure -- a CI
+    job can then prove the playwright tests actually executed rather than
+    silently skipping (green-with-nothing-verified).
+    """
+    if _browser_available():
+        return
+    if _require_browser_env():
+        pytest.fail(
+            "KDCUBE_REQUIRE_BROWSER is set but no launchable Chromium is "
+            "available; the browser-backed write_png tests did not run."
+        )
+    pytest.skip("Playwright Chromium not available")
+
+
+@pytest.fixture(autouse=True)
+async def _reset_shared_browser():
+    """Reset the process-global shared browser after every test.
+
+    The shared browser is cached against the loop that first launched it;
+    pytest-asyncio hands each test a fresh loop, so without this a second
+    browser-backed test would reuse a browser bound to a closed loop. Tearing it
+    down here -- in the same loop that used it -- lets the next test re-init
+    Chromium cleanly. No-op when nothing touched the browser (e.g. the sync
+    signature test).
+    """
+    yield
+    try:
+        from kdcube_ai_app.infra.rendering.shared_browser import (
+            close_shared_browser,
+        )
+        await close_shared_browser()
+    except Exception:
+        pass
 
 
 def _load_png_colors(png_path):
@@ -89,8 +156,9 @@ def test_write_png_signature_is_default_off():
 
 
 @pytest.mark.playwright
-@requires_browser
-def test_write_png_url_navigation_runs_eval_js_before_ready_gate(tmp_path):
+async def test_write_png_url_navigation_runs_eval_js_before_ready_gate(
+    tmp_path, monkeypatch, requires_browser
+):
     """url mode: navigate a local file, run eval_js, gate on ready_js, capture.
 
     The fixture never sets the readiness flag itself, and paints nothing. Only
@@ -104,6 +172,20 @@ def test_write_png_url_navigation_runs_eval_js_before_ready_gate(tmp_path):
     workdir.mkdir()
     OUTDIR_CV.set(str(runtime_outdir))
     WORKDIR_CV.set(str(workdir))
+
+    # Spy on temp-HTML writes so the "url mode writes no _render_ file" claim is
+    # non-vacuous: the legacy content path unlinks its temp file in a finally, so
+    # a post-hoc glob would pass even if the temp file *had* been written. We
+    # instead assert write_text was never invoked for a _render_ file at all.
+    render_writes: list[str] = []
+    real_write_text = pathlib.Path.write_text
+
+    def _spy_write_text(self, *args, **kwargs):
+        if "_render_" in self.name:
+            render_writes.append(str(self))
+        return real_write_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(pathlib.Path, "write_text", _spy_write_text)
 
     # Fixture: no ready flag, no visible content of its own.
     fixture = tmp_path / "widget.html"
@@ -125,17 +207,15 @@ def test_write_png_url_navigation_runs_eval_js_before_ready_gate(tmp_path):
         "}"
     )
 
-    result = asyncio.run(
-        RenderingTools().write_png(
-            path="turn_test/outputs/widget.png",
-            content="",  # ignored in url mode
-            format="html",
-            url=fixture.as_uri(),
-            eval_js=eval_js,
-            ready_js="window.__RENDER_READY__ === true",
-            render_delay_ms=0,
-            content_selector="#injected",
-        )
+    result = await RenderingTools().write_png(
+        path="turn_test/outputs/widget.png",
+        content="",  # ignored in url mode
+        format="html",
+        url=fixture.as_uri(),
+        eval_js=eval_js,
+        ready_js="window.__RENDER_READY__ === true",
+        render_delay_ms=0,
+        content_selector="#injected",
     )
 
     assert result.get("ok") is True, result
@@ -144,7 +224,7 @@ def test_write_png_url_navigation_runs_eval_js_before_ready_gate(tmp_path):
     assert png_path.exists() and png_path.stat().st_size > 0
 
     # url mode must NOT write a temp render file (that is the content path).
-    assert not list(resolve_output_dir().glob("_render_*.html"))
+    assert render_writes == [], render_writes
 
     colors = _load_png_colors(png_path)
     if colors is not None:
@@ -153,12 +233,15 @@ def test_write_png_url_navigation_runs_eval_js_before_ready_gate(tmp_path):
 
 
 @pytest.mark.playwright
-@requires_browser
-def test_write_png_url_none_still_renders_from_content(tmp_path):
+async def test_write_png_url_none_still_renders_from_content(
+    tmp_path, requires_browser
+):
     """url=None: the legacy content path is unchanged.
 
     A temp ``_render_*.html`` is written from ``content`` and screenshotted; no
-    navigation seam is exercised.
+    navigation seam is exercised. This runs *after* a browser-backed test in the
+    same session, exercising the shared-browser reset (a second launch on a
+    fresh loop must succeed).
     """
     runtime_outdir = tmp_path / "out"
     workdir = tmp_path / "work"
@@ -173,15 +256,13 @@ def test_write_png_url_none_still_renders_from_content(tmp_path):
         f"background:rgb({marker_rgb[0]},{marker_rgb[1]},{marker_rgb[2]})'></div>"
     )
 
-    result = asyncio.run(
-        RenderingTools().write_png(
-            path="turn_test/outputs/inline.png",
-            content=html,
-            format="html",
-            # url omitted -> defaults to None -> legacy path
-            render_delay_ms=0,
-            content_selector="#content",
-        )
+    result = await RenderingTools().write_png(
+        path="turn_test/outputs/inline.png",
+        content=html,
+        format="html",
+        # url omitted -> defaults to None -> legacy path
+        render_delay_ms=0,
+        content_selector="#content",
     )
 
     assert result.get("ok") is True, result
