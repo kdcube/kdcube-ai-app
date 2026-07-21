@@ -25,10 +25,20 @@ def _doc_rendering_disabled() -> bool:
 
     Honors KDCUBE_DISABLE_DOC_RENDERING. Default (unset / falsy) leaves
     rendering ENABLED so upstream behavior is unchanged. Truthy values
-    ("1", "true", "yes", "on", case-insensitive) gate the browser off.
+    ("1", "true", "yes", "y", "on", "t", case-insensitive) gate the browser
+    off. Unrecognized non-empty values are treated as falsy (rendering stays
+    enabled) but logged so typos like "diable" don't silently mislead.
     """
-    val = os.getenv("KDCUBE_DISABLE_DOC_RENDERING", "")
-    return val.strip().lower() in ("1", "true", "yes", "on")
+    val = os.getenv("KDCUBE_DISABLE_DOC_RENDERING", "").strip().lower()
+    if val in ("1", "true", "yes", "y", "on", "t"):
+        return True
+    if val not in ("", "0", "false", "no", "n", "off", "f"):
+        logger.warning(
+            "KDCUBE_DISABLE_DOC_RENDERING=%r is not a recognized boolean; "
+            "treating as falsy (document rendering stays ENABLED). Use 1/0.",
+            val,
+        )
+    return False
 
 
 def _looks_like_missing_browser_error(exc: Exception) -> bool:
