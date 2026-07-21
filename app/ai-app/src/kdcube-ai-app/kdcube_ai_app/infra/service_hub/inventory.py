@@ -21,7 +21,7 @@ from langchain_core.embeddings import Embeddings
 from langchain_core.messages import SystemMessage, HumanMessage, BaseMessage, AIMessage, AIMessageChunk, ToolMessage
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
-from kdcube_ai_app.apps.chat.reg import MODEL_CONFIGS, EMBEDDERS, model_caps
+from kdcube_ai_app.apps.chat.reg import DEFAULT_MODEL_CONFIG, MODEL_CONFIGS, EMBEDDERS, model_caps
 from kdcube_ai_app.infra.accounting import track_embedding, track_llm
 from kdcube_ai_app.infra.accounting.usage import (
     _structured_usage_extractor,
@@ -540,6 +540,8 @@ class ConfigRequest(BaseModel):
     # Feature toggles
     has_classifier: Optional[bool] = None         # override; else derive from MODEL_CONFIGS
     format_fix_enabled: bool = True               # enable JSON fixer on structured calls
+    format_fixer_provider: Optional[str] = None
+    format_fixer_model: Optional[str] = None
 
     # Gemini caching (optional, safe defaults)
     gemini_cache_enabled: Optional[bool] = None
@@ -569,6 +571,37 @@ class ConfigRequest(BaseModel):
     assistant_signal_spec: Optional[str] = None
 
 
+_CONFIG_SECRET_CACHE: dict[tuple[str, str], tuple[float, str | None]] = {}
+_CONFIG_SECRET_CACHE_TTL_SECONDS = 300.0
+
+
+def _config_secret_cache_ttl_seconds() -> float:
+    raw = str(os.getenv("KDCUBE_CONFIG_SECRET_CACHE_TTL_SECONDS") or "").strip()
+    if not raw:
+        return _CONFIG_SECRET_CACHE_TTL_SECONDS
+    try:
+        return max(0.0, float(raw))
+    except Exception:
+        return _CONFIG_SECRET_CACHE_TTL_SECONDS
+
+
+async def _resolve_cached_config_secret(canonical_key: str, *, bundle_id: str | None = None) -> str | None:
+    ttl = _config_secret_cache_ttl_seconds()
+    cache_key = (str(bundle_id or ""), canonical_key)
+    now = time.monotonic()
+    cached = _CONFIG_SECRET_CACHE.get(cache_key)
+    if cached and cached[0] > now:
+        return cached[1]
+
+    value = None
+    if bundle_id:
+        value = await get_secret(f"b:{canonical_key}", bundle_id=bundle_id)
+    value = value or await get_secret(canonical_key)
+    if ttl > 0:
+        _CONFIG_SECRET_CACHE[cache_key] = (now + ttl, value)
+    return value
+
+
 async def resolve_config_request_secrets(
         config_request: ConfigRequest,
         *,
@@ -576,22 +609,70 @@ async def resolve_config_request_secrets(
 ) -> ConfigRequest:
     """Resolve provider-backed model credentials before sync client factories run."""
     updates: dict[str, str] = {}
+    required_providers: set[str] = set()
 
-    async def _resolve(field: str, canonical_key: str) -> None:
+    # Providers explicitly referenced by role_models always need their key.
+    if isinstance(config_request.role_models, dict) and config_request.role_models:
+        for spec in config_request.role_models.values():
+            if isinstance(spec, dict):
+                provider = str(spec.get("provider") or "").strip().lower()
+                if provider:
+                    required_providers.add(provider)
+
+    # The default-LLM provider is ALWAYS needed: any role that isn't pinned in
+    # role_models falls back to it, and the format-fixer defaults to it too.
+    # (Previously this was only added in the empty-role_models branch, so a
+    #  bundle sending openai-only roles never resolved the anthropic default
+    #  key -> FormatFixerService built an anthropic client with an empty key.)
+    default_llm_provider = "anthropic"
+    try:
+        settings = get_settings()
+        default_model_id = str(getattr(settings, "DEFAULT_MODEL_LLM_ID", "") or "").strip()
+        model_spec = MODEL_CONFIGS.get(default_model_id)
+        default_llm_provider = str(
+            (model_spec or DEFAULT_MODEL_CONFIG).get("provider") or "anthropic"
+        ).strip().lower() or "anthropic"
+    except Exception:
+        default_llm_provider = "anthropic"
+    if default_llm_provider:
+        required_providers.add(default_llm_provider)
+
+    # The EFFECTIVE format-fixer provider also needs its key resolved:
+    # request override -> env override -> default-LLM provider.
+    fixer_provider = str(
+        (config_request.format_fixer_provider or "")
+        or os.getenv("KDCUBE_FORMAT_FIXER_PROVIDER")
+        or os.getenv("FORMAT_FIXER_PROVIDER")
+        or default_llm_provider
+    ).strip().lower()
+    if fixer_provider:
+        required_providers.add(fixer_provider)
+
+    try:
+        settings = get_settings()
+        embedder_id = str(getattr(settings, "DEFAULT_EMBEDDER", "") or "").strip()
+        embedder = EMBEDDERS.get(embedder_id)
+        provider = str((embedder or {}).get("provider") or "").strip().lower()
+        if provider:
+            required_providers.add(provider)
+    except Exception:
+        pass
+
+    async def _resolve(field: str, canonical_key: str, provider: Optional[str] = None) -> None:
+        # provider=None => always attempt (e.g. "custom" gateway keys).
+        if provider is not None and provider not in required_providers:
+            return
         if getattr(config_request, field, None):
             return
-        value = None
-        if bundle_id:
-            value = await get_secret(f"b:{canonical_key}", bundle_id=bundle_id)
-        value = value or await get_secret(canonical_key)
+        value = await _resolve_cached_config_secret(canonical_key, bundle_id=bundle_id)
         if value:
             updates[field] = value
 
-    await _resolve("openai_api_key", "services.openai.api_key")
-    await _resolve("claude_api_key", "services.anthropic.api_key")
-    await _resolve("google_api_key", "services.google.api_key")
-    await _resolve("huggingface_api_key", "services.huggingface.api_key")
-    await _resolve("openrouter_api_key", "services.openrouter.api_key")
+    await _resolve("openai_api_key", "services.openai.api_key", "openai")
+    await _resolve("claude_api_key", "services.anthropic.api_key", "anthropic")
+    await _resolve("google_api_key", "services.google.api_key", "google")
+    await _resolve("huggingface_api_key", "services.huggingface.api_key", "huggingface")
+    await _resolve("openrouter_api_key", "services.openrouter.api_key", "openrouter")
     # provider "custom" (locally served models / models gateway): same
     # door-time, bundle-then-platform key resolution as hosted providers
     await _resolve("custom_model_api_key", "services.llm.custom.api_key")
@@ -635,11 +716,26 @@ class Config:
         # logging
         self.log_level = get_settings().PLATFORM.LOG.LOG_LEVEL
 
-        # format fix (Claude by default)
-        self.format_fixer_model = "claude-3-haiku-20240307"
+        self.default_llm_model = MODEL_CONFIGS.get(default_llm_model) or  MODEL_CONFIGS.get("o3-mini")
+
+        # format fix model is configurable; default to the active default LLM
+        # instead of a stale provider-specific literal.
+        self.format_fixer_provider = (
+            os.getenv("KDCUBE_FORMAT_FIXER_PROVIDER")
+            or os.getenv("FORMAT_FIXER_PROVIDER")
+            or self.default_llm_model["provider"]
+        )
+        self.format_fixer_model = (
+            os.getenv("KDCUBE_FORMAT_FIXER_MODEL")
+            or os.getenv("FORMAT_FIXER_MODEL")
+            or self.default_llm_model["model_name"]
+        )
+        if self.format_fixer_model in MODEL_CONFIGS:
+            model_spec = MODEL_CONFIGS[self.format_fixer_model]
+            self.format_fixer_provider = model_spec.get("provider") or self.format_fixer_provider
+            self.format_fixer_model = model_spec.get("model_name") or self.format_fixer_model
         self.format_fix_enabled = True
 
-        self.default_llm_model = MODEL_CONFIGS.get(default_llm_model) or  MODEL_CONFIGS.get("o3-mini")
         # role map (filled later; defaults below)
         self.role_models: Dict[str, Dict[str, str]] = role_models or self.default_role_map()
 
@@ -718,8 +814,7 @@ class Config:
         BASE_ROLES = ("classifier", "query_writer", "reranker", "answer_generator", "format_fixer")
         base = {r: {"provider": self.default_llm_model["provider"], "model": self.default_llm_model["model_name"]}
                 for r in BASE_ROLES}
-        # prefer Anthropic for format fixer
-        base["format_fixer"] = {"provider": "anthropic", "model": self.format_fixer_model}
+        base["format_fixer"] = {"provider": self.format_fixer_provider, "model": self.format_fixer_model}
         return base
 
     def get_default_role_spec(self) -> Dict[str, str]:
@@ -730,7 +825,7 @@ class Config:
         """Make sure a role has a mapping; if missing, fill with defaults (special-case format_fixer)."""
         if role not in self.role_models:
             if role == "format_fixer":
-                self.role_models[role] = {"provider": "anthropic", "model": self.format_fixer_model}
+                self.role_models[role] = {"provider": self.format_fixer_provider, "model": self.format_fixer_model}
             else:
                 self.role_models[role] = self.get_default_role_spec()
         return self.role_models[role]
@@ -804,6 +899,17 @@ def create_workflow_config(config_request: ConfigRequest) -> Config:
         cfg.gemini_cache_ttl_seconds = int(config_request.gemini_cache_ttl_seconds)
 
     cfg.format_fix_enabled = bool(config_request.format_fix_enabled)
+    if config_request.format_fixer_provider:
+        cfg.format_fixer_provider = str(config_request.format_fixer_provider).strip().lower()
+    if config_request.format_fixer_model:
+        cfg.format_fixer_model = str(config_request.format_fixer_model).strip()
+    # Apply the same id -> model_name normalization the env path does: if the
+    # request passed a MODEL_CONFIGS id (e.g. "o3-mini"), resolve it to the
+    # concrete provider/model_name pair.
+    if cfg.format_fixer_model in MODEL_CONFIGS:
+        _fixer_spec = MODEL_CONFIGS[cfg.format_fixer_model]
+        cfg.format_fixer_provider = _fixer_spec.get("provider") or cfg.format_fixer_provider
+        cfg.format_fixer_model = _fixer_spec.get("model_name") or cfg.format_fixer_model
 
     # embeddings
     # try:
@@ -1060,17 +1166,35 @@ def ms_freeform_meta_extractor(model_service, _client=None, messages=None, *a, *
 # Format fixer
 # =========================
 class FormatFixerService:
-    """Fixes malformed JSON responses using Claude"""
+    """Fixes malformed JSON responses using the configured format_fixer role."""
     def __init__(self, config: Config):
         self.config = config
         self.logger = AgentLogger("FormatFixer", config.log_level)
+        self.role_spec = dict(config.ensure_role("format_fixer"))
+        self.provider = str(self.role_spec.get("provider") or config.format_fixer_provider or "").strip().lower()
+        self.model = str(self.role_spec.get("model") or config.format_fixer_model or "").strip()
+        self.client = None
         try:
-            import anthropic
-            self.claude_client = anthropic.Anthropic(api_key=config.claude_api_key)
-            # self.logger.log_step("claude_client_initialized", {"model": config.format_fixer_model})
-        except ImportError:
-            self.claude_client = None
-            self.logger.log_error(ImportError("anthropic package not available"), "Claude client initialization")
+            if self.provider == "anthropic":
+                import anthropic
+                self.client = anthropic.Anthropic(api_key=config.claude_api_key)
+            elif self.provider == "openai":
+                # Build via the caps-aware helper so o-series models (whose
+                # caps forbid a non-default temperature, e.g. the fallback
+                # default o3-mini) don't 400 on temperature=0.
+                self.client = make_chat_openai(
+                    model=self.model,
+                    api_key=config.openai_api_key or None,
+                    temperature=0,
+                )
+            else:
+                self.logger.log_error(
+                    ValueError(f"Unsupported format_fixer provider: {self.provider}"),
+                    "Format fixer client initialization",
+                )
+        except Exception as exc:
+            self.client = None
+            self.logger.log_error(exc, "Format fixer client initialization")
 
     async def fix_format(
             self,
@@ -1097,12 +1221,12 @@ class FormatFixerService:
             expected_format=expected_format,
             input_data_length=0,
             system_prompt_length=len(system_prompt_text),
-            model=self.config.format_fixer_model,
-            provider="anthropic"
+            model=self.model,
+            provider=self.provider,
         )
 
-        if not self.claude_client:
-            msg = "Claude client not available"
+        if not self.client:
+            msg = "Format fixer client not available"
             self.logger.log_error(Exception(msg), "Client unavailable")
             self.logger.finish_operation(False, msg)
             return {"success": False, "error": msg, "raw": raw_output}
@@ -1118,18 +1242,30 @@ Malformed output: {raw_output}
 Please fix the JSON to match the expected format. Return only the fixed JSON, no additional text."""
 
             self.logger.log_step("sending_fix_request", {
-                "model": self.config.format_fixer_model,
+                "provider": self.provider,
+                "model": self.model,
                 "fix_prompt_length": len(fix_prompt),
                 "raw_output": raw_output
             })
 
-            response = self.claude_client.messages.create(
-                model=self.config.format_fixer_model,
-                max_tokens=1000,
-                messages=[{"role": "user", "content": fix_prompt}]
-            )
-
-            fixed_content = response.content[0].text
+            if self.provider == "anthropic":
+                response = self.client.messages.create(
+                    model=self.model,
+                    max_tokens=1000,
+                    messages=[{"role": "user", "content": fix_prompt}]
+                )
+                fixed_content = response.content[0].text
+            elif self.provider == "openai":
+                response = await self.client.ainvoke([
+                    SystemMessage(content="Return only valid JSON."),
+                    HumanMessage(content=fix_prompt),
+                ])
+                fixed_content = str(getattr(response, "content", "") or "")
+            else:
+                msg = f"Unsupported format_fixer provider: {self.provider}"
+                self.logger.log_error(ValueError(msg), "Format fixing failed")
+                self.logger.finish_operation(False, msg)
+                return {"success": False, "error": msg, "raw": raw_output}
 
             try:
                 parsed = json.loads(fixed_content)
@@ -1396,8 +1532,8 @@ class ModelServiceBase:
                             validated = response_format.model_validate(fix["data"])
                             self.logger.finish_operation(True,
                                                          "Parsed after FormatFixer",
-                                                         model=self.format_fixer.config.format_fixer_model,
-                                                         provider="anthropic",)
+                                                         model=getattr(self.format_fixer, "model", None),
+                                                         provider=getattr(self.format_fixer, "provider", None),)
                             return {
                                 "success": True,
                                 "data": validated.model_dump(),
