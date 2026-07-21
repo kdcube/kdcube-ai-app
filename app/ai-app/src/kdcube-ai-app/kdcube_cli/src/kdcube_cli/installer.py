@@ -3852,7 +3852,7 @@ def gather_configuration(
                 ui_port = str(
                     _get_nested(assembly_data, "ports", "ui")
                     or env_main.entries.get("KDCUBE_UI_PORT", (None, None))[1]
-                    or "5174"
+                    or "5173"
                 ).strip()
                 if ui_port in ("80", "443"):
                     proxy_domain = "localhost"
