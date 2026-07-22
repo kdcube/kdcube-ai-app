@@ -89,12 +89,16 @@ Check what the programmable chat menu button currently opens:
 curl "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getChatMenuButton"
 ```
 
-Register bot commands:
+Register bot commands. The CLI companion setup (`configure_telegram_companion`)
+registers these automatically via `setMyCommands`; run this only to set them
+manually. The commands mirror the continuation commands the bot processes
+(`/stop`, `/steer`, `/followup`; the `/s` and `/f` aliases are parsed but not
+listed in the menu):
 
 ```bash
 curl -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setMyCommands" \
   -H "Content-Type: application/json" \
-  -d '{"commands":[{"command":"start","description":"Start the assistant"},{"command":"help","description":"Show help"},{"command":"settings","description":"Open settings"}]}'
+  -d '{"commands":[{"command":"stop","description":"Stop the current turn"},{"command":"steer","description":"Steer the current turn (optionally add new focus)"},{"command":"followup","description":"Add to the current turn"}]}'
 ```
 
 Test:
