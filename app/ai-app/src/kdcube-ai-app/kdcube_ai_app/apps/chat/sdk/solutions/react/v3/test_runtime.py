@@ -1664,6 +1664,175 @@ async def test_decision_node_always_enables_final_answer_timeline_stream(monkeyp
 
 
 @pytest.mark.asyncio
+async def test_decision_node_does_not_retry_empty_packet_after_answer_streamed(monkeypatch):
+    solver = _solver_stub()
+    emitted = []
+
+    class _Timeline:
+        last_external_event_seq = 0
+
+    class _Browser:
+        def __init__(self):
+            self.timeline = _Timeline()
+            self.runtime_ctx = SimpleNamespace(
+                workspace_implementation="git",
+                bundle_id="bundle.test",
+            )
+            self.sources_pool = []
+
+        async def wait_and_drain_external_events(self, *, call_hooks, block_ms, limit):
+            del call_hooks, block_ms, limit
+            return 0
+
+        async def drain_external_events(self, *, call_hooks):
+            del call_hooks
+            return 0
+
+        def announce(self, *, blocks):
+            del blocks
+
+        @property
+        def feedback_updates(self):
+            return []
+
+        @property
+        def feedback_updates_integrated(self):
+            return False
+
+        def contribute_notice(self, *args, **kwargs):
+            del args, kwargs
+
+        @property
+        def timeline_visible_paths(self):
+            return []
+
+    async def _capture_delta(**kwargs):
+        emitted.append(dict(kwargs))
+
+    solver.ctx_browser = _Browser()
+    solver.comm = SimpleNamespace(delta=_capture_delta, service_event=_noop_async)
+    solver._drain_external_events = _noop_async
+    solver._update_announce = _noop_async
+    solver._mk_mainstream = lambda phase: _noop_async
+    solver._mk_exec_code_streamer = lambda phase, idx, execution_id=None: (_noop_async, None)
+    solver._mk_content_streamers = lambda phase, sources_list=None, artifact_name=None: ([], [])
+    solver._append_react_timing = lambda **kwargs: None
+    solver._adapters_index = lambda adapters: {}
+    solver._short_json = lambda obj, max_len=800: str(obj)
+    solver._protocol_violation_message = lambda **kwargs: "protocol"
+    solver.scratchpad = SimpleNamespace(
+        turn_id="turn-1",
+        register_agentic_response=lambda *args, **kwargs: None,
+    )
+
+    class _TimelineStreamer:
+        def __init__(self, *, emit_delta, on_action_identity):
+            self._emit_delta = emit_delta
+            self._on_action_identity = on_action_identity
+            self._parts = []
+            self._answer_started = False
+
+        async def feed(self, text="", completed=False, **kwargs):
+            del kwargs
+            if text:
+                self._parts.append(text)
+            if not completed:
+                return
+            parsed = json.loads("".join(self._parts))
+            await self._on_action_identity(
+                parsed["action"],
+                "",
+                parsed.get("tool_call") or {},
+            )
+            self._answer_started = True
+            await self._emit_delta(
+                text=parsed["final_answer"],
+                marker="answer",
+                completed=False,
+            )
+
+        def has_started(self, name: str) -> bool:
+            return name == "final_answer" and self._answer_started
+
+        def next_index(self, name: str) -> int:
+            del name
+            return 1
+
+        def started_at(self, name: str):
+            del name
+            return None
+
+    def _fake_mk_timeline_streamer(*args, **kwargs):
+        del args
+        streamer = _TimelineStreamer(
+            emit_delta=kwargs["emit_delta"],
+            on_action_identity=kwargs["on_action_identity"],
+        )
+        return streamer.feed, streamer
+
+    solver._mk_timeline_streamer = _fake_mk_timeline_streamer
+
+    async def _fake_retry_with_compaction(**kwargs):
+        return await kwargs["agent_fn"](blocks=[])
+
+    async def _fake_react_decision_stream_v2(**kwargs):
+        payload = (
+            '{"action":"complete","notes":"","tool_call":null,'
+            '"final_answer":"The answer already shown.","suggested_followups":[]}'
+        )
+        subscribers = kwargs["subscribers"]
+        for fn in subscribers.get("action", channel_instance=0):
+            await fn(text=payload, completed=False, channel="action", channel_instance=0)
+            await fn(text="", completed=True, channel="action", channel_instance=0)
+        # Reproduce the provider/post-stream mismatch from the live incident:
+        # subscribers saw the complete action, but the returned packet lost it.
+        return {
+            "agent_response": {},
+            "log": {"error": None},
+            "channels": {"action": {"text": ""}, "code": {"text": ""}},
+        }
+
+    async def _record_failed_decision_attempt(**kwargs):
+        del kwargs
+
+    solver._record_failed_decision_attempt = _record_failed_decision_attempt
+    monkeypatch.setattr(
+        "kdcube_ai_app.apps.chat.sdk.solutions.chatbot.agent_retry.retry_with_compaction",
+        _fake_retry_with_compaction,
+    )
+    monkeypatch.setattr(
+        "kdcube_ai_app.apps.chat.sdk.solutions.react.v3.runtime.react_decision_stream_v2",
+        _fake_react_decision_stream_v2,
+    )
+
+    state = {
+        "iteration": 0,
+        "max_iterations": 15,
+        "adapters": [],
+        "outdir": "/tmp/out",
+        "workdir": "/tmp/work",
+        "turn_id": "turn-1",
+        "decision_retries": 0,
+        "max_decision_retries": 2,
+        "session_log": [],
+        "round_timings": [],
+    }
+
+    out = await solver._decision_node_impl(state, 0)
+
+    assert out["retry_decision"] is False
+    assert out["last_decision"] == {
+        "action": "complete",
+        "final_answer": "The answer already shown.",
+        "tool_call": None,
+        "notes": "",
+    }
+    assert [item.get("text") for item in emitted if item.get("marker") == "answer"] == [
+        "The answer already shown."
+    ]
+
+
+@pytest.mark.asyncio
 async def test_decision_node_uses_delta_cache_started_at_for_answer(monkeypatch):
     solver = _solver_stub()
     note_calls = []

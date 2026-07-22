@@ -4240,6 +4240,19 @@ class ReactSolverV2:
                         )
                     except Exception:
                         pass
+                    # The online overseer is authoritative about delivery. If
+                    # this round's accepted answer already reached the user,
+                    # a post-stream parse/validation mismatch must not create
+                    # a second model round and duplicate the answer.
+                    finalized = self._keep_and_stop_if_answer_streamed(
+                        decision=decision,
+                        streamed_state=streamed_state,
+                        state=state,
+                        code=validation_error,
+                    )
+                    if finalized is not None:
+                        state["last_decision"] = finalized
+                        return state
                     retries = int(state.get("decision_retries") or 0)
                     if retries < int(state.get("max_iterations") or 0):
                         state["decision_retries"] = retries + 1
