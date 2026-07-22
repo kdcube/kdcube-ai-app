@@ -90,6 +90,41 @@ def test_validate_decision_rejects_final_answer_with_notes():
     assert "notes empty" in message
 
 
+def test_exec_contract_object_is_reported_as_invalid_shape():
+    solver = _solver_stub()
+    decision = {
+        "action": "call_tool",
+        "tool_call": {
+            "tool_id": "exec_tools.execute_code_python",
+            "params": {
+                "contract": {
+                    "filepath": "turn_1/files/report.xlsx",
+                    "description": "Spreadsheet",
+                },
+                "prog_name": "build_report",
+            },
+        },
+    }
+
+    verdict = solver._validate_tool_call_protocol(
+        tool_call=decision["tool_call"],
+        adapters_by_id={
+            "exec_tools.execute_code_python": {
+                "id": "exec_tools.execute_code_python",
+                "doc": {"args": {"contract": {}, "prog_name": {}}},
+            }
+        },
+    )
+
+    assert verdict["ok"] is False
+    assert [item["code"] for item in verdict["violations"]] == ["invalid_contract"]
+    assert "non-empty list" in solver._protocol_violation_message(
+        code="invalid_contract",
+        state={},
+        decision=decision,
+    )
+
+
 def test_route_after_decision_exits_when_exit_reason_is_set():
     solver = _solver_stub()
     state = {

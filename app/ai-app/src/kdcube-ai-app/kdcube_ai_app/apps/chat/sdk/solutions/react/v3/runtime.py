@@ -1318,6 +1318,11 @@ class ReactSolverV2:
             return "tool_call.tool_id is missing for action=call_tool."
         if code == "missing_contract":
             return f"exec tool requires params.contract (tool_id={tool_id or 'unknown'})."
+        if code == "invalid_contract":
+            return (
+                "exec tool params.contract must be a non-empty list of "
+                "{filepath, description, visibility?} objects."
+            )
         if code == "tool_call_invalid":
             return f"tool_call failed protocol validation for tool_id={tool_id or 'unknown'}. No action was executed for this round."
         if code == "tool_signature_red":
@@ -2789,10 +2794,19 @@ class ReactSolverV2:
         artifact_specs: List[Dict[str, Any]] = []
         if tools_insights.is_exec_tool(tool_id):
             contract = params.get("contract") if isinstance(params, dict) else None
-            if not isinstance(contract, list) or not contract:
+            if contract is None or contract == []:
                 violations.append({
                     "code": "missing_contract",
                     "message": "exec_tools.execute_code_python requires params.contract",
+                    "tool_id": tool_id,
+                })
+            elif not isinstance(contract, list):
+                violations.append({
+                    "code": "invalid_contract",
+                    "message": (
+                        "exec_tools.execute_code_python params.contract must be a non-empty list of "
+                        "{filepath, description, visibility?} objects"
+                    ),
                     "tool_id": tool_id,
                 })
             else:

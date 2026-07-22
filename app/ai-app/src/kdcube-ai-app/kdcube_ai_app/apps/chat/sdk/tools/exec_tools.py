@@ -1315,7 +1315,12 @@ class ExecTools:
     )
     async def execute_code_python(
         self,
-        contract: Annotated[Any, "List or JSON string of artifact specs (filepath, description, optional visibility=external|internal) that you plan your future code to produce. filepath is the full OUTPUT_DIR-relative path your code writes to."],
+        contract: Annotated[
+            List[Dict[str, Any]],
+            "Required non-empty list of artifact specs: "
+            "[{filepath, description, visibility?}]. filepath is the full "
+            "OUTPUT_DIR-relative path the code writes to; visibility is external or internal.",
+        ],
         prog_name: Annotated[Optional[str], "Short name of the program for UI labeling."] = None,
         timeout_s: Annotated[Optional[int], "Execution timeout seconds (default: 600)."] = None,
     ) -> Annotated[dict, "Envelope: ok/artifacts/items/error/report_text."]:

@@ -115,6 +115,46 @@ def test_tool_catalog_renders_named_service_namespace_scope():
     assert "memo: neutral" in rendered
 
 
+def test_compact_tool_catalog_preserves_semantic_kernel_parameter_docs():
+    subsystem = ToolSubsystem.__new__(ToolSubsystem)
+    entry = subsystem._mk_entry(
+        "exec_tools",
+        "execute_code_python",
+        "from exec_tools import tools as exec_tools",
+        "exec_tools.execute_code_python(contract={contract}, prog_name={prog_name})",
+        "Execute Python code.",
+        [
+            {
+                "name": "contract",
+                "annotation": (
+                    "array, Required non-empty list of artifact specs: "
+                    "[{filepath, description, visibility?}]"
+                ),
+                "default": None,
+                "required": True,
+            },
+            {
+                "name": "prog_name",
+                "annotation": "['string', 'null'], Short name used for UI labeling.",
+                "default": None,
+                "required": False,
+            },
+        ],
+        is_async=True,
+        return_annotation="object",
+    )
+
+    rendered = build_tools_block(
+        build_tool_catalog([entry]),
+        header="[AVAILABLE COMMON TOOLS]",
+        detail="compact",
+    )
+
+    assert "contract:list — Required non-empty list of artifact specs" in rendered
+    assert "[{filepath, description, visibility?}]" in rendered
+    assert "prog_name:str? — Short name used for UI labeling." in rendered
+
+
 @pytest.mark.asyncio
 async def test_analyze_result_uses_latest_recorded_completion_before_state(tmp_path):
     solver = _solver_stub()
@@ -204,6 +244,42 @@ def test_validate_decision_rejects_final_answer_with_notes():
         decision=decision,
     )
     assert "notes empty" in message
+
+
+def test_exec_contract_object_is_reported_as_invalid_shape():
+    solver = _solver_stub()
+    decision = {
+        "action": "call_tool",
+        "tool_call": {
+            "tool_id": "exec_tools.execute_code_python",
+            "params": {
+                "contract": {
+                    "filepath": "turn_1/files/report.xlsx",
+                    "description": "Spreadsheet",
+                },
+                "prog_name": "build_report",
+            },
+        },
+    }
+
+    verdict = solver._validate_tool_call_protocol(
+        tool_call=decision["tool_call"],
+        adapters_by_id={
+            "exec_tools.execute_code_python": {
+                "id": "exec_tools.execute_code_python",
+                "doc": {"args": {"contract": {}, "prog_name": {}}},
+            }
+        },
+    )
+
+    assert verdict["ok"] is False
+    assert [item["code"] for item in verdict["violations"]] == ["invalid_contract"]
+    message = solver._protocol_violation_message(
+        code="invalid_contract",
+        state={},
+        decision=decision,
+    )
+    assert "non-empty list" in message
 
 
 def test_memory_write_multi_action_violation_message_reports_missing_neutral_trait():
