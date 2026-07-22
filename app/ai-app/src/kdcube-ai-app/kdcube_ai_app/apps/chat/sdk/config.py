@@ -22,6 +22,7 @@ from kdcube_ai_app.apps.chat.sdk.config_scopes import (
     MetricsCloudWatchConfig, MetricsPrometheusConfig,
     PyExecConfig, ExecConfig, ReactDebugConfig, AccountingConfig, GitBundlesConfig, ApplicationsConfig,
     PlatformConfig, IDPLocalConfig, IDPConfig, AuthConfig, CognitoTrustedProviderConfig, ServicesConfig,
+    SIMPLE_IDP_STORE_PATH,
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.connections.authority_registry_config import (
     DEFAULT_PLATFORM_AUTHORITY_ID,
@@ -1556,7 +1557,13 @@ class Settings(PLATFORM_CONFIG):
             ),
             IDP=IDPConfig(
                 local=IDPLocalConfig(
-                    IDP_DB_PATH=self._resolve_str("IDP_DB_PATH", f"{svc}.idp.idp_db_path"),
+                    # `simple` pins the store so ingress and proc cannot diverge;
+                    # the per-service key stays readable for other providers.
+                    IDP_DB_PATH=(
+                        SIMPLE_IDP_STORE_PATH
+                        if str(platform_auth_cfg.get("auth_provider") or "").strip().lower() == "simple"
+                        else self._resolve_str("IDP_DB_PATH", f"{svc}.idp.idp_db_path")
+                    ),
                     IDP_IMPORT_ENABLED=self._resolve_bool("IDP_IMPORT_ENABLED", f"{svc}.idp.idp_import_enabled", False),
                     IDP_IMPORT_RUN_AT=self._resolve_str("IDP_IMPORT_RUN_AT", f"{svc}.idp.idp_import_run_at"),
                     IDP_IMPORT_SCRIPT_PATH=self._resolve_str("IDP_IMPORT_SCRIPT_PATH", f"{svc}.idp.idp_import_script_path"),
