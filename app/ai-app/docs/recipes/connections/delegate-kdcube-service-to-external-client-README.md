@@ -195,8 +195,13 @@ namespace.
 
 If the namespace uses Slack, Gmail, or another connected provider, its
 provider-account claims remain a second prerequisite under **Delegated to
-KDCube**. The external MCP client gets a KDCube delegated credential, never the
-provider token.
+KDCube** — and the external client additionally needs a per-account binding
+(`account_scope`) on its own grant card. That binding is default-closed: the
+authorize screen offers the user's connected accounts with per-claim
+checkboxes (nothing pre-checked), and an account left unticked yields
+`agent_grant_required` at call time, deep-linking the client's card for the
+user to grant. The external MCP client gets a KDCube delegated credential,
+never the provider token.
 
 ## Identity Scope Choices
 
