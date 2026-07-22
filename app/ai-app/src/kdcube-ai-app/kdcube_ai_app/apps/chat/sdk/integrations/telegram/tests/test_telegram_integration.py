@@ -1744,10 +1744,10 @@ def test_telegram_renderer_reads_file_metadata_from_block_meta(tmp_path):
             "blocks": [
                 {"path": "tc:turn_1.react.final_answer.0", "text": "Generated the file."},
                 {
-                    "path": "fi:turn_1.outputs/tech_news.xlsx",
+                    "path": "conv:fi:turn_1.outputs/tech_news.xlsx",
                     "mime": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     "meta": {
-                        "artifact_path": "fi:turn_1.outputs/tech_news.xlsx",
+                        "artifact_path": "conv:fi:turn_1.outputs/tech_news.xlsx",
                         "hosted_uri": report.as_uri(),
                         "physical_path": "turn_1/outputs/tech_news.xlsx",
                         "filename": "tech_news.xlsx",
@@ -1786,7 +1786,7 @@ async def test_telegram_renderer_unwraps_stored_timeline_and_uploads_current_tur
                 {
                     "type": "react.tool.result",
                     "turn_id": "turn_old",
-                    "path": "fi:turn_old.outputs/old.xlsx",
+                    "path": "conv:fi:turn_old.outputs/old.xlsx",
                     "meta": {
                         "hosted_uri": "file:///does/not/exist/old.xlsx",
                         "physical_path": "turn_old/outputs/old.xlsx",
@@ -1801,12 +1801,12 @@ async def test_telegram_renderer_unwraps_stored_timeline_and_uploads_current_tur
                 {
                     "type": "react.tool.result",
                     "turn_id": "turn_current",
-                    "path": "fi:turn_current.outputs/tech_news.xlsx",
+                    "path": "conv:fi:turn_current.outputs/tech_news.xlsx",
                     "mime": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     "meta": {
                         "digest": json.dumps(
                             {
-                                "artifact_path": "fi:turn_current.outputs/tech_news.xlsx",
+                                "artifact_path": "conv:fi:turn_current.outputs/tech_news.xlsx",
                                 "physical_path": "turn_current/outputs/tech_news.xlsx",
                                 "mime": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                                 "description": "Excel report",
@@ -1827,7 +1827,7 @@ async def test_telegram_renderer_unwraps_stored_timeline_and_uploads_current_tur
     assert [message.kind for message in messages] == ["text", "document"]
     assert messages[0].text == "Here is the spreadsheet."
     assert messages[1].text == "Excel report"
-    assert messages[1].files[0]["logical_path"] == "fi:turn_current.outputs/tech_news.xlsx"
+    assert messages[1].files[0]["logical_path"] == "conv:fi:turn_current.outputs/tech_news.xlsx"
     assert await telegram._file_item_bytes(messages[1].files[0]) == b"excel-bytes"
 
 
