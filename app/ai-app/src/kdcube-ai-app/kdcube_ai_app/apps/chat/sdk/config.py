@@ -686,6 +686,9 @@ class Settings(PLATFORM_CONFIG):
 
     # OPEX aggregation scheduler
     OPEX_AGG_CRON: str = Field(default="0 3 * * *")
+    # Intra-day refresh: re-aggregates TODAY so spend reports read aggregates
+    # only (no per-request raw scans for the current day). "off" disables.
+    OPEX_TODAY_REFRESH_CRON: str = Field(default="7 * * * *")
 
     # Subscription rollover scheduler
     SUBSCRIPTION_ROLLOVER_ENABLED: bool = Field(default=True)
@@ -1401,6 +1404,10 @@ class Settings(PLATFORM_CONFIG):
             val = self._assembly_str("routines.opex.agg_cron")
             if val:
                 self.OPEX_AGG_CRON = val
+        if not self._env_present("OPEX_TODAY_REFRESH_CRON"):
+            val = self._assembly_str("routines.opex.today_refresh_cron")
+            if val:
+                self.OPEX_TODAY_REFRESH_CRON = val
         if not self._env_present("SUBSCRIPTION_ROLLOVER_ENABLED"):
             val = self._assembly_bool("routines.economics.subscription_rollover_enabled")
             if val is not None:
