@@ -13,7 +13,7 @@ see_also:
 # Economics Model (Control Plane)
 
 This document is the authoritative description of the current economics model and how it is enforced at runtime.
-It replaces the older usage notes and reflects the production bundle flow and control‑plane schema.
+It replaces the older usage notes and reflects the production app flow and control‑plane schema.
 
 Runtime entrypoint:
 - [entrypoint_with_economic.py](../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/chatbot/entrypoint_with_economic.py)
@@ -59,7 +59,7 @@ not projected to a platform user”; it is treated as no platform economics
 authority until Connection Hub provides a platform/grantor projection.
 
 SDK operation visibility follows the same rule. `user_types` declarations on
-older decorators/descriptors are not authorization. Central bundle-operation and
+older decorators/descriptors are not authorization. Central app-operation and
 Data Bus dispatch ignore `user_types`; surfaces must use roles and/or
 authority/grant requirements. This keeps Telegram, delegated-client, browser,
 and background-job executions on the same authority model.
@@ -116,15 +116,26 @@ but no background job is needed to "downgrade" users.
 
 Visual summary:
 
-```mermaid
-flowchart TD
-  A[Request arrives] --> B{Role}
-  B -- admin/privileged --> P[plan_id = admin]
-  B -- anonymous --> N[plan_id = anonymous]
-  B -- other --> C{Active subscription?}
-  C -- yes --> S[plan_id = subscription.plan_id]
-  C -- no --> F[plan_id = free]
-  F --> W[If wallet exists: wallet service limits + free token limits]
+```text
+request arrives
+      |
+      v
+    role?
+      |-- admin/privileged --------> plan_id = admin
+      |-- anonymous ---------------> plan_id = anonymous
+      |-- other
+            |
+            v
+      active subscription?
+            |-- yes --------------> plan_id = subscription.plan_id
+            |-- no
+                  |
+                  v
+            plan_id = free
+                  |
+                  v
+            wallet exists? -- yes -> wallet service limits
+                                     + free token limits
 ```
 
 ## Where Limits Come From (Plan Quotas)
@@ -132,18 +143,22 @@ flowchart TD
 Plan quotas are stored in the control plane table `plan_quota_policies`.
 
 **Scope and window semantics (important):**
-- Quotas are enforced **per tenant/project** (global across bundles).
+- Quotas are enforced **per tenant/project** (global across apps).
 - Hourly token limits use a **rolling 60‑minute** window (minute buckets).
 - Daily limits use the **current 24‑hour quota period since the last daily reset**.
 - Monthly limits use the **current 30‑day quota period since the last monthly reset**.
 - Total requests do not reset.
 Reservation amount configuration:
-- Per‑bundle fixed reservation can be set via bundle props: `economics.reservation_amount_dollars`.
+- Per‑app fixed reservation is set via the app's properties (bundle props): `economics.reservation.chat`
+  (scalar USD; a `{amount: ...}` object is tolerated; a value ≤ 0 disables the floor).
+  The legacy spelling `economics.reservation_amount_dollars` is still accepted.
 - If set, the reservation estimate uses that fixed USD amount (regardless of funding source).
+  When the app does not define it, the platform default from the economics
+  descriptor's `reservation.chat` applies.
   Configure via Integrations bundle props API (see `eco-admin-README.md`).
 
-Accounting and spend are still recorded **per bundle** for reporting, but quota enforcement is global per tenant/project.
-Global quota counters use bundle id `__project__` in Redis keys (subject_id already encodes tenant/project).
+Accounting and spend are still recorded **per app** for reporting, but quota enforcement is global per tenant/project.
+Global quota counters use the sentinel `__project__` in the bundle-id slot of Redis keys (subject_id already encodes tenant/project).
 
 Seeding flow:
 
@@ -156,19 +171,26 @@ Seeding flow:
   preserves operator/admin edits; `enforce: true` realigns every listed entity to the descriptor.
 - After seeding, adjust limits in the admin UI (or re-run the seeder with an updated descriptor).
 - Runtime prefers the DB policy, with a defensive fallback to the built-in defaults if a plan
-  row is missing. The legacy bundle-runtime seeder `ensure_policies_initialized()` is a
+  row is missing. The legacy app-runtime seeder `ensure_policies_initialized()` is a
   deprecated no-op shim.
 
-```mermaid
-flowchart TD
-  A[Deploy: postgres-setup job] --> B[Read economics.yaml descriptor]
-  B --> C[Merge over built-in baseline DEFAULT_QUOTA_POLICIES]
-  C --> D{enforce?}
-  D -- false --> E[Seed only missing plan_quota_policies]
-  D -- true --> F[Realign all listed entities]
-  E --> G[Runtime uses DB policies]
-  F --> G
-  G --> H[Defensive fallback to built-in defaults if a plan row is missing]
+```text
+deploy: postgres-setup job
+      |
+      v
+read economics.yaml descriptor
+      |
+      v
+merge over built-in baseline (DEFAULT_QUOTA_POLICIES)
+      |
+      v
+   enforce?
+      |-- false -> seed only missing plan_quota_policies rows
+      |-- true --> realign every listed entity
+      |
+      v
+runtime uses DB policies
+(defensive fallback to built-in defaults if a plan row is missing)
 ```
 
 ## Funding Sources and Reservation Semantics
@@ -220,22 +242,33 @@ Reservations are committed or released after execution and accounting. Expired r
 
 ## Decision Tree (Role → Plan → Funding)
 
-```mermaid
-flowchart TD
-  A[Request] --> B[Resolve role]
-  B --> C[Resolve plan_id]
-  C --> D[Load plan quota policy]
-  D --> P[Size primary funds P]
-  P --> AD{"Wallet‑aware admit: wallet covers wallet_part?"}
-  AD -- No --> X[Deny]
-  AD -- Yes --> H1[Hold primary for plan_part]
-  H1 --> H2{wallet_part > 0?}
-  H2 -- Yes --> HW[Hold wallet for wallet_part]
-  H2 -- No --> RUN
-  HW --> RUN
-
-  RUN --> ACC[Accounting]
-  ACC --> COMMIT["Settle: primary + wallet; project absorbs residual"]
+```text
+request
+   |
+   v
+resolve role -> resolve plan_id -> load plan quota policy
+   |
+   v
+size primary funds P
+   |
+   v
+wallet-aware admit: can the wallet cover wallet_part?
+   |-- no --------------------------------> DENY
+   |                                        (no money hold left behind)
+   |-- yes
+        |
+        v
+   hold primary for plan_part
+        |
+        v
+   wallet_part > 0? -- yes -> hold wallet for wallet_part
+        |                          |
+        v                          v
+   run (every paid call metered / accounting)
+        |
+        v
+   settle: primary + wallet first;
+   project budget absorbs any residual
 ```
 
 ## Subscription Periods and Rollovers
@@ -257,9 +290,10 @@ Maintenance entry points:
 
 ## Data Model (Tables)
 
-Authoritative schema:
+Authoritative schema: the economics tables live in the **per-project schema**,
+rendered from the `<SCHEMA>` placeholder at deploy time:
 
-- [deploy-kdcube-control-plane.sql](../../src/kdcube-ai-app/kdcube_ai_app/ops/deployment/sql/control_plane/deploy-kdcube-control-plane.sql)
+- [deploy-kdcube-proj-schema.sql](../../src/kdcube-ai-app/kdcube_ai_app/ops/deployment/sql/chatbot/deploy-kdcube-proj-schema.sql)
 
 Key tables:
 
@@ -271,7 +305,7 @@ Key tables:
 - `tenant_project_budget_reservations` — project budget holds
 - `tenant_project_budget_ledger` — project budget ledger
 - `tenant_project_budget_absorption` — view for shortfall absorption reporting
-- `tenant_project_budget_absorption_detail` — view for shortfall reporting by user/bundle
+- `tenant_project_budget_absorption_detail` — view for shortfall reporting by user/app
 - `plans` — plan catalog and Stripe price mapping (free/admin baseline + chargeable plans)
 - `user_plans` — per‑user plan row (one per tenant/project/user). Carries a baseline `free`/`admin` row for every authenticated user (see Plan Resolution), `provider` (`internal`|`stripe`), Stripe linkage ids, and `rl_month_anchor_at` — a durable mirror of the Redis monthly‑quota window anchor so the window survives a Redis flush.
 - `user_plan_period_budget` — per period subscription balance
