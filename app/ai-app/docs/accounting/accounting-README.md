@@ -40,9 +40,9 @@ The accounting flow spans three layers:
 
 The accounting system auto‑tracks usage via decorators:
 
-- `@track_llm` in `kdcube_ai_app/infra/service_hub/inventory.py`
-- `@track_embedding` in `kdcube_ai_app/infra/embedding/embedding.py`
-- `@track_web_search` in `kdcube_ai_app/apps/chat/sdk/tools/backends/web/search_backends.py`
+- `@track_llm` in [`kdcube_ai_app/infra/service_hub/inventory.py`](../../src/kdcube-ai-app/kdcube_ai_app/infra/service_hub/inventory.py)
+- `@track_embedding` in [`kdcube_ai_app/infra/embedding/embedding.py`](../../src/kdcube-ai-app/kdcube_ai_app/infra/embedding/embedding.py)
+- `@track_web_search` in [`kdcube_ai_app/apps/chat/sdk/tools/backends/web/search_backends.py`](../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/tools/backends/web/search_backends.py)
 
 These decorators wrap model/back‑end calls and emit an `AccountingEvent` with:
 
@@ -91,7 +91,7 @@ Key helpers:
 
 Reference:
 
-- `kdcube_ai_app/infra/accounting/__init__.py`
+- [`kdcube_ai_app/infra/accounting/__init__.py`](../../src/kdcube-ai-app/kdcube_ai_app/infra/accounting/__init__.py)
 
 ---
 
@@ -101,8 +101,8 @@ Reference:
 
 Ingress creates an `AccountingEnvelope` using:
 
-- `build_envelope_from_session()` in `kdcube_ai_app/infra/accounting/envelope.py`
-- Example usage in `kdcube_ai_app/apps/chat/ingress/chat_core.py`
+- `build_envelope_from_session()` in [`kdcube_ai_app/infra/accounting/envelope.py`](../../src/kdcube-ai-app/kdcube_ai_app/infra/accounting/envelope.py)
+- Example usage in [`kdcube_ai_app/apps/chat/ingress/ingress_core.py`](../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/ingress/ingress_core.py)
 
 The envelope includes:
 
@@ -114,8 +114,8 @@ The envelope includes:
 
 Processor binds the envelope and storage backend to the async context:
 
-- `bind_accounting()` in `kdcube_ai_app/infra/accounting/envelope.py`
-- Used in `kdcube_ai_app/apps/chat/processor.py`
+- `bind_accounting()` in [`kdcube_ai_app/infra/accounting/envelope.py`](../../src/kdcube-ai-app/kdcube_ai_app/infra/accounting/envelope.py)
+- Used in [`kdcube_ai_app/apps/chat/processor.py`](../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/processor.py)
 
 The binder:
 
@@ -129,7 +129,7 @@ From this point on, all tracked calls emit events with this context.
 
 The workflow uses `with_accounting()` to declare component/step‑level attribution:
 
-- Example in `kdcube_ai_app/apps/chat/sdk/solutions/chatbot/base_workflow.py`
+- Example in [`kdcube_ai_app/apps/chat/sdk/solutions/chatbot/base_workflow.py`](../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/chatbot/base_workflow.py)
 - Also used in React runtime and tool backends
 
 Each nested scope can set:
@@ -159,8 +159,8 @@ Key points:
 
 References:
 
-- `kdcube_ai_app/infra/accounting/__init__.py`
-- `kdcube_ai_app/infra/accounting/calculator.py`
+- [`kdcube_ai_app/infra/accounting/__init__.py`](../../src/kdcube-ai-app/kdcube_ai_app/infra/accounting/__init__.py)
+- [`kdcube_ai_app/infra/accounting/calculator.py`](../../src/kdcube-ai-app/kdcube_ai_app/infra/accounting/calculator.py)
 
 ---
 
@@ -168,7 +168,7 @@ References:
 
 Accounting events can also be mirrored into Redis for fast per‑turn queries:
 
-- Class: `TurnEventCache` in `kdcube_ai_app/infra/accounting/turn_cache.py`
+- Class: `TurnEventCache` in [`kdcube_ai_app/infra/accounting/turn_cache.py`](../../src/kdcube-ai-app/kdcube_ai_app/infra/accounting/turn_cache.py)
 - Key format: `acct:turn:<tenant>:<project>:<conversation_id>:<turn_id>`
 - Value: Redis LIST of JSON events
 - TTL is **sliding** (refreshed on each append)
@@ -183,7 +183,7 @@ This cache is used by `RateCalculator.calculate_turn_costs()` when `use_memory_c
 
 Per‑turn cost calculation is performed by:
 
-- `RateCalculator.calculate_turn_costs()` in `kdcube_ai_app/infra/accounting/calculator.py`
+- `RateCalculator.calculate_turn_costs()` in [`kdcube_ai_app/infra/accounting/calculator.py`](../../src/kdcube-ai-app/kdcube_ai_app/infra/accounting/calculator.py)
 
 Outputs:
 
@@ -194,7 +194,7 @@ Outputs:
 
 ### 5.2 Turn accounting in workflows
 
-- `apply_accounting()` in `kdcube_ai_app/apps/chat/sdk/solutions/chatbot/entrypoint.py`
+- `apply_accounting()` in [`kdcube_ai_app/apps/chat/sdk/solutions/chatbot/entrypoint.py`](../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/chatbot/entrypoint.py)
 - `entrypoint_with_economic.py` uses the same accounting results for budget enforcement
 
 When applied, the workflow emits `accounting.usage` as:
@@ -214,8 +214,8 @@ These results feed:
 
 Aggregates are computed by `AccountingAggregator`:
 
-- `kdcube_ai_app/infra/accounting/aggregator.py`
-- scheduled via `kdcube_ai_app/apps/chat/ingress/opex/routines.py`
+- [`kdcube_ai_app/infra/accounting/aggregator.py`](../../src/kdcube-ai-app/kdcube_ai_app/infra/accounting/aggregator.py)
+- scheduled via [`kdcube_ai_app/apps/chat/ingress/opex/routines.py`](../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/ingress/opex/routines.py)
 
 Raw events live under `accounting/…`  
 Aggregates are written under:
@@ -265,7 +265,7 @@ Spend-report surfaces on top of this data:
 - `GET /api/economics/me/cost-breakdown` — the authenticated user's actual
   per-model spend (aggregates-only; `coverage` flags un-aggregated windows).
 - Economics admin dashboard **Cost Report** tab
-  (`apps/chat/ingress/control_plane/EconomicsDashboard.tsx`) — group by
+  ([`apps/chat/ingress/control_plane/EconomicsDashboard.tsx`](../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/ingress/control_plane/EconomicsDashboard.tsx)) — group by
   user/agent/app, id filter, CSV export, and a **Rebuild aggregates** action
   over `run-aggregation-range`. In the user grouping, recorded system
   principals (e.g. events whose `user_id` is literally `bundle`) are listed
@@ -273,7 +273,7 @@ Spend-report surfaces on top of this data:
 
 See:
 
-- `repo:kdcube-ai-app/app/ai-app/docs/aggregations/README-AGGREGATIONS.md`
+- [Aggregations](../aggregations/README-AGGREGATIONS.md)
 
 ---
 
@@ -282,7 +282,7 @@ See:
 Key inputs that affect accounting behavior:
 
 - **Storage backend**: derived from `KDCUBE_STORAGE_PATH` / `settings.STORAGE_PATH`
-- **Web search pricing tiers**: `ACCOUNTING_SERVICES` (JSON) in `src/kdcube-ai-app/kdcube_ai_app/infra/accounting/usage.py` and OPEX API
+- **Web search pricing tiers**: `ACCOUNTING_SERVICES` (JSON) in [`kdcube_ai_app/infra/accounting/usage.py`](../../src/kdcube-ai-app/kdcube_ai_app/infra/accounting/usage.py) and OPEX API
 - **Redis turn cache**: enabled in `AccountingSystem.init_storage()` by default
 
 The accounting system itself is controlled by the service entrypoints and binders; there is no single global switch unless explicitly wired in the caller.
@@ -291,10 +291,10 @@ The accounting system itself is controlled by the service entrypoints and binder
 
 ## 8) Key references
 
-- Core system: `kdcube_ai_app/infra/accounting/__init__.py`
-- Envelope + binding: `kdcube_ai_app/infra/accounting/envelope.py`
-- Storage cache: `kdcube_ai_app/infra/accounting/turn_cache.py`
-- Cost calculator: `kdcube_ai_app/infra/accounting/calculator.py`
-- Aggregator: `kdcube_ai_app/infra/accounting/aggregator.py`
-- OPEX API: `kdcube_ai_app/apps/chat/ingress/opex/opex.py`
-- Aggregation scheduler: `kdcube_ai_app/apps/chat/ingress/opex/routines.py`
+- Core system: [`kdcube_ai_app/infra/accounting/__init__.py`](../../src/kdcube-ai-app/kdcube_ai_app/infra/accounting/__init__.py)
+- Envelope + binding: [`kdcube_ai_app/infra/accounting/envelope.py`](../../src/kdcube-ai-app/kdcube_ai_app/infra/accounting/envelope.py)
+- Storage cache: [`kdcube_ai_app/infra/accounting/turn_cache.py`](../../src/kdcube-ai-app/kdcube_ai_app/infra/accounting/turn_cache.py)
+- Cost calculator: [`kdcube_ai_app/infra/accounting/calculator.py`](../../src/kdcube-ai-app/kdcube_ai_app/infra/accounting/calculator.py)
+- Aggregator: [`kdcube_ai_app/infra/accounting/aggregator.py`](../../src/kdcube-ai-app/kdcube_ai_app/infra/accounting/aggregator.py)
+- OPEX API: [`kdcube_ai_app/apps/chat/ingress/opex/opex.py`](../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/ingress/opex/opex.py)
+- Aggregation scheduler: [`kdcube_ai_app/apps/chat/ingress/opex/routines.py`](../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/ingress/opex/routines.py)
