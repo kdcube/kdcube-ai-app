@@ -35,7 +35,13 @@ from .signed_downloads import (
     make_signed_link_token,
     verify_signed_link_token,
 )
-from .router import deliver_react_turn_to_telegram, message_log_items, render_react_turn_messages
+from kdcube_ai_app.apps.chat.sdk.integrations.telegram.router import (
+    deliver_react_turn_to_telegram,
+    deliver_turn_to_telegram,
+    message_log_items,
+    render_react_turn_messages,
+    render_turn_messages,
+)
 from .stream import (
     TelegramActivityStreamer,
     deliver_messages_preserving_progress_card,
@@ -64,6 +70,7 @@ __all__ = [
     "decode_inline_attachment_bytes",
     "deliver_messages_preserving_progress_card",
     "deliver_react_turn_to_telegram",
+    "deliver_turn_to_telegram",
     "edit_telegram_text_message",
     "extract_telegram_init_data_from_request",
     "hydrate_telegram_attachments",
@@ -73,6 +80,7 @@ __all__ = [
     "progress_final_card",
     "raw_attachments_from_telegram",
     "render_react_turn_messages",
+    "render_turn_messages",
     "render_telegram_messages_from_timeline",
     "make_signed_link",
     "make_signed_link_token",

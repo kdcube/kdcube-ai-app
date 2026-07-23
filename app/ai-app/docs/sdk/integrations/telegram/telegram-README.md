@@ -320,9 +320,9 @@ Before calling the bundle done, prove:
 kdcube_ai_app.apps.chat.sdk.integrations.telegram
   bot.py              Telegram Bot API calls, update summaries, attachment hydration,
                       timeline rendering, Markdown/HTML normalization, file sends
-  stream.py           TelegramActivityStreamer for live ReAct progress updates
+  stream.py           TelegramActivityStreamer for live app-turn progress updates
                       and progress-card finalization
-  router.py           generic React-turn-to-Telegram rendering and delivery
+  router.py           framework-neutral turn-result rendering and delivery
   webapp_auth.py      Telegram Mini App initData extraction and signature validation
   chat_submit.py      helpers for /steer, /followup, RawAttachment, UserSession,
                       RequestContext, and IngressConfig
@@ -331,7 +331,7 @@ kdcube_ai_app.apps.chat.sdk.integrations.telegram
                       chat/user metadata, conversation binding, and
                       webhook update-id claims
   user_admin.py       configurable Telegram user registry/admin, webhook
-                      authorization and submitter orchestration, attachment hosting
+                      authorization and shared-ingress submission
   widget_auth.py      configurable Mini App identity resolver backed by a bundle registry
   widget_ops.py       configurable Mini App operations for conversations, tasks,
                       executions, and artifact downloads
@@ -343,7 +343,7 @@ Keep these concerns separate when reusing the SDK:
 ```text
 bot.py      Telegram protocol primitives
 stream.py   live progress message/card mechanics
-router.py   final React-turn delivery to Telegram
+router.py   final app-turn delivery to Telegram
 user_admin  Telegram chat metadata, conversation binding, webhook orchestration
 widget_*    Telegram Mini App identity and operations
 ```
@@ -397,15 +397,20 @@ Telegram update
   -> ChatIngressSubmitter.submit(...)
        message_data.external_events[] contains event.user.*
   -> shared conversation ingress processing
-  -> ReAct workflow
-  -> deliver_react_turn_to_telegram(...)
-       -> render_react_turn_messages(...)
+  -> processor runs the app's ReAct, LangGraph, CrewAI, or custom workflow
+  -> deliver_turn_to_telegram(...)
+       -> render_turn_messages(...)
        -> deliver_messages_preserving_progress_card(...)
 ```
 
 `ChatIngressSubmitter` is provided by the chat service layer. Telegram helpers
 prepare the transport-specific inputs; the submitter sends the message through
 the same ingestion core used by browser transports.
+
+Submission targets the app's configured
+`surfaces.as_consumer.default_agent`. That id is carried by the ingress request
+and its events, so a non-ReAct app does not inherit a ReAct-specific lane or
+delegated-client identity.
 
 Telegram is not a separate downstream request shape. By the time a Telegram
 turn reaches conversation ingress, user text and Telegram files are represented
@@ -415,8 +420,10 @@ as the same plural event batch used by every other client:
 {
   "conversation_id": "conv-main",
   "turn_id": "turn_2026-06-05-10-00-00-000",
+  "agent_id": "main",
   "payload": {
     "source": "telegram",
+    "agent_id": "main",
     "telegram": {
       "chat_id": "12345",
       "update_id": "98765",
@@ -430,7 +437,7 @@ as the same plural event batch used by every other client:
       "event_source_id": "telegram.user.prompt",
       "logical_path": "conv:ev:turn_2026-06-05-10-00-00-000.events/telegram.prompt.abc123",
       "reactive": true,
-      "agent_id": "react",
+      "agent_id": "main",
       "payload": {
         "mime": "text/plain",
         "event": {"text": "hello from telegram"}
@@ -542,7 +549,7 @@ raw_attachments = raw_attachments_from_telegram(attachments)
 These helpers only create normalized chat ingress inputs. They do not read bundle
 storage, choose a conversation, authorize a user, or enqueue a workflow.
 
-For Telegram webhook turns that go through the queue, `submit_react_turn(...)`
+For Telegram webhook turns, `submit_telegram_turn(...)`
 must pass `message_data.external_events[]` to the shared ingress submitter.
 Without that event batch, ingress rejects the submission as
 `missing_external_events` before a workflow can be enqueued.
@@ -556,16 +563,16 @@ Queued Telegram turns have two distinct phases:
 
 ```text
 webhook request
-  -> submit_react_turn(...)
+  -> submit_telegram_turn(...)
        stores Telegram metadata under request.payload.telegram
        submits external_events[] through ChatIngressSubmitter
   -> returns accepted/rejected webhook acknowledgement
 
 processor turn
-  -> bundle entrypoint run path wraps the real ReAct runner with
+  -> app entrypoint wraps its real async runner with
      telegram_user_admin.run_with_queued_telegram_delivery(...)
        -> TelegramActivityStreamer streams progress for that turn
-       -> deliver_react_turn_to_telegram(...) sends the final rendered result
+       -> deliver_turn_to_telegram(...) sends the final rendered result
 ```
 
 The webhook should not spawn a separate relay-subscriber task to deliver the
@@ -573,7 +580,7 @@ final answer. Final delivery belongs to the processor-side queued-delivery
 wrapper because that code sees the actual turn result, turn log, timeline,
 streamed-file de-duplication keys, and configured `send_responses` policy.
 A webhook-side background delivery path can duplicate messages for bundles that
-already use the wrapper and can bypass the normal ReAct rendering path.
+already use the wrapper and can bypass the normal turn-result rendering path.
 
 Reference bundles that support Telegram queued delivery should wrap their run
 method, for example:
@@ -594,15 +601,15 @@ first check whether its processor run path uses
 
 ```python
 from kdcube_ai_app.apps.chat.sdk.integrations.telegram import (
-    deliver_react_turn_to_telegram,
+    deliver_turn_to_telegram,
 )
 
-delivery = await deliver_react_turn_to_telegram(
+delivery = await deliver_turn_to_telegram(
     bundle_id="my.bundle@1-0",
     bot_token=bot_token,
     chat_id=chat_id,
     update_id=update_id,
-    react_turn=react_turn,
+    turn_result=turn_result,
     delivered_file_keys=already_streamed_file_keys,
     progress_message_id=progress_message_id,
     progress_summary=progress_summary,
@@ -610,7 +617,7 @@ delivery = await deliver_react_turn_to_telegram(
 )
 ```
 
-The router converts a React turn log or timeline into Telegram-safe
+The router converts an app turn result, turn log, or timeline into Telegram-safe
 `TelegramMessage` values, then sends them through the Bot API. It emits text
 chunks, sources text, and visible file artifacts.
 
@@ -631,7 +638,7 @@ The sender handles:
 
 ## Progress Card Finalization
 
-Long ReAct turns can stream into a single Telegram progress card. The final
+Long-running app turns can stream into a single Telegram progress card. The final
 answer must not replace that card. The stream module owns this behavior:
 
 ```text
@@ -640,7 +647,7 @@ while turn runs:
   progress card contains status, notes, thinking, sources, file notifications
 
 when turn completes:
-  deliver_react_turn_to_telegram(...)
+  deliver_turn_to_telegram(...)
     -> if final text fits:
          edit same progress message:
            <existing progress>
@@ -676,8 +683,8 @@ progress_summary = streamer.progress_summary()
 ```
 
 `TelegramActivityStreamer` listens to chat communicator activity and updates a
-single Telegram progress message while the turn runs. It is useful for long
-ReAct turns where the final answer may take minutes.
+single Telegram progress message while the turn runs. It is useful for any
+long-running ReAct, LangGraph, CrewAI, or custom app turn.
 
 Thinking and note deltas are rendered as Telegram HTML blockquotes. The streamer
 tracks already-sent file keys so final delivery does not duplicate files that

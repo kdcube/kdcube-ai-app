@@ -25,8 +25,8 @@ Use these docs in this order:
   `/api/integrations/bundles/{tenant}/{project}/{bundle_id}/public/widgets/{alias}/`.
 - [Telegram Webhook Submit And Queued Delivery](telegram-webhook-submit-and-delivery-README.md) -
   exact runtime boundaries for bot messages: webhook acknowledgement, chat
-  ingress submission, processor-side ReAct execution, progress streaming, and
-  final Telegram rendering/delivery.
+  ingress submission, processor-side app execution, progress streaming, and
+  final Telegram rendering/delivery for ReAct, LangGraph, or custom runners.
 - [Telegram External Prerequisites](telegram-external-prereq-README.md) - work
   that must happen outside KDCube before the integration can function,
   including BotFather setup, public HTTPS exposure, webhook registration,

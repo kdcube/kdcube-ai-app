@@ -36,20 +36,20 @@ def message_log_items(messages: list[Any] | None) -> list[Dict[str, Any]]:
     return items
 
 
-async def deliver_react_turn_to_telegram(
+async def deliver_turn_to_telegram(
     *,
     bundle_id: str,
     bot_token: str,
     chat_id: str | int,
     update_id: str = "",
-    react_turn: Dict[str, Any],
+    turn_result: Dict[str, Any],
     delivered_file_keys: set[str] | None = None,
     progress_message_id: str | int | None = None,
     progress_summary: str = "",
     send_responses: bool = True,
 ) -> Dict[str, Any]:
-    telegram_messages = render_react_turn_messages(
-        react_turn=react_turn,
+    telegram_messages = render_turn_messages(
+        turn_result=turn_result,
         delivered_file_keys=delivered_file_keys,
     )
     log.info(
@@ -58,7 +58,7 @@ async def deliver_react_turn_to_telegram(
         update_id or "",
         (
             "turn_log"
-            if isinstance(react_turn, dict) and isinstance(react_turn.get("turn_log"), dict) and react_turn.get("turn_log")
+            if isinstance(turn_result, dict) and isinstance(turn_result.get("turn_log"), dict) and turn_result.get("turn_log")
             else "timeline"
         ),
         len(telegram_messages),
@@ -106,18 +106,56 @@ async def deliver_react_turn_to_telegram(
     }
 
 
+def render_turn_messages(
+    *,
+    turn_result: Dict[str, Any],
+    delivered_file_keys: set[str] | None = None,
+) -> list[TelegramMessage]:
+    return render_telegram_messages_from_timeline(
+        timeline=(
+            turn_result.get("turn_log")
+            if isinstance(turn_result, dict) and isinstance(turn_result.get("turn_log"), dict) and turn_result.get("turn_log")
+            else turn_result.get("timeline") if isinstance(turn_result, dict) else None
+        ),
+        react_turn=turn_result,
+        exclude_file_keys=delivered_file_keys or set(),
+        prefer_react_turn_answer=True,
+    )
+
+
+async def deliver_react_turn_to_telegram(
+    *,
+    bundle_id: str,
+    bot_token: str,
+    chat_id: str | int,
+    update_id: str = "",
+    react_turn: Dict[str, Any],
+    delivered_file_keys: set[str] | None = None,
+    progress_message_id: str | int | None = None,
+    progress_summary: str = "",
+    send_responses: bool = True,
+) -> Dict[str, Any]:
+    """Compatibility wrapper for the pre-framework-neutral SDK name."""
+    return await deliver_turn_to_telegram(
+        bundle_id=bundle_id,
+        bot_token=bot_token,
+        chat_id=chat_id,
+        update_id=update_id,
+        turn_result=react_turn,
+        delivered_file_keys=delivered_file_keys,
+        progress_message_id=progress_message_id,
+        progress_summary=progress_summary,
+        send_responses=send_responses,
+    )
+
+
 def render_react_turn_messages(
     *,
     react_turn: Dict[str, Any],
     delivered_file_keys: set[str] | None = None,
 ) -> list[TelegramMessage]:
-    return render_telegram_messages_from_timeline(
-        timeline=(
-            react_turn.get("turn_log")
-            if isinstance(react_turn, dict) and isinstance(react_turn.get("turn_log"), dict) and react_turn.get("turn_log")
-            else react_turn.get("timeline") if isinstance(react_turn, dict) else None
-        ),
-        react_turn=react_turn,
-        exclude_file_keys=delivered_file_keys or set(),
-        prefer_react_turn_answer=True,
+    """Compatibility wrapper for the pre-framework-neutral SDK name."""
+    return render_turn_messages(
+        turn_result=react_turn,
+        delivered_file_keys=delivered_file_keys,
     )

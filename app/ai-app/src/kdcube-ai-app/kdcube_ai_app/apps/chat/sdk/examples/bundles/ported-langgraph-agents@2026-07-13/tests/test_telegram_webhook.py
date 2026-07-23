@@ -145,7 +145,7 @@ def test_handle_webhook_delegates_to_the_sdk(monkeypatch) -> None:
         seen["entrypoint"] = entrypoint
         seen["request"] = request
         seen["update"] = update
-        return {"ok": True, "stage": "queued-react-turn"}
+        return {"ok": True, "stage": "queued-turn"}
 
     monkeypatch.setattr(user_admin, "handle_webhook", _fake_handle)
 

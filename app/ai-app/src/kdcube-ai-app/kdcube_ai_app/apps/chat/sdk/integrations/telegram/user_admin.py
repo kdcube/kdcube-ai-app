@@ -3,11 +3,8 @@ from __future__ import annotations
 import logging
 import uuid
 import asyncio
-import base64
-import binascii
 import hmac
 import inspect
-import threading
 from dataclasses import asdict
 from datetime import datetime
 from typing import Any, Callable, Dict
@@ -19,6 +16,7 @@ from kdcube_ai_app.apps.chat.ingress.ingress_core import IngressConfig, RawAttac
 from kdcube_ai_app.apps.chat.sdk.event_identity import (
     DEFAULT_REACT_AGENT_ID,
     build_event_logical_path,
+    normalize_agent_id,
 )
 from kdcube_ai_app.apps.chat.sdk.identity_authority import resolve_platform_authority
 from kdcube_ai_app.apps.chat.sdk.solutions.connections.connection_edges import ConnectionEdgesClient
@@ -33,24 +31,21 @@ from kdcube_ai_app.apps.chat.sdk.integrations.integration_config import (
     integration_secret_value,
     select_integration,
 )
-from kdcube_ai_app.apps.chat.sdk.storage.conversation_store import ConversationStore
 from kdcube_ai_app.apps.chat.sdk.integrations.telegram.bundle_registry import (
     configured_bundle_id,
     register_config,
     resolve_config,
 )
 from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import (
-    bind_current_request_context,
     get_current_bundle_id,
     get_current_request_context,
 )
 from kdcube_ai_app.apps.chat.sdk.integrations.telegram import (
     TelegramMessage,
     TelegramActivityStreamer,
-    deliver_react_turn_to_telegram,
+    deliver_turn_to_telegram,
     hydrate_telegram_attachments,
     raw_attachments_from_telegram as sdk_raw_attachments_from_telegram,
-    role_to_user_type as sdk_role_to_user_type,
     send_telegram_messages,
     summarize_telegram_update,
     telegram_command_kind_and_text as sdk_telegram_command_kind_and_text,
@@ -63,8 +58,6 @@ _storage_factory: Callable[[Any], Any] | None = None
 _storage_root_or_error: Callable[[Any], Any] | None = None
 _migrate_telegram_user_to_kdcube_scope: Callable[..., Any] | None = None
 _CONFIGS: Dict[str, Dict[str, Any]] = {}
-_inline_turn_locks_guard = threading.Lock()
-_inline_turn_locks: dict[str, asyncio.Lock] = {}
 
 
 def configure_telegram_user_admin(
@@ -169,12 +162,32 @@ def _telegram_connect_answer(turn_id: str) -> Dict[str, Any]:
     }
 
 
+def _telegram_ingress_unavailable_answer(turn_id: str) -> Dict[str, Any]:
+    text = "KDCube cannot accept this message right now. Please try again shortly."
+    return {
+        "answer": text,
+        "followups": [],
+        "timeline": {
+            "blocks": [
+                {
+                    "path": f"conv:tc:{turn_id}.telegram.ingress_unavailable",
+                    "type": "answer",
+                    "text": text,
+                }
+            ],
+            "sources_pool": [],
+        },
+        "error": "chat_ingress_unavailable",
+    }
+
+
 def _telegram_external_events(
     *,
     text: str,
     attachments: list[Dict[str, Any]],
     turn_id: str,
     text_event_type: str = "event.user.prompt",
+    agent_id: str = DEFAULT_REACT_AGENT_ID,
 ) -> list[Dict[str, Any]]:
     events: list[Dict[str, Any]] = []
 
@@ -185,6 +198,7 @@ def _telegram_external_events(
         return datetime.utcnow().isoformat() + "Z"
 
     normalized_type = str(text_event_type or "event.user.prompt").strip() or "event.user.prompt"
+    target_agent_id = normalize_agent_id(agent_id, default=DEFAULT_REACT_AGENT_ID)
     # A steer may carry no text: an empty steer is the "stop" control. Mirror the web
     # client, which allows an empty body only for event.user.steer; every other type
     # still needs text to produce an event.
@@ -198,7 +212,7 @@ def _telegram_external_events(
                 "event_source_id": f"telegram.user.{event_suffix}",
                 "logical_path": _event_path(event_id),
                 "reactive": True,
-                "agent_id": DEFAULT_REACT_AGENT_ID,
+                "agent_id": target_agent_id,
                 "timestamp": _timestamp(),
                 "payload": {
                     "mime": "text/plain",
@@ -219,7 +233,7 @@ def _telegram_external_events(
                 "logical_path": _event_path(event_id),
                 "hosted_uri": hosted_uri,
                 "reactive": bool(not text),
-                "agent_id": DEFAULT_REACT_AGENT_ID,
+                "agent_id": target_agent_id,
                 "timestamp": _timestamp(),
                 "payload": {
                     "mime": str(raw.get("mime") or raw.get("mime_type") or "application/octet-stream"),
@@ -276,150 +290,6 @@ def _attachment_log_items(attachments: list[Dict[str, Any]] | None) -> list[Dict
             }
         )
     return items
-
-
-def _scope_prefix(entrypoint: Any) -> str:
-    comm_context = getattr(entrypoint, "comm_context", None)
-    tenant = str(getattr(getattr(comm_context, "actor", None), "tenant_id", "") or get_settings().TENANT or "").strip()
-    project = str(getattr(getattr(comm_context, "actor", None), "project_id", "") or get_settings().PROJECT or "").strip()
-    return f"{tenant or 'tenant'}:{project or 'project'}"
-
-
-def _telegram_inline_turn_lock_key(entrypoint: Any, summary: Dict[str, Any]) -> str:
-    chat_id = str(summary.get("chat_id") or "unknown").strip()
-    telegram_user_id = str(summary.get("user_id") or chat_id or "anonymous").strip()
-    conversation_id = str(summary.get("conversation_id") or "").strip()
-    if not conversation_id:
-        try:
-            identity = storage(entrypoint).resolve_telegram_user(
-                telegram_user_id=telegram_user_id,
-                telegram_chat_id=chat_id,
-                telegram_username=str(summary.get("username") or "").strip(),
-                create_if_missing=False,
-            )
-            conversation_id = str(identity.get("conversation_id") or "").strip()
-        except Exception:
-            conversation_id = ""
-    return f"{_scope_prefix(entrypoint)}:{conversation_id or f'telegram_chat_{chat_id}'}"
-
-
-def _telegram_inline_turn_lock(key: str) -> asyncio.Lock:
-    loop_key = f"{id(asyncio.get_running_loop())}:{key}"
-    with _inline_turn_locks_guard:
-        lock = _inline_turn_locks.get(loop_key)
-        if lock is None:
-            lock = asyncio.Lock()
-            _inline_turn_locks[loop_key] = lock
-        return lock
-
-
-def _decode_inline_attachment_bytes(item: Dict[str, Any]) -> bytes | None:
-    value = item.get("base64")
-    if not isinstance(value, str) or not value.strip():
-        return None
-    try:
-        return base64.b64decode(value, validate=False)
-    except (binascii.Error, ValueError):
-        return None
-
-
-def _conversation_store(entrypoint: Any) -> Any:
-    store = getattr(entrypoint, "store", None) or getattr(entrypoint, "_store", None)
-    if store:
-        return store
-    settings = getattr(entrypoint, "settings", None) or get_settings()
-    storage_path = getattr(settings, "STORAGE_PATH", None)
-    if not storage_path:
-        return None
-    store = ConversationStore(storage_path)
-    try:
-        setattr(entrypoint, "_store", store)
-    except Exception:
-        pass
-    return store
-
-
-async def _host_telegram_attachments(
-    entrypoint: Any,
-    *,
-    attachments: list[Dict[str, Any]],
-    tenant: str,
-    project: str,
-    user_id: str,
-    user_type: str,
-    conversation_id: str,
-    turn_id: str,
-) -> list[Dict[str, Any]]:
-    """Persist Telegram upload bytes into conversation attachment storage before React sees them."""
-    if not attachments:
-        return []
-    bundle_id = _bundle_id(entrypoint)
-    store = _conversation_store(entrypoint)
-    if not store:
-        raise RuntimeError("telegram attachment hosting failed: conversation store is unavailable")
-
-    hosted: list[Dict[str, Any]] = []
-    log.info(
-        "[%s] telegram attachments host start | conversation_id=%s turn_id=%s attachments=%s",
-        bundle_id,
-        conversation_id,
-        turn_id,
-        _attachment_log_items(attachments),
-    )
-    for index, raw in enumerate(attachments):
-        if not isinstance(raw, dict):
-            continue
-        item = dict(raw)
-        if item.get("hosted_uri") or item.get("key") or item.get("rn"):
-            hosted.append(item)
-            continue
-        data = _decode_inline_attachment_bytes(item)
-        if data is None:
-            item["error"] = item.get("error") or "telegram_attachment_bytes_missing"
-            hosted.append(item)
-            continue
-
-        filename = str(item.get("filename") or item.get("file_name") or "").strip() or f"telegram_attachment_{index + 1}.bin"
-        mime = str(item.get("mime_type") or item.get("mime") or "").strip() or "application/octet-stream"
-        uri, key, rn = await store.put_attachment(
-            tenant=tenant,
-            project=project,
-            user=user_id,
-            fingerprint=None,
-            conversation_id=conversation_id,
-            turn_id=turn_id,
-            role="user",
-            filename=filename,
-            data=data,
-            mime=mime,
-            user_type=user_type,
-            origin="user",
-        )
-        item.update(
-            {
-                "filename": filename,
-                "mime": mime,
-                "mime_type": mime,
-                "size": len(data),
-                "size_bytes": len(data),
-                "hosted_uri": uri,
-                "key": key,
-                "rn": rn,
-                "role": "user",
-                "origin": "telegram",
-            }
-        )
-        item.pop("base64", None)
-        item.pop("file_name", None)
-        hosted.append(item)
-    log.info(
-        "[%s] telegram attachments host finished | conversation_id=%s turn_id=%s attachments=%s",
-        bundle_id,
-        conversation_id,
-        turn_id,
-        _attachment_log_items(hosted),
-    )
-    return hosted
 
 
 def storage(entrypoint: Any) -> Any:
@@ -682,10 +552,6 @@ async def _resolve_webhook_integration_id(entrypoint: Any = None, *, request: An
     raise HTTPException(status_code=401, detail="telegram_webhook_secret_invalid")
 
 
-def _role_to_user_type(role: str) -> UserType:
-    return sdk_role_to_user_type(role)
-
-
 def _role_allows_access(role: str) -> bool:
     return str(role or "").strip().lower() in {"registered", "admin"}
 
@@ -722,11 +588,17 @@ def _telegram_definition_prop(entrypoint: Any, key: str, default: Any = None, *,
     )
 
 
-async def submit_react_turn(entrypoint: Any, *, summary: Dict[str, Any]) -> Dict[str, Any] | None:
+def _telegram_target_agent_id(entrypoint: Any) -> str:
+    bundle_prop = getattr(entrypoint, "bundle_prop", None)
+    configured = ""
+    if callable(bundle_prop):
+        configured = str(bundle_prop("surfaces.as_consumer.default_agent", "") or "").strip()
+    return normalize_agent_id(configured, default=DEFAULT_REACT_AGENT_ID)
+
+
+async def submit_telegram_turn(entrypoint: Any, *, summary: Dict[str, Any]) -> Dict[str, Any]:
     chat_submitter = getattr(entrypoint, "chat_submitter", None)
     submit = getattr(chat_submitter, "submit", None)
-    if not callable(submit):
-        return None
     bundle_id = _bundle_id(entrypoint)
 
     text = str(summary.get("text") or "").strip()
@@ -749,19 +621,11 @@ async def submit_react_turn(entrypoint: Any, *, summary: Dict[str, Any]) -> Dict
     )
     kdcube_user_id = str(telegram_identity.get("kdcube_user_id") or "").strip()
     role = str(telegram_identity.get("role") or "anonymous").strip().lower() or "anonymous"
-
-    comm_context = getattr(entrypoint, "comm_context", None)
-    if not comm_context:
-        return None
-
-    tenant = str(getattr(getattr(comm_context, "actor", None), "tenant_id", "") or get_settings().TENANT or "").strip()
-    project = str(getattr(getattr(comm_context, "actor", None), "project_id", "") or get_settings().PROJECT or "").strip()
     conversation_id = (
         str(telegram_identity.get("conversation_id") or "").strip()
         or f"telegram_chat_{chat_id}"
     )
     turn_id = new_turn_id()
-    telegram_command_type, processed_text = _telegram_command_kind_and_text(text)
     actor_user_id = f"telegram_{telegram_user_id}"
     identity_authority = await _telegram_platform_authority(
         entrypoint,
@@ -771,7 +635,39 @@ async def submit_react_turn(entrypoint: Any, *, summary: Dict[str, Any]) -> Dict
         source="telegram.webhook",
     )
     if not str(identity_authority.get("platform_user_id") or "").strip():
-        return None
+        return {
+            "mode": "connection_required",
+            "accepted": True,
+            "reason": "telegram_platform_identity_unresolved",
+            "conversation_id": conversation_id,
+            "turn_id": turn_id,
+            "telegram_identity": telegram_identity,
+        }
+    if not callable(submit):
+        return {
+            "mode": "unavailable",
+            "accepted": False,
+            "reason": "chat_submitter_unavailable",
+            "conversation_id": conversation_id,
+            "turn_id": turn_id,
+            "telegram_identity": telegram_identity,
+        }
+
+    comm_context = getattr(entrypoint, "comm_context", None)
+    if not comm_context:
+        return {
+            "mode": "unavailable",
+            "accepted": False,
+            "reason": "comm_context_unavailable",
+            "conversation_id": conversation_id,
+            "turn_id": turn_id,
+            "telegram_identity": telegram_identity,
+        }
+
+    tenant = str(getattr(getattr(comm_context, "actor", None), "tenant_id", "") or get_settings().TENANT or "").strip()
+    project = str(getattr(getattr(comm_context, "actor", None), "project_id", "") or get_settings().PROJECT or "").strip()
+    telegram_command_type, processed_text = _telegram_command_kind_and_text(text)
+    agent_id = _telegram_target_agent_id(entrypoint)
     runtime_label = _authority_runtime_label(identity_authority)
     request_context = RequestContext(
         client_ip="telegram",
@@ -801,6 +697,7 @@ async def submit_react_turn(entrypoint: Any, *, summary: Dict[str, Any]) -> Dict
     payload: Dict[str, Any] = {
         "source": "telegram",
         "telegram": telegram_payload,
+        "agent_id": agent_id,
     }
     message_data: Dict[str, Any] = {
         "tenant": tenant,
@@ -808,6 +705,7 @@ async def submit_react_turn(entrypoint: Any, *, summary: Dict[str, Any]) -> Dict
         "bundle_id": bundle_id,
         "conversation_id": conversation_id,
         "turn_id": turn_id,
+        "agent_id": agent_id,
         "payload": payload,
     }
     text_event_type = (
@@ -822,6 +720,7 @@ async def submit_react_turn(entrypoint: Any, *, summary: Dict[str, Any]) -> Dict
         attachments=attachments,
         turn_id=turn_id,
         text_event_type=text_event_type,
+        agent_id=agent_id,
     )
 
     ingress = IngressConfig(
@@ -868,193 +767,6 @@ async def submit_react_turn(entrypoint: Any, *, summary: Dict[str, Any]) -> Dict
         "telegram_identity": telegram_identity,
         "ingress": result_payload,
     }
-
-
-async def run_react_turn(entrypoint: Any, *, summary: Dict[str, Any]) -> Dict[str, Any] | None:
-    text = str(summary.get("text") or "").strip()
-    attachments = list(summary.get("attachments") or [])
-    comm_context = getattr(entrypoint, "comm_context", None)
-    bundle_id = _bundle_id(entrypoint)
-    if not text and not attachments:
-        return None
-
-    chat_id = str(summary.get("chat_id") or "unknown").strip()
-    update_id = str(summary.get("update_id") or uuid.uuid4().hex).strip()
-    integration_id = str(summary.get("integration_id") or "").strip()
-    telegram_user_id = str(summary.get("user_id") or chat_id or "anonymous").strip()
-    telegram_identity = storage(entrypoint).resolve_telegram_user(
-        telegram_user_id=telegram_user_id,
-        telegram_chat_id=chat_id,
-        telegram_username=str(summary.get("username") or "").strip(),
-    )
-    kdcube_user_id = str(telegram_identity.get("kdcube_user_id") or "").strip()
-    role = str(telegram_identity.get("role") or "anonymous").strip().lower() or "anonymous"
-    conversation_id = str(telegram_identity.get("conversation_id") or "").strip() or f"telegram_chat_{chat_id}"
-    turn_id = new_turn_id()
-    log.info(
-        "[%s] telegram react turn resolved | update_id=%s chat_id=%s telegram_user_id=%s kdcube_user_id=%s role=%s conversation_id=%s turn_id=%s text_chars=%s attachments=%s",
-        bundle_id,
-        update_id,
-        chat_id,
-        telegram_user_id,
-        kdcube_user_id or "",
-        role,
-        conversation_id,
-        turn_id,
-        len(text),
-        _attachment_log_items(attachments),
-    )
-    actor_user_id = f"telegram_{telegram_user_id}"
-    identity_authority = await _telegram_platform_authority(
-        entrypoint,
-        actor_user_id=actor_user_id,
-        telegram_user_id=telegram_user_id,
-        local_role=role,
-        source="telegram.webhook",
-    )
-    if not str(identity_authority.get("platform_user_id") or "").strip():
-        connect_answer = _telegram_connect_answer(turn_id)
-        return {
-            "conversation_id": conversation_id,
-            "turn_id": turn_id,
-            "telegram_identity": telegram_identity,
-            **connect_answer,
-        }
-    if not comm_context:
-        return None
-    telegram_command_type, processed_text = _telegram_command_kind_and_text(text)
-    text_event_type = (
-        "event.user.steer"
-        if telegram_command_type == "steer"
-        else "event.user.followup"
-        if telegram_command_type == "followup"
-        else "event.user.prompt"
-    )
-
-    scoped_ctx = comm_context.model_copy(deep=True)
-    scoped_ctx.routing.session_id = conversation_id
-    scoped_ctx.routing.conversation_id = conversation_id
-    scoped_ctx.routing.turn_id = turn_id
-    runtime_label = _authority_runtime_label(identity_authority)
-    scoped_ctx.user.user_id = actor_user_id
-    scoped_ctx.user.username = str(summary.get("username") or scoped_ctx.user.username or "")
-    scoped_ctx.user.user_type = runtime_label
-    scoped_ctx.user.roles = list(identity_authority.get("platform_roles") or [])
-    scoped_ctx.user.permissions = list(identity_authority.get("platform_permissions") or [])
-    scoped_ctx.user.identity_authority = identity_authority
-    scoped_payload = getattr(scoped_ctx.request, "payload", None)
-    scoped_payload = dict(scoped_payload) if isinstance(scoped_payload, dict) else {}
-    scoped_telegram = scoped_payload.get("telegram")
-    scoped_telegram = dict(scoped_telegram) if isinstance(scoped_telegram, dict) else {}
-    scoped_telegram.update(_telegram_payload_summary(summary))
-    scoped_telegram.update(
-        {
-            "kdcube_user_id": kdcube_user_id,
-            "role": role,
-            "conversation_id": conversation_id,
-            "turn_id": turn_id,
-            "integration_id": integration_id,
-        }
-    )
-    scoped_payload["source"] = "telegram"
-    scoped_payload["telegram"] = scoped_telegram
-    scoped_ctx.request.payload = scoped_payload
-
-    async def _run_scoped_telegram_turn() -> Dict[str, Any]:
-        nonlocal attachments
-        if attachments:
-            attachments = await _host_telegram_attachments(
-                entrypoint,
-                attachments=attachments,
-                tenant=scoped_ctx.actor.tenant_id,
-                project=scoped_ctx.actor.project_id,
-                user_id=scoped_ctx.user.user_id,
-                user_type=scoped_ctx.user.user_type,
-                conversation_id=conversation_id,
-                turn_id=turn_id,
-            )
-            summary["attachments"] = attachments
-        external_events = _telegram_external_events(
-            text=processed_text,
-            attachments=attachments,
-            turn_id=turn_id,
-            text_event_type=text_event_type,
-        )
-
-        state = entrypoint.create_initial_state(
-            {
-                "request_id": scoped_ctx.request.request_id or str(uuid.uuid4()),
-                "tenant": scoped_ctx.actor.tenant_id,
-                "project": scoped_ctx.actor.project_id,
-                "user": scoped_ctx.user.user_id,
-                "user_type": scoped_ctx.user.user_type,
-                "identity_authority": identity_authority,
-                "roles": list(identity_authority.get("platform_roles") or []),
-                "permissions": list(identity_authority.get("platform_permissions") or []),
-                "session_id": conversation_id,
-                "conversation_id": conversation_id,
-                "turn_id": turn_id,
-                "external_events": external_events,
-                "message_kind": telegram_command_type,
-            }
-        )
-        state["turn_id"] = turn_id
-        entrypoint.set_state(state)
-        stream_enabled = bool(
-            _telegram_definition_prop(entrypoint, "stream_activity", True, integration_id=integration_id)
-            and _telegram_definition_prop(entrypoint, "send_responses", True, integration_id=integration_id)
-        )
-        stream_show_progress = bool(
-            _telegram_definition_prop(entrypoint, "stream_activity_display", True, integration_id=integration_id)
-        )
-        async with TelegramActivityStreamer(
-            comm=getattr(entrypoint, "comm", None),
-            bot_token=await _bot_token_value(entrypoint, integration_id=integration_id),
-            chat_id=chat_id,
-            turn_id=turn_id,
-            enabled=stream_enabled,
-            show_progress=stream_show_progress,
-        ) as telegram_streamer:
-            result = await entrypoint.run(external_events=external_events)
-        delivered_file_keys = telegram_streamer.delivered_file_keys() if telegram_streamer else set()
-        progress_message_id = telegram_streamer.progress_message_id() if telegram_streamer else None
-        progress_summary = telegram_streamer.progress_summary() if telegram_streamer else ""
-        turn_log = (result or {}).get("turn_log") if isinstance((result or {}).get("turn_log"), dict) else {}
-        timeline = (result or {}).get("timeline") if isinstance((result or {}).get("timeline"), dict) else {}
-        log.info(
-            "[%s] telegram react turn completed | update_id=%s conversation_id=%s turn_id=%s answer_chars=%s followups=%s turn_log_blocks=%s timeline_blocks=%s timeline_sources=%s",
-            bundle_id,
-            update_id,
-            conversation_id,
-            turn_id,
-            len(str((result or {}).get("final_answer") or "")),
-            len((result or {}).get("followups") or []),
-            len(turn_log.get("blocks") or []) if isinstance(turn_log, dict) else 0,
-            len(timeline.get("blocks") or []) if isinstance(timeline, dict) else 0,
-            len(timeline.get("sources_pool") or []) if isinstance(timeline, dict) else 0,
-        )
-        return {
-            "conversation_id": conversation_id,
-            "turn_id": turn_id,
-            "telegram_identity": telegram_identity,
-            "answer": (result or {}).get("final_answer") or "",
-            "followups": (result or {}).get("followups") or [],
-            "turn_log": turn_log,
-            "timeline": timeline,
-            "telegram_delivered_file_keys": sorted(delivered_file_keys),
-            "telegram_progress_message_id": progress_message_id,
-            "telegram_progress_summary": progress_summary,
-        }
-
-    binder = getattr(entrypoint, "bind_request_context", None)
-    if callable(binder):
-        with binder(comm_context=scoped_ctx):
-            with bind_current_request_context(scoped_ctx, comm=getattr(entrypoint, "comm", None)):
-                return await _run_scoped_telegram_turn()
-
-    entrypoint.rebind_request_context(comm_context=scoped_ctx)
-    with bind_current_request_context(scoped_ctx, comm=getattr(entrypoint, "comm", None)):
-        return await _run_scoped_telegram_turn()
 
 
 def _queued_telegram_meta(entrypoint: Any) -> Dict[str, Any]:
@@ -1104,12 +816,12 @@ async def run_with_queued_telegram_delivery(entrypoint: Any, *, runner: Any) -> 
         result = await runner()
     if not isinstance(result, dict):
         result = {}
-    delivery = await deliver_react_turn_to_telegram(
+    delivery = await deliver_turn_to_telegram(
         bundle_id=bundle_id,
         bot_token=await _bot_token_value(entrypoint, integration_id=integration_id),
         chat_id=chat_id,
         update_id=update_id,
-        react_turn=result,
+        turn_result=result,
         delivered_file_keys=telegram_streamer.delivered_file_keys() if telegram_streamer else set(),
         progress_message_id=telegram_streamer.progress_message_id() if telegram_streamer else None,
         progress_summary=telegram_streamer.progress_summary() if telegram_streamer else "",
@@ -1184,74 +896,26 @@ async def handle_webhook(entrypoint: Any, request: Any = None, **update) -> Dict
                 update_id,
                 _attachment_log_items(list(summary.get("attachments") or [])),
             )
-        submitted_turn = await submit_react_turn(entrypoint, summary=summary)
+        submitted_turn = await submit_telegram_turn(entrypoint, summary=summary)
     except Exception as exc:
         await asyncio.to_thread(telegram_store.fail_telegram_update, update_id=update_id, error=str(exc))
         raise
 
-    if submitted_turn is not None:
-        ingress = submitted_turn.get("ingress") if isinstance(submitted_turn.get("ingress"), dict) else {}
-        stage = "webhook-ack"
-        if submitted_turn.get("mode") == "submitted":
-            ingress_reason = str(ingress.get("reason") or "")
-            if ingress_reason.startswith("active_turn_control_"):
-                stage = "telegram-control-noop"
-            elif ingress_reason.endswith("_accepted") and bool(ingress.get("is_continuation")):
-                stage = "telegram-continuation"
-            else:
-                stage = "queued-react-turn" if submitted_turn.get("accepted") else "submit-rejected"
-        result_payload = {
-            "ok": True,
-            "accepted": bool(submitted_turn.get("accepted", True)),
-            "stage": stage,
-            "summary": _telegram_payload_summary(summary),
-            "react_turn": None,
-            "chat_ingress": submitted_turn,
-            "telegram_response": None,
-            "telegram_delivery": None,
-        }
-        await asyncio.to_thread(telegram_store.complete_telegram_update, update_id=update_id, result=result_payload)
-        return result_payload
-
-    command_kind, _command_text = _telegram_command_kind_and_text(str(summary.get("text") or ""))
-    if command_kind == "steer":
-        # The inline fallback has no shared ingress/lane and therefore cannot
-        # implement the active-turn control contract. A no-op is safer than
-        # incorrectly starting a new turn for `/stop`.
-        result_payload = {
-            "ok": True,
-            "accepted": False,
-            "stage": "telegram-control-unavailable",
-            "summary": _telegram_payload_summary(summary),
-            "react_turn": None,
-            "chat_ingress": None,
-            "telegram_response": None,
-            "telegram_delivery": None,
-        }
-        await asyncio.to_thread(telegram_store.complete_telegram_update, update_id=update_id, result=result_payload)
-        return result_payload
-
-    # Inline fallback (no chat_submitter available): this path runs entirely in the
-    # current process and bypasses shared ingress. Its local lock only protects two
-    # inline coroutines in this process; it is not a distributed conversation fence.
-    lock_key = _telegram_inline_turn_lock_key(entrypoint, summary)
-    turn_lock = _telegram_inline_turn_lock(lock_key)
-    await turn_lock.acquire()
-    lock_held = True
-    try:
-        react_turn = await run_react_turn(entrypoint, summary=summary)
-        telegram_delivery = None
-        telegram_messages: list[Dict[str, Any]] = []
-        if react_turn:
-            delivery_result = await deliver_react_turn_to_telegram(
+    mode = str(submitted_turn.get("mode") or "").strip()
+    if mode in {"connection_required", "unavailable"}:
+        turn_id = str(submitted_turn.get("turn_id") or new_turn_id()).strip()
+        response_turn = (
+            _telegram_connect_answer(turn_id)
+            if mode == "connection_required"
+            else _telegram_ingress_unavailable_answer(turn_id)
+        )
+        try:
+            delivery_result = await deliver_turn_to_telegram(
                 bundle_id=bundle_id,
                 bot_token=await _bot_token_value(entrypoint, integration_id=str(summary.get("integration_id") or "")),
                 chat_id=summary.get("chat_id") or "",
                 update_id=update_id,
-                react_turn=react_turn,
-                delivered_file_keys=set(react_turn.get("telegram_delivered_file_keys") or []) if isinstance(react_turn, dict) else set(),
-                progress_message_id=react_turn.get("telegram_progress_message_id") if isinstance(react_turn, dict) else None,
-                progress_summary=react_turn.get("telegram_progress_summary") if isinstance(react_turn, dict) else "",
+                turn_result=response_turn,
                 send_responses=bool(
                     _telegram_definition_prop(
                         entrypoint,
@@ -1261,50 +925,52 @@ async def handle_webhook(entrypoint: Any, request: Any = None, **update) -> Dict
                     )
                 ),
             )
-            telegram_delivery = delivery_result.get("telegram_delivery")
-            telegram_messages = list(delivery_result.get("messages") or [])
-    except Exception as exc:
-        if lock_held:
-            turn_lock.release()
-            lock_held = False
-        await asyncio.to_thread(telegram_store.fail_telegram_update, update_id=update_id, error=str(exc))
-        raise
-    log.info(
-        "[%s] telegram update accepted | update_id=%s type=%s chat_id=%s user_id=%s attachments=%s",
-        bundle_id,
-        summary.get("update_id"),
-        summary.get("update_type"),
-        summary.get("chat_id"),
-        summary.get("user_id"),
-        len(summary.get("attachments") or []),
-    )
-    result_payload = {
-        "ok": True,
-        "accepted": True,
-        "stage": (
-            "connection-required"
-            if isinstance(react_turn, dict) and react_turn.get("authorization") == "connection_required"
-            else "react-turn" if react_turn else "webhook-ack"
-        ),
-        "summary": summary,
-        "react_turn": react_turn,
-        "telegram_response": (
-            {
+        except Exception as exc:
+            await asyncio.to_thread(telegram_store.fail_telegram_update, update_id=update_id, error=str(exc))
+            raise
+        telegram_messages = list(delivery_result.get("messages") or [])
+        result_payload = {
+            "ok": mode == "connection_required",
+            "accepted": bool(submitted_turn.get("accepted")),
+            "stage": "connection-required" if mode == "connection_required" else "chat-ingress-unavailable",
+            "reason": submitted_turn.get("reason"),
+            "summary": _telegram_payload_summary(summary),
+            "chat_ingress": None,
+            "telegram_response": {
                 "text": telegram_messages[0].get("text") if telegram_messages else "",
                 "messages": telegram_messages,
-                "files": [
-                    file_item
-                    for message in telegram_messages
-                    for file_item in (message.get("files") or [])
-                ],
-            }
-            if react_turn
-            else None
-        ),
-        "telegram_delivery": telegram_delivery,
+                "files": [],
+            },
+            "telegram_delivery": delivery_result.get("telegram_delivery"),
+        }
+        log.warning(
+            "[%s] telegram update not submitted | update_id=%s mode=%s reason=%s",
+            bundle_id,
+            update_id,
+            mode,
+            submitted_turn.get("reason") or "",
+        )
+        await asyncio.to_thread(telegram_store.complete_telegram_update, update_id=update_id, result=result_payload)
+        return result_payload
+
+    ingress = submitted_turn.get("ingress") if isinstance(submitted_turn.get("ingress"), dict) else {}
+    stage = "webhook-ack"
+    if mode == "submitted":
+        ingress_reason = str(ingress.get("reason") or "")
+        if ingress_reason.startswith("active_turn_control_"):
+            stage = "telegram-control-noop"
+        elif ingress_reason.endswith("_accepted") and bool(ingress.get("is_continuation")):
+            stage = "telegram-continuation"
+        else:
+            stage = "queued-turn" if submitted_turn.get("accepted") else "submit-rejected"
+    result_payload = {
+        "ok": True,
+        "accepted": bool(submitted_turn.get("accepted", True)),
+        "stage": stage,
+        "summary": _telegram_payload_summary(summary),
+        "chat_ingress": submitted_turn,
+        "telegram_response": None,
+        "telegram_delivery": None,
     }
-    if lock_held:
-        turn_lock.release()
-        lock_held = False
     await asyncio.to_thread(telegram_store.complete_telegram_update, update_id=update_id, result=result_payload)
     return result_payload

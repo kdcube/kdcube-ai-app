@@ -167,7 +167,7 @@ The same acknowledgement semantics as SSE apply.
 
 ### Telegram Webhook Through Submitter
 
-The normal Telegram path does not run ReAct directly inside the webhook.
+The Telegram path never runs the app workflow inside the webhook.
 
 ```text
 Telegram webhook
@@ -176,7 +176,7 @@ Telegram webhook
 handle_webhook(...)
         |
         v
-telegram user_admin.submit_react_turn(...)
+telegram user_admin.submit_telegram_turn(...)
   turn_id = new_turn_id()
   builds message_data.external_events[]
   creates IngressConfig(transport="telegram")
@@ -191,31 +191,32 @@ process_chat_message(...)
 Redis lane + ready queue + proc
 ```
 
-`handle_webhook(...)` calls `submit_react_turn(...)` first. When the submitter
-accepts the request, the webhook has queued conversation work and should not
-also run ReAct inline. Later, when processor runs the queued turn, the bundle
-can wrap its runner with `run_with_queued_telegram_delivery(...)` so progress
+`handle_webhook(...)` calls `submit_telegram_turn(...)`. When the submitter
+accepts the request, the webhook has queued conversation work. Later, the
+processor runs the target app. The app wraps its ReAct, LangGraph, CrewAI, or
+custom async runner with `run_with_queued_telegram_delivery(...)` so progress
 and final delivery are sent to Telegram.
 
-### Telegram Inline Fallback
+The ingress contract is framework-neutral; live event consumption is not
+automatic. ReAct consumes followup/steer events through its active listener.
+The current ported LangGraph app runs to completion and sees the ingress batch
+at turn start, so live cancellation requires an explicit runner adapter.
 
-Inline fallback is only for runtimes where the injected chat submitter is not
-available:
+### No Telegram Inline Agent Fallback
+
+If the injected chat submitter is unavailable, the webhook returns a short
+retry response and executes no agent workflow. This preserves the shared
+ingress, conversation fence, and event-lane contract:
 
 ```text
 handle_webhook(...)
-  submit_react_turn(...) returns None
-        |
-        v
-run_react_turn(...)
-        |
-        v
-deliver_react_turn_to_telegram(...)
+  submit_telegram_turn(...) reports unavailable
+  -> send transport-level retry response
+  -> do not create or run a turn
 ```
 
-This is a fallback execution path. It must bind a runtime turn explicitly and
-then reduce the returned ReAct timeline/turn log for delivery. It is not the
-normal Redis lane wake path.
+An unlinked Telegram identity similarly receives the Connection Hub linking
+prompt directly. Neither direct response is an agent turn.
 
 ### Backend Jobs And Other Webhooks
 

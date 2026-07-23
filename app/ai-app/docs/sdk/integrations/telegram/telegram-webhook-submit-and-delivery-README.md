@@ -1,9 +1,9 @@
 ---
 id: repo:kdcube-ai-app/app/ai-app/docs/sdk/integrations/telegram/telegram-webhook-submit-and-delivery-README.md
 title: "Telegram Webhook Submit And Queued Delivery"
-summary: "Exact runtime data path for Telegram bot messages: webhook acknowledgement, chat ingress submission, processor-side ReAct execution, activity streaming, and final Telegram delivery."
-tags: ["sdk", "integrations", "telegram", "webhook", "chat-ingress", "queued-delivery", "react"]
-keywords: ["telegram webhook", "telegram submitter", "telegram queued delivery", "run_with_queued_telegram_delivery", "TelegramActivityStreamer", "deliver_react_turn_to_telegram"]
+summary: "Exact runtime data path for Telegram bot messages: webhook acknowledgement, shared chat ingress, processor-side app execution, activity streaming, and final Telegram delivery."
+tags: ["sdk", "integrations", "telegram", "webhook", "chat-ingress", "queued-delivery", "agent-runtime"]
+keywords: ["telegram webhook", "telegram submitter", "telegram queued delivery", "submit_telegram_turn", "run_with_queued_telegram_delivery", "TelegramActivityStreamer", "deliver_turn_to_telegram"]
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/integrations/telegram/telegram-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/integrations/telegram/telegram-external-prereq-README.md
@@ -16,9 +16,9 @@ see_also:
 # Telegram Webhook Submit And Queued Delivery
 
 This article describes the normal Telegram bot message path in KDCube. A
-Telegram webhook request does not normally run the ReAct turn inline and does
-not own final response delivery. The webhook submits the message to shared chat
-ingress. The processor later runs the bundle and the bundle wraps that run with
+Telegram webhook request does not run the app's agent or workflow inline and
+does not own final response delivery. The webhook submits the message to shared
+chat ingress. The processor later runs the app, and the app wraps that run with
 `telegram_user_admin.run_with_queued_telegram_delivery(...)`.
 
 ## Normal Flow
@@ -28,57 +28,62 @@ Telegram Bot API
   POST /public/telegram_webhook
     |
     v
-bundle telegram_webhook(...)
+app telegram_webhook(...)
   -> telegram_user_admin.handle_webhook(entrypoint, **update)
        - summarize Telegram update
        - claim update_id for idempotency
        - hydrate Telegram files when needed
        - resolve registered/admin Telegram user
-       - call submit_react_turn(...)
+       - call submit_telegram_turn(...)
             |
             v
             ChatIngressSubmitter.submit(...)
               message_data.payload.source = "telegram"
               message_data.payload.telegram = {chat_id, update_id, turn_id, ...}
+              message_data.agent_id = surfaces.as_consumer.default_agent
               message_data.external_events[] = event.user.prompt/followup/steer + attachments
             |
             v
             return accepted/rejected webhook acknowledgement
 
 processor later claims queued chat turn
-  -> creates bundle entrypoint with comm_context.request.payload.telegram
-  -> bundle graph calls:
+  -> creates app entrypoint with comm_context.request.payload.telegram
+  -> app run path calls:
        telegram_user_admin.run_with_queued_telegram_delivery(entrypoint, runner=...)
           |
           +-- TelegramActivityStreamer observes comm events while runner executes
           |
-          +-- runner() runs the real ReAct workflow
+          +-- runner() runs the app's configured workflow
+              ReAct | LangGraph | CrewAI | custom async code
           |
-          +-- deliver_react_turn_to_telegram(...)
+          +-- deliver_turn_to_telegram(...)
                 renders final Telegram messages from runner result and turn log
 ```
 
-The fallback inline path `run_react_turn(...)` exists only for environments
-where `entrypoint.chat_submitter.submit` is not available or the SDK cannot
-submit a registered Telegram user to chat ingress. Reference bundles should use
-the submitter path.
+There is no webhook-side agent-execution fallback. If shared chat ingress is
+unavailable, the webhook sends a short retry response and does not run the app
+in the webhook process. An unlinked user receives the Connection Hub linking
+prompt directly; that prompt is a transport response, not an agent turn.
 
-The submit path does not use a process-local conversation lock. Such a lock
-cannot order requests across processors or replicas. Shared chat ingress,
-conversation-state compare-and-set, and the retained Redis event lane own
-admission and turn-order correctness. Queued execution and delivery rely on that
-shared ownership as well. Only the explicitly inline fallback uses a local
-execution lock, because that fallback runs entirely inside one process and does
-not claim distributed coordination. No local lock gates `/stop` admission.
+The submit and delivery paths do not use process-local conversation locks. Such
+a lock cannot order requests across processors or replicas. Shared chat ingress,
+conversation-state compare-and-set, the queue, and the retained Redis event lane
+own admission and turn-order correctness.
 
 `/stop` is normalized to the same `event.user.steer` event used by classic chat
 and passes through the same shared ingress and Redis lane. It is accepted only
 for the currently active turn. With no active turn it is a successful no-op; it
-never queues a new turn. The inline fallback has no shared lane, so it does not
-attempt to emulate steer by starting an inline turn.
+never queues a new turn.
+
+Transport parity does not give every agent framework live steering by itself.
+The built-in ReAct harness has a live event listener and can interrupt an active
+phase. A run-to-completion app, including the current ported LangGraph example,
+does not consume mid-turn lane events unless its runner adds a cancellation or
+steer adapter. It still receives normal Telegram turns through the same ingress,
+identity, attachment, ordering, and delivery path.
 
 The Telegram payload can contain Telegram-specific ids and transport metadata.
-The effective ReAct runtime turn id is still the chat ingress
+The effective runtime turn id is still the chat ingress
 `ExternalEventPayload.routing.turn_id`; see
 [Event Ingress To React Turn](../../events/event-ingress-to-react-turn-README.md).
 
@@ -93,7 +98,7 @@ The effective ReAct runtime turn id is still the chat ingress
                 v
 ┌──────────────────────────────────────────────────────────────────────┐
 │ BUNDLE WEBHOOK REQUEST                                                │
-│ owner: bundle public API + telegram.user_admin.handle_webhook          │
+│ owner: app public API + telegram.user_admin.handle_webhook             │
 │                                                                      │
 │ input: raw Telegram update                                            │
 │ output: HTTP acknowledgement to Telegram                              │
@@ -106,7 +111,7 @@ The effective ReAct runtime turn id is still the chat ingress
 │   - submit external_events[] to chat ingress                          │
 │                                                                      │
 │ forbidden work on normal path:                                        │
-│   - run ReAct inline                                                  │
+│   - run the app workflow inline                                       │
 │   - send the final assistant answer                                   │
 │   - start a second answer relay                                       │
 └───────────────┬──────────────────────────────────────────────────────┘
@@ -126,35 +131,35 @@ The effective ReAct runtime turn id is still the chat ingress
 │                                                                      │
 │ does not know:                                                        │
 │   - what answer Telegram will receive                                 │
-│   - how the bundle will render its final ReAct result                  │
+│   - which agent framework the app runs                                │
+│   - how the app will reduce its final result                          │
 └───────────────┬──────────────────────────────────────────────────────┘
                 │ processor claims queued turn
                 v
 ┌──────────────────────────────────────────────────────────────────────┐
 │ PROCESSOR-SIDE BUNDLE RUN                                             │
-│ owner: bundle entrypoint graph                                        │
+│ owner: app entrypoint                                                 │
 │                                                                      │
 │ input: comm_context.request.payload.telegram                          │
 │ required wrapper:                                                     │
 │   telegram_user_admin.run_with_queued_telegram_delivery(...)           │
 │                                                                      │
 │ wrapper owns:                                                         │
-│   - Telegram conversation delivery lock                               │
 │   - TelegramActivityStreamer lifecycle                                │
-│   - final call to deliver_react_turn_to_telegram(...)                  │
+│   - final call to deliver_turn_to_telegram(...)                        │
 │                                                                      │
 │ runner owns:                                                          │
-│   - workflow.process_*_turn(...)                                      │
-│   - ReAct construction and execution                                  │
+│   - the app's configured async workflow                               │
+│   - ReAct, LangGraph, CrewAI, or custom execution                     │
 │   - turn_log/timeline/result payload                                  │
 └───────────────┬──────────────────────────────────────────────────────┘
                 │ runner()
                 v
 ┌──────────────────────────────────────────────────────────────────────┐
-│ REACT WORKFLOW                                                        │
-│ owner: bundle workflow + React SDK                                    │
+│ APP WORKFLOW                                                          │
+│ owner: app (bundle)                                                   │
 │                                                                      │
-│ model-facing input: external_events[] folded into the timeline         │
+│ input: canonical external_events[] plus platform turn context          │
 │ live output: comm events, progress, files, citations, answer blocks    │
 │ durable output: turn_log.blocks[], artifacts, indexed messages         │
 │ returned output: result.answer/final_answer plus turn_log/timeline     │
@@ -186,7 +191,7 @@ Key boundary rule:
 payload.telegram       = transport metadata for delivery
 external_events[]      = context/model input
 turn_log.blocks[]      = durable turn output and fallback render source
-result.answer          = reduced final answer chosen by the bundle/workflow
+result.answer          = reduced final answer chosen by the app workflow
 Telegram final message = renderer output from result + turn_log/timeline
 ```
 
@@ -221,11 +226,11 @@ will perform.
 
 Command handlers such as `/start`, `/pause`, or product-specific quick replies
 may send immediate Telegram messages before delegating to `handle_webhook(...)`.
-Those are command responses, not the normal ReAct turn delivery path.
+Those are command responses, not the normal app-turn delivery path.
 
 ## Submitted Data Shape
 
-`submit_react_turn(...)` sends one chat-ingress submission. The relevant fields
+`submit_telegram_turn(...)` sends one chat-ingress submission. The relevant fields
 are:
 
 ```json
@@ -235,8 +240,10 @@ are:
   "bundle_id": "my.bundle@1-0",
   "conversation_id": "telegram_chat_12345",
   "turn_id": "turn_2026-06-18-12-00-00-000",
+  "agent_id": "main",
   "payload": {
     "source": "telegram",
+    "agent_id": "main",
     "telegram": {
       "chat_id": "12345",
       "update_id": "98765",
@@ -251,6 +258,7 @@ are:
     {
       "type": "event.user.prompt",
       "event_source_id": "telegram.user.prompt",
+      "agent_id": "main",
       "reactive": true,
       "payload": {
         "mime": "text/plain",
@@ -265,38 +273,48 @@ are:
 later by the processor-side wrapper to know where to stream and deliver the
 Telegram response.
 
-`external_events[]` is the model/context input. Telegram text and Telegram
-attachments must be represented there so ReAct sees the same event model used
-by browser transports.
+`agent_id` is the app's configured `surfaces.as_consumer.default_agent`. This
+keeps event-lane identity, grants, accounting, and app dispatch aligned for
+ReAct and non-ReAct apps. The legacy platform default is used only when the app
+does not declare a default agent.
+
+`external_events[]` is the canonical app-turn input. Telegram text and Telegram
+attachments are represented there so every app framework sees the same event
+model used by browser transports. Ingress receives the file bytes separately as
+`RawAttachment`, validates and hosts them, then adds `hosted_uri`, `key`, and
+`rn` to the corresponding attachment events before the turn is queued.
 
 ## Processor-Side Wrapper
 
-Every Telegram-capable bundle that accepts submitted Telegram turns must wrap
-the real ReAct run:
+Every Telegram-capable app that accepts submitted Telegram turns must wrap its
+real async run. The runner is framework-neutral:
 
 ```python
-async def _run_react_surface() -> dict:
-    return await workflow.process_main_turn(payload)
+async def _run_app_turn() -> dict:
+    return await execute_core(state=state, thread_id=conversation_id)
 
 result = await telegram_user_admin.run_with_queued_telegram_delivery(
     self,
-    runner=_run_react_surface,
+    runner=_run_app_turn,
 )
 ```
+
+The built-in ReAct app can make `_run_app_turn` call its ReAct runtime. The
+ported LangGraph example makes it call the same `execute_core` used by browser
+chat. CrewAI and custom apps use their own async runner in the same position.
 
 `run_with_queued_telegram_delivery(...)` performs this exact sequence:
 
 | Step | Behavior |
 | --- | --- |
 | Read metadata | Looks for `comm_context.request.payload["telegram"]`. If absent, returns `await runner()` unchanged. |
-| Lock | Acquires a per-Telegram-conversation async lock. |
 | Stream progress | Opens `TelegramActivityStreamer(...)` around `await runner()`. |
-| Run bundle | Executes the supplied `runner`, which owns the ReAct workflow. |
-| Final delivery | Calls `deliver_react_turn_to_telegram(...)` with the runner result, delivered file keys, progress message id, and progress summary. |
+| Run app | Executes the supplied `runner`, which owns the app workflow. |
+| Final delivery | Calls `deliver_turn_to_telegram(...)` with the runner result, delivered file keys, progress message id, and progress summary. |
 | Return result | Adds `result["telegram"] = {...delivery metadata...}` and returns the result. |
 
 The helper does not create the assistant answer. It only wraps execution and
-performs Telegram transport delivery from the bundle's result and turn log.
+performs Telegram transport delivery from the app's result and turn log.
 
 ## Runner Result Contract
 
@@ -304,13 +322,14 @@ The runner should return a dictionary with these fields when available:
 
 | Field | Meaning | Used by Telegram delivery |
 | --- | --- | --- |
-| `answer` or `final_answer` | Reduced final answer text selected by the bundle/workflow. | Preferred first by the Telegram renderer when non-empty. |
+| `answer` or `final_answer` | Reduced final answer text selected by the app workflow. | Preferred first by the Telegram renderer when non-empty. |
 | `suggested_followups` or `followups` | Optional next-action text. | Preserved in returned result; renderer may ignore unless explicitly supported. |
 | `turn_log` | Current turn payload with `blocks[]`. | Used to render answer blocks, sources, and files when needed. |
 | `timeline` | Timeline-like payload. | Fallback if `turn_log` is absent. |
 
-Current Telegram final rendering uses `render_react_turn_messages(...)`, which
-passes `prefer_react_turn_answer=True`. Therefore:
+Current Telegram final rendering uses `render_turn_messages(...)`. The older
+`render_react_turn_messages(...)` and `deliver_react_turn_to_telegram(...)`
+names remain compatibility wrappers. The reduction rule is:
 
 ```text
 if result.answer/result.final_answer is non-empty:
@@ -319,7 +338,7 @@ else:
     collect answer blocks from result.turn_log/result.timeline
 ```
 
-This means a bundle must not synthesize a generic fallback answer unless that is
+This means an app must not synthesize a generic fallback answer unless that is
 really the intended user-facing answer. A generic fallback in `result.answer`
 will hide useful assistant completion blocks that are present in the turn log.
 
@@ -331,7 +350,7 @@ notifications according to the SDK implementation.
 
 The activity stream is transport-level progress. It is not the same thing as
 the final answer reducer. The final Telegram answer is still produced after
-`runner()` returns by `deliver_react_turn_to_telegram(...)`.
+`runner()` returns by `deliver_turn_to_telegram(...)`.
 
 `integrations.telegram.stream_activity_display=false` suppresses the progress
 display part of the streamer, but the streamer still accepts `chat.files` and
@@ -345,12 +364,12 @@ file artifacts already sent during progress streaming are not sent twice.
 
 ## What Not To Build In A Bundle
 
-Do not add these patterns to a Telegram bundle:
+Do not add these patterns to a Telegram-capable app:
 
 | Wrong pattern | Why it is wrong |
 | --- | --- |
 | Webhook-side final answer relay | Duplicates the processor-side delivery wrapper and can race with queued execution. |
-| Webhook-side ReAct run for normal registered users | Bypasses shared chat ingress, external-event ordering, and processor ownership. |
+| Webhook-side app run for normal registered users | Bypasses shared chat ingress, external-event ordering, and processor ownership. |
 | Separate background subscriber just for Telegram answers | Splits delivery from the actual turn result and turn log. |
 | Generic fallback answer in `result.answer` when answer blocks exist | Masks useful legal assistant completions from `turn_log`. |
 | Telegram-specific model input outside `external_events[]` | Makes Telegram turns diverge from browser/event semantics. |
@@ -363,7 +382,7 @@ When Telegram delivery looks wrong, inspect these facts in order:
 | --- | --- |
 | Webhook log | `telegram submitter result` exists for the `update_id`. |
 | Ingress result | accepted turn has `payload.telegram` and `external_events[]`. |
-| Processor log | bundle run path calls `run_with_queued_telegram_delivery(...)`. |
+| Processor log | app run path calls `run_with_queued_telegram_delivery(...)`. |
 | Wrapper metadata | `_queued_telegram_meta(...)` finds `chat_id`, `update_id`, and `turn_id`. |
 | Runner result | returned dict has either a correct `answer` or useful answer blocks in `turn_log.blocks[]`. |
 | Renderer log | `telegram response rendered` shows message count and source `turn_log` or `timeline`. |

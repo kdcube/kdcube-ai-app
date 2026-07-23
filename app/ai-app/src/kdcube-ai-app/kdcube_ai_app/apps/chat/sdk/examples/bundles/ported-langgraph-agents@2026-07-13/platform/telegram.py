@@ -9,7 +9,7 @@
 # it duplicates no product (research) logic.
 #
 # All Telegram protocol mechanics — webhook secret verification, update parsing,
-# attachment hydration, per-conversation turn locking, progress streaming, Bot API
+# canonical ingress submission, attachment hosting, progress streaming, Bot API
 # rendering, the Telegram user registry, and final delivery — are owned by the
 # reusable SDK integration:
 #
@@ -73,10 +73,9 @@ async def handle_webhook(entrypoint: Any, *, request: Any = None, **update: Any)
     """Route one Telegram update to the shared turn path.
 
     `handle_webhook` verifies the webhook secret, claims the update id (dedupe),
-    resolves the Telegram user + conversation binding, and then EITHER submits
-    the message as `external_events[]` through the shared chat ingress (async
-    submit — the processor runs the turn) OR, when no submitter is present, runs
-    the turn inline. Either way the message drives the SAME `execute_core`."""
+    resolves the Telegram user + conversation binding, and submits the message
+    as `external_events[]` through shared chat ingress. The processor then drives
+    this app's LangGraph `execute_core`; the webhook never runs it inline."""
     return await telegram_user_admin.handle_webhook(entrypoint, request=request, **update)
 
 

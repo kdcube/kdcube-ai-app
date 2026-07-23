@@ -148,13 +148,13 @@ Telegram webhook
 handle_webhook(...)
         |
         v
-submit_react_turn(...)
+submit_telegram_turn(...)
         |
         v
 entrypoint.chat_submitter.submit(...)
         |
         v
-platform ingress -> Redis lane -> proc -> ReAct
+platform ingress -> Redis lane -> processor -> app workflow
 ```
 
 When processor later runs the queued turn, the app uses the Telegram
@@ -168,28 +168,27 @@ run_with_queued_telegram_delivery(entrypoint, runner=...)
         |
         +-- TelegramActivityStreamer observes progress
         |
-        +-- runner() runs ReAct and returns turn_log/timeline result
+        +-- runner() runs ReAct, LangGraph, CrewAI, or custom async code
+            and returns the app's turn result
         |
         v
-deliver_react_turn_to_telegram(...)
+deliver_turn_to_telegram(...)
 ```
 
-Only when no submitter is available does Telegram use inline fallback:
+Telegram has no inline agent fallback. If shared ingress is unavailable, it
+sends a transport-level retry response and executes no app workflow:
 
 ```text
 handle_webhook(...)
-  submit_react_turn(...) returns None
-        |
-        v
-run_react_turn(...)
-        |
-        v
-deliver_react_turn_to_telegram(...)
+  submit_telegram_turn(...) reports unavailable
+  -> send retry response
+  -> do not create or run a turn
 ```
 
 An app author integrating Telegram should not infer conversation semantics
 from the word "resubmitter". The deciding boundary is whether the code called
-the platform submitter and received an ingress result, or ran ReAct inline.
+the platform submitter and received an ingress result. User-visible conversation
+work always crosses that boundary.
 
 ## Scheduled Jobs And Backend Webhooks
 
@@ -290,7 +289,7 @@ with the provider name, required claim, and a link from `action_url` or
 
 | Example | What to inspect |
 | --- | --- |
-| `repo:kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/integrations/telegram/user_admin.py` | Submitted Telegram path, inline fallback, and queued delivery boundary. |
+| `repo:kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/integrations/telegram/user_admin.py` | Submitted Telegram path, direct transport responses, and queued delivery boundary. |
 | `repo:kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/integrations/telegram` | Telegram timeline-to-message rendering helpers. |
 | `repo:kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/tasks/operations.py` | Task execution delivering ReAct results through Telegram rendering. |
 | `repo:kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/workspace@2026-03-31-13-36/agents/main.py` | Normal app ReAct construction and workspace persistence; the path keeps the historical `bundles` directory name. |

@@ -120,7 +120,7 @@ def test_telegram_user_admin_storage_maps_roles_and_conversations(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_telegram_submit_react_turn_sends_external_events(tmp_path, monkeypatch):
+async def test_telegram_submit_turn_sends_events_and_raw_attachments_to_ingress(tmp_path, monkeypatch):
     from kdcube_ai_app.apps.chat.ingress.ingress_core import IngressResult
     from kdcube_ai_app.apps.chat.sdk.integrations.telegram import TelegramUserAdminStorage
     from kdcube_ai_app.apps.chat.sdk.integrations.telegram import user_admin
@@ -139,6 +139,7 @@ async def test_telegram_submit_react_turn_sends_external_events(tmp_path, monkey
         storage_root_or_error=lambda entrypoint: tmp_path,
         bundle_id="test.telegram-submit",
     )
+
     async def _authority(_entrypoint=None, **kwargs):
         return {
             "actor_user_id": kwargs["actor_user_id"],
@@ -157,6 +158,7 @@ async def test_telegram_submit_react_turn_sends_external_events(tmp_path, monkey
 
     async def _submit(**kwargs):
         captured["message_data"] = dict(kwargs["message_data"])
+        captured["raw_attachments"] = list(kwargs["raw_attachments"] or [])
         return IngressResult(
             ok=True,
             conversation_id=kwargs["message_data"]["conversation_id"],
@@ -168,13 +170,16 @@ async def test_telegram_submit_react_turn_sends_external_events(tmp_path, monkey
     entrypoint = SimpleNamespace(
         BUNDLE_ID="test.telegram-submit",
         chat_submitter=SimpleNamespace(submit=_submit),
+        bundle_prop=lambda path, default=None: "lg-solution"
+        if path == "surfaces.as_consumer.default_agent"
+        else default,
         comm_context=SimpleNamespace(
             actor=SimpleNamespace(tenant_id="tenant-a", project_id="project-a"),
             meta=SimpleNamespace(instance_id="telegram-test"),
         ),
     )
 
-    result = await user_admin.submit_react_turn(
+    result = await user_admin.submit_telegram_turn(
         entrypoint,
         summary={
             "text": "hello from telegram",
@@ -183,30 +188,45 @@ async def test_telegram_submit_react_turn_sends_external_events(tmp_path, monkey
             "username": "elena",
             "update_id": "upd-1",
             "message_id": 42,
-            "attachments": [],
+            "attachments": [
+                {
+                    "file_name": "brief.txt",
+                    "mime_type": "text/plain",
+                    "base64": base64.b64encode(b"telegram attachment").decode("ascii"),
+                }
+            ],
         },
     )
 
     assert result["accepted"] is True
     message_data = captured["message_data"]
+    assert message_data["agent_id"] == "lg-solution"
+    assert message_data["payload"]["agent_id"] == "lg-solution"
     events = message_data["external_events"]
-    assert len(events) == 1
+    assert len(events) == 2
     assert events[0]["type"] == "event.user.prompt"
     assert events[0]["event_source_id"] == "telegram.user.prompt"
     assert events[0]["reactive"] is True
+    assert events[0]["agent_id"] == "lg-solution"
     assert events[0]["payload"] == {
         "mime": "text/plain",
         "event": {"text": "hello from telegram"},
     }
+    assert events[1]["type"] == "event.user.attachment"
+    assert events[1]["agent_id"] == "lg-solution"
+    raw_attachments = captured["raw_attachments"]
+    assert len(raw_attachments) == 1
+    assert raw_attachments[0].name == "brief.txt"
+    assert raw_attachments[0].mime == "text/plain"
+    assert raw_attachments[0].content == b"telegram attachment"
 
 
 @pytest.mark.asyncio
-async def test_telegram_handle_webhook_submit_path_does_not_take_inline_turn_lock(tmp_path, monkeypatch):
+async def test_telegram_handle_webhook_submit_path_reaches_ingress_directly(tmp_path, monkeypatch):
     """A mid-turn followup/steer must reach chat ingress while the turn is live.
 
     A process-local lock cannot coordinate processors or replicas. Shared submission
-    must proceed directly to ingress; only the explicitly inline fallback may use its
-    local execution lock.
+    must proceed directly to ingress while the current turn is still live.
     """
     from kdcube_ai_app.apps.chat.ingress.ingress_core import IngressResult
     from kdcube_ai_app.apps.chat.sdk.integrations.telegram import TelegramUserAdminStorage
@@ -261,15 +281,6 @@ async def test_telegram_handle_webhook_submit_path_does_not_take_inline_turn_loc
         ),
     )
 
-    lock_requests: list[str] = []
-    real_lock = user_admin._telegram_inline_turn_lock
-
-    def _spy_lock(key):
-        lock_requests.append(key)
-        return real_lock(key)
-
-    monkeypatch.setattr(user_admin, "_telegram_inline_turn_lock", _spy_lock)
-
     result = await asyncio.wait_for(
         user_admin.handle_webhook(
             entrypoint,
@@ -287,8 +298,6 @@ async def test_telegram_handle_webhook_submit_path_does_not_take_inline_turn_loc
     assert result["ok"] is True
     assert result["accepted"] is True
     assert result["stage"] == "telegram-continuation"
-    # The shared submit path must never enter the local-only fallback lock.
-    assert lock_requests == []
 
 
 @pytest.mark.asyncio
@@ -389,46 +398,62 @@ def test_telegram_external_events_allows_empty_steer_but_not_empty_prompt_or_fol
 
 
 @pytest.mark.asyncio
-async def test_telegram_inline_run_react_turn_derives_external_event_type(tmp_path, monkeypatch):
+async def test_telegram_unlinked_user_gets_direct_connect_response_without_agent_run(tmp_path, monkeypatch):
     from kdcube_ai_app.apps.chat.sdk.integrations.telegram import TelegramUserAdminStorage
     from kdcube_ai_app.apps.chat.sdk.integrations.telegram import user_admin
 
-    streamer_kwargs: list[dict] = []
-
-    class _FakeStreamer:
-        def __init__(self, **kwargs):
-            streamer_kwargs.append(dict(kwargs))
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, exc_type, exc, tb):
-            return None
-
-        def delivered_file_keys(self):
-            return set()
-
-        def progress_message_id(self):
-            return None
-
-        def progress_summary(self):
-            return ""
-
-    monkeypatch.setattr(user_admin, "TelegramActivityStreamer", _FakeStreamer)
-    monkeypatch.setattr(user_admin, "bot_token", lambda entrypoint=None: "telegram-token")
     async def _authority(_entrypoint=None, **kwargs):
         return {
             "actor_user_id": kwargs["actor_user_id"],
             "storage_user_id": kwargs["actor_user_id"],
-            "economics_user_id": "user-a",
-            "platform_user_id": "user-a",
-            "platform_roles": ["kdcube:role:registered"],
-            "platform_permissions": ["chat:run"],
+            "economics_user_id": "",
+            "platform_user_id": "",
+            "platform_roles": [],
+            "platform_permissions": [],
             "identity_provider": "telegram",
-            "platform_authority_resolved": True,
+            "platform_authority_resolved": False,
         }
 
     monkeypatch.setattr(user_admin, "_telegram_platform_authority", _authority)
+
+    storage = TelegramUserAdminStorage(tmp_path)
+    user_admin.configure_telegram_user_admin(
+        storage_factory=lambda entrypoint: storage,
+        storage_root_or_error=lambda entrypoint: tmp_path,
+        bundle_id="test.telegram-unlinked",
+    )
+
+    delivered: dict[str, object] = {}
+
+    async def _deliver(**kwargs):
+        delivered.update(kwargs)
+        return {
+            "messages": [{"kind": "text", "text": kwargs["turn_result"]["answer"]}],
+            "telegram_delivery": {"ok": True, "sent": 1},
+        }
+
+    monkeypatch.setattr(user_admin, "deliver_turn_to_telegram", _deliver)
+    result = await user_admin.handle_webhook(
+        SimpleNamespace(BUNDLE_ID="test.telegram-unlinked"),
+        update_id="upd-unlinked",
+        message={
+            "message_id": 80,
+            "chat": {"id": 1001, "type": "private"},
+            "from": {"id": 2002, "username": "elena"},
+            "text": "hello",
+        },
+    )
+
+    assert result["ok"] is True
+    assert result["stage"] == "connection-required"
+    assert result["chat_ingress"] is None
+    assert "Connect your Telegram account" in delivered["turn_result"]["answer"]
+
+
+@pytest.mark.asyncio
+async def test_telegram_missing_shared_ingress_returns_unavailable_without_agent_run(tmp_path, monkeypatch):
+    from kdcube_ai_app.apps.chat.sdk.integrations.telegram import TelegramUserAdminStorage
+    from kdcube_ai_app.apps.chat.sdk.integrations.telegram import user_admin
 
     storage = TelegramUserAdminStorage(tmp_path)
     storage.upsert_user(
@@ -442,77 +467,44 @@ async def test_telegram_inline_run_react_turn_derives_external_event_type(tmp_pa
     user_admin.configure_telegram_user_admin(
         storage_factory=lambda entrypoint: storage,
         storage_root_or_error=lambda entrypoint: tmp_path,
-        bundle_id="test.telegram-inline",
+        bundle_id="test.telegram-no-ingress",
     )
 
-    class _Ctx:
-        def __init__(self):
-            self.routing = SimpleNamespace(session_id="", conversation_id="", turn_id="")
-            self.user = SimpleNamespace(user_id="web-user", username="", user_type="anonymous")
-            self.request = SimpleNamespace(request_id="request-1")
-            self.actor = SimpleNamespace(tenant_id="tenant-a", project_id="project-a")
+    async def _authority(_entrypoint=None, **kwargs):
+        return {
+            "actor_user_id": kwargs["actor_user_id"],
+            "storage_user_id": kwargs["actor_user_id"],
+            "economics_user_id": "user-a",
+            "platform_user_id": "user-a",
+            "platform_roles": ["kdcube:role:registered"],
+            "platform_permissions": ["chat:run"],
+            "identity_provider": "telegram",
+            "platform_authority_resolved": True,
+        }
 
-        def model_copy(self, deep: bool = False):
-            del deep
-            clone = _Ctx()
-            clone.routing = SimpleNamespace(**vars(self.routing))
-            clone.user = SimpleNamespace(**vars(self.user))
-            clone.request = SimpleNamespace(**vars(self.request))
-            clone.actor = SimpleNamespace(**vars(self.actor))
-            return clone
+    async def _deliver(**kwargs):
+        return {
+            "messages": [{"kind": "text", "text": kwargs["turn_result"]["answer"]}],
+            "telegram_delivery": {"ok": True, "sent": 1},
+        }
 
-    class _Entrypoint:
-        BUNDLE_ID = "test.telegram-inline"
-        comm_context = _Ctx()
-
-        def rebind_request_context(self, *, comm_context):
-            self.bound_context = comm_context
-
-        def create_initial_state(self, payload):
-            self.initial_payload = dict(payload)
-            return dict(payload)
-
-        def set_state(self, state):
-            self.state = dict(state)
-
-        def bundle_prop(self, path, default=None):
-            if path == "integrations":
-                return {
-                    "telegram.test": {
-                        "provider": "telegram",
-                        "enabled": True,
-                        "definition": {"stream_activity_display": False},
-                    }
-                }
-            return default
-
-        async def run(self, **params):
-            self.run_params = dict(params)
-            return {"final_answer": "ok", "followups": [], "turn_log": {"blocks": []}, "timeline": {"blocks": []}}
-
-    entrypoint = _Entrypoint()
-    result = await user_admin.run_react_turn(
-        entrypoint,
-        summary={
-            "text": "/followup and then?",
-            "chat_id": "1001",
-            "user_id": "2002",
-            "username": "elena",
-            "update_id": "upd-2",
-            "attachments": [],
+    monkeypatch.setattr(user_admin, "_telegram_platform_authority", _authority)
+    monkeypatch.setattr(user_admin, "deliver_turn_to_telegram", _deliver)
+    result = await user_admin.handle_webhook(
+        SimpleNamespace(BUNDLE_ID="test.telegram-no-ingress"),
+        update_id="upd-no-ingress",
+        message={
+            "message_id": 81,
+            "chat": {"id": 1001, "type": "private"},
+            "from": {"id": 2002, "username": "elena"},
+            "text": "hello",
         },
     )
 
-    assert result["answer"] == "ok"
-    events = entrypoint.run_params["external_events"]
-    assert events[0]["type"] == "event.user.followup"
-    assert events[0]["event_source_id"] == "telegram.user.followup"
-    assert events[0]["payload"]["event"]["text"] == "and then?"
-    assert entrypoint.initial_payload["message_kind"] == "followup"
-    assert entrypoint.bound_context.request.payload["source"] == "telegram"
-    assert entrypoint.bound_context.request.payload["telegram"]["chat_id"] == "1001"
-    assert entrypoint.bound_context.request.payload["telegram"]["conversation_id"] == "conv-main"
-    assert streamer_kwargs[0]["show_progress"] is False
+    assert result["ok"] is False
+    assert result["accepted"] is False
+    assert result["stage"] == "chat-ingress-unavailable"
+    assert result["reason"] == "chat_submitter_unavailable"
 
 
 @pytest.mark.asyncio
@@ -550,14 +542,9 @@ async def test_queued_telegram_delivery_uses_processor_payload_telegram(monkeypa
         def progress_summary(self):
             return ""
 
-    monkeypatch.setattr(user_admin, "deliver_react_turn_to_telegram", _deliver)
+    monkeypatch.setattr(user_admin, "deliver_turn_to_telegram", _deliver)
     monkeypatch.setattr(user_admin, "TelegramActivityStreamer", _FakeStreamer)
     monkeypatch.setattr(user_admin, "bot_token", lambda entrypoint=None: "telegram-token")
-
-    def _unexpected_inline_lock(_key):
-        raise AssertionError("queued delivery must not use the inline fallback lock")
-
-    monkeypatch.setattr(user_admin, "_telegram_inline_turn_lock", _unexpected_inline_lock)
 
     class _Entrypoint:
         BUNDLE_ID = "test.telegram-queued"
@@ -618,8 +605,8 @@ async def test_queued_telegram_delivery_uses_processor_payload_telegram(monkeypa
     assert result["telegram"]["chat_id"] == "1001"
     assert delivered["chat_id"] == "1001"
     assert delivered["update_id"] == "upd-queued"
-    assert delivered["react_turn"]["answer"] == "Queued answer"
-    assert delivered["react_turn"]["turn_log"]["turn_id"] == "turn_queued"
+    assert delivered["turn_result"]["answer"] == "Queued answer"
+    assert delivered["turn_result"]["turn_log"]["turn_id"] == "turn_queued"
     assert streamer_kwargs[0]["show_progress"] is False
 
 
