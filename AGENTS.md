@@ -129,7 +129,8 @@ encodes everything below plus the details.
 ### Operating a runtime
 
 - Install via the published CLI: `pip install kdcube-cli`, then
-  `kdcube init` with your descriptor set. The runtime workdir
+  `kdcube init` with your descriptor set — the worked path is the
+  [Quick Start](app/ai-app/docs/quick-start-README.md). The runtime workdir
   (`~/.kdcube/kdcube-runtime/<tenant>__<project>`) holds staged descriptors
   (`config/`) and a staged platform copy (`repo/`).
 - Change configuration by editing descriptors and applying them
@@ -173,7 +174,9 @@ the user's requirements onto that boundary — surfaces first, code second:
 ### Where to read
 
 [how-to-navigate-kdcube-docs-README.md](app/ai-app/docs/sdk/bundle/build/how-to-navigate-kdcube-docs-README.md)
-is the map. The reference apps under
+is the map and the [docs index](app/ai-app/docs/README.md) is the full
+catalog — jump there first when asked to verify a design claim against its
+documentation. The reference apps under
 `app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/`
 are worked examples of every pattern above; read them, copy their shape, and
 keep your app in your own repository.

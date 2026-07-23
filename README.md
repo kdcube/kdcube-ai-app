@@ -56,6 +56,10 @@ Then create or connect an app, start the local runtime, and reload changes
 without rebuilding the platform image. Follow the
 [Quick Start](app/ai-app/docs/quick-start-README.md).
 
+Working with a coding agent? Point it at [AGENTS.md](AGENTS.md) — it routes
+contributor rules and the operator/builder path (install, configure, build an
+app) and names the docs to read first.
+
 ## Choose your starting point
 
 | You already have | Add with KDCube |
