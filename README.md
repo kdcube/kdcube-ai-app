@@ -6,6 +6,15 @@
 
 **The open-source, self-hosted production runtime for AI applications.**
 
+<p>
+  <a href="https://github.com/kdcube/kdcube/actions/workflows/release-kdcube-platform.yml"><img src="https://img.shields.io/github/actions/workflow/status/kdcube/kdcube/release-kdcube-platform.yml?branch=main&label=build" alt="Build status"></a>
+  <a href="https://github.com/kdcube/kdcube/releases"><img src="https://img.shields.io/github/v/release/kdcube/kdcube?label=release&sort=semver" alt="Latest release"></a>
+  <a href="https://pypi.org/project/kdcube-cli/"><img src="https://img.shields.io/pypi/v/kdcube-cli?label=pypi%3A%20kdcube-cli&logo=pypi&logoColor=white" alt="PyPI: kdcube-cli"></a>
+  <a href="https://hub.docker.com/u/kdcube"><img src="https://img.shields.io/badge/Docker%20Hub-kdcube-2496ED?logo=docker&logoColor=white" alt="Docker Hub: kdcube"></a>
+  <a href="https://github.com/kdcube/kdcube/blob/main/LICENSE"><img src="https://img.shields.io/github/license/kdcube/kdcube?color=blue" alt="License: MIT"></a>
+  <a href="https://github.com/kdcube/kdcube/stargazers"><img src="https://img.shields.io/github/stars/kdcube/kdcube?style=flat" alt="GitHub stars"></a>
+</p>
+
 Keep the agent and product code you already have. Run LangGraph, CrewAI,
 Claude Agent SDK, your own loop, or KDCube's built-in ReAct agent. KDCube
 handles the production work around it: multi-user serving, ordered
