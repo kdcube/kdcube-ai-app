@@ -903,6 +903,7 @@ async def host_artifact_file(
         hosted_rn = (h0.get("rn") or "").strip()
         hosted_physical = (h0.get("physical_path") or h0.get("local_path") or "").strip()
         hosted_size = h0.get("size")
+        hosted_sha = (h0.get("content_sha256") or "").strip()
         if isinstance(artifact.get("value"), dict):
             if hosted_uri:
                 artifact["value"]["hosted_uri"] = hosted_uri
@@ -914,6 +915,8 @@ async def host_artifact_file(
                 artifact["value"]["physical_path"] = hosted_physical
             if hosted_size is not None and artifact["value"].get("size_bytes") is None:
                 artifact["value"]["size_bytes"] = hosted_size
+            if hosted_sha and not artifact["value"].get("content_sha256"):
+                artifact["value"]["content_sha256"] = hosted_sha
             enrich_artifact_file_metadata(
                 artifact=artifact,
                 outdir=outdir,

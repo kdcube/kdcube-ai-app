@@ -269,6 +269,7 @@ def _declared_files_to_tool_items(
             "filename": filename,
             "mime": mime,
             "size": row.get("size") if row.get("size") is not None else row.get("size_bytes"),
+            "content_sha256": row.get("content_sha256") or "",
             "tool_id": tool_id,
             "description": description,
             "owner_id": row.get("owner_id") or "",

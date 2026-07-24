@@ -688,7 +688,10 @@ long-running ReAct, LangGraph, CrewAI, or custom app turn.
 
 Thinking and note deltas are rendered as Telegram HTML blockquotes. The streamer
 tracks already-sent file keys so final delivery does not duplicate files that
-were emitted during the turn.
+were emitted during the turn. The key is content-scoped (delivery path plus the
+artifact `content_sha256`, falling back to size, then the path alone): a true
+duplicate emit is dropped, but a rewrite of the same path with new content is a
+distinct key and is delivered as a new message.
 
 Two bundle properties control this behavior:
 
