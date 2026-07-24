@@ -236,6 +236,9 @@ One vocabulary spans the three tiers:
 
 A stored instruction set is itself an ordered item list in this same
 vocabulary, so custom refs compose with everything above and with each other.
+The store, the governed `instr` namespace, and the constructor widget
+(authoring, block library, assignment):
+[Agentic Config](../../solutions/agentic-config/agentic-config-README.md).
 
 Profiles (for `lite:` and `xlite:`): `core`, `workspace`, `workspace_exec`,
 `document`, `web`, `all_capabilities`.

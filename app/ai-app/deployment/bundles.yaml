@@ -1542,6 +1542,7 @@ bundles:
               multi_action_mode: "off"
               include_skill_gallery: false
               tool_catalog_detail: compact
+              skills_form: compact
               blocks:
               - xlite:workspace_exec
           additional_instructions: '[KDCUBE DOC LINKS]

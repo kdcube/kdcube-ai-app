@@ -152,3 +152,128 @@ export async function previewBody(items: string[], workspaceImplementation = 'cu
   if (!envelope.ok) throw new Error(errorText(envelope))
   return { body: envelope.body ?? '', items_expanded: envelope.items_expanded ?? [] }
 }
+
+// ── assignment: wire a stored instruction to an application agent ────────────
+// Uses the platform admin routes (list bundles, read props, merge-write props).
+// Assignment adds/updates an instruction-profile OPTION on the target agent
+// whose id is the instruction slug and whose blocks wire the pinned ref —
+// user-pickable immediately; optionally also made the profile default.
+
+export interface AppEntry {
+  bundleId: string
+  name: string
+}
+
+function adminBase(): string {
+  return `${settings.getBaseUrl()}/admin/integrations/bundles`
+}
+
+function scopeQuery(): string {
+  return `tenant=${encodeURIComponent(settings.getTenant())}&project=${encodeURIComponent(settings.getProject())}`
+}
+
+async function adminGet(url: string): Promise<Record<string, unknown>> {
+  const response = await fetch(url, {
+    method: 'GET',
+    credentials: 'include',
+    headers: settings.authHeaders({ Accept: 'application/json' }),
+    cache: 'no-store',
+  })
+  const payload = (await response.json().catch(() => null)) as Record<string, unknown> | null
+  if (!response.ok || !payload) {
+    throw new Error(`${(payload as { detail?: string } | null)?.detail || 'request failed'} (HTTP ${response.status})`)
+  }
+  return payload
+}
+
+export async function listApps(): Promise<AppEntry[]> {
+  const payload = await adminGet(`${adminBase()}?${scopeQuery()}`)
+  const entries = (payload.available_bundles ?? {}) as Record<string, { name?: string }>
+  return Object.keys(entries)
+    .sort()
+    .map((bundleId) => ({ bundleId, name: entries[bundleId]?.name || bundleId }))
+}
+
+function deepMerge(base: unknown, over: unknown): unknown {
+  if (over === undefined || over === null) return base
+  if (typeof base !== 'object' || base === null || Array.isArray(base)) return over
+  if (typeof over !== 'object' || Array.isArray(over)) return over
+  const out: Record<string, unknown> = { ...(base as Record<string, unknown>) }
+  for (const key of Object.keys(over as Record<string, unknown>)) {
+    out[key] = deepMerge((base as Record<string, unknown>)[key], (over as Record<string, unknown>)[key])
+  }
+  return out
+}
+
+/** The app's EFFECTIVE config (code defaults ← stored props) + its react agent keys. */
+export async function getAppAgents(bundleId: string): Promise<{ agents: string[]; config: Record<string, unknown> }> {
+  const payload = await adminGet(`${adminBase()}/${encodeURIComponent(bundleId)}/props?${scopeQuery()}`)
+  const config = deepMerge(payload.defaults ?? {}, payload.props ?? {}) as Record<string, unknown>
+  const react = config.react
+  const agents = (react && typeof react === 'object' && !Array.isArray(react))
+    ? Object.keys(react as Record<string, unknown>).filter((key) => {
+        const value = (react as Record<string, unknown>)[key]
+        return value && typeof value === 'object' && !Array.isArray(value)
+      })
+    : []
+  return { agents: agents.length ? agents : ['default_agent'], config }
+}
+
+interface ProfileOption {
+  id: string
+  label?: string
+  description?: string
+  blocks?: string[]
+  [key: string]: unknown
+}
+
+/** Add/update the instruction-profile option wiring `record` on the target
+ *  agent, and merge-write the WHOLE instruction_profiles subtree (the admin
+ *  merge replaces arrays, so the full options list rides the patch). */
+export async function assignInstruction(
+  bundleId: string,
+  agentKey: string,
+  record: InstructionRecord,
+  options: { makeDefault?: boolean } = {},
+): Promise<{ optionId: string }> {
+  const { config } = await getAppAgents(bundleId)
+  const react = (config.react ?? {}) as Record<string, unknown>
+  const agentBlock = (react[agentKey] ?? {}) as Record<string, unknown>
+  const profiles = (agentBlock.instruction_profiles ?? {}) as Record<string, unknown>
+  const existing: ProfileOption[] = Array.isArray(profiles.options)
+    ? (profiles.options as ProfileOption[]).map((row) => ({ ...row }))
+    : []
+  const ref = `instr:custom:${record.instruction_id}:${record.version}`
+  const option: ProfileOption = {
+    id: record.instruction_id,
+    label: record.name || record.instruction_id,
+    ...(record.description ? { description: record.description } : {}),
+    blocks: [ref],
+  }
+  const index = existing.findIndex((row) => row.id === record.instruction_id)
+  if (index >= 0) existing[index] = { ...existing[index], ...option }
+  else existing.push(option)
+  const nextProfiles: Record<string, unknown> = {
+    ...profiles,
+    options: existing,
+    default: options.makeDefault
+      ? record.instruction_id
+      : (profiles.default ?? existing[0]?.id ?? record.instruction_id),
+  }
+  const response = await fetch(`${adminBase()}/${encodeURIComponent(bundleId)}/props`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: settings.authHeaders({ 'Content-Type': 'application/json', Accept: 'application/json' }),
+    body: JSON.stringify({
+      tenant: settings.getTenant(),
+      project: settings.getProject(),
+      op: 'merge',
+      props: { react: { [agentKey]: { instruction_profiles: nextProfiles } } },
+    }),
+  })
+  const payload = (await response.json().catch(() => null)) as Record<string, unknown> | null
+  if (!response.ok || !payload || payload.status !== 'ok') {
+    throw new Error(`${(payload as { detail?: string } | null)?.detail || 'assign failed'} (HTTP ${response.status})`)
+  }
+  return { optionId: record.instruction_id }
+}
