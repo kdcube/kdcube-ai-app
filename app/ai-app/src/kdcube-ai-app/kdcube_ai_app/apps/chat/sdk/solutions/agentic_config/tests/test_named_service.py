@@ -45,14 +45,14 @@ class _FakeStore:
         v = int(version) if version is not None else max(versions)
         return versions.get(v)
 
-    async def list_instructions(self, *, include_retired=False):
+    async def list_instructions(self, *, include_retired=False, q="", tags=None):
         return [versions[max(versions)] for versions in self.data.values()]
 
     async def list_versions(self, instruction_id):
         versions = self.data.get(instruction_id) or {}
         return [versions[v] for v in sorted(versions, reverse=True)]
 
-    async def save_version(self, instruction_id, *, name, items, author, description=""):
+    async def save_version(self, instruction_id, *, name, items, author, description="", tags=None):
         if not str(name or "").strip():
             raise ValueError("name is required")
         self.saved.append((instruction_id, name, items, author))

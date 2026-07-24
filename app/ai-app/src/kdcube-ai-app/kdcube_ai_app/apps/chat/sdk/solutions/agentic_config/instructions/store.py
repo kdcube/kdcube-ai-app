@@ -70,8 +70,23 @@ def _normalized_items(items: Any) -> list[str]:
     return out
 
 
+def _normalized_tags(tags: Any) -> list[str]:
+    if isinstance(tags, str):
+        tags = [tags]
+    if not isinstance(tags, (list, tuple)):
+        return []
+    out: list[str] = []
+    for tag in tags:
+        text = str(tag or "").strip().lower()
+        if text and text not in out:
+            out.append(text)
+    return out
+
+
 def _record(row: Any) -> dict:
     data = dict(row)
+    tags = data.get("tags")
+    data["tags"] = [str(t) for t in tags] if isinstance(tags, (list, tuple)) else []
     items = data.get("items")
     if isinstance(items, str):
         try:
@@ -145,6 +160,7 @@ class AgenticInstructionsStore:
                 name TEXT NOT NULL,
                 description TEXT NOT NULL DEFAULT '',
                 items JSONB NOT NULL,
+                tags TEXT[] NOT NULL DEFAULT '{{}}',
                 body_ref TEXT NOT NULL DEFAULT '',
                 status TEXT NOT NULL DEFAULT '{STATUS_ACTIVE}',
                 created_by TEXT NOT NULL,
@@ -153,6 +169,10 @@ class AgenticInstructionsStore:
                 updated_at TIMESTAMPTZ,
                 PRIMARY KEY (instruction_id, version)
             )
+            """,
+            f"""
+            ALTER TABLE {schema}.{INSTRUCTIONS_TABLE}
+            ADD COLUMN IF NOT EXISTS tags TEXT[] NOT NULL DEFAULT '{{}}'
             """,
             f"""
             CREATE INDEX IF NOT EXISTS idx_{INSTRUCTIONS_TABLE}_status
@@ -176,6 +196,7 @@ class AgenticInstructionsStore:
         items: Any,
         author: str,
         description: str = "",
+        tags: Any = None,
     ) -> dict:
         """Insert the next version for ``instruction_id`` (1 for a new id).
 
@@ -198,14 +219,14 @@ class AgenticInstructionsStore:
             row = await con.fetchrow(
                 f"""
                 INSERT INTO {self.schema}.{INSTRUCTIONS_TABLE}
-                    (instruction_id, version, name, description, items, created_by)
+                    (instruction_id, version, name, description, items, tags, created_by)
                 VALUES (
                     $1,
                     COALESCE((
                         SELECT MAX(version) FROM {self.schema}.{INSTRUCTIONS_TABLE}
                         WHERE instruction_id = $1
                     ), 0) + 1,
-                    $2, $3, $4::jsonb, $5
+                    $2, $3, $4::jsonb, $5, $6
                 )
                 RETURNING *
                 """,
@@ -213,6 +234,7 @@ class AgenticInstructionsStore:
                 clean_name,
                 str(description or "").strip(),
                 json.dumps(clean_items, ensure_ascii=False),
+                _normalized_tags(tags),
                 clean_author,
             )
         return _record(row)
@@ -297,18 +319,42 @@ class AgenticInstructionsStore:
         items = record.get("items")
         return [str(v or "") for v in items] if isinstance(items, list) else None
 
-    async def list_instructions(self, *, include_retired: bool = False) -> list[dict]:
-        """Latest version per id (latest ACTIVE unless ``include_retired``)."""
+    async def list_instructions(
+        self,
+        *,
+        include_retired: bool = False,
+        q: str = "",
+        tags: Any = None,
+    ) -> list[dict]:
+        """Latest version per id (latest ACTIVE unless ``include_retired``).
+
+        ``q`` filters by id/name/description substring; ``tags`` requires every
+        named tag — so the constructor can FIND units, not only list them.
+        """
         pool = self._require_pool()
-        status_clause = "" if include_retired else f"WHERE status = '{STATUS_ACTIVE}'"
+        clauses: list[str] = [] if include_retired else [f"status = '{STATUS_ACTIVE}'"]
+        params: list[Any] = []
+        query = str(q or "").strip()
+        if query:
+            params.append(f"%{query}%")
+            n = len(params)
+            clauses.append(
+                f"(instruction_id ILIKE ${n} OR name ILIKE ${n} OR description ILIKE ${n})"
+            )
+        wanted_tags = _normalized_tags(tags)
+        if wanted_tags:
+            params.append(wanted_tags)
+            clauses.append(f"tags @> ${len(params)}")
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         async with pool.acquire() as con:
             rows = await con.fetch(
                 f"""
                 SELECT DISTINCT ON (instruction_id) *
                 FROM {self.schema}.{INSTRUCTIONS_TABLE}
-                {status_clause}
+                {where}
                 ORDER BY instruction_id, version DESC
-                """
+                """,
+                *params,
             )
         return [_record(row) for row in rows]
 

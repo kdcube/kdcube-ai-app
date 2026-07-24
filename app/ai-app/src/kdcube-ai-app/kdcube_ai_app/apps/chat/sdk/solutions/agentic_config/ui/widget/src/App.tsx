@@ -27,12 +27,14 @@ interface Draft {
   instruction_id: string
   name: string
   description: string
+  /** comma-separated in the input; split on save */
+  tags: string
   items: string[]
   /** the loaded record when editing an existing set (null = new) */
   loaded: InstructionRecord | null
 }
 
-const EMPTY_DRAFT: Draft = { instruction_id: '', name: '', description: '', items: [''], loaded: null }
+const EMPTY_DRAFT: Draft = { instruction_id: '', name: '', description: '', tags: '', items: [''], loaded: null }
 
 export default function App() {
   const [ready, setReady] = useState(false)
@@ -89,6 +91,7 @@ function Editor() {
         instruction_id: record.instruction_id,
         name: record.name,
         description: record.description,
+        tags: (record.tags ?? []).join(', '),
         items: record.items.length ? [...record.items] : [''],
         loaded: record,
       })
@@ -122,6 +125,7 @@ function Editor() {
         instruction_id: draft.instruction_id.trim().toLowerCase(),
         name: draft.name.trim(),
         description: draft.description.trim(),
+        tags: draft.tags.split(',').map((t) => t.trim()).filter(Boolean),
         items: cleanItems(),
       })
       setNotice({ kind: 'success', text: `Saved ${record.ref} (by ${record.created_by})` })
@@ -200,6 +204,18 @@ function Editor() {
       </aside>
 
       <main className="agc-main">
+        <div className="agc-help">
+          A <strong>stored instruction set</strong> is an ordered list of composition
+          items saved under a slug id, in immutable versions. Build one: give it an
+          id and a name → add items in composition order (pick tokens from the
+          palette — whole predefined sets, single blocks — or add your own literal
+          instruction text) → <em>Preview composed body</em> shows exactly what an
+          agent would receive → <em>Save</em> creates the next version. Wire it to
+          an agent by its ref, e.g. <code>instr:custom:support-tone:1</code>, inside
+          the agent's instruction profile <code>blocks</code> or
+          <code>instructions</code> list (App Config → Edit configuration). Saving
+          and retiring are administrator operations.
+        </div>
         {notice ? <div className={`agc-notice agc-notice-${notice.kind}`}>{notice.text}</div> : null}
 
         <div className="agc-field-row">
@@ -226,6 +242,14 @@ function Editor() {
           <input
             value={draft.description}
             onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))}
+          />
+        </label>
+        <label className="agc-field">
+          <span>Tags (comma-separated)</span>
+          <input
+            value={draft.tags}
+            placeholder="tone, support"
+            onChange={(e) => setDraft((d) => ({ ...d, tags: e.target.value }))}
           />
         </label>
 

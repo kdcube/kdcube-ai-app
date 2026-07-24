@@ -716,7 +716,11 @@ class KDCubeServicesEntrypoint(BaseEntrypoint):
 
         ``body.data.action``:
 
-        - ``list``    ``{include_retired?}`` → latest version per id.
+        - ``list``    ``{include_retired?, q?, tags?}`` → latest version per
+                      id; ``q`` filters id/name/description, ``tags`` requires
+                      every named tag.
+        - ``blocks``  → the built-in block catalog (name, tier, description,
+                      tags) the constructor offers alongside stored units.
         - ``get``     ``{ref}`` → one version + its version history
                       (``ref`` = ``instr:custom:<id>[:<version>]``).
         - ``save``    ``{instruction_id | ref, name, description?, items}`` →
@@ -730,6 +734,7 @@ class KDCubeServicesEntrypoint(BaseEntrypoint):
         from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import get_current_user_identity
         from kdcube_ai_app.apps.chat.sdk.solutions.agentic_config.instructions import (
             AgenticInstructionsStore,
+            builtin_block_catalog,
             expand_instruction_items,
             has_custom_instruction_refs,
         )
@@ -749,6 +754,13 @@ class KDCubeServicesEntrypoint(BaseEntrypoint):
         payload = self._agent_selection_payload(data, kwargs)
         action = str(payload.get("action") or "").strip().lower()
         base = self._agent_selection_identity()
+        self.logger.log(
+            f"[agentic_instructions] action={action or '<missing>'} user={base.get('user_id')} "
+            f"tenant={base.get('tenant')} project={base.get('project')}"
+        )
+
+        if action == "blocks":
+            return {"ok": True, "blocks": builtin_block_catalog()}
 
         if action == "preview":
             raw_items = payload.get("items")
@@ -797,7 +809,11 @@ class KDCubeServicesEntrypoint(BaseEntrypoint):
                 response = await provider.object_list(ctx, NamedServiceRequest(
                     operation=OBJECT_LIST,
                     namespace=INSTR_NAMESPACE,
-                    filters={"include_retired": bool(payload.get("include_retired"))},
+                    filters={
+                        "include_retired": bool(payload.get("include_retired")),
+                        "q": str(payload.get("q") or ""),
+                        "tags": payload.get("tags"),
+                    },
                 ))
             elif action == "get":
                 response = await provider.object_get(ctx, NamedServiceRequest(
@@ -820,6 +836,7 @@ class KDCubeServicesEntrypoint(BaseEntrypoint):
                         "name": payload.get("name"),
                         "description": payload.get("description"),
                         "items": payload.get("items"),
+                        "tags": payload.get("tags"),
                     },
                 ))
             elif action == "retire":

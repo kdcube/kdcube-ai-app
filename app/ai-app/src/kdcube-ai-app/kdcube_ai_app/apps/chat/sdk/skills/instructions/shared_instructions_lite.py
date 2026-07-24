@@ -489,6 +489,11 @@ def get_lite_instruction_block(name: str) -> str:
     return _BLOCKS[key].strip()
 
 
+def list_lite_instruction_blocks() -> dict[str, str]:
+    """The registered moderate blocks (name -> text), for catalogs/pickers."""
+    return dict(_BLOCKS)
+
+
 def resolve_lite_item(
     item: str,
     *,

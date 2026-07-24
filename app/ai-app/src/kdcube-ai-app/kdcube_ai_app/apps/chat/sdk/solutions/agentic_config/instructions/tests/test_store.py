@@ -77,6 +77,7 @@ async def test_save_version_validates_and_inserts_next_version():
         name="Support tone",
         items=["[TONE] be warm.", "  ", "REACT_LITE_SKILLS"],
         author="admin@example.test",
+        tags=["Tone", "support", "tone", ""],
     )
     assert record["instruction_id"] == "support-tone"
     op, sql, params = pool.log[-1]
@@ -85,7 +86,8 @@ async def test_save_version_validates_and_inserts_next_version():
     assert "COALESCE(( SELECT MAX(version)" in sql  # next-version, never overwrite
     assert "UPDATE" not in sql                       # immutable versions
     assert json.loads(params[3]) == ["[TONE] be warm.", "REACT_LITE_SKILLS"]  # empties dropped
-    assert params[4] == "admin@example.test"
+    assert params[4] == ["tone", "support"]          # normalized, deduped, ordered
+    assert params[5] == "admin@example.test"
 
 
 @pytest.mark.asyncio
@@ -138,3 +140,15 @@ async def test_missing_pool_raises():
     store = AgenticInstructionsStore(tenant="t", project="p")
     with pytest.raises(RuntimeError):
         await store.get("ok-id")
+
+
+@pytest.mark.asyncio
+async def test_list_filters_by_query_and_tags():
+    pool = _FakePool()
+    store = _store(pool)
+    await store.list_instructions(q="tone", tags=["Support"])
+    op, sql, params = pool.log[-1]
+    assert op == "fetch"
+    assert "ILIKE $1" in sql
+    assert "tags @> $2" in sql
+    assert params == ("%tone%", ["support"])

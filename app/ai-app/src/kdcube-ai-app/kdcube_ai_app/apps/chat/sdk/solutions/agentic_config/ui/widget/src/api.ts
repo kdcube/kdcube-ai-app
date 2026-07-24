@@ -20,6 +20,7 @@ export interface InstructionRecord {
   version: number
   name: string
   description: string
+  tags: string[]
   items: string[]
   status: string
   created_by: string
@@ -27,6 +28,13 @@ export interface InstructionRecord {
   updated_by?: string
   updated_at?: string | null
   versions?: InstructionVersionRow[]
+}
+
+export interface BuiltinBlock {
+  name: string
+  tier: string
+  description: string
+  tags: string[]
 }
 
 export interface OpError {
@@ -43,8 +51,13 @@ interface OpEnvelope {
   }
   body?: string
   items_expanded?: string[]
+  blocks?: BuiltinBlock[]
   error?: OpError | string | null
   message?: string
+  /** FastAPI-level rejection (auth/route), not the op envelope. */
+  detail?: string
+  /** transport status, attached client-side for legible errors */
+  http_status?: number
 }
 
 function opsUrl(): string {
@@ -55,27 +68,49 @@ function opsUrl(): string {
 }
 
 async function call(data: Record<string, unknown>): Promise<OpEnvelope> {
-  const response = await fetch(opsUrl(), {
+  const url = opsUrl()
+  const response = await fetch(url, {
     method: 'POST',
     credentials: 'include',
     headers: settings.authHeaders({ 'Content-Type': 'application/json', Accept: 'application/json' }),
     body: JSON.stringify({ data }),
   })
-  const payload = (await response.json().catch(() => null)) as OpEnvelope | null
-  if (!payload) throw new Error(`request failed (${response.status})`)
-  return payload
+  const raw = (await response.json().catch(() => null)) as Record<string, unknown> | null
+  if (!raw) throw new Error(`request failed (HTTP ${response.status} at ${url})`)
+  // The operations route wraps the op's own result under its ALIAS key:
+  // {status: "ok", tenant, project, bundle_id, agentic_instructions: {ok, ...}}.
+  const inner = raw['agentic_instructions']
+  const envelope = (
+    inner && typeof inner === 'object' ? inner : raw
+  ) as OpEnvelope
+  envelope.http_status = response.status
+  return envelope
 }
 
 export function errorText(envelope: OpEnvelope): string {
   const err = envelope.error
-  if (err && typeof err === 'object') return err.message || err.code
-  return String(err || envelope.message || 'request failed')
+  const status = envelope.http_status ? ` (HTTP ${envelope.http_status})` : ''
+  if (err && typeof err === 'object') return (err.message || err.code) + status
+  const text = String(err || envelope.message || envelope.detail || 'request failed')
+  return text + status
 }
 
-export async function listInstructions(includeRetired: boolean): Promise<InstructionRecord[]> {
-  const envelope = await call({ action: 'list', include_retired: includeRetired })
+export async function listInstructions(
+  includeRetired: boolean,
+  q = '',
+  tags: string[] = [],
+): Promise<InstructionRecord[]> {
+  const envelope = await call({ action: 'list', include_retired: includeRetired, q, tags })
   if (!envelope.ok) throw new Error(errorText(envelope))
   return envelope.ret?.items ?? []
+}
+
+/** The built-in block catalog (name, tier, description, tags) — what the
+ *  constructor offers alongside stored units. */
+export async function listBuiltinBlocks(): Promise<BuiltinBlock[]> {
+  const envelope = await call({ action: 'blocks' })
+  if (!envelope.ok) throw new Error(errorText(envelope))
+  return envelope.blocks ?? []
 }
 
 export async function getInstruction(ref: string): Promise<InstructionRecord> {
@@ -90,6 +125,7 @@ export async function saveVersion(input: {
   instruction_id: string
   name: string
   description: string
+  tags: string[]
   items: string[]
 }): Promise<InstructionRecord> {
   const envelope = await call({ action: 'save', ...input })

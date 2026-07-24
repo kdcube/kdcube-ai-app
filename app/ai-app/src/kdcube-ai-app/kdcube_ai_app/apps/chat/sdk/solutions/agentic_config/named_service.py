@@ -82,6 +82,7 @@ def _wire_object(record: Mapping[str, Any]) -> dict:
         "version": version,
         "name": record.get("name") or "",
         "description": record.get("description") or "",
+        "tags": [str(t) for t in (record.get("tags") or [])],
         "items": list(record.get("items") or []),
         "status": record.get("status") or "",
         "created_by": record.get("created_by") or "",
@@ -165,9 +166,13 @@ class AgenticInstructionsNamedService(NamedServiceProvider):
     async def object_list(
         self, ctx: NamedServiceContext, request: NamedServiceRequest
     ) -> NamedServiceResponse:
-        include_retired = bool((request.filters or {}).get("include_retired"))
+        filters = request.filters or {}
         store = self._store(ctx)
-        records = await store.list_instructions(include_retired=include_retired)
+        records = await store.list_instructions(
+            include_retired=bool(filters.get("include_retired")),
+            q=str(filters.get("q") or ""),
+            tags=filters.get("tags"),
+        )
         return NamedServiceResponse.ok_response(
             provider=self._provider_identity(),
             namespace=self._namespace(request),
@@ -237,6 +242,7 @@ class AgenticInstructionsNamedService(NamedServiceProvider):
                 description=str(payload.get("description") or "").strip(),
                 items=payload.get("items"),
                 author=author,
+                tags=payload.get("tags"),
             )
         except ValueError as exc:
             return NamedServiceResponse.error_response(

@@ -13,6 +13,9 @@
 
 from __future__ import annotations
 
+from kdcube_ai_app.apps.chat.sdk.solutions.agentic_config.instructions.catalog import (
+    builtin_block_catalog,
+)
 from kdcube_ai_app.apps.chat.sdk.solutions.agentic_config.instructions.compose import (
     compose_instruction_body,
 )
@@ -32,6 +35,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.agentic_config.instructions.store imp
 
 __all__ = [
     "AgenticInstructionsStore",
+    "builtin_block_catalog",
     "CustomInstructionRef",
     "compose_instruction_body",
     "expand_instruction_items",
