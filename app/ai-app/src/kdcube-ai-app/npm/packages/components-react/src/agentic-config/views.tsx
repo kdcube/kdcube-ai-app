@@ -148,8 +148,11 @@ function SetsView() {
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT)
   const [preview, setPreview] = useState<string>('')
   const [segments, setSegments] = useState<ComposedSegment[]>([])
+  const [previewTokens, setPreviewTokens] = useState(0)
   const [previewBusy, setPreviewBusy] = useState(false)
   const [busy, setBusy] = useState(false)
+  /** token totals per set ref (EXPANDED composition), fetched lazily */
+  const [setTokens, setSetTokens] = useState<Record<string, number>>({})
 
   const refresh = useCallback(async (retired: boolean) => {
     try {
@@ -168,6 +171,30 @@ function SetsView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Token weight per sidebar set — each set previews once (its EXPANDED
+  // composition, as the runtime would build it) and the count is cached.
+  useEffect(() => {
+    let alive = true
+    const refs = [
+      ...BUILTIN_SETS.map((s) => s.ref),
+      ...rows.map((r) => r.ref),
+    ].filter((ref) => setTokens[ref] === undefined)
+    if (!refs.length) return
+    void (async () => {
+      for (const ref of refs) {
+        try {
+          const tokens = await api.tokensForItems([ref])
+          if (!alive) return
+          setSetTokens((m) => ({ ...m, [ref]: tokens }))
+        } catch {
+          if (!alive) return
+        }
+      }
+    })()
+    return () => { alive = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows])
+
   // continuous final rendering (debounced server-side compose)
   const cleanItems = draft.items.map((v) => v.trim()).filter(Boolean)
   const itemsKey = cleanItems.join(' ')
@@ -176,6 +203,7 @@ function SetsView() {
     if (!cleanItems.length) {
       setPreview('')
       setSegments([])
+      setPreviewTokens(0)
       return
     }
     const seq = ++previewSeq.current
@@ -186,6 +214,7 @@ function SetsView() {
           if (previewSeq.current === seq) {
             setPreview(result.body)
             setSegments(result.segments)
+            setPreviewTokens(result.tokens)
           }
         })
         .catch((err) => {
@@ -333,7 +362,12 @@ function SetsView() {
               className={'agc-list-row' + (builtinSet?.ref === set.ref ? ' is-active' : '')}
               onClick={() => { setBuiltinSet(set); setDraft(EMPTY_DRAFT); setNotice(null) }}
             >
-              <span className="agc-list-name">{set.label}</span>
+              <span className="agc-list-name">
+                {set.label}
+                {setTokens[set.ref] !== undefined ? (
+                  <span className="agc-tok">{formatTokens(setTokens[set.ref])}</span>
+                ) : null}
+              </span>
               <span className="agc-list-ref">{set.ref}</span>
             </button>
             <button className="agc-block-add" title="Insert into items" onClick={() => appendItem(set.ref)}>+</button>
@@ -360,7 +394,12 @@ function SetsView() {
                 }
                 onClick={() => void open(row.ref)}
               >
-                <span className="agc-list-name">{row.name}</span>
+                <span className="agc-list-name">
+                  {row.name}
+                  {setTokens[row.ref] !== undefined ? (
+                    <span className="agc-tok">{formatTokens(setTokens[row.ref])}</span>
+                  ) : null}
+                </span>
                 <span className="agc-list-ref">{row.ref}</span>
                 {(row.tags ?? []).length ? (
                   <span className="agc-chiprow">
@@ -392,6 +431,9 @@ function SetsView() {
           <section className="agc-block-details agc-builtin-set">
             <div className="agc-block-details-head">
               <span className="agc-block-name">{builtinSet.label} — {builtinSet.ref}</span>
+              {setTokens[builtinSet.ref] !== undefined ? (
+                <span className="agc-tok">{formatTokens(setTokens[builtinSet.ref])}</span>
+              ) : null}
               <button className="agc-btn" onClick={() => setBuiltinSet(null)}>Close</button>
             </div>
             <p className="agc-muted">{builtinSet.description}</p>
@@ -471,6 +513,9 @@ function SetsView() {
                   <div className="agc-block-details">
                     <div className="agc-block-details-head">
                       <span className="agc-block-name">{details.name}</span>
+                      {details.tokens !== undefined ? (
+                        <span className="agc-tok">{formatTokens(details.tokens)}</span>
+                      ) : null}
                       <button className="agc-btn" onClick={() => appendItem(details.name)}>
                         + Add to items
                       </button>
@@ -562,6 +607,9 @@ function SetsView() {
           <section className="agc-composed">
             <div className="agc-composed-head">
               <h3>Composed instruction</h3>
+              {previewTokens && !previewBusy ? (
+                <span className="agc-tok agc-tok-total">{formatTokens(previewTokens)} total</span>
+              ) : null}
               {previewBusy ? <span className="agc-muted">rendering…</span> : null}
             </div>
             {segments.length ? (
@@ -575,6 +623,9 @@ function SetsView() {
                     >
                       {segment.item.length > 72 ? `${segment.item.slice(0, 71)}…` : segment.item}
                     </button>
+                    {segment.tokens !== undefined ? (
+                      <span className="agc-tok">{formatTokens(segment.tokens)}</span>
+                    ) : null}
                     <pre>{segment.body || '(empty)'}</pre>
                   </div>
                 ))}
@@ -593,6 +644,12 @@ function SetsView() {
   )
 }
 
+/** Token counts are cl100k weights, shown compact (1234 → "1.2k tok"). */
+function formatTokens(tokens: number): string {
+  const n = tokens >= 1000 ? `${(tokens / 1000).toFixed(1).replace(/\.0$/, '')}k` : String(tokens)
+  return `${n} tok`
+}
+
 function LibraryCard({
   block,
   onShow,
@@ -606,6 +663,7 @@ function LibraryCard({
     <div className="agc-block-card" onClick={onShow} title="Show block details" role="button" tabIndex={0}>
       <div className="agc-block-card-row">
         <span className="agc-block-name">{block.name}</span>
+        {block.tokens !== undefined ? <span className="agc-tok">{formatTokens(block.tokens)}</span> : null}
         <button
           className="agc-block-add"
           title="Add to items"

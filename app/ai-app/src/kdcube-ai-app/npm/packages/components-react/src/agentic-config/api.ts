@@ -50,10 +50,14 @@ export interface BuiltinBlock {
   profiles?: string[]
   /** full block text for the details view */
   text?: string
+  /** token weight of the block body (cl100k) */
+  tokens?: number
 }
 export interface ComposedSegment {
   item: string
   body: string
+  /** token weight of this segment (cl100k) */
+  tokens?: number
 }
 export interface OpError {
   code: string
@@ -69,6 +73,7 @@ interface OpEnvelope {
   body?: string
   items_expanded?: string[]
   segments?: ComposedSegment[]
+  tokens?: number
   blocks?: BuiltinBlock[]
   error?: OpError | string | null
   message?: string
@@ -205,6 +210,7 @@ export function createAgenticConfigApi(transport: AgenticConfigTransport) {
     body: string
     items_expanded: string[]
     segments: ComposedSegment[]
+    tokens: number
   }> {
     const envelope = await call({
       action: 'preview',
@@ -216,7 +222,15 @@ export function createAgenticConfigApi(transport: AgenticConfigTransport) {
       body: envelope.body ?? '',
       items_expanded: envelope.items_expanded ?? [],
       segments: envelope.segments ?? [],
+      tokens: envelope.tokens ?? 0,
     }
+  }
+
+  /** Token weight of one composition item/set (its EXPANDED composition, as
+   *  the runtime would build it) — used for the sidebar set counts. */
+  async function tokensForItems(items: string[]): Promise<number> {
+    const result = await previewBody(items)
+    return result.tokens
   }
 
   // ── assignment: wire a stored instruction to an application agent ────────────
@@ -491,6 +505,7 @@ export function createAgenticConfigApi(transport: AgenticConfigTransport) {
     saveVersion,
     retireInstruction,
     previewBody,
+    tokensForItems,
     listApps,
     getAppAgents,
     writeAppProps,

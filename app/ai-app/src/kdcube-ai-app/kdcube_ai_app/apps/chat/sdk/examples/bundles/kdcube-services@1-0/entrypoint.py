@@ -739,7 +739,8 @@ class KDCubeServicesEntrypoint(BaseEntrypoint):
                       when the ref is unpinned (admin).
         - ``preview`` ``{items, workspace_implementation?}`` → the composed
                       instruction body exactly as the runtime would build it
-                      (stored refs expanded, capability tokens resolved).
+                      (stored refs expanded, capability tokens resolved),
+                      with token counts (total + per segment).
         """
         from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import get_current_user_identity
         from kdcube_ai_app.apps.chat.sdk.solutions.agentic_config.instructions import (
@@ -799,17 +800,28 @@ class KDCubeServicesEntrypoint(BaseEntrypoint):
                 # Per-item segmentation so the constructor can show which
                 # section of the final instruction each block contributed and
                 # jump from the composed view back to its source block.
+                from kdcube_ai_app.apps.chat.sdk.util import token_count
                 segments = []
                 for source_item in expanded:
                     segment_body = normalize_instruction_blocks(
                         [source_item],
                         workspace_implementation=workspace_implementation,
                     )
-                    segments.append({"item": source_item, "body": segment_body})
+                    segments.append({
+                        "item": source_item,
+                        "body": segment_body,
+                        "tokens": token_count(segment_body),
+                    })
             except Exception as exc:
                 self.logger.log(f"[agentic_instructions] preview failed: {traceback.format_exc()}", "ERROR")
                 return {"ok": False, "error": str(exc), "status": 500}
-            return {"ok": True, "body": body, "items_expanded": expanded, "segments": segments}
+            return {
+                "ok": True,
+                "body": body,
+                "items_expanded": expanded,
+                "segments": segments,
+                "tokens": token_count(body),
+            }
 
         if self.pg_pool is None:
             return {"ok": False, "error": "storage_unavailable"}

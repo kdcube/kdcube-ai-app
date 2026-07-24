@@ -28,6 +28,7 @@ from kdcube_ai_app.apps.chat.sdk.skills.instructions.instructions_extra_lite imp
 from kdcube_ai_app.apps.chat.sdk.solutions.agentic_config.instructions.block_signals import (
     BLOCK_SIGNALS,
 )
+from kdcube_ai_app.apps.chat.sdk.util import token_count
 
 _DESCRIPTION_LIMIT = 160
 
@@ -52,11 +53,12 @@ def _derive_description(text: str) -> str:
 
 def builtin_block_catalog() -> list[dict[str, Any]]:
     """Every built-in block as
-    ``{name, tier, description, signals, tags, profiles, text}``.
+    ``{name, tier, description, signals, tags, profiles, text, tokens}``.
 
     ``signals``/``tags`` carry the block's MEANING (curated); ``profiles``
     lists the moderate profiles whose expansion includes it; ``text`` is the
-    full block body for the details view.
+    full block body for the details view; ``tokens`` is its token weight
+    (cl100k), so the constructor can show what each block costs.
     """
     profile_membership: dict[str, list[str]] = {}
     for profile, blocks in (REACT_LITE_PROFILE_BLOCKS or {}).items():
@@ -67,6 +69,7 @@ def builtin_block_catalog() -> list[dict[str, Any]]:
         meaning = BLOCK_SIGNALS.get(name, {})
         signals = list(meaning.get("signals") or [])
         tags = list(meaning.get("tags") or [tier])
+        body = str(text or "").strip()
         return {
             "name": name,
             "tier": tier,
@@ -74,7 +77,8 @@ def builtin_block_catalog() -> list[dict[str, Any]]:
             "signals": signals,
             "tags": tags,
             "profiles": sorted(profile_membership.get(name, [])),
-            "text": str(text or "").strip(),
+            "text": body,
+            "tokens": token_count(body),
         }
 
     catalog: list[dict[str, Any]] = []

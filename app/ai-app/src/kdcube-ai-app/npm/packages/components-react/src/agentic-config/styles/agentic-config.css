@@ -409,3 +409,12 @@
 .agc-agent-section-title { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
 .agc-agent-section-title h3 { margin: 0; font-size: 13px; }
 .agc-agent-section-head > .agc-muted { flex: 1 1 auto; font-size: 12px; }
+
+/* ── token weights ─────────────────────────────────────────────────────── */
+.agc-tok {
+  display: inline-block; margin-left: 6px; padding: 1px 6px;
+  border-radius: 8px; font-size: 10px; font-weight: 600;
+  color: var(--muted); background: var(--line-soft);
+  white-space: nowrap; vertical-align: middle;
+}
+.agc-tok-total { font-size: 11px; }

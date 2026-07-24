@@ -29,6 +29,8 @@ def test_catalog_covers_both_tiers_with_meaning():
         # tags reflect meaning, not mechanics — tier lives in its own field
         assert entry["tier"] not in entry["tags"]
         assert entry["text"], entry["name"]
+        # every block carries its token weight for the constructor
+        assert isinstance(entry["tokens"], int) and entry["tokens"] > 0, entry["name"]
     # profile membership is its own facet, not a tag
     skills = by_name["REACT_LITE_SKILLS"]
     assert "all_capabilities" in skills["profiles"]
