@@ -4,15 +4,13 @@
 """The block catalog — every composition unit the constructor can offer.
 
 Built-in blocks come from the two in-tree registries (moderate
-``REACT_LITE_*``, extra-lite ``REACT_XLITE_*``); each entry carries a derived
-description (the block's own header line + first content line — so blocks are
-DISTINGUISHABLE when browsing) and tags: its tier plus, for moderate blocks,
-every profile that includes it. Stored custom units add their authored
-description/tags on top (served by the store, not here).
-
-The signal table in ``docs/sdk/agents/react/system-instruction-README.md``
-remains the authoritative purpose map; descriptions here are derived hints
-sized for pickers.
+``REACT_LITE_*``, extra-lite ``REACT_XLITE_*``). Each entry carries its
+MEANING: the curated SIGNALS the block protects/teaches and semantic tags
+that reflect them (``block_signals.py``; the signal table in
+``docs/sdk/agents/react/system-instruction-README.md`` is the long form),
+plus a derived text hint, its profile memberships, and the full block text
+for the constructor's details view. Stored custom units author their own
+signals/tags at save time (served by the store, not here).
 """
 
 from __future__ import annotations
@@ -26,6 +24,9 @@ from kdcube_ai_app.apps.chat.sdk.skills.instructions.shared_instructions_lite im
 )
 from kdcube_ai_app.apps.chat.sdk.skills.instructions.instructions_extra_lite import (
     list_extra_lite_instruction_blocks,
+)
+from kdcube_ai_app.apps.chat.sdk.solutions.agentic_config.instructions.block_signals import (
+    BLOCK_SIGNALS,
 )
 
 _DESCRIPTION_LIMIT = 160
@@ -50,36 +51,37 @@ def _derive_description(text: str) -> str:
 
 
 def builtin_block_catalog() -> list[dict[str, Any]]:
-    """Every built-in block as ``{name, tier, description, tags}``.
+    """Every built-in block as
+    ``{name, tier, description, signals, tags, profiles, text}``.
 
-    Tags: the tier (``moderate`` | ``extra-lite``) and, for moderate blocks,
-    each profile whose expansion includes the block — so a picker can filter
-    "everything the web profile teaches" or "extra-lite only".
+    ``signals``/``tags`` carry the block's MEANING (curated); ``profiles``
+    lists the moderate profiles whose expansion includes it; ``text`` is the
+    full block body for the details view.
     """
-    profile_tags: dict[str, list[str]] = {}
+    profile_membership: dict[str, list[str]] = {}
     for profile, blocks in (REACT_LITE_PROFILE_BLOCKS or {}).items():
         for name in blocks or ():
-            profile_tags.setdefault(str(name), []).append(str(profile))
+            profile_membership.setdefault(str(name), []).append(str(profile))
+
+    def _entry(name: str, text: str, tier: str) -> dict[str, Any]:
+        meaning = BLOCK_SIGNALS.get(name, {})
+        signals = list(meaning.get("signals") or [])
+        tags = list(meaning.get("tags") or [tier])
+        return {
+            "name": name,
+            "tier": tier,
+            "description": signals[0] if signals else _derive_description(text),
+            "signals": signals,
+            "tags": tags,
+            "profiles": sorted(profile_membership.get(name, [])),
+            "text": str(text or "").strip(),
+        }
 
     catalog: list[dict[str, Any]] = []
     for name, text in sorted(list_lite_instruction_blocks().items()):
-        catalog.append(
-            {
-                "name": name,
-                "tier": "moderate",
-                "description": _derive_description(text),
-                "tags": ["moderate", *sorted(profile_tags.get(name, []))],
-            }
-        )
+        catalog.append(_entry(name, text, "moderate"))
     for name, text in sorted(list_extra_lite_instruction_blocks().items()):
-        catalog.append(
-            {
-                "name": name,
-                "tier": "extra-lite",
-                "description": _derive_description(text),
-                "tags": ["extra-lite"],
-            }
-        )
+        catalog.append(_entry(name, text, "extra-lite"))
     return catalog
 
 

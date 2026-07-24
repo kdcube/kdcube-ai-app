@@ -392,6 +392,7 @@ CREATE TABLE IF NOT EXISTS <SCHEMA>.agentic_instructions (
     description    TEXT NOT NULL DEFAULT '',
     items          JSONB NOT NULL,
     tags           TEXT[] NOT NULL DEFAULT '{}',
+    signals        TEXT[] NOT NULL DEFAULT '{}',
     body_ref       TEXT NOT NULL DEFAULT '',
     status         TEXT NOT NULL DEFAULT 'active',
     created_by     TEXT NOT NULL,
@@ -402,6 +403,8 @@ CREATE TABLE IF NOT EXISTS <SCHEMA>.agentic_instructions (
 );
 ALTER TABLE <SCHEMA>.agentic_instructions
   ADD COLUMN IF NOT EXISTS tags TEXT[] NOT NULL DEFAULT '{}';
+ALTER TABLE <SCHEMA>.agentic_instructions
+  ADD COLUMN IF NOT EXISTS signals TEXT[] NOT NULL DEFAULT '{}';
 CREATE INDEX IF NOT EXISTS idx_<SCHEMA>_agentic_instructions_status
   ON <SCHEMA>.agentic_instructions (instruction_id, status);
 

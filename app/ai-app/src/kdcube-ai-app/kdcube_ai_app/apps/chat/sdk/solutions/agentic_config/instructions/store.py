@@ -83,10 +83,25 @@ def _normalized_tags(tags: Any) -> list[str]:
     return out
 
 
+def _normalized_signals(signals: Any) -> list[str]:
+    if isinstance(signals, str):
+        signals = [signals]
+    if not isinstance(signals, (list, tuple)):
+        return []
+    out: list[str] = []
+    for signal in signals:
+        text = str(signal or "").strip()
+        if text and text not in out:
+            out.append(text)
+    return out
+
+
 def _record(row: Any) -> dict:
     data = dict(row)
     tags = data.get("tags")
     data["tags"] = [str(t) for t in tags] if isinstance(tags, (list, tuple)) else []
+    signals = data.get("signals")
+    data["signals"] = [str(s) for s in signals] if isinstance(signals, (list, tuple)) else []
     items = data.get("items")
     if isinstance(items, str):
         try:
@@ -161,6 +176,7 @@ class AgenticInstructionsStore:
                 description TEXT NOT NULL DEFAULT '',
                 items JSONB NOT NULL,
                 tags TEXT[] NOT NULL DEFAULT '{{}}',
+                signals TEXT[] NOT NULL DEFAULT '{{}}',
                 body_ref TEXT NOT NULL DEFAULT '',
                 status TEXT NOT NULL DEFAULT '{STATUS_ACTIVE}',
                 created_by TEXT NOT NULL,
@@ -173,6 +189,10 @@ class AgenticInstructionsStore:
             f"""
             ALTER TABLE {schema}.{INSTRUCTIONS_TABLE}
             ADD COLUMN IF NOT EXISTS tags TEXT[] NOT NULL DEFAULT '{{}}'
+            """,
+            f"""
+            ALTER TABLE {schema}.{INSTRUCTIONS_TABLE}
+            ADD COLUMN IF NOT EXISTS signals TEXT[] NOT NULL DEFAULT '{{}}'
             """,
             f"""
             CREATE INDEX IF NOT EXISTS idx_{INSTRUCTIONS_TABLE}_status
@@ -197,6 +217,7 @@ class AgenticInstructionsStore:
         author: str,
         description: str = "",
         tags: Any = None,
+        signals: Any = None,
     ) -> dict:
         """Insert the next version for ``instruction_id`` (1 for a new id).
 
@@ -219,14 +240,14 @@ class AgenticInstructionsStore:
             row = await con.fetchrow(
                 f"""
                 INSERT INTO {self.schema}.{INSTRUCTIONS_TABLE}
-                    (instruction_id, version, name, description, items, tags, created_by)
+                    (instruction_id, version, name, description, items, tags, signals, created_by)
                 VALUES (
                     $1,
                     COALESCE((
                         SELECT MAX(version) FROM {self.schema}.{INSTRUCTIONS_TABLE}
                         WHERE instruction_id = $1
                     ), 0) + 1,
-                    $2, $3, $4::jsonb, $5, $6
+                    $2, $3, $4::jsonb, $5, $6, $7
                 )
                 RETURNING *
                 """,
@@ -235,6 +256,7 @@ class AgenticInstructionsStore:
                 str(description or "").strip(),
                 json.dumps(clean_items, ensure_ascii=False),
                 _normalized_tags(tags),
+                _normalized_signals(signals),
                 clean_author,
             )
         return _record(row)

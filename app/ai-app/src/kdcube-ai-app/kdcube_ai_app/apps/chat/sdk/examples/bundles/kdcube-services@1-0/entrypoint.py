@@ -786,10 +786,20 @@ class KDCubeServicesEntrypoint(BaseEntrypoint):
                     expanded,
                     workspace_implementation=workspace_implementation,
                 )
+                # Per-item segmentation so the constructor can show which
+                # section of the final instruction each block contributed and
+                # jump from the composed view back to its source block.
+                segments = []
+                for source_item in expanded:
+                    segment_body = normalize_instruction_blocks(
+                        [source_item],
+                        workspace_implementation=workspace_implementation,
+                    )
+                    segments.append({"item": source_item, "body": segment_body})
             except Exception as exc:
                 self.logger.log(f"[agentic_instructions] preview failed: {traceback.format_exc()}", "ERROR")
                 return {"ok": False, "error": str(exc), "status": 500}
-            return {"ok": True, "body": body, "items_expanded": expanded}
+            return {"ok": True, "body": body, "items_expanded": expanded, "segments": segments}
 
         if self.pg_pool is None:
             return {"ok": False, "error": "storage_unavailable"}
@@ -837,6 +847,7 @@ class KDCubeServicesEntrypoint(BaseEntrypoint):
                         "description": payload.get("description"),
                         "items": payload.get("items"),
                         "tags": payload.get("tags"),
+                        "signals": payload.get("signals"),
                     },
                 ))
             elif action == "retire":

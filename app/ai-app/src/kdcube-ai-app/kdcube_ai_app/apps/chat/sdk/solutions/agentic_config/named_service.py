@@ -83,6 +83,7 @@ def _wire_object(record: Mapping[str, Any]) -> dict:
         "name": record.get("name") or "",
         "description": record.get("description") or "",
         "tags": [str(t) for t in (record.get("tags") or [])],
+        "signals": [str(s) for s in (record.get("signals") or [])],
         "items": list(record.get("items") or []),
         "status": record.get("status") or "",
         "created_by": record.get("created_by") or "",
@@ -243,6 +244,7 @@ class AgenticInstructionsNamedService(NamedServiceProvider):
                 items=payload.get("items"),
                 author=author,
                 tags=payload.get("tags"),
+                signals=payload.get("signals"),
             )
         except ValueError as exc:
             return NamedServiceResponse.error_response(

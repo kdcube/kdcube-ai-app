@@ -52,7 +52,7 @@ class _FakeStore:
         versions = self.data.get(instruction_id) or {}
         return [versions[v] for v in sorted(versions, reverse=True)]
 
-    async def save_version(self, instruction_id, *, name, items, author, description="", tags=None):
+    async def save_version(self, instruction_id, *, name, items, author, description="", tags=None, signals=None):
         if not str(name or "").strip():
             raise ValueError("name is required")
         self.saved.append((instruction_id, name, items, author))

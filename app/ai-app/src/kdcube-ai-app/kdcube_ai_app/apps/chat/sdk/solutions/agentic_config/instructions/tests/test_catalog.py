@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: MIT
 
-"""The built-in block catalog: every block distinguishable by description+tags."""
+"""The built-in block catalog: every block distinguishable by its MEANING —
+curated signals, semantic tags, profile memberships, full text for details."""
 
 from kdcube_ai_app.apps.chat.sdk.skills.instructions.shared_instructions_lite import (
     REACT_LITE_PROFILE_BLOCKS,
@@ -10,7 +11,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.agentic_config.instructions import (
 )
 
 
-def test_catalog_covers_both_tiers_with_descriptions_and_tags():
+def test_catalog_covers_both_tiers_with_meaning():
     catalog = builtin_block_catalog()
     by_name = {entry["name"]: entry for entry in catalog}
     # every moderate block of every profile is present
@@ -20,11 +21,20 @@ def test_catalog_covers_both_tiers_with_descriptions_and_tags():
     # both tiers present
     tiers = {entry["tier"] for entry in catalog}
     assert tiers == {"moderate", "extra-lite"}
-    # each entry is DISTINGUISHABLE: non-empty description + tier tag
+    # every entry carries its MEANING: signals, semantic tags, and text
     for entry in catalog:
+        assert entry["signals"], f"{entry['name']}: no curated signals"
         assert entry["description"], entry["name"]
-        assert entry["tier"] in entry["tags"]
-    # moderate blocks carry their profile memberships as tags
+        assert entry["tags"], f"{entry['name']}: no semantic tags"
+        # tags reflect meaning, not mechanics — tier lives in its own field
+        assert entry["tier"] not in entry["tags"]
+        assert entry["text"], entry["name"]
+    # profile membership is its own facet, not a tag
     skills = by_name["REACT_LITE_SKILLS"]
-    assert "all_capabilities" in skills["tags"]
-    assert "core" in skills["tags"]
+    assert "all_capabilities" in skills["profiles"]
+    assert "core" in skills["profiles"]
+    assert "all_capabilities" not in skills["tags"]
+    # curated meaning example
+    web = by_name["REACT_LITE_WEB_TOOLS"]
+    assert web["tags"] == ["web", "search", "fetch"]
+    assert any("external information" in s for s in web["signals"])

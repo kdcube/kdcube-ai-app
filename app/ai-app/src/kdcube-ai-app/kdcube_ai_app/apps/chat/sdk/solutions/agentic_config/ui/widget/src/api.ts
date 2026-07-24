@@ -21,6 +21,7 @@ export interface InstructionRecord {
   name: string
   description: string
   tags: string[]
+  signals: string[]
   items: string[]
   status: string
   created_by: string
@@ -34,7 +35,17 @@ export interface BuiltinBlock {
   name: string
   tier: string
   description: string
+  signals: string[]
   tags: string[]
+  /** moderate blocks: profiles whose expansion includes this block */
+  profiles?: string[]
+  /** full block text for the details view */
+  text?: string
+}
+
+export interface ComposedSegment {
+  item: string
+  body: string
 }
 
 export interface OpError {
@@ -51,6 +62,7 @@ interface OpEnvelope {
   }
   body?: string
   items_expanded?: string[]
+  segments?: ComposedSegment[]
   blocks?: BuiltinBlock[]
   error?: OpError | string | null
   message?: string
@@ -126,6 +138,7 @@ export async function saveVersion(input: {
   name: string
   description: string
   tags: string[]
+  signals: string[]
   items: string[]
 }): Promise<InstructionRecord> {
   const envelope = await call({ action: 'save', ...input })
@@ -143,6 +156,7 @@ export async function retireInstruction(ref: string): Promise<void> {
 export async function previewBody(items: string[], workspaceImplementation = 'custom'): Promise<{
   body: string
   items_expanded: string[]
+  segments: ComposedSegment[]
 }> {
   const envelope = await call({
     action: 'preview',
@@ -150,7 +164,11 @@ export async function previewBody(items: string[], workspaceImplementation = 'cu
     workspace_implementation: workspaceImplementation,
   })
   if (!envelope.ok) throw new Error(errorText(envelope))
-  return { body: envelope.body ?? '', items_expanded: envelope.items_expanded ?? [] }
+  return {
+    body: envelope.body ?? '',
+    items_expanded: envelope.items_expanded ?? [],
+    segments: envelope.segments ?? [],
+  }
 }
 
 // ── assignment: wire a stored instruction to an application agent ────────────
@@ -205,18 +223,48 @@ function deepMerge(base: unknown, over: unknown): unknown {
   return out
 }
 
-/** The app's EFFECTIVE config (code defaults ← stored props) + its react agent keys. */
-export async function getAppAgents(bundleId: string): Promise<{ agents: string[]; config: Record<string, unknown> }> {
+/** One discoverable agent: its key and WHERE it lives in the react config —
+ *  `react.agents.<key>` (the agents container) or `react.<key>` (direct). */
+export interface AgentSlot {
+  key: string
+  container: 'agents' | 'root'
+}
+
+/** react-root keys that are configuration, not agents — mirrors the runtime's
+ *  agent-key resolution (`react.<agent>` direct or `react.agents.<agent>`,
+ *  with `default_agent` as the fallback block). */
+const NON_AGENT_REACT_KEYS = new Set([
+  'agents', 'instructions', 'instruction_profiles', 'story_snapshots',
+  'event_source_pipeline', 'supported_models', 'role_models', 'subagents',
+  'render_thinking', 'line_numbers_mode', 'multi_action_mode', 'model',
+])
+
+/** The app's EFFECTIVE config (code defaults ← stored props) + its agents. */
+export async function getAppAgents(bundleId: string): Promise<{ agents: AgentSlot[]; config: Record<string, unknown> }> {
   const payload = await adminGet(`${adminBase()}/${encodeURIComponent(bundleId)}/props?${scopeQuery()}`)
   const config = deepMerge(payload.defaults ?? {}, payload.props ?? {}) as Record<string, unknown>
-  const react = config.react
-  const agents = (react && typeof react === 'object' && !Array.isArray(react))
-    ? Object.keys(react as Record<string, unknown>).filter((key) => {
-        const value = (react as Record<string, unknown>)[key]
-        return value && typeof value === 'object' && !Array.isArray(value)
-      })
-    : []
-  return { agents: agents.length ? agents : ['default_agent'], config }
+  const react = (config.react && typeof config.react === 'object' && !Array.isArray(config.react))
+    ? (config.react as Record<string, unknown>)
+    : {}
+  const slots: AgentSlot[] = []
+  const container = react.agents
+  if (container && typeof container === 'object' && !Array.isArray(container)) {
+    for (const key of Object.keys(container as Record<string, unknown>)) {
+      const value = (container as Record<string, unknown>)[key]
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        slots.push({ key, container: 'agents' })
+      }
+    }
+  }
+  for (const key of Object.keys(react)) {
+    if (NON_AGENT_REACT_KEYS.has(key)) continue
+    const value = react[key]
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      slots.push({ key, container: 'root' })
+    }
+  }
+  if (!slots.length) slots.push({ key: 'default_agent', container: 'root' })
+  return { agents: slots, config }
 }
 
 interface ProfileOption {
@@ -227,39 +275,16 @@ interface ProfileOption {
   [key: string]: unknown
 }
 
-/** Add/update the instruction-profile option wiring `record` on the target
- *  agent, and merge-write the WHOLE instruction_profiles subtree (the admin
- *  merge replaces arrays, so the full options list rides the patch). */
-export async function assignInstruction(
-  bundleId: string,
-  agentKey: string,
-  record: InstructionRecord,
-  options: { makeDefault?: boolean } = {},
-): Promise<{ optionId: string }> {
-  const { config } = await getAppAgents(bundleId)
-  const react = (config.react ?? {}) as Record<string, unknown>
-  const agentBlock = (react[agentKey] ?? {}) as Record<string, unknown>
-  const profiles = (agentBlock.instruction_profiles ?? {}) as Record<string, unknown>
-  const existing: ProfileOption[] = Array.isArray(profiles.options)
-    ? (profiles.options as ProfileOption[]).map((row) => ({ ...row }))
-    : []
-  const ref = `instr:custom:${record.instruction_id}:${record.version}`
-  const option: ProfileOption = {
-    id: record.instruction_id,
-    label: record.name || record.instruction_id,
-    ...(record.description ? { description: record.description } : {}),
-    blocks: [ref],
-  }
-  const index = existing.findIndex((row) => row.id === record.instruction_id)
-  if (index >= 0) existing[index] = { ...existing[index], ...option }
-  else existing.push(option)
-  const nextProfiles: Record<string, unknown> = {
-    ...profiles,
-    options: existing,
-    default: options.makeDefault
-      ? record.instruction_id
-      : (profiles.default ?? existing[0]?.id ?? record.instruction_id),
-  }
+/** What an assignment wires: a built-in set (instr:profile:*) or a stored
+ *  set's pinned ref — one option shape either way. */
+export interface AssignSource {
+  optionId: string
+  label: string
+  description?: string
+  ref: string
+}
+
+export async function writeAppProps(bundleId: string, props: Record<string, unknown>): Promise<void> {
   const response = await fetch(`${adminBase()}/${encodeURIComponent(bundleId)}/props`, {
     method: 'POST',
     credentials: 'include',
@@ -268,12 +293,85 @@ export async function assignInstruction(
       tenant: settings.getTenant(),
       project: settings.getProject(),
       op: 'merge',
-      props: { react: { [agentKey]: { instruction_profiles: nextProfiles } } },
+      props,
     }),
   })
   const payload = (await response.json().catch(() => null)) as Record<string, unknown> | null
   if (!response.ok || !payload || payload.status !== 'ok') {
-    throw new Error(`${(payload as { detail?: string } | null)?.detail || 'assign failed'} (HTTP ${response.status})`)
+    throw new Error(`${(payload as { detail?: string } | null)?.detail || 'write failed'} (HTTP ${response.status})`)
   }
-  return { optionId: record.instruction_id }
+}
+
+/** Add/update the instruction-profile option wiring `source` on the target
+ *  agent (in its real container: react.agents.<key> or react.<key>), and
+ *  merge-write the WHOLE instruction_profiles subtree (the admin merge
+ *  replaces arrays, so the full options list rides the patch). */
+export async function assignInstruction(
+  bundleId: string,
+  agent: AgentSlot,
+  source: AssignSource,
+  options: { makeDefault?: boolean } = {},
+): Promise<{ optionId: string }> {
+  const { config } = await getAppAgents(bundleId)
+  const react = (config.react ?? {}) as Record<string, unknown>
+  const holder = agent.container === 'agents'
+    ? ((react.agents ?? {}) as Record<string, unknown>)
+    : react
+  const agentBlock = (holder[agent.key] ?? {}) as Record<string, unknown>
+  const profiles = (agentBlock.instruction_profiles ?? {}) as Record<string, unknown>
+  const existing: ProfileOption[] = Array.isArray(profiles.options)
+    ? (profiles.options as ProfileOption[]).map((row) => ({ ...row }))
+    : []
+  const option: ProfileOption = {
+    id: source.optionId,
+    label: source.label || source.optionId,
+    ...(source.description ? { description: source.description } : {}),
+    blocks: [source.ref],
+  }
+  const index = existing.findIndex((row) => row.id === source.optionId)
+  if (index >= 0) existing[index] = { ...existing[index], ...option }
+  else existing.push(option)
+  const nextProfiles: Record<string, unknown> = {
+    ...profiles,
+    options: existing,
+    default: options.makeDefault
+      ? source.optionId
+      : (profiles.default ?? existing[0]?.id ?? source.optionId),
+  }
+  const agentPatch = { [agent.key]: { instruction_profiles: nextProfiles } }
+  await writeAppProps(bundleId, {
+    react: agent.container === 'agents' ? { agents: agentPatch } : agentPatch,
+  })
+  return { optionId: source.optionId }
+}
+
+// ── app settings: secrets (admin routes, values write-only) ──────────────────
+
+/** Redacted view of the app's stored secret keys. */
+export async function getBundleSecretsRedacted(bundleId: string): Promise<Record<string, unknown>> {
+  const payload = await adminGet(`${adminBase()}/${encodeURIComponent(bundleId)}/secrets?${scopeQuery()}`)
+  return (payload.secrets ?? payload) as Record<string, unknown>
+}
+
+/** Set (or clear) app secrets from a nested map. Values are write-only. */
+export async function setBundleSecrets(
+  bundleId: string,
+  secrets: Record<string, unknown>,
+  mode: 'set' | 'clear' = 'set',
+): Promise<void> {
+  const response = await fetch(`${adminBase()}/${encodeURIComponent(bundleId)}/secrets`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: settings.authHeaders({ 'Content-Type': 'application/json', Accept: 'application/json' }),
+    body: JSON.stringify({
+      tenant: settings.getTenant(),
+      project: settings.getProject(),
+      mode,
+      secrets,
+    }),
+  })
+  const payload = (await response.json().catch(() => null)) as Record<string, unknown> | null
+  if (!response.ok || !payload || payload.status !== 'ok') {
+    throw new Error(`${(payload as { detail?: string } | null)?.detail || 'secrets write failed'} (HTTP ${response.status})`)
+  }
 }

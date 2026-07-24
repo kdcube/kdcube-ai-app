@@ -78,6 +78,7 @@ async def test_save_version_validates_and_inserts_next_version():
         items=["[TONE] be warm.", "  ", "REACT_LITE_SKILLS"],
         author="admin@example.test",
         tags=["Tone", "support", "tone", ""],
+        signals=["Warm, empathetic support voice.", ""],
     )
     assert record["instruction_id"] == "support-tone"
     op, sql, params = pool.log[-1]
@@ -87,7 +88,8 @@ async def test_save_version_validates_and_inserts_next_version():
     assert "UPDATE" not in sql                       # immutable versions
     assert json.loads(params[3]) == ["[TONE] be warm.", "REACT_LITE_SKILLS"]  # empties dropped
     assert params[4] == ["tone", "support"]          # normalized, deduped, ordered
-    assert params[5] == "admin@example.test"
+    assert params[5] == ["Warm, empathetic support voice."]
+    assert params[6] == "admin@example.test"
 
 
 @pytest.mark.asyncio
