@@ -22,3 +22,8 @@ export function appPropsUrl(base: string, scope: AppScope, bundleId: string): st
 export function agentCapabilitiesUrl(base: string, scope: AppScope, bundleId: string): string {
   return `${base}/api/integrations/bundles/${enc(scope.tenant)}/${enc(scope.project)}/${enc(bundleId)}/operations/agent_capabilities`;
 }
+
+/** Admin write: merge/replace one app's stored props (tenant/project ride the body). */
+export function appPropsWriteUrl(base: string, bundleId: string): string {
+  return `${base}/admin/integrations/bundles/${enc(bundleId)}/props`;
+}

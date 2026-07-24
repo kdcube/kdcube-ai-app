@@ -21,6 +21,14 @@ export interface AppsConfigDataSource {
     bundleId: string,
     agentId: string,
   ): Promise<AgentCapabilities>;
+  /** Admin write: MERGE a partial props patch into one app's stored props.
+   *  Optional — a read-only source (e.g. a provided descriptor set) simply
+   *  omits it and the UI hides its edit affordances. */
+  updateAppProps?(
+    scope: AppScope,
+    bundleId: string,
+    patch: Record<string, unknown>,
+  ): Promise<void>;
 }
 
 /**

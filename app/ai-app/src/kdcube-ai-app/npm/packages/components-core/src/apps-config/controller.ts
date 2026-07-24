@@ -17,6 +17,11 @@ export interface AppsConfigController {
   selectAgent(agentId: string | null): void;
   /** Load one agent's capabilities into its slot. */
   loadAgent(agentId: string): Promise<void>;
+  /** True when the data source supports admin writes. */
+  canEdit(): boolean;
+  /** Admin write: merge a partial props patch into the SELECTED app's stored
+   *  props, then reload its config view so the panel shows the stored truth. */
+  updateAppConfig(patch: Record<string, unknown>): Promise<void>;
 }
 
 function errMsg(e: unknown): string {
@@ -61,6 +66,25 @@ export function createAppsConfigController(opts: {
 
     selectAgent(agentId) {
       store.dispatch(A.selectAgent(agentId));
+    },
+
+    canEdit() {
+      return typeof dataSource.updateAppProps === 'function';
+    },
+
+    async updateAppConfig(patch) {
+      const bundleId = store.getState().appsConfig.selectedAppId;
+      if (!bundleId) throw new Error('apps-config: no app selected');
+      if (typeof dataSource.updateAppProps !== 'function') {
+        throw new Error('apps-config: this data source is read-only');
+      }
+      await dataSource.updateAppProps(requireScope(), bundleId, patch);
+      store.dispatch(A.appConfigLoading());
+      try {
+        store.dispatch(A.appConfigLoaded(await dataSource.loadAppConfig(requireScope(), bundleId)));
+      } catch (e) {
+        store.dispatch(A.appConfigError(errMsg(e)));
+      }
     },
 
     async loadAgent(agentId) {

@@ -154,3 +154,29 @@
   .ac-panes { flex-direction: column; }
   .ac-pane--list { flex: 0 0 auto; max-height: 40vh; border-right: 0; border-bottom: 1px solid var(--ac-line); }
 }
+
+/* ── admin config editor ─────────────────────────────────────────────── */
+.ac-note--ok { color: #1e7c5a; }
+.ac-config-editor { display: flex; flex-direction: column; gap: 8px; }
+.ac-config-editor__input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid var(--ac-line, #d8e4ea);
+  border-radius: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  resize: vertical;
+  background: #fff;
+}
+.ac-config-editor__actions { display: flex; justify-content: flex-end; }
+.ac-btn {
+  padding: 7px 14px;
+  border: 1px solid var(--ac-line, #d8e4ea);
+  border-radius: 8px;
+  background: #fff;
+  font: inherit;
+  cursor: pointer;
+}
+.ac-btn:disabled { opacity: 0.5; cursor: default; }
+.ac-btn--primary { background: var(--ac-accent, #01beb2); border-color: var(--ac-accent, #01beb2); color: #fff; }

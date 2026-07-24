@@ -7,6 +7,7 @@ import { ProviderSurfaces } from './provider/ProviderSurfaces.tsx';
 import { ConsumerOverview } from './consumer/ConsumerOverview.tsx';
 import { Section } from './primitives/Section.tsx';
 import { ConfigTree } from './primitives/ConfigTree.tsx';
+import { ConfigEditor } from './primitives/ConfigEditor.tsx';
 
 export function AppDetail() {
   const selectedId = useAppsConfigSelector(selectSelectedAppId);
@@ -49,6 +50,12 @@ export function AppDetail() {
             hint="The full app config — everything else declared on this app (execution, telemetry, models, react/instructions, connections, integrations…)."
           >
             <ConfigTree value={view.config} omitKeys={['surfaces']} />
+          </Section>
+          <Section
+            title="Edit configuration"
+            hint="Merge a partial JSON subtree into this app's stored props (administrator write; lands live). Agent defaults live under react.<agent> — e.g. instruction profiles, presentation facets, instruction blocks."
+          >
+            <ConfigEditor />
           </Section>
         </>
       )}

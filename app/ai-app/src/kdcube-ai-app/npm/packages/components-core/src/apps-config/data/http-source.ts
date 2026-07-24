@@ -6,7 +6,7 @@
 import type { AppScope, AppSummary, AppConfigView, AgentCapabilities } from '../model/index.ts';
 import type { AppsConfigDataSource, AppsConfigTransport } from './datasource.ts';
 import type { RawBundlesResponse, RawBundleProps, RawAgentCapabilitiesResponse } from './dto.ts';
-import { appsListUrl, appPropsUrl, agentCapabilitiesUrl } from './endpoints.ts';
+import { appsListUrl, appPropsUrl, appPropsWriteUrl, agentCapabilitiesUrl } from './endpoints.ts';
 import { deepMerge } from './props.ts';
 import {
   appSummaryFromEntry,
@@ -64,6 +64,15 @@ export function createHttpDataSource(transport: AppsConfigTransport): AppsConfig
         consumer: consumerOverviewFromProps(merged),
         config: merged,
       };
+    },
+
+    async updateAppProps(scope, bundleId, patch): Promise<void> {
+      await postJson(transport, appPropsWriteUrl(transport.baseUrl(), bundleId), {
+        tenant: scope.tenant,
+        project: scope.project,
+        props: patch,
+        op: 'merge',
+      });
     },
 
     async loadAgentCapabilities(scope, bundleId, agentId): Promise<AgentCapabilities> {
