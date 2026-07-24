@@ -379,6 +379,29 @@ CREATE INDEX IF NOT EXISTS idx_<SCHEMA>_ubp_subsystem_updated
 CREATE INDEX IF NOT EXISTS idx_<SCHEMA>_ubp_value_gin
   ON <SCHEMA>.user_bundle_props USING gin (value_json);
 
+-- ---------- Agentic instructions (stored, versioned instruction sets) ----------
+-- The agentic_config store: one row per (instruction_id, version); versions are
+-- IMMUTABLE (an edit inserts the next version) so an agent pinned to
+-- instr:custom:<id>:<n> never shifts. Rows carry provenance; writes are
+-- admin-gated at the service layer. items = the ordered composer-token list;
+-- body_ref is reserved for offloading oversized literal bodies to bundle storage.
+CREATE TABLE IF NOT EXISTS <SCHEMA>.agentic_instructions (
+    instruction_id TEXT NOT NULL,
+    version        INT  NOT NULL,
+    name           TEXT NOT NULL,
+    description    TEXT NOT NULL DEFAULT '',
+    items          JSONB NOT NULL,
+    body_ref       TEXT NOT NULL DEFAULT '',
+    status         TEXT NOT NULL DEFAULT 'active',
+    created_by     TEXT NOT NULL,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_by     TEXT NOT NULL DEFAULT '',
+    updated_at     TIMESTAMPTZ,
+    PRIMARY KEY (instruction_id, version)
+);
+CREATE INDEX IF NOT EXISTS idx_<SCHEMA>_agentic_instructions_status
+  ON <SCHEMA>.agentic_instructions (instruction_id, status);
+
 -- ---------- RAG index (hybrid: vector + BM25 + filters) ----------
 CREATE TABLE IF NOT EXISTS <SCHEMA>.rag_chunks (
                                                    id          BIGSERIAL PRIMARY KEY,

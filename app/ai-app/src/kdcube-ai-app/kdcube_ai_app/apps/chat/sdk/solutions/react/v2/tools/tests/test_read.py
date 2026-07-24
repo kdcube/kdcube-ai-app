@@ -1013,3 +1013,65 @@ async def test_read_large_image_file_returns_downscaled_multimodal_preview(tmp_p
     ))
     assert status["paths"][0]["status"] == "image_downscaled_for_visible_context"
     assert status["paths"][0]["image_view"]["visible_size_bytes"] <= runtime.read_visible_max_bytes
+
+
+@pytest.mark.asyncio
+async def test_read_skill_honors_the_skills_form_facet(monkeypatch, tmp_path):
+    """The agent's skills-form facet (admin default ⊕ user pick) selects the
+    default skill-body variant for sk: loads; full stays the fallback when a
+    skill has no compact body."""
+    import kdcube_ai_app.apps.chat.sdk.skills.skills_registry as registry
+
+    spec = SimpleNamespace(
+        name="Press",
+        namespace="public",
+        id="press",
+        instruction_text="FULL-BODY press instruction",
+        instruction_compact_text="COMPACT-BODY press instruction",
+        instruction_paths=None,
+        sources=[],
+    )
+    bare_spec = SimpleNamespace(
+        name="Bare",
+        namespace="public",
+        id="bare",
+        instruction_text="FULL-ONLY bare instruction",
+        instruction_compact_text="",
+        instruction_paths=None,
+        sources=[],
+    )
+    specs = {"public.press": spec, "public.bare": bare_spec}
+    monkeypatch.setattr(registry, "build_skill_short_id_map", lambda consumer, **kwargs: {})
+    monkeypatch.setattr(
+        registry, "import_skillset", lambda items, short_id_map=None, **kwargs: list(items)
+    )
+    monkeypatch.setattr(registry, "get_skill", lambda sid: specs.get(sid))
+
+    # facet = compact -> the compact body loads; a skill without one falls back to full
+    runtime = RuntimeCtx(turn_id="turn_read", outdir=str(tmp_path), workdir=str(tmp_path))
+    runtime.skills_form = "compact"
+    ctx = FakeBrowser(runtime)
+    state = {"last_decision": {"tool_call": {"params": {"paths": ["sk:public.press", "sk:public.bare"]}}}}
+    await handle_react_read(ctx_browser=ctx, state=state, tool_call_id="r_facet")
+    press_block = next(
+        b for b in ctx.timeline.blocks
+        if b.get("type") == "react.tool.result" and b.get("path") == "sk:public.press"
+    )
+    assert "COMPACT-BODY" in press_block["text"]
+    assert "FULL-BODY" not in press_block["text"]
+    bare_block = next(
+        b for b in ctx.timeline.blocks
+        if b.get("type") == "react.tool.result" and b.get("path") == "sk:public.bare"
+    )
+    assert "FULL-ONLY" in bare_block["text"]
+
+    # no facet -> full stays the default
+    runtime_full = RuntimeCtx(turn_id="turn_read2", outdir=str(tmp_path), workdir=str(tmp_path))
+    ctx_full = FakeBrowser(runtime_full)
+    state_full = {"last_decision": {"tool_call": {"params": {"paths": ["sk:public.press"]}}}}
+    await handle_react_read(ctx_browser=ctx_full, state=state_full, tool_call_id="r_full")
+    full_block = next(
+        b for b in ctx_full.timeline.blocks
+        if b.get("type") == "react.tool.result" and b.get("path") == "sk:public.press"
+    )
+    assert "FULL-BODY" in full_block["text"]

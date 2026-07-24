@@ -2861,13 +2861,19 @@ class BaseWorkflow():
             matched_pick = match_supported_model((selection or {}).get("model"), supported)
             from kdcube_ai_app.apps.chat.sdk.runtime.agent_inventory import (
                 match_instruction_profile,
+                normalize_presentation_pick,
                 react_instruction_profiles,
             )
             _instruction_profiles = react_instruction_profiles(bundle_props, agent_id)
             matched_instructions = match_instruction_profile(
                 (selection or {}).get("instructions"), _instruction_profiles,
             )
-            curr_snapshot = selection_snapshot(disabled, matched_pick, matched_instructions)
+            matched_presentation = normalize_presentation_pick(
+                (selection or {}).get("presentation")
+            )
+            curr_snapshot = selection_snapshot(
+                disabled, matched_pick, matched_instructions, matched_presentation
+            )
             prev_snapshot = getattr(timeline, "agent_selection_snapshot", None) if timeline is not None else None
             change = classify_selection_change(prev_snapshot, curr_snapshot)
             pinned = False
@@ -2890,6 +2896,9 @@ class BaseWorkflow():
                 matched_pick = match_supported_model((prev_snapshot or {}).get("model"), supported)
                 matched_instructions = match_instruction_profile(
                     (prev_snapshot or {}).get("instructions"), _instruction_profiles,
+                )
+                matched_presentation = normalize_presentation_pick(
+                    (prev_snapshot or {}).get("presentation")
                 )
             else:
                 if change["changed"]:
@@ -2972,6 +2981,10 @@ class BaseWorkflow():
             # neither means "the platform default instruction set".
             if runtime_ctx is not None:
                 runtime_ctx.agent_instruction_profile = None
+                # The user's presentation-facet picks (tool catalog / skills
+                # form), applied post-pinning like the profile pick; the build
+                # gives them precedence over profile and agent-level defaults.
+                runtime_ctx.agent_presentation = matched_presentation
                 try:
                     if _instruction_profiles:
                         from kdcube_ai_app.apps.chat.sdk.runtime.agent_inventory import (
@@ -2983,6 +2996,34 @@ class BaseWorkflow():
                                 bundle_props, agent_id, applied_id,
                             )
                             if resolved:
+                                # Stored instruction sets: expand instr:custom:<id>[:<version>]
+                                # refs into their composer-token lists here (async, store-
+                                # backed) — the sync composer drops any unexpanded custom
+                                # ref rather than leaking it into a prompt. Fails OPEN to
+                                # the unexpanded blocks minus what cannot resolve.
+                                try:
+                                    from kdcube_ai_app.apps.chat.sdk.solutions.agentic_config.instructions import (
+                                        AgenticInstructionsStore,
+                                        expand_instruction_items,
+                                        has_custom_instruction_refs,
+                                    )
+                                    _profile_blocks = resolved.get("blocks") if isinstance(resolved, Mapping) else None
+                                    if has_custom_instruction_refs(_profile_blocks) and self.pg_pool is not None:
+                                        instr_store = AgenticInstructionsStore(
+                                            pg_pool=self.pg_pool,
+                                            tenant=tenant or "default",
+                                            project=project or "default",
+                                        )
+                                        resolved = dict(resolved)
+                                        resolved["blocks"] = await expand_instruction_items(
+                                            _profile_blocks, store=instr_store,
+                                        )
+                                except Exception:
+                                    self.logger.log(
+                                        "[agent_selection] custom instruction expansion failed; profile blocks stay\n"
+                                        + traceback.format_exc(),
+                                        level="WARNING",
+                                    )
                                 runtime_ctx.agent_instruction_profile = resolved
                 except Exception:
                     # Fail OPEN to the configured instruction set.
@@ -3241,6 +3282,12 @@ class BaseWorkflow():
                 ),
             )
         )
+        # Presentation facets: the USER's pick beats the profile's default
+        # beats the agent-level config (admin sets defaults, the user decides).
+        _presentation_pick = getattr(runtime_ctx, "agent_presentation", None)
+        _presentation_pick = _presentation_pick if isinstance(_presentation_pick, Mapping) else {}
+        if tool_catalog_detail is None:
+            tool_catalog_detail = str(_presentation_pick.get("tool_catalog") or "").strip() or None
         if _profile_applied and tool_catalog_detail is None:
             tool_catalog_detail = str(_profile.get("tool_catalog_detail") or "").strip() or None
         if tool_catalog_detail is None:
@@ -3249,6 +3296,18 @@ class BaseWorkflow():
             ).strip().lower()
         if tool_catalog_detail not in {"full", "compact"}:
             tool_catalog_detail = "full"
+        skills_form = str(_presentation_pick.get("skills_form") or "").strip() or None
+        if _profile_applied and skills_form is None:
+            skills_form = str(_profile.get("skills_form") or "").strip() or None
+        if skills_form is None:
+            skills_form = str(
+                _first_react_prop("instructions.skills_form") or "full"
+            ).strip().lower()
+        if skills_form not in {"full", "compact"}:
+            skills_form = "full"
+        # The sk: skill-instruction load path (react.read) consults this as
+        # the default variant for skill bodies.
+        runtime_ctx.skills_form = skills_form
         if include_tool_catalog is None:
             include_tool_catalog = _bool_or_none(_first_react_prop(
                 "instructions.include_tool_catalog",

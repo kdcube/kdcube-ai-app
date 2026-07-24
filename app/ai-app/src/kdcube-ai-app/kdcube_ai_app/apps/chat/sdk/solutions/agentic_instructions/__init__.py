@@ -1,18 +1,17 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Elena Viter
 
-"""Agentic instruction composition — the agent-neutral instruction-body seam.
+"""Compatibility shim — the composer lives in ``agentic_config.instructions``.
 
-Composes an agent's instruction body from a configured token list with one
-vocabulary shared across agents (``full`` | ``lite:<profile>`` |
-``xlite:<profile>`` | single ``REACT_LITE_*``/``REACT_XLITE_*`` blocks | literal
-text). Intended to grow into the home for externally-managed, versioned
-instruction sets referenced by id + version.
+The agent-neutral instruction seam grew into the ``agentic_config`` subsystem
+(vocabulary + ``instr:`` refs + versioned store + async expansion). Import
+from ``kdcube_ai_app.apps.chat.sdk.solutions.agentic_config`` going forward;
+this module keeps the original import path working.
 """
 
 from __future__ import annotations
 
-from kdcube_ai_app.apps.chat.sdk.solutions.agentic_instructions.compose import (
+from kdcube_ai_app.apps.chat.sdk.solutions.agentic_config.instructions.compose import (
     compose_instruction_body,
 )
 

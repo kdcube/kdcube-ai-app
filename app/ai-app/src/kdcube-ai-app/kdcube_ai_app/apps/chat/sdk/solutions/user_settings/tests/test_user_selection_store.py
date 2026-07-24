@@ -442,3 +442,40 @@ def test_merge_patch_namespace_entry_lists_round_trip():
     # Re-enable clears everything for the namespace.
     merged = merge_selection_patch(merged, {"named_services": {"mail": False}})
     assert "named_services" not in merged or "mail" not in merged.get("named_services", {})
+
+
+@pytest.mark.asyncio
+async def test_presentation_pick_round_trip_merge_and_clear():
+    pool = _FakePool()
+    store = _store(pool)
+
+    saved = await store.set_selection(
+        user_id="u1", bundle_id="b", agent_id="main",
+        patch=None,
+        presentation={"tool_catalog": "compact"},
+    )
+    assert saved["presentation"] == {"tool_catalog": "compact"}
+
+    # a later facet pick merges with the earlier one
+    merged = await store.set_selection(
+        user_id="u1", bundle_id="b", agent_id="main",
+        patch=None,
+        presentation={"skills_form": "compact"},
+    )
+    assert merged["presentation"] == {"tool_catalog": "compact", "skills_form": "compact"}
+
+    # invalid values never persist
+    unchanged = await store.set_selection(
+        user_id="u1", bundle_id="b", agent_id="main",
+        patch=None,
+        presentation={"tool_catalog": "tiny"},
+    )
+    assert unchanged["presentation"] == {"tool_catalog": "compact", "skills_form": "compact"}
+
+    # explicit None clears the pick entirely (back to admin defaults)
+    cleared = await store.set_selection(
+        user_id="u1", bundle_id="b", agent_id="main",
+        patch=None,
+        presentation=None,
+    )
+    assert cleared["presentation"] is None

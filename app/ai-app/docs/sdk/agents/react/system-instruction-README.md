@@ -217,7 +217,7 @@ top-level `await` enabled. Do not generate an event-loop runner or a separate
 
 A `blocks` list (in `instruction_blocks` or a profile's `blocks`) is composed
 into the instruction body by
-`kdcube_ai_app.apps.chat.sdk.solutions.agentic_instructions.compose_instruction_body`
+`kdcube_ai_app.apps.chat.sdk.solutions.agentic_config.instructions.compose_instruction_body`
 — an agent-neutral composer, reached from ReAct through
 `decision_prompt.normalize_instruction_blocks`. **Each item is resolved
 independently and all are joined with a blank line in the exact order listed.**
@@ -230,7 +230,12 @@ One vocabulary spans the three tiers:
 | `xlite:<profile>` | a whole **extra-lite** profile body | Same profile names, for serving-constrained models. |
 | `REACT_LITE_*` | a single moderate block | From `shared_instructions_lite.py`. |
 | `REACT_XLITE_*` | a single extra-lite block | From `instructions_extra_lite.py`. |
+| `instr:profile:<set>` | a predefined set by name | `full`, `lite`, `extra-lite` — thin aliases onto the tokens above (`full`, `lite:all_capabilities`, `xlite:workspace_exec`). |
+| `instr:custom:<id>[:<version>]` | a stored instruction set | Tenant/project-scoped, versioned (immutable versions; omitted version = latest active). Resolved from the `agentic_config` store before composition; a ref that cannot resolve is dropped, never leaked as literal text. |
 | anything else | literal instruction text | Used verbatim — e.g. a `[BUNDLE-SPECIFIC RULES]` fragment. |
+
+A stored instruction set is itself an ordered item list in this same
+vocabulary, so custom refs compose with everything above and with each other.
 
 Profiles (for `lite:` and `xlite:`): `core`, `workspace`, `workspace_exec`,
 `document`, `web`, `all_capabilities`.
@@ -310,6 +315,17 @@ can force the one-action protocol, `include_skill_gallery` and
 names while omitting long examples and repeated prose. The reference Extra Lite
 profile uses single-action mode, no skill gallery, and the compact tool catalog;
 the compact catalog also omits scheduling traits used only by multi-action mode.
+
+**Presentation facets.** `tool_catalog_detail` and `skills_form` (the skill-body
+variant loaded on `sk:` reads — `full` | `compact`) are *presentation facets*:
+user-pickable per agent, surfaced to pickers as `presentation_facets` in the
+capabilities catalog and stored in the user's selection under `presentation`.
+Precedence per facet: the user's pick, then the picked profile's declared
+value, then the agent-level react config (`instructions.tool_catalog_detail` /
+`instructions.skills_form`), then `full`. A profile value is therefore a
+DEFAULT the user can override, never a lock. A facet switch re-renders the
+composed prompt surfaces, so it rides the same cold-cache policy class as an
+instruction-profile switch.
 
 Or a complete hand-written body (highest priority, over `blocks`):
 

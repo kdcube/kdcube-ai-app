@@ -1239,12 +1239,20 @@ async def handle_react_read(*, ctx_browser: Any, state: Dict[str, Any], tool_cal
                     short_id_map=short_map,
                     tool_catalog=active_tool_catalog,
                 )
+                # The agent's skills-form facet (admin default ⊕ user pick,
+                # resolved at build time) selects the default skill-body
+                # variant; full stays the fallback when compact is absent.
+                _skills_form = str(
+                    getattr(getattr(ctx_browser, "runtime_ctx", None), "skills_form", "") or ""
+                ).strip().lower()
+                if _skills_form not in {"full", "compact"}:
+                    _skills_form = "full"
                 blocks: List[str] = []
                 for block_sid in block_ids:
                     spec = get_skill(block_sid)
                     if not spec:
                         continue
-                    instr_text = _read_skill_instruction_text(spec)
+                    instr_text = _read_skill_instruction_text(spec, variant=_skills_form)
                     if not instr_text:
                         continue
                     sid_map: Dict[int, int] = {}

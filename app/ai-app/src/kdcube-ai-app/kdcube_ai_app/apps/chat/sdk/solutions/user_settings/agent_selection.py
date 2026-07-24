@@ -50,6 +50,7 @@ from kdcube_ai_app.apps.chat.sdk.runtime.agent_inventory import (
     match_supported_model,
     normalize_instruction_pick,
     normalize_model_pick,
+    normalize_presentation_pick,
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.user_settings.store import (
     UserSettingsStore,
@@ -63,6 +64,7 @@ AGENT_SELECTION_CONVERSATION_KEY_PREFIX = "conversation:"
 # set_selection sentinels: "not in this patch" (None means CLEAR the pick).
 _MODEL_UNSET = object()
 _INSTRUCTIONS_UNSET = object()
+_PRESENTATION_UNSET = object()
 
 _DICT_CATEGORIES = ("tools", "mcp", "named_services")
 
@@ -201,6 +203,7 @@ class UserAgentSelectionStore(UserSettingsStore):
             "disabled": {},
             "model": None,
             "instructions": None,
+            "presentation": None,
             "cache_policy": {},
             "pending": None,
             "created_at": now,
@@ -221,6 +224,7 @@ class UserAgentSelectionStore(UserSettingsStore):
             "disabled": dict(disabled) if isinstance(disabled, Mapping) else {},
             "model": normalize_model_pick(value.get("model")),
             "instructions": normalize_instruction_pick(value.get("instructions")),
+            "presentation": normalize_presentation_pick(value.get("presentation")),
             "cache_policy": dict(cache_policy) if isinstance(cache_policy, Mapping) else {},
             "pending": dict(pending) if isinstance(pending, Mapping) else None,
             "created_at": str(record.get("created_at") or ""),
@@ -244,6 +248,9 @@ class UserAgentSelectionStore(UserSettingsStore):
         instructions = normalize_instruction_pick(selection.get("instructions"))
         if instructions:
             value["instructions"] = instructions
+        presentation = normalize_presentation_pick(selection.get("presentation"))
+        if presentation:
+            value["presentation"] = presentation
         if include_cache_policy and selection.get("cache_policy"):
             value["cache_policy"] = dict(selection.get("cache_policy") or {})
         pending = selection.get("pending")
@@ -349,6 +356,7 @@ class UserAgentSelectionStore(UserSettingsStore):
             "disabled": dict(active.get("disabled") or {}),
             "model": normalize_model_pick(active.get("model")),
             "instructions": normalize_instruction_pick(active.get("instructions")),
+            "presentation": normalize_presentation_pick(active.get("presentation")),
             "cache_policy": dict(default.get("cache_policy") or {}),
             "pending": pending,
             "pending_scope": pending_scope,
@@ -404,11 +412,20 @@ class UserAgentSelectionStore(UserSettingsStore):
                     candidate_id = match_instruction_profile(candidate_id, catalog.get("instruction_profiles"))
                 if candidate_id:
                     merged_instructions = candidate_id
+        merged_presentation = normalize_presentation_pick(stored.get("presentation"))
+        if "presentation" in pending:
+            if pending.get("presentation") is None:
+                merged_presentation = None
+            else:
+                candidate_facets = normalize_presentation_pick(pending.get("presentation"))
+                if candidate_facets:
+                    merged_presentation = {**(merged_presentation or {}), **candidate_facets}
         promoted = {
             **stored,
             "disabled": merged,
             "model": merged_model,
             "instructions": merged_instructions,
+            "presentation": merged_presentation,
             "pending": None,
         }
         await self._write_value(
@@ -485,6 +502,7 @@ class UserAgentSelectionStore(UserSettingsStore):
         patch: Mapping[str, Any] | None,
         model: Any = _MODEL_UNSET,
         instructions: Any = _INSTRUCTIONS_UNSET,
+        presentation: Any = _PRESENTATION_UNSET,
         cache_policy: Optional[Mapping[str, Any]] = None,
         apply: str = "now",
         conversation_id: str = "",
@@ -553,11 +571,13 @@ class UserAgentSelectionStore(UserSettingsStore):
             current_disabled: Mapping[str, Any] = {}
             current_model: Any = None
             current_instructions: Any = None
+            current_presentation: Any = None
             current_pending: Optional[dict[str, Any]] = None
         else:
             current_disabled = current.get("disabled") or {}
             current_model = current.get("model")
             current_instructions = current.get("instructions")
+            current_presentation = current.get("presentation")
             current_pending = current.get("pending")
 
         if apply_mode in ("next_conversation", "when_cold"):
@@ -585,6 +605,13 @@ class UserAgentSelectionStore(UserSettingsStore):
                         candidate_id = match_instruction_profile(candidate_id, catalog.get("instruction_profiles"))
                     if candidate_id:
                         deferred["instructions"] = candidate_id
+            if presentation is not _PRESENTATION_UNSET:
+                if presentation is None:
+                    deferred["presentation"] = None
+                else:
+                    candidate_facets = normalize_presentation_pick(presentation)
+                    if candidate_facets:
+                        deferred["presentation"] = candidate_facets
             deferred["apply"] = apply_mode
             deferred["since_conversation_id"] = conversation
             deferred.setdefault("created_at", utc_now_iso())
@@ -593,9 +620,10 @@ class UserAgentSelectionStore(UserSettingsStore):
                 "disabled": dict(current_disabled),
                 "model": normalize_model_pick(current_model),
                 "instructions": normalize_instruction_pick(current_instructions),
+                "presentation": normalize_presentation_pick(current_presentation),
                 "pending": (
                     deferred
-                    if "disabled" in deferred or "model" in deferred or "instructions" in deferred
+                    if any(k in deferred for k in ("disabled", "model", "instructions", "presentation"))
                     else None
                 ),
             }
@@ -621,11 +649,19 @@ class UserAgentSelectionStore(UserSettingsStore):
                     candidate_id = match_instruction_profile(candidate_id, catalog.get("instruction_profiles"))
                 if candidate_id:
                     merged_instructions = candidate_id
+            merged_presentation = normalize_presentation_pick(current_presentation)
+            if presentation is None:
+                merged_presentation = None
+            elif presentation is not _PRESENTATION_UNSET:
+                candidate_facets = normalize_presentation_pick(presentation)
+                if candidate_facets:
+                    merged_presentation = {**(merged_presentation or {}), **candidate_facets}
             changed = {
                 **current,
                 "disabled": merged,
                 "model": merged_model,
                 "instructions": merged_instructions,
+                "presentation": merged_presentation,
                 "pending": current_pending,
             }
 

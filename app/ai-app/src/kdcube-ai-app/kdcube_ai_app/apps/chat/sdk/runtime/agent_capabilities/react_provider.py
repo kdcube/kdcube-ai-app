@@ -69,6 +69,7 @@ class ReactCapabilitiesProvider:
             _catalog_skills,
             configured_strong_model,
             react_instruction_profiles,
+            react_presentation_facets,
             react_subagents_config,
             react_supported_models,
             subagents_default_on,
@@ -111,6 +112,9 @@ class ReactCapabilitiesProvider:
                 if profiles
                 else None
             ),
+            # ReAct honors the presentation picks at build time (tool catalog
+            # form in the composed prompt; skills form on sk: loads).
+            presentation=react_presentation_facets(bundle_props, agent_id)["facets"],
             skills=skills_out,
             subagents=subagents,
             # ReAct consumes both mid-turn affordances: an in-turn followup at a

@@ -38,7 +38,7 @@ from kdcube_ai_app.apps.chat.sdk.skills.instructions.shared_instructions import 
     REACT_PLANNING,
     REACT_SKILL_SELECTION_GUIDE,
 )
-from kdcube_ai_app.apps.chat.sdk.solutions.agentic_instructions import (
+from kdcube_ai_app.apps.chat.sdk.solutions.agentic_config.instructions import (
     compose_instruction_body,
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.react.layout import (
@@ -124,7 +124,7 @@ def normalize_instruction_blocks(
     """Resolve ReAct config instruction items into one body (order-preserving).
 
     Thin adapter over the agent-neutral
-    :func:`agentic_instructions.compose_instruction_body`: it injects the ReAct
+    :func:`agentic_config.instructions.compose_instruction_body`: it injects the ReAct
     default/full body as the ``full`` token's provider. The shared vocabulary is
     ``full`` | ``lite:<profile>`` | ``xlite:<profile>`` | single
     ``REACT_LITE_*``/``REACT_XLITE_*`` blocks | literal text. The runtime

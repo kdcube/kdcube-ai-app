@@ -4,10 +4,10 @@
 
 `compose_instruction_body` resolves one token list into a body, order-preserving,
 with `full` | `lite:<profile>` | `xlite:<profile>` | single `REACT_LITE_*` /
-`REACT_XLITE_*` blocks | literal text.
+`REACT_XLITE_*` blocks | `instr:profile:<set>` aliases | literal text.
 """
 
-from kdcube_ai_app.apps.chat.sdk.solutions.agentic_instructions import (
+from kdcube_ai_app.apps.chat.sdk.solutions.agentic_config.instructions import (
     compose_instruction_body,
 )
 from kdcube_ai_app.apps.chat.sdk.skills.instructions.shared_instructions_lite import (
@@ -58,3 +58,33 @@ def test_unknown_token_is_literal_and_empty_items_drop():
     assert compose_instruction_body(["", "  ", "REACT_LITE_SKILLS"]).startswith("[SKILLS]")
     # a bare string is accepted as a one-item list
     assert compose_instruction_body("REACT_LITE_SKILLS").startswith("[SKILLS]")
+
+
+def test_instr_profile_refs_alias_the_predefined_sets():
+    # instr:profile:<set> == the exact token it aliases
+    assert compose_instruction_body(["instr:profile:lite"]) == compose_instruction_body(
+        ["lite:all_capabilities"]
+    )
+    assert compose_instruction_body(["instr:profile:extra-lite"]) == compose_instruction_body(
+        ["xlite:workspace_exec"]
+    )
+    assert (
+        compose_instruction_body(["instr:profile:full"], full_body_provider=lambda: "FULL-BODY")
+        == "FULL-BODY"
+    )
+    # an unknown set name is dropped, never leaked as literal prompt text
+    assert compose_instruction_body(["instr:profile:nope", "REACT_LITE_SKILLS"]).startswith(
+        "[SKILLS]"
+    )
+    assert "instr:profile" not in compose_instruction_body(["instr:profile:nope"])
+
+
+def test_unexpanded_custom_ref_is_dropped_never_leaked():
+    # custom refs are resolved by the async expand pass BEFORE composition;
+    # one that reaches the composer unexpanded must vanish from the body.
+    body = compose_instruction_body(
+        ["instr:custom:support-tone:3", "REACT_LITE_SKILLS"]
+    )
+    assert body.startswith("[SKILLS]")
+    assert "instr:custom" not in body
+    assert compose_instruction_body(["instr:custom:support-tone"]) == ""

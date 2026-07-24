@@ -93,6 +93,23 @@ bundles:
               - kdcube:role:super-admin
               delegable_permissions:
               - memories:write
+            - grant: instr:read
+              label: Read agent instruction sets
+              description: List and read stored, versioned agent instruction sets.
+              delegable_roles:
+                - kdcube:role:registered
+                - kdcube:role:paid
+                - kdcube:role:privileged
+                - kdcube:role:super-admin
+              delegable_permissions:
+                - instr:read
+            - grant: instr:write
+              label: Manage agent instruction sets
+              description: Save new versions of stored agent instruction sets or retire them (administrator operation).
+              delegable_roles:
+                - kdcube:role:super-admin
+              delegable_permissions:
+                - instr:write
             - grant: tasks:read
               label: Read KDCube tasks
               description: Read task objects through delegated named-service tools.
@@ -286,6 +303,47 @@ bundles:
                   - named_services:use
               named_services:
                 namespaces:
+                  instr:
+                    label: Agent instruction sets
+                    description: Stored, versioned instruction sets wired to agents by ref (instr:custom:<id>[:<version>]).
+                    authority_id: delegated_client
+                    tools:
+                      about:
+                        operation: provider.about
+                        label: About instruction sets
+                        description: Explain the instruction-set namespace and its refs.
+                        grants:
+                          - instr:read
+                      capabilities:
+                        operation: provider.capabilities
+                        label: Instruction-set capabilities
+                        description: Read provider capabilities for the instruction-set namespace.
+                        grants:
+                          - instr:read
+                      list:
+                        operation: object.list
+                        label: List instruction sets
+                        description: List stored instruction sets (latest version per id).
+                        grants:
+                          - instr:read
+                      get:
+                        operation: object.get
+                        label: Read one instruction set
+                        description: Read one stored instruction set by ref, with its version history.
+                        grants:
+                          - instr:read
+                      upsert:
+                        operation: object.upsert
+                        label: Save instruction-set version
+                        description: Save the next immutable version of a stored instruction set (administrator operation).
+                        grants:
+                          - instr:write
+                      delete:
+                        operation: object.delete
+                        label: Retire instruction set
+                        description: Retire one version or every version of a stored instruction set (administrator operation).
+                        grants:
+                          - instr:write
                   mem:
                     label: User memories
                     description: KDCube memory notes for the approving user.
@@ -1464,6 +1522,8 @@ bundles:
           # `lite:<profile>` / `xlite:<profile>` (a whole moderate/extra-lite
           # profile in one token), single `REACT_LITE_*` / `REACT_XLITE_*` blocks,
           # or literal text. A profile with no `blocks` uses the full default set.
+          # Stored sets: instr:custom:<id>[:<version>] (admin-authored, versioned);
+          # predefined: instr:profile:full|lite|extra-lite.
           # Profiles: core · workspace · workspace_exec · document · web · all_capabilities.
           instruction_profiles:
             default: full

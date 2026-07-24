@@ -1509,3 +1509,63 @@ def test_realm_card_presents_only_provider_served_operations():
     ]
     assert "object.host_file" not in wildcard_live
     assert set(wildcard_live) >= {"object.list", "object.get"}
+
+
+# ── presentation facets (tool catalog / skills form) ─────────────────────────
+
+def test_normalize_presentation_pick_validates_facets_and_values():
+    from kdcube_ai_app.apps.chat.sdk.runtime.agent_inventory import (
+        normalize_presentation_pick,
+    )
+
+    assert normalize_presentation_pick(
+        {"tool_catalog": "Compact", "skills_form": "full"}
+    ) == {"tool_catalog": "compact", "skills_form": "full"}
+    # invalid values and unknown facets drop; nothing valid -> None
+    assert normalize_presentation_pick({"tool_catalog": "tiny", "other": "compact"}) is None
+    assert normalize_presentation_pick("compact") is None
+    assert normalize_presentation_pick(None) is None
+
+
+def test_selection_snapshot_carries_presentation_and_change_classifies():
+    from kdcube_ai_app.apps.chat.sdk.runtime.agent_inventory import (
+        SELECTION_CHANGE_MODEL,
+        classify_selection_change,
+        selection_snapshot,
+    )
+
+    base = selection_snapshot({}, None, None, None)
+    assert base["presentation"] is None
+    switched = selection_snapshot({}, None, None, {"tool_catalog": "compact"})
+    assert switched["presentation"] == {"tool_catalog": "compact"}
+    change = classify_selection_change(base, switched)
+    # a facet switch re-renders the prompt surfaces -> model-switch policy class
+    assert change["changed"] is True
+    assert "presentation_switch" in change["reasons"]
+    assert SELECTION_CHANGE_MODEL in change["classes"]
+    # same presentation both sides -> no change
+    same = classify_selection_change(switched, selection_snapshot({}, None, None, {"tool_catalog": "compact"}))
+    assert "presentation_switch" not in same["reasons"]
+
+
+def test_react_presentation_facets_defaults_from_agent_config():
+    from kdcube_ai_app.apps.chat.sdk.runtime.agent_inventory import (
+        react_presentation_facets,
+    )
+
+    props = _props()
+    props["react"] = {
+        "main": {
+            "instructions": {
+                "tool_catalog_detail": "compact",
+                "skills_form": "compact",
+            }
+        }
+    }
+    facets = react_presentation_facets(props, "main")["facets"]
+    assert facets["tool_catalog"] == {"options": ["full", "compact"], "default": "compact"}
+    assert facets["skills_form"] == {"options": ["full", "compact"], "default": "compact"}
+    # no declared defaults -> full; both options always pickable
+    bare = react_presentation_facets(_props(), "main")["facets"]
+    assert bare["tool_catalog"]["default"] == "full"
+    assert bare["skills_form"]["default"] == "full"

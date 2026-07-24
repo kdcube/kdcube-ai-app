@@ -544,6 +544,71 @@ def match_instruction_profile(value: Any, profiles: Mapping[str, Any] | None) ->
     return None
 
 
+# Presentation facets: HOW the prompt surfaces render, decoupled from WHICH
+# instruction set is picked. A profile may default a facet; the user's pick
+# overrides it (admin sets defaults, the user decides).
+PRESENTATION_FACETS = ("tool_catalog", "skills_form")
+PRESENTATION_FACET_VALUES = ("full", "compact")
+
+
+def normalize_presentation_facet(value: Any) -> str | None:
+    raw = _norm(value).lower()
+    return raw if raw in PRESENTATION_FACET_VALUES else None
+
+
+def normalize_presentation_pick(value: Any) -> dict[str, str] | None:
+    """The user's presentation-facet picks: ``{tool_catalog?, skills_form?}``.
+
+    Unknown facets and invalid values drop; None when nothing valid remains
+    (no pick stored/applied — every facet falls back to its admin default).
+    """
+    if not isinstance(value, Mapping):
+        return None
+    out: dict[str, str] = {}
+    for facet in PRESENTATION_FACETS:
+        facet_value = normalize_presentation_facet(value.get(facet))
+        if facet_value:
+            out[facet] = facet_value
+    return out or None
+
+
+def react_presentation_facets(
+    bundle_props: Mapping[str, Any] | None,
+    agent_id: str | None,
+) -> dict[str, Any]:
+    """The wire-safe presentation-facet picker block for this agent.
+
+    Every facet is always pickable (``full`` | ``compact``). The default per
+    facet is the agent-level react config (``instructions.tool_catalog_detail``
+    / ``instructions.skills_form``); a picked instruction profile that declares
+    its own facet value replaces that default at APPLY time, not here.
+    """
+    tool_catalog: str | None = None
+    skills_form: str | None = None
+    for block in _react_agent_config_blocks(bundle_props, agent_id):
+        instructions = block.get("instructions")
+        if not isinstance(instructions, Mapping):
+            continue
+        tool_catalog = tool_catalog or normalize_presentation_facet(
+            instructions.get("tool_catalog_detail")
+        )
+        skills_form = skills_form or normalize_presentation_facet(
+            instructions.get("skills_form")
+        )
+    return {
+        "facets": {
+            "tool_catalog": {
+                "options": list(PRESENTATION_FACET_VALUES),
+                "default": tool_catalog or "full",
+            },
+            "skills_form": {
+                "options": list(PRESENTATION_FACET_VALUES),
+                "default": skills_form or "full",
+            },
+        }
+    }
+
+
 def normalize_model_pick(pick: Any) -> dict[str, str] | None:
     """`{provider, model}` from a stored/submitted pick; None when shapeless."""
     if not isinstance(pick, Mapping):
@@ -611,12 +676,14 @@ def selection_snapshot(
     disabled: Mapping[str, Any] | None,
     model: Any,
     instructions: Any = None,
+    presentation: Any = None,
 ) -> dict[str, Any]:
     """The canonical APPLIED-selection snapshot persisted per conversation."""
     return {
         "disabled": dict(disabled) if isinstance(disabled, Mapping) else {},
         "model": normalize_model_pick(model),
         "instructions": normalize_instruction_pick(instructions),
+        "presentation": normalize_presentation_pick(presentation),
     }
 
 
@@ -660,6 +727,14 @@ def classify_selection_change(
     # impact as a model switch, so it rides that policy class.
     if normalize_instruction_pick(prev.get("instructions")) != normalize_instruction_pick(curr.get("instructions")):
         reasons.append("instruction_switch")
+        if SELECTION_CHANGE_MODEL not in classes:
+            classes.append(SELECTION_CHANGE_MODEL)
+    # A presentation-facet switch (tool catalog / skills form) re-renders the
+    # composed prompt surfaces — same cache impact, same policy class.
+    if (normalize_presentation_pick(prev.get("presentation")) or {}) != (
+        normalize_presentation_pick(curr.get("presentation")) or {}
+    ):
+        reasons.append("presentation_switch")
         if SELECTION_CHANGE_MODEL not in classes:
             classes.append(SELECTION_CHANGE_MODEL)
     prev_disabled = prev.get("disabled")

@@ -77,11 +77,18 @@ def test_capability_blocks_match_the_inline_embedding(subagents):
     # ReAct declares it consumes both mid-turn affordances (a DECLARATION only —
     # the runtime followup/steer handling at the ReAct node is unchanged).
     assert fields["conversation"] == {"accepts_followup": True, "accepts_steer": True}
+    # ReAct always declares the presentation facets (both facets pickable,
+    # defaults from the agent-level react config; "full" absent any).
+    assert fields["presentation_facets"] == {
+        "tool_catalog": {"options": ["full", "compact"], "default": "full"},
+        "skills_form": {"options": ["full", "compact"], "default": "full"},
+    }
     # The four historical fields keep their exact order (skills -> models ->
-    # subagents); the additive `conversation` key is appended last, so the byte
-    # order of the pre-existing fields is preserved.
+    # subagents); the additive `conversation` and `presentation_facets` keys
+    # append after, so the byte order of the pre-existing fields is preserved.
     assert list(fields.keys()) == [
         "skills", "supported_models", "default_model", "subagents", "conversation",
+        "presentation_facets",
     ]
 
 

@@ -51,18 +51,11 @@ from kdcube_ai_app.infra.plugin.bundle_loader import (
 )
 from kdcube_ai_app.infra.service_hub.inventory import BundleState, Config
 
-try:
-    from .services.conversations.named_service import build_conversation_named_service_provider
-    from .services.named_services import NamedServicesMcpBridge
-    from .services.named_services.request_scope import get_public_base_url
-    from .surfaces.mcp import conversations as conversations_mcp_module
-    from .surfaces.mcp import named_services as named_services_mcp_module
-except Exception:  # pragma: no cover - bundle loader may import as loose module
-    from services.conversations.named_service import build_conversation_named_service_provider  # type: ignore
-    from services.named_services import NamedServicesMcpBridge  # type: ignore
-    from services.named_services.request_scope import get_public_base_url  # type: ignore
-    from surfaces.mcp import conversations as conversations_mcp_module  # type: ignore
-    from surfaces.mcp import named_services as named_services_mcp_module  # type: ignore
+from .services.conversations.named_service import build_conversation_named_service_provider
+from .services.named_services import NamedServicesMcpBridge
+from .services.named_services.request_scope import get_public_base_url
+from .surfaces.mcp import conversations as conversations_mcp_module
+from .surfaces.mcp import named_services as named_services_mcp_module
 
 
 LOGGER = logging.getLogger("kdcube.bundles.kdcube-services")
@@ -291,6 +284,14 @@ class KDCubeServicesEntrypoint(BaseEntrypoint):
                 file_url_factory=self._integration_file_url,
                 upload_slot_factory=self._integration_upload_slot,
             )
+        )
+        # Stored agent instruction sets (instr:custom:<id>[:<version>]):
+        # reads serve pickers/widgets; writes are admin-gated in the provider.
+        from kdcube_ai_app.apps.chat.sdk.solutions.agentic_config.named_service import (
+            AgenticInstructionsNamedService,
+        )
+        providers.append(
+            AgenticInstructionsNamedService(pool_factory=lambda: self.pg_pool)
         )
         return providers
 

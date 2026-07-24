@@ -82,6 +82,11 @@ class CapabilityBlocks:
     subagents: Optional[Dict[str, Any]] = None
     conversation: Optional[ConversationCaps] = None
     instructions: Optional[InstructionProfiles] = None
+    #: presentation facets ({facet: {options, default}}) — how prompt surfaces
+    #: render (tool catalog form, skills form), decoupled from WHICH
+    #: instruction set is picked. Declared by providers whose runtime honors
+    #: the picks; absent = the picker section stays hidden.
+    presentation: Optional[Dict[str, Any]] = None
 
     def to_catalog_fields(self) -> Dict[str, Any]:
         # Key order mirrors the historical catalog literal
@@ -132,6 +137,11 @@ class CapabilityBlocks:
             out["instruction_profiles"] = {
                 "options": [dict(o) for o in self.instructions.options],
                 "default": self.instructions.default,
+            }
+        # ADDITIVE: presentation facets, emitted only when declared.
+        if self.presentation:
+            out["presentation_facets"] = {
+                facet: dict(block) for facet, block in self.presentation.items()
             }
         return out
 
