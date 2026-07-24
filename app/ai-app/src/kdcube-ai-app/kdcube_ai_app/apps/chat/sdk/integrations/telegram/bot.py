@@ -656,7 +656,10 @@ def _append_file(files: list[dict[str, Any]], seen: set[str], file_item: dict[st
 
 
 def _file_delivery_key(file_item: Mapping[str, Any]) -> str:
-    return str(
+    # Key on (path, content): a rewrite of the same path is a new delivery, a
+    # true duplicate is dropped. content_sha256 preferred; size is the fallback;
+    # neither present falls back to the legacy path-only key.
+    path = str(
         file_item.get("url")
         or file_item.get("hosted_uri")
         or file_item.get("rn")
@@ -666,6 +669,15 @@ def _file_delivery_key(file_item: Mapping[str, Any]) -> str:
         or file_item.get("filename")
         or ""
     ).strip()
+    if not path:
+        return ""
+    signature = str(
+        file_item.get("content_sha256")
+        or file_item.get("size")
+        or file_item.get("size_bytes")
+        or ""
+    ).strip()
+    return f"{path}::{signature}" if signature else path
 
 
 def _file_item_from_meta(meta: Mapping[str, Any], *, logical_path: str) -> dict[str, Any]:
@@ -696,6 +708,7 @@ def _file_item_from_meta(meta: Mapping[str, Any], *, logical_path: str) -> dict[
             "key": str(meta.get("key") or "").strip(),
             "base64": str(meta.get("base64") or "").strip(),
             "size_bytes": meta.get("size_bytes"),
+            "content_sha256": str(meta.get("content_sha256") or "").strip(),
         }.items()
         if value not in ("", None)
     }
