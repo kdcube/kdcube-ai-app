@@ -70,6 +70,7 @@ WORKFLOW_NAME = "kdcube_services"
 CONV_FILE_DOWNLOAD_SECRET_KEY = "conversations.file_download_secret"
 STORAGE_WIDGET_SRC = "sdk://solutions/storage/ui.widget.storage"
 APP_CONFIG_WIDGET_SRC = "sdk://solutions/app_config/ui/widget"
+AGENTIC_CONFIG_WIDGET_SRC = "sdk://solutions/agentic_config/ui/widget"
 
 
 def _content_disposition(filename: str) -> str:
@@ -162,6 +163,11 @@ class KDCubeServicesEntrypoint(BaseEntrypoint):
                             },
                         },
                     },
+                    "agentic_instructions": {
+                        "enabled": True,
+                        "src_folder": AGENTIC_CONFIG_WIDGET_SRC,
+                        "build_command": WIDGET_BUILD_COMMAND,
+                    },
                 },
             },
         }
@@ -205,6 +211,27 @@ class KDCubeServicesEntrypoint(BaseEntrypoint):
         return [
             "<div style=\"font-family:system-ui,sans-serif;padding:16px\">"
             "App Config is served from sdk://solutions/app_config/ui/widget after build."
+            "</div>"
+        ]
+
+    @api(
+        alias="agentic_instructions_widget",
+        route="operations",
+        user_types=("privileged",),
+    )
+    @ui_widget(
+        icon={
+            "tailwind": "heroicons-outline:adjustments-horizontal",
+            "lucide": "SlidersHorizontal",
+        },
+        alias="agentic_instructions",
+        user_types=("privileged",),
+    )
+    def agentic_instructions_widget(self, **kwargs):
+        del kwargs
+        return [
+            "<div style=\"font-family:system-ui,sans-serif;padding:16px\">"
+            "Agent Instructions is served from sdk://solutions/agentic_config/ui/widget after build."
             "</div>"
         ]
 
@@ -677,6 +704,140 @@ class KDCubeServicesEntrypoint(BaseEntrypoint):
         params: Dict[str, Any],
     ):
         return await self.graph.ainvoke(state)
+
+    @api(method="POST", alias="agentic_instructions", route="operations", user_types=("registered", "paid", "privileged"))
+    async def agentic_instructions(self, data: Optional[Dict[str, Any]] = None, **kwargs: Any) -> Dict[str, Any]:
+        """Operations facade over the ``instr`` stored-instruction-sets provider.
+
+        The widget-facing surface for authoring instruction sets; the SAME
+        provider that serves the governed named-services door answers here, so
+        both transports share one contract and one admin gate (writes require
+        an administrator identity — enforced in the provider, not the widget).
+
+        ``body.data.action``:
+
+        - ``list``    ``{include_retired?}`` → latest version per id.
+        - ``get``     ``{ref}`` → one version + its version history
+                      (``ref`` = ``instr:custom:<id>[:<version>]``).
+        - ``save``    ``{instruction_id | ref, name, description?, items}`` →
+                      the next immutable version (admin).
+        - ``retire``  ``{ref}`` → retire the pinned version, or every version
+                      when the ref is unpinned (admin).
+        - ``preview`` ``{items, workspace_implementation?}`` → the composed
+                      instruction body exactly as the runtime would build it
+                      (stored refs expanded, capability tokens resolved).
+        """
+        from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import get_current_user_identity
+        from kdcube_ai_app.apps.chat.sdk.solutions.agentic_config.instructions import (
+            AgenticInstructionsStore,
+            expand_instruction_items,
+            has_custom_instruction_refs,
+        )
+        from kdcube_ai_app.apps.chat.sdk.solutions.agentic_config.named_service import (
+            INSTR_NAMESPACE,
+            AgenticInstructionsNamedService,
+        )
+        from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers.types import (
+            OBJECT_DELETE,
+            OBJECT_GET,
+            OBJECT_LIST,
+            OBJECT_UPSERT,
+            NamedServiceContext,
+            NamedServiceRequest,
+        )
+
+        payload = self._agent_selection_payload(data, kwargs)
+        action = str(payload.get("action") or "").strip().lower()
+        base = self._agent_selection_identity()
+
+        if action == "preview":
+            raw_items = payload.get("items")
+            if isinstance(raw_items, str):
+                raw_items = [raw_items]
+            items = [str(v or "").strip() for v in (raw_items or []) if str(v or "").strip()]
+            workspace_implementation = str(
+                payload.get("workspace_implementation") or "custom"
+            ).strip() or "custom"
+            expanded = items
+            try:
+                if has_custom_instruction_refs(items) and self.pg_pool is not None:
+                    store = AgenticInstructionsStore(
+                        pg_pool=self.pg_pool,
+                        tenant=base["tenant"],
+                        project=base["project"],
+                    )
+                    expanded = await expand_instruction_items(items, store=store)
+                from kdcube_ai_app.apps.chat.sdk.solutions.react.decision_prompt import (
+                    normalize_instruction_blocks,
+                )
+                body = normalize_instruction_blocks(
+                    expanded,
+                    workspace_implementation=workspace_implementation,
+                )
+            except Exception as exc:
+                self.logger.log(f"[agentic_instructions] preview failed: {traceback.format_exc()}", "ERROR")
+                return {"ok": False, "error": str(exc), "status": 500}
+            return {"ok": True, "body": body, "items_expanded": expanded}
+
+        if self.pg_pool is None:
+            return {"ok": False, "error": "storage_unavailable"}
+        identity = dict(get_current_user_identity() or {})
+        ctx = NamedServiceContext(
+            tenant=base["tenant"],
+            project=base["project"],
+            user_id=base["user_id"],
+            user_type=str(identity.get("user_type") or ""),
+            roles=tuple(identity.get("roles") or ()),
+            bundle_id=base["bundle_id"],
+        )
+        provider = AgenticInstructionsNamedService(pool_factory=lambda: self.pg_pool)
+        ref = str(payload.get("ref") or "").strip()
+        try:
+            if action == "list":
+                response = await provider.object_list(ctx, NamedServiceRequest(
+                    operation=OBJECT_LIST,
+                    namespace=INSTR_NAMESPACE,
+                    filters={"include_retired": bool(payload.get("include_retired"))},
+                ))
+            elif action == "get":
+                response = await provider.object_get(ctx, NamedServiceRequest(
+                    operation=OBJECT_GET,
+                    namespace=INSTR_NAMESPACE,
+                    object_ref=ref,
+                ))
+            elif action == "save":
+                await AgenticInstructionsStore(
+                    pg_pool=self.pg_pool,
+                    tenant=base["tenant"],
+                    project=base["project"],
+                ).ensure_schema()
+                response = await provider.object_upsert(ctx, NamedServiceRequest(
+                    operation=OBJECT_UPSERT,
+                    namespace=INSTR_NAMESPACE,
+                    object_ref=ref,
+                    payload={
+                        "instruction_id": payload.get("instruction_id"),
+                        "name": payload.get("name"),
+                        "description": payload.get("description"),
+                        "items": payload.get("items"),
+                    },
+                ))
+            elif action == "retire":
+                response = await provider.object_delete(ctx, NamedServiceRequest(
+                    operation=OBJECT_DELETE,
+                    namespace=INSTR_NAMESPACE,
+                    object_ref=ref,
+                ))
+            else:
+                return {
+                    "ok": False,
+                    "error": "invalid_action",
+                    "message": "body.data.action must be list | get | save | retire | preview",
+                }
+        except Exception as exc:
+            self.logger.log(f"[agentic_instructions] {action} failed: {traceback.format_exc()}", "ERROR")
+            return {"ok": False, "error": str(exc), "status": 500}
+        return response.to_dict()
 
     # ── platform admin apps ─────────────────────────────────────────────
     # The operator dashboards (economics control plane, conversation and

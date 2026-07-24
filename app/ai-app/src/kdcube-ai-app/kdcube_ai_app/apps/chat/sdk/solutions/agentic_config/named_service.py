@@ -43,7 +43,8 @@ LOGGER = logging.getLogger(__name__)
 
 INSTR_NAMESPACE = "instr"
 
-_ADMIN_USER_TYPES = {"admin", "super_admin"}
+_ADMIN_USER_TYPES = {"admin", "super_admin", "privileged"}
+_ADMIN_ROLE_TOKENS = {"admin", "super_admin", "super-admin", "kdcube:role:super-admin"}
 
 _INTRO = (
     "Stored instruction sets for agents. Each object is one versioned "
@@ -61,7 +62,7 @@ def _is_admin(ctx: NamedServiceContext) -> bool:
     if user_type in _ADMIN_USER_TYPES:
         return True
     roles = {str(r or "").strip().lower() for r in (getattr(ctx, "roles", ()) or ())}
-    return bool(roles & _ADMIN_USER_TYPES)
+    return bool(roles & _ADMIN_ROLE_TOKENS)
 
 
 def _author(ctx: NamedServiceContext) -> str:
