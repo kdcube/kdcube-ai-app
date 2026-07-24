@@ -1,22 +1,21 @@
 /** Admin merge-patch editor for one app's stored props.
  *
- * The operator writes a partial JSON subtree; Apply MERGE-writes it through
- * the platform admin route (`set_bundle_props`, op=merge) and the panel
- * reloads the stored truth. Writes are admin-gated SERVER-SIDE; the change
- * lands live (the platform regenerates the runtime descriptor view), and the
+ * The operator writes a partial subtree in YAML **or** JSON (JSON is valid
+ * YAML — one editor accepts both); Apply MERGE-writes it through the
+ * platform admin route (`set_bundle_props`, op=merge) and the panel reloads
+ * the stored truth. Writes are admin-gated SERVER-SIDE; the change lands
+ * live (the platform regenerates the runtime descriptor view), and the
  * descriptor file remains the restart-time source of truth. Hidden when the
  * data source is read-only.
  */
 import { useState } from 'react';
+import { load as yamlLoad } from 'js-yaml';
 import { useAppsConfigController } from '../../binding.tsx';
 
-const PLACEHOLDER = `{
-  "react": {
-    "default_agent": {
-      "instructions": { "tool_catalog_detail": "compact" }
-    }
-  }
-}`;
+const PLACEHOLDER = `react:
+  default_agent:
+    instructions:
+      tool_catalog_detail: compact`;
 
 export function ConfigEditor() {
   const controller = useAppsConfigController();
@@ -29,9 +28,9 @@ export function ConfigEditor() {
   const apply = async () => {
     let patch: Record<string, unknown>;
     try {
-      const parsed: unknown = JSON.parse(text);
+      const parsed: unknown = yamlLoad(text);
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-        throw new Error('the patch must be a JSON object');
+        throw new Error('the patch must be a mapping (YAML or JSON object)');
       }
       patch = parsed as Record<string, unknown>;
     } catch (err) {

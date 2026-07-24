@@ -167,6 +167,16 @@ class KDCubeServicesEntrypoint(BaseEntrypoint):
                         "enabled": True,
                         "src_folder": AGENTIC_CONFIG_WIDGET_SRC,
                         "build_command": WIDGET_BUILD_COMMAND,
+                        "shared_sources": {
+                            "components_core": {
+                                "src_folder": "npm://components-core/src",
+                                "target": "_shared/components-core",
+                            },
+                            "components_react": {
+                                "src_folder": "npm://components-react/src",
+                                "target": "_shared/components-react",
+                            },
+                        },
                     },
                 },
             },

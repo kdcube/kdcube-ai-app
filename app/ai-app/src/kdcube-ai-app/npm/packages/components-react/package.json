@@ -29,7 +29,12 @@
       "types": "./dist/apps-config/index.d.ts",
       "import": "./dist/apps-config/index.js"
     },
-    "./apps-config/styles.css": "./src/apps-config/styles/apps-config.css"
+    "./apps-config/styles.css": "./src/apps-config/styles/apps-config.css",
+    "./agentic-config": {
+      "types": "./dist/agentic-config/index.d.ts",
+      "import": "./dist/agentic-config/index.js"
+    },
+    "./agentic-config/styles.css": "./src/agentic-config/styles/agentic-config.css"
   },
   "scripts": {
     "build": "tsup",
@@ -47,7 +52,8 @@
     "react-markdown": "^10.1.0",
     "react-redux": "^9.1.0",
     "remark-breaks": "^4.0.0",
-    "remark-gfm": "^4.0.1"
+    "remark-gfm": "^4.0.1",
+    "js-yaml": "^4.1.0"
   },
   "devDependencies": {
     "@types/react": "^18.2.0",
@@ -55,6 +61,7 @@
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "tsup": "^8.0.0",
-    "typescript": "^5.4.0"
+    "typescript": "^5.4.0",
+    "@types/js-yaml": "^4.0.9"
   }
 }
